@@ -697,10 +697,12 @@
      * Wire the editor-owned controls (moves, expand, pills, stepper, rating
      * includes, reset, preview switch), keep the rows in step with the
      * settings after any change, and build the preview card once the editor
-     * is first on screen.
-     * @param {Object} ctx - Panel context ({ resetAutoCloseTimer }).
+     * is first on screen. The editor is disposed when the panel closes
+     * (ctx.onClose) or is wired again.
+     * @param {Object} ctx - Panel context ({ resetAutoCloseTimer, onClose }).
      */
     internal.wireTagGroupEditor = function(ctx) {
+        internal.tagGroupEditor?.dispose();
         const root = document.getElementById('jeTagGroupEditor');
         const L = layoutApi();
         if (!root || !L) return;
@@ -710,14 +712,17 @@
         /** @type {HTMLElement|null} */
         let previewCard = null;
         let refreshQueued = false;
+        let disposed = false;
+        /** @type {IntersectionObserver|null} */
+        let io = null;
 
         /** Re-render the preview after the current event's handlers ran. */
         const queuePreview = () => {
-            if (refreshQueued || !previewCard) return;
+            if (refreshQueued || !previewCard || disposed) return;
             refreshQueued = true;
             Promise.resolve().then(() => {
                 refreshQueued = false;
-                refreshPreview(/** @type {HTMLElement} */ (previewCard));
+                if (!disposed && previewCard) refreshPreview(previewCard);
             });
         };
 
@@ -845,22 +850,44 @@
 
         // Build the preview the first time the editor is on screen (the
         // panel opens on another section most of the time).
-        const mount = document.getElementById('jeTgePreview');
+        let mount = document.getElementById('jeTgePreview');
         const build = () => {
-            if (previewCard || !mount) return;
+            if (previewCard || !mount || disposed) return;
             previewCard = buildPreviewCard();
             mount.appendChild(previewCard);
             refreshPreview(previewCard);
         };
         if (mount && typeof window.IntersectionObserver === 'function') {
-            const io = new window.IntersectionObserver((entries) => {
-                if (entries.some((entry) => entry.isIntersecting)) { io.disconnect(); build(); }
+            io = new window.IntersectionObserver((entries) => {
+                if (entries.some((entry) => entry.isIntersecting)) {
+                    io?.disconnect();
+                    io = null;
+                    build();
+                }
             });
             io.observe(mount);
         } else {
             build();
         }
 
-        internal.tagGroupEditor = { sync, refreshPreview: () => previewCard && refreshPreview(previewCard), nextCap };
+        /**
+         * Tear the editor down: stop watching for the preview, drop the
+         * preview card and the element references, and ignore preview work
+         * still queued. The panel's markup goes with the panel.
+         */
+        const dispose = () => {
+            if (disposed) return;
+            disposed = true;
+            io?.disconnect();
+            io = null;
+            if (previewCard) L.clearCard(previewCard.querySelector('.cardScalable'));
+            previewCard?.remove();
+            previewCard = null;
+            mount = null;
+            if (internal.tagGroupEditor === api) internal.tagGroupEditor = null;
+        };
+        const api = { sync, refreshPreview: () => previewCard && refreshPreview(previewCard), nextCap, dispose };
+        internal.tagGroupEditor = api;
+        ctx.onClose?.(dispose);
     };
 })(window.JellyfinEnhanced);
