@@ -1103,6 +1103,7 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `SeasonNumber`, `EpisodeNumber` | Nullable integers |
 | `Genres`, `AudioLanguages`, `PartialAudioLanguages` | Nullable string arrays |
 | `CommunityRating`, `CriticRating` | Nullable numbers |
+| `Ratings` | Optional object of nullable native-unit scores: `imdb`, `tmdb`, `rtCritic`, `rtAudience`, `metacritic`, `letterboxd`, `trakt`; no key or upstream data means absent |
 | `LastUpdated` | Integer milliseconds |
 | `DateCreated`, `PremiereDate`, `LatestEpisodeAdded` | Nullable integer milliseconds |
 | `Status` | Nullable Jellyfin series status string |
@@ -1112,11 +1113,13 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `SeasonAddedSpan` | Nullable `{First,Last,Count}` for season episode added dates |
 | `StreamData` | Nullable `{Streams,Sources,ItemName,ItemPath}` |
 
-`LibraryId` is the library (collection folder) holding the item in N format; seasons and episodes carry their series'. Entries are cache schema 13; older snapshots are discarded and rebuilt. `DateCreated` is when the item was added to the library. `PremiereDate` is set for movies, series and episodes. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
+Source rating preferences are `RatingTagsSources` (ordered string array; null preserves legacy include switches, empty hides source scores), `RatingTagsMinScore` (finite 0–10, default 0), and `RatingTagsColorByScore` (boolean, default false). They are per-user preferences with public admin defaults, seeded for new users and copied by reset-all-users. Unknown source ids and duplicates are removed on save. `Ratings` is immutable shared metadata, removed with Community/Critic scores by Spoiler Guard.
+
+`LibraryId` is the library (collection folder) holding the item in N format; seasons and episodes carry their series'. Entries are cache schema 14; older snapshots are discarded and rebuilt. `DateCreated` is when the item was added to the library. `PremiereDate` is set for movies, series and episodes. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
 
 `StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs.
 
-Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `LibraryId`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
+Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `Ratings`, `OfficialRating`, `LibraryId`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
 
 With `latestEpisode=true`, batch items also carry the applicable `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex`, `SeasonPremiere`, `SeasonAddedSpan` and `EpisodeIndex` facts. Episode sibling lookups use the target user too. The shared cache conservatively omits episode-derived aggregates if any contributor is inaccessible; its server-only `StatusEpisodeIds`/`LatestEpisodeId` are excluded from serialization. A changed `filterRevision` requires replacing stored data. Schema 13 invalidates older disk and IndexedDB copies.
 

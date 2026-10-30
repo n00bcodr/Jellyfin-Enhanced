@@ -382,16 +382,19 @@ Admin settings below are under **Display**; the row's default is in **UI Prefere
 
 ## Rating Tags
 
-Rating Tags show Jellyfin's community score as a yellow-star chip and its critic score as a percentage. You can choose which item types and home rows show them.
+Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten Tomatoes critic and audience, Metacritic, Letterboxd and Trakt scores. Each named source has a bundled logo. Choose which item types and home rows show them.
 
 ![Numeric community, critic and average user rating chips](../images/tags/rating-tags.webp)
 
 **How to use:**
 
 1. Turn on the **Rating** group on the **Groups** tab of **Media Tags**.
-2. Open the row to choose **Community score** and **Critic score** under **Include**, and item types and home rows under **Choose where to show**.
+2. Under **Include**, tick sources and move them up or down. Set **Minimum score** and **Colour by score** if desired.
+3. Keep or change the item types and home rows under **Choose where to show**.
 
 Administrators set defaults under the same heading in **Media Tags**.
+
+![Ordered rating source controls and the live preview](../images/tags/rating-sources-hub.png)
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -402,17 +405,33 @@ Administrators set defaults under the same heading in **Media Tags**.
 | Admin: **Show on episodes** / personal: **Episodes** | On | Allows rating and review chips on episode cards |
 | Admin: **Show in the Continue Watching row** / personal: **Continue Watching row** | On | Allows rating and review chips in that row |
 | Admin: **Show in the Next Up row** / personal: **Next Up row** | On | Allows rating and review chips in home **Next Up** and the series-page shelf |
-| Admin: **Include the community score** / personal: **Community score** | On | Shows the yellow-star community score chip |
-| Admin: **Include the critic score** / personal: **Critic score** | On | Shows the critic percentage chip; with neither score, only a user-review chip can appear |
+| **Rating sources** | Community, Critic | Ordered enabled source list; an empty list hides source scores while review chips remain independent |
+| **Minimum score** | Off | Off, 5, 6, 7 or 8; compares each source on a scale of ten before applying the group limit |
+| **Colour by score** | Off | Red below 5, amber through green at 7.5; explicit Tag Styles colours take precedence |
 
 Your item-type and row choices both apply. Turn off **Episodes** to hide these chips on every episode card, including **Next Up** and **Continue Watching**. Turn off a row to hide them only in that row. These choices do not hide quality, genre, language, or age-rating badges.
 
 ??? info "Score sources and fallback"
-    Collections and videos are not governed by the four type switches. Critic scores below 60% use the rotten icon; 60% and above use the fresh icon. Built-in chip colors are fixed rather than a score gradient.
+    Collections and videos are not governed by the four type switches. Critic scores below 60% use the rotten icon; 60% and above use the fresh icon. Compact density shows named-source values beside a tiny source-coloured dot. Native posters use the same source order, formats, minimum, cap and colours.
 
-    Scores come from Jellyfin's `CommunityRating` and `CriticRating`. Their sources depend on your metadata providers or synchronization, including [MDBList settings](../other/other-settings.md#mdblist-ratings). The overlays do not fetch TMDB or Rotten Tomatoes scores directly. A community score displayed as `0.0` becomes a dash; absent scores do not produce their respective chips.
+    Community and Critic come from Jellyfin's `CommunityRating` and `CriticRating`. Their sources depend on your metadata providers or synchronization, including [MDBList settings](../other/other-settings.md#mdblist-ratings). The overlays do not fetch TMDB or Rotten Tomatoes scores directly. A community score displayed as `0.0` becomes a dash; absent scores do not produce their respective chips.
 
     Season/episode score fallback differs by data path. The server cache substitutes both series scores when the child's community score is null. Batch fallback and player scores use the series only when neither child score is truthy. A child with only a critic score can therefore display differently between the cache and fallback paths.
+
+Named sources use the server's existing MDBList service when its API key is configured. Full tag-cache builds warm bounded batches, and reconciliation refreshes expired ratings even when library metadata has not changed. Found titles have a seven-day TTL; confirmed misses and failures keep the existing MDBList retry policy. Batch mode also shares this cache. The API key stays on the server. Without a key or a returned score, that source produces no chip. Seasons and episodes use their series' source ratings.
+
+| Source | Example | Native scale |
+|---|---|---|
+| IMDb | 8.1 | /10 |
+| TMDb | 81% | /100 |
+| RT critic / RT audience | 92% / 88% | /100 |
+| Metacritic | 74 | /100 |
+| Letterboxd | 4.1 | /5 |
+| Trakt | 85% | /100 |
+
+Existing users retain their old Community/Critic include choices and order until they edit sources. New users take the administrator's defaults. Named sources have individual labels in **Tag Styles** and `data-je-rating-source` hooks for custom CSS.
+
+![The Rating colour editor with separate source labels](../images/tags/rating-source-styles.png)
 
 !!! note "Spoiler Guard and scores"
     [Spoiler Guard](../spoiler-guard/spoiler-guard-settings.md) can suppress score data on protected items. Age classifications have a separate policy, described below.
