@@ -338,7 +338,7 @@
                     <div class="je-tge-hint">${escapeHtml(JE.t(meta.descKey))}</div>
                     <div class="je-tge-field" role="group" aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_position'))}">
                         <div class="je-tge-label" aria-hidden="true">${escapeHtml(JE.t('panel_settings_ui_tag_editor_position'))}</div>
-                        <div class="je-tge-pills">${pillsHtml(conf, group)}</div>
+                        <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
                     </div>
                     <div class="je-tge-field">
                         <div class="je-tge-label" id="jeTgeCapLabel-${group}">${escapeHtml(JE.t('panel_settings_ui_tag_editor_show_up_to'))}</div>
@@ -548,6 +548,8 @@
         #jellyfin-enhanced-panel .je-tge-enable { width: 18px; height: 18px; flex-shrink: 0; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-body { padding: 4px 12px 12px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 12px; }
         #jellyfin-enhanced-panel .je-tge-body[hidden] { display: none; }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > [data-slot="off"] { grid-column: 1 / -1; }
         #jellyfin-enhanced-panel .je-tge-pills, #jellyfin-enhanced-panel .je-tge-includes, #jellyfin-enhanced-panel .je-tge-cats { display: flex; flex-wrap: wrap; gap: 6px; }
         #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 4px 12px; background: transparent; color: rgba(255,255,255,0.85); font: inherit; font-size: 12px; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-pill[aria-pressed="true"], #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:checked) { background: var(--je-tge-accent); border-color: var(--je-tge-accent); color: #fff; }
@@ -608,6 +610,7 @@
                 /** @type {HTMLElement} */ (row.querySelector('.je-tge-summary')).textContent = summaryOf(conf, group);
                 const pills = /** @type {HTMLElement} */ (row.querySelector('.je-tge-pills'));
                 const pillFocus = pills.contains(document.activeElement) ? /** @type {HTMLElement} */ (document.activeElement).dataset.slot : null;
+                pills.dataset.layout = conf.layout;
                 pills.innerHTML = pillsHtml(conf, group);
                 if (pillFocus) /** @type {HTMLElement|null} */ (pills.querySelector(`[data-slot="${pillFocus}"]`))?.focus();
                 const step = stepperState(conf, group);

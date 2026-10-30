@@ -47,9 +47,9 @@
      */
     function pick(obj, key) {
         if (!obj || typeof obj !== 'object') return undefined;
-        if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+        if (Object.hasOwn(obj, key) && obj[key] !== undefined && obj[key] !== null) return obj[key];
         const pascal = key.charAt(0).toUpperCase() + key.slice(1);
-        return obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
+        return Object.hasOwn(obj, pascal) && obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
     }
 
     /** @returns {Object<string, string[]>} layout → valid slots (from core/tag-layout.js). */
@@ -102,7 +102,8 @@
         const pairs = Array.isArray(raw)
             ? raw.map((entry) => [pick(entry, 'group'), pick(entry, 'slot')])
             : Object.entries(raw);
-        const valid = layoutSlots()[layout] || [];
+        const layouts = layoutSlots();
+        const valid = Object.hasOwn(layouts, layout) ? layouts[layout] : [];
         /** @type {Object<string, string>} */
         const out = {};
         for (const [rawGroup, rawSlot] of pairs) {

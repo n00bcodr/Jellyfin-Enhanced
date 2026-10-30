@@ -83,6 +83,16 @@ function setup(t, { html = card(MOVIE), settings = {}, plugin = {}, withLook = t
 
 const rule = (when, layout, density = 'full', extra = {}) => ({ id: `r${Math.abs(JSON.stringify(when).split('').reduce((a, c) => a * 31 + c.charCodeAt(0) | 0, 7))}`, enabled: true, when, layout, density, ...extra });
 
+test('look slot normalization rejects inherited and unknown layout names without throwing', t => {
+  const h = setup(t);
+  for (const layout of ['constructor', '__proto__', 'toString', 'unknown']) {
+    assert.equal(h.look.normalizeSlots({ quality: 'tc' }, layout), null);
+    assert.deepEqual(plain(h.look.normalizeRules([rule([{field:'type',value:'Movie'}], layout)])), []);
+  }
+  assert.deepEqual(plain(h.look.normalizeSlots({ quality: 'tc' }, 'corners')), { quality: 'tc' });
+  assert.deepEqual(plain(h.look.normalizeRules([Object.create({ layout: 'bands', when: [{field:'type',value:'Movie'}] })])), []);
+});
+
 test('with no rules and no locks every card follows the default exactly as before rules existed', t => {
   const without = setup(t, { withLook: false, settings: { tagLayout: 'bands' } });
   without.render();
@@ -298,4 +308,19 @@ test('a user switch forgets every card\'s item data, also on hosts without a con
   assert.equal(h.layout.resolveLayout(h.hostOf(OTHER)).layout, 'corners');
   await h.settle();
   assert.equal(h.hostOf(OTHER).dataset.jeLayout, undefined);
+});
+
+
+test('centre slots travel unchanged through rules, locks and a saved lock snapshot', async t => {
+  const slots = [{group: 'quality', slot: 'tc'}, {group: 'rating', slot: 'bc'}, {group: 'ageRating', slot: 'mr'}, {group: 'genre', slot: 'c'}, {group: 'language', slot: 'ml'}];
+  const h = setup(t, {settings: {tagLookRules: [rule([{field: 'type', value: 'Movie'}], 'corners', 'full', {slots})]}});
+  h.render();
+  const conf = h.layout.resolveLayout(h.hostOf(MOVIE));
+  for (const {group, slot} of slots) assert.equal(conf.slots[group], slot);
+  await h.look.lockItem(MOVIE, {layout: 'corners', density: 'full', slots: conf.slots});
+  const saved = h.writes.at(-1).tagLayoutLocks[MOVIE];
+  for (const {group, slot} of slots) assert.ok(saved.slots.some(s => s.group === group && s.slot === slot));
+  h.JE.currentSettings.tagLookRules = [];
+  await h.settle();
+  for (const {group, slot} of slots) assert.equal(h.layout.resolveLayout(h.hostOf(MOVIE)).slots[group], slot);
 });

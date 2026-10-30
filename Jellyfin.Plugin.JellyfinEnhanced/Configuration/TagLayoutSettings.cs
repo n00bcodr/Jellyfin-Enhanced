@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Valid slots per layout ("off" is valid everywhere).</summary>
         public static readonly IReadOnlyDictionary<string, string[]> LayoutSlots = new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
-            ["corners"] = new[] { "tl", "tr", "bl", "br", "off" },
+            ["corners"] = new[] { "tl", "tc", "tr", "ml", "c", "mr", "bl", "bc", "br", "off" },
             ["bands"] = new[] { "top", "bottom", "off" },
             ["caption"] = new[] { "poster", "caption", "off" },
             ["summary"] = new[] { "pill", "hover", "off" },

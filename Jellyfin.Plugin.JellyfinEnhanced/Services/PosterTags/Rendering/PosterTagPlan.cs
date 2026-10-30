@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 {
@@ -65,14 +66,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// </summary>
         public float NaturalY { get; set; }
 
-        public float Width { get; }
+        public float Width { get; set; }
 
-        public float Height { get; }
+        public float Height { get; set; }
 
         /// <summary>Flex gap between the container's items.</summary>
         public float Gap { get; }
 
-        public bool Clips { get; }
+        public bool Clips { get; set; }
 
         public IReadOnlyList<PlannedItem> Items { get; }
 
@@ -118,6 +119,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         public float IconWidth { get; init; }
 
         public float IconHeight { get; init; }
+
+        /// <summary>A whole chip omitted when a centre anchor has no room.</summary>
+        public bool Hidden { get; set; }
     }
 
     /// <summary>
@@ -164,6 +168,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
 
             Place(groups, css, cardHeight, layout.TopRightOffset);
+            PlaceCentres(groups, css, cardHeight);
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
         }
 
@@ -226,7 +231,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         private static void Place(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, bool topRightOffset)
         {
             var boundary = new Dictionary<PosterTagCorner, float>();
-            foreach (var g in groups)
+            foreach (var g in groups.Where(g => !IsCentre(g.Corner)))
             {
                 g.X = g.IsLeft ? PosterTagCss.CornerInset : css.CardWidth - PosterTagCss.CornerInset - g.Width;
                 float top = PosterTagCss.CornerInset + (topRightOffset && g.Corner == PosterTagCorner.TopRight ? PosterTagCss.TopRightIndicatorOffset : 0f);
@@ -255,6 +260,85 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     item.X = g.IsLeft ? g.X : g.X + g.Width - item.Width;
                     item.Y = y;
                     y += item.Height + g.Gap;
+                }
+            }
+        }
+
+        /// <summary>The extra anchors; the original corner placement above stays unchanged.</summary>
+        private static bool IsCentre(PosterTagCorner corner) => corner is PosterTagCorner.TopCenter or PosterTagCorner.BottomCenter or PosterTagCorner.CenterLeft or PosterTagCorner.CenterRight or PosterTagCorner.Center;
+
+        /// <summary>
+        /// Centre rows wrap with a 4px gap and centre each line; side anchors
+        /// stack between the occupied corner stacks. All dimensions are CSS px.
+        /// Static images omit whole chips that have no room (there is no hover tooltip).
+        /// </summary>
+        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight)
+        {
+            float inset = PosterTagCss.CornerInset;
+            foreach (var anchor in groups.Where(g => IsCentre(g.Corner)).GroupBy(g => g.Corner))
+            {
+                var corner = anchor.Key;
+                bool vertical = corner is PosterTagCorner.CenterLeft or PosterTagCorner.CenterRight;
+                bool right = corner == PosterTagCorner.CenterRight;
+                var neighbours = groups.Where(g => !IsCentre(g.Corner) && (vertical
+                    ? g.IsLeft == !right
+                    : corner == PosterTagCorner.TopCenter ? g.IsTop : corner == PosterTagCorner.BottomCenter && !g.IsTop)).ToList();
+                float reserve = neighbours.Select(g => vertical
+                    ? g.IsTop ? g.Y + g.Height + 4 : cardHeight - g.Y + 4
+                    : g.IsLeft ? g.X + g.Width + 4 : css.CardWidth - g.X + 4).DefaultIfEmpty(inset).Max();
+                float width = Math.Max(0, vertical ? (css.CardWidth / 2) - inset : css.CardWidth - (2 * reserve));
+                float maxHeight = Math.Max(0, vertical ? cardHeight - (2 * reserve) : cardHeight / 3);
+                var items = anchor.SelectMany(g => g.Items).ToList();
+                var rows = new List<List<PlannedItem>>();
+                float used = 0, rowHeight = 0, height = 0;
+                foreach (var item in items)
+                {
+                    if (vertical)
+                    {
+                        if (item.Width > width || height + item.Height > maxHeight) { item.Hidden = true; continue; }
+                        item.Y = height;
+                        height += item.Height + 4;
+                    }
+                    else
+                    {
+                        if (item.Width > width) { item.Hidden = true; continue; }
+                        bool wrap = rows.Count == 0 || used + 4 + item.Width > width;
+                        if (wrap)
+                        {
+                            if (rows.Count == 2 || height + (rows.Count > 0 ? rowHeight + 4 : 0) + item.Height > maxHeight) { item.Hidden = true; continue; }
+                            if (rows.Count > 0) height += rowHeight + 4;
+                            rows.Add(new List<PlannedItem>());
+                            used = rowHeight = 0;
+                        }
+                        if (height + Math.Max(rowHeight, item.Height) > maxHeight) { item.Hidden = true; continue; }
+                        item.X = used + (used > 0 ? 4 : 0);
+                        item.Y = height;
+                        used = item.X + item.Width;
+                        rowHeight = Math.Max(rowHeight, item.Height);
+                        rows[^1].Add(item);
+                    }
+                }
+                if (vertical) height = Math.Max(0, height - 4);
+                else
+                {
+                    height += rowHeight;
+                    foreach (var row in rows)
+                    {
+                        float rowWidth = row.Count > 0 ? row[^1].X + row[^1].Width : 0;
+                        float tallest = row.Select(i => i.Height).DefaultIfEmpty(0).Max();
+                        foreach (var item in row) { item.X += (width - rowWidth) / 2; item.Y += (tallest - item.Height) / 2; }
+                    }
+                }
+                float x = vertical ? right ? css.CardWidth - inset - width : inset : (css.CardWidth - width) / 2;
+                float y = corner == PosterTagCorner.TopCenter ? inset : corner == PosterTagCorner.BottomCenter ? cardHeight - inset - height : (cardHeight - height) / 2;
+                foreach (var g in anchor)
+                {
+                    g.X = x; g.Y = g.NaturalY = y; g.Width = width; g.Height = height; g.Clips = true;
+                    foreach (var item in g.Items)
+                    {
+                        item.X = x + (vertical ? right ? width - item.Width : 0 : item.X);
+                        item.Y += y;
+                    }
                 }
             }
         }

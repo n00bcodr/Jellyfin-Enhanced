@@ -241,7 +241,7 @@
                                 <div class="inputContainer je-tag-position">
                                     <label class="inputLabel" for="qualityTagsPosition">Position</label>
                                     <select is="emby-select" id="qualityTagsPosition" name="qualityTagsPosition" class="emby-select">
-                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
                                     </select>
                                 </div>
                             </div>
@@ -323,7 +323,7 @@
                                 <div class="inputContainer je-tag-position">
                                     <label class="inputLabel" for="genreTagsPosition">Position</label>
                                     <select is="emby-select" id="genreTagsPosition" name="genreTagsPosition" class="emby-select">
-                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
                                     </select>
                                 </div>
                             </div>
@@ -336,7 +336,7 @@
                                 <div class="inputContainer je-tag-position">
                                     <label class="inputLabel" for="languageTagsPosition">Position</label>
                                     <select is="emby-select" id="languageTagsPosition" name="languageTagsPosition" class="emby-select">
-                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
                                     </select>
                                 </div>
                             </div>
@@ -401,7 +401,7 @@
                                 <div class="inputContainer je-tag-position">
                                     <label class="inputLabel" for="ratingTagsPosition">Position</label>
                                     <select is="emby-select" id="ratingTagsPosition" name="ratingTagsPosition" class="emby-select">
-                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
                                     </select>
                                 </div>
                             </div>
@@ -433,7 +433,7 @@
                                 <div class="inputContainer je-tag-position">
                                     <label class="inputLabel" for="ageRatingTagsPosition">Position</label>
                                     <select is="emby-select" id="ageRatingTagsPosition" name="ageRatingTagsPosition" class="emby-select">
-                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
                                     </select>
                                 </div>
                             </div>
@@ -446,7 +446,7 @@
                                 <div class="inputContainer je-tag-position">
                                     <label class="inputLabel" for="statusTagsPosition">Position</label>
                                     <select is="emby-select" id="statusTagsPosition" name="statusTagsPosition" class="emby-select">
-                                        <option value="top-left">Top Left</option><option value="top-right">Top Right</option><option value="bottom-left">Bottom Left</option><option value="bottom-right">Bottom Right</option>
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
                                     </select>
                                 </div>
                             </div>
@@ -5860,7 +5860,7 @@
             var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre'];
             var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 };
             var LAYOUT_SLOTS = {
-                corners: ['tl', 'tr', 'bl', 'br', 'off'],
+                corners: ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br', 'off'],
                 bands: ['top', 'bottom', 'off'],
                 caption: ['poster', 'caption', 'off'],
                 summary: ['pill', 'hover', 'off'],
@@ -5873,14 +5873,14 @@
                 minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top' }
             };
             var SLOT_LABELS = {
-                corners: { tl: 'Top left', tr: 'Top right', bl: 'Bottom left', br: 'Bottom right' },
+                corners: { tl: 'Top left', tc: 'Top centre', tr: 'Top right', ml: 'Left centre', c: 'Centre', mr: 'Right centre', bl: 'Bottom left', bc: 'Bottom centre', br: 'Bottom right' },
                 bands: { top: 'Top band', bottom: 'Bottom row' },
                 caption: { poster: 'On poster', caption: 'Caption' },
                 summary: { pill: 'In pill', hover: 'On hover' },
                 minimal: { top: 'Top', dots: 'Dots', corner: 'Corner', hover: 'On hover' }
             };
-            var POS_TO_SLOT = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br' };
-            var SLOT_TO_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' };
+            var POS_TO_SLOT = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br', 'top-center': 'tc', 'bottom-center': 'bc', 'center-left': 'ml', 'center-right': 'mr', 'center': 'c' };
+            var SLOT_TO_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
             var MAX_CAP = 10;
             // Explicit administrator values; null / missing = built-in.
             var state = { order: null, caps: {}, profiles: { corners: {}, bands: {}, caption: {}, summary: {}, minimal: {} } };

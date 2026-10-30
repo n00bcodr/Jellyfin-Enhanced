@@ -103,7 +103,7 @@ test('rows follow the default order for a document without one; moving writes th
 test('a position pill writes the selected layout\'s profile; corners also keeps the old position setting', async t => {
   const h = setup(t, { stored: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', ageRatingTagsPosition: 'bottom-right' } });
   const pills = () => Array.from(h.row('ageRating').querySelectorAll('.je-tge-pill')).map(p => p.dataset.slot);
-  assert.deepEqual(pills(), ['tl', 'tr', 'bl', 'br', 'off']);
+  assert.deepEqual(pills(), ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br', 'off']);
   assert.equal(h.row('ageRating').querySelector('[aria-pressed="true"]').dataset.slot, 'br');
 
   await h.click(h.row('ageRating').querySelector('[data-slot="tl"]'));
@@ -382,4 +382,18 @@ test('Language includes, style and badge controls save, reinitialize and refresh
   assert.equal(h.saved().languageTagsShowAudio, false);
   assert.equal(h.card().querySelector('.language-count-badge'), null);
   assert.ok(h.calls.includes('reinitializeLanguageTags'));
+});
+
+test('centre pills save both position representations and repaint the live preview', async t => {
+  const h = setup(t, { stored: { qualityTagsEnabled: true } });
+  const positions = { tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
+  for (const [slot, position] of Object.entries(positions)) {
+    await h.click(h.row('quality').querySelector(`[data-slot="${slot}"]`));
+    assert.equal(h.saved().qualityTagsPosition, position);
+    assert.ok(h.saved().tagLayouts.corners.groups.some(g => g.group === 'quality' && g.slot === slot));
+    assert.ok(h.preview().querySelector(`[data-je-slot="${slot}"] [data-je-group="quality"]`));
+  }
+  assert.equal(h.row('quality').querySelector('.je-tge-pills').dataset.layout, 'corners');
+  const css = h.document.getElementById('je-tag-group-editor').textContent;
+  assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
 });

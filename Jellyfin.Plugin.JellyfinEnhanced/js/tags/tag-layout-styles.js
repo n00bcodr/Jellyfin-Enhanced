@@ -62,6 +62,39 @@
             @media (max-width: 480px) {
                 ${CORNER} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 10.2px); }
             }
+            /* Centre anchors only: leave the original four corner rules untouched.
+               Measured reserves keep rows between corner stacks and columns
+               between the top and bottom stacks, even on episode thumbnails. */
+            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) {
+                left: 50%; transform: translateX(-50%);
+                width: max(0px, calc(100% - 2 * var(--je-anchor-reserve, 6px)));
+                max-height: calc(100% / 3);
+                overflow: hidden;
+                flex-direction: row; flex-wrap: wrap;
+                justify-content: center; align-items: center; align-content: center;
+                gap: 4px;
+            }
+            ${host('corners')}[data-je-slot="tc"] { top: var(--je-anchor-top, 6px); }
+            ${host('corners')}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 6px); }
+            ${host('corners')}[data-je-slot="c"] { top: 50%; transform: translate(-50%, -50%); max-width: calc(100% - 12px); }
+            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) > [data-je-group] { display: contents; }
+            ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) {
+                top: 50%; transform: translateY(-50%);
+                max-height: max(0px, calc(100% - 2 * var(--je-anchor-reserve, 6px)));
+                max-width: calc(50% - 6px);
+                /* Fitting hides excess chips explicitly; hover names must be
+                   able to extend from the icon toward the card's centre. */
+                flex-direction: column; overflow: visible;
+            }
+            ${host('corners')}[data-je-slot="ml"] { left: 6px; align-items: flex-start; }
+            ${host('corners')}[data-je-slot="mr"] { right: 6px; align-items: flex-end; }
+            ${host('corners')}[data-je-slot="ml"] > [data-je-group] { align-items: flex-start; }
+            ${host('corners')}[data-je-slot="mr"] > [data-je-group] { align-items: flex-end; }
+            ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) > [data-je-group] { display: contents; }
+            /* Keep chips at their intrinsic width for measureFit's batched reads.
+               Fitting hides oversized chips whole instead of clipping their text. */
+            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="ml"], [data-je-slot="mr"], [data-je-slot="c"]) > [data-je-group] > * { max-width: none; box-sizing: border-box; flex-shrink: 0; }
+
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
                with a group set to top-right moves that stack below it. */
             ${INDICATORS}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],
@@ -99,11 +132,11 @@
             }
 
             /* Genre names float toward the inside of the card. */
-            .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="poster"], [data-je-slot="top"]) .genre-tag .genre-text {
+            .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"], [data-je-slot="poster"], [data-je-slot="top"]) .genre-tag .genre-text {
                 left: calc(100% + 4px);
                 right: auto;
             }
-            .je-tag-slot:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="corner"]) .genre-tag .genre-text {
+            .je-tag-slot:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"], [data-je-slot="corner"]) .genre-tag .genre-text {
                 right: calc(100% + 4px);
                 left: auto;
             }

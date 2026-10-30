@@ -96,7 +96,7 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
 | Layout | Where tags go | Default arrangement |
 |---|---|---|
-| **Corners** (default) | One stack per corner of the poster; groups sharing a corner stack with a small gap | Quality top left, genre and status top right, language bottom left, rating and age rating bottom right |
+| **Corners** (default) | Nine anchors: four corners, top/bottom centre, left/right centre and centre; groups sharing an anchor keep their priority order | Quality top left, genre and status top right, language bottom left, rating and age rating bottom right |
 | **Bands** | A gradient band along the top (first group left, the others right) and one along the bottom that wraps; the middle of the poster stays clear | Status and age rating on top; quality, rating and language at the bottom; genre hidden |
 | **Caption** | A strip below the poster, between the image and the title, plus a small stack at the poster's top left | Status on the poster; quality, rating, age rating and language in the caption; genre hidden |
 | **Summary** | One pill at the bottom of the poster with up to three short facts (for example `Just Added · 4K DV · ★ 8.1`); every group's full chips appear over a dark scrim on hover or keyboard focus | Status, quality and rating in the pill; genre, language and age rating on hover |
@@ -105,6 +105,10 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 === "Corners"
 
     ![Movie posters with quality, genre, language, rating and age rating tags in the four corners](../images/tags/tag-layout-corners.webp)
+
+=== "Centre anchors"
+
+    ![Movie posters with quality at top centre, language at left centre, genres in the centre and ratings at bottom centre](../images/tags/tag-layout-centres.webp)
 
 === "Bands"
 
@@ -153,13 +157,13 @@ Each group has a row on the **Groups** tab, highest priority first. Groups highe
 
 Open a row to change it:
 
-- **Position:** the places the selected layout offers, plus **Hidden**. Changing the layout re-labels every row. **Dots** is offered to quality only.
+- **Position:** the places the selected layout offers, plus **Hidden**. Corners offers a 3×3 grid: top left, top centre, top right; left centre, centre, right centre; bottom left, bottom centre, bottom right. Changing the layout re-labels every row. **Dots** is offered to quality only.
 - **Show up to:** how many tags the group shows, from 1 to 10. Quality and rating also offer **All**. Age rating and status always show one.
 - **Include:** the quality categories with their stack order, or the rating group's **Community score** and **Critic score**. Other groups have nothing to choose here.
 
 The limit applies after each group's own filtering (quality categories, language grouping and priority, rating scopes). **Reset to defaults** restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.
 
-![The Groups tab with the rating row open: position pills, the Show up to stepper and the community and critic score switches; the preview outlines the rating chips](../images/tags/tag-group-editor.webp)
+![The Groups tab with quality open: nine Position pills in a 3×3 grid, Hidden, the Show up to stepper and a live preview with centre anchors](../images/tags/tag-group-editor.webp)
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -167,11 +171,15 @@ The limit applies after each group's own filtering (quality categories, language
 | Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
 | **Tag Groups** order | Status, quality, rating, age rating, language, genre | Priority order of the groups |
 | **Show up to** | Genre 3, language 3, age rating 1, status 1, quality and rating all | The same limits as before layouts existed |
-| **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | The corner a group uses in the Corners layout; the admin **Position** selects set these defaults |
+| **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
-Top-right groups move below Jellyfin's watched or unplayed-count indicator. People Tags have their own cast-card layout and no position.
+The four default corners keep their original appearance. Top and bottom centre wrap chips into centred rows (up to two); left and right centre stack chips vertically. Centre rows reserve the width occupied by corner groups; side columns reserve the height of their neighbouring corner stacks. Chips that are too wide or tall are hidden whole and counted in a **+N** chip, which names the hidden tags on hover or focus. Group limits apply before fitting.
+
+Top-right groups move below Jellyfin's watched or unplayed-count indicator. Top centre reserves space for side indicators and moves below any top-centre Jellyfin indicator; bottom centre clears a card's progress bar when present. People Tags have their own cast-card layout and no position.
+
+At the left and right centre anchors, genre names appear toward the inside of the card on hover.
 
 With **Hide Tags on Hover** off, genre names expand beside their icons on hover. Turn it on to fade poster tags instead.
 
@@ -819,7 +827,9 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 ??? info "Supported groups and preferences"
     JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, and age-classification. People Tags are not a native group.
 
-    It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the administrator's language-priority policy. Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. Labels stay full; compact density is web only. Status Tags are web only.
+    It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the administrator's language-priority policy. Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. All nine Corners anchors are supported, including centred rows and side columns. Labels stay full; compact density is web only. Status Tags are web only.
+
+    **Centre-anchor differences:** native posters omit whole chips that do not fit, without the web's **+N** tooltip. Very wide chips in side columns are omitted rather than squeezed. The image request cannot reproduce the web card's progress bar, Jellyfin indicators or custom overlays, rules or per-item locks; native placement uses the saved Corners profile. The four default corner positions are unchanged.
 
 ### Eligible clients and requests
 

@@ -438,6 +438,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <returns>The corner.</returns>
         public static PosterTagCorner CornerOf(string position)
         {
+            switch (position)
+            {
+                case "top-center": return PosterTagCorner.TopCenter;
+                case "bottom-center": return PosterTagCorner.BottomCenter;
+                case "center-left": return PosterTagCorner.CenterLeft;
+                case "center-right": return PosterTagCorner.CenterRight;
+                case "center": return PosterTagCorner.Center;
+            }
             var isTop = position.Contains("top", StringComparison.Ordinal);
             var isLeft = position.Contains("left", StringComparison.Ordinal);
             return isTop
@@ -585,6 +593,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             ["tr"] = "top-right",
             ["bl"] = "bottom-left",
             ["br"] = "bottom-right",
+            ["tc"] = "top-center",
+            ["bc"] = "bottom-center",
+            ["ml"] = "center-left",
+            ["mr"] = "center-right",
+            ["c"] = "center",
         };
 
         /// <summary>The native-relevant part of a user's layout settings.</summary>

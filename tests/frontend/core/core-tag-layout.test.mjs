@@ -1041,3 +1041,121 @@ test('corner slots restate the containers\' card-relative size limits, so narrow
     '90% of the card, against a slot 12px shorter');
   assert.match(css, /@media \(max-width: 480px\) \{\s*[^{]+> :is\(\.quality-overlay-container, \.genre-overlay-container\) \{ max-height: calc\(85% \+ 10\.2px\); \}/);
 });
+
+
+test('all centre anchors accept legacy values, survive promotion and retain their CSS and corner hooks', t => {
+  const positions = { tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
+  for (const [slot, position] of Object.entries(positions)) {
+    const h = setup(t, { settings: { qualityTagsPosition: position } });
+    const host = h.render();
+    assert.equal(h.layout.normalizeSettings().slots.quality, slot);
+    assert.equal(groupEl(host, 'quality', slot).dataset.jeCorner, position);
+    h.layout.promoteLegacySettings(h.JE.currentSettings);
+    h.layout.invalidateSettings();
+    assert.equal(h.layout.normalizeSettings().slots.quality, slot);
+    assert.equal(h.layout.POSITION_TO_SLOT[position], slot);
+    assert.equal(h.layout.SLOT_TO_POSITION[slot], position);
+    assert.ok(h.layout.buildStyles().includes(`[data-je-slot="${slot}"]`));
+  }
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups: [{group: 'quality', slot: 'unknown'}] } } } });
+  assert.equal(h.layout.normalizeSettings().slots.quality, 'tl');
+});
+
+test('position and layout lookups reject inherited property names and preserve the legacy fallback', t => {
+  const h = setup(t);
+  for (const value of ['constructor', '__proto__', 'toString', 'unknown']) {
+    for (const version of [0, 1]) {
+      const conf = h.layout.normalizeSettings({ tagLayoutSettingsVersion: version, tagLayout: value, qualityTagsPosition: value });
+      assert.equal(conf.layout, 'corners', value);
+      assert.equal(conf.slots.quality, 'br', value);
+      assert.equal(h.layout.normalizeSettings({ qualityTagsPosition: '' }, { QualityTagsPosition: value }).slots.quality, 'br');
+    }
+    assert.equal(h.layout.POSITION_TO_SLOT[value], undefined);
+    assert.equal(h.layout.SLOT_TO_POSITION[value], undefined);
+    assert.equal(h.layout.LAYOUT_SLOTS[value], undefined);
+  }
+  assert.equal(h.layout.normalizeSettings({ qualityTagsPosition: 'stray-top' }).slots.quality, 'tr');
+  assert.equal(h.layout.normalizeSettings({ qualityTagsPosition: 'middle-left' }).slots.quality, 'bl');
+});
+
+test('compact quality labels do not resolve inherited dictionary members', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLabelDensity: 'compact' } });
+  for (const text of ['constructor', '__proto__', 'toString', 'unknown']) {
+    const wrapper = h.document.createElement('div');
+    wrapper.innerHTML = '<span class="quality-overlay-label"></span>';
+    wrapper.firstElementChild.textContent = text;
+    h.layout.commitGroup(h.host(), 'quality', wrapper);
+    assert.equal(groupEl(h.host(), 'quality', 'tl').textContent, text);
+  }
+});
+
+test('top and bottom centre overflow counts eligible chips after the group cap and refits on short cards', t => {
+  for (const slot of ['tc', 'bc']) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups: [
+      ...['genre', 'rating', 'ageRating', 'language', 'status'].map(group => ({group, slot: 'off'})), {group: 'quality', slot},
+    ] } }, tagGroupCaps: {quality: 3} } });
+    h.render();
+    fitCard(h, {width: 40, height: 180});
+    const el = h.host().querySelector(`[data-je-slot="${slot}"]`);
+    assert.equal(el.querySelectorAll('[data-je-group] > *').length, 3);
+    assert.equal(el.lastElementChild.textContent, '+2');
+    assert.equal(el.querySelectorAll('[data-je-group] > [data-je-overflow]').length, 2);
+    fitCard(h, {width: 140, height: 180});
+    assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).lastElementChild.hasAttribute('data-je-overflow'), true);
+  }
+});
+
+test('centre budgets reserve occupied corners, top-centre overlays and progress bars in the batched pass', t => {
+  const h = setup(t, {settings: {tagLayoutSettingsVersion: 1, tagLayouts: {corners: {groups: [
+    {group:'quality',slot:'tl'}, {group:'rating',slot:'br'}, {group:'status',slot:'tc'},
+    {group:'language',slot:'ml'}, {group:'genre',slot:'bc'}, {group:'ageRating',slot:'off'},
+  ]}}}});
+  const scalable = h.document.querySelector('.cardScalable');
+  scalable.insertAdjacentHTML('beforeend','<div class="itemProgressBar"></div><div class="cardIndicators"><span></span><span class="countIndicator"></span></div>');
+  h.render();
+  const proto = h.window.HTMLElement.prototype;
+  const rect = proto.getBoundingClientRect;
+  const width = Object.getOwnPropertyDescriptor(h.window.Element.prototype,'clientWidth');
+  const height = Object.getOwnPropertyDescriptor(h.window.Element.prototype,'clientHeight');
+  proto.getBoundingClientRect = function () {
+    if (this.classList.contains('je-tag-host')) return {left:0,right:180,top:0,bottom:270,width:180,height:270};
+    if (this.dataset.jeGroup === 'quality') return {left:6,right:66,top:6,bottom:86,width:60,height:80};
+    if (this.dataset.jeGroup === 'rating') return {left:134,right:174,top:224,bottom:264,width:40,height:40};
+    if (this.classList.contains('itemProgressBar')) return {top:260,bottom:270};
+    if (this.classList.contains('countIndicator')) return {left:90,right:174,top:6,bottom:30};
+    if (this.parentElement?.classList.contains('cardIndicators')) return {left:80,right:100,top:6,bottom:24};
+    return {left:0,right:20,top:0,bottom:18,width:20,height:18};
+  };
+  Object.defineProperty(h.window.Element.prototype,'clientWidth',{configurable:true,get(){return 180;}});
+  Object.defineProperty(h.window.Element.prototype,'clientHeight',{configurable:true,get(){return 270;}});
+  try {
+    h.layout.refreshPresentation(h.host());
+    h.layout.flushFit();
+    const slot = name => h.host().querySelector(`[data-je-slot="${name}"]`);
+    assert.equal(slot('tc').style.getPropertyValue('--je-anchor-reserve'),'94px');
+    assert.equal(slot('bc').style.getPropertyValue('--je-anchor-reserve'),'50px');
+    assert.equal(slot('ml').style.getPropertyValue('--je-anchor-reserve'),'90px');
+    assert.equal(slot('tc').style.getPropertyValue('--je-anchor-top'),'28px');
+    assert.equal(slot('bc').style.getPropertyValue('--je-anchor-bottom'),'14px');
+  } finally {
+    proto.getBoundingClientRect = rect;
+    Object.defineProperty(h.window.Element.prototype,'clientWidth',width);
+    Object.defineProperty(h.window.Element.prototype,'clientHeight',height);
+  }
+});
+
+test('side-centre columns fit whole chips and an overflow count inside short cards', t => {
+  for (const slot of ['ml','mr']) {
+    const h = setup(t, {settings: {tagLayoutSettingsVersion:1, tagLayouts:{corners:{groups:[
+      ...['quality','rating','ageRating','status','genre'].map(group=>({group,slot:'off'})), {group:'language',slot},
+    ]}}}});
+    h.render();
+    fitCard(h,{width:113,height:64});
+    const column = h.host().querySelector(`[data-je-slot="${slot}"]`);
+    assert.equal(column.querySelectorAll('[data-je-group] > :not([data-je-overflow])').length,1);
+    assert.equal(column.lastElementChild.textContent,'+2');
+    assert.equal(column.lastElementChild.hasAttribute('data-je-overflow'),false);
+    fitCard(h,{width:113,height:16});
+    assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).hasAttribute('data-je-overflow'),true);
+  }
+});

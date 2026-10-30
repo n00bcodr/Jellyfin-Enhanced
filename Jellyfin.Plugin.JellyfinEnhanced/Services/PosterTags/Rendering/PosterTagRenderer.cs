@@ -390,6 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
                     foreach (var item in group.Items)
                     {
+                        if (item.Hidden) continue;
                         float x = originX + ((item.X - group.X) * s);
                         float y = originY + ((item.Y - group.Y) * s);
                         var box = Snap(x, y, item.Width * s, item.Height * s);

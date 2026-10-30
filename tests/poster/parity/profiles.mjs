@@ -248,6 +248,18 @@ for (const policy of ['latest', 'mixed']) {
         LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes',
         SeriesQualityAggregation: policy, RatingTagsSources: ['imdb', 'tmdb', 'rtCritic'] });
 }
+
+synth('positions-centres-legacy', {
+    ...allOn, QualityTagsPosition: 'top-center', GenreTagsPosition: 'center',
+    LanguageTagsPosition: 'center-left', RatingTagsPosition: 'bottom-center', AgeRatingTagsPosition: 'center-right',
+});
+synth('positions-centres-profile', {
+    ...allOn, TagLayoutSettingsVersion: 1,
+    TagLayouts: { Corners: { Groups: [
+        { Group: 'quality', Slot: 'tc' }, { Group: 'genre', Slot: 'c' },
+        { Group: 'language', Slot: 'ml' }, { Group: 'rating', Slot: 'bc' }, { Group: 'ageRating', Slot: 'mr' },
+    ] } },
+});
 synth('positions-mirror', {
     ...allOn, QualityTagsPosition: 'bottom-right', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'top-left',
     AgeRatingTagsPosition: 'top-left', LanguageTagsPosition: 'top-right', VideoCodecTagOrder: 0,
