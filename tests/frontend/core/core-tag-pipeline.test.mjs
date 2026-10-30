@@ -59,3 +59,17 @@ test('individual fallback drops facts immediately when the user changed during /
  await h.JE.tagPipeline.itemLookFacts('aabb');
  assert.equal(fetched,true,'old facts were never remembered');
 });
+
+for (const inFlight of [false, true]) test(`navigation retries cards whose work was cancelled (in-flight=${inFlight})`, async t => {
+ const h=setup(t);let navigate;
+ h.JE.currentSettings.qualityTagsEnabled=true;
+ h.JE.helpers={onBodyMutation(){},onNavigate(fn){navigate=fn;}};
+ h.JE.tagPipeline.initialize();await settle();h.scan();
+ if(inFlight)h.fetch();
+ h.window.location.hash='#/details?id=series';navigate();h.scan();
+ if(inFlight){h.response.resolve({Items:[{Id:'aabb',Type:'Movie'}]});await settle();assert.equal(h.rendered.length,0,'old navigation cannot render');}
+ h.fetch();
+ assert.equal(h.calls.length,inFlight?2:1,'cancelled cards are fetched again');
+ h.response.resolve({Items:[{Id:'aabb',Type:'Movie'}]});await settle();
+ assert.equal(h.rendered.length,1);
+});

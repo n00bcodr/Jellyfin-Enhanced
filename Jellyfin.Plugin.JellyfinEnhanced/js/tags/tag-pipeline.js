@@ -85,6 +85,7 @@
     let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
+    let activeBatch = [];               // entries whose request is currently in flight
     let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting }
 
     // ── Pipeline-level exclusions ─────────────────────────────────────
@@ -1401,7 +1402,9 @@
                     // fetching and rendering tag data nobody will ever see.
                     .filter((entry) => entry.el.isConnected);
                 if (batch.length === 0) continue;
+                activeBatch = batch;
                 await processBatch(batch, myGeneration);
+                activeBatch = [];
                 // Cards still waiting for item data the batch didn't bring
                 // (failed, or no such item) show their tags without it.
                 for (const entry of batch) {
@@ -1409,6 +1412,7 @@
                 }
             }
         } finally {
+            activeBatch = [];
             isProcessing = false;
             // Cancelled by a generation bump (a reinitialize or navigation
             // while a batch was in flight): the scan that followed queued its
@@ -1687,6 +1691,10 @@
                 // Invalidate any in-flight batch processing (don't reset isProcessing
                 // directly — let stale batches finish naturally and discard results)
                 batchGeneration++;
+                scanGeneration++;
+                // Cancelled work is not processed: surviving/re-attached cards
+                // must be eligible for the scan scheduled below.
+                for (const entry of [...requestQueue, ...activeBatch]) processedCards.delete(entry.el);
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
                 requestQueue = [];
