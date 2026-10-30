@@ -28,10 +28,13 @@
 // started in: after a user switch, a decode still in flight is dropped, never
 // shown or stored as the incoming user's.
 //
-// The work runs in idle slices: reads (which image, is it loaded) for a batch
-// of cards, then the writes for cards whose colour is known; images still to
-// sample are decoded off the main thread (createImageBitmap, resized while
-// decoding) and their cards are queued for the next slice.
+// The work runs in idle slices: the pixel work of artwork already decoded
+// (draw, read back, histogram) while the idle period lasts, then reads (which
+// image, is it loaded) for a batch of cards and the writes for cards whose
+// colour is known. Images still to sample are decoded off the main thread
+// (createImageBitmap, resized while decoding; without it, the image's own
+// decode()), and their pixel work waits for a slice: a full-size image drawn
+// small without createImageBitmap takes a slice of its own.
 //
 // Public surface: JE.tagPosterColours { ALGORITHM, dominant, normalise,
 // coloursOf, keyOf, setActive, isActive, track, release, stats, clearMemory }.
@@ -57,6 +60,10 @@
     /** Cards handled per idle slice, and decodes in flight at once. */
     const SLICE_CARDS = 40;
     const MAX_DECODES = 4;
+    /** A slice starts another pixel step only with this much idle time left (ms). */
+    const STEP_MIN_MS = 4;
+    /** A slice's budget without an idle deadline (no requestIdleCallback), in ms. */
+    const SLICE_BUDGET_MS = 8;
     /** Colours kept in memory and in the persisted store. */
     const MEMORY_CAP = 3000;
     const STORE_CAP = 2000;
@@ -64,6 +71,8 @@
     const PERSIST_DELAY_MS = 2000;
     /** A failed sample (tainted canvas, decode error): the card keeps the Default colours. */
     const FAILED = 'failed';
+    /** A card's image changed before it was drawn: nothing is remembered, its cards are read again. */
+    const STALE = 'stale';
 
     // ── The algorithm (pure, shared with PosterColour.cs) ─────────────────
 
@@ -196,12 +205,19 @@
     /**
      * A sample: its artwork, the cards showing it, and the generation and
      * store scope it was started for.
-     * @typedef {{url: string, img: HTMLImageElement|null, hosts: Set<HTMLElement>, gen: number, scope: string}} Job
+     * @typedef {{key: string, url: string, img: HTMLImageElement|null, hosts: Set<HTMLElement>, gen: number, scope: string}} Job
+     */
+    /**
+     * Decoded artwork waiting for its pixel step: a small bitmap, or (no
+     * createImageBitmap) the full-size image to draw small.
+     * @typedef {{job: Job, drawable: ImageBitmap|HTMLImageElement, bitmap: boolean, w: number, h: number}} Decoded
      */
     /** @type {Map<string, Job>} samples waiting for a decode slot */
     const toSample = new Map();
-    /** @type {Map<string, Job>} samples being decoded */
+    /** @type {Map<string, Job>} samples being decoded or waiting for their pixel step */
     const sampling = new Map();
+    /** @type {Decoded[]} */
+    const ready = [];
     /** @type {Map<string, Map<string, number[]|null>>} new colours not yet persisted, per store scope */
     const unsaved = new Map();
     let persistTimer = 0;
@@ -221,7 +237,7 @@
     /** @type {WeakMap<HTMLElement, Watch>} host → its watch */
     const watchOf = new WeakMap();
     let canvas = null;
-    const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0, sampleMs: 0, maxSampleMs: 0 };
+    const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0, sampleMs: 0, maxSampleMs: 0, steps: 0, fallback: 0 };
 
     /** @returns {string} `${serverId}:${userId}`, the tag cache store's scope. */
     function scope() {
@@ -438,6 +454,13 @@
         delete target.dataset.jePosterKey;
     }
 
+    /** Drop every sample in flight or waiting for its pixel step; their late results are ignored. */
+    function dropSamples() {
+        toSample.clear();
+        sampling.clear();
+        for (const step of ready.splice(0)) if (step.bitmap) /** @type {ImageBitmap} */ (step.drawable).close?.();
+    }
+
     /** Run a slice when the browser is idle (soon, at the latest). */
     function scheduleSlice() {
         if (sliceScheduled || !active) return;
@@ -447,13 +470,31 @@
     }
 
     /**
-     * One idle slice: reads for a batch of queued cards, then the writes for
-     * those whose colour is known; the rest are queued for sampling.
+     * One idle slice: pixel steps for decoded artwork while the idle period
+     * lasts (at least one when the slice ran late, at most one full-size
+     * drawing), then reads for a batch of queued cards and the writes for
+     * those whose colour is known; the rest are queued for sampling, and
+     * free decode slots are filled. Every part is timed in the slice
+     * counters.
+     * @param {IdleDeadline} [deadline]
      */
-    function runSlice() {
+    function runSlice(deadline) {
         sliceScheduled = false;
         if (!active) return;
         const started = performance.now();
+        const left = typeof deadline?.timeRemaining === 'function'
+            ? () => deadline.timeRemaining()
+            : () => SLICE_BUDGET_MS - (performance.now() - started);
+        const late = !deadline || !!deadline.didTimeout;
+        let steps = 0;
+        let drawings = 0;
+        while (ready.length && (left() >= STEP_MIN_MS || (late && steps === 0))) {
+            if (!ready[0].bitmap && drawings) break;
+            const step = /** @type {Decoded} */ (ready.shift());
+            if (!step.bitmap) drawings++;
+            steps++;
+            finish(step.job, pixels(step));
+        }
         // Cards gone from the page take their watches with them.
         for (const w of watches.values()) if (!w.owner.isConnected) drop(w);
         const batch = [];
@@ -481,87 +522,145 @@
             // Already being decoded (another card with the same artwork): wait for that result.
             const running = sampling.get(art.key);
             if (running) { running.hosts.add(host); continue; }
-            const job = toSample.get(art.key) || { url: art.url, img: art.img, hosts: new Set(), gen: generation, scope: scope() };
+            const job = toSample.get(art.key) || { key: art.key, url: art.url, img: art.img, hosts: new Set(), gen: generation, scope: scope() };
             job.hosts.add(host);
             if (!job.img && art.img) job.img = art.img;
             toSample.set(art.key, job);
         }
+        // Decodes start while idle time lasts too (at least one when the slice ran late).
+        let launched = 0;
+        pumpSamples(() => (left() >= STEP_MIN_MS || (late && !launched)) && ++launched > 0);
         const spent = performance.now() - started;
         counters.slices++;
         counters.cards += batch.length;
+        counters.steps += steps;
         counters.totalMs += spent;
         counters.maxMs = Math.max(counters.maxMs, spent);
-        pumpSamples();
-        if (queue.size) scheduleSlice();
+        if (queue.size || ready.length || (toSample.size && sampling.size < MAX_DECODES)) scheduleSlice();
     }
 
     /**
-     * Start decodes while slots are free; cards showing an artwork already
-     * being decoded join that decode, and its result goes to every one of
-     * them. A result arriving after a user
-     * switch (another generation) is dropped: not remembered, not stored,
-     * and no card is touched.
+     * Start decodes while slots are free (a decoded artwork holds its slot
+     * until its pixel step ran); cards showing an artwork already being
+     * decoded join that decode, and its result goes to every one of them.
+     * Nothing here runs pixel work: a decode, even one that settles at once,
+     * only queues its step for a slice.
+     * @param {() => boolean} more - Whether the slice has time for another decode to start.
      */
-    function pumpSamples() {
+    function pumpSamples(more) {
         for (const [key, job] of toSample) {
             if (sampling.size >= MAX_DECODES) return;
-            toSample.delete(key);
             const running = sampling.get(key);
             if (running) {
+                toSample.delete(key);
                 job.hosts.forEach((host) => running.hosts.add(host));
                 continue;
             }
+            if (!more()) return;
+            toSample.delete(key);
             sampling.set(key, job);
-            sample(job).then((d) => {
-                if (job.gen !== generation) return;
-                remember(key, d === FAILED ? FAILED : { d });
-                if (d === FAILED) counters.failed++;
-                else {
-                    counters.sampled++;
-                    if (!unsaved.has(job.scope)) unsaved.set(job.scope, new Map());
-                    unsaved.get(job.scope).set(key, d);
-                    persistSoon();
+            decode(job).then((decoded) => {
+                if (sampling.get(key) !== job || job.gen !== generation) {
+                    if (decoded?.bitmap) /** @type {ImageBitmap} */ (decoded.drawable).close?.();
+                    return;
                 }
-            }).finally(() => {
-                if (sampling.get(key) === job) sampling.delete(key);
-                if (job.gen !== generation) return;
-                for (const host of job.hosts) track(host);
-                pumpSamples();
+                if (!decoded) finish(job, FAILED);
+                else ready.push(decoded);
+                scheduleSlice();
+            }, (err) => {
+                finish(job, failure(job, err));
+                scheduleSlice();
             });
         }
     }
 
     /**
-     * Decode one artwork small and take its dominant colour. The image is
-     * same-origin, so the canvas stays readable; anything that still fails
-     * (a tainted canvas: SecurityError, a broken image: InvalidStateError)
-     * gives FAILED and the card keeps the Default colours.
-     * @param {{url: string, img: HTMLImageElement|null}} job
-     * @returns {Promise<number[]|null|string>}
+     * A sample is done: remember its colour (or failure) and read its cards
+     * again. A result arriving after a user switch (another generation) is
+     * dropped: not remembered, not stored, and no card is touched.
+     * @param {Job} job
+     * @param {number[]|null|string} d - The dominant colour, FAILED or STALE.
      */
-    async function sample(job) {
+    function finish(job, d) {
+        if (sampling.get(job.key) === job) sampling.delete(job.key);
+        if (job.gen !== generation) return;
+        if (d !== STALE) {
+            remember(job.key, d === FAILED ? FAILED : { d: /** @type {number[]|null} */ (d) });
+            if (d === FAILED) counters.failed++;
+            else {
+                counters.sampled++;
+                if (!unsaved.has(job.scope)) unsaved.set(job.scope, new Map());
+                /** @type {Map<string, number[]|null>} */ (unsaved.get(job.scope)).set(job.key, /** @type {number[]|null} */ (d));
+                persistSoon();
+            }
+        }
+        for (const host of job.hosts) track(host);
+    }
+
+    /** @param {Job} job @returns {boolean} The card's own image shows other artwork by now. */
+    const moved = (job) => !!job.img && keyOf(job.img.currentSrc || job.img.src) !== job.key;
+
+    /**
+     * Why a sample failed: FAILED (the card keeps the Default colours; a
+     * tainted canvas: SecurityError, a broken image: InvalidStateError or
+     * EncodingError), or STALE when the card's image changed meanwhile.
+     * @param {Job} job
+     * @param {*} err
+     * @returns {string}
+     */
+    function failure(job, err) {
+        if (moved(job)) return STALE;
+        if (err?.name !== 'SecurityError' && err?.name !== 'InvalidStateError' && err?.name !== 'EncodingError') {
+            console.debug(`${logPrefix} could not sample artwork`, err);
+        }
+        return FAILED;
+    }
+
+    /**
+     * Decode one artwork, off the main thread: small, with createImageBitmap
+     * (resized while decoding); else (or when it rejects) the image itself,
+     * decoded before a slice draws it. The image is same-origin, so the
+     * canvas stays readable.
+     * @param {Job} job
+     * @returns {Promise<Decoded|null>} Null for an image without pixels.
+     */
+    async function decode(job) {
+        let source = job.img && job.img.complete && job.img.naturalWidth > 0 ? job.img : null;
+        if (!source) {
+            const image = new Image();
+            image.decoding = 'async';
+            image.src = job.url;
+            await image.decode();
+            source = image;
+        }
+        const width = source.naturalWidth, height = source.naturalHeight;
+        if (!(width > 0 && height > 0)) return null;
+        const scale = Math.min(1, SAMPLE_SIZE / Math.max(width, height));
+        const w = Math.max(1, Math.floor(width * scale + 0.5));
+        const h = Math.max(1, Math.floor(height * scale + 0.5));
+        if (typeof createImageBitmap === 'function') {
+            try {
+                return { job, drawable: await createImageBitmap(source, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' }), bitmap: true, w, h };
+            } catch (err) {
+                if (err?.name === 'SecurityError') throw err;
+                // Drawn from the image instead.
+            }
+        }
+        if (typeof source.decode === 'function') await source.decode();
+        return { job, drawable: source, bitmap: false, w, h };
+    }
+
+    /**
+     * The pixel step of a decoded artwork, on the main thread (timed): draw
+     * it small, read it back, take its dominant colour.
+     * @param {Decoded} step
+     * @returns {number[]|null|string} The dominant colour, FAILED or STALE.
+     */
+    function pixels(step) {
+        const { job, drawable, bitmap, w, h } = step;
+        if (!bitmap && drawable === job.img && (moved(job) || !job.img.complete)) return STALE;
+        const started = performance.now();
         try {
-            let source = job.img && job.img.complete && job.img.naturalWidth > 0 ? job.img : null;
-            if (!source) {
-                const image = new Image();
-                image.decoding = 'async';
-                image.src = job.url;
-                await image.decode();
-                source = image;
-            }
-            const width = source.naturalWidth, height = source.naturalHeight;
-            if (!(width > 0 && height > 0)) return FAILED;
-            const scale = Math.min(1, SAMPLE_SIZE / Math.max(width, height));
-            const w = Math.max(1, Math.floor(width * scale + 0.5));
-            const h = Math.max(1, Math.floor(height * scale + 0.5));
-            let drawable = source;
-            let bitmap = null;
-            if (typeof createImageBitmap === 'function') {
-                bitmap = await createImageBitmap(source, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' });
-                drawable = bitmap;
-            }
-            // The synchronous part (draw, read back, histogram) runs on the main thread: timed.
-            const started = performance.now();
             canvas = canvas || (typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(w, h) : document.createElement('canvas'));
             canvas.width = w;
             canvas.height = h;
@@ -570,18 +669,16 @@
             ctx.clearRect(0, 0, w, h);
             ctx.imageSmoothingQuality = 'medium';
             ctx.drawImage(drawable, 0, 0, w, h);
-            bitmap?.close?.();
             const data = ctx.getImageData(0, 0, w, h).data;
-            const result = dominant(data, w, h);
+            return dominant(data, w, h);
+        } catch (err) {
+            return failure(job, err);
+        } finally {
+            if (bitmap) /** @type {ImageBitmap} */ (drawable).close?.();
+            else counters.fallback++;
             const spent = performance.now() - started;
             counters.sampleMs += spent;
             counters.maxSampleMs = Math.max(counters.maxSampleMs, spent);
-            return result;
-        } catch (err) {
-            if (err?.name !== 'SecurityError' && err?.name !== 'InvalidStateError' && err?.name !== 'EncodingError') {
-                console.debug(`${logPrefix} could not sample artwork`, err);
-            }
-            return FAILED;
         }
     }
 
@@ -616,7 +713,7 @@
             return;
         }
         queue.clear();
-        toSample.clear();
+        dropSamples();
         for (const w of Array.from(watches.values())) drop(w);
         document.querySelectorAll('[data-je-poster-colour], [data-je-poster-key]').forEach((el) => clear(/** @type {HTMLElement} */ (el)));
     }
@@ -636,7 +733,7 @@
     JE.session?.onUserChange?.('tag-poster-colours', () => {
         generation++;
         setActive(false);
-        sampling.clear();
+        dropSamples();
         clearMemory();
     });
 

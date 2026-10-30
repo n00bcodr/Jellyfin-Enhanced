@@ -26,6 +26,7 @@ function pixels(width, height, paint) {
  */
 function stubImages(w, art) {
   const decoded = [];
+  const draws = [];
   const observing = new Set();
   w.MutationObserver = class extends w.MutationObserver {
     observe(...args) { observing.add(this); return super.observe(...args); }
@@ -38,7 +39,7 @@ function stubImages(w, art) {
   w.HTMLCanvasElement.prototype.getContext = function () {
     let drawn = null;
     return {
-      clearRect() {}, drawImage(source) { drawn = source.url; },
+      clearRect() {}, drawImage(source) { drawn = source.url || source.src; draws.push(drawn); },
       getImageData: (x, y, width, height) => {
         const source = art[drawn];
         if (source instanceof Error) throw source;
@@ -46,7 +47,7 @@ function stubImages(w, art) {
       },
     };
   };
-  return { decoded, observing };
+  return { decoded, draws, observing };
 }
 
 /** The module alone, with stubbed image decoding: `art` maps an image URL to its pixels (or an error to throw). */
@@ -57,13 +58,13 @@ function setup(t, { html = card(ID), art = {}, store = null, session = {} } = {}
   });
   t.after(() => h.close());
   const w = h.window;
-  const { decoded, observing } = stubImages(w, art);
+  const { decoded, draws, observing } = stubImages(w, art);
   h.load('tags/tag-poster-colours.js');
   const P = h.JE.tagPosterColours;
   /** Let queued slices and decodes run to the end. */
   const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(r => w.setTimeout(r, 20)); };
   const box = (id = ID) => h.document.querySelector(`[data-id="${id}"] .cardBox`);
-  return { ...h, P, decoded, observing, settle, box };
+  return { ...h, P, decoded, draws, observing, settle, box };
 }
 
 const solid = rgb => (w, h) => pixels(w, h, () => [...rgb, 255]);
@@ -458,4 +459,51 @@ test('a card arriving while its artwork is being decoded is coloured by that dec
   assert.equal(h.box(ID).style.getPropertyValue('--je-tag-bg'), red);
   assert.equal(h.box(ID2).style.getPropertyValue('--je-tag-bg'), red, 'both waiters coloured');
   assert.equal(h.P.stats().sampled, 1);
+});
+
+test('without createImageBitmap, 200 cards are drawn one per idle period, never once its time runs low', async t => {
+  const ids = Array.from({ length: 200 }, (_, i) => i.toString(16).padStart(32, '0'));
+  const art = Object.fromEntries(ids.map((id, i) => [img(id), solid([200, 30 + (i % 50), 30])]));
+  const h = setup(t, { html: ids.map(id => card(id)).join(''), art });
+  delete h.window.createImageBitmap;
+  // The decode before drawing settles at once, as for an image already decoded: no await gives the pixel work a free pass.
+  h.window.HTMLImageElement.prototype.decode = () => Promise.resolve();
+  const idle = [];
+  h.window.requestIdleCallback = (fn) => idle.push(fn);
+  const flush = () => new Promise(r => h.window.setTimeout(r, 0));
+  /** Run the next idle callback with this much time left; the drawings it made. */
+  const period = async (remaining, didTimeout = false) => {
+    const before = h.draws.length;
+    idle.shift()({ timeRemaining: () => remaining, didTimeout });
+    const drew = h.draws.length - before;
+    await flush();
+    return drew;
+  };
+  h.P.setActive(true);
+  await flush();
+  assert.equal(idle.length, 1);
+  assert.equal(await period(50), 0, 'the first period reads cards and starts decodes');
+  assert.equal(await period(3), 0, 'too little idle time: the drawing waits');
+  assert.equal(await period(0, true), 1, 'a period that ran late still makes progress, one drawing');
+  let periods = 3;
+  while (idle.length) {
+    assert.ok(await period(50) <= 1, 'one full-size drawing per idle period');
+    assert.ok(++periods < 1000);
+  }
+  assert.equal(h.draws.length, 200);
+  assert.equal(h.document.querySelectorAll('[data-je-poster-colour]').length, 200);
+  const stats = h.P.stats();
+  assert.equal(stats.fallback, 200);
+  assert.equal(stats.steps, 200, 'the drawings ran inside the timed slices');
+  assert.equal(stats.sampled, 200);
+  assert.equal(stats.decoding + stats.waiting + stats.queued, 0);
+});
+
+test('a createImageBitmap that rejects falls back to drawing the image', async t => {
+  const h = setup(t, { art: { [img(ID)]: solid([30, 60, 200]) } });
+  h.window.createImageBitmap = async () => { const err = new Error('unsupported'); err.name = 'InvalidStateError'; throw err; };
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(h.box().style.getPropertyValue('--je-tag-bg'), h.P.css(h.P.normalise([30, 60, 200]).background));
+  assert.equal(h.P.stats().fallback, 1);
 });
