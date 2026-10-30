@@ -7,12 +7,17 @@
 // own preset, the user's choice (settings panel) is sent along and the admin's
 // group and label overrides stay on top. Rules use a doubled/extra class so
 // they beat the tag modules' own rules whatever order the stylesheets land in.
+// Under the Poster preset the server lists only the overrides; the colours
+// underneath come from each card's artwork (tags/tag-poster-colours.js), set
+// as custom properties on the card, and posterRules() below paints them: each
+// rule matches its group's override selectors in specificity and comes first,
+// so a tag or group colour the admin set wins field by field.
 (function(JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Tag Styles:';
     const styleId = 'je-tag-style-overrides';
-    const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono'];
+    const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster'];
     const STATUS_LABELS = ['added', 'newMovie', 'newSeries', 'newEpisode', 'trending'];
 
     // Values come from the server already validated as rgba() colours; this is
@@ -60,6 +65,34 @@
     }
 
     /**
+     * The Poster preset's static rules: chips on a card marked
+     * data-je-poster-colour take its --je-tag-bg / --je-tag-border /
+     * --je-tag-fg. Each selector has the specificity of the override rules
+     * of its group (buildCss), so those, coming later, win field by field;
+     * !important beats the tag modules' own colours. Flags keep theirs.
+     * @param {string} P - Scope prefix ('' or '#id ').
+     * @returns {string[]}
+     */
+    function posterRules(P) {
+        const M = `${P}[data-je-poster-colour]`;
+        const fill = 'background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important;';
+        const edge = 'border-color: var(--je-tag-border) !important;';
+        const ringed = 'outline: 1px solid var(--je-tag-border) !important; outline-offset: -1px !important;';
+        return [
+            // (0,4,0): over the quality module's !important label rules, level with the "*" override.
+            `${M} .quality-overlay-container.quality-overlay-container .quality-overlay-label { ${fill} ${edge} }`,
+            `${M} .age-rating-overlay-container .age-rating-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
+            `${M} .rating-overlay-container .rating-tag { ${fill} ${ringed} }`,
+            `${M} .rating-overlay-container .rating-tag :is(.rating-star-icon, .je-userreview-icon) { color: var(--je-tag-fg) !important; }`,
+            `${M} .genre-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
+            `${M} .status-overlay-container .status-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
+            `${M} .status-overlay-container .status-tag .status-tag-rank { color: var(--je-tag-fg) !important; }`,
+            `${M} .je-tag-pill { background: var(--je-tag-bg); border-color: var(--je-tag-border); color: var(--je-tag-fg); }`,
+            `${M} .je-tag-pill .je-tag-pill-glyph { color: inherit; }`,
+        ];
+    }
+
+    /**
      * Builds the stylesheet from the server's web model (GET tag-styles).
      * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language}`.
      * @param {string} [scope] - The id selector of one element every rule is
@@ -74,6 +107,8 @@
             throw new Error('tag-styles: scope must be a single #id selector');
         }
         const P = scope ? `${scope} ` : '';
+        // Poster preset: the artwork's colours first, every override after them.
+        if (styles.preset === 'poster') rules.push(...posterRules(P));
         const quality = styles.quality || {};
         // Beat category rules (including editions) regardless of reinjection order.
         const Q = `${P}.quality-overlay-container.quality-overlay-container.quality-overlay-container .quality-overlay-label`;
@@ -152,6 +187,7 @@
     function deactivate() {
         requestSeq++;
         JE.core?.ui?.removeCss(styleId);
+        JE.tagPosterColours?.setActive(false);
     }
 
     // On a user switch or logout the previous user's styles (their preset) go
@@ -191,6 +227,8 @@
             const css = buildCss(styles || {});
             if (css) JE.core.ui.injectCss(styleId, css);
             else JE.core.ui.removeCss(styleId);
+            // Poster preset: cards take their artwork's colours from here on.
+            JE.tagPosterColours?.setActive(styles?.preset === 'poster');
         } catch (e) {
             console.warn(`${logPrefix} Could not load tag style overrides.`, e);
         }

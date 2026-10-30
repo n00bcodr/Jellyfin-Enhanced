@@ -25,7 +25,7 @@
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
     const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
-    const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono'];
+    const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster'];
     const CONFIG_PAGE_NAME = 'Jellyfin Enhanced';
     const TAB_STORE_PREFIX = 'JE_mediaTagsTab:';
 
@@ -58,6 +58,13 @@
         status: { background: 'rgba(15, 15, 15, 0.72)', color: '#ffffff', border: 'rgba(255, 255, 255, 0.18)' },
         rating: { background: 'rgba(0, 0, 0, 0.85)', color: '#ffc107', border: 'transparent' },
     };
+
+    /**
+     * The Poster preset's tile: each chip in the colours a different artwork
+     * gives it (a red, a blue and a teal poster), through the same
+     * normalisation as the cards (tags/tag-poster-colours.js).
+     */
+    const POSTER_SAMPLE_ART = { quality: [178, 34, 34], status: [30, 60, 140], rating: [20, 120, 130] };
 
     const escapeHtml = (value) => JE.escapeHtml(String(value));
     /** @param {string} key @param {Object} [params] @returns {string} Translated and escaped. */
@@ -840,9 +847,14 @@
                             status: styles?.status?.added,
                             rating: styles?.rating?.community,
                         };
+                        const sampled = styles?.preset === 'poster' ? JE.tagPosterColours : null;
                         box.querySelectorAll('[data-chip]').forEach((chip) => {
                             const kind = /** @type {HTMLElement} */ (chip).dataset.chip || 'quality';
-                            const colours = { ...CHIP_DEFAULTS[kind], ...(pick[kind] || {}) };
+                            const art = sampled ? sampled.normalise(POSTER_SAMPLE_ART[kind]) : null;
+                            const base = art ? { background: sampled.css(art.background), color: sampled.css(art.text), border: sampled.css(art.border) } : CHIP_DEFAULTS[kind];
+                            // Overrides the admin set stay on top, field by field.
+                            const own = Object.fromEntries(Object.entries(pick[kind] || {}).filter(([, v]) => v));
+                            const colours = { ...base, ...own };
                             const style = /** @type {HTMLElement} */ (chip).style;
                             style.setProperty('background', colours.background, 'important');
                             style.setProperty('color', colours.color, 'important');

@@ -150,20 +150,20 @@ test('admin-only content is never rendered for a user; presets disallowed remove
   assert.deepEqual(await user.search('colours editor'), []);
 });
 
-test('a user with presets allowed gets Colours with seven tiles painted from each preset\'s real palette', async t => {
+test('a user with presets allowed gets Colours with eight tiles painted from each preset\'s real palette', async t => {
   const h = setup(t, { plugin: { TagStylesAllowUserPreset: true, TagStylePreset: 'glass' }, stored: { tagStylePreset: 'mono' } });
   await h.open();
   assert.ok(h.tab('colours'));
   assert.equal(h.$('.je-mth-admin'), null, 'no colour editor card for a user');
   const tiles = Array.from(h.document.querySelectorAll('input[name="jeTagPreset"]'));
-  assert.deepEqual(tiles.map(r => r.value), ['', 'default', 'glass', 'outline', 'dark', 'light', 'mono']);
+  assert.deepEqual(tiles.map(r => r.value), ['', 'default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster']);
   assert.equal(h.$('input[name="jeTagPreset"]:checked').value, 'mono');
   assert.match(h.$('#jeTagPresetChoice').textContent, /panel_settings_ui_tag_style_preset_server:panel_settings_ui_tag_style_preset_glass/);
   assert.equal(h.requests.filter(u => u.includes('/tag-styles')).length, 0, 'palettes load only when Colours shows');
   h.click(h.tab('colours'));
   await h.settle();
   const styleRequests = h.requests.filter(u => u.includes('/tag-styles'));
-  assert.equal(styleRequests.length, 7);
+  assert.equal(styleRequests.length, 8);
   assert.ok(styleRequests.includes('http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=glass'));
   assert.ok(styleRequests.includes('http://jellyfin.test/JellyfinEnhanced/tag-styles'), 'the server default tile asks for the admin\'s');
   const chip = h.$('.je-mth-preset-chips[data-preset="glass"] [data-chip="quality"]');

@@ -32,6 +32,9 @@
     };
     const GROUP_IDS = Object.keys(ENABLED);
 
+    /** Each sample art's dominant colour (its CSS gradient's main band), for the Poster tag colours. */
+    const ART_RGB = { movie: '181,86,47', series: '44,111,122', episode: '143,208,242', list: '143,208,242' };
+
     /** Inline flags (data URIs), so the preview never touches the network. */
     const FLAGS = {
         fr: { name: 'French', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#002395"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ed2939"/></svg>' },
@@ -245,6 +248,8 @@
         scalable.className = `${sample.shape === 'list' ? '' : 'cardScalable '}je-mtp-scalable`;
         const art = document.createElement('div');
         art.className = `je-mtp-art je-mtp-art--${sample.key}`;
+        // The art's main colour, for the Poster tag colours (tags/tag-poster-colours.js).
+        art.dataset.jePosterRgb = ART_RGB[sample.key] || ART_RGB.movie;
         const overlay = document.createElement('div');
         overlay.className = 'cardOverlayContainer';
         scalable.append(art, overlay);

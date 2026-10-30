@@ -14,6 +14,14 @@
         <DisableTransitiveFrameworkReferences>true</DisableTransitiveFrameworkReferences>
     </PropertyGroup>
 
+    <!-- The Poster preset's colour check (colours mode) decodes synthetic posters with Skia: the plugin
+         compiles against SkiaSharp without its runtime assets (Jellyfin ships them), so this harness brings
+         its own, at the version the backend tests use. -->
+    <ItemGroup>
+        <PackageReference Include="SkiaSharp" Version="3.116.1" />
+        <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
+    </ItemGroup>
+
     <ItemGroup>
         <ProjectReference Include="../../../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" AdditionalProperties="JellyfinTarget=jf12" />
     </ItemGroup>

@@ -1272,6 +1272,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 presets = TagStyleKeys.Presets,
                 groups,
                 palettes,
+                // The Poster preset's colours depend on each artwork: the editor's contrast badge shows the worst
+                // case its normalisation band allows, and its preview the example artwork's colours (palettes.poster).
+                poster = new { worstContrast = Math.Round(PosterColour.WorstCaseContrast, 2), example = Web(PosterColour.Example) },
             });
         }
 

@@ -78,6 +78,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             Hash = IsEmpty ? string.Empty : ComputeHash();
         }
 
+        private TagStyleSet(TagStyleSet set, TagColors sampled)
+        {
+            Preset = set.Preset;
+            Groups = set.Groups;
+            Labels = set.Labels;
+            IsEmpty = set.IsEmpty;
+            Hash = set.Hash;
+            Sampled = sampled;
+        }
+
         /// <summary>The preset id (see <see cref="TagStyleKeys.Presets"/>).</summary>
         public string Preset { get; }
 
@@ -93,6 +103,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Stable hash of the preset and overrides, empty when the set is empty. Part of the poster cache key.</summary>
         public string Hash { get; }
 
+        /// <summary>True under the Poster preset: chips take their colours from the artwork they are drawn on.</summary>
+        public bool IsPoster => Preset == TagStyleKeys.PosterPreset;
+
+        /// <summary>
+        /// The artwork's colours under the Poster preset (<see cref="WithSampled"/>), or null. Not part of
+        /// <see cref="Hash"/>: they follow from the artwork, whose identity the composite key already carries, and the
+        /// tile keys carry the resolved colours.
+        /// </summary>
+        public TagColors? Sampled { get; }
+
+        /// <summary>This set with one artwork's colours under every field nothing overrides (Poster preset only).</summary>
+        /// <param name="sampled">The artwork's colours (<see cref="PosterColour.Sample"/>).</param>
+        /// <returns>The set; this one when the preset is not Poster.</returns>
+        public TagStyleSet WithSampled(TagColors sampled)
+        {
+            ArgumentNullException.ThrowIfNull(sampled);
+            return IsPoster ? new TagStyleSet(this, sampled) : this;
+        }
         /// <summary>
         /// Parses the stored document; never throws, anything unusable is skipped. A version 1 document is
         /// migrated to the colours it drew (see <see cref="ReadV1"/>) under the default preset.
@@ -213,7 +241,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <returns>The set.</returns>
         public TagStyleSet ForUser(string? userPreset, bool allowed) => allowed ? WithPreset(userPreset) : this;
 
-        /// <summary>A chip's effective colours, field by field: label, group, preset. Null fields keep the built-in colour.</summary>
+        /// <summary>
+        /// A chip's effective colours, field by field: label, group, preset, then (Poster preset) the artwork's
+        /// <see cref="Sampled"/> colours. Null fields keep the built-in colour. Language flags are images and never
+        /// take sampled colours.
+        /// </summary>
         /// <param name="group">A group id.</param>
         /// <param name="label">A label of the group, or <see cref="TagStyleKeys.AnyLabel"/> for chips outside the catalog.</param>
         /// <returns>The colours.</returns>
@@ -222,7 +254,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             Labels.TryGetValue(group + ":" + label, out var own);
             Groups.TryGetValue(group, out var shared);
             var c = (own ?? new TagColors(null, null, null)).Over(shared).Over(TagStylePalettes.Preset(Preset, group, label));
-            return group == TagStyleKeys.Language ? c with { Background = null, Text = null } : c;
+            if (group == TagStyleKeys.Language) return c with { Background = null, Text = null };
+            return Sampled is null ? c : c.Over(Sampled);
         }
 
         /// <summary>A quality chip's colours: catalog labels by name, composite labels ("ATMOS 7.1") by their base, anything else as <c>*</c> (as the web's selectors match).</summary>

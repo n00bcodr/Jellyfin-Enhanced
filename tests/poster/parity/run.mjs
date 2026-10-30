@@ -8,8 +8,9 @@
 // for --server/--admin/--user/--config-dir), build the profiles and synthetic
 // entries, let the C# harness write the server's view of synthetic settings,
 // compute the web's tags (web-expected.mjs), run the C# resolver, compare
-// (diff.mjs), and check the language-name port against Intl (names) and the
-// string casing port against String.prototype (casing).
+// (diff.mjs), and check the language-name port against Intl (names), the
+// string casing port against String.prototype (casing) and the Poster preset's
+// artwork colours against js/tags/tag-poster-colours.js (colours).
 // Everything lands in tests/poster/parity/data/ (git-ignored).
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
@@ -47,6 +48,8 @@ run('node', ['names-expected.mjs']);
 run('dotnet', [harness, 'names', data]);
 run('node', ['casing-expected.mjs']);
 run('dotnet', [harness, 'casing', data]);
+run('node', ['colours-expected.mjs']);
+run('dotnet', [harness, 'colours', data]);
 try {
     run('node', ['diff.mjs']);
 } catch {

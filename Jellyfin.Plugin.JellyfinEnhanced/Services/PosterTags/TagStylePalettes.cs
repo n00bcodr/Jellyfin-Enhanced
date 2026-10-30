@@ -35,11 +35,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The preset that keeps the built-in colours.</summary>
         public const string DefaultPreset = "default";
 
+        /// <summary>
+        /// The preset whose colours come from each card's own artwork (<see cref="PosterColour"/>): its palette is
+        /// empty, the renderer and the web fill every field nothing overrides with the sampled colours.
+        /// </summary>
+        public const string PosterPreset = "poster";
+
         /// <summary>Every group, in editor tab order.</summary>
         public static readonly IReadOnlyList<string> Groups = new[] { Quality, AgeRating, Rating, Genre, Status, Language };
 
         /// <summary>Every preset, in editor order.</summary>
-        public static readonly IReadOnlyList<string> Presets = new[] { DefaultPreset, "glass", "outline", "dark", "light", "mono" };
+        public static readonly IReadOnlyList<string> Presets = new[] { DefaultPreset, "glass", "outline", "dark", "light", "mono", PosterPreset };
 
         /// <summary>The rating chip labels.</summary>
         public static readonly IReadOnlyList<(string Key, string Name)> RatingLabels = new[] { ("community", "Community"), ("critic", "Critic"), ("userReview", "User review"), ("imdb", "IMDb"), ("tmdb", "TMDb"), ("rtCritic", "RT critic"), ("rtAudience", "RT audience"), ("metacritic", "Metacritic"), ("letterboxd", "Letterboxd"), ("trakt", "Trakt") };
@@ -129,7 +135,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>
         /// The colours a preset gives a chip. Null fields keep the built-in colour; the default preset is all
-        /// null, so it changes nothing (no CSS, no native style, the same poster cache key).
+        /// null, so it changes nothing (no CSS, no native style, the same poster cache key). The Poster preset is all
+        /// null too: its colours depend on the artwork (<see cref="TagStyleSet.WithSampled"/>).
         /// </summary>
         /// <param name="preset">A preset id.</param>
         /// <param name="group">A group id.</param>
@@ -169,14 +176,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>
         /// The colours a preset shows for a chip in the editor: the preset's colour where it sets one, else the
-        /// built-in colour. Every field is concrete.
+        /// built-in colour; under Poster, the example artwork's colours (flags keep theirs). Every field is concrete.
         /// </summary>
         /// <param name="preset">A preset id.</param>
         /// <param name="group">A group id.</param>
         /// <param name="label">A label of the group.</param>
         /// <returns>The colours.</returns>
         public static TagColors Concrete(string preset, string group, string label) =>
-            Preset(preset, group, label).Over(Builtin(group, label));
+            preset == TagStyleKeys.PosterPreset && group != TagStyleKeys.Language
+                ? PosterColour.Example
+                : Preset(preset, group, label).Over(Builtin(group, label));
 
         /// <summary>The quality tint a label belongs to (outline preset), by its quality category.</summary>
         /// <param name="label">A quality label, possibly composite ("ATMOS 7.1").</param>

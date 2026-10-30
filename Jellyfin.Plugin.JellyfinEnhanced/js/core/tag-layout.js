@@ -1535,6 +1535,8 @@
         refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
         scheduleFit(ctrl);
+        // Poster preset: the card's colours follow its artwork (tags/tag-poster-colours.js).
+        JE.tagPosterColours?.track(ctrl.host);
     }
 
     // ── Fitting ────────────────────────────────────────────────────────
