@@ -83,6 +83,7 @@ function setup(t, { width = 1400, height = 900, stored = null, storage } = {}) {
     + '<div class="je-panel-main"><button id="jePanelBack"></button><section class="je-pane" data-pane="ui"><h3 class="je-pane-title">UI</h3><input type="checkbox" id="someToggle"></section></div></div>'
     + `<div class="panel-footer">footer</div>${ui.buildPanelResizeHandlesHtml()}`;
   for (const name of ['wireShortcutEditor', 'wireSettingsListeners', 'wireHiddenContentListeners', 'wireMiscSettingsControls', 'wireTagGroupEditor', 'wireLanguageControls']) ui[name] = () => {};
+  ui.wireShortcutEditor = ctx => { h.context = ctx; };
   h.load('enhanced/settingspanel/ui-panel.js');
 
   const $ = selector => h.document.querySelector(selector);
@@ -96,6 +97,7 @@ function setup(t, { width = 1400, height = 900, stored = null, storage } = {}) {
   };
   return {
     ...h, $, panel, queries,
+    context: () => h.context,
     async open() { await h.JE.showEnhancedPanel(); },
     close() { $('#closeSettingsPanel').click(); },
     size: () => { const r = panel().getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; },
@@ -562,4 +564,58 @@ test('pointer announcements coalesce for 250ms and discard pending updates on cl
   h.close();
   await new Promise(resolve => setTimeout(resolve, 280));
   assert.equal(status.textContent, 'Panel size 1082 × 762', 'no announcement after teardown');
+});
+
+for (const method of ['pushState', 'replaceState']) test(`shared navigation ${method} closes and restores the page exactly once`, async t => {
+  const h = setup(t);
+  h.load('core/navigation.js');
+  const nav = h.JE.core.navigation;
+  const baseline = nav.getNavCallbackCount();
+  await h.open();
+  const ctx = h.context();
+  let cleanups = 0;
+  ctx.onClose(() => cleanups++);
+  assert.equal(nav.getNavCallbackCount(), baseline + 1);
+  const panel = h.panel();
+  h.window.history[method]({}, '', '#/hidden-content');
+  assert.equal(h.panel(), null);
+  assert.equal(h.$('#opener').hasAttribute('inert'), false);
+  assert.equal(nav.getNavCallbackCount(), baseline);
+  assert.equal(cleanups, 1);
+  const outside = h.document.createElement('button');
+  h.document.body.append(outside);
+  outside.focus();
+  const nativeTimeout = h.window.setTimeout;
+  let scheduled = 0;
+  h.window.setTimeout = (...args) => { scheduled++; return nativeTimeout(...args); };
+  ctx.resetAutoCloseTimer();
+  assert.equal(scheduled, 0, 'a closed dialog cannot restart its auto-close timer');
+  ctx.closePanel();
+  ctx.closePanel();
+  assert.equal(cleanups, 1);
+  assert.equal(h.document.activeElement, outside);
+  assert.equal(panel.isConnected, false);
+  await h.open();
+  assert.equal(nav.getNavCallbackCount(), baseline + 1);
+  h.close();
+  assert.equal(nav.getNavCallbackCount(), baseline);
+});
+
+for (const page of [true, false]) test(`Manage Hidden Content closes before opening its ${page ? 'page' : 'fallback modal'}`, async t => {
+  const h = setup(t);
+  const steps = [];
+  h.JE.hiddenContent = { showManagementPanel: () => steps.push('modal') };
+  h.JE.hiddenContentPage = { showPage: () => steps.push('page') };
+  h.JE.pluginConfig.HiddenContentEnabled = page;
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  await h.open();
+  const btn = h.document.createElement('button');
+  btn.id = 'manageHiddenContentBtn';
+  h.panel().append(btn);
+  h.JE.internals.enhancedUi.wireHiddenContentListeners(h.context());
+  h.context().onClose(() => steps.push('close'));
+  btn.click();
+  assert.equal(h.panel(), null);
+  assert.equal(h.$('#opener').hasAttribute('inert'), false);
+  assert.deepEqual(steps, ['close', page ? 'page' : 'modal']);
 });

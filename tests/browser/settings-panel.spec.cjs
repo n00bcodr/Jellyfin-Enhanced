@@ -44,7 +44,7 @@ async function setup(page) {
       window.ApiClient = { getCurrentUserId: () => 'user-a', getUrl: x => x, ajax: async () => null };
       const ui = { buildPanelHtml: () => '<div class="panel-header"><h2 id="jePanelTitle">Settings</h2><button id="closeSettingsPanel">Close</button></div>' };
       for (const name of ['wireShortcutEditor', 'wireSettingsListeners', 'wireHiddenContentListeners', 'wireMiscSettingsControls', 'wireTagGroupEditor', 'wireLanguageControls']) ui[name] = () => {};
-      window.JellyfinEnhanced = { internals: { enhancedUi: ui }, pluginConfig: {}, currentSettings: {}, state: { activeShortcuts: { x: 1 } },
+      window.JellyfinEnhanced = { core: { navigation: window.JellyfinEnhanced.core.navigation }, internals: { enhancedUi: ui }, pluginConfig: {}, currentSettings: {}, state: { activeShortcuts: { x: 1 } },
         CONFIG: { HELP_PANEL_AUTOCLOSE_DELAY: 60000 }, keyListener() {}, themer: { getThemeVariables: () => ({}) } };
     });
     await page.addScriptTag({ path: path.join(root, 'enhanced/settingspanel/ui-panel.js') });
@@ -96,5 +96,29 @@ test('settings dialog keeps focus after real background clicks, late controls an
   await expect(page.locator('#panel-background-probe')).not.toHaveAttribute('inert');
   await page.locator('#panel-late-probe').click();
   expect(await page.evaluate(() => window.lateActivated)).toBe(true);
+  expect(errors, 'JE console/page errors').toEqual([]);
+});
+
+
+test('settings dialog tears down on pushState, back and forward', async ({ page }, testInfo) => {
+  test.setTimeout(90000);
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => { if (m.type() === 'error' && (!lab || /Jellyfin Enhanced|JellyfinEnhanced|🪼/.test(m.text()))) errors.push(m.text()); });
+  await setup(page);
+  const panel = page.locator('#jellyfin-enhanced-panel');
+  await page.evaluate(() => JellyfinEnhanced.showEnhancedPanel());
+  await page.evaluate(() => history.pushState({}, '', '#/home?panel-regression=1'));
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator('body > [inert]')).toHaveCount(0);
+  await page.evaluate(() => JellyfinEnhanced.showEnhancedPanel());
+  await page.goBack();
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator('body > [inert]')).toHaveCount(0);
+  await page.evaluate(() => JellyfinEnhanced.showEnhancedPanel());
+  await page.goForward();
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator('body > [inert]')).toHaveCount(0);
+  await shot(page, 'navigation-released', testInfo);
   expect(errors, 'JE console/page errors').toEqual([]);
 });

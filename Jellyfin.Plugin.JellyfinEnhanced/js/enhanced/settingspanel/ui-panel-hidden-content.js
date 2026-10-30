@@ -110,6 +110,8 @@
             const manageBtn = document.getElementById('manageHiddenContentBtn');
             if (manageBtn) {
                 manageBtn.addEventListener('click', () => {
+                    // Both the page and fallback modal take over from this dialog.
+                    ctx.closePanel();
                     if (JE.pluginConfig?.HiddenContentEnabled && JE.hiddenContentPage) {
                         JE.hiddenContentPage.showPage();
                     } else {

@@ -198,11 +198,14 @@
             for (const type of ['pointerdown', 'mousedown', 'click']) document.removeEventListener(type, guardPointer, true);
         };
 
+        let closed = false;
         /**
          * Close this panel: every close path (Escape/?, the close button,
-         * auto-close, the toggle) goes through here.
+         * auto-close, navigation, the toggle) goes through here.
          */
         const closePanel = () => {
+            if (closed) return;
+            closed = true;
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             if (closeOpenPanel === closePanel) closeOpenPanel = null;
             help.remove();
@@ -219,6 +222,7 @@
         };
 
         const resetAutoCloseTimer = () => {
+            if (closed) return;
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             autoCloseTimer = setTimeout(() => {
                 if (!isMouseInside && document.getElementById(panelId)) closePanel();
@@ -317,6 +321,8 @@
         document.body.appendChild(help);
         closeOpenPanel = closePanel;
         holdBackground();
+        const stopNavigation = JE.core?.navigation?.onNavigate(closePanel);
+        if (stopNavigation) panelMediaCleanups.push(stopNavigation);
         // The dialog itself takes focus first (no ring: it is not a control).
         help.focus({ preventScroll: true });
 
