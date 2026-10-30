@@ -61,7 +61,7 @@ function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, p
   t.after(() => h.close());
   // Boxes for every element: jsdom lays nothing out.
   h.window.Element.prototype.getClientRects = function () { return [{ width: 1, height: 1 }]; };
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   for (const file of ['ui-panel-settings.js', 'ui-panel-tag-editor.js', 'ui-panel-tag-looks.js', 'ui-panel-tag-preview.js', 'ui-panel-media-tags.js']) h.load(`enhanced/settingspanel/${file}`);

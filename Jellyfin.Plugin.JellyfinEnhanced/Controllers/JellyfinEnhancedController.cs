@@ -5479,6 +5479,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Missing settings document." });
             }
 
+            if (!LanguageTagPriority.TryNormalize(userConfiguration.LanguageTagsPriority, out var languagePriority))
+            {
+                return BadRequest(new { success = false, message = "Language priorities require at most 12 ISO 639-1/639-2 language codes." });
+            }
+            userConfiguration.LanguageTagsPriority = languagePriority;
+
             try
             {
                 // Unknown layouts, groups and slots are normalized away and caps

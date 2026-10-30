@@ -235,7 +235,40 @@
             <select data-language-key="${key}" style="background:#222;color:#fff;padding:6px;border-radius:6px;">${values.map(([value, text]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(JE.t(text))}</option>`).join('')}</select></label>`;
         return `<div class="je-tge-includes">${[['Audio', conf.audio], ['Subtitles', conf.subtitles]].map(([kind, on]) => `<label class="je-tge-toggle-pill"><input type="checkbox" data-language-key="languageTagsShow${kind}" ${on ? 'checked' : ''}><span>${escapeHtml(JE.t('language_tags_' + kind.toLowerCase()))}</span></label>`).join('')}</div>
             ${select('languageTagsStyle', 'language_tags_style', conf.style, [['flags', 'language_tags_flags'], ['codes', 'language_tags_codes']])}
-            ${select('languageTagsCountBadge', 'language_tags_count_badge', conf.badge, [['off', 'language_tags_badge_off'], ['only', 'language_tags_badge_only'], ['both', 'language_tags_badge_both']])}`;
+            ${select('languageTagsCountBadge', 'language_tags_count_badge', conf.badge, [['off', 'language_tags_badge_off'], ['only', 'language_tags_badge_only'], ['both', 'language_tags_badge_both']])}
+            ${languagePriorityHtml()}`;
+    }
+
+    /** The personal language priority editor; null choices continue to follow server changes. */
+    function languagePriorityHtml() {
+        const M = JE.core.mediaLanguage;
+        const own = M.priorityList(JE.currentSettings.languageTagsPriority);
+        const strict = JE.currentSettings.languageTagsPriorityStrict;
+        const policy = M.priorityPolicy();
+        return `<fieldset class="je-language-priority">
+            <legend class="je-tge-label">${escapeHtml(JE.t('language_priority_title'))}</legend>
+            <label><input type="checkbox" data-language-follow ${own === null ? 'checked' : ''}> ${escapeHtml(JE.t('language_priority_follow'))}</label>
+            <p class="je-tge-hint">${escapeHtml(JE.t('language_priority_help'))}</p>
+            <p class="je-tge-hint" data-language-server>${escapeHtml(JE.t('language_priority_server', { languages: String(JE.pluginConfig?.LanguageTagsPriority || '') || JE.t('language_priority_none') }))}</p>
+            <div data-language-personal ${own === null ? 'hidden' : ''}>
+                <div class="je-tge-label" data-language-priority-count></div>
+                <ol data-language-priority-list></ol>
+                <label for="jeLanguagePrioritySearch" class="je-tge-label">${escapeHtml(JE.t('language_priority_search'))}</label>
+                <input id="jeLanguagePrioritySearch" type="search" autocomplete="off" maxlength="80" data-language-priority-search>
+                <label for="jeLanguagePriorityChoice" class="je-tge-label">${escapeHtml(JE.t('language_priority_language'))}</label>
+                <div class="je-language-priority-add">
+                    <select id="jeLanguagePriorityChoice" data-language-priority-choice></select>
+                    <button type="button" data-language-priority-action="add">${escapeHtml(JE.t('language_priority_add'))}</button>
+                </div>
+            </div>
+            <label for="jeLanguagePriorityStrict" class="je-tge-label">${escapeHtml(JE.t('language_priority_strict'))}</label>
+            <select id="jeLanguagePriorityStrict" data-language-priority-strict>
+                <option value="inherit" ${typeof strict !== 'boolean' ? 'selected' : ''}>${escapeHtml(JE.t('language_priority_inherit', { policy: JE.t(JE.pluginConfig?.LanguageTagsPriorityStrict ? 'language_priority_only' : 'language_priority_prefer') }))}</option>
+                <option value="true" ${strict === true ? 'selected' : ''}>${escapeHtml(JE.t('language_priority_only'))}</option>
+                <option value="false" ${strict === false ? 'selected' : ''}>${escapeHtml(JE.t('language_priority_prefer'))}</option>
+            </select>
+            <span class="je-tge-hint" data-language-priority-status aria-live="polite">${escapeHtml(JE.t(policy.strict ? 'language_priority_only' : 'language_priority_prefer'))}</span>
+        </fieldset>`;
     }
 
     /**
@@ -521,6 +554,18 @@
         #jellyfin-enhanced-panel .je-rating-source-row button { min-width: 32px; min-height: 32px; color: inherit; background: transparent; border: 1px solid #777; border-radius: 4px; }
         #jellyfin-enhanced-panel .je-tge-rating-includes > label { display: block; margin: 8px 0; }
 
+        #jellyfin-enhanced-panel .je-language-priority { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0; padding: 12px; border: 1px solid #666; border-radius: 6px; }
+        #jellyfin-enhanced-panel .je-language-priority [hidden] { display: none; }
+        #jellyfin-enhanced-panel .je-language-priority :is(input[type="search"], select) { box-sizing: border-box; width: 100%; min-width: 0; background: #222; color: #fff; border: 1px solid #777; border-radius: 6px; padding: 8px; }
+        #jellyfin-enhanced-panel .je-language-priority ol { padding-left: 24px; margin: 6px 0; }
+        #jellyfin-enhanced-panel .je-language-priority li { padding: 4px 0; }
+        #jellyfin-enhanced-panel .je-language-priority li > div { display: flex; align-items: center; gap: 4px; }
+        #jellyfin-enhanced-panel .je-language-priority li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        #jellyfin-enhanced-panel .je-language-priority button { min-width: 36px; min-height: 36px; color: inherit; background: transparent; border: 1px solid #777; border-radius: 4px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-language-priority button:disabled { opacity: 0.4; cursor: default; }
+        #jellyfin-enhanced-panel .je-language-priority-add { display: flex; gap: 8px; margin-top: 8px; }
+        #jellyfin-enhanced-panel .je-language-priority-add select { flex: 1; }
+
         #jellyfin-enhanced-panel .je-tge { margin-bottom: 16px; padding: 12px; background: var(--je-tge-box); border-radius: 6px; border-left: 3px solid var(--je-tge-accent); }
         #jellyfin-enhanced-panel .je-tge-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
         #jellyfin-enhanced-panel .je-tge-top > div { flex: 1 1 220px; min-width: 0; }
@@ -588,6 +633,125 @@
         const list = /** @type {HTMLElement} */ (root.querySelector('.je-tge-rows'));
         const touch = () => ctx.resetAutoCloseTimer?.();
         let disposed = false;
+
+        const priorityEditor = root.querySelector('.je-language-priority');
+        // Standalone/partial editor mounts may contain only layout rows.
+        if (priorityEditor) {
+            // Choices are built once per panel; searching never requests metadata or lays out cards.
+            const priorityChoices = JE.core.mediaLanguage.priorityChoices();
+            const priorityNames = new Map(priorityChoices.map(c => [c.code, c.name]));
+            let prioritySaving = false;
+
+            /** Filter choices by English name or any equivalent ISO code, excluding selected languages. */
+            const filterPriorityChoices = () => {
+                const own = JE.core.mediaLanguage.priorityList(JE.currentSettings.languageTagsPriority) || [];
+                const query = priorityEditor.querySelector('[data-language-priority-search]').value.trim().toLowerCase();
+                /** Exact language names/codes precede family names containing the same word. */
+                const exact = c => !!query && [c.name, c.code, ...c.aliases.flatMap(a => a.split(';'))]
+                    .some(term => term.trim().toLowerCase() === query);
+                const choices = priorityChoices.filter(c => !own.includes(c.code) &&
+                    `${c.name} ${c.code} ${c.aliases.join(' ')}`.toLowerCase().includes(query))
+                    .sort((a, b) => Number(exact(b)) - Number(exact(a))).slice(0, 40);
+                const select = priorityEditor.querySelector('[data-language-priority-choice]');
+                const previous = select.value;
+                select.replaceChildren(...choices.map(c => {
+                    const option = document.createElement('option');
+                    option.value = c.code;
+                    option.textContent = `${c.name} (${c.code.toUpperCase()})`;
+                    return option;
+                }));
+                if (choices.some(c => c.code === previous)) select.value = previous;
+                const full = own.length >= JE.core.mediaLanguage.MAX_PRIORITY_LANGUAGES;
+                priorityEditor.querySelector('[data-language-priority-action="add"]').disabled = full || !choices.length;
+                select.disabled = full || !choices.length;
+            };
+
+            /** Bring the list, inherited choices and count in step with saved or rolled-back settings. */
+            const syncPriority = () => {
+                const own = JE.core.mediaLanguage.priorityList(JE.currentSettings.languageTagsPriority);
+                priorityEditor.querySelector('[data-language-follow]').checked = own === null;
+                priorityEditor.querySelector('[data-language-personal]').hidden = own === null;
+                priorityEditor.querySelector('[data-language-server]').hidden = own !== null;
+                const strict = JE.currentSettings.languageTagsPriorityStrict;
+                priorityEditor.querySelector('[data-language-priority-strict]').value = typeof strict === 'boolean' ? String(strict) : 'inherit';
+                priorityEditor.querySelector('[data-language-priority-count]').textContent = JE.t('language_priority_count', { count: own?.length || 0 });
+                priorityEditor.querySelector('[data-language-priority-list]').innerHTML = (own || []).map((code, i) => {
+                    const language = priorityNames.get(code) || code.toUpperCase();
+                    return `<li data-language-priority-code="${escapeHtml(code)}"><div><span>${escapeHtml(language)} (${escapeHtml(code.toUpperCase())})</span>
+                        <button type="button" data-language-priority-action="up" ${i === 0 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('language_priority_up', { language }))}">↑</button>
+                        <button type="button" data-language-priority-action="down" ${i === own.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('language_priority_down', { language }))}">↓</button>
+                        <button type="button" data-language-priority-action="remove" aria-label="${escapeHtml(JE.t('language_priority_remove', { language }))}">×</button>
+                    </div></li>`;
+                }).join('');
+                filterPriorityChoices();
+            };
+
+            /**
+             * Save just the personal language policy through the normal document transport.
+             * Edits are serialized; a failed write restores the prior policy and its preview.
+             * @param {Object} changes
+             * @param {{code?: string, action?: string}} [focus]
+             */
+            const savePriority = async (changes, focus = {}) => {
+                if (prioritySaving) return;
+                const settings = JE.currentSettings;
+                const previous = { languageTagsPriority: settings.languageTagsPriority, languageTagsPriorityStrict: settings.languageTagsPriorityStrict };
+                Object.assign(settings, changes);
+                prioritySaving = true;
+                priorityEditor.disabled = true;
+                touch();
+                let failed = false;
+                try {
+                    await JE.saveUserSettings('settings.json', settings, { throwOnError: true });
+                } catch {
+                    failed = true;
+                    if (JE.currentSettings === settings) Object.assign(settings, previous);
+                } finally {
+                    prioritySaving = false;
+                    priorityEditor.disabled = false;
+                }
+                if (disposed || JE.currentSettings !== settings || !root.isConnected) return;
+                syncPriority();
+                if (JE.currentSettings.languageTagsEnabled) JE.reinitializeLanguageTags?.();
+                document.dispatchEvent(new CustomEvent('je:tag-layout-changed'));
+                priorityEditor.querySelector('[data-language-priority-status]').textContent = JE.t(failed ? 'language_priority_save_failed' : 'language_priority_saved');
+                const row = Array.from(priorityEditor.querySelectorAll('[data-language-priority-code]')).find(el => el.dataset.languagePriorityCode === focus.code);
+                const target = row?.querySelector(`[data-language-priority-action="${focus.action}"]:not(:disabled)`)
+                    || row?.querySelector('button:not(:disabled)')
+                    || priorityEditor.querySelector('[data-language-priority-action="add"]:not(:disabled)')
+                    || priorityEditor.querySelector('[data-language-follow]');
+                if (focus.action) target?.focus();
+            };
+            priorityEditor.addEventListener('input', e => {
+                if (e.target.matches('[data-language-priority-search]')) { filterPriorityChoices(); touch(); }
+            });
+            priorityEditor.addEventListener('change', e => {
+                if (e.target.matches('[data-language-follow]')) savePriority({ languageTagsPriority: e.target.checked ? null : [] });
+                if (e.target.matches('[data-language-priority-strict]')) savePriority({ languageTagsPriorityStrict: e.target.value === 'inherit' ? null : e.target.value === 'true' });
+            });
+            priorityEditor.addEventListener('click', e => {
+                const button = e.target.closest('[data-language-priority-action]');
+                if (!button || button.disabled || prioritySaving) return;
+                const action = button.dataset.languagePriorityAction;
+                const own = (JE.core.mediaLanguage.priorityList(JE.currentSettings.languageTagsPriority) || []).slice();
+                const row = button.closest('[data-language-priority-code]');
+                const code = row?.dataset.languagePriorityCode || priorityEditor.querySelector('[data-language-priority-choice]').value;
+                const i = own.indexOf(code);
+                if (action === 'add') {
+                    if (!code || i !== -1 || own.length >= JE.core.mediaLanguage.MAX_PRIORITY_LANGUAGES) return;
+                    own.push(code);
+                } else if (action === 'remove') {
+                    if (i === -1) return;
+                    own.splice(i, 1);
+                } else {
+                    const to = i + (action === 'up' ? -1 : 1);
+                    if (i < 0 || to < 0 || to >= own.length) return;
+                    [own[i], own[to]] = [own[to], own[i]];
+                }
+                savePriority({ languageTagsPriority: own }, { code: action === 'remove' ? own[Math.min(i, own.length - 1)] : code, action });
+            });
+            syncPriority();
+        }
 
         /** Bring every row (order, summary, pills, stepper, move buttons) in step with the settings. */
         const sync = () => {

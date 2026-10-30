@@ -43,6 +43,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/LanguageTagPrioritySettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
       "category": "Configuration"
     },
@@ -7290,6 +7294,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "LanguageTagsPriority",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "LanguageTagsPriorityStrict",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -8761,9 +8781,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 386,
+    "files": 387,
     "routes": 182,
-    "configuration_properties": 631,
+    "configuration_properties": 633,
     "storage_references": 75,
     "scheduled_tasks": 13,
     "locales": 33

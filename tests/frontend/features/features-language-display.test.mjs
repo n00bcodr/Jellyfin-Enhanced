@@ -29,7 +29,7 @@ test('CC subtitles follow audio under one cap; tooltips retain full names', t =>
   assert.deepEqual(chips.map(el => el.dataset.jeLanguage), ['flag', 'flag', 'subtitles']);
   assert.equal(chips[2].querySelector('.language-cc').textContent, 'CC');
   assert.match(chips[2].title, /Subtitles: Japanese/);
-  assert.equal(chips[0].title, 'English');
+  assert.equal(chips[0].title, 'Audio: English');
 });
 
 test('Codes use canonical ISO codes, keep partial treatment and three-letter fallbacks', t => {
@@ -101,7 +101,7 @@ test('hoverable language chips use native anchors through clones and caption mov
   const anchors = h.target.querySelectorAll('a.language-link');
   assert.equal(anchors.length, 2);
   for (const a of anchors) assert.equal(a.getAttribute('href'), '#/details?id=a');
-  assert.equal(anchors[0].title, 'English');
+  assert.equal(anchors[0].title, 'Audio: English');
   assert.equal(anchors[1].title, 'Subtitles: French');
   assert.ok(anchors[0].querySelector('img.language-flag'));
   assert.ok(anchors[1].querySelector('.language-cc'));
@@ -159,7 +159,7 @@ for (const style of ['flags', 'codes']) {
   });
 }
 
-for (const [audio, text, title] of [[['en'], 'EN', 'English'], [['en', 'ja'], 'Dual', '2 audio languages'], [['en', 'ja', 'fr'], 'Multi', '3 audio languages']]) {
+for (const [audio, text, title] of [[['en'], 'EN', 'Audio: English'], [['en', 'ja'], 'Dual', '2 audio languages: English, Japanese'], [['en', 'ja', 'fr'], 'Multi', '3 audio languages: English, Japanese, French']]) {
   test(`Summary keeps the original title for ${text}`, t => {
     const h = setup(t, { languageTagsStyle: 'codes', languageTagsCountBadge: 'both',
       tagLayout: 'summary', tagLayoutSettingsVersion: 1, tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } });
@@ -170,3 +170,119 @@ for (const [audio, text, title] of [[['en'], 'EN', 'English'], [['en', 'ja'], 'D
     assert.equal(pill.getAttribute('aria-label'), title);
   });
 }
+
+for (const style of ['flags', 'codes']) {
+  test(`personal priorities override admin order with canonical ISO matching: ${style}`, t => {
+    const h = setup(t, { languageTagsStyle: style, languageTagsPriority: ['jpn', 'eng'] }, { LanguageTagsPriority: 'French', LanguageTagsPriorityStrict: true });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['fra', 'eng', 'jpn'], PartialAudioLanguages: ['jpn'] });
+    assert.deepEqual(h.chips().map(el => el.dataset.lang), style === 'flags' ? ['jp', 'gb'] : ['ja', 'en']);
+    assert.match(h.chips()[0].title, /Audio: Japanese.*not on all episodes/);
+  });
+}
+
+for (const strict of [null, true, false]) {
+  test(`strict inheritance and personal override ${strict}`, t => {
+    const h = setup(t, { languageTagsPriority: ['ja'], languageTagsPriorityStrict: strict }, { LanguageTagsPriority: 'French', LanguageTagsPriorityStrict: true });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['eng', 'jpn', 'fra'] });
+    assert.deepEqual(h.chips().map(el => el.dataset.lang), strict === false ? ['jp', 'gb', 'fr'] : ['jp']);
+  });
+}
+
+test('personal code matches every language sharing a flag and preserves region merging', t => {
+  const h = setup(t, { languageTagsPriority: ['tam', 'por'], languageTagsPriorityStrict: true });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['hin', 'tam', 'pt-BR', 'por'] });
+  assert.deepEqual(h.chips().map(el => el.dataset.lang), ['in', 'br', 'pt']);
+  assert.match(h.chips()[0].title, /Hindi, Tamil/);
+  h.JE.pluginConfig.LanguageTagsMergeRegions = true;
+  h.JE.reinitializeLanguageTags();
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['hin', 'tam', 'pt-BR', 'por'] });
+  assert.deepEqual(h.chips().map(el => el.dataset.lang), ['in', 'pt']);
+});
+
+test('empty personal priority opts out of admin strict filtering; null returns to live policy', t => {
+  const h = setup(t, { languageTagsPriority: [] }, { LanguageTagsPriority: 'French', LanguageTagsPriorityStrict: true });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['eng', 'jpn', 'fra'] });
+  assert.deepEqual(h.chips().map(el => el.dataset.lang), ['gb', 'jp', 'fr']);
+  h.JE.currentSettings.languageTagsPriority = null;
+  h.JE.reinitializeLanguageTags();
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['eng', 'jpn', 'fra'] });
+  assert.deepEqual(h.chips().map(el => el.dataset.lang), ['fr']);
+});
+
+test('personal list orders subtitle chips, count tooltip names and Summary fact together', async t => {
+  const h = setup(t, { languageTagsPriority: ['ja', 'en'], languageTagsPriorityStrict: true,
+    languageTagsShowSubtitles: true, languageTagsCountBadge: 'only', tagLayoutSettingsVersion: 1,
+    tagLayout: 'summary', tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['fra', 'eng', 'jpn'], PartialAudioLanguages: ['eng'], SubtitleLanguages: ['eng', 'fra', 'jpn'] });
+  const pill = h.target.querySelector('.je-tag-pill');
+  assert.equal(pill.textContent, 'Dual');
+  assert.match(pill.title, /^2 audio languages: Japanese, English.*not on all episodes/);
+  const chips = h.target.querySelector('[data-je-slot="hover"] .language-overlay-container').children;
+  assert.equal(chips[1].title, 'Subtitles: Japanese');
+  assert.equal(chips[2].title, 'Subtitles: English');
+  assert.equal(chips[1].getAttribute('aria-label'), chips[1].title);
+  h.JE.currentSettings.languageTagsCountBadge = 'off';
+  h.JE.reinitializeLanguageTags();
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['eng', 'jpn'], PartialAudioLanguages: ['jpn'] });
+  assert.match(h.target.querySelector('.je-tag-pill').title, /Audio: Japanese.*not on all episodes/);
+});
+
+test('settings preserve nullable inheritance, empty list and canonical values across unrelated saves', async t => {
+  const h = setup(t);
+  const writes = [];
+  h.window.ApiClient.ajax = async req => writes.push(JSON.parse(req.data));
+  h.load('enhanced/config.js');
+  for (const [stored, list, strict] of [
+    [{}, null, null],
+    [{ languageTagsPriority: [], languageTagsPriorityStrict: false }, [], false],
+    [{ languageTagsPriority: ['jpn', 'eng', 'en'] }, ['ja', 'en'], null],
+    [{ languageTagsPriority: ['Japanese'] }, null, null],
+  ]) {
+    h.JE.userConfig = { settings: stored };
+    h.JE.currentSettings = h.JE.loadSettings();
+    h.JE.currentSettings.showFileSizes = true;
+    await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+    assert.deepEqual(writes.at(-1).languageTagsPriority, list);
+    assert.equal(writes.at(-1).languageTagsPriorityStrict, strict);
+  }
+});
+
+test('personal ISO choices validate, deduplicate audio equivalences and support name/code search inputs', t => {
+  const h = setup(t);
+  const M = h.JE.core.mediaLanguage;
+  assert.deepEqual(Array.from(M.priorityList(['eng', 'en', 'ger', 'deu', 'tgl', 'tl', 'fil', 'nob', 'nno'])), ['en', 'de', 'fil', 'no']);
+  for (const raw of ['English', 'pt-BR', 'xx', 'xxx', 'und', 'mul', 'pob', '__proto__']) assert.equal(M.priorityCode(raw), null);
+  assert.equal(M.priorityList(Array(13).fill('en')), null);
+  const choices = M.priorityChoices();
+  const french = choices.find(c => c.code === 'fr');
+  assert.equal(french.name, 'French');
+  assert.ok(french.aliases.includes('fre') && french.aliases.includes('fra'));
+  assert.equal(new Set(choices.map(c => c.code)).size, choices.length);
+});
+
+test('user switch reuses raw cached facts under the incoming policy without inheriting another users priorities', t => {
+  const h = setup(t, { languageTagsPriority: ['ja'] });
+  const item = { Id: 'a', Type: 'Movie', MediaStreams: [{ Type: 'Audio', Language: 'en' }, { Type: 'Audio', Language: 'ja' }] };
+  h.renderer.render(h.target, item, {});
+  assert.deepEqual(h.chips().map(el => el.dataset.lang), ['jp', 'gb']);
+  h.JE.currentSettings = { languageTagsEnabled: true, languageTagsPriority: null };
+  h.JE.reinitializeLanguageTags();
+  h.renderer.renderFromCache(h.target, 'a');
+  assert.deepEqual(h.chips().map(el => el.dataset.lang), ['gb', 'jp']);
+});
+
+test('language editor searches equivalent names and keeps full ISO names on browsers with small ICU tables', t => {
+  const h = setup(t);
+  const original = h.window.Intl.DisplayNames;
+  h.window.Intl.DisplayNames = class { of(code) { return code; } };
+  try {
+    const choices = h.JE.core.mediaLanguage.priorityChoices();
+    assert.equal(choices.find(c => c.code === 'aa').name, 'Afar');
+    const filipino = choices.find(c => c.code === 'fil');
+    assert.ok(filipino.aliases.some(name => name.includes('Tagalog')));
+    assert.ok(filipino.aliases.some(name => name.includes('Filipino')));
+    const norwegian = choices.find(c => c.code === 'no');
+    assert.ok(norwegian.aliases.some(name => name.includes('Bokmål')));
+    assert.ok(norwegian.aliases.some(name => name.includes('Nynorsk')));
+  } finally { h.window.Intl.DisplayNames = original; }
+});

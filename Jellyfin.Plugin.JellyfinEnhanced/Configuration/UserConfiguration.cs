@@ -99,6 +99,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsShowSubtitles { get; set; }
         public string LanguageTagsStyle { get; set; } = "flags";
         public string LanguageTagsCountBadge { get; set; } = "off";
+        /// <summary>Personal ISO 639 language priorities; null follows the server, empty means no priorities.</summary>
+        public string[]? LanguageTagsPriority { get; set; }
+        /// <summary>Only show priority languages; null inherits the current administrator policy.</summary>
+        public bool? LanguageTagsPriorityStrict { get; set; }
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public string StatusTagsPosition { get; set; } = "top-right";
         public bool StatusTagsJustAdded { get; set; } = true;

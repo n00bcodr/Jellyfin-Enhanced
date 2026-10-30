@@ -377,7 +377,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
 ## Language Tags
 
-Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a small **CC** prefix. Hover a chip for the full language name. A language fact assigned to the Summary pill keeps the CC prefix and full-name tooltip. Language chips follow the poster link, including Ctrl/Command-click and middle-click to open a new tab. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
+Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a small **CC** prefix. Hover a chip for Audio or Subtitles and the full language name; partial dubs identify missing episode coverage. Dual/Multi tooltips include the distinct count and represented audio languages in priority order. A language fact assigned to the Summary pill keeps the CC prefix and full-name tooltip. Language chips follow the poster link, including Ctrl/Command-click and middle-click to open a new tab. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
 
 ![Subtitle language chips with CC markers on library posters](../images/tags/language-subtitles.webp)
 
@@ -391,14 +391,30 @@ Language Tags show audio and subtitle languages as flags or short uppercase code
 2. Expand **Language**. Under **Include**, choose **Audio**, **Subtitles**, or both. Choose **Flags** or **Codes** under **Style** and optionally enable the **Audio count badge**.
 3. Set **Show up to** for the combined list. A badge takes one place, followed by audio chips, then subtitle chips. For a separate list on the detail page, enable **Show Audio Languages**.
 
-Administrators can favor particular languages under **Priority languages**.
+Each user can choose a personal order under **Groups** → **Language** → **Priority**. **Follow server policy** starts on: it uses the administrator's **Priority Languages**, including future changes. Turn it off, search by language name or ISO code, and **Add** up to 12 languages. Move them with the up/down buttons or remove one. Equivalent codes such as `eng`/`en`, `fre`/`fra`/`fr`, Tagalog/Filipino and Norwegian variants share one preference. Personal priorities apply to audio and subtitles in Flags and Codes styles, the Dual/Multi badge and Summary pill, and Native Poster Tags.
+
+**Only show priority languages** starts at **Follow server (…)**. Choose **Only priority languages** to filter, or **Priority languages first, then others** to keep the rest. This choice inherits independently of the list. An empty personal list means no prioritization or strict filtering. Switch **Follow server policy** back on to use the server list again. The server's **Merge Regional Variants** still controls regional flags; personal base-language choices match all regional tracks. These choices change poster badges, not playback track selection.
+
+![Personal language priorities with search, ordered languages and strict inheritance](../images/tags/language-priority-editor.png)
+
+![A real card before and after personal Japanese, English and French priorities](../images/tags/language-priority-card.png)
+
+??? info "Phone editor and controls"
+
+    ![Personal language priority editor on a 420px phone](../images/tags/language-priority-editor-phone.png)
+
+    ![Removing, searching, adding and moving a language, then changing strict inheritance](../images/tags/language-priority-demo.gif)
+
+Administrators can set the shared fallback under **Priority Languages**. Existing personal settings without a priority list continue to follow that policy.
 
 | Setting | Default | What it does |
 |---|---|---|
 | Admin: **Enable Language Tags** / personal: **Language** switch | Off | Shows distinct flags/symbols on supported cards (three by default; see [Layouts](#layouts)) |
 | **Include: Audio / Subtitles** | Audio on, subtitles off | Choose either or both track types; repeated forced/SDH tracks count once per language |
-| **Style: Flags / Codes** | Flags | Codes use uppercase ISO 639-1 where available, otherwise the three-letter code (for example `TL`, `NB`, `NN`, `FIL`); audio equivalence still governs deduplication and counting. Both styles have full-name tooltips |
+| **Style: Flags / Codes** | Flags | Codes use uppercase ISO 639-1 where available, otherwise the three-letter code (for example `TL`, `NB`, `NN`, `FIL`); audio equivalence still governs deduplication and counting. Both styles have full-name tooltips identifying Audio or Subtitles |
 | **Audio count badge** | Off | **Badge only** replaces audio chips when two or more audio languages qualify; **Badge and flags** keeps them (or codes with Codes style). Selected subtitles remain. Counts distinct canonical audio languages after priority filtering and before the cap; regional versions and no-dialogue tracks do not increase the count |
+| Personal: **Priority** → **Follow server policy** | On | Follows the live administrator list; turn off for an ordered list of up to 12 ISO 639-1/639-2 languages. An empty personal list has no priorities. |
+| Personal: **Only show priority languages** | Follow server | Inherits strict filtering, or explicitly filters/keeps other languages. |
 | Admin: **Priority Languages** | Empty | Comma-separated language names or codes; use names such as `English, Japanese` to avoid differences between two- and three-letter codes. Matching flags appear first in list order |
 | Admin: **Only Show Priority Languages** | Off | With a nonempty priority list, removes flags that do not match; an item can show fewer flags than its limit, or none |
 | Admin: **Merge Regional Variants** | Off | Regional and script variants such as `en-GB`, `pt-BR` or `zh-Hant` share their base language's flag, so tracks Jellyfin lists as one language show one flag |
@@ -414,9 +430,9 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 
     Languages sharing a flag are grouped before the three-flag limit. Their names are stored in the flag's title/alt text. Hover a flag or code to read those names. Tags remain visible on hover unless **Hide Tags on Hover** is enabled.
 
-    Priority filtering also operates on grouped flags: a matching flag can represent additional languages sharing it. An empty priority list leaves flags unchanged even with strict filtering on. Language priorities are server policy, with no personal priority-list setting.
+    Priority filtering also operates on grouped flags: a matching flag can represent additional languages sharing it. An empty priority list leaves flags unchanged even with strict filtering on. A personal list overrides the administrator list. Strict mode follows the personal override when set, otherwise the administrator value.
 
-    Priority matching uses the flag's language code, its base code, or its displayed language names. It does not equate two- and three-letter codes: `ja` does not match `jpn`, but `Japanese` matches the displayed name.
+    Server-list matching uses the flag's language code, its base code, or its displayed language names; personal ISO priorities match every represented language canonically. The legacy server matcher does not equate two- and three-letter codes: `ja` does not match `jpn`, but `Japanese` matches the displayed name.
 
     Cached audio and subtitle languages use the union across episodes. Subtitle tracks use the same access and Spoiler Guard stripping paths as audio. With the server cache off, container cards use their representative episode instead of the full union. Forced and SDH subtitle variants share one language chip.
 
@@ -827,7 +843,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 ??? info "Supported groups and preferences"
     JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, and age-classification. People Tags are not a native group.
 
-    It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the administrator's language-priority policy. Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. All nine Corners anchors are supported, including centred rows and side columns. Labels stay full; compact density is web only. Status Tags are web only.
+    It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with your personal language-priority policy (or the live administrator fallback). Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. All nine Corners anchors are supported, including centred rows and side columns. Labels stay full; compact density is web only. Status Tags are web only.
 
     **Centre-anchor differences:** native posters omit whole chips that do not fit, without the web's **+N** tooltip. Very wide chips in side columns are omitted rather than squeezed. The image request cannot reproduce the web card's progress bar, Jellyfin indicators or custom overlays, rules or per-item locks; native placement uses the saved Corners profile. The four default corner positions are unchanged.
 

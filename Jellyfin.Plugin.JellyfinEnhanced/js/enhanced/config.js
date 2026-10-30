@@ -210,6 +210,12 @@
             }
         }
 
+        // Personal language policy: retain null inheritance and intentional empty arrays.
+        // Do not resolve admin values here, or an unrelated save would pin today's policy.
+        mergedSettings.languageTagsPriority = JE.core?.mediaLanguage?.priorityList(userSettings.languageTagsPriority) ?? null;
+        mergedSettings.languageTagsPriorityStrict = typeof userSettings.languageTagsPriorityStrict === 'boolean'
+            ? userSettings.languageTagsPriorityStrict : null;
+
         // Source scores: retain legacy includes for old documents and preserve an intentional empty list.
         mergedSettings.ratingTagsSources = JE.ratingSources?.normalizeSources(userSettings.ratingTagsSources) ?? null;
         mergedSettings.ratingTagsMinScore = JE.ratingSources?.settings(userSettings, JE.pluginConfig).minimum ?? 0;
