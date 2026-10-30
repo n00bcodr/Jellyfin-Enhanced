@@ -88,3 +88,46 @@ test('release notes releases the settings dialog before opening its secondary mo
   await Promise.resolve();
   assert.deepEqual(steps, ['close', 'notes'], 'no closed-panel auto-close timer is restarted');
 });
+
+/** A stand-in pipeline whose waitForServerCache resolves when the test says the server's warm finished. */
+function logoPipeline(h, entries) {
+  const state = { entries, waits: 0, stops: 0, redraws: 0, finish: null };
+  h.JE.initializeLogoTags = () => {};
+  h.JE.reinitializeLogoTags = () => state.redraws++;
+  h.JE.tagPipeline = {
+    serverEntries: () => state.entries,
+    waitForServerCache: ready => { state.waits++; return new Promise(resolve => { state.finish = () => resolve(ready(state.entries)); }); },
+    stopWaitingForServerCache: () => { state.stops++; },
+  };
+  return state;
+}
+
+test('switching Logos on for the first user redraws the group once the server republished entries with logos', async t => {
+  const h = setup(t, { TagCacheServerMode: true });
+  const state = logoPipeline(h, [{ Type: 'Movie' }]);
+  await h.change('logoTagsToggle', true);
+  assert.equal(state.waits, 1, 'waits for the background warm');
+  assert.equal(state.redraws, 0, 'nothing to redraw before it lands');
+  state.entries = [{ Type: 'Movie', Logos: [{ kind: 'provider', name: 'Netflix' }] }];
+  state.finish();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.redraws, 1, 'the cards on the page get their logos without a reload');
+  assert.equal(JSON.parse(h.writes.at(-1).data).logoTagsEnabled, true);
+});
+
+test('switching Logos on when entries already carry logos needs no wait, and switching off ends a wait without a redraw', async t => {
+  const h = setup(t, { TagCacheServerMode: true });
+  const state = logoPipeline(h, [{ Type: 'Movie', Logos: [{ kind: 'studio', name: 'A24' }] }]);
+  await h.change('logoTagsToggle', true);
+  assert.equal(state.waits, 0);
+  state.entries = [{ Type: 'Movie' }];
+  await h.change('logoTagsToggle', false);
+  await h.change('logoTagsToggle', true);
+  await h.change('logoTagsToggle', false);
+  assert.equal(state.waits, 1);
+  assert.equal(state.stops, 2);
+  state.entries = [{ Type: 'Movie', Logos: [{ kind: 'studio', name: 'A24' }] }];
+  state.finish();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(state.redraws, 0, 'the group is off again: nothing is redrawn');
+});

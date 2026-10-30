@@ -181,3 +181,64 @@ test('container facts evict the oldest entries and their lookups at the memory c
   assert.equal(h.pipeline.peekSeasonFacts('series', 2).Id, 'season0', 'newer facts survive the cap');
   for (const [key, id] of h.seasons) assert.equal(h.items.get(id)?.seasonKey, key);
 });
+
+/**
+ * The real pipeline in server cache mode over a server whose background
+ * logo warm finishes after `readyAfter` deltas: from then on its cache
+ * version moves and the full download carries Logos.
+ */
+async function logoWarmHarness(t, readyAfter) {
+  const urls = [];
+  let deltas = 0;
+  const h = createHarness({
+    globals: { requestIdleCallback: () => {} },
+    apiClient: {
+      getCurrentUserId: () => 'user-a',
+      ajax: async ({ url }) => {
+        urls.push(url);
+        if (url.includes('since=')) deltas++;
+        const warm = deltas >= readyAfter;
+        const full = !url.includes('since=');
+        return { items: full ? { movie: warm ? { Type: 'Movie', Logos: [{ kind: 'provider', name: 'Netflix' }] } : { Type: 'Movie' } } : {},
+          count: full ? 1 : 0, version: warm ? 2 : 1, timestamp: 50, filterRevision: 'all', servedAt: 60 };
+      },
+    },
+    JE: {
+      pluginConfig: { TagCacheServerMode: true }, currentSettings: { logoTagsEnabled: true },
+      helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
+      core: { tagRenderer: { applyCornerStacking() {}, scheduleCornerStacking() {} } },
+      session: { getUserId: () => 'user-a', getServerId: () => 'server-a', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+    },
+  });
+  t.after(() => h.close());
+  h.load('tags/tag-pipeline.js');
+  h.JE.tagPipeline.initialize();
+  await h.JE.tagPipeline.invalidateServerCache();
+  urls.length = 0;
+  return { h, urls, pipeline: h.JE.tagPipeline };
+}
+
+const carriesLogos = entries => [...entries].some(entry => Array.isArray(entry?.Logos) && entry.Logos.length > 0);
+
+test('waitForServerCache keeps fetching deltas until the server\'s delayed republish brings what it waits for', async t => {
+  const { urls, pipeline } = await logoWarmHarness(t, 3);
+  assert.equal(carriesLogos(pipeline.serverEntries()), false, 'drawn from entries without logos');
+  assert.equal(await pipeline.waitForServerCache(carriesLogos, { delays: [0, 0, 0, 0, 0] }), true);
+  assert.equal(carriesLogos(pipeline.serverEntries()), true);
+  assert.equal(urls.filter(url => url.includes('since=')).length, 3, 'one delta per attempt until the warm finished');
+  assert.ok(!urls.at(-1).includes('since='), 'the moved cache version brought a full download');
+});
+
+test('waitForServerCache gives up after its bound, when stopped, and with the server cache off', async t => {
+  const { urls, pipeline } = await logoWarmHarness(t, Infinity);
+  assert.equal(await pipeline.waitForServerCache(carriesLogos, { delays: [0, 0] }), false);
+  assert.equal(urls.length, 2);
+  const stopped = pipeline.waitForServerCache(carriesLogos, { delays: [0, 0, 0] });
+  pipeline.stopWaitingForServerCache();
+  assert.equal(await stopped, false);
+  assert.equal(urls.length, 2, 'a stopped wait fetches nothing more');
+  const off = await logoWarmHarness(t, 0);
+  off.h.JE.pluginConfig.TagCacheServerMode = false;
+  assert.equal(await off.pipeline.waitForServerCache(carriesLogos, { delays: [0] }), false);
+  assert.equal(off.urls.length, 0);
+});

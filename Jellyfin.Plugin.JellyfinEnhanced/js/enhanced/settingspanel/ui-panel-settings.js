@@ -54,6 +54,33 @@
         restackTagCorners();
     };
 
+    /**
+     * @param {Iterable<object>} entries - Server tag-cache entries.
+     * @returns {boolean} Whether any entry carries logos.
+     */
+    const anyEntryHasLogos = (entries) => {
+        for (const entry of entries) {
+            if (Array.isArray(entry?.Logos) && entry.Logos.length > 0) return true;
+        }
+        return false;
+    };
+
+    /**
+     * The Logos group was switched on. When nobody showed it before, the
+     * server only now looks the logos up and republishes every entry in the
+     * background, so the cards on the page were drawn from entries without
+     * them: once a delta brings entries with logos, redraw the group once.
+     * Entries that already carry logos (someone else shows the group) need
+     * no wait.
+     */
+    const redrawLogosWhenServerHasThem = () => {
+        const pipeline = JE.tagPipeline;
+        if (!pipeline?.waitForServerCache || anyEntryHasLogos(pipeline.serverEntries?.() || [])) return;
+        pipeline.waitForServerCache(anyEntryHasLogos).then((ready) => {
+            if (ready && JE.currentSettings?.logoTagsEnabled) JE.reinitializeLogoTags?.();
+        }).catch(() => {});
+    };
+
     /** Panel toggles of the poster tag groups the layout controller places. */
     const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'logoTagsToggle'];
 
@@ -127,7 +154,9 @@
                         if (typeof JE.initializeLogoTags === 'function') {
                             JE.initializeLogoTags();
                         }
+                        redrawLogosWhenServerHasThem();
                     } else {
+                        JE.tagPipeline?.stopWaitingForServerCache?.();
                         removeTagGroup('logos', 'logo-overlay-container');
                     }
                     requiresRefresh = false;
