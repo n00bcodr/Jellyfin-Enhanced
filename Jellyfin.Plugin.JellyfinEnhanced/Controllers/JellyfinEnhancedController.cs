@@ -5352,8 +5352,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         TagsHideOnHover = defaultConfig.TagsHideOnHover,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
-                // Series/season quality aggregation default.
-                SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
+                        // Series/season quality aggregation default.
+                        SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
                         GenreTagsPosition = defaultConfig.GenreTagsPosition,
                         LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                         RatingTagsPosition = defaultConfig.RatingTagsPosition,
