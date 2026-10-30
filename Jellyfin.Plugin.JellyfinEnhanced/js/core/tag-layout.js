@@ -24,6 +24,12 @@
 // first .cardText, never inside .cardImageContainer. Cards without that
 // topology (list rows, bare images) show caption groups in the poster slot.
 //
+// Card shapes: portrait posters (and square cards), landscape cards (episode
+// thumbnails, backdrop cards) and large list rows can each have their own
+// look (tagShapeOverrides). A card's shape comes from Jellyfin's card classes
+// or the list row selector, else from the image's rendered aspect ratio,
+// measured in the fitting pass's batched reads.
+//
 // Public surface: JE.core.tagLayout (see the object at the bottom) and
 // JE.reinitializeTagLayout().
 (function (JE) {
@@ -51,6 +57,32 @@
         caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster' },
         summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill' },
         minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top' },
+    };
+
+    /** Card shapes with a look of their own; every other card is a portrait (the default look). */
+    const SHAPES = ['landscape', 'list'];
+    /** A card is landscape when its image is this much wider than tall (portrait the other way; squares count as portrait). */
+    const SHAPE_RATIO = 1.2;
+    /** Jellyfin card classes (overflowPortraitCard, backdropCard, …) per shape. */
+    const PORTRAIT_CARD = /^(?:overflow)?(?:portrait|square)card$/i;
+    const LANDSCAPE_CARD = /^(?:overflow)?(?:backdrop|smallbackdrop|banner|thumb)card$/i;
+
+    /**
+     * The looks "Use recommended" gives each shape (the settings panel writes
+     * them; configPage.html carries the same looks for the admin defaults).
+     * Episode thumbnails: bands, compact, status and age on top, quality and
+     * rating below. List rows: corners, compact, quality top left, status top
+     * right, rating bottom right, up to 2 chips each.
+     */
+    const RECOMMENDED_SHAPES = {
+        landscape: {
+            layout: 'bands', density: 'compact', caps: null,
+            slots: { status: 'top', ageRating: 'top', quality: 'bottom', rating: 'bottom', language: 'off', genre: 'off' },
+        },
+        list: {
+            layout: 'corners', density: 'compact', caps: { quality: 2, status: 2, rating: 2 },
+            slots: { quality: 'tl', status: 'tr', rating: 'br', ageRating: 'off', language: 'off', genre: 'off' },
+        },
     };
 
     /** Built-in chip limits (0 = unlimited): the limits each group had before caps existed. */
@@ -214,6 +246,91 @@
     }
 
     /**
+     * @typedef {Object} TagShapeLook
+     * @property {string|null} layout - null keeps the default layout.
+     * @property {string|null} density - null keeps the default density.
+     * @property {Object<string, string>|null} slots - group → slot over the profile of the
+     *   layout the card resolves to (checked against it there).
+     * @property {Object<string, number>|null} caps - group → cap over the default caps.
+     */
+
+    /**
+     * One shape's look ({ layout, density, slots: [{group, slot}] or
+     * { group: slot }, caps: { group: n } }, either key case), or null.
+     * Unknown layouts and densities inherit (null), unknown groups and
+     * slots no layout has are dropped, caps are clamped.
+     * @param {*} raw
+     * @returns {TagShapeLook|null}
+     */
+    function readShapeLook(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+        const layoutRaw = pick(raw, 'layout');
+        const layout = typeof layoutRaw === 'string' && LAYOUTS.includes(layoutRaw.trim().toLowerCase()) ? layoutRaw.trim().toLowerCase() : null;
+        const densityRaw = String(pick(raw, 'density') ?? '').trim().toLowerCase();
+        const slotsRaw = pick(raw, 'slots');
+        /** @type {Object<string, string>} */
+        const slots = {};
+        const pairs = Array.isArray(slotsRaw)
+            ? slotsRaw.map((entry) => [pick(entry, 'group'), pick(entry, 'slot')])
+            : (slotsRaw && typeof slotsRaw === 'object' ? Object.entries(slotsRaw) : []);
+        const valid = layout ? LAYOUT_SLOTS[layout] : LAYOUTS.flatMap((name) => LAYOUT_SLOTS[name]);
+        for (const [rawGroup, rawSlot] of pairs) {
+            const group = normalizeGroup(rawGroup);
+            const slot = typeof rawSlot === 'string' ? rawSlot.trim().toLowerCase() : '';
+            if (!group || slots[group] || !valid.includes(slot) || (slot === 'dots' && group !== 'quality')) continue;
+            slots[group] = slot;
+        }
+        /** @type {Object<string, number>} */
+        const caps = {};
+        const capsRaw = pick(raw, 'caps');
+        for (const group of DEFAULT_ORDER) {
+            const cap = readCap(pick(capsRaw, group));
+            if (cap !== undefined) caps[group] = cap;
+        }
+        return {
+            layout,
+            density: densityRaw === 'compact' || densityRaw === 'full' ? densityRaw : null,
+            slots: Object.keys(slots).length ? slots : null,
+            caps: Object.keys(caps).length ? caps : null,
+        };
+    }
+
+    /**
+     * Per-shape looks ({ landscape, list }, either key case) normalised:
+     * unknown shapes dropped, a missing or null shape inherits the default look.
+     * @param {*} raw
+     * @returns {{landscape: TagShapeLook|null, list: TagShapeLook|null}}
+     */
+    function readShapeOverrides(raw) {
+        const out = { landscape: null, list: null };
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+        for (const shape of SHAPES) out[shape] = readShapeLook(pick(raw, shape));
+        return out;
+    }
+
+    /**
+     * Wire form of per-shape looks (slots as [{group, slot}], the form the
+     * server stores); null when no shape has a look.
+     * @param {{landscape?: TagShapeLook|null, list?: TagShapeLook|null}|null} shapes
+     * @returns {Object|null}
+     */
+    function shapesToWire(shapes) {
+        if (!shapes || !SHAPES.some((shape) => shapes[shape])) return null;
+        /** @type {Object<string, Object|null>} */
+        const out = {};
+        for (const shape of SHAPES) {
+            const look = shapes[shape];
+            out[shape] = look ? {
+                layout: look.layout || null,
+                density: look.density || null,
+                slots: look.slots ? Object.entries(look.slots).map(([group, slot]) => ({ group, slot })) : null,
+                caps: look.caps ? { ...look.caps } : null,
+            } : null;
+        }
+        return out;
+    }
+
+    /**
      * The corners slot a group's legacy position setting maps to, read exactly
      * like the old resolvePosition(): the first non-empty of user → admin →
      * built-in, "top" anywhere in it means a top corner and "left" a left one
@@ -246,6 +363,9 @@
      *   the caption slot: cards reserve the strip before their data arrives.
      * @property {boolean} orderChosen - The order was set by the user or administrator.
      * @property {boolean} locked - The look comes from a per-item lock.
+     * @property {{landscape: TagShapeLook|null, list: TagShapeLook|null}} shapes - The
+     *   per-shape looks in effect (the user's own, else the administrator's on a
+     *   normalized document; none on a legacy one unless the user set them).
      * @property {string} lookKey - Identifies the presentation (see lookKeyOf).
      */
 
@@ -315,7 +435,12 @@
         const reserveCaption = layout === 'caption'
             && DEFAULT_ORDER.some((g) => profiles.caption[g] === 'caption' && !!s[ENABLED_SETTING[g]]);
 
-        const conf = { layout, legacy, density, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, lookKey: '' };
+        // Per-shape looks: the document's own; without one, a normalized
+        // document inherits the administrator's and a legacy one has none.
+        const ownShapes = s.tagShapeOverrides;
+        const shapes = readShapeOverrides(ownShapes && typeof ownShapes === 'object' ? ownShapes : (legacy ? null : pick(p, 'tagShapeOverrides')));
+
+        const conf = { layout, legacy, density, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, shapes, lookKey: '' };
         conf.lookKey = lookKeyOf(conf);
         return conf;
     }
@@ -339,6 +464,11 @@
         s.tagGroupCaps = { ...DEFAULT_CAPS };
         s.tagGroupOrder = null;
         if (!Array.isArray(s.tagLookRules)) s.tagLookRules = [];
+        // Promotion by any layout control must not opt a legacy user into
+        // the administrator's shape looks. Only an explicit shape edit does.
+        if (!s.tagShapeOverrides || typeof s.tagShapeOverrides !== 'object' || Array.isArray(s.tagShapeOverrides)) {
+            s.tagShapeOverrides = { landscape: null, list: null };
+        }
         s.tagLayoutSettingsVersion = 1;
         if (s === JE.currentSettings) invalidateSettings();
         return true;
@@ -346,12 +476,14 @@
 
     /**
      * A string that differs whenever two settings would present a card
-     * differently (layout, density, slots, lock marker).
+     * differently (layout, density, slots, caps — a shape look can change
+     * them —, lock marker).
      * @param {TagLayoutSettings} conf
      * @returns {string}
      */
     function lookKeyOf(conf) {
-        return [conf.layout, conf.density, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(',')].join('|');
+        return [conf.layout, conf.density, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(','),
+            DEFAULT_ORDER.map((g) => conf.caps[g]).join(',')].join('|');
     }
 
     /** @type {TagLayoutSettings|null} memoised until the next invalidateSettings() */
@@ -400,28 +532,65 @@
     }
 
     /**
-     * The settings a rule's or lock's look gives a card: the user's settings
-     * with the look's layout and density, and its slot overrides (a lock
-     * carries the whole profile it was locked with) over the user's profile
-     * for that layout. Order and caps stay the user's. Memoised per look.
+     * The slots of a look that are valid in a layout (a shape look that keeps
+     * the default layout may name another layout's slots).
+     * @param {string} layout
+     * @param {Object<string, string>|null|undefined} slots
+     * @returns {Object<string, string>}
+     */
+    function validSlots(layout, slots) {
+        /** @type {Object<string, string>} */
+        const out = {};
+        for (const [group, slot] of Object.entries(slots || {})) {
+            if (GROUPS.has(group) && LAYOUT_SLOTS[layout].includes(slot) && (slot !== 'dots' || group === 'quality')) out[group] = slot;
+        }
+        return out;
+    }
+
+    /**
+     * A look with a card shape's look laid over it: the shape's layout and
+     * density where it sets them, its slots over the look's (only the
+     * shape's own when it switches to another layout, whose profile fills
+     * the rest) and its caps over the look's.
+     * @param {{layout: string|null, density: string|null, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
+     * @param {TagShapeLook|null|undefined} shapeLook
+     * @returns {{layout: string|null, density: string|null, slots: Object<string, string>|null, caps: Object<string, number>|null}}
+     */
+    function withShape(look, shapeLook) {
+        if (!shapeLook) return { ...look, caps: look.caps || null };
+        const switches = !!shapeLook.layout && shapeLook.layout !== look.layout;
+        const slots = switches ? shapeLook.slots : (look.slots || shapeLook.slots ? { ...(look.slots || {}), ...(shapeLook.slots || {}) } : null);
+        const caps = look.caps || shapeLook.caps ? { ...(look.caps || {}), ...(shapeLook.caps || {}) } : null;
+        return { layout: shapeLook.layout || look.layout, density: shapeLook.density || look.density, slots, caps };
+    }
+
+    /**
+     * The settings a look (a rule's, a lock's or a card shape's) gives a
+     * card: the user's settings with the look's layout and density (the
+     * user's where it sets none), its slot overrides (a lock carries the
+     * whole profile it was locked with) over the user's profile for that
+     * layout, and its caps over the user's. Order stays the user's.
+     * Memoised per look.
      * @param {TagLayoutSettings} base
-     * @param {{layout: string, density: string, slots: Object<string, string>|null}} look
+     * @param {{layout: string|null, density: string|null, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
      * @param {boolean} locked
      * @returns {TagLayoutSettings}
      */
     function lookSettings(base, look, locked) {
-        const layout = normalizeLayout(look.layout);
-        const slots = { ...base.profiles[layout], ...(look.slots || {}) };
+        const layout = look.layout ? normalizeLayout(look.layout) : base.layout;
+        const own = validSlots(layout, look.slots);
+        const slots = { ...base.profiles[layout], ...own };
         const conf = {
             ...base,
             layout,
-            density: look.density === 'compact' ? 'compact' : 'full',
+            density: look.density ? (look.density === 'compact' ? 'compact' : 'full') : base.density,
+            caps: look.caps ? { ...base.caps, ...look.caps } : base.caps,
             // A chosen order applies everywhere; otherwise corners keeps
             // arrival order and the other layouts the built-in order.
             order: base.orderChosen ? base.order : (layout === 'corners' ? null : DEFAULT_ORDER),
             profiles: { ...base.profiles, [layout]: slots },
             slots,
-            indicatorGap: look.slots && layout === 'corners'
+            indicatorGap: Object.keys(own).length && layout === 'corners'
                 ? new Set(DEFAULT_ORDER.filter((g) => slots[g] === 'tr')) : base.indicatorGap,
             reserveCaption: layout === 'caption'
                 && DEFAULT_ORDER.some((g) => slots[g] === 'caption' && !!JE.currentSettings?.[ENABLED_SETTING[g]]),
@@ -452,6 +621,8 @@
      * @property {HTMLElement|null} [described] - The card link whose aria-describedby names moreTip.
      * @property {string} lookKey - lookKey of the settings the card is presented with.
      * @property {boolean} [pendingPresentation] - A detached card needs presentation on reconnection.
+     * @property {string|null} shape - 'portrait', 'landscape' or 'list'; null until the
+     *   fitting pass measured a card its classes don't classify (see shapeOfCard).
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
@@ -504,6 +675,73 @@
         const holder = el.closest('[data-id]') || el.closest('[data-itemid]');
         const raw = holder?.getAttribute('data-id') || holder?.getAttribute('data-itemid') || '';
         return raw.replace(/-/g, '').toLowerCase();
+    }
+
+    /**
+     * A card's shape from its markup alone: a large list row by its image
+     * selector, an explicit data-je-shape (the settings panel's samples),
+     * else Jellyfin's card shape class (overflowPortraitCard, backdropCard,
+     * squareCard, …; square cards count as portrait). Null when the markup
+     * doesn't say (the fitting pass then measures the image).
+     * @param {Element|null} el - The host, render target or any element of the card.
+     * @returns {string|null}
+     */
+    function shapeOfCard(el) {
+        if (!el || typeof el.closest !== 'function') return null;
+        if (el.closest('.listItemImage-large')) return 'list';
+        // The host's marker describes output; only an ancestor may declare
+        // an input shape (the preview samples). Never classify from stale output.
+        const origin = el.classList.contains('je-tag-host') ? el.parentElement : el;
+        const explicit = origin?.closest('[data-je-shape]:not(.je-tag-host)')?.getAttribute('data-je-shape');
+        if (explicit === 'portrait' || SHAPES.includes(explicit || '')) return explicit;
+        const card = el.closest('.card');
+        if (!card) return null;
+        for (const cls of card.classList) {
+            if (PORTRAIT_CARD.test(cls)) return 'portrait';
+            if (LANDSCAPE_CARD.test(cls)) return 'landscape';
+        }
+        return null;
+    }
+
+    /**
+     * A card's shape from its image's rendered size: landscape when it is
+     * clearly wider than tall, else portrait (squares included).
+     * @param {number} width
+     * @param {number} height
+     * @returns {string}
+     */
+    function shapeOfSize(width, height) {
+        return width > 0 && height > 0 && width / height > SHAPE_RATIO ? 'landscape' : 'portrait';
+    }
+
+    /**
+     * The shape a card context resolves with: a controller's (portrait while
+     * still unmeasured), an element's controller's or markup's, or a plain
+     * item description's `shape`; portrait otherwise.
+     * @param {CardController|HTMLElement|Object} cardContext
+     * @returns {string}
+     */
+    function shapeOf(cardContext) {
+        if (cardContext?.host && cardContext.groups) return cardContext.shape || 'portrait';
+        if (cardContext?.nodeType === 1) {
+            const el = /** @type {HTMLElement} */ (cardContext);
+            const ctrl = controllers.get(findHost(el) || el);
+            return ctrl?.shape || shapeOfCard(el) || 'portrait';
+        }
+        return SHAPES.includes(cardContext?.shape) ? cardContext.shape : 'portrait';
+    }
+
+    /**
+     * Whether any look depends on the card shape: a shape look in the
+     * settings, or a rule or lock that carries one. Without, every card
+     * resolves as before shapes existed and nothing is measured.
+     * @returns {boolean}
+     */
+    function shapesInUse() {
+        const base = currentSettings();
+        if (SHAPES.some((shape) => base.shapes[shape])) return true;
+        const looks = currentLooks();
+        return looks.rules.some((rule) => !!rule.shapes) || Array.from(looks.locks.values()).some((lock) => !!lock.shapes);
     }
 
     /**
@@ -591,7 +829,7 @@
         }
         if (!ctrl && create) {
             injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '' };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '', shape: shapeOfCard(host) };
             controllers.set(host, ctrl);
         }
         return ctrl;
@@ -658,39 +896,49 @@
     /**
      * The look decision for one card, and the only place it is made:
      * a lock on the item (or, for a season or episode, on its series) →
-     * the first enabled rule whose conditions all hold → the user's default
-     * layout and density. With no rules and no locks every card follows the
-     * user's settings, exactly as before rules existed.
+     * the first enabled rule whose conditions all hold → the look of the
+     * card's shape (landscape cards, list rows) → the user's default layout
+     * and density. A lock or rule may carry its own per-shape looks, laid
+     * over its look on cards of that shape. With no rules, no locks and no
+     * shape looks every card follows the user's settings, exactly as before.
      * @param {CardController|HTMLElement|Object} cardContext - A card
      *   controller, a card element, or a plain item description
-     *   ({ itemId, cardType, Type, Genres, OfficialRating, LibraryId, SeriesId }).
+     *   ({ itemId, cardType, Type, Genres, OfficialRating, LibraryId, SeriesId, shape }).
      * @returns {TagLayoutSettings}
      */
     function resolveLayout(cardContext) {
         const base = currentSettings();
         const source = lookSource(cardContext);
-        if (source.lock) return lookSettings(base, source.lock, true);
-        return source.rule ? lookSettings(base, source.rule, false) : base;
+        const shape = source.shape;
+        if (source.lock) return lookSettings(base, withShape(source.lock, source.lock.shapes?.[shape]), true);
+        if (source.rule) return lookSettings(base, withShape(source.rule, source.rule.shapes?.[shape]), false);
+        if (source.source === 'shape') {
+            return lookSettings(base, withShape({ layout: base.layout, density: base.density, slots: null, caps: null }, base.shapes[shape]), false);
+        }
+        return base;
     }
 
     /**
      * Where a card's look comes from: its lock, the first enabled rule that
-     * matches (with its position in the user's rule list), or the default.
-     * resolveLayout() decides through this, so a caller that names the
-     * source (the settings panel's preview) always agrees with the cards.
+     * matches (with its position in the user's rule list), its shape's look,
+     * or the default. resolveLayout() decides through this, so a caller that
+     * names the source (the settings panel's preview) always agrees with the
+     * cards.
      * @param {CardController|HTMLElement|Object} cardContext - As for resolveLayout.
-     * @returns {{source: 'lock'|'rule'|'default', lock: Object|null, rule: Object|null, index: number}}
-     *   index is the rule's position in the list (-1 for a lock or the default).
+     * @returns {{source: 'lock'|'rule'|'shape'|'default', lock: Object|null, rule: Object|null, index: number, shape: string}}
+     *   index is the rule's position in the list (-1 otherwise); shape is the card's shape.
      */
     function lookSource(cardContext) {
         const looks = currentLooks();
-        const none = { source: /** @type {'default'} */ ('default'), lock: null, rule: null, index: -1 };
+        const shape = shapeOf(cardContext);
+        const shaped = SHAPES.includes(shape) && !!currentSettings().shapes[shape];
+        const none = { source: /** @type {'shape'|'default'} */ (shaped ? 'shape' : 'default'), lock: null, rule: null, index: -1, shape };
         if (!looks.rules.length && !looks.locks.size) return none;
         const facts = cardFacts(cardContext);
         const lock = JE.core.tagLook.findLock(looks.locks, facts);
-        if (lock) return { source: 'lock', lock, rule: null, index: -1 };
+        if (lock) return { source: 'lock', lock, rule: null, index: -1, shape };
         const rule = JE.core.tagLook.firstMatch(looks.rules, facts);
-        return rule ? { source: 'rule', lock: null, rule, index: looks.rules.indexOf(rule) } : none;
+        return rule ? { source: 'rule', lock: null, rule, index: looks.rules.indexOf(rule), shape } : none;
     }
 
     /**
@@ -1177,6 +1425,7 @@
         delete ctrl.host.dataset.jeLegacy;
         delete ctrl.host.dataset.jeLocked;
         delete ctrl.host.dataset.jeIndicatorGap;
+        delete ctrl.host.dataset.jeShape;
     }
 
     /**
@@ -1185,11 +1434,25 @@
      */
     function presentAll(ctrl) {
         ctrl.pendingPresentation = false;
+        const declaredShape = shapeOfCard(ctrl.host);
+        if (declaredShape) ctrl.shape = declaredShape;
         const conf = resolveLayout(ctrl);
+        const shaped = shapesInUse();
         teardown(ctrl);
         ctrl.layout = conf.layout;
         ctrl.lookKey = conf.lookKey;
         ctrl.host.dataset.jeLayout = conf.layout;
+        if (shaped) {
+            // A card its markup doesn't classify waits for the fitting pass
+            // to measure its image, so its chips don't land in the portrait
+            // look first and then move.
+            if (ctrl.shape === null) {
+                ctrl.lookKey = '';
+                scheduleFit(ctrl);
+                return;
+            }
+            ctrl.host.dataset.jeShape = ctrl.shape;
+        }
         // Settings saved before layouts keep the original web geometry
         // (tags/tag-layout-styles.js keys its legacy rules off this).
         if (conf.legacy) ctrl.host.dataset.jeLegacy = '1';
@@ -1373,11 +1636,23 @@
     }
 
     /**
+     * Whether the fitting pass must measure a card's shape: its markup
+     * doesn't classify it and some look depends on the shape. Measured
+     * shapes are read again on the next fit, since responsive images can
+     * change aspect ratio without changing their item identity.
+     * @param {CardController} ctrl
+     * @returns {boolean}
+     */
+    function needsShape(ctrl) {
+        return shapeOfCard(ctrl.host) === null && shapesInUse();
+    }
+
+    /**
      * Queue a card for the next fitting pass (cards that need one only).
      * @param {CardController} ctrl
      */
     function scheduleFit(ctrl) {
-        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || indicatorGapsToMeasure(ctrl))) return;
+        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || indicatorGapsToMeasure(ctrl) || needsShape(ctrl))) return;
         pendingFit.add(ctrl);
         if (fitScheduled) return;
         fitScheduled = true;
@@ -1393,18 +1668,34 @@
         if (list.length === 0) return;
         fitting = true;
         try {
-            // Reads: cards not laid out (hidden, detached tab) are left as they are.
+            // Reads: cards not laid out (hidden, detached tab) are left as they
+            // are. The image's height only for cards whose shape is measured.
             const widths = list.map((ctrl) => ctrl.host.clientWidth);
+            const heights = list.map((ctrl, i) => (widths[i] > 0 && needsShape(ctrl) ? ctrl.host.clientHeight : 0));
             const shown = list.filter((ctrl, i) => widths[i] > 0);
-            // Writes: bands that crossed the narrow-card width re-present with
-            // the other labels; then show what an earlier pass hid, and give
-            // every wrapping slot its "+N" chip, so both are measured afresh.
+            // Writes: a card whose shape was measured is presented in its
+            // shape's look (one not laid out as a portrait, measured again
+            // next time); bands that crossed the narrow-card width re-present
+            // with the other labels; then show what an earlier pass hid, and
+            // give every wrapping slot its "+N" chip, so both are measured afresh.
+            const presented = new Set();
+            const narrowed = new Set();
             list.forEach((ctrl, i) => {
                 const narrow = widths[i] > 0 && widths[i] < NARROW_CARD_PX;
                 if (widths[i] === 0 || narrow === !!ctrl.narrow) return;
                 ctrl.narrow = narrow;
-                if (ctrl.layout === 'bands') presentAll(ctrl);
+                narrowed.add(ctrl);
             });
+            list.forEach((ctrl, i) => {
+                if (!needsShape(ctrl)) return;
+                const shape = widths[i] > 0 ? shapeOfSize(widths[i], heights[i]) : 'portrait';
+                const changed = shape !== ctrl.shape;
+                ctrl.shape = shape;
+                if (changed) { presentAll(ctrl); presented.add(ctrl); }
+            });
+            for (const ctrl of narrowed) {
+                if (ctrl.layout === 'bands' && !presented.has(ctrl)) presentAll(ctrl);
+            }
             for (const ctrl of shown) prepareFit(ctrl);
             // Reads, then writes.
             const plans = shown.map(measureFit);
@@ -1948,7 +2239,10 @@
         LAYOUT_SLOTS,
         DEFAULT_ORDER: DEFAULT_ORDER.slice(),
         DEFAULT_CAPS: { ...DEFAULT_CAPS },
+        MAX_CAP,
         DEFAULT_PROFILES,
+        SHAPES: SHAPES.slice(),
+        RECOMMENDED_SHAPES,
         CONTAINER_CLASS,
         SLOT_TO_POSITION,
         POSITION_TO_SLOT,
@@ -1961,6 +2255,10 @@
         invalidateSettings,
         resolveLayout,
         lookSource,
+        shapeOf,
+        shapeOfCard,
+        readShapeOverrides,
+        shapesToWire,
         setCardContext,
         cardIdentity,
         awaitCardContext,
