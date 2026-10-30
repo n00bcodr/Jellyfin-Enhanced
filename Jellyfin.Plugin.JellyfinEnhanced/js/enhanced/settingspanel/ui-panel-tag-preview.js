@@ -288,20 +288,24 @@
         return lead.concat(rest);
     }
 
-    /** The preview's stylesheet (panel-scoped). */
+    /**
+     * The preview's stylesheet (panel-scoped). Its text colours read
+     * --je-mtp-* custom properties, which the admin page sets per theme; the
+     * hub defines none and keeps the fallbacks.
+     */
     const PREVIEW_CSS = `
         #jellyfin-enhanced-panel .je-mtp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
         #jellyfin-enhanced-panel .je-mtp-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; margin: 0; }
         #jellyfin-enhanced-panel .je-mtp-title::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
-        #jellyfin-enhanced-panel .je-mtp-view { display: inline-flex; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; overflow: hidden; }
-        #jellyfin-enhanced-panel .je-mtp-view button { background: transparent; color: rgba(255,255,255,0.85); border: 0; padding: 5px 12px; min-height: 30px; font: inherit; font-size: 12px; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-mtp-view button[aria-pressed="true"] { background: rgba(255,255,255,0.9); color: #111; font-weight: 600; }
-        #jellyfin-enhanced-panel .je-mtp-view button:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+        #jellyfin-enhanced-panel .je-mtp-view { display: inline-flex; border: 1px solid var(--je-mtp-line, rgba(255,255,255,0.22)); border-radius: 999px; overflow: hidden; }
+        #jellyfin-enhanced-panel .je-mtp-view button { background: transparent; color: var(--je-mtp-text, rgba(255,255,255,0.85)); border: 0; padding: 5px 12px; min-height: 30px; font: inherit; font-size: 12px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-mtp-view button[aria-pressed="true"] { background: var(--je-mtp-pressed-bg, rgba(255,255,255,0.9)); color: var(--je-mtp-pressed-text, #111); font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-view button:focus-visible { outline: 2px solid var(--je-mtp-strong, #fff); outline-offset: -3px; }
         #jellyfin-enhanced-panel .je-mtp-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
         #jellyfin-enhanced-panel .je-mtp-sample { margin: 0; min-width: 0; }
         #jellyfin-enhanced-panel .je-mtp-sample[data-sample="episode"] { grid-column: 1 / -1; display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 4px 10px; align-items: start; }
         #jellyfin-enhanced-panel .je-mtp-sample[data-sample="list"] { grid-column: 1 / -1; }
-        #jellyfin-enhanced-panel .je-mtp-card--list .cardBox { display: flex; height: 92px; gap: 8px; align-items: center; background: rgba(255,255,255,0.05); border-radius: 6px; }
+        #jellyfin-enhanced-panel .je-mtp-card--list .cardBox { display: flex; height: 92px; gap: 8px; align-items: center; background: var(--je-mtp-surface, rgba(255,255,255,0.05)); border-radius: 6px; }
         #jellyfin-enhanced-panel .je-mtp-card--list .je-mtp-scalable { width: 140px; height: 92px; flex: 0 0 140px; }
         #jellyfin-enhanced-panel .je-mtp-art--list { background: linear-gradient(180deg, #8fd0f2 0%, #bfe6f7 55%, #6fbf5a 56%, #3f8d3a 100%); }
         #jellyfin-enhanced-panel .je-mtp-card .cardBox { margin: 0; }
@@ -318,16 +322,16 @@
         #jellyfin-enhanced-panel .je-mtp-art--episode::after { content: ''; position: absolute; left: 18%; bottom: 14%; width: 22%; height: 16%; border-radius: 50%; background: #3f6fd8; box-shadow: 34px 4px 0 -4px #e8a04c; }
         #jellyfin-enhanced-panel .je-mtp-card .cardOverlayContainer { display: none; }
         #jellyfin-enhanced-panel .je-mtp-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
-        #jellyfin-enhanced-panel .je-mtp-card-title { font-size: 12px; padding: 3px 2px 0; color: rgba(255,255,255,0.9); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        #jellyfin-enhanced-panel .je-mtp-meta { font-size: 12px; line-height: 1.35; color: rgba(255,255,255,0.7); padding: 2px 2px 0; overflow-wrap: anywhere; }
-        #jellyfin-enhanced-panel .je-mtp-meta strong { color: #fff; font-weight: 600; white-space: nowrap; }
-        #jellyfin-enhanced-panel .je-mtp-meta [data-source="lock"] { color: #ffd166; }
+        #jellyfin-enhanced-panel .je-mtp-card-title { font-size: 12px; padding: 3px 2px 0; color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #jellyfin-enhanced-panel .je-mtp-meta { font-size: 12px; line-height: 1.35; color: var(--je-mtp-muted, rgba(255,255,255,0.7)); padding: 2px 2px 0; overflow-wrap: anywhere; }
+        #jellyfin-enhanced-panel .je-mtp-meta strong { color: var(--je-mtp-strong, #fff); font-weight: 600; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mtp-meta [data-source="lock"] { color: var(--je-mtp-lock, #ffd166); }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="shape"] { white-space: normal; }
-        #jellyfin-enhanced-panel .je-mtp-meta [data-source="rule"] { color: #7fd3ff; }
+        #jellyfin-enhanced-panel .je-mtp-meta [data-source="rule"] { color: var(--je-mtp-rule, #7fd3ff); }
         #jellyfin-enhanced-panel .je-mtp-meta .je-mtp-look { display: block; white-space: nowrap; }
-        #jellyfin-enhanced-panel .je-mtp-foot { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: rgba(255,255,255,0.7); }
-        #jellyfin-enhanced-panel .je-mtp-foot strong { color: #fff; }
-        #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: #ffd166; }
+        #jellyfin-enhanced-panel .je-mtp-foot { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--je-mtp-muted, rgba(255,255,255,0.7)); }
+        #jellyfin-enhanced-panel .je-mtp-foot strong { color: var(--je-mtp-strong, #fff); }
+        #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: var(--je-mtp-lock, #ffd166); }
         #jellyfin-enhanced-panel .je-mtp-note[hidden] { display: none; }
         /* Spotlight: the group being edited stays bright, the others step back. */
         #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }

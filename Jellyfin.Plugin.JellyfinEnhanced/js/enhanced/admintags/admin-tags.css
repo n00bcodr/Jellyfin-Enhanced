@@ -6,7 +6,7 @@
     --je-ta-admin: #ffb74d;
     --je-ta-text: #fff;
     --je-ta-muted: rgba(255, 255, 255, 0.65);
-    --je-ta-faint: rgba(255, 255, 255, 0.45);
+    --je-ta-faint: rgba(255, 255, 255, 0.55);
     --je-ta-surface: rgba(255, 255, 255, 0.04);
     --je-ta-surface-2: rgba(255, 255, 255, 0.07);
     --je-ta-sunken: rgba(0, 0, 0, 0.22);
@@ -16,6 +16,22 @@
     --je-ta-good: #66bb6a;
     --je-ta-warn: #ffd166;
     --je-ta-bad: #ef5350;
+    /* Contrast-checked pairs (tests/frontend/features/features-admin-tags-page.test.mjs):
+       text ≥ 4.5:1 on the page and its cards, selected controls ≥ 3:1 against them. */
+    --je-ta-page-bg: rgb(16, 16, 16);
+    --je-ta-accent-text: #00a4dc;
+    --je-ta-selected-bg: #0077a3;
+    --je-ta-selected-text: #fff;
+    /* The shared preview's colours (ui-panel-tag-preview.js reads them, the hub keeps its own). */
+    --je-mtp-text: rgba(255, 255, 255, 0.9);
+    --je-mtp-muted: rgba(255, 255, 255, 0.7);
+    --je-mtp-strong: #fff;
+    --je-mtp-line: rgba(255, 255, 255, 0.22);
+    --je-mtp-surface: rgba(255, 255, 255, 0.05);
+    --je-mtp-pressed-bg: rgba(255, 255, 255, 0.9);
+    --je-mtp-pressed-text: #111;
+    --je-mtp-lock: #ffd166;
+    --je-mtp-rule: #7fd3ff;
     /* Tokens the moved Tag Styles editor rules use. */
     --je-surface-1: var(--je-ta-surface);
     --je-surface-3: rgba(255, 255, 255, 0.12);
@@ -32,7 +48,7 @@
 .je-tag-admin.je-ta-light {
     --je-ta-text: #111;
     --je-ta-muted: rgba(0, 0, 0, 0.66);
-    --je-ta-faint: rgba(0, 0, 0, 0.5);
+    --je-ta-faint: rgba(0, 0, 0, 0.6);
     --je-ta-surface: rgba(0, 0, 0, 0.035);
     --je-ta-surface-2: rgba(0, 0, 0, 0.06);
     --je-ta-sunken: rgba(0, 0, 0, 0.06);
@@ -40,6 +56,20 @@
     --je-ta-border-strong: rgba(0, 0, 0, 0.28);
     --je-ta-input: #fff;
     --je-ta-admin: #b26a00;
+    --je-ta-accent: #0077a3;
+    --je-ta-warn: #7a4a00;
+    --je-ta-bad: #c62828;
+    --je-ta-page-bg: rgb(242, 242, 242);
+    --je-ta-accent-text: #006f99;
+    --je-mtp-text: #111;
+    --je-mtp-muted: rgba(0, 0, 0, 0.7);
+    --je-mtp-strong: #000;
+    --je-mtp-line: rgba(0, 0, 0, 0.28);
+    --je-mtp-surface: rgba(0, 0, 0, 0.05);
+    --je-mtp-pressed-bg: #111;
+    --je-mtp-pressed-text: #fff;
+    --je-mtp-lock: #7a4a00;
+    --je-mtp-rule: #00618a;
     --je-border-focus: rgba(0, 0, 0, 0.6);
 }
 .je-tag-admin *, .je-tag-admin *::before, .je-tag-admin *::after { box-sizing: border-box; }
@@ -67,12 +97,11 @@
 .je-ta-admin-chip { display: inline-block; padding: 1px 6px; border: 1px solid var(--je-ta-admin); border-radius: 4px; color: var(--je-ta-admin); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
 
 /* ── Tabs ── */
-.je-ta-tabs { position: sticky; top: 0; z-index: 4; display: flex; gap: 2px; margin: 0 0 14px; border-bottom: 1px solid var(--je-ta-border-strong); background: var(--je-ta-page-bg, rgb(16, 16, 16)); overflow-x: auto; scrollbar-width: none; }
-.je-ta-light .je-ta-tabs { --je-ta-page-bg: rgb(242, 242, 242); }
+.je-ta-tabs { position: sticky; top: 0; z-index: 4; display: flex; gap: 2px; margin: 0 0 14px; border-bottom: 1px solid var(--je-ta-border-strong); background: var(--je-ta-page-bg); overflow-x: auto; scrollbar-width: none; }
 .je-ta-tabs::-webkit-scrollbar { display: none; }
 .je-ta-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 10px 14px 11px; min-height: 44px; background: transparent; border: 0; border-radius: 6px 6px 0 0; color: var(--je-ta-muted); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .je-ta-tab:hover { color: var(--je-ta-text); background: var(--je-ta-surface); }
-.je-ta-tab[aria-selected="true"] { color: var(--je-ta-accent); }
+.je-ta-tab[aria-selected="true"] { color: var(--je-ta-accent-text); }
 .je-ta-tab[aria-selected="true"]::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 3px; border-radius: 3px; background: var(--je-ta-accent); }
 .je-ta-tab .material-icons { font-size: 18px; }
 .je-ta-tab:focus-visible { outline-offset: -2px; }
@@ -127,7 +156,7 @@
 .je-ta-unit { font-size: 13px; color: var(--je-ta-muted); }
 .je-ta-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .je-ta-pill { position: relative; display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--je-ta-border-strong); background: transparent; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
-.je-ta-pill:has(input:checked), .je-ta-pill[aria-pressed="true"], .je-ta-pill[aria-checked="true"] { background: var(--je-ta-accent); border-color: var(--je-ta-accent); color: #fff; font-weight: 600; }
+.je-ta-pill:has(input:checked), .je-ta-pill[aria-pressed="true"], .je-ta-pill[aria-checked="true"] { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); font-weight: 600; }
 .je-ta-pill:has(input:disabled) { opacity: 0.45; cursor: default; }
 .je-tag-admin :is(select, input, textarea):disabled { opacity: 0.5; cursor: default; }
 .je-ta-pill input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
@@ -135,8 +164,8 @@
 .je-ta-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--je-ta-border-strong); background: var(--je-ta-surface-2); color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
 .je-ta-button:hover { background: var(--je-ta-border); }
 .je-ta-button:disabled { opacity: 0.45; cursor: default; }
-.je-ta-button--primary { background: var(--je-ta-accent); border-color: var(--je-ta-accent); color: #fff; }
-.je-ta-button--primary:hover { filter: brightness(1.1); background: var(--je-ta-accent); }
+.je-ta-button--primary { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); }
+.je-ta-button--primary:hover { filter: brightness(1.1); background: var(--je-ta-selected-bg); }
 .je-ta-button--danger { border-color: rgba(239, 83, 80, 0.6); color: #ff8a80; }
 .je-ta-light .je-ta-button--danger { color: #c62828; }
 .je-ta-link { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; color: #7fd3ff; font-size: 13px; text-decoration: none; background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
@@ -294,7 +323,7 @@
 .je-tag-admin .je-ts-section-label { margin-top: 4px; }
 .je-tag-admin .je-ts-pills, .je-tag-admin .je-ts-opacity { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .je-tag-admin .je-ts-pill { min-height: 32px; padding: 4px 12px; border: 1px solid var(--je-border-strong); border-radius: 16px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
-.je-tag-admin .je-ts-pill.active { background: var(--je-ta-accent); border-color: var(--je-ta-accent); color: #fff; font-weight: 600; }
+.je-tag-admin .je-ts-pill.active { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); font-weight: 600; }
 .je-tag-admin .je-ts-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
 .je-tag-admin .je-ts-preset { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px; border: 2px solid var(--je-border); border-radius: 8px; background: linear-gradient(135deg, #3a4a5c 0%, #1c2430 55%, #4b3b2a 100%); color: #fff; cursor: pointer; font: inherit; text-align: left; }
 .je-tag-admin .je-ts-preset.active { border-color: var(--je-ta-accent); box-shadow: 0 0 0 2px var(--je-ta-accent); }
@@ -340,7 +369,7 @@
 .je-tag-admin .je-ts-contrast-badge { padding: 2px 10px; border-radius: 12px; font-weight: 700; font-size: 12px; color: #111; }
 .je-tag-admin .je-ts-contrast-aa { background: #66bb6a; }
 .je-tag-admin .je-ts-contrast-large { background: #ffb74d; }
-.je-tag-admin .je-ts-contrast-low { background: #ef5350; color: #fff; }
+.je-tag-admin .je-ts-contrast-low { background: #c62828; color: #fff; }
 .je-tag-admin .je-ts-contrast-hint { font-size: 12px; opacity: 0.7; }
 .je-tag-admin .je-ts-preview { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; padding: 12px; background: #101010; border-radius: 6px; }
 .je-tag-admin .je-ts-card { display: flex; flex-direction: column; gap: 6px; color: #fff; }

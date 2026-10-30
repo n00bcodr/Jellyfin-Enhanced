@@ -762,6 +762,71 @@ test('the preview draws the saved server Tag Styles, scoped to it, whatever this
   assert.equal(fetches, 3);
 });
 
+/** WCAG 2 contrast for the page's colour tokens (admin-tags.css), dark and light. */
+function themeTokens(css, light) {
+  const block = (selector) => {
+    const at = css.indexOf(`${selector} {`);
+    assert.ok(at >= 0, selector);
+    const body = css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+    return Object.fromEntries([...body.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
+  };
+  const tokens = { ...block('.je-tag-admin'), ...(light ? block('.je-tag-admin.je-ta-light') : {}) };
+  const resolve = (value) => value.replace(/var\((--[\w-]+)(?:,\s*([^)]+))?\)/g, (m, name, fallback) => (tokens[name] ? resolve(tokens[name]) : fallback.trim()));
+  return (name) => resolve(tokens[name] ?? assert.fail(`${name} is defined`));
+}
+function rgba(value) {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value);
+  if (hex) {
+    const h = hex[1].length === 3 ? hex[1].replace(/./g, '$&$&') : hex[1];
+    return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).concat(1);
+  }
+  const m = /^rgba?\(([^)]+)\)$/.exec(value);
+  assert.ok(m, `a colour: ${value}`);
+  const parts = m[1].split(',').map(Number);
+  return parts.length === 3 ? [...parts, 1] : parts;
+}
+/** @returns {number[]} fg drawn over an opaque bg. */
+const over = (fg, bg) => [0, 1, 2].map((i) => fg[i] * fg[3] + bg[i] * (1 - fg[3])).concat(1);
+const luminance = (c) => c.slice(0, 3).map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }).reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+
+test('selected pills, tabs, status text and the preview\'s captions are legible in the dark and light themes', () => {
+  const css = readFileSync(resolve(jsRoot, 'enhanced/admintags/admin-tags.css'), 'utf8');
+  // The selected controls draw from the checked tokens.
+  assert.match(css, /\.je-ta-pill:has\(input:checked\)[^{]*\{ background: var\(--je-ta-selected-bg\); border-color: var\(--je-ta-selected-bg\); color: var\(--je-ta-selected-text\);/);
+  assert.match(css, /\.je-ts-pill\.active \{ background: var\(--je-ta-selected-bg\);[^}]*color: var\(--je-ta-selected-text\);/);
+  assert.match(css, /\.je-ta-tab\[aria-selected="true"\] \{ color: var\(--je-ta-accent-text\); \}/);
+  for (const light of [false, true]) {
+    const theme = light ? 'light' : 'dark';
+    const token = themeTokens(css, light);
+    const page = rgba(token('--je-ta-page-bg'));
+    const card = over(rgba(token('--je-ta-surface')), page);   // cards and the preview column
+    const on = (name, bg) => over(rgba(token(name)), bg);
+    const check = (fg, bg, min, what) => {
+      const ratio = contrast(fg, bg);
+      assert.ok(ratio >= min, `${theme}: ${what} ${ratio.toFixed(2)}:1 < ${min}:1`);
+    };
+    const selected = on('--je-ta-selected-bg', card);
+    check(on('--je-ta-selected-text', selected), selected, 4.5, 'selected pill text');
+    check(selected, page, 3, 'selected pill against the page');
+    check(selected, card, 3, 'selected pill against a card');
+    check(on('--je-ta-accent', card), card, 3, 'accent outline against a card');
+    check(on('--je-ta-accent', page), page, 3, 'accent outline against the page');
+    check(on('--je-ta-accent-text', page), page, 4.5, 'selected tab text');
+    for (const name of ['--je-ta-text', '--je-ta-muted', '--je-ta-faint', '--je-ta-bad', '--je-ta-warn']) {
+      check(on(name, card), card, 4.5, `${name} on a card`);
+      check(on(name, page), page, 4.5, `${name} on the page`);
+    }
+    for (const name of ['--je-mtp-text', '--je-mtp-muted', '--je-mtp-strong', '--je-mtp-lock', '--je-mtp-rule']) check(on(name, card), card, 4.5, `preview ${name}`);
+    const pressed = on('--je-mtp-pressed-bg', card);
+    check(on('--je-mtp-pressed-text', pressed), pressed, 4.5, 'preview Resting/Hover pressed');
+  }
+  // The shared preview's captions take those tokens (no fixed white text on the admin page).
+  const preview = readFileSync(resolve(jsRoot, 'enhanced/settingspanel/ui-panel-tag-preview.js'), 'utf8');
+  const sheet = preview.slice(preview.indexOf('const PREVIEW_CSS'), preview.indexOf('function spotlightCss'));
+  for (const m of sheet.matchAll(/(?<![-\w])color: ([^;]+);/g)) assert.match(m[1], /^var\(--je-mtp-/, `preview text colour ${m[1]}`);
+});
+
 test('each section module is a self-contained file the page loads, and every declaration is one line', () => {
   const dir = resolve(jsRoot, 'enhanced/admintags/sections');
   const h = createHarness({ JE: {} });
