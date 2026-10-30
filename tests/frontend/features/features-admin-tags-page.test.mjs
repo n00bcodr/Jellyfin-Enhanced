@@ -36,15 +36,13 @@ const BASE = {
 const catalog = { presets: ['default', 'glass'], age: [], groups: { quality: [{ key: '4K', name: '4K' }], ageRating: [], rating: [{ key: 'community', name: 'Community' }], genre: [{ key: 'genre', name: 'Genre' }], status: [{ key: 'added', name: 'Just Added' }], language: [{ key: 'flag', name: 'Flag' }] }, palettes: { default: {}, glass: {} } };
 
 /**
- * The page over a mocked server.
+ * A browser realm with the page core and every section module loaded, over a
+ * mocked server (`server`), without a page built yet.
  * @param {import('node:test').TestContext} t
- * @param {{config?: object, url?: string, confirm?: boolean}} [options]
+ * @param {{server: object, url?: string, apiClient?: object, globals?: object}} options
  */
-function setup(t, { config = {}, url, confirm = true } = {}) {
-  const server = structuredClone({ ...BASE, ...config });
-  const puts = [];
+function boot(t, { server, url, apiClient = {}, globals = {} }) {
   const posts = [];
-  const confirms = [];
   const h = createHarness({
     html: '<div id="jeTaRoot"></div>',
     url: url || 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags',
@@ -52,6 +50,7 @@ function setup(t, { config = {}, url, confirm = true } = {}) {
     apiClient: {
       getUrl: (path, query) => `http://jellyfin.test/${path.replace(/^\//, '')}${query ? `?${new URLSearchParams(query)}` : ''}`,
       getJSON: async () => [{ ItemId: LIBRARY, Name: 'Movies' }, { ItemId: OTHER_LIBRARY, Name: 'Shows' }],
+      getPluginConfiguration: async () => structuredClone(server),
       ajax: async (request) => {
         const path = new URL(request.url).pathname;
         if (request.type === 'POST') { posts.push(path); return { message: 'started' }; }
@@ -60,11 +59,14 @@ function setup(t, { config = {}, url, confirm = true } = {}) {
         if (path.endsWith('/tag-styles/catalog')) return catalog;
         return null;
       },
+      ...apiClient,
     },
     // mediaTagsPage.html defines the local CDN route (flags in the colour editor).
-    globals: { jeCdnUrl: (path) => `http://jellyfin.test/JellyfinEnhanced/cdn/${path}` },
+    globals: { jeCdnUrl: (path) => `http://jellyfin.test/JellyfinEnhanced/cdn/${path}`, Dashboard: {}, ...globals },
   });
-  t.after(() => { ctx?.dispose(); h.close(); });
+  // Views are disposed before the realm closes.
+  const cleanup = [];
+  t.after(() => { for (const fn of cleanup.reverse()) fn(); h.close(); });
   // jsdom has no canvas: the colour editor's parser gets a minimal 2D context.
   h.window.HTMLCanvasElement.prototype.getContext = () => {
     let fill = '#000000';
@@ -75,13 +77,7 @@ function setup(t, { config = {}, url, confirm = true } = {}) {
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   const A = h.JE.adminTags;
   for (const file of A.SECTION_FILES) h.load(`enhanced/admintags/${file}`);
-  const root = h.document.getElementById('jeTaRoot');
-  let ctx = A.createPage(root, structuredClone(server), {
-    api: { get: async () => structuredClone(server), put: async (c) => { puts.push(structuredClone(c)); Object.assign(server, structuredClone(c)); } },
-    confirm: (text, title) => { confirms.push(title); return confirm; },
-  });
   const settle = () => new Promise((r) => setTimeout(r, 0));
-  const $ = (sel) => root.querySelector(sel);
   /** Set a control's value and fire change as a user would. */
   const change = (el, value) => {
     assert.ok(el, 'control exists');
@@ -89,7 +85,27 @@ function setup(t, { config = {}, url, confirm = true } = {}) {
     else el.value = value;
     el.dispatchEvent(new h.window.Event('change', { bubbles: true }));
   };
-  return { ...h, A, ctx, root, server, puts, posts, confirms, settle, $, $$: (sel) => [...root.querySelectorAll(sel)], change, save: async () => { await ctx.flush(); } };
+  return Object.assign(h, { A, posts, settle, change, cleanup });
+}
+
+/**
+ * The page over a mocked server.
+ * @param {import('node:test').TestContext} t
+ * @param {{config?: object, url?: string, confirm?: boolean}} [options]
+ */
+function setup(t, { config = {}, url, confirm = true } = {}) {
+  const server = structuredClone({ ...BASE, ...config });
+  const puts = [];
+  const confirms = [];
+  const h = boot(t, { server, url });
+  const root = h.document.getElementById('jeTaRoot');
+  const ctx = h.A.createPage(root, structuredClone(server), {
+    api: { get: async () => structuredClone(server), put: async (c) => { puts.push(structuredClone(c)); Object.assign(server, structuredClone(c)); } },
+    confirm: (text, title) => { confirms.push(title); return confirm; },
+  });
+  h.cleanup.push(() => ctx.dispose());
+  const $ = (sel) => root.querySelector(sel);
+  return { ...h, ctx, root, server, puts, confirms, $, $$: (sel) => [...root.querySelectorAll(sel)], save: async () => { await ctx.flush(); } };
 }
 
 test('every declared field reads its configuration field and saves the new value through the plugin configuration', async t => {
@@ -156,6 +172,57 @@ test('a failed save says so, keeps the change and retries', async t => {
   await ctx.flush();
   assert.equal(server.DisableTagsOnSearchPage, true);
   assert.equal(root.querySelector('#jeTaSaved').dataset.state, 'saved');
+});
+
+/** Two retained Jellyfin page elements for the Media Tags page, as Jellyfin keeps them for distinct URLs. */
+const TWO_PAGES = '<div class="page" id="JellyfinEnhancedMediaTagsPage"><div class="je-tag-admin"></div></div><div class="page" id="JellyfinEnhancedMediaTagsPage"><div class="je-tag-admin"></div></div>';
+
+test('a failed save survives navigating to another Media Tags view: still pending there, and Retry saves it', async t => {
+  const server = structuredClone(BASE);
+  let fail = true;
+  const writes = [];
+  const asked = [];
+  const h = boot(t, {
+    server,
+    url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout',
+    apiClient: { updatePluginConfiguration: async (id, c) => { if (fail) throw new Error('offline'); writes.push(structuredClone(c)); Object.assign(server, structuredClone(c)); } },
+    globals: { Dashboard: { confirm: (text, title, cb) => { asked.push(title); cb(false); } } },
+  });
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  h.document.body.innerHTML = TWO_PAGES;
+  const [first, second] = h.document.querySelectorAll('.page');
+  const a = await h.A.activate(first);
+  h.cleanup.push(() => a.dispose());
+  h.change(first.querySelector('#tagsHideOnHover'), true);
+  assert.equal(await a.flush(), false, 'the save failed');
+  assert.equal(first.querySelector('#jeTaSaved').dataset.state, 'error');
+  assert.match(first.querySelector('#jeTaSaved').textContent, /admin_tags_save_failed_fields:admin_tags_hide_on_hover/);
+  // Another Media Tags deep link: the first view is torn down, the edit is not.
+  h.window.location.hash = '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups';
+  const b = await h.A.activate(second);
+  h.cleanup.push(() => b.dispose());
+  assert.equal(first.querySelector('.je-ta-tabs'), null, 'the old view is emptied');
+  assert.equal(server.TagsHideOnHover, false);
+  assert.equal(second.querySelector('#tagsHideOnHover').checked, true, 'the new view shows the unsaved edit');
+  assert.equal(b.config.TagsHideOnHover, true);
+  const chip = second.querySelector('#jeTaSaved');
+  assert.equal(chip.dataset.state, 'error', 'not "All changes saved"');
+  assert.match(chip.textContent, /admin_tags_save_failed_fields:admin_tags_hide_on_hover/);
+  assert.deepEqual(plain(h.A.pendingState()), { state: 'error', fields: ['TagsHideOnHover'], failed: ['TagsHideOnHover'] });
+  // Leaving Media Tags altogether while it is still failing asks; the edit stays either way.
+  h.window.location.hash = '#/dashboard';
+  await h.A.leaveWithPending();
+  assert.deepEqual(asked, ['admin_tags_leave_title']);
+  assert.deepEqual(plain(h.A.pendingState().fields), ['TagsHideOnHover']);
+  // Back on the page with the server healthy again: Retry saves it.
+  h.window.location.hash = '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups';
+  fail = false;
+  chip.querySelector('[data-je-retry]').click();
+  await b.flush();
+  assert.equal(server.TagsHideOnHover, true);
+  assert.equal(writes.length, 1);
+  assert.equal(chip.dataset.state, 'saved');
+  assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
 });
 
 test('tabs follow the WAI pattern and deep links open a tab and a group', async t => {

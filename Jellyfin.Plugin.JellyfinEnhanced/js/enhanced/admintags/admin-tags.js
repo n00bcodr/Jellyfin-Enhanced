@@ -278,6 +278,118 @@
         return out.join('');
     }
 
+    // ── Unsaved edits ──────────────────────────────────────────────────
+
+    /**
+     * The edits that are not on the server yet. They belong to the document,
+     * not to one view: Jellyfin replaces the page element when the URL
+     * changes, and an edit whose save failed must outlive that view until it
+     * is retried. Every live view draws its save indicator from here.
+     */
+    const store = {
+        /** @type {Map<string, *>} field → the value to save */
+        values: new Map(),
+        /** @type {'saved'|'saving'|'error'} */
+        state: 'saved',
+        /** @type {string[]} the fields the last failed save carried */
+        failed: [],
+        /** @type {ReturnType<typeof setTimeout>|null} */
+        timer: null,
+        /** @type {Promise<boolean>|null} the save on its way */
+        saving: null,
+        /** @type {{get: () => Promise<Object>, put: (config: Object) => Promise<*>}|null} the newest view's host */
+        host: null,
+        /** @type {Set<(event: {type: string, values?: Object}) => void>} live views */
+        views: new Set(),
+    };
+
+    /**
+     * Tell every live view about a change of state or a completed save.
+     * @param {{type: 'state'|'saved', values?: Object}} event
+     */
+    function notify(event) {
+        for (const view of Array.from(store.views)) view(event);
+    }
+
+    /** @param {'saved'|'saving'|'error'} state */
+    function setStoreState(state) {
+        store.state = state;
+        notify({ type: 'state' });
+    }
+
+    /** @returns {boolean} Whether some edit is not on the server yet (queued, on its way or failed). */
+    function hasPending() {
+        return store.values.size > 0 || !!store.saving || !!store.timer;
+    }
+
+    /**
+     * Save every pending edit now: re-read the server configuration, copy
+     * only the pending fields into it and write it back. A failed save keeps
+     * its edits here (state 'error') for a retry from any view.
+     * @returns {Promise<boolean>} Whether everything pending so far is saved.
+     */
+    function flushStore() {
+        clearTimeout(store.timer);
+        store.timer = null;
+        if (store.saving) return store.saving.then((ok) => (ok && store.values.size ? flushStore() : ok));
+        if (!store.values.size) {
+            if (store.state !== 'saved') setStoreState('saved');
+            return Promise.resolve(true);
+        }
+        const host = store.host;
+        const sent = new Map(store.values);
+        store.values.clear();
+        setStoreState('saving');
+        store.saving = (async () => {
+            try {
+                const fresh = await host.get();
+                for (const [key, value] of sent) fresh[key] = value;
+                await host.put(fresh);
+                store.failed = [];
+                notify({ type: 'saved', values: Object.fromEntries(sent) });
+                return true;
+            } catch (err) {
+                console.error('🪼 Jellyfin Enhanced: could not save the Media Tags settings', err);
+                for (const [key, value] of sent) if (!store.values.has(key)) store.values.set(key, value);
+                store.failed = Array.from(sent.keys());
+                return false;
+            } finally {
+                store.saving = null;
+            }
+        })();
+        return store.saving.then((ok) => {
+            if (!ok) setStoreState('error');
+            else if (store.values.size) return flushStore();
+            else setStoreState('saved');
+            return ok;
+        });
+    }
+
+    /** Queue a save after a short pause (a burst of changes saves once). */
+    function scheduleStore() {
+        clearTimeout(store.timer);
+        setStoreState('saving');
+        store.timer = setTimeout(() => {
+            store.timer = null;
+            flushStore();
+        }, SAVE_DELAY_MS);
+    }
+
+    /**
+     * A field's name for the save indicator: its control's label, else the
+     * field name spelled out.
+     * @param {string} key - PluginConfiguration field.
+     * @returns {string}
+     */
+    function fieldName(key) {
+        for (const s of sections) {
+            for (const f of s.fields || []) {
+                if (f.key === key || f.orderKey === key) return JE.t(f.label);
+            }
+        }
+        return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    }
+
     // ── The page ───────────────────────────────────────────────────────
 
     /**
@@ -294,9 +406,9 @@
             get: () => ApiClient.getPluginConfiguration(PLUGIN_ID),
             put: (c) => ApiClient.updatePluginConfiguration(PLUGIN_ID, c),
         };
-        const changed = new Set();
-        let saveTimer = null;
-        let saving = null;
+        store.host = host;
+        // Edits a failed save left behind (another view's) show here too.
+        for (const [key, value] of store.values) config[key] = value;
         let disposed = false;
         let preview = null;
         let snackTimer = null;
@@ -357,56 +469,36 @@
         const live = /** @type {HTMLElement} */ (root.querySelector('.je-ta-live'));
         const savedChip = /** @type {HTMLElement} */ (root.querySelector('#jeTaSaved'));
 
-        // ── Saving ──
-        /** @param {'saved'|'saving'|'error'} state */
-        const setSaveState = (state) => {
+        // ── Saving (the edits live in the document-wide store) ──
+        /** Draw the save indicator from the store: saved, saving, or not saved with the fields and Retry. */
+        const drawSaveState = () => {
+            const state = store.state;
             savedChip.dataset.state = state;
-            savedChip.innerHTML = state === 'saving' ? tx('admin_tags_saving')
-                : state === 'error' ? `${tx('admin_tags_save_failed')}<button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`
-                : tx('admin_tags_saved');
+            if (state === 'error') {
+                const fields = store.failed.length ? store.failed : Array.from(store.values.keys());
+                const names = Array.from(new Set(fields.map(fieldName))).join(', ');
+                savedChip.innerHTML = `<span>${names ? tx('admin_tags_save_failed_fields', { fields: names }) : tx('admin_tags_save_failed')}</span><button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`;
+            } else savedChip.innerHTML = tx(state === 'saving' ? 'admin_tags_saving' : 'admin_tags_saved');
         };
         savedChip.addEventListener('click', (e) => {
             if (/** @type {HTMLElement} */ (e.target).closest('[data-je-retry]')) flush();
         });
-
+        /** @returns {Promise<boolean>} Whether everything pending is saved. */
+        const flush = () => flushStore();
+        const schedule = scheduleStore;
         /**
-         * Save every changed field now: re-read the server configuration, copy
-         * only the changed fields into it and write it back.
-         * @returns {Promise<boolean>} Whether everything changed so far is saved.
+         * The store changed state, or a save went through: redraw the
+         * indicator; after a save, take the stored values into this view.
+         * @param {{type: string, values?: Object}} event
          */
-        function flush() {
-            clearTimeout(saveTimer);
-            saveTimer = null;
-            if (saving) return saving.then(() => (changed.size ? flush() : true));
-            if (!changed.size) return Promise.resolve(true);
-            const keys = Array.from(changed);
-            changed.clear();
-            setSaveState('saving');
-            saving = (async () => {
-                try {
-                    const fresh = await host.get();
-                    for (const key of keys) fresh[key] = config[key];
-                    await host.put(fresh);
-                    if (!changed.size) setSaveState('saved');
-                    return true;
-                } catch (err) {
-                    console.error('🪼 Jellyfin Enhanced: could not save the Media Tags settings', err);
-                    for (const key of keys) changed.add(key);
-                    setSaveState('error');
-                    return false;
-                } finally {
-                    saving = null;
-                }
-            })();
-            return saving.then((ok) => (ok && changed.size ? flush() : ok));
-        }
-
-        /** Queue a save after a short pause (a burst of changes saves once). */
-        const schedule = () => {
-            clearTimeout(saveTimer);
-            setSaveState('saving');
-            saveTimer = setTimeout(() => { flush(); }, SAVE_DELAY_MS);
+        const onStore = (event) => {
+            if (disposed) return;
+            if (event.type === 'saved' && event.values) {
+                for (const [key, value] of Object.entries(event.values)) if (!store.values.has(key)) config[key] = value;
+            }
+            drawSaveState();
         };
+        store.views.add(onStore);
 
         /**
          * Write configuration fields, save them and redraw what depends on them.
@@ -416,7 +508,7 @@
         function setMany(values, opts = {}) {
             for (const [key, value] of Object.entries(values)) {
                 config[key] = value;
-                changed.add(key);
+                store.values.set(key, value);
             }
             schedule();
             refresh(opts.redraw === false ? { controls: false } : {});
@@ -656,15 +748,7 @@
          */
         function confirmAction(text, title) {
             if (options.confirm) return Promise.resolve(options.confirm(text, title));
-            return new Promise((resolve) => {
-                try {
-                    if (typeof Dashboard !== 'undefined' && typeof Dashboard.confirm === 'function') {
-                        Dashboard.confirm(esc(text).replace(/\n/g, '<br>'), title, (ok) => resolve(!!ok));
-                        return;
-                    }
-                } catch { /* fall through */ }
-                resolve(window.confirm(`${title}\n\n${text}`));
-            });
+            return askConfirm(text, title);
         }
 
         /**
@@ -710,10 +794,11 @@
             preview?.refresh();
         }
 
-        /** Tear the page down: the preview and pending timers (saves are flushed first by the caller). */
+        /** Tear the page down: the preview and its timers. Pending edits stay in the store. */
         function dispose() {
             if (disposed) return;
             disposed = true;
+            store.views.delete(onStore);
             clearTimeout(snackTimer);
             preview?.dispose();
             preview = null;
@@ -722,11 +807,11 @@
 
         /**
          * Replace the working copy with a fresh configuration (page shown again).
-         * Fields with unsaved changes keep the page's values.
+         * Fields with unsaved edits keep the edited values.
          * @param {Object} fresh
          */
         function reload(fresh) {
-            for (const key of Object.keys(fresh)) if (!changed.has(key)) config[key] = fresh[key];
+            for (const key of Object.keys(fresh)) if (!store.values.has(key)) config[key] = fresh[key];
             for (const s of sections) s.load?.(ctx, bodyOf(s));
             refresh();
         }
@@ -740,7 +825,7 @@
             /** @returns {string} The tab shown now. */
             currentTab: current,
             /** @returns {boolean} Whether some change is not saved yet. */
-            pending: () => changed.size > 0 || !!saving || !!saveTimer,
+            pending: hasPending,
             get preview() { return preview; },
             layout: JE.core?.tagLayout || null,
             fieldValue,
@@ -748,6 +833,7 @@
 
         for (const s of sections) s.render?.(ctx, bodyOf(s));
         refresh({ controls: false });
+        drawSaveState();
         let start = requestedTarget();
         if (!start.tab || !TABS.some((t) => t.id === start.tab)) {
             let saved = null;
@@ -756,6 +842,45 @@
         }
         openTab(start.tab || 'overview', { group: start.group });
         return ctx;
+    }
+
+    /**
+     * Ask with the dashboard's dialog (the browser's when it is missing).
+     * @param {string} text
+     * @param {string} title
+     * @returns {Promise<boolean>}
+     */
+    function askConfirm(text, title) {
+        return new Promise((resolve) => {
+            try {
+                if (typeof Dashboard !== 'undefined' && typeof Dashboard.confirm === 'function') {
+                    Dashboard.confirm(esc(text).replace(/\n/g, '<br>'), title, (ok) => resolve(!!ok));
+                    return;
+                }
+            } catch { /* fall through */ }
+            resolve(window.confirm(`${title}\n\n${text}`));
+        });
+    }
+
+    /** @returns {boolean} Whether the URL shows a Media Tags view. */
+    function onMediaTagsPage() {
+        return window.location.hash.includes(`name=${PAGE_NAME}`);
+    }
+
+    /**
+     * The page was hidden while an edit was not saved. Jellyfin cannot cancel
+     * a view change, so save now and, when that fails and no other Media Tags
+     * view took over, ask whether to go back to retry. The edits stay pending
+     * in the store either way and the next Media Tags view shows them.
+     * @returns {Promise<void>}
+     */
+    async function leaveWithPending() {
+        if (!hasPending()) return;
+        const ok = await flushStore();
+        if (ok || onMediaTagsPage()) return;
+        const names = Array.from(new Set((store.failed.length ? store.failed : Array.from(store.values.keys())).map(fieldName))).join(', ');
+        const back = await askConfirm(JE.t('admin_tags_leave_confirm', { fields: names }), JE.t('admin_tags_leave_title'));
+        if (back && !onMediaTagsPage()) window.location.href = pageUrl();
     }
 
     /**
@@ -858,14 +983,16 @@
         if (!page.dataset.jeTaWired) {
             page.dataset.jeTaWired = '1';
             page.addEventListener('viewshow', () => { activate(page); });
-            page.addEventListener('viewbeforehide', () => { if (active?.page === page) active.ctx.flush(); });
+            page.addEventListener('viewbeforehide', () => { if (active?.page === page) leaveWithPending(); });
         }
         if (!unloadWired) {
             unloadWired = true;
+            // Leaving the dashboard (reload, closing the tab) with an edit not saved: the browser asks.
             window.addEventListener('beforeunload', (e) => {
-                if (!active?.ctx.pending()) return;
-                active.ctx.flush();
+                if (!hasPending()) return;
+                flushStore();
                 e.preventDefault();
+                e.returnValue = '';
             });
         }
         return activate(page);
@@ -888,6 +1015,10 @@
         controlValue,
         createPage,
         mount,
+        activate,
         requestedTarget,
+        /** @returns {{state: string, fields: string[], failed: string[]}} The unsaved edits (tests, diagnostics). */
+        pendingState: () => ({ state: store.state, fields: Array.from(store.values.keys()), failed: store.failed.slice() }),
+        leaveWithPending,
     };
 })(window.JellyfinEnhanced);
