@@ -1182,8 +1182,13 @@
      */
     function clearCard(target) {
         const host = findHost(target);
-        const ctrl = host ? controllers.get(host) : null;
-        if (!host || !ctrl) return;
+        if (!host) return;
+        // A cleared card stops waiting for item data too, or a replacement
+        // group committed on the same host stays hidden until the old hold's
+        // safety timeout fires.
+        endAwait(host);
+        const ctrl = controllers.get(host);
+        if (!ctrl) return;
         teardown(ctrl);
         controllers.delete(host);
     }
@@ -1264,9 +1269,11 @@
     // je:user-data-loaded re-applies the incoming user's layout.
     JE.session?.onUserChange?.('tag-layout', () => {
         invalidateSettings();
+        // Clear first so every hold's timer is cancelled through clearCard,
+        // then forget whatever a host without a controller still kept.
+        clearAll();
         cardData = new WeakMap();
         awaitingData = new WeakMap();
-        clearAll();
     });
 
     const api = {

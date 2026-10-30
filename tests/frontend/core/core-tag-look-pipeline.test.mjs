@@ -264,6 +264,30 @@ test('an old batch cannot render into a reused card or release its new facts hol
   assert.equal(host.dataset.jeLayout, 'bands');
 });
 
+test('clearing a waiting card ends its hold, so a replacement group shows at once', t => {
+  const rules = [{ id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS_LIB }], layout: 'bands', density: 'full' }];
+  const h = setupReal(t, { html: episodeCard(EPISODE, 'Movie'), settings: { tagLookRules: rules } });
+  h.scan(); h.fetch();
+  const host = h.hostOf(EPISODE);
+  h.layout.awaitCardContext(host, EPISODE, 'Movie');
+  h.layout.clearCard(host);
+  const chip = h.document.createElement('div'); chip.innerHTML = '<span>4K</span>';
+  h.layout.commitGroup(host, 'quality', chip);
+  assert.ok(h.shown(EPISODE), 'the old hold must not keep the replacement hidden until its timeout');
+});
+
+test('clearing every card ends every hold', t => {
+  const rules = [{ id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS_LIB }], layout: 'bands', density: 'full' }];
+  const h = setupReal(t, { html: episodeCard(EPISODE, 'Movie'), settings: { tagLookRules: rules } });
+  h.scan(); h.fetch();
+  const host = h.hostOf(EPISODE);
+  h.layout.awaitCardContext(host, EPISODE, 'Movie');
+  h.layout.clearAll();
+  const chip = h.document.createElement('div'); chip.innerHTML = '<span>4K</span>';
+  h.layout.commitGroup(host, 'quality', chip);
+  assert.ok(h.shown(EPISODE));
+});
+
 test('a wait token cannot release a newer hold for the same card identity', t => {
   const h = setupReal(t, { settings: { tagLayoutLocks: seriesLock } });
   h.scan();
