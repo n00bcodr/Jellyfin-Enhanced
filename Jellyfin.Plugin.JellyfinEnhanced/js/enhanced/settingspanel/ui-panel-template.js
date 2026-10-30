@@ -85,7 +85,7 @@
                 /* Adaptive settings view: section nav on the left, one pane at a
                    time on the right; below 760px the nav is the first screen and
                    the pane covers it instantly with a back button. */
-                #jellyfin-enhanced-panel .je-panel-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); flex: 1; min-height: 0; background: ${panelBgColor}; }
+                #jellyfin-enhanced-panel .je-panel-body { display: grid; grid-template-columns: clamp(230px, 18%, 280px) minmax(0, 1fr); flex: 1; min-height: 0; background: ${panelBgColor}; }
                 #jellyfin-enhanced-panel .je-panel-nav { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; border-right: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18); overflow-y: auto; }
                 #jellyfin-enhanced-panel .je-panel-nav-items { display: flex; flex-direction: column; gap: 3px; }
                 #jellyfin-enhanced-panel .je-panel-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: #fff; font-family: inherit; font-size: 13px; outline: none; }
@@ -122,6 +122,7 @@
             <div class="panel-header" style="position: relative; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; align-items: baseline; gap: 10px; cursor: grab;">
                 <div id="jePanelTitle" style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(JE.t('panel_version', { version: JE.pluginVersion }))}</div>
+                ${internal.buildPanelSizeControlsHtml ? internal.buildPanelSizeControlsHtml() : ''}
                 <button id="closeSettingsPanel" type="button" aria-label="${escapeHtml(tWithFallback('panel_close', 'Close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
             <div class="je-panel-body">
@@ -535,6 +536,7 @@
             <div class="panel-footer" style="padding: 10px 20px; border-top: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; justify-content: center; align-items: center;">
                 <div class="close-helptext" style="font-size:12px; color:rgba(255,255,255,0.5);">${JE.t('panel_footer_close')}</div>
             </div>
+            ${internal.buildPanelResizeHandlesHtml ? internal.buildPanelResizeHandlesHtml() : ''}
         `;
     };
 

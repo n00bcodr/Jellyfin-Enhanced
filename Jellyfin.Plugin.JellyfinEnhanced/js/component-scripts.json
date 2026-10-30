@@ -124,6 +124,7 @@
     "// ui-panel.js call their builders and wiring at panel-open time.",
     "enhanced/settingspanel/ui-panel-tag-preview.js",
     "enhanced/settingspanel/ui-panel-media-tags.js",
+    "enhanced/settingspanel/ui-panel-resize.js",
     "enhanced/settingspanel/ui-panel.js",
     "enhanced/bookmarks/bookmarks.js",
     "// bookmarks-library modules — order matters: styles/page/render",

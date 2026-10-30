@@ -281,6 +281,7 @@
             }
         });
 
+        internal.wirePanelResize?.(ctx);
         internal.wireShortcutEditor(ctx);
         resetAutoCloseTimer();
 

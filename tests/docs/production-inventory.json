@@ -1003,6 +1003,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-resize.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js",
       "category": "js"
     },
@@ -8449,7 +8453,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 375,
+    "files": 376,
     "routes": 182,
     "configuration_properties": 599,
     "storage_references": 72,
