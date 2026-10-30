@@ -23,7 +23,9 @@
 // capped), keyed by item, image type and image tag, so new artwork resamples.
 // Each coloured or waiting card has an artwork watch (its image container
 // and its item id): new artwork or a card recycled for another item
-// resamples it; the watch goes with the card.
+// resamples it; the watch goes with the card, released by the layout or, for
+// a card that just left the page, by a sweep every few seconds (whether or
+// not anything is being sampled), and held weakly meanwhile.
 // Every sample and every store write belongs to the session generation it
 // started in: after a user switch, a decode still in flight is dropped, never
 // shown or stored as the incoming user's.
@@ -69,6 +71,8 @@
     const STORE_CAP = 2000;
     /** The persisted copy is written this long after the last new colour. */
     const PERSIST_DELAY_MS = 2000;
+    /** While any card is watched, watches of cards gone from the page are released this often (ms). */
+    const SWEEP_MS = 3000;
     /** A failed sample (tainted canvas, decode error): the card keeps the Default colours. */
     const FAILED = 'failed';
     /** A card's image changed before it was drawn: nothing is remembered, its cards are read again. */
@@ -230,12 +234,17 @@
      * listener on an image still loading. `key` is the artwork last seen
      * ready (null while waiting), `id` the item id last seen.
      * @typedef {{owner: Element, host: HTMLElement, container: Element|null, card: Element|null, id: string|null, key: string|null,
-     *   img: HTMLImageElement|null, observer: MutationObserver|null, onLoad: () => void}} Watch
+     *   img: HTMLImageElement|null, observer: MutationObserver|null, onLoad: () => void, ref: {deref: () => Watch|undefined}}} Watch
      */
-    /** @type {Map<Element, Watch>} a host's parent (the card's render target) → its watch */
-    const watches = new Map();
+    /** @type {WeakMap<Element, Watch>} a host's parent (the card's render target) → its watch */
+    const watches = new WeakMap();
     /** @type {WeakMap<HTMLElement, Watch>} host → its watch */
     const watchOf = new WeakMap();
+    /** @type {Set<{deref: () => Watch|undefined}>} every watch, held weakly: a card gone from the page stays collectable */
+    const live = new Set();
+    /** @param {Watch} w @returns {{deref: () => Watch|undefined}} */
+    const weakRef = (w) => (typeof WeakRef === 'function' ? new WeakRef(w) : { deref: () => w });
+    let sweepTimer = 0;
     let canvas = null;
     const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0, sampleMs: 0, maxSampleMs: 0, steps: 0, fallback: 0 };
 
@@ -366,7 +375,10 @@
         if (!w) {
             const created = /** @type {Watch} */ ({ owner, host, container: null, card: null, id: null, key: null, img: null, observer: null, onLoad: () => changed(created) });
             w = created;
+            w.ref = weakRef(w);
             watches.set(owner, w);
+            live.add(w.ref);
+            sweepSoon();
         }
         if (w.host !== host) watchOf.delete(w.host);
         w.host = host;
@@ -413,6 +425,29 @@
         w.img = null;
         if (watches.get(w.owner) === w) watches.delete(w.owner);
         if (watchOf.get(w.host) === w) watchOf.delete(w.host);
+        live.delete(w.ref);
+    }
+
+    /** Sweep the watches in a few seconds, while there are any. */
+    function sweepSoon() {
+        if (sweepTimer || !live.size) return;
+        sweepTimer = setTimeout(sweep, SWEEP_MS);
+    }
+
+    /**
+     * Release the watches of cards gone from the page (or whose host was
+     * removed: a replacement host takes the watch over), on a timer of its
+     * own: a page whose sampling has settled runs no slice, and Jellyfin
+     * can drop a whole row without the layout seeing it.
+     */
+    function sweep() {
+        sweepTimer = 0;
+        for (const ref of Array.from(live)) {
+            const w = ref.deref();
+            if (!w) live.delete(ref);
+            else if (!w.owner.isConnected || w.host.parentElement !== w.owner) changed(w);
+        }
+        sweepSoon();
     }
 
     /**
@@ -495,8 +530,6 @@
             steps++;
             finish(step.job, pixels(step));
         }
-        // Cards gone from the page take their watches with them.
-        for (const w of watches.values()) if (!w.owner.isConnected) drop(w);
         const batch = [];
         for (const host of queue) {
             queue.delete(host);
@@ -714,7 +747,13 @@
         }
         queue.clear();
         dropSamples();
-        for (const w of Array.from(watches.values())) drop(w);
+        for (const ref of Array.from(live)) {
+            const w = ref.deref();
+            if (w) drop(w);
+        }
+        live.clear();
+        clearTimeout(sweepTimer);
+        sweepTimer = 0;
         document.querySelectorAll('[data-je-poster-colour], [data-je-poster-key]').forEach((el) => clear(/** @type {HTMLElement} */ (el)));
     }
 
@@ -750,7 +789,7 @@
         track,
         release,
         /** @returns {Object} Slice timings and counts (performance checks). */
-        stats: () => ({ ...counters, queued: queue.size, waiting: toSample.size, decoding: sampling.size, remembered: memory.size, watching: watches.size }),
+        stats: () => ({ ...counters, queued: queue.size, waiting: toSample.size, decoding: sampling.size, remembered: memory.size, watching: live.size }),
         clearMemory,
     };
 })(window.JellyfinEnhanced);

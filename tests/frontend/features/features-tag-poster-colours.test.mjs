@@ -10,6 +10,9 @@ import { createHarness, plain } from '../helpers/harness.mjs';
 const ID = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const ID2 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const img = (id, tag = 't1') => `http://jellyfin.test/Items/${id}/Images/Primary?fillHeight=300&fillWidth=200&quality=96&tag=${tag}`;
+/** The debounced store write and the watch sweep (tags/tag-poster-colours.js). */
+const PERSIST_MS = 2000;
+const SWEEP_MS = 3000;
 const card = (id, tag = 't1') => `<div class="card portraitCard" data-id="${id}" data-type="Movie"><div class="cardBox"><div class="cardScalable"><div class="cardContent"><div class="cardImageContainer coveredImage"><div><img src="${img(id, tag)}"></div></div></div><div class="je-tag-host"></div><div class="cardOverlayContainer"></div></div><div class="je-tag-caption"></div><div class="cardText">Title</div></div></div>`;
 
 /** RGBA pixels from a paint function. */
@@ -48,6 +51,14 @@ function stubImages(w, art) {
     };
   };
   return { decoded, draws, observing };
+}
+
+/** Hold the watch sweep's timer: run it with the returned function. */
+function holdSweeps(w) {
+  const sweeps = [];
+  const realTimeout = w.setTimeout;
+  w.setTimeout = (fn, ms, ...rest) => (ms === SWEEP_MS ? (sweeps.push(fn), -sweeps.length) : realTimeout(fn, ms, ...rest));
+  return { sweeps, sweep: () => { const pending = sweeps.splice(0); pending.forEach(fn => fn()); return pending.length; } };
 }
 
 /** The module alone, with stubbed image decoding: `art` maps an image URL to its pixels (or an error to throw). */
@@ -197,7 +208,7 @@ test('colours persisted for this server and user are used without decoding, new 
   const h = setup(t, { html: card(ID) + card(ID2), store, art: { [img(ID2)]: solid([200, 30, 30]) } });
   const realTimeout = h.window.setTimeout;
   // The store write is debounced by seconds: run it at once.
-  h.window.setTimeout = (fn, ms, ...rest) => realTimeout(fn, ms >= 1000 ? 0 : ms, ...rest);
+  h.window.setTimeout = (fn, ms, ...rest) => realTimeout(fn, ms === PERSIST_MS ? 0 : ms, ...rest);
   h.P.setActive(true);
   await h.settle();
   assert.deepEqual(h.decoded.map(d => d.url), [img(ID2)], 'only the artwork not stored is decoded');
@@ -304,7 +315,7 @@ test('a decode still out at a user switch is dropped: nothing shown, remembered 
   const store = { available: () => true, getPosterColours: async () => new Map(), putPosterColours: async (...args) => { puts.push(args); } };
   const h = setup(t, { store, session: { getUserId: () => user, onUserChange: (name, fn) => { reset = fn; } }, art: { [img(ID)]: solid([200, 30, 30]) } });
   const realTimeout = h.window.setTimeout;
-  h.window.setTimeout = (fn, ms, ...rest) => realTimeout(fn, ms >= 1000 ? 0 : ms, ...rest);
+  h.window.setTimeout = (fn, ms, ...rest) => realTimeout(fn, ms === PERSIST_MS ? 0 : ms, ...rest);
   // Each decode waits until the test lets it finish.
   const decode = h.window.createImageBitmap;
   const pending = [];
@@ -337,7 +348,7 @@ test('a store write still pending at a user switch is dropped', async t => {
   const timers = [];
   const realTimeout = h.window.setTimeout;
   // Hold the debounced write; slices run as usual.
-  h.window.setTimeout = (fn, ms, ...rest) => (ms >= 1000 ? (timers.push(fn), timers.length) : realTimeout(fn, ms, ...rest));
+  h.window.setTimeout = (fn, ms, ...rest) => (ms === PERSIST_MS ? (timers.push(fn), timers.length) : realTimeout(fn, ms, ...rest));
   h.P.setActive(true);
   await h.settle();
   assert.equal(timers.length, 1, "A's colour waits to be written");
@@ -399,14 +410,41 @@ test('artwork watches go with their cards: cleared, removed or switched off', as
   assert.equal(h.observing.size, 2);
   h.P.release(h.document.querySelector(`[data-id="${ID}"] .je-tag-host`));
   assert.equal(h.observing.size, 1, 'released with its card');
-  h.document.querySelector(`[data-id="${ID2}"]`).remove();
-  h.P.track(h.document.querySelector(`[data-id="${ID}"] .je-tag-host`));
-  await h.settle();
-  assert.equal(h.P.stats().watching, 1, 'a card gone from the page loses its watch at the next slice');
-  assert.equal(h.observing.size, 1);
   h.P.setActive(false);
   assert.equal(h.observing.size, 0);
   assert.equal(h.P.stats().watching, 0);
+});
+
+test('a card removed while nothing is sampled loses its watch at the next sweep, without a slice', async t => {
+  const h = setup(t, { html: card(ID) + card(ID2), art: { [img(ID)]: solid([200, 30, 30]), [img(ID2)]: solid([30, 60, 200]) } });
+  const { sweeps, sweep } = holdSweeps(h.window);
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(h.observing.size, 2);
+  assert.equal(sweeps.length, 1, 'one sweep pending while cards are watched');
+  const { slices } = h.P.stats();
+  // Jellyfin drops the row: no layout call, no track, no new card.
+  h.document.querySelector(`[data-id="${ID2}"]`).remove();
+  h.document.querySelector(`[data-id="${ID}"]`).remove();
+  await h.settle();
+  assert.equal(h.P.stats().slices, slices, 'sampling has settled: no slice runs');
+  assert.equal(h.P.stats().watching, 2);
+  sweep();
+  assert.equal(h.P.stats().watching, 0, 'released by the sweep');
+  assert.equal(h.observing.size, 0, 'no observer left');
+  assert.equal(sweeps.length, 0, 'no further sweep once nothing is watched');
+  assert.equal(h.P.stats().slices, slices);
+});
+
+test('a host removed from a card still on the page loses its watch at the next sweep', async t => {
+  const h = setup(t, { html: card(ID) + card(ID2), art: { [img(ID)]: solid([200, 30, 30]), [img(ID2)]: solid([30, 60, 200]) } });
+  const { sweep } = holdSweeps(h.window);
+  h.P.setActive(true);
+  await h.settle();
+  h.document.querySelector(`[data-id="${ID2}"] .je-tag-host`).remove();
+  sweep();
+  assert.equal(h.P.stats().watching, 1);
+  assert.equal(h.observing.size, 1);
 });
 
 test('the layout\'s clearAll releases every card\'s artwork watch', async t => {
@@ -425,6 +463,7 @@ test('the layout\'s clearAll releases every card\'s artwork watch', async t => {
   });
   t.after(() => h.close());
   const { observing } = stubImages(h.window, { [img(ID)]: solid([200, 30, 30]), [img(ID2)]: solid([30, 60, 200]) });
+  const { sweep } = holdSweeps(h.window);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/qualitytags.js', 'tags/tag-poster-colours.js']) h.load(file);
   h.JE.initializeQualityTags();
   h.JE.tagPosterColours.setActive(true);
@@ -433,8 +472,12 @@ test('the layout\'s clearAll releases every card\'s artwork watch', async t => {
   for (let i = 0; i < 12; i++) await new Promise(r => h.window.setTimeout(r, 20));
   assert.equal(h.document.querySelectorAll('[data-je-poster-colour]').length, 2, 'both cards coloured through the layout');
   assert.equal(observing.size, 2);
+  // One card already left the page: clearAll only finds the hosts still on it.
+  h.document.querySelector(`[data-id="${ID2}"]`).remove();
   h.JE.core.tagLayout.clearAll();
-  assert.equal(observing.size, 0, 'no observer outlives clearAll');
+  assert.equal(observing.size, 1, 'the detached card is not reached by clearAll');
+  sweep();
+  assert.equal(observing.size, 0, 'no observer outlives clearAll and the sweep');
   assert.equal(h.JE.tagPosterColours.stats().watching, 0);
 });
 
