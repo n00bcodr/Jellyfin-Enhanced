@@ -2599,6 +2599,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         streams.Add(new TagMediaStream
                         {
                             Type = s.Type.ToString(),
+                            SourceId = source.Id,
                             Language = effectiveLanguage,
                             Codec = s.Codec,
                             CodecTag = s.CodecTag,

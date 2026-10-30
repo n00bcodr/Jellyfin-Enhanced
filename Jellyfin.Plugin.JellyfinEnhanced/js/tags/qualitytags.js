@@ -234,6 +234,52 @@
         return (entry.audioLang || '') === audioPreferenceKey();
     }
 
+    // The version (media source) the user last picked for an item, remembered
+    // per browser. Library posters and the details poster show that version's
+    // badges; an item with no pick keeps showing its first version.
+    const SOURCE_PREF_KEY = 'je-quality-source';
+    const SOURCE_PREF_MAX = 500;
+
+    function normItemId(id) {
+        return String(id || '').replace(/-/g, '').toLowerCase();
+    }
+
+    function readSourcePrefs() {
+        try {
+            return JSON.parse(localStorage.getItem(SOURCE_PREF_KEY) || '{}') || {};
+        } catch {
+            return {};
+        }
+    }
+
+    /** @returns {string} The remembered media source id, or '' for the default. */
+    function selectedSourceFor(itemId) {
+        return readSourcePrefs()[normItemId(itemId)] || '';
+    }
+
+    function rememberSource(itemId, sourceId) {
+        const prefs = readSourcePrefs();
+        const id = normItemId(itemId);
+        delete prefs[id]; // re-insert so the newest pick sits last
+        prefs[id] = sourceId;
+        const keys = Object.keys(prefs);
+        keys.slice(0, Math.max(0, keys.length - SOURCE_PREF_MAX)).forEach((k) => delete prefs[k]);
+        try {
+            localStorage.setItem(SOURCE_PREF_KEY, JSON.stringify(prefs));
+        } catch { /* storage unavailable: the pick lasts until reload */ }
+    }
+
+    /**
+     * Whether a cached entry matches both the audio preference and the item's
+     * remembered version.
+     * @param {{audioLang?: string, srcId?: string}} entry
+     * @param {string} itemId
+     * @returns {boolean}
+     */
+    function matchesCache(entry, itemId) {
+        return matchesAudioPreference(entry) && (entry.srcId || '') === selectedSourceFor(itemId);
+    }
+
     /**
      * Narrows the audio streams to the preferred language when one is set.
      * Tiers: streams matching language and region (when the preference has
@@ -349,10 +395,15 @@
      * @param {Array} mediaStreams - The MediaStreams array from the Jellyfin item.
      * @param {Array} mediaSources - The MediaSources array from the Jellyfin item.
      * @param {Object} [itemData] - Optional item metadata for filename/title signals.
+     * @param {string} [sourceId] - Judge only this version's streams when the item has several.
      * @returns {Array<string>} A list of detected quality tags.
      */
-    function getEnhancedQuality(mediaStreams, mediaSources, itemData = null) {
+    function getEnhancedQuality(mediaStreams, mediaSources, itemData = null, sourceId = '') {
         if (!mediaStreams && !mediaSources) return [];
+
+        if (sourceId && mediaStreams?.some(s => s.SourceId === sourceId)) {
+            mediaStreams = mediaStreams.filter(s => s.SourceId === sourceId);
+        }
 
         const qualities = new Set();
         let videoStreams = [];
@@ -981,24 +1032,25 @@
                 const itemId = item.Id;
                 // Check hot cache first
                 const hot = ctx.hot?.get(itemId);
-                if (hot && (Date.now() - hot.timestamp) < ctx.cacheTtl && matchesAudioPreference(hot)) {
+                if (hot && (Date.now() - hot.timestamp) < ctx.cacheTtl && matchesCache(hot, itemId)) {
                     insertOverlay(ctx, el, hot.qualities);
                     return;
                 }
 
                 let qualities = [];
+                const srcId = selectedSourceFor(itemId);
                 if (item.Type === 'Series' || item.Type === 'Season') {
                     if (extras.firstEpisode) {
                         qualities = getEnhancedQuality(extras.firstEpisode.MediaStreams, extras.firstEpisode.MediaSources, extras.firstEpisode);
                     }
                 } else {
-                    qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item);
+                    qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item, srcId);
                 }
 
                 if (qualities.length > 0) {
                     const audioLang = audioPreferenceKey();
-                    ctx.setPersistent(itemId, { qualities, timestamp: Date.now(), audioLang });
-                    ctx.hot?.set(itemId, { qualities, timestamp: Date.now(), audioLang });
+                    ctx.setPersistent(itemId, { qualities, timestamp: Date.now(), audioLang, srcId });
+                    ctx.hot?.set(itemId, { qualities, timestamp: Date.now(), audioLang, srcId });
                     insertOverlay(ctx, el, qualities);
                 }
             },
@@ -1010,7 +1062,7 @@
                 if (isAudioPreferencePending()) return true;
                 const hot = ctx.hot?.get(itemId);
                 const cached = hot || ctx.getPersistent(itemId);
-                if (cached && cached.qualities && cached.qualities.length > 0 && matchesAudioPreference(cached)) {
+                if (cached && cached.qualities && cached.qualities.length > 0 && matchesCache(cached, itemId)) {
                     insertOverlay(ctx, el, cached.qualities);
                     return true;
                 }
@@ -1022,15 +1074,16 @@
                 if (isAudioPreferencePending()) return;
                 // Check local computed cache first (avoids re-running quality detection)
                 const cached = serverQualityCache.get(itemId);
-                if (cached && matchesAudioPreference(cached)) {
+                if (cached && matchesCache(cached, itemId)) {
                     if (cached.qualities.length > 0) insertOverlay(ctx, el, cached.qualities);
                     return;
                 }
                 const audioLang = audioPreferenceKey();
+                const srcId = selectedSourceFor(itemId);
                 const sd = entry.StreamData;
-                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, { audioLang, qualities: [] }); return; }
-                const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath });
-                serverQualityCache.set(itemId, { audioLang, qualities });
+                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, { audioLang, srcId, qualities: [] }); return; }
+                const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath }, srcId);
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {
@@ -1052,11 +1105,54 @@
         primeJellyfinAudioPreference().then(render);
     }
 
+    let versionPickerWatched = false;
+
+    /**
+     * Makes the details page's version picker drive the badges: a pick is
+     * remembered (so library posters follow it) and re-renders the poster, and
+     * on opening the page the remembered version is selected again.
+     */
+    function watchVersionPicker() {
+        if (versionPickerWatched) return;
+        versionPickerWatched = true;
+        const detailId = () => new URLSearchParams(location.hash.split('?')[1] || '').get('id');
+
+        document.addEventListener('change', (e) => {
+            const select = e.target;
+            if (!select?.classList?.contains('selectSource') || !select.value) return;
+            const id = detailId();
+            if (!id || selectedSourceFor(id) === select.value) return;
+            rememberSource(id, select.value);
+            JE.core.tagRenderer.reinitialize('quality', spec);
+        });
+
+        document.addEventListener('viewshow', () => {
+            const id = detailId();
+            const want = id && selectedSourceFor(id);
+            if (!want) return;
+            // Jellyfin fills the picker after the page shows.
+            let tries = 0;
+            const timer = setInterval(() => {
+                const select = document.querySelector('#itemDetailPage:not(.hide) .selectSource');
+                if (select && select.options.length > 1) {
+                    clearInterval(timer);
+                    if (select.value !== want && [...select.options].some((o) => o.value === want)) {
+                        select.value = want;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                } else if (++tries > 20) {
+                    clearInterval(timer);
+                }
+            }, 300);
+        });
+    }
+
     /**
      * Initializes the Quality Tags feature.
      */
     JE.initializeQualityTags = function() {
         watchPlaybackPreferencesPage();
+        watchVersionPicker();
         withJellyfinAudioPreference(() => JE.core.tagRenderer.register('quality', spec));
     };
 

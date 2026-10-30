@@ -463,6 +463,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Streams = sd.Streams?.Select(st => new TagMediaStream
                     {
                         Type = st.Type,
+                        SourceId = st.SourceId,
                         Language = st.Language,
                         Codec = st.Codec,
                         CodecTag = st.CodecTag,

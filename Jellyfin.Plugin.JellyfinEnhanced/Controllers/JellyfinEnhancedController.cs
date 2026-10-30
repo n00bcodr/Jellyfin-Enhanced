@@ -8729,17 +8729,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var stubMediaSources =
                             SelectTagDataMediaSources(spEp.GetMediaSources(false));
                         stubStreams = stubMediaSources
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache))
+                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                             .Where(resolved =>
-                                resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio)
+                                resolved.Resolved.Stream.Type == MediaStreamType.Video
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio)
                             .Select(resolved =>
                             {
-                                var s = resolved.Stream;
+                                var s = resolved.Resolved.Stream;
                                 return (object)new
                                 {
                                     Type = s.Type.ToString(),
-                                    Language = resolved.Language,
+                                    SourceId = resolved.SourceId,
+                                    Language = resolved.Resolved.Language,
                                     Codec = s.Codec,
                                     CodecTag = s.CodecTag,
                                     Profile = s.Profile,
@@ -8840,17 +8841,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         var stubMs =
                             SelectTagDataMediaSources(spMovie.GetMediaSources(false));
                         stubStreams = stubMs
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache))
+                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                             .Where(resolved =>
-                                resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio)
+                                resolved.Resolved.Stream.Type == MediaStreamType.Video
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio)
                             .Select(resolved =>
                             {
-                                var s = resolved.Stream;
+                                var s = resolved.Resolved.Stream;
                                 return (object)new
                                 {
                                     Type = s.Type.ToString(),
-                                    Language = resolved.Language,
+                                    SourceId = resolved.SourceId,
+                                    Language = resolved.Resolved.Language,
                                     Codec = s.Codec,
                                     CodecTag = s.CodecTag,
                                     Profile = s.Profile,
@@ -8932,17 +8934,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         SelectTagDataMediaSources(item.GetMediaSources(false));
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
-                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache))
+                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                         .Where(resolved =>
-                            resolved.Stream.Type == MediaStreamType.Video
-                            || resolved.Stream.Type == MediaStreamType.Audio)
+                            resolved.Resolved.Stream.Type == MediaStreamType.Video
+                            || resolved.Resolved.Stream.Type == MediaStreamType.Audio)
                         .Select(resolved =>
                         {
-                            var s = resolved.Stream;
+                            var s = resolved.Resolved.Stream;
                             return (object)new
                             {
                                 Type = s.Type.ToString(),
-                                Language = resolved.Language,
+                                SourceId = resolved.SourceId,
+                                Language = resolved.Resolved.Language,
                                 Codec = s.Codec,
                                 CodecTag = s.CodecTag,
                                 Profile = s.Profile,

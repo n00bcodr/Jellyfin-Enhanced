@@ -193,6 +193,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
     public class TagMediaStream
     {
         public string? Type { get; set; }
+        public string? SourceId { get; set; }
         public string? Language { get; set; }
         public string? Codec { get; set; }
         public string? CodecTag { get; set; }
@@ -210,6 +211,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public static bool ContentEquals(TagMediaStream a, TagMediaStream b) =>
             a.Type == b.Type
+            && a.SourceId == b.SourceId
             && a.Language == b.Language
             && a.Codec == b.Codec
             && a.CodecTag == b.CodecTag
