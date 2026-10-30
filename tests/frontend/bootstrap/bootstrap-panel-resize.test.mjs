@@ -516,6 +516,9 @@ test('grip announces keyboard size and maximum through its polite localized stat
   h.preset('fill').click();
   h.key(h.grip(), 'ArrowRight');
   assert.equal(status.textContent, 'Panel size 1352 × 852. Maximum size reached');
+  h.key(h.grip(), 'ArrowLeft');
+  h.key(h.grip(), 'ArrowRight');
+  assert.equal(status.textContent, 'Panel size 1352 × 852. Maximum size reached', 'announces on reaching the boundary from below');
 });
 
 test('pointer announcements coalesce for 250ms and discard pending updates on close', async t => {

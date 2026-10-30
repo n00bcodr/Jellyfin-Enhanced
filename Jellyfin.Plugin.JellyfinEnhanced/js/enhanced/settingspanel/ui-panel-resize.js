@@ -357,7 +357,8 @@
             const rect = help.getBoundingClientRect();
             const box = clampSize(rect.width + steps[0] * step, rect.height + steps[1] * step);
             choose({ preset: 'custom', width: box.width, height: box.height });
-            announce(box, (steps[0] > 0 && box.width <= rect.width) || (steps[1] > 0 && box.height <= rect.height));
+            const bounds = sizeBounds();
+            announce(box, (steps[0] > 0 && box.width === bounds.maxWidth) || (steps[1] > 0 && box.height === bounds.maxHeight));
         });
 
         // Selecting text while the pointer is captured would highlight the page.
