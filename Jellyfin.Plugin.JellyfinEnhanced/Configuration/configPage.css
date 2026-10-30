@@ -828,8 +828,7 @@
 }
 #JellyfinEnhancedPage .configSection > .inputContainer,
 #JellyfinEnhancedPage .configSection > .checkboxContainer,
-#JellyfinEnhancedPage .configSection > .selectContainer,
-#JellyfinEnhancedPage .configSection > .je-tag-row {
+#JellyfinEnhancedPage .configSection > .selectContainer {
     background: var(--je-surface-1);
     border: 1px solid var(--je-border);
     border-radius: 8px;
@@ -839,15 +838,13 @@
 }
 #JellyfinEnhancedPage .configSection > .inputContainer:hover,
 #JellyfinEnhancedPage .configSection > .checkboxContainer:hover,
-#JellyfinEnhancedPage .configSection > .selectContainer:hover,
-#JellyfinEnhancedPage .configSection > .je-tag-row:hover {
+#JellyfinEnhancedPage .configSection > .selectContainer:hover {
     border-color: var(--je-border);
     background: var(--je-surface-1);
 }
 #JellyfinEnhancedPage .configSection > .inputContainer:focus-within,
 #JellyfinEnhancedPage .configSection > .checkboxContainer:focus-within,
-#JellyfinEnhancedPage .configSection > .selectContainer:focus-within,
-#JellyfinEnhancedPage .configSection > .je-tag-row:focus-within {
+#JellyfinEnhancedPage .configSection > .selectContainer:focus-within {
     border-color: var(--primary-accent-color, #00a4dc);
     background: var(--je-surface-2);
     box-shadow: 0 0 0 1px var(--primary-accent-color, #00a4dc) inset;
@@ -1820,48 +1817,10 @@ body.je-has-customtabs   .je-needs-customtabs   { display: none !important; }
 body.je-has-pluginpages  .je-needs-pluginpages  { display: none !important; }
 body.je-has-introskipper .je-needs-introskipper { display: none !important; }
 
-/* Media Tags rows — pair an Enable toggle with its Position dropdown on
-   one row so the relationship is obvious without an "Advanced" accordion.
-   Falls to a stacked layout on narrow viewports so the dropdown doesn't
-   shrink unreadably. */
-.je-tag-row {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-.je-tag-row > .checkboxContainer {
-    flex: 1 1 200px;
-    margin: 0;
-    min-width: 0;
-}
-.je-tag-row > .je-tag-position {
-    flex: 0 0 auto;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.je-tag-row > .je-tag-position .inputLabel {
-    font-size: 0.85em;
-    margin: 0;
-    white-space: nowrap;
-}
-.je-tag-row > .je-tag-position .emby-select {
-    min-width: 140px;
-}
-@media (max-width: 600px) {
-    .je-tag-row > .je-tag-position {
-        flex: 1 1 100%;
-    }
-}
-
 /* Quality-tag category rows inside the admin <details>. Visual treatment
    matches the rest of the form: a single horizontal row holding a checkbox
    container, plus reorder buttons that stay quiet by default and hint at
    their action on hover. */
-/* Wrapper the reorder code sorts rows within; the rows keep the expander's own spacing. */
-#qualityCategoriesAdmin { display: contents; }
 .je-quality-cat-admin-row {
     display: flex;
     align-items: center;
@@ -1889,98 +1848,6 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
     opacity: 0.35;
     cursor: not-allowed;
 }
-/* Tag layout defaults (Media Tags): group rows with move buttons, a limit
-   stepper and the position pills for the selected default layout. Each row
-   is a fieldset so the group's Enable switch disables it as a whole. */
-.je-tla-rows {
-    list-style: none;
-    margin: 8px 0 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-.je-tla-row > fieldset {
-    margin: 0;
-    padding: 6px 8px 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    min-width: 0;
-}
-.je-tla-row > fieldset:disabled {
-    opacity: 0.5;
-}
-.je-tla-legend {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-}
-.je-tla-head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-}
-.je-tla-name {
-    flex: 1;
-    font-weight: 500;
-    min-width: 6em;
-}
-.je-tla-cap {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-.je-tla-cap output {
-    min-width: 2.2em;
-    text-align: center;
-    font-weight: 600;
-}
-.je-tla-move,
-.je-tla-step {
-    min-width: 32px;
-    padding: 4px 6px;
-    margin: 0;
-    line-height: 1;
-}
-.je-tla-move .material-icons,
-.je-tla-step .material-icons {
-    font-size: 18px !important;
-    vertical-align: middle;
-}
-.je-tla-move[disabled],
-.je-tla-step[disabled] {
-    opacity: 0.35;
-    cursor: not-allowed;
-}
-.je-tla-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 8px;
-}
-.je-tla-pill {
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    border-radius: 999px;
-    padding: 4px 12px;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    font-size: 0.85em;
-    cursor: pointer;
-}
-.je-tla-pill[aria-pressed="true"] {
-    background: var(--primary-accent-color, #00a4dc);
-    border-color: var(--primary-accent-color, #00a4dc);
-    color: #fff;
-}
-.je-tla-rows button:focus-visible {
-    outline: 2px solid #fff;
-    outline-offset: 2px;
-}
-
 /* Inline reorder-icon hints that live in the descriptive sentence above the
    list — show them at text size, not button size. */
 .je-cat-arrow-icon {
@@ -2412,98 +2279,14 @@ div#bazarrMappingsValidationResult {
     padding: 10px;
 }
 
-/* ---------------------------------------------------------------------------
-   Tag Styles editor (Media Tags section): preset tiles, group tabs, editing
-   targets, Background/Border/Text rows, contrast badge, live preview.
-   --------------------------------------------------------------------------- */
-.je-ts-editor { margin: 8px 0 16px 0; padding: 12px 16px; background: var(--je-surface-1); border: 1px solid var(--je-border); border-radius: 6px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.je-ts-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.je-ts-row-label, .je-ts-section-label { font-weight: 600; }
-.je-ts-section-label { margin-top: 4px; }
-.je-ts-pills, .je-ts-opacity { display: inline-flex; flex-wrap: wrap; gap: 4px; }
-.je-ts-pill { padding: 4px 12px; border: 1px solid var(--je-border-strong); border-radius: 14px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
-.je-ts-pill.active { background: var(--primary-accent-color, #00a4dc); border-color: var(--primary-accent-color, #00a4dc); color: #fff; font-weight: 600; }
-
-.je-ts-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.je-ts-preset { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px; border: 2px solid var(--je-border); border-radius: 8px; background: linear-gradient(135deg, #3a4a5c 0%, #1c2430 55%, #4b3b2a 100%); color: #fff; cursor: pointer; font: inherit; text-align: left; }
-.je-ts-preset.active { border-color: var(--primary-accent-color, #00a4dc); box-shadow: 0 0 0 2px var(--primary-accent-color, #00a4dc); }
-.je-ts-preset-title { font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
-.je-ts-preset-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.je-ts-preset-chips .je-ts-chip { font-size: 11px; padding: 2px 6px; }
-
-.je-ts-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
-.je-ts-tab { padding: 4px 12px; border: 1px solid var(--je-border-strong); border-radius: 14px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
-.je-ts-tab.active { background: var(--je-surface-3); border-color: var(--je-border-focus); font-weight: 600; }
-.je-ts-group-panel { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--je-border); border-radius: 6px; }
-.je-ts-targets { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; background: #262626; border-radius: 6px; }
-.je-ts-target { position: relative; display: inline-flex; align-items: center; padding: 4px; border: 2px solid transparent; border-radius: 8px; background: transparent; color: #fff; cursor: pointer; font: inherit; }
-.je-ts-target-all { padding: 4px 10px; border-color: rgba(255, 255, 255, 0.25); }
-.je-ts-target.active { border-color: #fff; background: rgba(0, 0, 0, 0.45); box-shadow: 0 0 0 2px var(--primary-accent-color, #00a4dc); }
-.je-ts-target.changed::after { content: ""; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--primary-accent-color, #00a4dc); }
-.je-ts-note:empty { display: none; }
-
-.je-ts-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; box-sizing: border-box; pointer-events: none; }
-.je-ts-q { font-weight: bold; font-variant-caps: small-caps; font-size: 0.85rem; line-height: 1.2; padding: 2px 10px; border-radius: 5px; border: 1px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
-.je-ts-age { font-size: 13px; font-weight: 700; line-height: 1; letter-spacing: 0.02em; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; border: 1px solid transparent; text-shadow: 0 0 2px rgba(0, 0, 0, 0.6); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-.je-ts-rate { font-size: 13px; font-weight: 600; line-height: 1; padding: 4px 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
-.je-ts-rate .je-ts-rate-icon { font-size: 14px; color: inherit; }
-.je-ts-tomato { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #fa320a; }
-.je-ts-genre { justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
-.je-ts-genre .material-icons { font-size: 16px; color: inherit; }
-.je-ts-status { font-size: 13px; font-weight: 600; line-height: 1.15; padding: 4px 10px; border-radius: 6px; border: 1px solid transparent; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-.je-ts-flag { width: 28px; height: 21px; border-radius: 2px; object-fit: cover; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
-
-.je-ts-rows { display: flex; flex-direction: column; gap: 8px; }
-.je-ts-field-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.je-ts-row-name { min-width: 84px; font-weight: 500; }
-.je-ts-swatches { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.je-ts-swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.35); cursor: pointer;
-    background: linear-gradient(var(--je-ts-swatch), var(--je-ts-swatch)), repeating-conic-gradient(#888 0 25%, #ccc 0 50%) 50% / 8px 8px; }
-.je-ts-swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--primary-accent-color, #00a4dc); }
-.je-ts-swatch-current { width: 30px; height: 30px; border-radius: 6px; cursor: default; }
-.je-ts-swatch-varies { background: conic-gradient(#1e88e5, #8e24aa, #ff6b6b, #ffd166, #2e7d32, #1e88e5); }
-.je-ts-opacity-pill:disabled { opacity: 0.4; cursor: default; }
-.je-ts-any { width: 34px; height: 26px; padding: 0; border: 0; background: none; cursor: pointer; }
-.je-ts-opacity-pill { padding: 2px 8px; font-size: 12px; }
-.je-ts-reset { padding: 3px 10px; border: 1px solid var(--je-border-strong); border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 12px; }
-.je-ts-reset:disabled { opacity: 0.4; cursor: default; }
-
-.je-ts-contrast { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 24px; }
-.je-ts-contrast-badge { padding: 2px 10px; border-radius: 12px; font-weight: 700; font-size: 12px; color: #111; }
-.je-ts-contrast-aa { background: #66bb6a; }
-.je-ts-contrast-large { background: #ffb74d; }
-.je-ts-contrast-low { background: #ef5350; color: #fff; }
-.je-ts-contrast-hint { font-size: 12px; opacity: 0.7; }
-
-.je-ts-preview { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; padding: 12px; background: #101010; border-radius: 6px; }
-.je-ts-card { display: flex; flex-direction: column; gap: 6px; }
-.je-ts-card-movie { width: 180px; }
-.je-ts-card-episode { width: 300px; max-width: 100%; }
-.je-ts-art { position: relative; border-radius: 6px; overflow: hidden; background: linear-gradient(160deg, #5a6f86 0%, #263445 45%, #7a5a3a 80%, #c9a46b 100%); }
-.je-ts-card-movie .je-ts-art { aspect-ratio: 2 / 3; }
-.je-ts-card-episode .je-ts-art { aspect-ratio: 16 / 9; background: linear-gradient(120deg, #b7c9d8 0%, #51677d 40%, #1d2733 75%); }
-.je-ts-corner { position: absolute; display: flex; flex-direction: column; gap: 4px; max-width: calc(100% - 12px); }
-.je-ts-corner-tl { top: 6px; left: 6px; align-items: flex-start; }
-.je-ts-corner-tr { top: 6px; right: 6px; align-items: flex-end; }
-.je-ts-corner-bl { bottom: 6px; left: 6px; align-items: flex-start; }
-.je-ts-corner-br { bottom: 6px; right: 6px; align-items: flex-end; }
-/* A group's production container inside a preview corner: laid out by the corner, never by tag CSS. */
-.je-ts-preview .je-ts-corner-group { position: static !important; display: flex; flex-direction: column; align-items: inherit; gap: 4px; margin: 0; padding: 0; transform: none; max-width: none; max-height: none; overflow: visible; }
-.je-ts-preview .je-userreview-icon { display: inline-flex; font-family: inherit; }
-.je-ts-art .je-ts-chip { font-size: 11px; }
-.je-ts-art .je-ts-q { padding: 1px 7px; }
-.je-ts-art .je-ts-genre { width: 24px; height: 24px; }
-.je-ts-card-title { font-size: 13px; opacity: 0.8; }
-
-.je-ts-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.je-ts-footer .checkboxContainer { margin: 0; }
-
-/* Media Tags holds the Tag Styles editor: give it two columns when the grid has room. */
-@media (min-width: 1100px) {
-    .jellyfin-tab-content.active > fieldset:has(#tagStyleEditor) { grid-column: span 2; }
-}
-@media (max-width: 600px) {
-    .je-ts-editor { padding: 10px; }
-    .je-ts-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .je-ts-row-name { min-width: 100%; }
-}
+/* Media Tags card (Display tab): the settings live on their own page
+   (mediaTagsPage.html); the card summarises them and links there. */
+.je-media-tags-card { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 18px; background: var(--je-surface-1); border: 1px solid var(--je-border); border-radius: 8px; }
+.je-media-tags-card-text { flex: 1 1 320px; min-width: 0; }
+.je-media-tags-card-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 10px 0 0; font-size: 0.9em; }
+.je-media-tags-card-facts dt { opacity: 0.7; }
+.je-media-tags-card-facts dd { margin: 0; font-weight: 600; }
+.je-media-tags-open { display: inline-flex !important; align-items: center; gap: 8px; margin: 0 !important; padding: 0.7em 1.4em !important; text-decoration: none; }
+.je-media-tags-card-links { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9em; }
+.je-media-tags-card-link { color: var(--primary-accent-color, #00a4dc); text-decoration: none; }
+.je-media-tags-card-link:hover { text-decoration: underline; }

@@ -19,6 +19,13 @@ Also derives each tab's icon (Material Icons ligature, or the real public
 jsDelivr URL for an <img data-je-cdn="..."> like Seerr's -- the docs site is
 static and has no plugin backend to proxy CdnAssetService.cs's route through).
 
+Also reads the Media Tags admin page (Configuration/mediaTagsPage.html), whose
+controls are declared in its section modules (js/enhanced/admintags/sections/*.js)
+as one-line field objects: `{ id: '<control id>', key: '<PropertyName>', type: ...,
+label: '<en.json key>' ... }`, grouped under the nearest preceding section
+`title: '<en.json key>'`. Those settings go under a "Media Tags" tab with the
+section's title as their group and the field's label as their label.
+
 Output shape: {"groups": {...}, "labels": {...}, "tabs": {...}, "tabIcons": {TabLabel: {...}}, "defaults": {PropertyName: value}}
 
 Run manually with: python scripts/generate_config_flag_groups.py
@@ -34,6 +41,10 @@ CONFIG_PAGE = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" /
 PLUGIN_CONFIG_CS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "Configuration" / "PluginConfiguration.cs"
 ENGLISH_LABELS = json.loads((REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "js" / "locales" / "en.json").read_text())
 OUTPUT = REPO_ROOT / "docs" / "advanced" / "config-flag-groups.json"
+MEDIA_TAGS_SECTIONS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "js" / "enhanced" / "admintags" / "sections"
+# The Media Tags page's tab in the output, and its icon (the main page card's).
+MEDIA_TAGS_TAB = ENGLISH_LABELS["admin_tags_title"]
+MEDIA_TAGS_TAB_ICON = {"type": "material", "value": "sell"}
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin
 # settings: their ids (e.g. "overview-quick-actions-section") don't
@@ -291,6 +302,23 @@ class ConfigPageParser(HTMLParser):
         if self._in_legend and self._legend_skip_depth == 0:
             self._current_title_parts.append(data)
 
+SECTION_TITLE_RE = re.compile(r"^\s*title: '(\w+)',", re.M)
+FIELD_RE = re.compile(r"^\s*\{ id: '(\w+)', key: '(\w+)', type: '(\w+)'.*?\blabel: '(\w+)'", re.M)
+
+
+def media_tags_fields():
+    """The Media Tags page's declared settings, as (property, group title, label)
+    in file and declaration order. A property declared twice keeps its first entry."""
+    out = []
+    for path in sorted(MEDIA_TAGS_SECTIONS.glob("*.js")):
+        text = path.read_text(encoding="utf-8")
+        titles = [(m.start(), ENGLISH_LABELS.get(m.group(1), m.group(1))) for m in SECTION_TITLE_RE.finditer(text)]
+        for m in FIELD_RE.finditer(text):
+            title = next((t for start, t in reversed(titles) if start < m.start()), MEDIA_TAGS_TAB)
+            out.append((m.group(2), title, ENGLISH_LABELS.get(m.group(4), m.group(4))))
+    return out
+
+
 ASSIGNMENT_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?);\s*(//.*)?$")
 
 
@@ -377,6 +405,12 @@ def main():
 
     defaults = extract_defaults(PLUGIN_CONFIG_CS.read_text(encoding="utf-8"))
 
+    # Settings that live on the Media Tags page (never also on the main page).
+    for prop, group_title, label in media_tags_fields():
+        parser.tabs.setdefault(prop, MEDIA_TAGS_TAB)
+        parser.groups.setdefault(prop, group_title)
+        parser.labels.setdefault(prop, label)
+
     for prop, (tab_label, group_title) in MANUAL_TAB_GROUP.items():
         parser.tabs.setdefault(prop, tab_label)
         parser.groups.setdefault(prop, group_title)
@@ -392,6 +426,9 @@ def main():
             src = resolve_cdn_path(icon["cdn_path"])
             if src:
                 tab_icons[label] = {"type": "img", "src": src}
+
+    if any(tab == MEDIA_TAGS_TAB for tab in parser.tabs.values()):
+        tab_icons[MEDIA_TAGS_TAB] = MEDIA_TAGS_TAB_ICON
 
     output = {
         "groups": dict(sorted(parser.groups.items())),

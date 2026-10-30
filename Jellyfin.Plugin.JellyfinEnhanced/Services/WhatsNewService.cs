@@ -12,7 +12,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
     /// Auto-detects newly added config-page settings by diffing the embedded
-    /// configPage.html's control ids against the last ACKNOWLEDGED baseline,
+    /// configPage.html's control ids, plus the ids the Media Tags page's
+    /// section modules declare (js/enhanced/admintags/sections/*.js), against
+    /// the last ACKNOWLEDGED baseline,
     /// powering the config page's "What's New" banner/badges with no
     /// per-release maintenance required.
     ///
@@ -33,6 +35,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     {
         private const string EmbeddedConfigPageResource = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html";
         private const string EmbeddedSeedResource = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.whats-new-seed.json";
+
+        // The Media Tags page's section modules (Configuration/mediaTagsPage.html
+        // builds its controls from them): embedded under this resource prefix.
+        private const string MediaTagsSectionPrefix = "Jellyfin.Plugin.JellyfinEnhanced.js.enhanced.admintags.sections.";
+
+        // A section module's one-line field declaration: { id: '<control id>', key: '<Property>', …
+        private static readonly Regex SectionFieldIdRegex = new Regex(
+            "^\\s*\\{ id: '(\\w+)', key: '\\w+'",
+            RegexOptions.Multiline | RegexOptions.Compiled);
 
         // Matches id="..." anywhere inside an <input>/<select>/<textarea>/<button>
         // tag, regardless of attribute order -- [^>]* is a plain negated
@@ -191,11 +202,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             using var reader = new StreamReader(stream);
             var html = reader.ReadToEnd();
 
+            // The Media Tags settings moved off configPage.html keep their old
+            // ids on their own page, declared in its section modules.
+            var sectionIds = new List<string>();
+            foreach (var name in assembly.GetManifestResourceNames()
+                .Where(n => n.StartsWith(MediaTagsSectionPrefix, StringComparison.Ordinal) && n.EndsWith(".js", StringComparison.Ordinal))
+                .OrderBy(n => n, StringComparer.Ordinal))
+            {
+                using var sectionStream = assembly.GetManifestResourceStream(name);
+                if (sectionStream == null) continue;
+                using var sectionReader = new StreamReader(sectionStream);
+                sectionIds.AddRange(SectionFieldIdRegex.Matches(sectionReader.ReadToEnd()).Select(m => m.Groups[1].Value));
+            }
+
             // Distinct + ordered: the same id should never repeat within one
             // page, but dedupe defensively rather than let a duplicate skew
             // the diff.
             return SettingIdRegex.Matches(html)
                 .Select(m => m.Groups[1].Value)
+                .Concat(sectionIds)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
         }
