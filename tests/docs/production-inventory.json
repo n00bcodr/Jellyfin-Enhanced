@@ -4240,6 +4240,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "RatingTagsShowCommunity",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "RatingTagsShowCritic",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -6760,6 +6776,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "RatingTagsShowCommunity",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "RatingTagsShowCritic",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -8157,7 +8189,7 @@
     "build_targets": 2,
     "files": 364,
     "routes": 181,
-    "configuration_properties": 570,
+    "configuration_properties": 574,
     "storage_references": 70,
     "scheduled_tasks": 13,
     "locales": 33

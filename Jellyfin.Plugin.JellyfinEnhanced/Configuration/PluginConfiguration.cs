@@ -146,6 +146,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RatingTagsOnEpisodes = true;
             RatingTagsOnContinueWatching = true;
             RatingTagsOnNextUp = true;
+            RatingTagsShowCommunity = true;
+            RatingTagsShowCritic = true;
             AgeRatingTagsPosition = "bottom-right";
             StatusTagsPosition = "top-right";
             StatusTagsJustAdded = true;
@@ -751,6 +753,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsOnEpisodes { get; set; } = true;
         public bool RatingTagsOnContinueWatching { get; set; } = true;
         public bool RatingTagsOnNextUp { get; set; } = true;
+        // Which scores the rating group includes (community star, critic
+        // tomato). Per-user defaults like the scope switches; both default to
+        // true so existing installs render exactly as before.
+        public bool RatingTagsShowCommunity { get; set; } = true;
+        public bool RatingTagsShowCritic { get; set; } = true;
         [AnalyticsInclude]
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         [AnalyticsInclude]
