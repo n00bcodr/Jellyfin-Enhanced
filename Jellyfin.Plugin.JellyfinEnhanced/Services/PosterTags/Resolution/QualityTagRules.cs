@@ -95,6 +95,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// <param name="data">Entry stream data (Series/Season: the representative episode).</param>
         /// <param name="preferredAudioLanguage">Effective preferred audio language, or null.</param>
         public static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage)
+            => Detect(data, preferredAudioLanguage, includeAudio: true);
+
+        /// <summary>Detect video and source labels without computing audio that aggregation ranks per track.</summary>
+        internal static List<string> DetectNonAudio(TagStreamData? data)
+            => Detect(data, null, includeAudio: false);
+
+        private static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, bool includeAudio)
         {
             var qualities = new List<string>(6);
             if (data?.Streams is null) return qualities;
@@ -112,10 +119,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             foreach (var stream in streams)
             {
                 if (stream.Type == "Video") videoStreams.Add(stream);
-                else if (stream.Type == "Audio") audioStreams.Add(stream);
+                else if (includeAudio && stream.Type == "Audio") audioStreams.Add(stream);
             }
 
-            audioStreams = SelectAudioStreamsForLanguage(audioStreams, preferredAudioLanguage);
+            if (includeAudio) audioStreams = SelectAudioStreamsForLanguage(audioStreams, preferredAudioLanguage);
             var primaryVideo = videoStreams.Count > 0 ? videoStreams[0] : null;
 
             // IMAX: item name (+ the item fields the server path does not carry), every source
@@ -139,16 +146,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 if (hdr is not null) Add(qualities, hdr);
             }
 
-            var audio = DetectAudioCodec(audioStreams);
-            var channels = DetectChannels(audioStreams);
-            if (audio is not null)
+            if (includeAudio)
             {
-                if (channels is not null && !audio.Contains(channels, StringComparison.Ordinal)) audio = audio + " " + channels;
-                Add(qualities, audio);
-            }
-            else if (channels is "7.1" or "5.1")
-            {
-                Add(qualities, channels);
+                var audio = DetectAudioCodec(audioStreams);
+                var channels = DetectChannels(audioStreams);
+                if (audio is not null)
+                {
+                    if (channels is not null && !audio.Contains(channels, StringComparison.Ordinal)) audio = audio + " " + channels;
+                    Add(qualities, audio);
+                }
+                else if (channels is "7.1" or "5.1")
+                {
+                    Add(qualities, channels);
+                }
             }
 
             if (sources is not null)

@@ -7,6 +7,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -27,6 +28,26 @@ public class SeriesQualityAggregationTests
     };
     private static SeriesQualityAggregation.Episode Fact(int height, long? aired, string codec = "h264", string range = "SDR", string audio = "DTS 5.1") =>
         new(Guid.NewGuid().ToString("N"), aired, Streams(height, codec, range, audio));
+
+    [Fact]
+    public void NonAudioDetectionRetainsSourceAndFormatSignalsWhileAggregationRanksEachAudioTrack()
+    {
+        var streams = Streams(2160, "hevc", "Dolby Vision");
+        // Audio titles still contribute format signals even when audio label detection is skipped.
+        streams.Streams!.Add(new() { Type = "Audio", Language = "deu", DisplayTitle = "IMAX TRUEHD 7.1", Channels = 8 });
+        streams.Sources = [new() { Path = "/movies/film.3d.hsbs.mkv" }];
+        var nonAudio = QualityTagRules.DetectNonAudio(streams);
+        Assert.Equal(QualityTagRules.Detect(streams, null).Where(label => QualityTagRules.CategoryOf(label) != QualityTagRules.AudioInfo), nonAudio);
+        Assert.Contains("IMAX", nonAudio);
+        Assert.Contains("3D", nonAudio);
+        Assert.DoesNotContain(nonAudio, label => QualityTagRules.CategoryOf(label) == QualityTagRules.AudioInfo);
+        var summary = SeriesQualityAggregation.Build([new("first", 1, streams), new("last", 2, streams)], 100);
+        Assert.Contains("IMAX", summary.LatestExtras);
+        Assert.Contains("3D", summary.LatestExtras);
+        Assert.Equal("TRUEHD 7.1", summary.Categories["audioInfo"].Best);
+        Assert.Equal("DTS 5.1", summary.AudioByLanguage["en"].Best);
+        Assert.Equal("TRUEHD 7.1", summary.AudioByLanguage["de"].Best);
+    }
 
     [Fact]
     public void BestRanksEachCategoryAndLatestUsesAirDateRatherThanAddedOrScanOrder()
