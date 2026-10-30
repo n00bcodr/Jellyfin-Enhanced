@@ -206,6 +206,7 @@
     "tags/ratingtags.js",
     "tags/ageratingtags.js",
     "tags/statustags.js",
+    "tags/logotags.js",
     "tags/tag-styles.js",
     "tags/userreviewtags.js",
     "// Detail-page Lock tag look button (reads JE.core.tagLook at call time).",
