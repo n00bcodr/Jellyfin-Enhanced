@@ -954,16 +954,17 @@
     }
 
     /**
-     * How many chips, in order, a wrapping row shows within maxRows rows,
-     * leaving room for a "+N" chip after them when some are left out. Mirrors
-     * flex-wrap: a chip joins the current row if it fits after the gap, else
-     * starts the next one.
+     * Which chips a wrapping row shows within maxRows rows, in priority
+     * order, leaving room for a "+N" chip after them when some are left out.
+     * A chip wider than the whole row can never be shown whole, so it is left
+     * out without holding back the chips after it. Mirrors flex-wrap: a chip
+     * joins the current row if it fits after the gap, else starts the next.
      * @param {number[]} widths - Chip widths in display order.
      * @param {number} available - Content width of the row.
      * @param {number} gap - Gap between chips.
      * @param {number} maxRows
      * @param {number} moreWidth - Width of the "+N" chip.
-     * @returns {number}
+     * @returns {boolean[]} Per chip, whether it is shown.
      */
     function chipsThatFit(widths, available, gap, maxRows, moreWidth) {
         const rowsFor = (list) => {
@@ -974,11 +975,17 @@
             }
             return rows;
         };
-        if (rowsFor(widths) <= maxRows) return widths.length;
-        for (let keep = widths.length - 1; keep > 0; keep--) {
-            if (rowsFor(widths.slice(0, keep).concat(moreWidth)) <= maxRows) return keep;
+        const fitting = widths.map((w, i) => i).filter((i) => widths[i] <= available + 0.5);
+        for (let keep = fitting.length; keep >= 0; keep--) {
+            const shown = fitting.slice(0, keep);
+            const list = shown.map((i) => widths[i]);
+            if (shown.length < widths.length) list.push(moreWidth);
+            if (keep === 0 || rowsFor(list) <= maxRows) {
+                const set = new Set(shown);
+                return widths.map((w, i) => set.has(i));
+            }
         }
-        return 0;
+        return widths.map(() => false);
     }
 
     /** @type {Set<CardController>} cards waiting for the next fitting pass */
@@ -1054,7 +1061,7 @@
     /**
      * @typedef {Object} FitPlan
      * @property {number} pillFacts - Pill facts to keep (-1 = no pill).
-     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], keep: number}>} rows - Wrapping slots.
+     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[]}>} rows - Wrapping slots.
      */
 
     /**
@@ -1072,10 +1079,10 @@
             const available = slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
             const gap = parseFloat(style.columnGap) || 0;
             const widths = chips.map((chip) => chip.getBoundingClientRect().width);
-            const keep = available > 0
+            const shown = available > 0
                 ? chipsThatFit(widths, available, gap, FIT_MAX_ROWS, more.getBoundingClientRect().width)
-                : chips.length;
-            plan.rows.push({ slot: slotEl, chips, keep });
+                : chips.map(() => true);
+            plan.rows.push({ slot: slotEl, chips, shown });
         }
         return plan;
     }
@@ -1114,10 +1121,10 @@
                 fact.previousElementSibling?.setAttribute('data-je-overflow', '');
             });
         }
-        for (const { slot, chips, keep } of plan.rows) {
+        for (const { slot, chips, shown } of plan.rows) {
             const more = moreChipOf(slot);
             if (!more) continue;
-            const hidden = chips.slice(keep);
+            const hidden = chips.filter((chip, i) => !shown[i]);
             for (const chip of hidden) chip.setAttribute('data-je-overflow', '');
             if (hidden.length === 0) {
                 more.setAttribute('data-je-overflow', '');

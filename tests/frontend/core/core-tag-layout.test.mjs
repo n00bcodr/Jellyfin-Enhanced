@@ -535,11 +535,12 @@ test('a summary pill too wide for its card drops its lowest-priority facts whole
 
 test('chipsThatFit wraps like flex-wrap and leaves room for the "+N" chip', t => {
   const h = setup(t);
-  const fit = h.layout.chipsThatFit;
-  assert.equal(fit([30, 30, 30, 30], 100, 3, 2, 20), 4, 'two rows of two... of three and one: everything fits');
-  assert.equal(fit([30, 30, 30, 30, 30, 30, 30], 100, 3, 2, 20), 5, 'row two keeps room for "+2"');
-  assert.equal(fit([30, 30, 30, 30, 30, 30], 100, 3, 2, 20), 6, 'exactly two full rows need no "+N"');
-  assert.equal(fit([150, 30], 100, 3, 1, 20), 0, 'a chip wider than the row cannot be shown whole next to "+N"');
+  const fit = (...args) => h.layout.chipsThatFit(...args).map(Number).join('');
+  assert.equal(fit([30, 30, 30, 30], 100, 3, 2, 20), '1111', 'three on row one, one on row two: everything fits');
+  assert.equal(fit([30, 30, 30, 30, 30, 30, 30], 100, 3, 2, 20), '1111100', 'row two keeps room for "+2"');
+  assert.equal(fit([30, 30, 30, 30, 30, 30], 100, 3, 2, 20), '111111', 'exactly two full rows need no "+N"');
+  assert.equal(fit([30, 150, 30, 30], 100, 3, 1, 20), '1010', 'a chip wider than the row can never be shown whole: it goes behind "+N" and the rest still fill the rows');
+  assert.equal(fit([150], 100, 3, 2, 20), '0', 'only "+1" is left');
 });
 
 /** Give a card's wrapping slot (default: the caption strip), its chips and "+N" chip fixed widths, then run the fitting pass. */
