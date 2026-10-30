@@ -135,3 +135,21 @@ test('cache invalidation cannot reuse the previous parent aggregate', async t =>
   await h.JE.tagPipeline.invalidateServerCache();
   assert.equal(h.JE.tagPipeline.peekItemFacts(SERIES), null);
 });
+
+
+test('live recomputation refreshes the series snapshot from authoritative parent facts', async t => {
+  const h = await setup(t);
+  assert.equal(h.key(SERIES), 'series_finale');
+  assert.equal(h.key(EPISODE), 'series_finale');
+  // A corrected library aggregate identifies E11, outside the finale window.
+  // E10 remains newly added; the series must use the same corrected aggregate.
+  h.JE.tagPipeline.rememberItemFacts({ ...aggregate,
+    LatestEpisodeIndex: { Season: 1, Episode: 11 }, LatestEpisodeAired: NOW - 40 * DAY });
+  h.window.dispatchEvent(new h.window.Event('focus'));
+  assert.equal(h.key(EPISODE), 'new_episode');
+  assert.equal(h.key(SERIES), 'new_episode');
+  // Stripped/replaced facts must also clear the matching snapshot fields.
+  h.JE.tagPipeline.rememberItemFacts({ Id: SERIES, Type: 'Series' });
+  h.window.dispatchEvent(new h.window.Event('focus'));
+  assert.equal(h.key(SERIES), null);
+});

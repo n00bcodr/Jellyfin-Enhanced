@@ -505,7 +505,7 @@
         if (!facts) return null;
         const parent = JE.tagPipeline?.peekItemFacts?.(data.seriesId)
             || JE.tagPipeline?.peekServerEntry?.(data.seriesId);
-        const aggregate = data.type === 'Series' ? data : readFacts(parent || {});
+        const aggregate = parent ? readFacts(parent) : data.type === 'Series' ? data : readFacts({});
         /** @param {Object} local @returns {SeriesFacts['last']} */
         const regular = local => {
             if (!(local.latestIndex?.s > 0) || local.latestAired === null) return null;
@@ -522,10 +522,16 @@
 
     /**
      * Pick the one badge a card shows (first match wins), or null.
-     * @param {StatusData} data
+     * @param {StatusData} data - Card snapshot, refreshed from shared facts when available.
+     * @param {string|null} itemId - The card's own item id (never its parent id).
      * @returns {{kind: string, key: string, label: string, compact?: string, rank?: number}|null}
      */
-    function pickBadge(data) {
+    function pickBadge(data, itemId) {
+        const current = JE.tagPipeline?.peekItemFacts?.(normId(itemId));
+        if (current) {
+            // Shared caller-filtered facts are authoritative, including removed fields.
+            Object.assign(data, readFacts(current), { latest: toMs(current.LatestEpisodeAdded) });
+        }
         const now = Date.now();
         const today = localDay(now);
         const justAddedMs = windowMs('StatusTagsJustAddedDays', 7);
@@ -784,13 +790,8 @@
         // Cheap when fresh; refreshes a list that expired during a long session.
         activateStatus(ctx);
         ensureTrending(ctx);
-        JE.tagPipeline?.rememberItemFacts?.({
-            Type: data.type, SeriesId: data.seriesId, SeasonNumber: data.season,
-            LatestEpisodeAired: data.latestAired,
-            LatestEpisodeIndex: data.latestIndex ? { Season: data.latestIndex.s, Episode: data.latestIndex.e } : null,
-        }, itemId);
         const readsSeries = wantsSeriesFacts(data);
-        const badge = pickBadge(data);
+        const badge = pickBadge(data, itemId);
         // All date badges can change when a local day passes.
         const previous = liveCards.get(el);
         if (!readsSeries || (previous && (previous.id !== normId(itemId) || previous.domId !== cardIdentity(el)))) {
@@ -977,7 +978,7 @@
                 forgetSeriesCard(/** @type {HTMLElement} */ (el));
                 return;
             }
-            const badge = pickBadge(card.data);
+            const badge = pickBadge(card.data, card.id);
             const key = badgeKey(badge);
             if (key === card.shown) return;
             card.shown = key;
@@ -1307,6 +1308,7 @@
                 if (ctx.isTagged(el)) return;
                 if (el.closest('.je-hidden')) return;
 
+                JE.tagPipeline?.rememberItemFacts?.(item);
                 const data = fromItem(item);
                 // A Spoiler Guard strip stub (no ProviderIds) is only cached when
                 // it carries the TMDB id, so a full item's id is never lost to it.
