@@ -215,6 +215,9 @@
      * @property {Object<string, string>} slots - group → slot for the active layout.
      * @property {Set<string>} indicatorGap - Groups set to exactly top-right: a corners card
      *   holding one moves its top-right stack below Jellyfin's played/count indicator.
+     * @property {boolean} orderChosen - The order was set by the user or administrator.
+     * @property {boolean} locked - The look comes from a per-item lock.
+     * @property {string} lookKey - Identifies the presentation (see lookKeyOf).
      */
 
     /**
@@ -260,9 +263,11 @@
         }
 
         let order = null;
+        let orderChosen = false;
         if (!legacy) {
-            const chosen = readOrder(s.tagGroupOrder) || readOrder(pick(p, 'tagGroupOrder'))
-                || (layout === 'corners' ? null : DEFAULT_ORDER);
+            const own = readOrder(s.tagGroupOrder) || readOrder(pick(p, 'tagGroupOrder'));
+            orderChosen = !!own;
+            const chosen = own || (layout === 'corners' ? null : DEFAULT_ORDER);
             if (chosen) order = chosen.concat(DEFAULT_ORDER.filter((g) => !chosen.includes(g)));
         }
 
@@ -273,7 +278,19 @@
             caps[group] = own ?? admin ?? DEFAULT_CAPS[group];
         }
 
-        return { layout, legacy, density, order, caps, profiles, slots: profiles[layout], indicatorGap };
+        const conf = { layout, legacy, density, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, locked: false, lookKey: '' };
+        conf.lookKey = lookKeyOf(conf);
+        return conf;
+    }
+
+    /**
+     * A string that differs whenever two settings would present a card
+     * differently (layout, density, slots, lock marker).
+     * @param {TagLayoutSettings} conf
+     * @returns {string}
+     */
+    function lookKeyOf(conf) {
+        return [conf.layout, conf.density, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(',')].join('|');
     }
 
     /** @type {TagLayoutSettings|null} memoised until the next invalidateSettings() */
@@ -288,6 +305,53 @@
     /** Forget the memoised settings (they changed, or the user switched). */
     function invalidateSettings() {
         cachedSettings = null;
+        cachedLooks = null;
+        lookSettingsCache.clear();
+    }
+
+    /** @type {{rules: Array<Object>, locks: Map<string, Object>}|null} memoised rules and locks */
+    let cachedLooks = null;
+    /** @type {Map<string, TagLayoutSettings>} derived settings per rule/lock look */
+    const lookSettingsCache = new Map();
+
+    /** @returns {{rules: Array<Object>, locks: Map<string, Object>}} The user's rules and locks (core/tag-look.js). */
+    function currentLooks() {
+        if (!cachedLooks) cachedLooks = JE.core.tagLook?.read() || { rules: [], locks: new Map() };
+        return cachedLooks;
+    }
+
+    /**
+     * The settings a rule's or lock's look gives a card: the user's settings
+     * with the look's layout and density, and its slot overrides (a lock
+     * carries the whole profile it was locked with) over the user's profile
+     * for that layout. Order and caps stay the user's. Memoised per look.
+     * @param {TagLayoutSettings} base
+     * @param {{layout: string, density: string, slots: Object<string, string>|null}} look
+     * @param {boolean} locked
+     * @returns {TagLayoutSettings}
+     */
+    function lookSettings(base, look, locked) {
+        const layout = normalizeLayout(look.layout);
+        const slots = { ...base.profiles[layout], ...(look.slots || {}) };
+        const conf = {
+            ...base,
+            layout,
+            density: look.density === 'compact' ? 'compact' : 'full',
+            // A chosen order applies everywhere; otherwise corners keeps
+            // arrival order and the other layouts the built-in order.
+            order: base.orderChosen ? base.order : (layout === 'corners' ? null : DEFAULT_ORDER),
+            profiles: { ...base.profiles, [layout]: slots },
+            slots,
+            indicatorGap: look.slots && layout === 'corners'
+                ? new Set(DEFAULT_ORDER.filter((g) => slots[g] === 'tr')) : base.indicatorGap,
+            locked,
+            lookKey: '',
+        };
+        conf.lookKey = lookKeyOf(conf);
+        const memo = lookSettingsCache.get(conf.lookKey + '|' + (conf.order ? 'o' : ''));
+        if (memo) return memo;
+        lookSettingsCache.set(conf.lookKey + '|' + (conf.order ? 'o' : ''), conf);
+        return conf;
     }
 
     // ── Card context ───────────────────────────────────────────────────
@@ -302,10 +366,13 @@
      * @property {HTMLElement|null} pill
      * @property {string|null} layout - Layout the card is currently presented in.
      * @property {number} seq - Arrival counter (legacy ordering).
+     * @property {string} lookKey - lookKey of the settings the card is presented with.
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
     const controllers = new WeakMap();
+    /** @type {WeakMap<HTMLElement, Object>} render target / host → what the card's item data says (setCardContext) */
+    const cardData = new WeakMap();
     let outletSeq = 0;
     let stylesInjected = false;
 
@@ -415,22 +482,71 @@
         }
         if (!ctrl && create) {
             injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0 };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, lookKey: '' };
             controllers.set(host, ctrl);
         }
         return ctrl;
     }
 
     /**
-     * The layout decision for one card. Today every card follows the user's
-     * layout; this is the single boundary later per-card rules and locks
-     * plug into.
-     * @param {CardController|HTMLElement} cardContext
+     * What is known about the item a card (or a plain description of an
+     * item) shows, for matching rules and locks: the card's type
+     * (data-type, which can differ from the fetched item's when an episode
+     * card shows series artwork) and the item data the pipeline passed to
+     * setCardContext() — ignored once the card shows another item.
+     * @param {CardController|HTMLElement|Object} cardContext
+     * @returns {Object} CardFacts (core/tag-look.js)
+     */
+    function cardFacts(cardContext) {
+        const look = JE.core.tagLook;
+        const el = cardContext?.host || (cardContext?.nodeType === 1 ? cardContext : null);
+        if (!el) return look.factsFrom(cardContext, { itemId: cardContext?.itemId, cardType: cardContext?.cardType || null });
+        const cardId = cardContext.host ? cardContext.itemId : identityOf(el);
+        const data = cardData.get(el) || (el.parentElement ? cardData.get(el.parentElement) : undefined);
+        const usable = data && (!data.cardId || data.cardId === cardId);
+        const cardType = el.closest('[data-type]')?.getAttribute('data-type') || null;
+        return look.factsFrom(usable ? data.entry : null, { itemId: usable ? data.itemId : '', cardId, cardType });
+    }
+
+    /**
+     * The look decision for one card, and the only place it is made:
+     * a lock on the item (or, for a season or episode, on its series) →
+     * the first enabled rule whose conditions all hold → the user's default
+     * layout and density. With no rules and no locks every card follows the
+     * user's settings, exactly as before rules existed.
+     * @param {CardController|HTMLElement|Object} cardContext - A card
+     *   controller, a card element, or a plain item description
+     *   ({ itemId, cardType, Type, Genres, OfficialRating, LibraryId, SeriesId }).
      * @returns {TagLayoutSettings}
      */
-    // eslint-disable-next-line no-unused-vars
     function resolveLayout(cardContext) {
-        return currentSettings();
+        const base = currentSettings();
+        const looks = currentLooks();
+        if (!looks.rules.length && !looks.locks.size) return base;
+        const facts = cardFacts(cardContext);
+        const lock = JE.core.tagLook.findLock(looks.locks, facts);
+        if (lock) return lookSettings(base, lock, true);
+        const rule = JE.core.tagLook.firstMatch(looks.rules, facts);
+        return rule ? lookSettings(base, rule, false) : base;
+    }
+
+    /**
+     * Record what the item data says about a card (type, genres, rating,
+     * library, series) so rules can match it, and re-present the card if its
+     * look changes. The pipeline calls this before rendering a card from a
+     * server-cache entry or a fetched item.
+     * @param {HTMLElement} target - Render target.
+     * @param {Object} entry - Tag-cache entry or /tag-data item.
+     * @param {string} itemId - The id the pipeline resolved for the card.
+     */
+    function setCardContext(target, entry, itemId) {
+        if (!target || !entry) return;
+        const host = findHost(target) || target;
+        cardData.set(host, { entry, itemId, cardId: identityOf(host) });
+        const ctrl = controllers.get(host);
+        if (!ctrl || !ctrl.host.isConnected || !ctrl.groups.size) return;
+        const looks = currentLooks();
+        if ((looks.rules.length || looks.locks.size) && resolveLayout(ctrl).lookKey !== ctrl.lookKey) presentAll(ctrl);
     }
 
     // ── Representations ────────────────────────────────────────────────
@@ -792,7 +908,9 @@
         ctrl.outlet?.remove();
         ctrl.outlet = null;
         ctrl.layout = null;
+        ctrl.lookKey = '';
         delete ctrl.host.dataset.jeLayout;
+        delete ctrl.host.dataset.jeLocked;
         delete ctrl.host.dataset.jeIndicatorGap;
     }
 
@@ -804,7 +922,9 @@
         const conf = resolveLayout(ctrl);
         teardown(ctrl);
         ctrl.layout = conf.layout;
+        ctrl.lookKey = conf.lookKey;
         ctrl.host.dataset.jeLayout = conf.layout;
+        if (conf.locked) ctrl.host.dataset.jeLocked = '1';
         if (conf.layout === 'caption' && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
         const groups = Array.from(ctrl.groups.keys()).sort((a, b) => rankOf(ctrl, conf, a) - rankOf(ctrl, conf, b));
         for (const group of groups) presentGroup(ctrl, conf, group);
@@ -834,7 +954,7 @@
         const conf = resolveLayout(ctrl);
         const previous = ctrl.groups.get(group);
         ctrl.groups.set(group, { master: overlay, seq: previous ? previous.seq : ++ctrl.seq });
-        if (ctrl.layout !== conf.layout) {
+        if (ctrl.layout !== conf.layout || ctrl.lookKey !== conf.lookKey) {
             presentAll(ctrl);
         } else {
             presentGroup(ctrl, conf, group);
@@ -958,7 +1078,7 @@
      * @param {HTMLElement} target - Render target.
      */
     function prepareCard(target) {
-        if (currentSettings().layout !== 'caption' || !target) return;
+        if (!target || resolveLayout(findHost(target) || target).layout !== 'caption') return;
         const host = ensureHost(target);
         if (!host || isIgnoredContext(host)) return;
         const ctrl = controllerFor(host, true);
@@ -989,9 +1109,9 @@
             reinitPending = null;
             invalidateSettings();
             const owned = new Set();
-            const caption = currentSettings().layout === 'caption';
             for (const host of document.querySelectorAll('.je-tag-host')) {
                 const el = /** @type {HTMLElement} */ (host);
+                const caption = resolveLayout(controllers.get(el) || el).layout === 'caption';
                 const ctrl = controllerFor(el, caption && !isIgnoredContext(el));
                 if (!ctrl) continue;
                 presentAll(ctrl);
@@ -1027,6 +1147,7 @@
         normalizeSettings,
         invalidateSettings,
         resolveLayout,
+        setCardContext,
         ensureHost,
         commitGroup,
         removeGroup,

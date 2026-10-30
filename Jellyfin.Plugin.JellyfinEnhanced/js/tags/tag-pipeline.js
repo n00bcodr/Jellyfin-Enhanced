@@ -483,6 +483,9 @@
             // predate them).
             if (!meta || meta.pending || !(meta.count > 0) || !meta.timestamp
                 || typeof meta.filterRevision !== 'string' || typeof meta.servedAt !== 'number') return false;
+            // Entries stored before the entry fields last changed (server
+            // schema) lack fields the renderers and tag look rules read.
+            if (meta.entrySchema !== store.ENTRY_SCHEMA) return false;
             // The admin's "Clear All Client Caches" applies to this copy too.
             const clearStamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
             if (clearStamp > (meta.clearStamp || 0)) {
@@ -999,6 +1002,8 @@
     function renderCard(card, serverEntry, hosts) {
         const { el, itemId, itemType } = card;
         const renderTarget = resolveRenderTarget(el);
+        // Tag look rules match on the entry (library, genres, age rating).
+        if (serverEntry) JE.core.tagLayout?.setCardContext?.(renderTarget, serverEntry, itemId);
         // Caption layout: reserve the strip below the image now, before the
         // tag data (possibly a batch fetch away) arrives.
         JE.core.tagLayout?.prepareCard(renderTarget);
@@ -1381,6 +1386,7 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
+                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId);
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try {
@@ -1455,6 +1461,7 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
+                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId);
 
                     for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
@@ -1624,6 +1631,18 @@
         getParentSeries,
         /** @param {string} name - Renderer name (e.g. 'quality'). */
         getRenderer(name) { return renderers.get(name); },
+        /**
+         * The server tag-cache entry already in memory for an item, without
+         * fetching (the tag look lock reads an item's library and genres).
+         * @param {string} itemId - Normalised item id.
+         * @returns {object|null}
+         */
+        peekServerEntry(itemId) { return serverCache?.get(itemId) || null; },
+        /**
+         * Every server tag-cache entry in memory (empty without one).
+         * @returns {Iterable<object>}
+         */
+        serverEntries() { return serverCache ? serverCache.values() : []; },
         /**
          * Review rating averages that came with the server cache, once the
          * load or refresh in flight has settled: Map<"mediaType:tmdbKey",

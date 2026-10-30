@@ -23,6 +23,9 @@
     "// tag-layout.js places the poster tag groups; it reads",
     "// JE.core.tagRenderer.isIgnoredContext at call time only.",
     "core/tag-layout.js",
+    "// tag-look.js holds the tag look rules and locks; tag-layout.js",
+    "// calls it at run time only (resolveLayout).",
+    "core/tag-look.js",
 
     "// enhanced",
     "enhanced/config.js",
