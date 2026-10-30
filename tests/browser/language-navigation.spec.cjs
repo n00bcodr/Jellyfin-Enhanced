@@ -150,6 +150,20 @@ for (const [style, slot] of [['flags', 'corner'], ['codes', 'corner'], ['subtitl
     page.on('pageerror', e => errors.push(String(e)));
     page.on('console', m => { if (m.type() === 'error' && /Jellyfin Enhanced|\bJE\b/.test(m.text())) errors.push(m.text()); });
     const destination = await prepare(page, style, slot);
+    // The resting Summary pill is itself a link to the item: it carries the destination and
+    // activates from the keyboard (Ctrl+Enter keeps this page so the chip checks below can run).
+    if (slot === 'pill') {
+      const pill = page.locator('#language-navigation-proof .je-tag-pill');
+      await expect(pill).toHaveAttribute('tabindex', '-1');
+      expect(await pill.evaluate(a => a.href)).toBe(destination);
+      const openedFromPill = context.waitForEvent('page');
+      await pill.focus();
+      await page.keyboard.press('ControlOrMeta+Enter');
+      const pillTab = await openedFromPill;
+      await expect(pillTab).toHaveURL(destination);
+      await pillTab.close();
+      await expect(page).not.toHaveURL(destination);
+    }
     // Hover hides Summary's linked pill and exposes the full language chips.
     if (slot === 'pill') {
       await page.locator('#language-navigation-proof').hover();
