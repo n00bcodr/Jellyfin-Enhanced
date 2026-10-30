@@ -890,6 +890,41 @@ test('selected pills, tabs, status text and the preview\'s captions are legible 
   for (const m of sheet.matchAll(/(?<![-\w])color: ([^;]+);/g)) assert.match(m[1], /^var\(--je-mtp-/, `preview text colour ${m[1]}`);
 });
 
+test('What\'s New on the main page lists new Media Tags settings with a link to their tab', () => {
+  // configPage.html's own helpers, run as the page runs them.
+  const page = readFileSync(resolve(jsRoot, '../Configuration/configPage.html'), 'utf8');
+  const humanize = /function jeHumanizeSettingId\(id\) \{[\s\S]*?\n        \}/.exec(page)[0];
+  const helper = page.slice(page.indexOf('// jeMediaTagsWhatsNewEntries: begin'), page.indexOf('// jeMediaTagsWhatsNewEntries: end'));
+  assert.ok(helper.includes('function jeMediaTagsWhatsNewEntries'));
+  const h = createHarness({ JE: {} });
+  try {
+    h.window.eval(`${humanize}\n${helper}\nwindow.entries = jeMediaTagsWhatsNewEntries;`);
+    const names = { admin_tags_title: 'Media Tags', admin_tags_tab_layout: 'Layout defaults', admin_tags_tab_groups: 'Groups', admin_tags_tab_badges: 'Status badges', panel_settings_ui_tag_group_rating: 'Rating', panel_settings_ui_tag_group_age_rating: 'Age Rating' };
+    const t = (key) => names[key] || key;
+    const where = {
+      tagLayout: { page: 'JellyfinEnhancedMediaTags', tab: 'layout', group: null },
+      tagsHideOnHover: { page: 'JellyfinEnhancedMediaTags', tab: 'layout', group: null },
+      ratingTagsOnNextUp: { page: 'JellyfinEnhancedMediaTags', tab: 'groups', group: 'rating' },
+      ageRatingTagsEnabled: { page: 'JellyfinEnhancedMediaTags', tab: 'groups', group: 'ageRating' },
+      // A setting new in a later release, on a tab this build has no name for.
+      tagFutureThing: { page: 'JellyfinEnhancedMediaTags', tab: 'extras', group: null },
+    };
+    const entries = plain(h.window.entries(Object.keys(where).concat('notOnAnyPage'), where, t));
+    assert.deepEqual(entries, [
+      { tab: 'layout', tabLabel: 'Media Tags', title: 'Layout defaults', href: '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout', ids: ['tagLayout', 'tagsHideOnHover'] },
+      { tab: 'groups', tabLabel: 'Media Tags', title: 'Groups › Rating', href: '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups&group=rating', ids: ['ratingTagsOnNextUp'] },
+      { tab: 'groups', tabLabel: 'Media Tags', title: 'Groups › Age Rating', href: '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups&group=ageRating', ids: ['ageRatingTagsEnabled'] },
+      { tab: 'extras', tabLabel: 'Media Tags', title: 'Extras', href: '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=extras', ids: ['tagFutureThing'] },
+    ]);
+    // Without the client bundle the names fall back to English.
+    assert.equal(plain(h.window.entries(['ratingTagsOnNextUp'], where, null))[0].title, 'Groups › Rating');
+  } finally { h.close(); }
+  // checkWhatsNew routes the ids the main page has no control for through it, and the chip follows the link.
+  assert.match(page, /var movedEntries = jeMediaTagsWhatsNewEntries\(moved, mediaTags,/);
+  assert.match(page, /renderWhatsNewBanner\(\(perSetting\.length \? groupWhatsNewByFieldset\(perSetting\) : \[\]\)\.concat\(movedEntries\)/);
+  assert.match(page, /if \(f\.href\) window\.location\.href = f\.href;/);
+});
+
 test('each section module is a self-contained file the page loads, and every declaration is one line', () => {
   const dir = resolve(jsRoot, 'enhanced/admintags/sections');
   const h = createHarness({ JE: {} });

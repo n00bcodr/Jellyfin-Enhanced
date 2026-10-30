@@ -8894,10 +8894,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var state = _whatsNewService.GetState();
             if (state == null)
             {
-                return Ok(new { pluginVersion = (string?)null, newSettings = new Dictionary<string, string>() });
+                return Ok(new { pluginVersion = (string?)null, newSettings = new Dictionary<string, string>(), mediaTags = new Dictionary<string, object>() });
             }
 
-            return Ok(new { pluginVersion = state.PluginVersion, newSettings = state.NewSettings });
+            // New settings that live on the Media Tags page: where, so the banner can link there.
+            var locations = _whatsNewService.GetMediaTagsLocations();
+            var mediaTags = state.NewSettings.Keys
+                .Where(locations.ContainsKey)
+                .ToDictionary(id => id, id => (object)new { page = Services.WhatsNewService.MediaTagsPageName, tab = locations[id].Tab, group = locations[id].Group }, StringComparer.Ordinal);
+            return Ok(new { pluginVersion = state.PluginVersion, newSettings = state.NewSettings, mediaTags });
         }
 
         [HttpPost("whats-new/dismiss")]

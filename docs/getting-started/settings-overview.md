@@ -57,7 +57,7 @@ Select a tab to see it on the admin page.
 
     ![Admin tab with maintenance and diagnostic groups](../images/admin/admin.webp)
 
-In **Overview**, the What's New notice links to the settings groups that contain controls added since the last dismissal. Use the release-notes link for the full changelog.
+In **Overview**, the What's New notice links to the settings groups that contain controls added since the last dismissal. New Media Tags settings are listed as **Media Tags > _tab_** and open the Media Tags page at that tab. Use the release-notes link for the full changelog.
 
 ![Administrator What's New notice with links to settings groups](../images/other/whats-new.webp)
 

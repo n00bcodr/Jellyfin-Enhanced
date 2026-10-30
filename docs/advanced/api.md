@@ -1563,7 +1563,7 @@ Activity merges recent watched/favorited entries with user reviews into library 
 | Method | Path | Access | Contract |
 |---|---|---|---|
 | GET | `activity` | Existing caller | `limit=50`, clamped `1..200` → `{items:[<activity>]}`, `no-store`. |
-| GET | `whats-new` | Administrator | `{pluginVersion,newSettings}`. |
+| GET | `whats-new` | Administrator | `{pluginVersion,newSettings,mediaTags}`. `mediaTags` maps each new setting that lives on the Media Tags page to `{page,tab,group}` (its tab, and its group on Groups, else `null`). |
 | POST | `whats-new/dismiss` | Administrator | No body → empty `200`; acknowledges server-wide state. |
 
 ```bash

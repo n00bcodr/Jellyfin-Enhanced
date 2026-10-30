@@ -8243,6 +8243,47 @@
             return spaced.charAt(0).toUpperCase() + spaced.slice(1);
         }
 
+        // jeMediaTagsWhatsNewEntries: begin
+        /**
+         * New settings that live on the Media Tags page (this page has no control
+         * for them): one banner entry per tab, per group on Groups, linking there.
+         * @param {string[]} ids - The new setting ids to route.
+         * @param {Object} locations - GET whats-new `mediaTags`: id -> {page, tab, group}.
+         * @param {?function(string): string} t - JE.t when the client bundle is loaded.
+         * @returns {Array<{tab: string, tabLabel: string, title: string, href: string, ids: string[]}>}
+         */
+        function jeMediaTagsWhatsNewEntries(ids, locations, t) {
+            var label = function(key, fallback) {
+                var text = t ? t(key) : '';
+                return text && text !== key ? text : fallback;
+            };
+            var groupKey = function(group) {
+                return group === 'people' ? 'admin_tags_group_people' : 'panel_settings_ui_tag_group_' + (group === 'ageRating' ? 'age_rating' : group);
+            };
+            var entries = {};
+            var order = [];
+            ids.forEach(function(id) {
+                var at = locations[id];
+                if (!at || !at.tab) return;
+                var group = at.tab === 'groups' && at.group ? at.group : null;
+                var key = at.tab + ':' + (group || '');
+                if (!entries[key]) {
+                    var tabName = label('admin_tags_tab_' + at.tab, jeHumanizeSettingId(at.tab));
+                    entries[key] = {
+                        tab: at.tab,
+                        tabLabel: label('admin_tags_title', 'Media Tags'),
+                        title: group ? tabName + ' \u203a ' + label(groupKey(group), jeHumanizeSettingId(group)) : tabName,
+                        href: '#/configurationpage?name=' + encodeURIComponent(at.page || 'JellyfinEnhancedMediaTags') + '&tab=' + encodeURIComponent(at.tab) + (group ? '&group=' + encodeURIComponent(group) : ''),
+                        ids: []
+                    };
+                    order.push(key);
+                }
+                entries[key].ids.push(id);
+            });
+            return order.map(function(key) { return entries[key]; });
+        }
+        // jeMediaTagsWhatsNewEntries: end
+
         // Warns when this build targets a different Jellyfin line or the file was replaced (GET host-compat).
         function checkHostCompat() {
             ApiClient.ajax({
@@ -8291,11 +8332,18 @@
                     var tabContent = el ? el.closest('.jellyfin-tab-content') : null;
                     return tabContent ? { id: id, tab: tabContent.id, selector: '#' + id, title: jeHumanizeSettingId(id), version: newSettings[id] } : null;
                 }).filter(Boolean);
+                // Settings on the Media Tags page get entries linking there.
+                var mediaTags = (data && data.mediaTags) || {};
+                var onMain = new Set(perSetting.map(function(f) { return f.id; }));
+                var moved = Object.keys(newSettings).filter(function(id) { return !onMain.has(id) && mediaTags[id]; });
+                var je = window.JellyfinEnhanced;
+                var movedEntries = jeMediaTagsWhatsNewEntries(moved, mediaTags, je && typeof je.t === 'function' ? je.t : null);
 
-                var distinctVersions = new Set(perSetting.map(function(f) { return f.version; }));
-                var singleVersion = distinctVersions.size === 1 ? perSetting[0].version : null;
+                var versions = perSetting.map(function(f) { return f.version; }).concat(moved.map(function(id) { return newSettings[id]; }));
+                var distinctVersions = new Set(versions);
+                var singleVersion = distinctVersions.size === 1 ? versions[0] : null;
 
-                renderWhatsNewBanner(perSetting.length ? groupWhatsNewByFieldset(perSetting) : [], pluginVersion, singleVersion);
+                renderWhatsNewBanner((perSetting.length ? groupWhatsNewByFieldset(perSetting) : []).concat(movedEntries), pluginVersion, singleVersion);
                 renderWhatsNewBadges(perSetting);
             }).catch(function(err) {
                 console.warn('[JE] whats-new check failed:', err);
@@ -8434,7 +8482,9 @@
                     chip.className = 'je-whats-new-chip';
                     chip.textContent = f.tabLabel + ' > ' + f.title;
                     chip.addEventListener('click', function() {
-                        jeJumpToTab(f.tab, f.selector, f.flashSelectors);
+                        // Settings on the Media Tags page: open it at their tab.
+                        if (f.href) window.location.href = f.href;
+                        else jeJumpToTab(f.tab, f.selector, f.flashSelectors);
                     });
                     list.appendChild(chip);
                 });

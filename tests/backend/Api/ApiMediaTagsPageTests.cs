@@ -161,4 +161,93 @@ public class ApiMediaTagsPageTests
         Assert.IsType<BadRequestObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest()));
         Assert.False(f.Plugin.Configuration.TagsHideOnHover);
     }
+
+    [Fact]
+    public void SectionModulesNameTheTabAndGroupOfEachSetting()
+    {
+        // A synthetic module with a setting that is new in this build.
+        const string module = """
+            const SHARED_FIELDS = [
+                { id: 'awardsTagsOscar', key: 'AwardsTagsOscar', type: 'switch', place: 'section', label: 'z' },
+            ];
+            A.registerSection({
+                id: 'badges-awards',
+                tab: 'badges',
+                fields: SHARED_FIELDS,
+            });
+            A.registerSection({
+                id: 'group-awards',
+                tab: 'groups',
+                order: 80,
+                group: {
+                    id: 'awards',
+                    summary(ctx) { return ''; },
+                },
+                fields: [
+                    { id: 'awardsTagsEnabled', key: 'AwardsTagsEnabled', type: 'enable', label: 'x' },
+                ],
+            });
+            A.registerSection({
+                id: 'layout-extra',
+                tab: 'layout',
+                fields: [
+                    { id: 'tagScale', key: 'TagScale', type: 'select', label: 'y' },
+                ],
+            });
+            """;
+        var parsed = WhatsNewService.ParseSectionModule(module).ToList();
+        Assert.Equal(new MediaTagsLocation("groups", "awards"), Assert.Single(parsed, p => p.Key == "awardsTagsEnabled").Value);
+        Assert.Equal(new MediaTagsLocation("layout", null), Assert.Single(parsed, p => p.Key == "tagScale").Value);
+        Assert.Equal(new MediaTagsLocation("badges", null), Assert.Single(parsed, p => p.Key == "awardsTagsOscar").Value);
+        Assert.Equal(3, parsed.Count);
+    }
+
+    [Fact]
+    public void WhatsNewRoutesNewMediaTagsSettingsToTheirTabWithoutReannouncingTheBaseline()
+    {
+        using var f = new ApiPluginFixture();
+        var service = new WhatsNewService(f.Core.Paths.Object, f.Core.Logger);
+        var controller = ApiAssetTests.Controller(f.Core, service);
+        controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext { User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(Guid.NewGuid(), true) } };
+        // An acknowledged baseline announces nothing again.
+        service.Dismiss();
+        service.CheckForNewSettings();
+        Assert.Null(service.GetState());
+        // Three Media Tags settings new since that baseline, and one main-page setting.
+        var path = Path.Combine(f.Core.ConfigRoot, "config-schema-snapshot.json");
+        var baseline = JsonConvert.DeserializeObject<ConfigSchemaSnapshot>(File.ReadAllText(path))!;
+        var fresh = new[] { "tagLayout", "statusTagsJustAddedDays", "ratingTagsOnNextUp", "devMode" };
+        baseline.SettingIds.RemoveAll(fresh.Contains);
+        File.WriteAllText(path, JsonConvert.SerializeObject(baseline));
+        service.CheckForNewSettings();
+        Assert.Equal(fresh.OrderBy(x => x), service.GetState()!.NewSettings.Keys.OrderBy(x => x));
+        var body = System.Text.Json.JsonSerializer.Serialize(Assert.IsType<OkObjectResult>(controller.GetWhatsNew()).Value);
+        using var json = System.Text.Json.JsonDocument.Parse(body);
+        var mediaTags = json.RootElement.GetProperty("mediaTags");
+        Assert.Equal("{\"page\":\"JellyfinEnhancedMediaTags\",\"tab\":\"layout\",\"group\":null}", mediaTags.GetProperty("tagLayout").GetRawText());
+        Assert.Equal("badges", mediaTags.GetProperty("statusTagsJustAddedDays").GetProperty("tab").GetString());
+        Assert.Equal("rating", mediaTags.GetProperty("ratingTagsOnNextUp").GetProperty("group").GetString());
+        Assert.False(mediaTags.TryGetProperty("devMode", out _), "main-page settings keep their badges there");
+    }
+
+    [Fact]
+    public void UpgradingFromTheSeedBaselineLeavesNoPendingSettingWithoutAPlaceToShowIt()
+    {
+        using var f = new ApiPluginFixture();
+        // An existing install (other plugin data on disk) with no snapshot yet falls back to the release seed.
+        File.WriteAllText(Path.Combine(f.Core.ConfigRoot, "reviews.json"), "{}");
+        var service = new WhatsNewService(f.Core.Paths.Object, f.Core.Logger);
+        service.CheckForNewSettings();
+        var pending = service.GetState()!.NewSettings.Keys.ToList();
+        var locations = service.GetMediaTagsLocations();
+        Assert.Contains("tagLayout", pending);
+        Assert.Equal(new MediaTagsLocation("badges", null), locations["statusTagsJustAdded"]);
+        Assert.Equal(new MediaTagsLocation("groups", "quality"), locations["showResolutionTag"]);
+        using var stream = typeof(Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced).Assembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html")!;
+        var html = new StreamReader(stream).ReadToEnd();
+        foreach (var id in pending)
+        {
+            Assert.True(html.Contains($"id=\"{id}\"", StringComparison.Ordinal) || locations.ContainsKey(id), $"{id} has a control on the main page or a Media Tags location");
+        }
+    }
 }

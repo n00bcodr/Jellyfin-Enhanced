@@ -46,7 +46,7 @@ Keep each field on **one line** starting `{ id: '…', key: '…', type: '…'` 
 
 | Property | Meaning |
 |---|---|
-| `id` | The control's DOM id. When a control moves here from `configPage.html`, keep its old id so What's New and the analytics map keep tracking it; a new id appears in What's New as a new setting. |
+| `id` | The control's DOM id. When a control moves here from `configPage.html`, keep its old id so What's New and the analytics map keep tracking it; a new id appears in What's New as a new setting, listed under **Media Tags** with a link to the section's tab (and group). |
 | `key` | The `PluginConfiguration` property it reads and writes (PascalCase). |
 | `type` | `switch`, `select`, `number`, `text`, `textarea`, `pills`, `ordered` (a checkbox in a reorderable list; `orderKey`, `defaultOrder`), `enable` (a Groups row switch) or `custom` (drawn by the section's `render`, declared only for tracking). |
 | `label`, `desc` | `en.json` keys. |
