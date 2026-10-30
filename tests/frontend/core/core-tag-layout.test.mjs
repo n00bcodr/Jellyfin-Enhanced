@@ -691,6 +691,21 @@ test('no caption space is reserved when no enabled group can fill the strip', as
   assert.ok(h.document.querySelector('.je-tag-caption'), 'one enabled caption group is enough');
 });
 
+test('the memoised layout settings follow the tag toggles and a reloaded settings document without an explicit invalidation', t => {
+  const h = setup(t, { html: modernCard() + modernCard(OTHER), settings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption', ...ALL_TAGS_OFF, languageTagsEnabled: true } });
+  const [first, second] = h.document.querySelectorAll('.je-tag-host');
+  h.layout.prepareCard(first);
+  assert.equal(first.closest('.cardBox').querySelector('.je-tag-caption') !== null, true);
+  h.JE.currentSettings.languageTagsEnabled = false; // any caller, not only the panel
+  h.layout.prepareCard(second);
+  assert.equal(second.closest('.cardBox').querySelector('.je-tag-caption'), null, 'no group left to fill the strip');
+  h.JE.currentSettings = { ...h.JE.currentSettings, ratingTagsEnabled: true }; // the panel reloads the document from the server
+  h.layout.prepareCard(second);
+  assert.ok(second.closest('.cardBox').querySelector('.je-tag-caption'), 'the reloaded document is read');
+  h.JE.currentSettings = { ...h.JE.currentSettings, tagLayout: 'bands' };
+  assert.equal(h.layout.resolveLayout(first).layout, 'bands');
+});
+
 test('turning every tag type off removes the caption strips, also from cards whose data never came', async t => {
   const h = setup(t, { html: modernCard() + modernCard(OTHER), settings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption' } });
   const [first, second] = h.document.querySelectorAll('.je-tag-host');

@@ -311,10 +311,28 @@
 
     /** @type {TagLayoutSettings|null} memoised until the next invalidateSettings() */
     let cachedSettings = null;
+    /** What the memo was computed from (see settingsSource). */
+    let cachedSource = null;
+
+    /**
+     * The inputs the memoised settings must still match: the settings and
+     * plugin objects (the panel reloads replace them) and the tag toggles
+     * (reserveCaption depends on them, and they change without a layout edit).
+     * @returns {{settings: *, plugin: *, enabled: string}}
+     */
+    function settingsSource() {
+        const s = JE.currentSettings;
+        return { settings: s, plugin: JE.pluginConfig, enabled: DEFAULT_ORDER.map((g) => (s?.[ENABLED_SETTING[g]] ? '1' : '0')).join('') };
+    }
 
     /** @returns {TagLayoutSettings} */
     function currentSettings() {
-        if (!cachedSettings) cachedSettings = normalizeSettings();
+        const source = settingsSource();
+        if (!cachedSettings || !cachedSource || cachedSource.settings !== source.settings
+            || cachedSource.plugin !== source.plugin || cachedSource.enabled !== source.enabled) {
+            cachedSettings = normalizeSettings();
+            cachedSource = source;
+        }
         return cachedSettings;
     }
 
@@ -1317,7 +1335,8 @@
         const host = ensureHost(target);
         if (!host || isIgnoredContext(host)) return;
         const ctrl = controllerFor(host, true);
-        if (ctrl && ctrl.layout !== 'caption') presentAll(ctrl);
+        // A card presented while nothing could fill the strip has no outlet yet.
+        if (ctrl && (ctrl.layout !== 'caption' || (!ctrl.outlet?.isConnected && captionAnchor(ctrl.host)))) presentAll(ctrl);
     }
 
     /** Toggle the body classes the layout CSS keys off (hide on hover). */

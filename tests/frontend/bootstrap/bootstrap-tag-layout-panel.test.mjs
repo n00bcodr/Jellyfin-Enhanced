@@ -14,12 +14,12 @@ const grid = key => `<div class="position-selector" data-setting="${key}">${['to
  * renders for tag layouts, with the real layout controller and settings
  * transport (writes are captured).
  */
-function setup(t, stored = {}) {
+function setup(t, stored = {}, cards = '') {
   const writes = [], toasts = [], reinit = [];
   const html = toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button>'
     + `<select id="tagLayoutSelect">${['corners', 'bands', 'caption', 'summary', 'minimal'].map(v => `<option value="${v}">${v}</option>`).join('')}</select>`
     + '<select id="tagLabelDensitySelect"><option value="full">full</option><option value="compact">compact</option></select>'
-    + `<div id="panel">${grid('ageRatingTagsPosition')}</div>`;
+    + `<div id="panel">${grid('ageRatingTagsPosition')}</div>` + cards;
   const h = createHarness({ html,
     JE: { pluginConfig: {}, userConfig: { settings: { ageRatingTagsPosition: 'bottom-right', ...stored }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
       t: key => key, toast: message => toasts.push(message), pauseScreenInstance: {} },
@@ -70,4 +70,31 @@ test('a corner grid pick writes the corners profile and keeps the old position s
     'the group\'s entry is replaced, the others kept');
   assert.equal(reinitAge, 1);
   assert.equal(h.JE.core.tagLayout.normalizeSettings().slots.ageRating, 'tl');
+});
+
+/** Jellyfin 12 Modern card with its tag host (caption outlets go before the title). */
+const card = id => `<div class="card" data-id="${id}" data-type="Movie"><div class="cardBox"><div class="cardScalable"><a class="cardImageContainer" href="#"></a><div class="je-tag-host"></div><div class="cardOverlayContainer"></div></div><div class="cardText cardText-first">Title</div></div></div>`;
+const OFF = { qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false };
+
+test('the tag toggles re-evaluate the caption reservation: the last caption group off gives the strips back, one on reserves them', async t => {
+  const h = setup(t, { ...OFF, languageTagsEnabled: true, tagLayoutSettingsVersion: 1, tagLayout: 'caption' }, card('a'.repeat(32)) + card('b'.repeat(32)));
+  const strips = () => h.document.querySelectorAll('.je-tag-caption').length;
+  const toggle = async (id, checked, { sync } = {}) => {
+    const el = h.document.getElementById(id); el.checked = checked;
+    el.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+    sync?.();
+    await h.settle();
+  };
+  await h.JE.reinitializeTagLayout();
+  assert.equal(strips(), 2, 'language can fill the strip: every card reserves it');
+  assert.equal(h.JE.core.tagLayout.normalizeSettings().reserveCaption, true);
+  await toggle('languageTagsToggle', false, { sync: () => assert.equal(strips(), 0, 'the toggle itself gives the space back, not only a later re-present') });
+  assert.equal(strips(), 0);
+  assert.equal(JSON.parse(h.writes.at(-1).data).languageTagsEnabled, false);
+  await toggle('statusTagsToggle', true);
+  assert.equal(strips(), 0, 'status shows on the poster: still nothing for the strip');
+  await toggle('ratingTagsToggle', true);
+  assert.equal(strips(), 2, 'a caption group back on reserves the strip on every card before its data arrives');
+  await toggle('ratingTagsToggle', false);
+  assert.equal(strips(), 0);
 });

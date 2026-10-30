@@ -53,6 +53,9 @@
         restackTagCorners();
     };
 
+    /** Panel toggles of the poster tag groups the layout controller places. */
+    const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle'];
+
     /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
@@ -64,6 +67,9 @@
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).addEventListener('change', (e) => {
                 JE.currentSettings[settingKey] = e.target.checked;
+                // The layout settings depend on which tag types are on (caption
+                // space is reserved only while a group can fill it).
+                JE.core?.tagLayout?.invalidateSettings();
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 let toastMessage = createToast(featureKey, e.target.checked);
 
@@ -136,6 +142,10 @@
                     }
                     requiresRefresh = false;
                 }
+                // Re-present every card for the new set of groups: caption space
+                // is reserved on every card when a group that can fill it comes
+                // on, and given back once none is left.
+                if (TAG_GROUP_TOGGLES.includes(id)) JE.reinitializeTagLayout?.();
 
                 if (requiresRefresh) {
                     toastMessage += ".<br> Refresh page to apply.";
