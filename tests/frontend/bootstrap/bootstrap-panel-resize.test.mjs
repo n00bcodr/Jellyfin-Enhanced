@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createHarness } from '../helpers/harness.mjs';
 
 const STORE = 'JE_panelSize_user-a';
@@ -664,3 +665,18 @@ for (const transition of ['user', 'round-trip', 'server', 'unannounced', 'reject
     }
   });
 }
+
+
+test('the guide describes Reset size after keyboard resizing and the control restores Default', async t => {
+  const guide = readFileSync(new URL('../../../docs/enhanced/enhanced-settings.md', import.meta.url), 'utf8');
+  assert.match(guide, /Reset size\*\* appears after dragging or resizing with the arrow keys/);
+  const h = setup(t);
+  await h.open();
+  assert.equal(h.reset().hidden, true);
+  h.key(h.grip(), 'ArrowRight');
+  assert.equal(h.reset().hidden, false);
+  h.reset().click();
+  assert.deepEqual(h.pressed(), ['default']);
+  assert.equal(h.reset().hidden, true);
+  assert.deepEqual(h.size(), [1042, 722]);
+});
