@@ -147,6 +147,11 @@ const synthetic = {
     a15: movie({ OfficialRating: '𐐨' }),
     a16: movie({ OfficialRating: 'pg-𐐨𐐩 ος' }),
 };
+// ISO display identity stays distinct from audio-equivalence grouping/counting.
+for (const code of ['tl', 'tgl', 'nb', 'nob', 'nn', 'nno', 'fil', 'srd', 'cmn']) {
+    synthetic[`iso-${code}`] = movie({ AudioLanguages: [code], SubtitleLanguages: [code] });
+}
+synthetic.isoAliases = movie({ AudioLanguages: ['tgl', 'tl', 'fil', 'nob', 'nb', 'nno', 'nn', 'nor'] });
 const syntheticEntries = {};
 const syntheticUserData = {};
 const syntheticReviews = {};

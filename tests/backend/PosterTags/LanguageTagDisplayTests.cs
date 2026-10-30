@@ -33,6 +33,35 @@ public class LanguageTagDisplayTests
         Assert.True(tags[2].Subtitle);
     }
 
+    [Theory]
+    [InlineData("tl", "TL")]
+    [InlineData("tgl", "TL")]
+    [InlineData("nb", "NB")]
+    [InlineData("nob", "NB")]
+    [InlineData("nn", "NN")]
+    [InlineData("nno", "NN")]
+    [InlineData("fil", "FIL")]
+    [InlineData("srd", "SC")]
+    [InlineData("cmn", "CMN")]
+    public void IsoDisplayCodesRemainIndependentOfAudioEquivalence(string input, string expected)
+    {
+        var entry = new TagCacheEntry { Type = "Movie", AudioLanguages = [input], SubtitleLanguages = [input] };
+        var tags = Resolve(entry, ",\"LanguageTagsStyle\":\"codes\",\"LanguageTagsShowSubtitles\":true")!.Groups.Single().Tags.Cast<LanguageTag>().ToArray();
+        Assert.Equal(new[] { expected, expected }, tags.Select(t => t.Code));
+        Assert.True(tags[1].Subtitle);
+    }
+
+    [Theory]
+    [InlineData("tgl", "tl", "fil", "TL")]
+    [InlineData("nob", "nno", "nor", "NB")]
+    public void AudioEquivalenceStillDeduplicatesAndCountsOnce(string a, string b, string c, string expected)
+    {
+        var entry = new TagCacheEntry { Type = "Movie", AudioLanguages = [a, b, c] };
+        var tag = Assert.IsType<LanguageTag>(Assert.Single(Resolve(entry, ",\"LanguageTagsStyle\":\"codes\",\"LanguageTagsCountBadge\":\"both\"")!.Groups.Single().Tags));
+        Assert.Equal(expected, tag.Code);
+        Assert.Null(tag.CountBadge);
+    }
+
     [Fact]
     public void BadgeOnlyKeepsSubtitlesAndUsesCombinedCap()
     {

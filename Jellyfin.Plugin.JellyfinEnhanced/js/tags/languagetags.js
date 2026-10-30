@@ -188,12 +188,6 @@
         };
     }
 
-    /** ISO 639-1 when available, otherwise the canonical three-letter base. @param {string} code */
-    function shortCode(code) {
-        const parsed = JE.core.mediaLanguage.parseLanguageTag(code);
-        return parsed?.base ? JE.core.mediaLanguage.canonicalBase(parsed.base).toUpperCase() : '';
-    }
-
     /**
      * Deduplicated chips for one track type, full coverage first, then admin priority.
      * Flags preserve country grouping; codes group canonical languages, retaining
@@ -206,9 +200,9 @@
         const unique = new Map();
         for (const lang of normalizeLanguages(languages)) {
             const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
-            const code = shortCode(lang.code);
+            const code = JE.core.mediaLanguage.displayCode(lang.code);
             const parsed = JE.core.mediaLanguage.parseLanguageTag(lang.code);
-            const key = style === 'codes' ? code + (JE.pluginConfig?.LanguageTagsMergeRegions ? '' : ':' + (parsed?.region || parsed?.script || '')) : countryCode;
+            const key = style === 'codes' ? JE.core.mediaLanguage.canonicalBase(parsed?.base) + (JE.pluginConfig?.LanguageTagsMergeRegions ? '' : ':' + (parsed?.region || parsed?.script || '')) : countryCode;
             if (!key || (style === 'codes' && !code)) continue;
             const name = lang.name || lang.code.toUpperCase();
             const existing = unique.get(key);
@@ -237,7 +231,7 @@
         const audio = conf.audio ? resolveChips(data.audio, conf.style) : [];
         const subtitles = conf.subtitles ? resolveChips(data.subtitles, conf.style) : [];
         // Count languages rather than countries: Hindi and Tamil share a flag.
-        const count = conf.audio && conf.badge !== 'off' ? new Set(resolveChips(data.audio, 'codes').map(chip => chip.text).filter(code => code !== 'ZXX')).size : 0;
+        const count = conf.audio && conf.badge !== 'off' ? new Set(resolveChips(data.audio, 'codes').map(chip => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(chip.code)?.base)).filter(code => code !== 'zxx')).size : 0;
         const badge = conf.badge !== 'off' && count >= 2;
         const chips = [];
         if (badge) chips.push({ badge: count === 2 ? 'dual' : 'multi' });

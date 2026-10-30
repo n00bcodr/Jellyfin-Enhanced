@@ -113,3 +113,23 @@ test('container batch fallback reads subtitle facts from the projected first epi
   });
   assert.deepEqual(h.chips().map(el => el.textContent), ['EN', 'CCFR']);
 });
+
+for (const [input, expected] of [['tl', 'TL'], ['tgl', 'TL'], ['nb', 'NB'], ['nob', 'NB'], ['nn', 'NN'], ['nno', 'NN'], ['fil', 'FIL'], ['srd', 'SC'], ['cmn', 'CMN']]) {
+  test(`ISO display code is independent of audio equivalence: ${input}`, t => {
+    const h = setup(t, { languageTagsStyle: 'codes', languageTagsShowSubtitles: true });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: [input], SubtitleLanguages: [input] });
+    assert.deepEqual(h.chips().map(el => el.textContent), [expected, `CC${expected}`]);
+    assert.equal(h.JE.core.mediaLanguage.displayCode(input.toUpperCase() + '-PH'), expected);
+  });
+}
+
+for (const audio of [['tgl', 'tl', 'fil'], ['nob', 'nb', 'nno', 'nn', 'nor']]) {
+  test(`audio-equivalent codes still dedupe and count once: ${audio}`, t => {
+    const h = setup(t, { languageTagsStyle: 'codes', languageTagsCountBadge: 'both' });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: audio });
+    assert.equal(h.chips().length, 1);
+    assert.equal(h.target.querySelector('.language-count-badge'), null);
+    assert.equal(h.chips()[0].textContent, audio[0] === 'tgl' ? 'TL' : 'NB');
+    assert.ok(h.JE.core.mediaLanguage.matchesLanguage(audio[0], audio.at(-1)));
+  });
+}
