@@ -191,6 +191,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             {
                 var item = tag switch
                 {
+                    OverflowTag more => MeasureOverflow(more.Count),
                     QualityTag q when group.Group == PosterTagGroup.Quality => MeasureQuality(q, css, keepEnd, styles),
                     GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, css, styles),
                     RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
@@ -334,8 +335,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 List<PlannedItem> shown;
                 if (!top)
                 {
-                    shown = FitBandChips(items, width, maxHeight, gap, hidden =>
-                        MeasureStatus(new StatusTag("overflow", "+" + hidden.ToString(CultureInfo.InvariantCulture), ""), css, TagStyleSet.Empty));
+                    shown = FitBandChips(items, width, maxHeight, gap, MeasureOverflow);
                 }
                 else
                 {
@@ -350,7 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         while (true)
                         {
                             int hidden = items.Count - shown.Count;
-                            var more = MeasureStatus(new StatusTag("overflow", "+" + hidden.ToString(CultureInfo.InvariantCulture), ""), css, TagStyleSet.Empty);
+                            var more = MeasureOverflow(hidden);
                             var trial = shown.Append(more).ToList();
                             if (Fit(trial, out _)) { shown = trial; break; }
                             if (shown.Count == 0) break;
@@ -379,6 +379,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 bands.Add(new PlannedBand(top, top ? 0 : Math.Max(0, y - 16), Math.Min(cardHeight, height + 22)));
             }
             return (groups, bands);
+        }
+
+        /// <summary>Measure the web's fixed-size .je-tag-more, without Status letter spacing or padding.</summary>
+        private PlannedItem MeasureOverflow(int count)
+        {
+            var text = "+" + count.ToString(CultureInfo.InvariantCulture);
+            // TextTypeface is the embedded Noto Sans Bold (font-weight: 700).
+            var layout = _text.Layout(text, PosterTagCss.OverflowFontSize, smallCaps: false, letterSpacing: 0);
+            float width = PosterTagCss.LuCeil(layout.Width) + 2 * PosterTagCss.OverflowPaddingH + 2;
+            float height = PosterTagCss.OverflowLineHeight + 2 * PosterTagCss.OverflowPaddingV + 2;
+            // Its own tile kind separates these fixed metrics/colours from every Status tile.
+            return new PlannedItem(PosterTagTileKind.Overflow, new OverflowTag(count), text, string.Empty, width, height) { TextLayout = layout };
         }
 
         /// <summary>Localized status chips use the same dimensions and label-specific Tag Styles as the web.</summary>

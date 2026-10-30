@@ -12,6 +12,7 @@
     <AssemblyName>JE.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../fixtures/native-overflow/*.png;../fixtures/native-overflow/metrics.json" LogicalName="NativeOverflow.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../fixtures/native-band-fit.json" LogicalName="NativeBandFit.json" />
     <EmbeddedResource Include="../fixtures/native-status-dates.json" LogicalName="NativeStatusDates.json" />
     <EmbeddedResource Include="../fixtures/source-edition-names.json" LogicalName="SourceEditionNames.json" />

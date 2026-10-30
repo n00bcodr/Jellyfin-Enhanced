@@ -495,6 +495,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
                 switch (item.Kind)
                 {
+                    case PosterTagTileKind.Overflow:
+                        PaintOverflow(canvas, item, local, border, space);
+                        break;
                     case PosterTagTileKind.Status:
                         PaintStatus(canvas, plan, item, local, border, space);
                         break;
@@ -520,6 +523,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
                 canvas.Flush();
                 return surface.Snapshot();
+            }
+
+            /// <summary>.je-tag-more has fixed geometry/colours and no box or text shadow.</summary>
+            private void PaintOverflow(SKCanvas canvas, PlannedItem item, SKRect local, float border, TileSpace space)
+            {
+                using var shape = new SKRoundRect(local, PosterTagCss.OverflowRadius);
+                PaintBox(canvas, shape, new SKColor(0, 0, 0, CssColor.AlphaByte(0.72f)),
+                    new SKColor(255, 255, 255, CssColor.AlphaByte(0.22f)), border, default);
+                float x = 1 + PosterTagCss.OverflowPaddingH;
+                float top = 1 + PosterTagCss.OverflowPaddingV;
+                // The anonymous flex text box floors its leading before align-items: center.
+                float baseline = MathF.Floor(Assets.TextMetrics.BaselineOffset(PosterTagCss.OverflowFontSize, PosterTagCss.OverflowLineHeight));
+                DrawText(canvas, item.TextLayout!, x, top + baseline,
+                    SKColors.White, null, space);
             }
 
             /// <summary>Static status chip: the family colours participate in the tile key; no viewport backdrop filter.</summary>

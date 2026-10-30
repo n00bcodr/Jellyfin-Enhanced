@@ -92,6 +92,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <summary>One localized status chip, styled with the web vocabulary's stable label key.</summary>
     public sealed record StatusTag(string Key, string Text, string StyleKey) : PosterTag;
 
+    /// <summary>Renderer-generated omission count; uses the dedicated .je-tag-more style.</summary>
+    internal sealed record OverflowTag(int Count) : PosterTag;
+
     /// <summary>The tags of one group and where they go.</summary>
     public sealed record PosterTagGroupLayout(PosterTagGroup Group, PosterTagCorner Corner, IReadOnlyList<PosterTag> Tags);
 

@@ -135,8 +135,9 @@ public class NativeStatusBandTests
         var plan = renderer.Plan(360, 540, layout);
         Assert.Equal(2, plan.Bands.Count);
         var bottom = plan.Groups[1].Items;
-        var more = Assert.IsType<StatusTag>(bottom.Last().Tag);
-        Assert.Equal("+" + (12 - (bottom.Count - 1)), more.Text);
+        var more = Assert.IsType<OverflowTag>(bottom.Last().Tag);
+        Assert.Equal(12 - (bottom.Count - 1), more.Count);
+        Assert.Equal("+" + more.Count, bottom.Last().Text);
         Assert.True(bottom.Select(i => i.Y).Distinct().Count() <= 2);
         Assert.All(bottom, i => Assert.InRange(i.X + i.Width, 0, plan.CardWidth - 6));
         using var rendered = renderer.Render(source, layout);
@@ -144,6 +145,22 @@ public class NativeStatusBandTests
         Assert.Equal(source.GetPixel(180, 270), rendered.GetPixel(180, 270));
         Assert.NotEqual(source.GetPixel(0, 0), rendered.GetPixel(0, 0));
         Assert.NotEqual(source.GetPixel(0, 539), rendered.GetPixel(0, 539));
+    }
+
+    [Theory]
+    [InlineData(PosterTagCorner.TopLeft, 180)]
+    [InlineData(PosterTagCorner.BottomLeft, 180)]
+    [InlineData(PosterTagCorner.TopLeft, 360)]
+    [InlineData(PosterTagCorner.BottomLeft, 360)]
+    public void Bands_natural_narrow_4I_metrics_match_browser_nine_chips_and_plus_three(PosterTagCorner corner, int width)
+    {
+        using var renderer = new PosterTagRenderer();
+        var layout = new PosterTagLayout([new(PosterTagGroup.Quality, corner,
+            Enumerable.Repeat<PosterTag>(new QualityTag("4I", "resolution"), 12).ToArray())], false, false, Bands: true);
+        var chips = renderer.Plan(width, width * 3 / 2, layout).Groups.Single().Items;
+        Assert.Equal(9, chips.Count(i => i.Tag is QualityTag));
+        Assert.Equal("+3", chips.Last().Text);
+        Assert.All(chips.Where(i => i.Tag is QualityTag), i => Assert.InRange(i.Width, 29.09375f - 0.01f, 29.09375f + 0.01f));
     }
 
     [Fact]

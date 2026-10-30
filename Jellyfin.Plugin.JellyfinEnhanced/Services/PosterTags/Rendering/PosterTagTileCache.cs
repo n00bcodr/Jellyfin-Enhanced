@@ -226,5 +226,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         Flag,
         LanguageChip,
         Status,
+        Overflow,
     }
 }
