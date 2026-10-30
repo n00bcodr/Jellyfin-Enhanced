@@ -14,3 +14,7 @@
 | T1R-3 | Legacy Community/Critic compact behavior stays; named-source compact chips use value plus a 2px source dot. | Preserves existing layouts and changes only the added chips. |
 | T1R-4 | Reuse TMDb identifiers through the existing MDBList batch API; items with only IMDb ids do not trigger a second upstream lookup path. | The brief permits IMDb/TMDb keys; existing JE service is TMDb keyed and shares caching/quota across consumers. |
 | T1R-5 | Assigned clone has an empty MDBList key; private key request timed out. | No-key output and UI preview verified. Live upstream fetching and source-filled desktop/420 movie-grid screenshots remain unverified. |
+
+| ID | Integration prerequisite | Status |
+|---|---|---|
+| T1M-1 | layouts has no MDBList API key; the private key request timed out. Preserve no-key behavior, verify named chips through automated combined parity and the built-in hub preview, and leave live upstream/grid verification explicitly unverified. | Open; live metadata needs a key |
