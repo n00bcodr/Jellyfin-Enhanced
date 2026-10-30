@@ -108,11 +108,13 @@
                 left: auto;
             }
 
-            /* bands: a top band (first group left, the rest right) and a wrapping bottom band */
+            /* bands: first top group left, the rest right; whole groups wrap
+               when long milestone labels and age ratings cannot share a row. */
             ${host('bands')}[data-je-slot="top"] {
                 top: 0; left: 0; right: 0;
                 padding: 6px 6px 16px;
                 flex-direction: row;
+                flex-wrap: wrap;
                 align-items: flex-start;
                 background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
             }
@@ -122,8 +124,17 @@
                 justify-content: flex-end;
                 align-items: flex-start;
                 gap: 3px;
-                flex-shrink: 1;
+                flex-shrink: 0;
                 min-width: 0;
+                max-width: 100%;
+            }
+            ${host('bands')}[data-je-slot="top"] > [data-je-group] > * {
+                box-sizing: border-box;
+                min-width: 0;
+                max-width: 100%;
+            }
+            ${host('bands')}[data-je-slot="top"] > [data-je-group] + [data-je-group] {
+                margin-left: auto;
             }
             ${host('bands')}[data-je-slot="top"] > [data-je-group]:first-child {
                 justify-content: flex-start;
