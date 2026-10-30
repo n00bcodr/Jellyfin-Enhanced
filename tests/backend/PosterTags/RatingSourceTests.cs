@@ -268,6 +268,41 @@ public class RatingSourceTests
         if (expectedRequests == 0) Assert.True(service.NeedsFetch("movie", "123"));
     }
 
+    [Theory]
+    [InlineData("/user")]
+    [InlineData("/tmdb/movie/")]
+    public async Task CancelledEnrichmentDoesNotCacheFailureAndCanRetryImmediately(string cancelPath)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        using var cancellation = new CancellationTokenSource();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancel = true;
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path != "/user") batches++;
+            if (cancel && path == cancelPath)
+            {
+                started.SetResult();
+                await Task.Delay(Timeout.Infinite, token);
+            }
+            return IntegrationTransport.Response(path == "/user" ? "{\"rate_limit\":1000,\"rate_limit_remaining\":1000}"
+                : "[{\"ids\":{\"tmdb\":123},\"ratings\":[{\"source\":\"imdb\",\"score\":81}]}]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var pending = service.WarmTagRatingsAsync(new[] { ("movie", "123") }, cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.Null(service.GetCachedEntry("movie", "123"));
+        Assert.True(service.NeedsFetch("movie", "123"));
+        cancel = false;
+        await service.WarmTagRatingsAsync(new[] { ("movie", "123") }, default);
+        Assert.Equal(cancelPath == "/user" ? 1 : 2, batches);
+        Assert.Equal(8.1, TagSourceRatings.FromMdblist(service.GetCachedEntry("movie", "123"))!.Imdb);
+    }
+
     private sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
     {
         public override List<MediaBrowser.Model.Dto.MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => [];

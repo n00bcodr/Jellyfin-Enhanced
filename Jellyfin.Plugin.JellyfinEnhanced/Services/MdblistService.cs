@@ -251,6 +251,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 return status;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.Warning($"[MDBList] Failed to fetch account status: {ex.GetType().Name}");
@@ -412,6 +416,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 return result;
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.Warning($"[MDBList] Failed to fetch media batch for {mediaType} ({tmdbIds.Count} ids): {ex.GetType().Name}");
@@ -437,6 +445,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (status != null && status.RateLimitRemaining <= Math.Max(SafetyMargin, reserve)) return;
                         var ids = chunk.Select(t => t.Id).ToArray();
                         var results = await GetMediaBatchAsync(group.Key, ids, cancellationToken).ConfigureAwait(false);
+                        cancellationToken.ThrowIfCancellationRequested();
                         if (results == null)
                         {
                             // Match single-title failures: short retry TTL, never a confirmed negative.
