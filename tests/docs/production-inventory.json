@@ -1535,6 +1535,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-short-dates.json",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.js",
       "category": "js"
     },
@@ -8797,7 +8801,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 391,
+    "files": 392,
     "routes": 182,
     "configuration_properties": 633,
     "storage_references": 75,

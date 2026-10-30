@@ -12,6 +12,16 @@ public class NativeStatusBandTests
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-10-30T12:00:00Z");
     private static PosterTagSettings Settings(string json, PluginConfiguration? config = null) => PosterTagSettings.FromSettingsJson(json, config ?? new());
 
+    [Theory]
+    [InlineData("bg", "4.10")]
+    [InlineData("cs", "4. 10.")]
+    [InlineData("es", "4 oct")]
+    [InlineData("fa", "۱۲ مهر")]
+    [InlineData("fi", "4.10.")]
+    [InlineData("sk", "4. 10.")]
+    public void Short_dates_match_browser_month_day_formats_reported_in_review(string locale, string expected)
+        => Assert.Equal(expected, StatusRules.FormatShortDate(new DateOnly(2026, 10, 4), System.Globalization.CultureInfo.GetCultureInfo(locale)));
+
     [Fact]
     public void Status_urls_retire_each_five_minutes_even_when_settings_snapshot_is_cached()
     {

@@ -1,0 +1,2216 @@
+{
+  "ar": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "يناير"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "فبراير"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "مارس"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "أبريل"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "مايو"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "يونيو"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "يوليو"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "أغسطس"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "سبتمبر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "أكتوبر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "نوفمبر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "ديسمبر"
+      }
+    ]
+  },
+  "ar-SA": {
+    "calendar": "gregory",
+    "digits": "٠١٢٣٤٥٦٧٨٩",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "يناير"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "فبراير"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "مارس"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "أبريل"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "مايو"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "يونيو"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "يوليو"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "أغسطس"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "سبتمبر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "أكتوبر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "نوفمبر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "ديسمبر"
+      }
+    ]
+  },
+  "bg": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}.{month}",
+        "month": "01"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "02"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "03"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "04"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "05"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "06"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "07"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "08"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "09"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "10"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "11"
+      },
+      {
+        "template": "{day}.{month}",
+        "month": "12"
+      }
+    ]
+  },
+  "ca": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "de gen."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de febr."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de març"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "d’abr."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de maig"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de juny"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de jul."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "d’ag."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de set."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "d’oct."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de nov."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "de des."
+      }
+    ]
+  },
+  "cs": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}. {month}.",
+        "month": "1"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "2"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "3"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "4"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "5"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "6"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "7"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "8"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "9"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "10"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "11"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "12"
+      }
+    ]
+  },
+  "da": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}. {month}",
+        "month": "jan."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "feb."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "mar."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "apr."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "maj"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "jun."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "jul."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "aug."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "sep."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "okt."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "nov."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "dec."
+      }
+    ]
+  },
+  "de": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}. {month}",
+        "month": "Jan."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Feb."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "März"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Apr."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Mai"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Juni"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Juli"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Aug."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Sept."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Okt."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Nov."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Dez."
+      }
+    ]
+  },
+  "en": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month} {day}",
+        "month": "Jan"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Feb"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Mar"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Apr"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "May"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jun"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jul"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Aug"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Sep"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Oct"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Nov"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Dec"
+      }
+    ]
+  },
+  "en-AU": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "Jan"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Feb"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Apr"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "May"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "June"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "July"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Aug"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Sept"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Oct"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Nov"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Dec"
+      }
+    ]
+  },
+  "en-CA": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month} {day}",
+        "month": "Jan"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Feb"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Mar"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Apr"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "May"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jun"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jul"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Aug"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Sep"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Oct"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Nov"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Dec"
+      }
+    ]
+  },
+  "en-GB": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "Jan"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Feb"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Apr"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "May"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Jun"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Jul"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Aug"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Sept"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Oct"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Nov"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Dec"
+      }
+    ]
+  },
+  "en-NZ": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "Jan"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Feb"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Apr"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "May"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Jun"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Jul"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Aug"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Sept"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Oct"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Nov"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Dec"
+      }
+    ]
+  },
+  "en-US": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month} {day}",
+        "month": "Jan"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Feb"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Mar"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Apr"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "May"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jun"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jul"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Aug"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Sep"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Oct"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Nov"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Dec"
+      }
+    ]
+  },
+  "es": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "ene"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "feb"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "abr"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "may"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "jun"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "jul"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "ago"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "sept"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "oct"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "nov"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "dic"
+      }
+    ]
+  },
+  "es-MX": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "ene"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "feb"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "abr"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "may"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "jun"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "jul"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "ago"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "sep"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "oct"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "nov"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "dic"
+      }
+    ]
+  },
+  "et": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}. {month}",
+        "month": "jaan"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "veebr"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "märts"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "apr"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "mai"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "juuni"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "juuli"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "aug"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "sept"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "okt"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "nov"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "dets"
+      }
+    ]
+  },
+  "fa": {
+    "calendar": "persian",
+    "digits": "۰۱۲۳۴۵۶۷۸۹",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "فروردین"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "اردیبهشت"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "خرداد"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "تیر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "مرداد"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "شهریور"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "مهر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "آبان"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "آذر"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "دی"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "بهمن"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "اسفند"
+      }
+    ]
+  },
+  "fa-AF": {
+    "calendar": "persian",
+    "digits": "۰۱۲۳۴۵۶۷۸۹",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "حمل"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "ثور"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "جوزا"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "سرطان"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "اسد"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "سنبلهٔ"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "میزان"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "عقرب"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "قوس"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "جدی"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "دلو"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "حوت"
+      }
+    ]
+  },
+  "fi": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}.{month}.",
+        "month": "1"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "2"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "3"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "4"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "5"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "6"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "7"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "8"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "9"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "10"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "11"
+      },
+      {
+        "template": "{day}.{month}.",
+        "month": "12"
+      }
+    ]
+  },
+  "fr": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "janv."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "févr."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mars"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "avr."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mai"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "juin"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "juil."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "août"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "sept."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "oct."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "nov."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "déc."
+      }
+    ]
+  },
+  "fr-CA": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "janv."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "févr."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mars"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "avr."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mai"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "juin"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "juill."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "août"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "sept."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "oct."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "nov."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "déc."
+      }
+    ]
+  },
+  "gsw": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}. {month}",
+        "month": "Jan"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Feb"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Mär"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Apr"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Mai"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Jun"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Jul"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Aug"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Sep"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Okt"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Nov"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "Dez"
+      }
+    ]
+  },
+  "he": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} ב{month}",
+        "month": "ינו׳"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "פבר׳"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "מרץ"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "אפר׳"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "מאי"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "יוני"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "יולי"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "אוג׳"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "ספט׳"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "אוק׳"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "נוב׳"
+      },
+      {
+        "template": "{day} ב{month}",
+        "month": "דצמ׳"
+      }
+    ]
+  },
+  "hu": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month} {day}.",
+        "month": "jan."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "febr."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "márc."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "ápr."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "máj."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "jún."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "júl."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "aug."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "szept."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "okt."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "nov."
+      },
+      {
+        "template": "{month} {day}.",
+        "month": "dec."
+      }
+    ]
+  },
+  "it": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "gen"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "feb"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "apr"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mag"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "giu"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "lug"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "ago"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "set"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "ott"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "nov"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "dic"
+      }
+    ]
+  },
+  "ko": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month} {day}일",
+        "month": "1월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "2월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "3월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "4월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "5월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "6월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "7월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "8월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "9월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "10월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "11월"
+      },
+      {
+        "template": "{month} {day}일",
+        "month": "12월"
+      }
+    ]
+  },
+  "ml": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month} {day}",
+        "month": "ജനു"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "ഫെബ്രു"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "മാർ"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "ഏപ്രി"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "മേയ്"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "ജൂൺ"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "ജൂലൈ"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "ഓഗ"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "സെപ്റ്റം"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "ഒക്ടോ"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "നവം"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "ഡിസം"
+      }
+    ]
+  },
+  "nl": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "jan"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "feb"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mrt"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "apr"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mei"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "jun"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "jul"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "aug"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "sep"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "okt"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "nov"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "dec"
+      }
+    ]
+  },
+  "no": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}. {month}",
+        "month": "jan."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "feb."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "mars"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "apr."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "mai"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "juni"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "juli"
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "aug."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "sep."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "okt."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "nov."
+      },
+      {
+        "template": "{day}. {month}",
+        "month": "des."
+      }
+    ]
+  },
+  "pl": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "sty"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "lut"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "kwi"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "maj"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "cze"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "lip"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "sie"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "wrz"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "paź"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "lis"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "gru"
+      }
+    ]
+  },
+  "pr": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month} {day}",
+        "month": "Jan"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Feb"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Mar"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Apr"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "May"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jun"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Jul"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Aug"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Sep"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Oct"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Nov"
+      },
+      {
+        "template": "{month} {day}",
+        "month": "Dec"
+      }
+    ]
+  },
+  "pt": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} de {month}",
+        "month": "jan."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "fev."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "mar."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "abr."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "mai."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "jun."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "jul."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "ago."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "set."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "out."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "nov."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "dez."
+      }
+    ]
+  },
+  "pt-BR": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} de {month}",
+        "month": "jan."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "fev."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "mar."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "abr."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "mai."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "jun."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "jul."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "ago."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "set."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "out."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "nov."
+      },
+      {
+        "template": "{day} de {month}",
+        "month": "dez."
+      }
+    ]
+  },
+  "pt-PT": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}/{month}",
+        "month": "01"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "02"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "03"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "04"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "05"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "06"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "07"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "08"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "09"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "10"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "11"
+      },
+      {
+        "template": "{day}/{month}",
+        "month": "12"
+      }
+    ]
+  },
+  "ru": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "янв."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "февр."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "мар."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "апр."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "мая"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "июн."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "июл."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "авг."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "сент."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "окт."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "нояб."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "дек."
+      }
+    ]
+  },
+  "sk": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day}. {month}.",
+        "month": "1"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "2"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "3"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "4"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "5"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "6"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "7"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "8"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "9"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "10"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "11"
+      },
+      {
+        "template": "{day}. {month}.",
+        "month": "12"
+      }
+    ]
+  },
+  "sv": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "jan."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "feb."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "mars"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "apr."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "maj"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "juni"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "juli"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "aug."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "sep."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "okt."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "nov."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "dec."
+      }
+    ]
+  },
+  "tr": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "Oca"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Şub"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Mar"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Nis"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "May"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Haz"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Tem"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Ağu"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Eyl"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Eki"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Kas"
+      },
+      {
+        "template": "{day} {month}",
+        "month": "Ara"
+      }
+    ]
+  },
+  "uk": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{day} {month}",
+        "month": "січ."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "лют."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "бер."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "квіт."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "трав."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "черв."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "лип."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "серп."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "вер."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "жовт."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "лист."
+      },
+      {
+        "template": "{day} {month}",
+        "month": "груд."
+      }
+    ]
+  },
+  "zh-CN": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month}月{day}日",
+        "month": "1"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "2"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "3"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "4"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "5"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "6"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "7"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "8"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "9"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "10"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "11"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "12"
+      }
+    ]
+  },
+  "zh-HK": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month}月{day}日",
+        "month": "1"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "2"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "3"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "4"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "5"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "6"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "7"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "8"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "9"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "10"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "11"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "12"
+      }
+    ]
+  }
+}

@@ -17,11 +17,14 @@ public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Sch
 /// </summary>
 public static class StatusRules
 {
+    private sealed record ShortMonth(string Template, string Month);
+    private sealed record ShortDate(string Calendar, string Digits, ShortMonth[] Months);
     private sealed record Vocabulary(StatusThresholds Thresholds, Dictionary<string, BadgeDefinition> Badges);
     private sealed record BadgeDefinition(string Kind, string Style, string Label, string? Compact);
     public sealed record StatusThresholds(long DayMs, int AirsWithinDays, int WeekdayWithinDays, int ReturnGapDays,
         int ReturnsWithinDays, int JustAddedDays, int NewReleaseDays, int MinWindowDays, int MaxWindowDays);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly Dictionary<string, ShortDate> ShortDates = Read<Dictionary<string, ShortDate>>("tags.status-short-dates")!;
     private static readonly Vocabulary Table = Read<Vocabulary>("tags.status-vocabulary")!;
     private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, string>> Locales = new(StringComparer.OrdinalIgnoreCase);
     public static StatusThresholds Thresholds => Table.Thresholds;
@@ -154,9 +157,26 @@ public static class StatusRules
         if (ahead == 1) return Translate("status_tag_tomorrow", settings.StatusCulture);
         var culture = settings.StatusCulture;
         if (ahead <= Thresholds.WeekdayWithinDays) return culture.DateTimeFormat.GetDayName(day.DayOfWeek);
-        // MonthDayPattern preserves the locale's date ordering without its year.
-        var pattern = culture.DateTimeFormat.MonthDayPattern.Replace("MMMM", "MMM", StringComparison.Ordinal).Replace("dd", "d", StringComparison.Ordinal);
-        return day.ToString(pattern, culture);
+        return FormatShortDate(day, culture);
+    }
+
+    /// <summary>Browser-generated month/day order, literals, calendar and digits for shipped locales.</summary>
+    internal static string FormatShortDate(DateOnly day, CultureInfo culture)
+    {
+        if (!ShortDates.TryGetValue(culture.Name, out var format)
+            && !ShortDates.TryGetValue(culture.TwoLetterISOLanguageName, out format)) format = ShortDates["en"];
+        Calendar calendar = format.Calendar switch
+        {
+            "persian" => new PersianCalendar(),
+            "islamic-umalqura" => new UmAlQuraCalendar(),
+            "buddhist" => new ThaiBuddhistCalendar(),
+            _ => new GregorianCalendar(),
+        };
+        var date = day.ToDateTime(TimeOnly.MinValue);
+        var month = format.Months[calendar.GetMonth(date) - 1];
+        var number = calendar.GetDayOfMonth(date).ToString(CultureInfo.InvariantCulture);
+        var digits = new string(number.Select(d => format.Digits[d - '0']).ToArray());
+        return month.Template.Replace("{month}", month.Month, StringComparison.Ordinal).Replace("{day}", digits, StringComparison.Ordinal);
     }
 
     private static StatusTag Make(string key, PosterTagSettings settings, string? date = null, int? rank = null)

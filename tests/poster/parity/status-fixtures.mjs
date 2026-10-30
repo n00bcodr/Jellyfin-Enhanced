@@ -1,3 +1,5 @@
+import { readdirSync } from 'node:fs';
+
 // Fixed-clock fixtures consumed by both the real web renderer and native StatusRules.
 const now = Date.UTC(2026, 9, 30, 12);
 const day = 86400000;
@@ -61,4 +63,22 @@ add('german-weekday-locale', show(), 'airs_date', 'Airs Sonntag', { locale: 'de-
 add('french-weekday-locale', show(), 'airs_date', 'Airs dimanche', { locale: 'fr-FR', schedule: schedule(null, ep('2026-11-01')) });
 add('new-york-before-dst-fallback', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 10, 1, 5, 30), zone: 'America/New_York', schedule: schedule(null, ep('2026-11-01')) });
 add('new-york-after-dst-fallback', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 10, 1, 6, 30), zone: 'America/New_York', schedule: schedule(null, ep('2026-11-01')) });
+// Every shipped locale, plus Persian calendar boundaries; the six review cases stay literal below.
+const dates = ['2026-01-04', '2026-03-20', '2026-03-21', '2026-10-04'];
+for (const file of readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url)).filter(f => f.endsWith('.json'))) {
+    const locale = file.slice(0, -5);
+    const effective = Intl.DateTimeFormat.supportedLocalesOf(locale).length ? locale : 'en';
+    for (const date of dates) {
+        const instant = Date.parse(date + 'T00:00:00Z');
+        const short = new Intl.DateTimeFormat(effective, {month:'short', day:'numeric', timeZone:'UTC'}).format(new Date(instant));
+        add(`short-date-${locale}-${date}`, show(), 'returns_date', `Returns ${short}`, {
+            now: instant - 14 * day, locale, schedule: schedule(ep(new Date(instant - 60 * day).toISOString().slice(0,10)), ep(date))
+        });
+    }
+}
+for (const [locale, short] of Object.entries({bg:'4.10', cs:'4. 10.', es:'4 oct', fa:'۱۲ مهر', fi:'4.10.', sk:'4. 10.'})) {
+    add(`review-short-date-${locale}`, show(), 'returns_date', `Returns ${short}`, {
+        now: Date.UTC(2026,8,20), locale, schedule: schedule(ep('2026-08-01'), ep('2026-10-04'))
+    });
+}
 export default rows;
