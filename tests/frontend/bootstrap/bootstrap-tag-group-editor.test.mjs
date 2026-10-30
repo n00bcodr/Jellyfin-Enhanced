@@ -28,10 +28,9 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
       ajax: async request => { if (request.type === 'GET') return []; writes.push(request); },
     } });
   t.after(() => h.close());
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
   h.JE.cdn = { flagSvg: code => `/flags/${code}.svg` };
-  h.load('core/media-language.js');
   h.load('tags/languagetags.js');
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   h.JE.toast = message => toasts.push(message);
@@ -396,4 +395,160 @@ test('centre pills save both position representations and repaint the live previ
   assert.equal(h.row('quality').querySelector('.je-tge-pills').dataset.layout, 'corners');
   const css = h.document.getElementById('je-tag-group-editor').textContent;
   assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+});
+
+test('language Priority editor adds by name/code, moves/removes, preserves focus and drives the real preview', async t => {
+  const h = setup(t, { stored: { languageTagsEnabled: true }, plugin: { LanguageTagsPriority: 'German' } });
+  const $ = selector => h.row('language').querySelector(selector);
+  assert.equal($('[data-language-follow]').checked, true);
+  await h.change($('[data-language-follow]'), false);
+  assert.deepEqual(h.saved().languageTagsPriority, []);
+  assert.equal($('[data-language-personal]').hidden, false);
+  const search = async text => {
+    const input = $('[data-language-priority-search]'); input.value = text;
+    input.dispatchEvent(new h.window.Event('input', { bubbles: true })); await h.settle();
+  };
+  await search('jpn');
+  assert.equal($('[data-language-priority-choice]').value, 'ja');
+  await h.click($('[data-language-priority-action="add"]'));
+  await search('French');
+  await h.click($('[data-language-priority-action="add"]'));
+  assert.deepEqual(h.saved().languageTagsPriority, ['ja', 'fr']);
+  assert.deepEqual([...h.preview().querySelectorAll('.language-flag')].map(el => el.dataset.lang), ['jp', 'fr', 'de']);
+  const up = $('[data-language-priority-code="fr"] [data-language-priority-action="up"]');
+  up.focus(); await h.click(up);
+  assert.deepEqual(h.saved().languageTagsPriority, ['fr', 'ja']);
+  assert.equal(h.document.activeElement.closest('[data-language-priority-code]').dataset.languagePriorityCode, 'fr');
+  await h.click($('[data-language-priority-code="ja"] [data-language-priority-action="remove"]'));
+  assert.deepEqual(h.saved().languageTagsPriority, ['fr']);
+  await h.change($('[data-language-priority-strict]'), 'true');
+  assert.equal(h.saved().languageTagsPriorityStrict, true);
+  assert.equal(h.preview().querySelectorAll('.language-flag').length, 1);
+  await h.change($('[data-language-priority-strict]'), 'inherit');
+  assert.equal(h.saved().languageTagsPriorityStrict, null);
+  await h.change($('[data-language-follow]'), true);
+  assert.equal(h.saved().languageTagsPriority, null);
+  assert.deepEqual([...h.preview().querySelectorAll('.language-flag')].map(el => el.dataset.lang), ['de', 'fr', 'jp']);
+  assert.equal(h.JE.currentSettings.tagLayoutSettingsVersion, 0, 'priority edits do not migrate legacy layout documents');
+  assert.ok(h.calls.includes('reinitializeLanguageTags'));
+  const entries = h.JE.internals.enhancedUi.mediaTagsHub.searchIndex();
+  assert.ok(entries.some(e => e.label.includes('language_priority_follow')));
+});
+
+test('personal language editor enforces 12 languages, deduplicates aliases, and serializes saves', async t => {
+  const values = ['en', 'ja', 'fr', 'de', 'it', 'pt', 'es', 'zh', 'ko', 'ar', 'hi', 'ru'];
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: values } });
+  const $ = selector => h.row('language').querySelector(selector);
+  assert.equal($('[data-language-priority-action="add"]').disabled, true);
+  assert.equal($('[data-language-priority-choice]').disabled, true);
+  await h.click($('[data-language-priority-code="ru"] [data-language-priority-action="remove"]'));
+  assert.equal(h.saved().languageTagsPriority.length, 11);
+  const input = $('[data-language-priority-search]'); input.value = 'eng';
+  input.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.equal([...$('[data-language-priority-choice]').options].some(o => o.value === 'en'), false);
+  let finish;
+  h.window.ApiClient.ajax = () => new Promise(resolve => { finish = resolve; });
+  const saving = h.change($('[data-language-priority-strict]'), 'true');
+  await h.settle();
+  assert.equal($('.je-language-priority').disabled, true);
+  assert.equal(typeof finish, 'function');
+  finish(); await saving; await h.settle();
+  assert.equal($('.je-language-priority').disabled, false);
+});
+
+test('personal language save failure restores the last policy and preview and permits retry', async t => {
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: ['ja', 'fr'] } });
+  const $ = selector => h.row('language').querySelector(selector);
+  h.window.ApiClient.ajax = async () => { throw new Error('offline'); };
+  await h.click($('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), ['ja', 'fr']);
+  assert.deepEqual([...h.preview().querySelectorAll('.language-flag')].map(el => el.dataset.lang), ['jp', 'fr', 'de']);
+  assert.equal($('[data-language-priority-status]').textContent, 'language_priority_save_failed');
+  assert.equal($('.je-language-priority').disabled, false);
+  h.window.ApiClient.ajax = async req => h.writes.push(req);
+  await h.click($('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.deepEqual(h.saved().languageTagsPriority, ['fr', 'ja']);
+});
+
+test('priority save fails while a subtitles toggle save is queued: persisted document keeps the old list and new subtitles value', async t => {
+  const oldList = ['ja', 'en', 'fr'];
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: oldList } });
+  const requests = [];
+  let rejectFirst, persisted;
+  h.window.ApiClient.ajax = req => {
+    const doc = JSON.parse(req.data);
+    requests.push(doc);
+    if (requests.length === 1) return new Promise((resolve, reject) => { rejectFirst = reject; });
+    persisted = doc;
+    return Promise.resolve();
+  };
+  await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.deepEqual(requests[0].languageTagsPriority, ['ja', 'fr', 'en']);
+  await h.change(h.$('[data-language-key="languageTagsShowSubtitles"]'), true);
+  assert.equal(requests.length, 1, 'the subtitles write waits for the priority outcome');
+  rejectFirst(new Error('HTTP 500'));
+  await h.settle();
+  assert.equal(requests.length, 2);
+  assert.deepEqual(persisted.languageTagsPriority, oldList);
+  assert.equal(persisted.languageTagsShowSubtitles, true);
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), oldList);
+  assert.equal(h.JE.currentSettings.languageTagsShowSubtitles, true);
+  assert.deepEqual(Array.from(h.$('[data-language-priority-list]').children, el => el.dataset.languagePriorityCode), oldList);
+  assert.equal(h.$('[data-language-priority-status]').textContent, 'language_priority_save_failed');
+});
+
+test('two priority edits in quick succession where the first fails: pending edit is dropped and retry uses rolled-back state', async t => {
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: ['ja', 'en', 'fr'] } });
+  const requests = [];
+  let rejectFirst;
+  h.window.ApiClient.ajax = req => {
+    requests.push(JSON.parse(req.data));
+    if (requests.length === 1) return new Promise((resolve, reject) => { rejectFirst = reject; });
+    return Promise.resolve();
+  };
+  await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.equal(h.$('.je-language-priority').disabled, true);
+  // Dispatch even though a real disabled fieldset prevents this interaction.
+  await h.click(h.$('[data-language-priority-code="en"] [data-language-priority-action="up"]'));
+  await h.change(h.$('[data-language-priority-strict]'), 'true');
+  assert.equal(requests.length, 1, 'click and change events while saving are dropped');
+  rejectFirst(new Error('HTTP 500'));
+  await h.settle();
+  assert.equal(requests.length, 1, 'no deferred priority edit is replayed after failure');
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), ['ja', 'en', 'fr']);
+  assert.equal(h.JE.currentSettings.languageTagsPriorityStrict, null);
+  assert.equal(h.$('[data-language-priority-strict]').value, 'inherit');
+  await h.click(h.$('[data-language-priority-code="en"] [data-language-priority-action="up"]'));
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1].languageTagsPriority, ['en', 'ja', 'fr']);
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), requests[1].languageTagsPriority);
+  assert.equal(h.$('[data-language-priority-status]').textContent, 'language_priority_saved');
+});
+
+test('earlier queued settings saves cannot persist a priority edit that later fails', async t => {
+  const oldList = ['ja', 'en', 'fr'];
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: oldList } });
+  const requests = [];
+  let finishFirst, persisted;
+  h.window.ApiClient.ajax = req => {
+    const doc = JSON.parse(req.data);
+    requests.push(doc);
+    if (requests.length === 1) return new Promise(resolve => { finishFirst = () => { persisted = doc; resolve(); }; });
+    if (requests.length === 3) return Promise.reject(new Error('HTTP 500'));
+    persisted = doc;
+    return Promise.resolve();
+  };
+  await h.change(h.$('[data-language-key="languageTagsShowSubtitles"]'), true);
+  await h.change(h.$('[data-language-key="languageTagsStyle"]'), 'codes');
+  await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.equal(requests.length, 1);
+  finishFirst();
+  await h.settle();
+  assert.equal(requests.length, 3);
+  assert.deepEqual(requests[2].languageTagsPriority, ['ja', 'fr', 'en']);
+  assert.deepEqual(persisted.languageTagsPriority, oldList);
+  assert.equal(persisted.languageTagsShowSubtitles, true);
+  assert.equal(persisted.languageTagsStyle, 'codes');
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), oldList);
+  assert.equal(h.$('[data-language-priority-status]').textContent, 'language_priority_save_failed');
 });

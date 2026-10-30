@@ -299,6 +299,18 @@ synth('audio-admin-from-user-no-pref', { QualityTagsEnabled: true }, { QualityTa
 synth('audio-admin-fixed', { QualityTagsEnabled: true, QualityTagsPreferredAudioLanguage: '' }, { QualityTagsPreferredAudioLanguage: 'en-GB' });
 synth('language-priority', { LanguageTagsEnabled: true }, { LanguageTagsPriority: 'Japanese, en, pt-br, brazilian portuguese, Norwegian Bokmål,, ' });
 synth('language-priority-strict', { LanguageTagsEnabled: true, GenreTagsEnabled: true }, { LanguageTagsPriority: 'fr,ja, Latin American Spanish', LanguageTagsPriorityStrict: true });
+for (const style of ['flags', 'codes']) {
+    for (const strict of [null, true, false]) {
+        synth(`personal-language-${style}-strict-${strict}`, { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true,
+            LanguageTagsStyle: style, LanguageTagsCountBadge: 'both', LanguageTagsPriority: ['jpn', 'eng', 'tam', 'por'], LanguageTagsPriorityStrict: strict },
+            { LanguageTagsPriority: 'French', LanguageTagsPriorityStrict: true });
+    }
+}
+synth('personal-language-empty', { LanguageTagsEnabled: true, LanguageTagsPriority: [] }, { LanguageTagsPriority: 'French', LanguageTagsPriorityStrict: true });
+synth('personal-language-aliases', { LanguageTagsEnabled: true, LanguageTagsPriority: ['tl', 'fil', 'nn', 'nob'], LanguageTagsPriorityStrict: true });
+synth('personal-language-follow-strict-override', { LanguageTagsEnabled: true, LanguageTagsPriorityStrict: false }, { LanguageTagsPriority: 'Japanese', LanguageTagsPriorityStrict: true });
+synth('personal-language-badge-only', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsPriority: ['ja', 'en'], LanguageTagsPriorityStrict: true, LanguageTagsCountBadge: 'only' });
+synth('personal-language-invalid', { LanguageTagsEnabled: true, LanguageTagsPriority: ['Japanese'] }, { LanguageTagsPriority: 'French' });
 synth('rating-scopes', { RatingTagsEnabled: true, RatingTagsOnMovies: false, RatingTagsOnSeries: true, RatingTagsOnSeasons: false, RatingTagsOnEpisodes: false, RatingTagsOnNextUp: false }, { ShowUserRatingDash: false });
 synth('rating-scopes-2', { RatingTagsEnabled: true, AgeRatingTagsEnabled: true, RatingTagsOnMovies: true, RatingTagsOnSeries: false, RatingTagsOnSeasons: true, RatingTagsOnEpisodes: true, RatingTagsOnContinueWatching: false });
 synth('reviews-off', { RatingTagsEnabled: true }, { ShowUserRatingOnPosters: false });

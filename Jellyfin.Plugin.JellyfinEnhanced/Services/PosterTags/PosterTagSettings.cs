@@ -242,10 +242,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool RatingTagsCompact { get; private init; }
 
 
-        /// <summary>Admin <c>LanguageTagsPriority</c> as the web's lowercase term list.</summary>
+        /// <summary>Effective personal ISO priorities, or the administrator's legacy terms.</summary>
         public IReadOnlyList<string> LanguagePriorityTerms { get; private init; } = Array.Empty<string>();
 
-        /// <summary>Admin <c>LanguageTagsPriorityStrict</c>.</summary>
+        /// <summary>Whether language terms are personal ISO codes using canonical matching.</summary>
+        public bool LanguagePriorityIsPersonal { get; private init; }
+
+        /// <summary>Personal strict override, otherwise the administrator's current policy.</summary>
         public bool LanguagePriorityStrict { get; private init; }
 
         /// <summary>Admin <c>LanguageTagsMergeRegions</c>.</summary>
@@ -427,8 +430,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(user.RatingTagsMinScore),
                 RatingTagsColorByScore = user.RatingTagsColorByScore,
                 RatingTagsCompact = user.TagLabelDensity == "compact",
-                LanguagePriorityTerms = LanguageFlagRules.ParsePriorityTerms(config.LanguageTagsPriority),
-                LanguagePriorityStrict = config.LanguageTagsPriorityStrict,
+                LanguagePriorityTerms = LanguageTagPriority.TryNormalize(user.LanguageTagsPriority, out var personalPriority) && personalPriority is not null
+                    ? personalPriority : LanguageFlagRules.ParsePriorityTerms(config.LanguageTagsPriority),
+                LanguagePriorityIsPersonal = personalPriority is not null,
+                LanguagePriorityStrict = user.LanguageTagsPriorityStrict ?? config.LanguageTagsPriorityStrict,
                 LanguageMergeRegions = config.LanguageTagsMergeRegions,
                 ShowUserReviews = config.ShowUserReviews,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
@@ -766,6 +771,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["language.countBadge"] = LanguageCountBadge;
                 values["language.priority"] = string.Join(",", LanguagePriorityTerms);
                 values["language.priorityStrict"] = Bool(LanguagePriorityStrict);
+                // Canonical personal matching differs from the legacy server term matcher.
+                // Omit the marker for inherited settings so their existing variant URLs stay stable.
+                if (LanguagePriorityIsPersonal) values["language.personalPriority"] = "1";
                 values["language.mergeRegions"] = Bool(LanguageMergeRegions);
             }
 

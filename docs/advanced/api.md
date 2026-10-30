@@ -1168,6 +1168,19 @@ Container `FirstEpisode` has `{Id,Type,Genres,NeedsStreamFetch:true}`; fetch tha
 
 The per-user settings document and public admin defaults also carry `LanguageTagsShowAudio` (true), `LanguageTagsShowSubtitles` (false), `LanguageTagsStyle` (`flags` or `codes`, default `flags`) and `LanguageTagsCountBadge` (`off`, `only`, `both`, default `off`). Save normalizes unknown styles and modes to their defaults. These change presentation, not the cache facts.
 
+Personal `settings.json` additionally accepts `LanguageTagsPriority` (nullable string array) and `LanguageTagsPriorityStrict` (nullable boolean). The existing own/admin `POST user-settings/{userId}/settings.json` validates the whole priority list before any write: at most 12 posted entries, each an assigned base ISO 639-1/639-2 code. Names, regional/BCP-47 tags, unknown codes, null entries and `und`/`mul` return `400`; the previous document stays intact. Codes are trimmed, lowercased and deduplicated in first-occurrence order through the existing audio-language equivalences (`eng`/`en`, `fre`/`fra`/`fr`, Tagalog/Filipino, Norwegian variants).
+
+`null`/missing list means the live administrator `LanguageTagsPriority` string; `[]` explicitly disables prioritization. A nonempty personal list replaces that string. Strict `null`/missing inherits the live administrator boolean independently; `true` filters and `false` retains nonprioritized languages. Empty lists never filter. New-user seeding and reset-all leave both fields null. Admin public configuration retains its string/boolean types; personal settings use the array/nullable boolean types above.
+
+The web client serializes saves of each user settings document. It applies a priority edit at its queue turn and restores it on failure before building the next queued document, preserving unrelated edits. Priority controls ignore further edits while saving; after failure, retry from the restored policy.
+
+For example, merge these properties into the complete user document before posting:
+
+```json
+{"LanguageTagsPriority":["ja","en","fr"],"LanguageTagsPriorityStrict":null}
+```
+
+Personal matching uses canonical base languages across all codes represented by a grouped flag, with the server's regional merging unchanged. The same policy runs before audio/subtitle chip caps and Dual/Multi counting in web, hub preview and native resolution. Effective terms, strict mode and personal canonical-matching mode participate in the native settings digest and signed image variants; settings saves invalidate the user's native snapshot. No tag-cache entry/schema or access `filterRevision` change is needed: cached languages remain policy-independent facts. Refresh other open clients to load a saved preference.
 
 Spoiler Guard can strip metadata before return and add `Tags` on stripped stubs. Series and movie stubs have no `ProviderIds` but keep the item's `TmdbId`, so Status Tags can still show a trending rank. `mediaSourceId` selects a media version; this route does not require cached delivery enabled.
 

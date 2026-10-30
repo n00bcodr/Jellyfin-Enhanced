@@ -67,6 +67,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             settings.LanguageTagsShowSubtitles = config.LanguageTagsShowSubtitles;
             settings.LanguageTagsStyle = NormalizeStyle(config.LanguageTagsStyle);
             settings.LanguageTagsCountBadge = NormalizeCountBadge(config.LanguageTagsCountBadge);
+            // Priority policy stays live: new/reset users follow future admin changes.
+            settings.LanguageTagsPriority = null;
+            settings.LanguageTagsPriorityStrict = null;
         }
     }
 }

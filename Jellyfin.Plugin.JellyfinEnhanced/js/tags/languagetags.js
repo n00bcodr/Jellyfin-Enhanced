@@ -117,44 +117,21 @@
     }
 
     /**
-     * Reads the admin-configured priority language list (comma-separated
-     * language codes and/or names, e.g. "en, Japanese, fr") and returns it
-     * as a lowercase array. Empty when unset, preserving the unprioritized
-     * default behavior. Accepting names too matters because the flag shown
-     * for a language is a *country* code (e.g. Telugu resolves to India's
-     * "in" flag, shared with Hindi, Tamil, etc.) — an admin can't reliably
-     * guess the underlying language code, but they do know the language name.
-     * @returns {Array<string>}
-     */
-    function getPriorityTerms() {
-        const raw = JE.pluginConfig?.LanguageTagsPriority || '';
-        return raw.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
-    }
-
-    /**
-     * Reorders deduplicated flags so that ones matching the admin's priority
-     * list come first (in priority order), with the rest following in their
-     * original detection order. Only the first few (the layout's language
-     * cap, 3 by default) end up visible, so this is what actually decides
-     * which flags a card shows. A flag can
-     * match the priority list by language code (en, pt-BR), its base code
-     * (pt), or its display name (English, Portuguese) — whichever the admin
-     * typed.
-     * When LanguageTagsPriorityStrict is on, non-matching flags are dropped
-     * entirely instead of just being pushed to the back — a card can then
-     * show fewer flags than the cap, or none, if it has no matching audio track.
-     * @param {Array<{code: string, allLanguages: Array<string>}>} flags
+     * Apply the effective priority list to grouped language chips. Personal ISO
+     * codes match every represented language through the shared equivalences.
+     * Server policy retains its existing code/name matching and stable order.
+     * @param {Array<{code: string, allCodes: string[], allLanguages: string[]}>} flags
      * @returns {Array}
      */
     function orderByPriority(flags) {
-        const priority = getPriorityTerms();
+        const policy = JE.core.mediaLanguage.priorityPolicy();
+        const priority = policy.terms;
         if (!priority.length) return flags;
-
         const rank = (flag) => {
             const code = (flag.code || '').toLowerCase();
-            const base = code.split('-')[0];
-            const names = (flag.allLanguages || []).map(n => n.toLowerCase());
-            const candidates = [code, base, ...names];
+            const candidates = policy.personal
+                ? flag.allCodes.map(c => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(c)?.base))
+                : [code, code.split('-')[0], ...flag.allLanguages.map(n => n.toLowerCase())];
             let best = -1;
             for (const candidate of candidates) {
                 const idx = priority.indexOf(candidate);
@@ -162,11 +139,9 @@
             }
             return best;
         };
-
-        const strict = !!JE.pluginConfig?.LanguageTagsPriorityStrict;
         return flags
             .map((flag, i) => ({ flag, i, rank: rank(flag) }))
-            .filter(entry => !strict || entry.rank !== -1)
+            .filter(entry => !policy.strict || entry.rank !== -1)
             .sort((a, b) => {
                 const ra = a.rank === -1 ? priority.length : a.rank;
                 const rb = b.rank === -1 ? priority.length : b.rank;
@@ -189,7 +164,7 @@
     }
 
     /**
-     * Deduplicated chips for one track type, full coverage first, then admin priority.
+     * Deduplicated chips for one track type, full coverage first, then personal/server priority.
      * Flags preserve country grouping; codes group canonical languages, retaining
      * explicit regions unless the administrator merges regional variants.
      * @param {Array} languages
@@ -206,9 +181,10 @@
             if (!key || (style === 'codes' && !code)) continue;
             const name = lang.name || lang.code.toUpperCase();
             const existing = unique.get(key);
-            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
+            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, allCodes: [lang.code], allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
             else {
                 existing.partial = existing.partial && !!lang.partial;
+                if (!existing.allCodes.includes(lang.code)) existing.allCodes.push(lang.code);
                 if (!existing.allLanguages.includes(name)) existing.allLanguages.push(name);
                 const label = languageLabel({ name, partial: lang.partial });
                 if (!existing.labels.includes(label)) existing.labels.push(label);
@@ -231,7 +207,9 @@
         const audio = conf.audio ? resolveChips(data.audio, conf.style) : [];
         const subtitles = conf.subtitles ? resolveChips(data.subtitles, conf.style) : [];
         // Count languages rather than countries: Hindi and Tamil share a flag.
-        const count = conf.audio && conf.badge !== 'off' ? new Set(resolveChips(data.audio, 'codes').map(chip => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(chip.code)?.base)).filter(code => code !== 'zxx')).size : 0;
+        const counted = conf.audio && conf.badge !== 'off' ? resolveChips(data.audio, 'codes')
+            .filter(chip => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(chip.code)?.base) !== 'zxx') : [];
+        const count = new Set(counted.map(chip => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(chip.code)?.base))).size;
         const badge = conf.badge !== 'off' && count >= 2;
         const chips = [];
         if (badge) chips.push({ badge: count === 2 ? 'dual' : 'multi' });
@@ -249,10 +227,10 @@
             chip.dataset.jeLanguage = info.badge ? 'countBadge' : info.subtitle ? 'subtitles' : 'flag';
             if (info.badge) {
                 chip.textContent = JE.t(`language_tags_${info.badge}`);
-                chip.title = JE.t('language_tags_count_tooltip', { count });
+                chip.title = `${JE.t('language_tags_count_tooltip', { count })}: ${counted.flatMap(chip => chip.labels).join(', ')}`;
             } else {
                 const label = info.labels.join(', ');
-                chip.title = info.subtitle ? `${JE.t('language_tags_subtitles')}: ${label}` : label;
+                chip.title = `${JE.t(info.subtitle ? 'language_tags_subtitles' : 'language_tags_audio')}: ${label}`;
                 chip.dataset.langName = info.allLanguages.join(', ');
                 chip.dataset.lang = conf.style === 'codes' ? info.text.toLowerCase() : info.countryCode.toLowerCase();
                 if (info.subtitle) {
@@ -273,6 +251,8 @@
                     if (info.subtitle) chip.appendChild(img);
                 }
             }
+            if (chip.tagName !== 'IMG') chip.setAttribute('role', 'img');
+            chip.setAttribute('aria-label', chip.title);
             wrap.appendChild(chip);
         }
         return wrap;

@@ -117,6 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 Code = code;
                 Partial = partial;
                 AllLanguages = new List<string>(2) { name };
+                AllCodes = new List<string>(2) { code };
             }
 
             public string CountryCode { get; }
@@ -126,6 +127,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             public bool Partial { get; set; }
 
             public List<string> AllLanguages { get; }
+
+            public List<string> AllCodes { get; }
 
             /// <summary>
             /// True for the web quirk where a language code or name equal to an Object.prototype key
@@ -244,7 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// in display order. Null when the web renders no language container (nothing resolved, or
         /// the web would throw while building it).
         /// </summary>
-        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict, bool mergeRegions = false, int cap = MaxFlags, bool codesStyle = false, bool validateFlags = true)
+        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict, bool mergeRegions = false, int cap = MaxFlags, bool codesStyle = false, bool validateFlags = true, bool canonicalPriority = false)
         {
             if (codes is null || codes.Length == 0) return null;
 
@@ -278,6 +281,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 }
                 else
                 {
+                    if (!existing.AllCodes.Contains(code)) existing.AllCodes.Add(code);
                     if (!existing.AllLanguages.Contains(name)) existing.AllLanguages.Add(name);
                     existing.Partial = existing.Partial && partial;
                 }
@@ -285,7 +289,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             // Full-series flags first (stable), then the admin priority list, then the limit.
             var ordered = flags.Where(f => !f.Partial).Concat(flags.Where(f => f.Partial)).ToList();
-            ordered = OrderByPriority(ordered, priorityTerms, strict);
+            ordered = OrderByPriority(ordered, priorityTerms, strict, canonicalPriority);
             if (cap > 0 && ordered.Count > cap) ordered.RemoveRange(cap, ordered.Count - cap);
 
             // A visible broken token throws (countryCode.toLowerCase is not a function): no container.
@@ -310,7 +314,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             bool codes = settings.LanguageStyle == "codes";
             List<FlagInfo>? ResolveTracks(string[]? tracks, string[]? partial, bool asCodes) => Resolve(
                 tracks, partial, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict,
-                settings.LanguageMergeRegions, cap: 0, codesStyle: asCodes, validateFlags: false);
+                settings.LanguageMergeRegions, cap: 0, codesStyle: asCodes, validateFlags: false, canonicalPriority: settings.LanguagePriorityIsPersonal);
             var audio = settings.LanguageShowAudio ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, codes) : null;
             var subtitles = settings.LanguageShowSubtitles ? ResolveTracks(entry.SubtitleLanguages, null, codes) : null;
             var count = settings.LanguageShowAudio && settings.LanguageCountBadge != "off"
@@ -370,12 +374,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return terms;
         }
 
-        private static List<FlagInfo> OrderByPriority(List<FlagInfo> flags, IReadOnlyList<string> priority, bool strict)
+        private static List<FlagInfo> OrderByPriority(List<FlagInfo> flags, IReadOnlyList<string> priority, bool strict, bool canonicalPriority)
         {
             if (priority.Count == 0) return flags;
 
             int Rank(FlagInfo flag)
             {
+                if (canonicalPriority)
+                {
+                    var rank = -1;
+                    foreach (var raw in flag.AllCodes)
+                    {
+                        if (Parse(raw, out var parsed) && CanonicalBase(parsed.Base) is { } canonical)
+                            rank = Best(rank, IndexOf(priority, canonical));
+                    }
+                    return rank;
+                }
                 var code = JsText.ToLower(flag.Code);
                 var dash = code.IndexOf('-');
                 var baseCode = dash < 0 ? code : code.Substring(0, dash);

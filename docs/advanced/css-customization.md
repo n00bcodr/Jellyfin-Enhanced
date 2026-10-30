@@ -402,7 +402,9 @@ Changing `display` alone does not reveal text hidden by opacity. Every genre chi
 
 ### Language Tags CSS
 
-Use `.language-overlay-container` and `.language-flag` to style language flags.
+Use `.language-overlay-container` and `.language-flag` to style language flags. Personal **Language** → **Priority** changes the eligible chips and their order before caps; hiding a chip with CSS does not promote another language. Tooltips and accessible labels identify Audio/Subtitles, full language names and partial coverage; count badges include the count and audio-language names. Existing chip selectors are unchanged.
+
+The personal hub editor is scoped to `#jellyfin-enhanced-panel .je-language-priority`. Its ordered list uses `[data-language-priority-list]` and `[data-language-priority-code]`; these are settings controls, separate from poster chips.
 
 - `data-lang` is a lowercase flag-country code: `jp` targets the Japanese flag, while Japanese's language code is `ja`.
 - `data-lang-name` contains represented language names.

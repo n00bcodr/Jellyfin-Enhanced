@@ -30,7 +30,9 @@
     const _lastSavedJson = {};
     // Per-file chain of in-flight saves. Every control posts the whole object,
     // so two quick changes must reach the server in call order or the earlier
-    // (smaller) snapshot can land last and drop the newer change.
+    // (smaller) snapshot can land last and drop the newer change. Settings document
+    // snapshots and failure rollbacks also run inside this chain, so a queued
+    // write sees the previous outcome before it reads the shared document.
     const _saveChain = {};
 
     /**
@@ -39,43 +41,54 @@
      * (prevents redundant writes). The first save per session for a given file is
      * always allowed through since the cache starts empty.
      * Failures are logged and swallowed unless the caller opts in to them.
+     * settings.json is read when its queued save starts, after the previous save
+     * and its onError callback finish. Other files retain call-time snapshots.
      * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
      * @param {object} settings The whole document to save.
-     * @param {{throwOnError?: boolean}} [options] throwOnError: reject (without logging) when
-     *   nothing was saved, so a caller can roll back its own optimistic change.
+     * @param {{throwOnError?: boolean, beforeSave?: () => void, onError?: (error: Error) => void | Promise<void>}} [options]
+     *   throwOnError: reject without logging. beforeSave: apply an edit at its queue
+     *   turn, before serialization. onError: restore an optimistic edit
+     *   before the next queued save reads the document.
      * @returns {Promise<void>}
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
         const throwOnError = options?.throwOnError === true;
-        if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
-            if (throwOnError) throw new Error('ApiClient not available');
-            console.error("🪼 Jellyfin Enhanced: ApiClient not available");
-            return;
-        }
+        /** Finish failure handling before releasing this document's save queue. */
+        const handleError = async e => {
+            await options.onError?.(e);
+            if (throwOnError) throw e;
+            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
+        };
         try {
+            if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
+                throw new Error('ApiClient not available');
+            }
             const userId = ApiClient.getCurrentUserId();
             if (!userId) {
-                if (throwOnError) throw new Error('User ID not available');
-                console.error("🪼 Jellyfin Enhanced: User ID not available");
-                return;
+                throw new Error('User ID not available');
             }
 
-            // Convert data back to PascalCase for server C# deserialization
-            let dataToSave = settings;
-            // currentSettings carries the resolved native-poster value (on). Leave it
-            // unset on disk until the user explicitly switches it in the panel.
-            if (fileName === 'settings.json' && settings === JE.currentSettings
-                && JE.userConfig?.settings?.useNativePosterTags == null) {
-                dataToSave = { ...settings, useNativePosterTags: null };
-            }
-            if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
-                dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
-            }
-
-            const serialized = JSON.stringify(dataToSave);
+            /** Build a document only after earlier saves and rollbacks have finished. */
+            const serialize = () => {
+                // Convert data back to PascalCase for server C# deserialization
+                let dataToSave = settings;
+                // currentSettings carries the resolved native-poster value (on). Leave it
+                // unset on disk until the user explicitly switches it in the panel.
+                if (fileName === 'settings.json' && settings === JE.currentSettings
+                    && JE.userConfig?.settings?.useNativePosterTags == null) {
+                    dataToSave = { ...settings, useNativePosterTags: null };
+                }
+                if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
+                    dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
+                }
+                return JSON.stringify(dataToSave);
+            };
+            const snapshot = fileName === 'settings.json' ? null : serialize();
             const cacheKey = `${userId}:${fileName}`;
 
             const post = async () => {
+                options.beforeSave?.();
+                const serialized = fileName === 'settings.json' ? serialize() : snapshot;
                 // Skip the POST if nothing has changed since the last save this session.
                 if (_lastSavedJson[cacheKey] === serialized) {
                     return; // no-op — identical to last save
@@ -91,12 +104,11 @@
                 // Update the cache on success so subsequent identical saves are skipped
                 _lastSavedJson[cacheKey] = serialized;
             };
-            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post);
+            const save = (_saveChain[cacheKey] || Promise.resolve()).then(post).catch(handleError);
             _saveChain[cacheKey] = save.catch(() => {});
-            await save;
+            return save;
         } catch (e) {
-            if (throwOnError) throw e;
-            console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
+            return handleError(e);
         }
     };
 
@@ -210,6 +222,12 @@
                 }
             }
         }
+
+        // Personal language policy: retain null inheritance and intentional empty arrays.
+        // Do not resolve admin values here, or an unrelated save would pin today's policy.
+        mergedSettings.languageTagsPriority = JE.core?.mediaLanguage?.priorityList(userSettings.languageTagsPriority) ?? null;
+        mergedSettings.languageTagsPriorityStrict = typeof userSettings.languageTagsPriorityStrict === 'boolean'
+            ? userSettings.languageTagsPriorityStrict : null;
 
         // Source scores: retain legacy includes for old documents and preserve an intentional empty list.
         mergedSettings.ratingTagsSources = JE.ratingSources?.normalizeSources(userSettings.ratingTagsSources) ?? null;
