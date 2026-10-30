@@ -294,6 +294,8 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | Language **Only show priority languages** | Follow server | Inherit the current strict policy, show only prioritized languages, or keep other languages after them. The administrator's regional-merge setting still applies. |
     | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
 
+    Priority controls pause until their save finishes. A failed save restores the previous policy while keeping other settings changes. Retry the priority edit once the controls become available.
+
 === "Status badges"
 
     | Setting | Default | What it does |

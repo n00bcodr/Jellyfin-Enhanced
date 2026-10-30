@@ -688,24 +688,32 @@
 
             /**
              * Save just the personal language policy through the normal document transport.
-             * Edits are serialized; a failed write restores the prior policy and its preview.
+             * Pending priority edits are dropped while the fieldset is disabled. A failed
+             * write restores the prior policy inside the shared document save queue.
              * @param {Object} changes
              * @param {{code?: string, action?: string}} [focus]
              */
             const savePriority = async (changes, focus = {}) => {
                 if (prioritySaving) return;
                 const settings = JE.currentSettings;
-                const previous = { languageTagsPriority: settings.languageTagsPriority, languageTagsPriorityStrict: settings.languageTagsPriorityStrict };
-                Object.assign(settings, changes);
+                let previous;
                 prioritySaving = true;
                 priorityEditor.disabled = true;
                 touch();
                 let failed = false;
                 try {
-                    await JE.saveUserSettings('settings.json', settings, { throwOnError: true });
+                    await JE.saveUserSettings('settings.json', settings, {
+                        throwOnError: true,
+                        beforeSave: () => {
+                            previous = { languageTagsPriority: settings.languageTagsPriority, languageTagsPriorityStrict: settings.languageTagsPriorityStrict };
+                            Object.assign(settings, changes);
+                        },
+                        onError: () => {
+                            if (previous && JE.currentSettings === settings) Object.assign(settings, previous);
+                        }
+                    });
                 } catch {
                     failed = true;
-                    if (JE.currentSettings === settings) Object.assign(settings, previous);
                 } finally {
                     prioritySaving = false;
                     priorityEditor.disabled = false;

@@ -1168,6 +1168,8 @@ Personal `settings.json` additionally accepts `LanguageTagsPriority` (nullable s
 
 `null`/missing list means the live administrator `LanguageTagsPriority` string; `[]` explicitly disables prioritization. A nonempty personal list replaces that string. Strict `null`/missing inherits the live administrator boolean independently; `true` filters and `false` retains nonprioritized languages. Empty lists never filter. New-user seeding and reset-all leave both fields null. Admin public configuration retains its string/boolean types; personal settings use the array/nullable boolean types above.
 
+The web client serializes saves of each user settings document. It applies a priority edit at its queue turn and restores it on failure before building the next queued document, preserving unrelated edits. Priority controls ignore further edits while saving; after failure, retry from the restored policy.
+
 For example, merge these properties into the complete user document before posting:
 
 ```json

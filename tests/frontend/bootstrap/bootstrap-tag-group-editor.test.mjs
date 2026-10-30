@@ -469,3 +469,86 @@ test('personal language save failure restores the last policy and preview and pe
   await h.click($('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
   assert.deepEqual(h.saved().languageTagsPriority, ['fr', 'ja']);
 });
+
+test('priority save fails while a subtitles toggle save is queued: persisted document keeps the old list and new subtitles value', async t => {
+  const oldList = ['ja', 'en', 'fr'];
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: oldList } });
+  const requests = [];
+  let rejectFirst, persisted;
+  h.window.ApiClient.ajax = req => {
+    const doc = JSON.parse(req.data);
+    requests.push(doc);
+    if (requests.length === 1) return new Promise((resolve, reject) => { rejectFirst = reject; });
+    persisted = doc;
+    return Promise.resolve();
+  };
+  await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.deepEqual(requests[0].languageTagsPriority, ['ja', 'fr', 'en']);
+  await h.change(h.$('[data-language-key="languageTagsShowSubtitles"]'), true);
+  assert.equal(requests.length, 1, 'the subtitles write waits for the priority outcome');
+  rejectFirst(new Error('HTTP 500'));
+  await h.settle();
+  assert.equal(requests.length, 2);
+  assert.deepEqual(persisted.languageTagsPriority, oldList);
+  assert.equal(persisted.languageTagsShowSubtitles, true);
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), oldList);
+  assert.equal(h.JE.currentSettings.languageTagsShowSubtitles, true);
+  assert.deepEqual(Array.from(h.$('[data-language-priority-list]').children, el => el.dataset.languagePriorityCode), oldList);
+  assert.equal(h.$('[data-language-priority-status]').textContent, 'language_priority_save_failed');
+});
+
+test('two priority edits in quick succession where the first fails: pending edit is dropped and retry uses rolled-back state', async t => {
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: ['ja', 'en', 'fr'] } });
+  const requests = [];
+  let rejectFirst;
+  h.window.ApiClient.ajax = req => {
+    requests.push(JSON.parse(req.data));
+    if (requests.length === 1) return new Promise((resolve, reject) => { rejectFirst = reject; });
+    return Promise.resolve();
+  };
+  await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.equal(h.$('.je-language-priority').disabled, true);
+  // Dispatch even though a real disabled fieldset prevents this interaction.
+  await h.click(h.$('[data-language-priority-code="en"] [data-language-priority-action="up"]'));
+  await h.change(h.$('[data-language-priority-strict]'), 'true');
+  assert.equal(requests.length, 1, 'click and change events while saving are dropped');
+  rejectFirst(new Error('HTTP 500'));
+  await h.settle();
+  assert.equal(requests.length, 1, 'no deferred priority edit is replayed after failure');
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), ['ja', 'en', 'fr']);
+  assert.equal(h.JE.currentSettings.languageTagsPriorityStrict, null);
+  assert.equal(h.$('[data-language-priority-strict]').value, 'inherit');
+  await h.click(h.$('[data-language-priority-code="en"] [data-language-priority-action="up"]'));
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[1].languageTagsPriority, ['en', 'ja', 'fr']);
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), requests[1].languageTagsPriority);
+  assert.equal(h.$('[data-language-priority-status]').textContent, 'language_priority_saved');
+});
+
+test('earlier queued settings saves cannot persist a priority edit that later fails', async t => {
+  const oldList = ['ja', 'en', 'fr'];
+  const h = setup(t, { stored: { languageTagsEnabled: true, languageTagsPriority: oldList } });
+  const requests = [];
+  let finishFirst, persisted;
+  h.window.ApiClient.ajax = req => {
+    const doc = JSON.parse(req.data);
+    requests.push(doc);
+    if (requests.length === 1) return new Promise(resolve => { finishFirst = () => { persisted = doc; resolve(); }; });
+    if (requests.length === 3) return Promise.reject(new Error('HTTP 500'));
+    persisted = doc;
+    return Promise.resolve();
+  };
+  await h.change(h.$('[data-language-key="languageTagsShowSubtitles"]'), true);
+  await h.change(h.$('[data-language-key="languageTagsStyle"]'), 'codes');
+  await h.click(h.$('[data-language-priority-code="fr"] [data-language-priority-action="up"]'));
+  assert.equal(requests.length, 1);
+  finishFirst();
+  await h.settle();
+  assert.equal(requests.length, 3);
+  assert.deepEqual(requests[2].languageTagsPriority, ['ja', 'fr', 'en']);
+  assert.deepEqual(persisted.languageTagsPriority, oldList);
+  assert.equal(persisted.languageTagsShowSubtitles, true);
+  assert.equal(persisted.languageTagsStyle, 'codes');
+  assert.deepEqual(Array.from(h.JE.currentSettings.languageTagsPriority), oldList);
+  assert.equal(h.$('[data-language-priority-status]').textContent, 'language_priority_save_failed');
+});

@@ -395,6 +395,8 @@ Each user can choose a personal order under **Groups** → **Language** → **Pr
 
 **Only show priority languages** starts at **Follow server (…)**. Choose **Only priority languages** to filter, or **Priority languages first, then others** to keep the rest. This choice inherits independently of the list. An empty personal list means no prioritization or strict filtering. Switch **Follow server policy** back on to use the server list again. The server's **Merge Regional Variants** still controls regional flags; personal base-language choices match all regional tracks. These choices change poster badges, not playback track selection.
 
+Priority controls pause while a change saves. If it fails, the previous list and strict choice return; other settings changed during the save still save with that restored policy. Try the priority edit again after the controls become available.
+
 ![Personal language priorities with search, ordered languages and strict inheritance](../images/tags/language-priority-editor.png)
 
 ![A real card before and after personal Japanese, English and French priorities](../images/tags/language-priority-card.png)
