@@ -668,3 +668,32 @@ test('genre names are always in the group; layout CSS decides where they show, w
     assert.doesNotMatch(css, /\.je-tag-caption \.genre-text \{\s*display: none/, 'the caption strip shows them on hover');
   }
 });
+
+const ALL_TAGS_OFF = { qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false };
+
+test('no caption space is reserved when no enabled group can fill the strip', async t => {
+  const caption = { tagLayoutSettingsVersion: 1, tagLayout: 'caption' };
+  for (const settings of [ALL_TAGS_OFF, { ...ALL_TAGS_OFF, statusTagsEnabled: true }]) {
+    const h = setup(t, { settings: { ...caption, ...settings } });
+    h.layout.prepareCard(h.host());
+    assert.equal(h.document.querySelector('.je-tag-caption'), null, 'nothing reserved at discovery');
+    await h.JE.reinitializeTagLayout();
+    assert.equal(h.document.querySelector('.je-tag-caption'), null, 'nor on reinitialisation');
+  }
+  const h = setup(t, { settings: { ...caption, ...ALL_TAGS_OFF, languageTagsEnabled: true } });
+  h.layout.prepareCard(h.host());
+  assert.ok(h.document.querySelector('.je-tag-caption'), 'one enabled caption group is enough');
+});
+
+test('turning every tag type off removes the caption strips, also from cards whose data never came', async t => {
+  const h = setup(t, { html: modernCard() + modernCard(OTHER), settings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption' } });
+  const [first, second] = h.document.querySelectorAll('.je-tag-host');
+  h.render(entry(), first);
+  h.layout.prepareCard(second);
+  assert.equal(h.document.querySelectorAll('.je-tag-caption').length, 2);
+  Object.assign(h.JE.currentSettings, ALL_TAGS_OFF);
+  for (const name of ['Quality', 'Genre', 'Language', 'Rating', 'AgeRating', 'Status']) h.JE[`reinitialize${name}Tags`]();
+  assert.equal(h.document.querySelectorAll('.je-tag-caption').length, 0, 'each renderer\'s reinitialise gives the space back once none is left');
+  await h.JE.reinitializeTagLayout();
+  assert.equal(h.document.querySelectorAll('.je-tag-caption, .je-tag-slot').length, 0);
+});

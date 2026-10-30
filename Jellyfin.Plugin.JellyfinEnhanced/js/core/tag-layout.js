@@ -67,6 +67,16 @@
         status: { userKey: 'statusTagsPosition', pluginKey: 'StatusTagsPosition', fallback: 'top-right' },
     };
     const POSITION_TO_SLOT = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br' };
+
+    /** The setting that turns each group's renderer on. */
+    const ENABLED_SETTING = {
+        quality: 'qualityTagsEnabled',
+        genre: 'genreTagsEnabled',
+        language: 'languageTagsEnabled',
+        rating: 'ratingTagsEnabled',
+        ageRating: 'ageRatingTagsEnabled',
+        status: 'statusTagsEnabled',
+    };
     const SLOT_TO_POSITION = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' };
 
     /** Group wrapper class per group (frozen DOM: Tag Styles and custom CSS target these). */
@@ -232,6 +242,8 @@
      * @property {Object<string, string>} slots - group → slot for the active layout.
      * @property {Set<string>} indicatorGap - Groups set to exactly top-right: a corners card
      *   holding one moves its top-right stack below Jellyfin's played/count indicator.
+     * @property {boolean} reserveCaption - Caption layout with at least one enabled group in
+     *   the caption slot: cards reserve the strip before their data arrives.
      */
 
     /**
@@ -290,7 +302,11 @@
             caps[group] = own ?? admin ?? DEFAULT_CAPS[group];
         }
 
-        return { layout, legacy, density, order, caps, profiles, slots: profiles[layout], indicatorGap };
+        // Only a group that is switched on can still fill the caption strip.
+        const reserveCaption = layout === 'caption'
+            && DEFAULT_ORDER.some((g) => profiles.caption[g] === 'caption' && !!s[ENABLED_SETTING[g]]);
+
+        return { layout, legacy, density, order, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption };
     }
 
     /** @type {TagLayoutSettings|null} memoised until the next invalidateSettings() */
@@ -845,7 +861,7 @@
         teardown(ctrl);
         ctrl.layout = conf.layout;
         ctrl.host.dataset.jeLayout = conf.layout;
-        if (conf.layout === 'caption' && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
+        if (conf.reserveCaption && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
         const groups = Array.from(ctrl.groups.keys()).sort((a, b) => rankOf(ctrl, conf, a) - rankOf(ctrl, conf, b));
         for (const group of groups) presentGroup(ctrl, conf, group);
         refreshPill(ctrl, conf);
@@ -1246,7 +1262,17 @@
      * @param {string} groupId
      */
     function removeGroupEverywhere(groupId) {
-        for (const host of document.querySelectorAll('.je-tag-host')) removeGroup(/** @type {HTMLElement} */ (host), groupId);
+        const reserve = currentSettings().reserveCaption;
+        for (const host of document.querySelectorAll('.je-tag-host')) {
+            removeGroup(/** @type {HTMLElement} */ (host), groupId);
+            // The group was the last one switched on that could fill the
+            // caption strip: give the reserved space back.
+            const ctrl = reserve ? null : controllers.get(/** @type {HTMLElement} */ (host));
+            if (ctrl?.outlet && !holdsGroups(ctrl.outlet)) {
+                ctrl.outlet.remove();
+                ctrl.outlet = null;
+            }
+        }
     }
 
     /**
@@ -1266,7 +1292,7 @@
      * @param {HTMLElement} target - Render target.
      */
     function prepareCard(target) {
-        if (currentSettings().layout !== 'caption' || !target) return;
+        if (!currentSettings().reserveCaption || !target) return;
         const host = ensureHost(target);
         if (!host || isIgnoredContext(host)) return;
         const ctrl = controllerFor(host, true);
@@ -1297,10 +1323,10 @@
             reinitPending = null;
             invalidateSettings();
             const owned = new Set();
-            const caption = currentSettings().layout === 'caption';
+            const reserve = currentSettings().reserveCaption;
             for (const host of document.querySelectorAll('.je-tag-host')) {
                 const el = /** @type {HTMLElement} */ (host);
-                const ctrl = controllerFor(el, caption && !isIgnoredContext(el));
+                const ctrl = controllerFor(el, reserve && !isIgnoredContext(el));
                 if (!ctrl) continue;
                 presentAll(ctrl);
                 if (ctrl.outlet) owned.add(ctrl.outlet);
