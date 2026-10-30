@@ -26,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// </summary>
     public class TagLookRule
     {
-        /// <summary>Stable rule id (letters, digits, '-' and '_'; regenerated when missing or repeated).</summary>
+        /// <summary>Stable rule id (letters, digits, '-' and '_'; a missing or repeated one becomes "rule-N").</summary>
         public string Id { get; set; } = string.Empty;
 
         /// <summary>Disabled rules are kept but skipped.</summary>
@@ -179,7 +179,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var id = (rule.Id ?? string.Empty).Trim();
                 if (!RuleIdPattern.IsMatch(id) || ids.Contains(id))
                 {
-                    id = "r" + Guid.NewGuid().ToString("N").Substring(0, 12);
+                    // Deterministic, so the same stored rules always come out
+                    // the same (public config is served with an ETag).
+                    var n = result.Count + 1;
+                    do
+                    {
+                        id = "rule-" + n++;
+                    }
+                    while (ids.Contains(id));
                 }
 
                 ids.Add(id);

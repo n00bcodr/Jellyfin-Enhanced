@@ -54,8 +54,8 @@ public class CoreTagLookSettingsTests
         Assert.Equal("kids", rules[0].Id);
         Assert.Equal("caption", rules[0].Layout);
         Assert.Equal(new[] { ("library", Library), ("type", "Episode") }, rules[0].When.Select(c => (c.Field, c.Value)));
-        Assert.NotEqual("kids", rules[1].Id); // a repeated id is replaced
-        Assert.Matches("^[A-Za-z0-9_-]{1,40}$", rules[1].Id);
+        Assert.Equal("rule-2", rules[1].Id); // a repeated id is replaced, deterministically
+        Assert.Equal(new[] { "kids", "rule-2", "rule-3" }, TagLookValidation.NormalizeRules(new[] { Rule("kids", "caption", When("type", "Movie")), Rule("kids", "bands", When("type", "Movie")), Rule("", "bands", When("type", "Movie")) })!.Select(r => r.Id));
         Assert.Equal(new[] { ("genre", "Animation"), ("ageRating", "PG") }, rules[1].When.Select(c => (c.Field, c.Value)));
         Assert.Equal("full", rules[2].Density);
         Assert.False(rules[2].Enabled);
