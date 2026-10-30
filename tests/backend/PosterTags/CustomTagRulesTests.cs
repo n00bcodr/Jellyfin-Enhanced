@@ -126,6 +126,28 @@ public class CustomTagRulesTests
     public void LabelValidationMatchesTheRuleLabels(string label, bool valid) =>
         Assert.Equal(valid, CustomTagRuleSet.IsValidLabel(label));
 
+    /// <summary>The label cases the rules table is checked against too (features-custom-tags.test.mjs).</summary>
+    public static IEnumerable<object[]> SharedLabels()
+    {
+        using var stream = typeof(CustomTagRulesTests).Assembly.GetManifestResourceStream("CustomTagLabels.json")!;
+        using var document = JsonDocument.Parse(stream);
+        return document.RootElement.EnumerateArray().Select(row => new object[]
+        { row.GetProperty("label").GetString()!, row.GetProperty("stored").GetString()!, row.GetProperty("kept").GetBoolean(), row.GetProperty("note").GetString()! }).ToArray();
+    }
+
+    [Theory]
+    [MemberData(nameof(SharedLabels))]
+    public void ReservedLabelsAreClassifiedByUnicodeScalarValueLikeTheRulesTable(string label, string stored, bool kept, string note)
+    {
+        // U+10100 is one punctuation scalar value: its two surrogates are not punctuation
+        // chars, which kept a rule the rules table drops (and Tag Styles accepted its label).
+        var saved = CustomTagRuleSet.Normalize([Rule("tag", "Value", label)]);
+        Assert.True(kept == (saved.Count == 1), note);
+        if (kept) Assert.Equal(stored, saved[0].Label);
+        Assert.True(kept == CustomTagRuleSet.IsValidLabel(stored), note);
+        Assert.True(kept == TagStyleCatalog.IsLabel(TagStyleKeys.Custom, stored), note);
+    }
+
     [Fact]
     public void ConfigurationSavesStoreNormalizedRules()
     {

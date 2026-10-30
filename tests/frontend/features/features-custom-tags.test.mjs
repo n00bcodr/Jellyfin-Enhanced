@@ -371,6 +371,26 @@ test('the rules table flags punctuation-only labels such as "*" and leaves them 
   assert.equal(hints[0].hidden, true);
 });
 
+test('the rules table classifies reserved labels by Unicode scalar value, exactly like the server', t => {
+  // The same cases CustomTagRulesTests checks Normalize, IsValidLabel and Tag Styles against.
+  const cases = JSON.parse(readFileSync(new URL('../../fixtures/custom-tag-labels.json', import.meta.url), 'utf8'));
+  assert.ok(cases.some(c => [...c.label].length < c.label.length && !c.kept), 'covers supplementary-plane punctuation');
+  const page = readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8');
+  const cut = (from, to) => page.slice(page.indexOf(from), page.indexOf(to, page.indexOf(from)) + to.length);
+  const h = createHarness({ html: cut('<details id="customTagsAdminDetails"', '</details>') });
+  t.after(() => h.close());
+  h.window.eval(`window.__rules = (function () {\n${cut('        var customTagRules = (function () {', '        })();')}\nreturn customTagRules; })();`);
+  h.window.__rules.load({ CustomTagRules: cases.map((c, i) => ({ Match: 'tag', Value: `Tag ${i}`, Label: c.label, Icon: null })) });
+  const flagged = [...h.document.querySelectorAll('.je-ct-label input')].map(el => el.getAttribute('aria-invalid') === 'true');
+  const config = {};
+  h.window.__rules.collect(config);
+  const saved = new Map(config.CustomTagRules.map(r => [r.Value, r.Label]));
+  cases.forEach((c, i) => {
+    assert.equal(flagged[i], !c.kept, `flagged: ${c.note}`);
+    assert.equal(saved.get(`Tag ${i}`), c.kept ? c.stored : undefined, `saved: ${c.note}`);
+  });
+});
+
 test('the layout controller knows the group: defaults, recommended shape looks and its wrapper class', t => {
   const h = setup(t);
   const L = h.JE.core.tagLayout;

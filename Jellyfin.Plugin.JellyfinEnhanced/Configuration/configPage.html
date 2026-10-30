@@ -6123,18 +6123,23 @@
                 return obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
             }
 
-            /** Trimmed, with inner whitespace collapsed (as the server stores names and labels). */
+            /**
+             * Trimmed, with runs of white space and control characters as one space, as
+             * the server stores names and labels (CustomTagRuleSet.Collapse).
+             */
             function clean(text) {
-                return String(text || '').replace(/\s+/g, ' ').trim();
+                return String(text || '').replace(/[\p{White_Space}\p{Cc}]+/gu, ' ').replace(/^ | $/g, '');
             }
 
             /**
              * A label of punctuation only, such as "*" (Tag Styles' whole-group key): the
-             * server drops such rules (CustomTagRuleSet.IsReservedLabel).
+             * server drops such rules. The definition is CustomTagRuleSet.IsReservedLabel's:
+             * every Unicode scalar value (the u flag matches code points, so U+10100 is one)
+             * is in general category P or has the White_Space property.
              */
             function isReservedLabel(text) {
                 var label = clean(text);
-                return label !== '' && /^[\p{P}\s]+$/u.test(label);
+                return label !== '' && /^[\p{P}\p{White_Space}]+$/u.test(label);
             }
 
             /**
@@ -6147,7 +6152,7 @@
                 var out = [];
                 rows.forEach(function (r) {
                     var value = clean(r.value);
-                    var label = clean(r.label).slice(0, MAX_LABEL).trim();
+                    var label = clean(r.label).slice(0, MAX_LABEL).replace(/ $/, '');
                     var key = r.match + ':' + value.toLowerCase();
                     if (!value || !label || isReservedLabel(label) || seen[key] || out.length >= MAX_RULES) return;
                     seen[key] = true;

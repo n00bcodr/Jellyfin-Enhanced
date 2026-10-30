@@ -140,10 +140,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// Whether a label is reserved: punctuation only (with spaces), which includes <c>*</c>,
         /// the Tag Styles sentinel for the whole group, so such a label could never have colours
         /// of its own. The rules table explains this next to the label.
+        /// <para>
+        /// This is the one definition the server (<see cref="Normalize"/>, <see cref="IsValidLabel"/>
+        /// and so Tag Styles) and the rules table (configPage.html <c>isReservedLabel</c>) share: every
+        /// Unicode scalar value of the label is in general category P (Pc, Pd, Ps, Pe, Pi, Pf, Po) or
+        /// has the White_Space property. A supplementary-plane character such as U+10100 is one
+        /// scalar value, not two surrogates. The table tests <c>/^[\p{P}\p{White_Space}]+$/u</c>, and
+        /// tests/fixtures/custom-tag-labels.json holds the cases both sides are checked against.
+        /// </para>
         /// </summary>
         /// <param name="label">A label.</param>
         /// <returns>True when reserved.</returns>
-        public static bool IsReservedLabel(string label) => label.All(c => char.IsPunctuation(c) || char.IsWhiteSpace(c));
+        public static bool IsReservedLabel(string label) => label.EnumerateRunes().All(r => Rune.IsPunctuation(r) || Rune.IsWhiteSpace(r));
 
         /// <summary>
         /// What decides which items match (match types and values in rule order, not labels
