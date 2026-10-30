@@ -525,7 +525,7 @@
     /**
      * The one short fact a group contributes to the summary pill, or null.
      * @param {string} group
-     * @param {HTMLElement} master
+     * @param {HTMLElement} master - The group's capped display copy (buildChips).
      * @returns {{text: string, glyph?: string, flag?: HTMLElement}|null}
      */
     function pillFact(group, master) {
@@ -692,7 +692,10 @@
             .sort((a, b) => rankOf(ctrl, conf, a) - rankOf(ctrl, conf, b));
         const facts = [];
         for (const group of groups) {
-            const fact = pillFact(group, /** @type {HTMLElement} */ (ctrl.groups.get(group)?.master));
+            // From the same capped, density-adjusted copy the chips show, so
+            // the pill never names a chip the caps or density left out.
+            const shown = buildChips(group, /** @type {HTMLElement} */ (ctrl.groups.get(group)?.master), conf);
+            const fact = pillFact(group, shown);
             if (fact) facts.push({ group, ...fact });
             if (facts.length >= PILL_MAX_FACTS) break;
         }

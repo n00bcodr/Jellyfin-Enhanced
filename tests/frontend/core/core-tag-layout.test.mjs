@@ -490,3 +490,13 @@ test('a review lookup cut short by clearing the card adds nothing', async t => {
   await settle();
   assert.equal(host.querySelector('.je-userreview-tag'), null);
 });
+
+test('summary pill facts come from the capped chips, not the full group', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary', tagGroupCaps: { quality: 1, rating: 1 } } });
+  const host = h.render();
+  const fact = group => host.querySelector(`.je-tag-pill-fact[data-je-group="${group}"]`).textContent;
+  assert.equal(fact('quality'), '4K', 'Dolby Vision is past the quality cap of 1');
+  assert.equal(fact('rating'), '91%', 'the community score is past the rating cap of 1; the critic chip is first');
+  assert.deepEqual(Array.from(host.querySelectorAll('.je-tag-slot[data-je-slot="hover"] .quality-overlay-label'), l => l.textContent), ['4K'],
+    'the pill names what the chips show');
+});
