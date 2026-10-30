@@ -202,7 +202,9 @@
             .je-tag-caption .genre-tag { width: 20px; height: 20px; min-width: 20px; box-shadow: none; }
             .je-tag-caption .genre-tag .je-msym-outlined { font-size: 13px; }
 
-            /* "+N": the chips a wrapping slot had no room for (title names them) */
+            /* "+N": the chips a wrapping slot had no room for. It never takes a
+               pointer or focus; the card link's description and the tooltip
+               below name them. */
             .je-tag-more {
                 display: inline-flex;
                 align-items: center;
@@ -222,9 +224,35 @@
             .je-tag-caption .je-tag-more {
                 font-size: clamp(9px, 6.4cqw, 11.5px);
                 background: rgba(255, 255, 255, 0.12);
-                /* Below the image nothing is covered: let the title show. */
-                pointer-events: auto;
-                cursor: default;
+            }
+            /* The names behind a card's "+N" chips, at the top of the image while
+               the card is hovered or focused (never interactive). */
+            .je-tag-host > .je-tag-more-tip {
+                position: absolute;
+                top: 6px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: max-content;
+                max-width: calc(100% - 12px);
+                box-sizing: border-box;
+                padding: 3px 7px;
+                border-radius: 4px;
+                background: rgba(12, 12, 12, 0.88);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                color: #fff;
+                font-size: 11px;
+                font-weight: 600;
+                line-height: 1.25;
+                text-align: center;
+                overflow-wrap: anywhere;
+                pointer-events: none;
+                opacity: 0;
+                visibility: hidden;
+                transition: opacity 0.15s ease, visibility 0.15s;
+            }
+            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host > .je-tag-more-tip {
+                opacity: 1;
+                visibility: visible;
             }
 
             /* summary: one fact pill; full chips on hover / focus */
@@ -336,12 +364,13 @@
             html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: 11px !important; }
 
             /* Hide Tags on Hover: everything but the summary / minimal reveal. */
-            body.je-tags-hide-on-hover .card:hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) {
+            body.je-tags-hide-on-hover .card:hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            body.je-tags-hide-on-hover .card:hover .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
                 opacity: 0 !important;
             }
 
             @media (prefers-reduced-motion: reduce) {
-                ${SLOT} { transition: none; }
+                ${SLOT}, .je-tag-host > .je-tag-more-tip { transition: none; }
             }
         `;
     }

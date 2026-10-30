@@ -721,6 +721,54 @@ test('the caption strip and the bottom band are not limited by the card height',
   }
 });
 
+test('the chips behind "+N" are named by the card link\'s description and a hover / focus tooltip; "+N" takes no pointer', async t => {
+  const card = modernCard().replace('<a class="cardImageContainer', '<a href="#/details?id=x" aria-describedby="jellyfin-own" class="cardImageContainer');
+  for (const [tagLayout, slot, size] of [['summary', '.je-tag-slot[data-je-slot="hover"]', { width: 113, height: 64 }],
+    ['bands', '.je-tag-slot[data-je-slot="bottom"]', { width: 120, height: 180 }], ['caption', '.je-tag-caption', { width: 113, height: 170 }]]) {
+    const h = setup(t, { html: card, settings: { tagLayoutSettingsVersion: 1, tagLayout } });
+    h.render();
+    fitCard(h, size);
+    const link = h.document.querySelector('.cardImageContainer');
+    const more = h.document.querySelector(`${slot} > .je-tag-more`);
+    const hidden = Array.from(h.document.querySelectorAll(`${slot} > [data-je-group] > [data-je-overflow]`));
+    assert.ok(hidden.length > 0, `${tagLayout}: some chips are behind "+N"`);
+    const tip = h.host().querySelector(':scope > .je-tag-more-tip');
+    assert.ok(tip, 'one names element inside the host');
+    const ids = link.getAttribute('aria-describedby').split(' ');
+    assert.deepEqual(ids, ['jellyfin-own', tip.id], 'appended to the link\'s own description');
+    assert.equal(h.document.getElementById(tip.id), tip);
+    assert.equal(tip.textContent, more.title, 'it names exactly the hidden chips');
+    assert.ok(tip.textContent.split(', ').length >= hidden.length - 1);
+    assert.equal(tip.getAttribute('aria-hidden'), 'true', 'read once, as the description');
+    assert.equal(h.window.getComputedStyle(more).pointerEvents, 'none', `${tagLayout}: the "+N" chip receives no pointer events`);
+    assert.equal(more.hasAttribute('tabindex'), false);
+    assert.equal(h.window.getComputedStyle(tip).pointerEvents, 'none', 'nor does the tooltip');
+    // Everything fits on a wider card: no names, the link's own description is left as it was.
+    fitCard(h, { width: 600, height: 900 });
+    assert.equal(h.host().querySelector('.je-tag-more-tip'), null);
+    assert.equal(link.getAttribute('aria-describedby'), 'jellyfin-own');
+    fitCard(h, size);
+    assert.ok(link.getAttribute('aria-describedby').includes('je-tag-more-'));
+    await h.apply({ tagLayout: 'corners' });
+    assert.equal(h.document.querySelector('.je-tag-more-tip'), null, 'another layout drops the names');
+    assert.equal(link.getAttribute('aria-describedby'), 'jellyfin-own');
+  }
+  const h = setup(t);
+  h.render();
+  const css = h.document.getElementById('je-tag-layout').textContent;
+  assert.match(css, /\.je-tag-host > \.je-tag-more-tip \{[^}]*pointer-events: none;[^}]*opacity: 0;/);
+  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-more-tip \{\s*opacity: 1;/, 'shown while the card is hovered or focused');
+  assert.doesNotMatch(css, /\.je-tag-more \{[^}]*pointer-events: auto/);
+});
+
+test('the hidden chip names use the translated label when there is one', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption' } });
+  h.JE.t = (key, params) => (key === 'tag_layout_more_tags' ? `More tags: ${params.tags}` : key);
+  h.render();
+  fitCard(h, { width: 113, height: 170 });
+  assert.match(h.host().querySelector('.je-tag-more-tip').textContent, /^More tags: \S/);
+});
+
 test('bands on a card under 160px switch to compact labels and keep the bottom band to two rows with "+N"', t => {
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'bands' } });
   const host = h.render();

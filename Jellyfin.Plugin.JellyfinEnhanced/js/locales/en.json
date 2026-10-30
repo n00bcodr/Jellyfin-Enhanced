@@ -175,6 +175,7 @@
     "panel_settings_ui_tag_density_full": "Full",
     "panel_settings_ui_tag_density_compact": "Compact",
     "toast_tag_layout_updated": "Tag layout updated",
+    "tag_layout_more_tags": "More tags: {tags}",
     "panel_settings_ui_people_tags": "Show People Tags",
     "panel_settings_ui_people_tags_desc": "Display age, birthplace, and deceased status for cast members.",
     "panel_settings_ui_hide_tags_on_hover": "Hide Tags on Hover",

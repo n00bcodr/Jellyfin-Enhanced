@@ -354,6 +354,8 @@
      * @property {string|null} layout - Layout the card is currently presented in.
      * @property {number} seq - Arrival counter (legacy ordering).
      * @property {boolean} [narrow] - Last measured narrower than NARROW_CARD_PX (bands go compact).
+     * @property {HTMLElement|null} [moreTip] - Names of the chips behind "+N" chips (moreTipOf).
+     * @property {HTMLElement|null} [described] - The card link whose aria-describedby names moreTip.
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
@@ -485,7 +487,7 @@
         }
         if (!ctrl && create) {
             injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0 };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null };
             controllers.set(host, ctrl);
         }
         return ctrl;
@@ -870,6 +872,7 @@
         }
         ctrl.outlet?.remove();
         ctrl.outlet = null;
+        describeHidden(ctrl, []);
         ctrl.layout = null;
         delete ctrl.host.dataset.jeLayout;
         delete ctrl.host.dataset.jeLegacy;
@@ -1183,11 +1186,14 @@
                 fact.previousElementSibling?.setAttribute('data-je-overflow', '');
             });
         }
+        /** @type {string[]} */
+        const names = [];
         for (const { slot, chips, shown, more: room } of plan.rows) {
             const more = moreChipOf(slot);
             if (!more) continue;
             const hidden = chips.filter((chip, i) => !shown[i]);
             for (const chip of hidden) chip.setAttribute('data-je-overflow', '');
+            names.push(...hidden.map(chipLabel).filter(Boolean));
             // Not a single row fits: no empty scrim either.
             if (!room) slot.setAttribute('data-je-overflow', '');
             if (hidden.length === 0 || !room) {
@@ -1197,6 +1203,85 @@
             }
             more.textContent = `+${hidden.length}`;
             more.title = hidden.map(chipLabel).filter(Boolean).join(', ');
+        }
+        describeHidden(ctrl, names);
+    }
+
+    // ── Hidden chip names ──────────────────────────────────────────────
+    // A "+N" chip takes no pointer events and no focus (on the poster it
+    // would take clicks from the card and Jellyfin's buttons). The names it
+    // stands for are given to the card's own link instead: an accessible
+    // description, and a small tooltip while the card is hovered or focused.
+
+    const FOCUSABLE = 'a[href], button, [tabindex]:not([tabindex="-1"])';
+    let moreTipSeq = 0;
+
+    /**
+     * The focusable element that stands for a card: its image link, else the
+     * focusable row or card around the host (list rows), else its first
+     * focusable element.
+     * @param {HTMLElement} host
+     * @returns {HTMLElement|null}
+     */
+    function cardLinkOf(host) {
+        const card = host.closest('.card, .listItem');
+        const image = card?.querySelector(`.cardImageContainer:is(${FOCUSABLE})`);
+        if (image) return /** @type {HTMLElement} */ (image);
+        const around = host.parentElement?.closest(FOCUSABLE);
+        if (around) return /** @type {HTMLElement} */ (around);
+        return /** @type {HTMLElement|null} */ (card?.querySelector(FOCUSABLE) || null);
+    }
+
+    /**
+     * Add or remove one id in an element's aria-describedby list.
+     * @param {HTMLElement} el
+     * @param {string} id
+     * @param {boolean} on
+     */
+    function toggleDescribedBy(el, id, on) {
+        const ids = (el.getAttribute('aria-describedby') || '').split(/\s+/).filter((t) => t && t !== id);
+        if (on) ids.push(id);
+        if (ids.length) el.setAttribute('aria-describedby', ids.join(' '));
+        else el.removeAttribute('aria-describedby');
+    }
+
+    /**
+     * Name the chips a card's "+N" chips stand for (none: remove the names).
+     * One element in the host holds them: the card link's aria-describedby
+     * points at it, and the layout stylesheet shows it as a tooltip while the
+     * card is hovered or focused. It is aria-hidden so it is not read a
+     * second time as page content.
+     * @param {CardController} ctrl
+     * @param {string[]} names
+     */
+    function describeHidden(ctrl, names) {
+        const link = names.length ? cardLinkOf(ctrl.host) : null;
+        if (ctrl.described && (ctrl.described !== link || !names.length) && ctrl.moreTip) {
+            toggleDescribedBy(ctrl.described, ctrl.moreTip.id, false);
+            ctrl.described = null;
+        }
+        if (!names.length) {
+            ctrl.moreTip?.remove();
+            ctrl.moreTip = null;
+            return;
+        }
+        let tip = ctrl.moreTip;
+        if (!tip || tip.parentElement !== ctrl.host) {
+            tip?.remove();
+            tip = document.createElement('span');
+            tip.className = 'je-tag-more-tip';
+            tip.id = `je-tag-more-${++moreTipSeq}`;
+            tip.setAttribute('aria-hidden', 'true');
+            ctrl.host.appendChild(tip);
+            ctrl.moreTip = tip;
+        }
+        const list = names.join(', ');
+        const label = typeof JE.t === 'function' ? JE.t('tag_layout_more_tags', { tags: list }) : '';
+        const text = label && label !== 'tag_layout_more_tags' ? label : list;
+        if (tip.textContent !== text) tip.textContent = text;
+        if (link && link !== ctrl.described) {
+            toggleDescribedBy(link, tip.id, true);
+            ctrl.described = link;
         }
     }
 
