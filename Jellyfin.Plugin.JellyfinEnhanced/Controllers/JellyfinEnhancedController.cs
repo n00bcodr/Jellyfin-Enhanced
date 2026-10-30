@@ -4196,10 +4196,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         ///   SeerrUserStatus      — GET jellyseerr/user-status, when no Seerr lookup is needed
         ///   SeerrStatus          — GET jellyseerr/status, from the 30-second probe cache only
         ///   ActiveStreamSessions — GET active-streams/sessions, admins or ActiveStreamsAllUsers
+        ///   TagStripRevision     — the StripRevision POST tag-data answers carry (no endpoint of its
+        ///                          own), null when the Spoiler Guard state could not be read
         /// </summary>
         private object BuildBootstrapPrefetched(PluginConfiguration config, Guid userId, string authorizedUserId, bool isAdmin)
         {
-            object? spoilerBlurSeries = null;
+            UserSpoilerBlur? spoilerBlurSeries = null;
             object? seerrUserStatus = null;
             object? seerrStatus = null;
             List<object>? activeStreamSessions = null;
@@ -4208,6 +4210,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 spoilerBlurSeries = TryReadSpoilerBlurStateForBootstrap(authorizedUserId);
             }
+
+            // Lets the web batch fallback check what it kept from earlier pages before
+            // its first request (tags/tag-pipeline.js); unknown when the state is unreadable.
+            string? tagStripRevision = !Services.SpoilerTagDataStripper.IsConfigured(config)
+                ? Services.SpoilerTagDataStripper.NoTagStrip
+                : spoilerBlurSeries == null
+                    ? null
+                    : Services.SpoilerTagDataStripper.TagStripRevision(Services.SpoilerTagDataStripper.CreatePolicy(config, spoilerBlurSeries));
 
             if (config.JellyseerrEnabled)
             {
@@ -4243,6 +4253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 SeerrUserStatus = seerrUserStatus,
                 SeerrStatus = seerrStatus,
                 ActiveStreamSessions = activeStreamSessions,
+                TagStripRevision = tagStripRevision,
             };
         }
 
@@ -9449,7 +9460,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
             }
 
-            return Ok(new { Items = results });
+            // What Hide tags stripped from these answers ("none": nothing). The web batch
+            // fallback stamps what it keeps with it (SpoilerTagDataStripper.TagStripRevision).
+            return Ok(new { Items = results, StripRevision = Services.SpoilerTagDataStripper.TagStripRevision(spoilerPolicy) });
         }
 
 

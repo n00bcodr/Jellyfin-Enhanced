@@ -20,6 +20,8 @@ const SOURCES = [
   { Id: ID.approved, Match: 'tag', Value: 'Director Approved' },
 ];
 const ALL = [ID.criterion, ID.remaster, ID.signed, ID.approved];
+/** Render extras of a /tag-data answer for a user Spoiler Guard strips nothing for. */
+const UNSTRIPPED = { stripRevision: 'none' };
 
 /**
  * The real Custom renderer over the real layout controller on one card.
@@ -30,19 +32,20 @@ const ALL = [ID.criterion, ID.remaster, ID.signed, ID.approved];
 function setup(t, settings = {}, plugin = {}) {
   const renderers = new Map();
   const store = new Map();
+  const pipeline = { strip: 'none' };
   const h = createHarness({ html: '<div class="card" data-type="Movie" data-id="item"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div><div class="cardText">Title</div></div></div>',
     JE: { currentSettings: { customTagsEnabled: true, ...settings }, pluginConfig: { CustomTagRules: RULES, TagCacheServerMode: false, ...plugin },
       t: (key, params) => (params ? `${key}:${params.name}` : key),
-      tagPipeline: { registerRenderer: (id, renderer) => renderers.set(id, renderer), getRenderer: id => renderers.get(id), clearProcessed() {}, scheduleScan() {} } },
+      tagPipeline: { registerRenderer: (id, renderer) => renderers.set(id, renderer), getRenderer: id => renderers.get(id), clearProcessed() {}, scheduleScan() {}, tagStripRevision: () => pipeline.strip } },
     globals: { localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: key => store.delete(key), key: () => null, length: 0 } } });
   t.after(() => h.close());
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/customtags.js']) h.load(file);
   h.JE.initializeCustomTags();
   const host = h.document.querySelector('.je-tag-host');
   const renderer = () => renderers.get('custom');
-  return { ...h, host, renderer,
+  return { ...h, host, renderer, pipeline,
     render(entry) { renderer().renderFromServerCache(host, entry, 'item'); },
-    batch(item) { renderer().render(host, { Id: 'item', Type: 'Movie', ...item }, {}); },
+    batch(item) { renderer().render(host, { Id: 'item', Type: 'Movie', ...item }, UNSTRIPPED); },
     chips: () => [...host.querySelectorAll('.custom-tag')].filter(el => !el.closest('[data-je-slot="hover"]')),
     labels() { return this.chips().map(el => el.dataset.jeCustom); } };
 }
@@ -157,7 +160,7 @@ test('the batch fallback keeps per-item matches only while the rules stay the sa
   assert.deepEqual(h.labels(), ['Signed']);
 
   // An item without a match is remembered too: nothing to fetch.
-  h.renderer().render(h.host, { Id: 'other', Type: 'Movie' }, {});
+  h.renderer().render(h.host, { Id: 'other', Type: 'Movie' }, UNSTRIPPED);
   assert.equal(h.renderer().renderFromCache(h.host, 'other'), true);
 
   // A rule added since may match the item: the stored match is not trusted.
@@ -175,9 +178,9 @@ test('the batch fallback copies go when the server copy is replaced (access or S
     delete h.document.querySelector('.card').dataset.jeCustomTagged;
   };
   const hit = id => { fresh(); return spec.renderFromCache(h.host, id); };
-  spec.render(h.host, { Id: 'item', Type: 'Movie', CustomTags: [ID.signed] }, {});
+  spec.render(h.host, { Id: 'item', Type: 'Movie', CustomTags: [ID.signed] }, UNSTRIPPED);
   fresh();
-  spec.render(h.host, { Id: 'other', Type: 'Movie', CustomTags: [ID.criterion] }, {});
+  spec.render(h.host, { Id: 'other', Type: 'Movie', CustomTags: [ID.criterion] }, UNSTRIPPED);
   assert.equal(hit('item'), true);
   // A delta drops the items it carries; a replacement drops them all.
   spec.onServerCacheRefresh(['item']);
@@ -194,14 +197,110 @@ test('a Spoiler Guard stub without matches replaces the stored ones in the batch
     h.JE.core.tagLayout.removeGroup(h.host, 'custom');
     delete h.document.querySelector('.card').dataset.jeCustomTagged;
   };
-  spec.render(h.host, { Id: 'item', Type: 'Episode', CustomTags: [ID.signed] }, {});
+  spec.render(h.host, { Id: 'item', Type: 'Episode', CustomTags: [ID.signed] }, UNSTRIPPED);
   fresh();
   // The server strips CustomTags from a guarded item's /tag-data stub, as it strips its genres.
-  spec.render(h.host, { Id: 'item', Type: 'Episode', Genres: [] }, {});
+  spec.render(h.host, { Id: 'item', Type: 'Episode', Genres: [] }, UNSTRIPPED);
   assert.deepEqual(h.labels(), []);
   fresh();
   assert.equal(spec.renderFromCache(h.host, 'item'), true, 'still a hit: nothing to fetch');
   assert.deepEqual(h.labels(), []);
+});
+
+test('a stored match is drawn only under the Spoiler Guard tag strip it was matched under', t => {
+  const h = setup(t);
+  const spec = h.renderer();
+  const fresh = () => {
+    h.JE.core.tagLayout.removeGroup(h.host, 'custom');
+    delete h.document.querySelector('.card').dataset.jeCustomTagged;
+  };
+  const hit = id => { fresh(); return spec.renderFromCache(h.host, id); };
+  spec.render(h.host, { Id: 'item', Type: 'Movie', CustomTags: [ID.signed] }, UNSTRIPPED);
+  assert.equal(hit('item'), true);
+
+  // Unknown (no bootstrap value, no answer yet): fetch, but keep the copy for when it is known.
+  h.pipeline.strip = null;
+  assert.equal(hit('item'), false);
+  h.pipeline.strip = 'none';
+  assert.equal(hit('item'), true, 'not discarded while unknown');
+
+  // A guard set since (here or elsewhere): the copy is discarded and the item fetched again.
+  h.pipeline.strip = 'g1:aaaa';
+  assert.equal(hit('item'), false);
+  h.pipeline.strip = 'none';
+  assert.equal(hit('item'), false, 'discarded, not just skipped');
+
+  // Under a guard, an answer is reused on this page only, never stored for the next one.
+  h.pipeline.strip = 'g1:aaaa';
+  spec.render(h.host, { Id: 'guarded', Type: 'Movie', CustomTags: [ID.criterion] }, { stripRevision: 'g1:aaaa' });
+  assert.equal(hit('guarded'), true);
+  assert.deepEqual(h.labels(), ['Criterion']);
+  h.JE._hotCache.custom.clear(); // a new page: only the persistent copy is left
+  assert.equal(hit('guarded'), false);
+  // Neither is an item that did not come from /tag-data (the per-item fallback).
+  spec.render(h.host, { Id: 'native', Type: 'Movie' }, { stripRevision: null });
+  assert.equal(hit('native'), false);
+});
+
+/**
+ * One page load with the server tag cache off: the real pipeline and Custom
+ * renderer over a localStorage carried between pages. The bootstrap says
+ * `prefetched` about the user's tag strip, and /tag-data answers `answer`.
+ * @param {import('node:test').TestContext} t
+ * @param {Map<string, string>} store
+ * @param {{prefetched?: string, answer: object}} page
+ */
+async function cacheOffPage(t, store, { prefetched, answer }) {
+  const movie = '0123456789abcdef0123456789abcdef';
+  const idle = [], timers = new Map(), calls = [], saves = [];
+  let seq = 0;
+  const storage = { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: key => store.delete(key),
+    key: i => [...store.keys()][i] ?? null, get length() { return store.size; } };
+  const h = createHarness({ html: `<div class="card" data-type="Movie" data-id="${movie}"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div></div><div class="cardText">Title</div></div></div>`,
+    JE: { currentSettings: { customTagsEnabled: true }, pluginConfig: { CustomTagRules: RULES, TagCacheServerMode: false },
+      t: key => key, takePrefetched: name => (name === 'TagStripRevision' ? prefetched : undefined),
+      _cacheManager: { register: fn => saves.push(fn), markDirty() {} }, helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} } },
+    apiClient: { ajax: async options => { calls.push(options.url); return { Items: [{ Id: movie, Type: 'Movie', ...answer.item }], StripRevision: answer.strip }; } },
+    globals: { requestIdleCallback: fn => idle.push(fn), setTimeout: (fn, ms) => { timers.set(++seq, { fn, ms }); return seq; }, clearTimeout: id => timers.delete(id) } });
+  Object.defineProperty(h.window, 'localStorage', { value: storage, configurable: true });
+  t.after(() => h.close());
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/tag-pipeline.js', 'tags/customtags.js']) h.load(file);
+  h.JE.initializeCustomTags();
+  h.JE.tagPipeline.initialize();
+  for (let n = 0; n < 8; n++) {
+    await new Promise(resolve => setImmediate(resolve));
+    while (idle.length) idle.shift()({ timeRemaining: () => 50, didTimeout: false });
+    for (const [id, timer] of [...timers]) if (timer.ms === 150) { timers.delete(id); timer.fn(); }
+  }
+  for (const save of saves) save();
+  return { calls, labels: [...h.document.querySelectorAll('.custom-tag')].map(el => el.dataset.jeCustom) };
+}
+
+test('with the server cache off, a match kept from an earlier page never outlives a Spoiler Guard set since', async t => {
+  const store = new Map();
+  const open = { item: { CustomTags: [ID.signed] }, strip: 'none' };
+  const guarded = { item: { Genres: [] }, strip: 'g1:5ec2e7' };
+
+  const first = await cacheOffPage(t, store, { prefetched: 'none', answer: open });
+  assert.deepEqual(first, { calls: [first.calls[0]], labels: ['Signed'] });
+  assert.match(first.calls[0], /\/tag-data\//);
+  const reload = await cacheOffPage(t, store, { prefetched: 'none', answer: open });
+  assert.deepEqual(reload, { calls: [], labels: ['Signed'] }, 'unguarded: drawn from the kept match, nothing fetched');
+
+  // The movie is guarded from another client: the next page knows from the bootstrap.
+  const after = await cacheOffPage(t, store, { prefetched: 'g1:5ec2e7', answer: guarded });
+  assert.equal(after.calls.length, 1, 'one batch request instead of the kept match');
+  assert.deepEqual(after.labels, []);
+  assert.deepEqual(await cacheOffPage(t, store, { prefetched: 'g1:5ec2e7', answer: guarded }).then(p => [p.calls.length, p.labels]), [1, []],
+    'guarded answers are not kept for the next page');
+
+  // Unguarded again: the chip returns, and is kept again.
+  assert.deepEqual(await cacheOffPage(t, store, { prefetched: 'none', answer: open }).then(p => [p.calls.length, p.labels]), [1, ['Signed']]);
+  assert.deepEqual(await cacheOffPage(t, store, { prefetched: 'none', answer: open }).then(p => [p.calls.length, p.labels]), [0, ['Signed']]);
+
+  // Without a bootstrap value the first answer decides: still nothing drawn from the kept copy first.
+  const unknown = await cacheOffPage(t, store, { prefetched: undefined, answer: guarded });
+  assert.deepEqual([unknown.calls.length, unknown.labels], [1, []]);
 });
 
 test('a label or icon edit applies to drawn rule ids at once, without new matches', t => {

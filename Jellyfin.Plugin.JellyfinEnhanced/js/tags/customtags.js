@@ -15,13 +15,18 @@
 // ids of rules that no longer exist are ignored. The public configuration
 // carries ids, labels and icons only: what a rule matches (the tooltip's
 // second line) is in the admin-only private configuration. Spoiler Guard's
-// tag strip removes the matches server side, like genres.
+// tag strip removes the matches server side, like genres; the batch
+// fallback's copies are stamped with that strip's revision and drawn only
+// while it is unchanged, and kept across page loads only while nothing is
+// stripped (see getCachedEntry).
 (function(JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced: Custom Tags:';
     const containerClass = 'custom-overlay-container';
     const tagClass = 'custom-tag';
+    /** The tag strip revision of a user Spoiler Guard strips nothing for (SpoilerTagDataStripper.NoTagStrip). */
+    const NO_TAG_STRIP = 'none';
 
     /**
      * Icons a rule may show: the genre icons the bundled Material Symbols
@@ -172,30 +177,58 @@
     }
 
     /**
+     * Spoiler Guard's current tag strip revision for this user, from the
+     * pipeline (bootstrap, then each /tag-data answer); null while unknown.
+     * @returns {string|null}
+     */
+    function currentStripRevision() {
+        const revision = JE.tagPipeline?.tagStripRevision?.();
+        return typeof revision === 'string' ? revision : null;
+    }
+
+    /**
      * Retrieve a cached entry: the item's matched ids, when they were matched
-     * under the current rules (a rule added since may match it too).
+     * under the current rules (a rule added since may match it too) and the
+     * current Spoiler Guard tag strip. Matches kept from an earlier page load
+     * count only while nothing is stripped for the user, then and now: the
+     * strip also follows watched state and collection membership, which no
+     * revision covers. A copy from under another strip (or other rules) is
+     * discarded, so the item is fetched again before anything is drawn.
      * @param {Object} ctx - Factory context.
      * @param {string} itemId - Jellyfin item ID.
      * @returns {string[]|null} The ids, or null when unknown.
      */
     function getCachedEntry(ctx, itemId) {
-        const entry = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
-        if (!entry || typeof entry !== 'object' || entry.r !== currentRules().key) return null;
-        return Array.isArray(entry.ids) ? entry.ids : [];
+        const strip = currentStripRevision();
+        if (strip === null) return null;
+        const rules = currentRules().key;
+        const valid = entry => !!entry && typeof entry === 'object' && entry.r === rules && entry.s === strip && Array.isArray(entry.ids);
+        const hot = ctx.hot?.get(itemId);
+        if (valid(hot)) return hot.ids;
+        if (hot !== undefined) ctx.hot.delete(itemId);
+        const stored = ctx.getPersistent(itemId);
+        if (stored === undefined) return null;
+        if (strip === NO_TAG_STRIP && valid(stored)) return stored.ids;
+        ctx.deletePersistent(itemId);
+        return null;
     }
 
     /**
      * Store an item's matched ids (an empty list too, so items without a
-     * match are not fetched again) with the rules they were matched under.
+     * match are not fetched again) with the rules and the tag strip they were
+     * matched under: in memory for this page, and across page loads only when
+     * nothing was stripped.
      * @param {Object} ctx - Factory context.
      * @param {string} itemId - Jellyfin item ID.
      * @param {*} ids - CustomTags from /tag-data.
+     * @param {string|null} strip - The answer's tag strip revision (null: not from /tag-data).
      * @returns {void}
      */
-    function setCachedEntry(ctx, itemId, ids) {
-        const entry = { ids: Array.isArray(ids) ? ids.map(String) : [], r: currentRules().key, timestamp: Date.now() };
-        ctx.setPersistent(itemId, entry);
+    function setCachedEntry(ctx, itemId, ids, strip) {
+        const entry = { ids: Array.isArray(ids) ? ids.map(String) : [], r: currentRules().key, s: strip, timestamp: Date.now() };
         ctx.hot?.set(itemId, entry);
+        if (strip === NO_TAG_STRIP) ctx.setPersistent(itemId, entry);
+        else ctx.deletePersistent(itemId);
     }
 
     /** @type {Object} Factory spec - everything Custom-specific lives here. */
@@ -296,11 +329,11 @@
         pipeline: {
             needsFirstEpisode: false,
             needsParentSeries: false,
-            render(ctx, el, item) {
+            render(ctx, el, item, extras) {
                 if (ctx.shouldIgnore(el)) return;
                 if (ctx.isTagged(el)) return;
                 if (el.closest('.je-hidden')) return;
-                setCachedEntry(ctx, item.Id, item.CustomTags);
+                setCachedEntry(ctx, item.Id, item.CustomTags, typeof extras?.stripRevision === 'string' ? extras.stripRevision : null);
                 applyCustomTags(ctx, el, item.CustomTags);
             },
             renderFromCache(ctx, el, itemId) {
@@ -321,6 +354,7 @@
             // The fallback copies were filtered for this user like the server
             // cache: when that is replaced (access or Spoiler Guard changed, a
             // rebuild) they go too, and a delta drops the items it carries.
+            // A tag strip changed elsewhere is caught by the stamp instead.
             onServerCacheRefresh(ctx, updatedIds) {
                 if (!updatedIds) {
                     ctx.clearPersistent();

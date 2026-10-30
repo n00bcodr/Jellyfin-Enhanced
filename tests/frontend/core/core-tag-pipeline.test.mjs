@@ -22,6 +22,28 @@ test('tag pipeline drops removed cards while a lookup is pending',async t=>{
 test('tag pipeline rejects a late previous-user batch after identity reset',async t=>{
  const h=setup(t);h.scan();h.fetch();h.changes.get('tag-pipeline')({userId:'b'});h.response.resolve({Items:[{Id:'aabb',Type:'Movie',Genres:['private']} ]});await settle();assert.equal(h.rendered.length,0);
 });
+test('the Spoiler Guard tag strip revision comes from the bootstrap, then each current /tag-data answer, and resets with the user',async t=>{
+ const idle=[],timers=new Map(),changes=new Map(),answers=[],extras=[];let seq=0;
+ const h=createHarness({html:card,globals:{requestIdleCallback:fn=>idle.push(fn),setTimeout:(fn,ms)=>{timers.set(++seq,{fn,ms});return seq;},clearTimeout:id=>timers.delete(id)},
+  apiClient:{ajax:()=>{const answer=deferred();answers.push(answer);return answer.promise;}},
+  JE:{pluginConfig:{TagCacheServerMode:false},currentSettings:{},takePrefetched:name=>name==='TagStripRevision'?'none':undefined,core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},session:{onUserChange:(id,fn)=>changes.set(id,fn)}}});
+ t.after(()=>h.close());h.load('tags/tag-pipeline.js');
+ h.JE.tagPipeline.registerRenderer('probe',{isEnabled:()=>true,render:(host,item,extra)=>extras.push(extra.stripRevision)});
+ const scan=()=>{while(idle.length)idle.shift()({timeRemaining:()=>50});};
+ const fetch=()=>{for(const[id,timer]of[...timers])if(timer.ms===150){timers.delete(id);timer.fn();}};
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),'none','the bootstrap value before any request');
+ // A batch cancelled by a reinitialize: its answer is dropped, revision and all.
+ scan();fetch();h.JE.tagPipeline.clearProcessed();h.JE.tagPipeline.scheduleScan();scan();
+ answers[0].resolve({Items:[],StripRevision:'g1:old'});await settle();
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),'none');
+ fetch();await settle();
+ assert.equal(answers.length,2);
+ answers[1].resolve({Items:[{Id:'aabb',Type:'Movie'}],StripRevision:'g1:new'});await settle();
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),'g1:new');
+ assert.deepEqual(extras,['g1:new'],'each render learns its own answer\'s revision');
+ changes.get('tag-pipeline')({userId:'b'});
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),null,'unknown for the next user until an answer says');
+});
 test('identity reset drops the previous user\'s review ratings',async t=>{
  const changes=new Map();
  const h=createHarness({globals:{requestIdleCallback:()=>{}},apiClient:{ajax:async()=>({reviewRatings:{'movie:42':{average:4.5}},items:{series:{Type:'Series',LatestEpisodeIndex:{Season:1,Episode:10}}},count:1})},JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{qualityTagsEnabled:true},helpers:{onBodyMutation(){},onNavigate(){},addCSS(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},

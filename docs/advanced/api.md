@@ -1089,7 +1089,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 |---|---|---|---|
 | POST | `tag-cache/rebuild` | Administrator | No body → `{success:true,message:"Tag cache rebuild started in the background."}`. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor → cache envelope below; ETag/`304`. |
-| POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>]}`. |
+| POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>],StripRevision}`. |
 | GET | `status-tags/series?ids=…` | Authenticated, user-filtered | Up to 50 series item IDs → `{id:{status,lastAired,nextAired}}`; see below. |
 | GET | `status-tags/trending` | Authenticated | `{source,movies,series}` trending ranks for Status Tags; see below. |
 | GET | `item-stats/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size,progress,totalPlaybackTicks,totalRuntimeTicks}`. |
@@ -1158,6 +1158,8 @@ Source rating preferences are `RatingTagsSources` (ordered string array; null pr
 `StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs. Directory paths are never returned; `Path` and `ItemPath` are basenames, including for Windows paths on a Unix server. Persisted entry schema 17 adds `Source` and `Edition`, and old snapshots rebuild.
 
 Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `Ratings`, `OfficialRating`, `LibraryId`, `CustomTags` (as in the cache, collection matches filtered for the target user the same way; with the server tag cache off, tag rules only, since collection membership is kept by the cache), `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, nullable `Source` and `Edition`, `SubtitleLanguages` (the selected media sources), trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
+
+`StripRevision` says what Spoiler Guard's tag strip (`SpoilerStripTags` with the user's Hide Tags choice) removes from these answers: `none` when it removes nothing, otherwise a digest of the user's guarded series, movies and collections. The web batch fallback stamps the Custom tag matches it keeps with it. It keeps them across page loads only under `none`, and it fetches again instead of drawing a copy stamped with another revision. A guard set from another client therefore never shows an older match, even with the server tag cache off.
 
 With `latestEpisode=true`, batch items also carry the applicable `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex`, `SeasonPremiere`, `SeasonAddedSpan` and `EpisodeIndex` facts. Episode sibling lookups use the target user too. The shared cache conservatively omits episode-derived aggregates if any contributor is inaccessible; its server-only `StatusEpisodeIds`/`LatestEpisodeId` are excluded from serialization. A changed `filterRevision` requires replacing stored data. Schema 17 invalidates older disk and IndexedDB copies, including snapshots without named-source `Ratings`.
 
@@ -1349,7 +1351,7 @@ Use `bootstrap` to load your initial configuration, user documents, and availabl
 | `HasCustomTabs`, `HasPluginPages` | Whether a plugin with that exact name is loaded. |
 | `UserSettings` | `{Settings,Shortcuts,Bookmark,Elsewhere,HiddenContent}` typed documents. |
 | `ComponentScripts` | Ordered component-script path array, nullable on manifest failure. |
-| `Prefetched` | `{SpoilerBlurSeries,SeerrUserStatus,SeerrStatus,ActiveStreamSessions}`; standalone response shapes or null. |
+| `Prefetched` | `{SpoilerBlurSeries,SeerrUserStatus,SeerrStatus,ActiveStreamSessions,TagStripRevision}`; standalone response shapes or null. `TagStripRevision` is the `StripRevision` a `tag-data` answer would carry, null when the Spoiler Guard state cannot be read. |
 
 A missing/unparseable claim returns `403`; an empty but parseable GUID passes the initial check. There is no target-user parameter or account-existence check. Missing configuration returns `503`.
 

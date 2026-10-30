@@ -97,6 +97,15 @@
     let activeBatch = [];               // entries whose request is currently in flight
     let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting, reuse }
     const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
+    // What Spoiler Guard's Hide tags strips from this user's /tag-data answers
+    // ("none": nothing; SpoilerTagDataStripper.TagStripRevision): the page-load
+    // bootstrap's value, then that of the latest batch answer (batches run one
+    // at a time, and a cancelled one's answer is dropped). Null while unknown:
+    // after a user switch or Spoiler Guard change until the next answer.
+    // Renderers keeping /tag-data results across page loads stamp them with it
+    // and fetch again when it differs (tags/customtags.js).
+    const prefetchedStripRevision = JE.takePrefetched?.('TagStripRevision');
+    let tagStripRevision = typeof prefetchedStripRevision === 'string' ? prefetchedStripRevision : null;
 
     /**
      * Remove a container fact and the season lookup owned by it.
@@ -225,7 +234,9 @@
      * @param {string} name - Unique renderer name (e.g., 'genre', 'quality')
      * @param {Object} config
      * @param {Function} config.render - (el, item, extras) => void. Renders the overlay.
-     *   `extras` contains: { firstEpisode, parentSeries }
+     *   `extras` contains: { firstEpisode, parentSeries, ratingParentSeries, renderTarget,
+     *   stripRevision } (stripRevision: the answer's Spoiler Guard tag strip revision, null
+     *   when the item did not come from /tag-data)
      * @param {Function} config.isEnabled - () => boolean. Checked before rendering.
      * @param {Function} [config.renderFromCache] - (el, itemId) => boolean. Try to render from
      *   localStorage/hot cache without any API call. Returns true if rendered successfully.
@@ -1658,6 +1669,8 @@
             // Abort if navigation happened while we were waiting for the API response
             if (!isCurrent()) return;
             if (needsLatestEpisode) items.forEach(item => rememberItemFacts(item));
+            const stripRevision = typeof response?.StripRevision === 'string' ? response.StripRevision : null;
+            if (stripRevision !== null) tagStripRevision = stripRevision;
 
             // Build parent series lookup for rating fallback
             const parentSeriesNeeded = new Set();
@@ -1738,7 +1751,7 @@
                         if (!el.isConnected) continue; // card itself is gone
                         renderTarget = resolveRenderTarget(el);
                     }
-                    const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
+                    const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget, stripRevision };
                     // Dropped by the layout when the card shows another item by now.
                     if (JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, entry.cardId) === false) continue;
                     for (const [name, renderer] of renderers) {
@@ -1819,7 +1832,7 @@
                         if (!el.isConnected) continue; // card itself is gone
                         renderTarget = resolveRenderTarget(el);
                     }
-                    const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
+                    const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget, stripRevision: null };
                     const layout = JE.core.tagLayout;
                     if (layout?.cardIdentity && layout.cardIdentity(renderTarget) !== cardId) continue;
                     if (!needsLibraryFacts() && layout?.setCardContext?.(renderTarget, item, itemId, cardId) === false) continue;
@@ -2045,6 +2058,14 @@
         /** @returns {number} performance.now() when the request behind the current review averages started (0 = none). */
         getReviewRatingsRequestedAt() { return reviewRatingsRequestedAt; },
         /**
+         * What Spoiler Guard's Hide tags strips from this user's /tag-data
+         * answers: "none" for nothing, another string for a guard set, null
+         * while unknown (before the first answer when the bootstrap did not
+         * say, and after a user switch or Spoiler Guard change).
+         * @returns {string|null}
+         */
+        tagStripRevision() { return tagStripRevision; },
+        /**
          * Subscribe to accepted review averages maps.
          * @param {(changed: Set<string>|null) => void} listener - Receives the "mediaType:tmdbKey" keys whose value changed (possibly none), or null for all.
          */
@@ -2078,6 +2099,7 @@
             isInvalidating = true;
             try {
                 dropServerCache();
+                tagStripRevision = null;
                 processedCards = new WeakSet();
                 requestQueue = [];
                 batchGeneration++;
@@ -2155,6 +2177,7 @@
     // outgoing user's is deleted when the incoming user's opens.
     JE.session?.onUserChange('tag-pipeline', () => {
         dropServerCache();
+        tagStripRevision = null;
         // The outgoing user's remembered tag look facts; the incoming user's
         // stored copy loads (owner checked) on first use.
         lookFacts = null;

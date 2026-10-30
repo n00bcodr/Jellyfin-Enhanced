@@ -122,6 +122,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return new SpoilerTagStripPolicy(state, stripGenres, stripRatings, replaceTitle, stripOverview);
         }
 
+        /// <summary>No tag strip applies to the user (<see cref="TagStripRevision"/>).</summary>
+        public const string NoTagStrip = "none";
+
+        /// <summary>
+        /// Revision of what Hide tags (<see cref="SpoilerTagStripPolicy.StripGenres"/>) strips from a user's
+        /// POST /tag-data answers: <see cref="NoTagStrip"/> when it strips nothing, otherwise a digest of the
+        /// guarded series, movies and collections. POST /tag-data answers carry it as <c>StripRevision</c> and
+        /// the bootstrap as <c>Prefetched.TagStripRevision</c>; the web batch fallback keeps results across page
+        /// loads only under <see cref="NoTagStrip"/> and drops any stamped with another revision
+        /// (js/tags/customtags.js), so a guard set elsewhere is never bypassed by an older copy.
+        /// </summary>
+        /// <param name="policy">The user's policy (<see cref="CreatePolicy"/>), or null.</param>
+        /// <returns>The revision.</returns>
+        public static string TagStripRevision(SpoilerTagStripPolicy? policy)
+        {
+            if (policy?.StripGenres != true) return NoTagStrip;
+            var keys = policy.State.Series.Keys.Select(k => "s:" + k.ToLowerInvariant())
+                .Concat(policy.State.Movies.Keys.Select(k => "m:" + k.ToLowerInvariant()))
+                .Concat(policy.State.Collections.Keys.Select(k => "c:" + k.ToLowerInvariant()))
+                .Order(StringComparer.Ordinal);
+            var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join(",", keys)));
+            return "g1:" + Convert.ToHexString(digest, 0, 12).ToLowerInvariant();
+        }
+
         /// <summary>
         /// Which guarded kind (Episode/Season/Movie/Series) a tag-cache entry is under this user's Spoiler
         /// Guard, or null when it isn't guarded. <paramref name="key"/> is the item id in N format.

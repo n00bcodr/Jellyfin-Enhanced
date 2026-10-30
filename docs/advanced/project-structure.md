@@ -30,7 +30,7 @@ The initialization stages and user-switch behavior are:
 
 The bootstrap's `UserSettings` members are `Settings`, `Shortcuts`, `Bookmark`, `Elsewhere` and `HiddenContent`. A document-loading failure yields null for that document. Bootstrap always loads the token user's data, with no target-user parameter, and is served with `no-store`.
 
-Bootstrap's `Prefetched` block can carry `SpoilerBlurSeries`, `SeerrUserStatus`, `SeerrStatus` and `ActiveStreamSessions`. These reuse standalone response bodies under the same feature, access and cache gates. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.
+Bootstrap's `Prefetched` block can carry `SpoilerBlurSeries`, `SeerrUserStatus`, `SeerrStatus`, `ActiveStreamSessions` and `TagStripRevision`. The first four reuse standalone response bodies under the same feature, access and cache gates. `TagStripRevision` is the Spoiler Guard tag strip revision that `tag-data` answers carry; the tag pipeline reads it before its first request. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.
 
 Components consume a value once, shortly after bootstrap, through `JE.takePrefetched(name)`. Otherwise, they call their endpoint normally. Bootstrap does not fetch every feature's data.
 

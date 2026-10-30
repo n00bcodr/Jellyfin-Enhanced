@@ -392,6 +392,65 @@ public class PerfRound2TagCacheResponseTests
     }
 
     [Fact]
+    public void BatchAnswersAndTheBootstrapStateWhatHideTagsStripsForTheUser()
+    {
+        // The web batch fallback keeps answers across page loads only under "none" and
+        // drops ones stamped with another revision, so a guard set from another client
+        // is never bypassed by a copy from before it (js/tags/customtags.js).
+        using var endpoint = new Endpoint();
+        string? Revision(object? body, params string[] path)
+        {
+            using var json = JsonDocument.Parse(JsonSerializer.Serialize(body));
+            var node = json.RootElement;
+            foreach (var key in path) node = node.GetProperty(key);
+            return node.ValueKind == JsonValueKind.Null ? null : node.GetString();
+        }
+
+        string? Batch()
+        {
+            endpoint.SignIn(endpoint.Alice);
+            return Revision(Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [Guid.NewGuid().ToString()])).Value, "StripRevision");
+        }
+
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<MediaBrowser.Controller.Session.ISessionManager>(), endpoint.Fixture.Core.Paths.Object, endpoint.Fixture.Core.Logger);
+        var bootstrap = ApiAssetTests.Controller(endpoint.Fixture.Core, maintenance, endpoint.Fixture.Core.Manager, endpoint.Library.Object);
+        bootstrap.ControllerContext.HttpContext.User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(endpoint.Alice.Id, false);
+        string? Bootstrap() => Revision(Assert.IsType<JsonResult>(bootstrap.GetBootstrap()).Value, "Prefetched", "TagStripRevision");
+
+        Assert.Equal((SpoilerTagDataStripper.NoTagStrip, SpoilerTagDataStripper.NoTagStrip), (Batch(), Bootstrap()));
+
+        endpoint.GuardSeries();
+        var guarded = Batch();
+        Assert.StartsWith("g1:", guarded);
+        Assert.Equal(guarded, Bootstrap());
+
+        // Another guarded title (from any client) changes it; the same set in another order or case does not.
+        var state = endpoint.Fixture.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName);
+        state.Movies[endpoint.First.ToString("N")] = new();
+        endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        var more = Batch();
+        Assert.NotEqual(guarded, more);
+        Assert.Equal(more, Bootstrap());
+        var shuffled = new UserSpoilerBlur();
+        shuffled.Movies[endpoint.First.ToString("N").ToUpperInvariant()] = new();
+        shuffled.Series[endpoint.SeriesId.ToString("N")] = new();
+        Assert.Equal(more, SpoilerTagDataStripper.TagStripRevision(SpoilerTagDataStripper.CreatePolicy(endpoint.Fixture.Plugin.Configuration, shuffled)));
+
+        // Nothing is stripped from tags under a ratings-only strip or the user's own Hide tags opt-out.
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripTags = false;
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripRatings = true;
+        Assert.Equal((SpoilerTagDataStripper.NoTagStrip, SpoilerTagDataStripper.NoTagStrip), (Batch(), Bootstrap()));
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripTags = true;
+        state.Prefs = new SpoilerBlurUserPrefs { HideTags = false };
+        endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        Assert.Equal((SpoilerTagDataStripper.NoTagStrip, SpoilerTagDataStripper.NoTagStrip), (Batch(), Bootstrap()));
+
+        // Unguarded again: back to "none", so kept copies are trusted once more.
+        endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, new UserSpoilerBlur());
+        Assert.Equal((SpoilerTagDataStripper.NoTagStrip, SpoilerTagDataStripper.NoTagStrip), (Batch(), Bootstrap()));
+    }
+
+    [Fact]
     public async Task LatestEpisodeDateOnlyReachesUsersWhoCanSeeThatEpisodeAndItsIdNeverDoes()
     {
         // The series entry's "New Episode" date came from Episode. Alice can see
