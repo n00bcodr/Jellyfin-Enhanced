@@ -633,6 +633,46 @@ test('a leave prompt answered after the administrator changed takes no one back 
   assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
 });
 
+test('a destructive action confirmed after the administrator changed does not run for the next one', async t => {
+  const server = structuredClone(BASE);
+  const { apiClient } = signedIn();
+  const prompts = [];
+  const h = boot(t, {
+    server, session: true, apiClient,
+    globals: { Dashboard: { confirm: (text, title, answer) => { prompts.push(answer); } } },
+  });
+  h.document.body.innerHTML = TWO_PAGES;
+  const [first, second] = h.document.querySelectorAll('.page');
+  const a = await h.A.activate(first);
+  h.cleanup.push(() => a.dispose());
+  // The same administrator confirming: the action runs.
+  first.querySelector('#jeTaApplyAll').click();
+  await h.settle(); await h.settle();
+  assert.equal(prompts.length, 1);
+  prompts[0](true);
+  await h.settle(); await h.settle(); await h.settle();
+  assert.deepEqual(h.posts.filter(p => p.endsWith('/reset-all-users-settings')).length, 1);
+  // Asked again; while the prompt is open, A signs out and B signs in. A's "yes" runs nothing.
+  first.querySelector('#jeTaApplyAll').click();
+  await h.settle(); await h.settle();
+  assert.equal(prompts.length, 2);
+  h.window.ApiClient.setAuthenticationInfo(null, null);
+  h.window.ApiClient.setAuthenticationInfo('token-b', 'admin-b');
+  prompts[1](true);
+  await h.settle(); await h.settle(); await h.settle();
+  assert.equal(h.posts.filter(p => p.endsWith('/reset-all-users-settings')).length, 1, 'A\'s answer applies nothing with B\'s credentials');
+  // The same for a cache rebuild started from B's own view, confirmed after B signs out.
+  const b = await h.A.activate(second);
+  h.cleanup.push(() => b.dispose());
+  const rebuilding = h.A.rebuildCache(b);
+  await h.settle(); await h.settle();
+  assert.equal(prompts.length, 3);
+  h.window.ApiClient.setAuthenticationInfo(null, null);
+  prompts[2](true);
+  await rebuilding;
+  assert.equal(h.posts.filter(p => p.endsWith('/tag-cache/rebuild')).length, 0, 'no rebuild is started for a signed-out session');
+});
+
 test('a torn-down page saves nothing: a reused root has one set of listeners, and Back/Forward saves a change once', async t => {
   const server = structuredClone(BASE);
   const h = boot(t, { server, url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout' });

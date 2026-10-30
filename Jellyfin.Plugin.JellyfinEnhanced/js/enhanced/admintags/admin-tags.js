@@ -1009,14 +1009,17 @@
         }
 
         /**
-         * Ask before a destructive action.
+         * Ask before a destructive action. A "yes" given after the administrator
+         * signed out, another one signed in or the view was torn down is a "no":
+         * the action would otherwise run with the next session's credentials.
          * @param {string} text
          * @param {string} title
          * @returns {Promise<boolean>}
          */
-        function confirmAction(text, title) {
-            if (options.confirm) return Promise.resolve(options.confirm(text, title));
-            return askConfirm(text, title);
+        async function confirmAction(text, title) {
+            const mark = sessionMark();
+            const ok = options.confirm ? await options.confirm(text, title) : await askConfirm(text, title);
+            return !!ok && !disposed && sameSession(mark);
         }
 
         /**
