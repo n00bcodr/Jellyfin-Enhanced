@@ -2105,6 +2105,60 @@
       }
     ]
   },
+  "zh": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month}月{day}日",
+        "month": "1"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "2"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "3"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "4"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "5"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "6"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "7"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "8"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "9"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "10"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "11"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "12"
+      }
+    ]
+  },
   "zh-CN": {
     "calendar": "gregory",
     "digits": "0123456789",
@@ -2160,6 +2214,168 @@
     ]
   },
   "zh-HK": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month}月{day}日",
+        "month": "1"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "2"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "3"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "4"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "5"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "6"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "7"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "8"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "9"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "10"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "11"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "12"
+      }
+    ]
+  },
+  "zh-MO": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month}月{day}日",
+        "month": "1"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "2"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "3"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "4"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "5"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "6"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "7"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "8"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "9"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "10"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "11"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "12"
+      }
+    ]
+  },
+  "zh-SG": {
+    "calendar": "gregory",
+    "digits": "0123456789",
+    "months": [
+      {
+        "template": "{month}月{day}日",
+        "month": "1"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "2"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "3"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "4"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "5"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "6"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "7"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "8"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "9"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "10"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "11"
+      },
+      {
+        "template": "{month}月{day}日",
+        "month": "12"
+      }
+    ]
+  },
+  "zh-TW": {
     "calendar": "gregory",
     "digits": "0123456789",
     "months": [

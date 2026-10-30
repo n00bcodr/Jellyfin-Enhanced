@@ -9,7 +9,7 @@ if (process.versions.icu !== '78.3' || process.versions.cldr !== '48.0') {
 const root = new URL('../', import.meta.url);
 const locales = readdirSync(new URL('Jellyfin.Plugin.JellyfinEnhanced/js/locales/', root)).filter(f => f.endsWith('.json')).map(f => f.slice(0, -5));
 // Include common saved regional contexts in addition to every shipped UI locale.
-locales.push('en-AU', 'en-CA', 'en-NZ', 'es-MX', 'fr-CA', 'ar-SA', 'fa-AF', 'pt-PT');
+locales.push('en-AU', 'en-CA', 'en-NZ', 'es-MX', 'fr-CA', 'ar-SA', 'fa-AF', 'pt-PT', 'zh', 'zh-MO', 'zh-SG', 'zh-TW');
 const output = {};
 for (const locale of [...new Set(locales)].sort()) {
     const effective = Intl.DateTimeFormat.supportedLocalesOf(locale).length ? locale : 'en';

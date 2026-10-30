@@ -13,6 +13,9 @@ public static class NativePosterDateContext
         @"\A(?:[a-z]{2,3}|[a-z]{5,8})(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*\z",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly IReadOnlyDictionary<string, string> Cultures = CultureInfo.GetCultures(CultureTypes.AllCultures)
+        // ICU resolves these registered Chinese aliases but omits them from GetCultures.
+        .Concat(new[] { "zh-CN", "zh-HK", "zh-MO", "zh-SG", "zh-TW" }.Select(CultureInfo.GetCultureInfo))
+        .DistinctBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
         .Where(c => c.Name.Length > 0).ToDictionary(c => c.Name, c => c.Name, StringComparer.OrdinalIgnoreCase);
     private static readonly Regex ZonePattern = new(@"\A[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*\z", RegexOptions.CultureInvariant);
 

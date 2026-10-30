@@ -28,6 +28,8 @@ public class CoreNativeDateContextTests
     [Theory]
     [InlineData(" en-us ", " Australia/Perth ", "en-US", "Australia/Perth")]
     [InlineData("fa", "Asia/Tehran", "fa", "Asia/Tehran")]
+    [InlineData("zh-cn", "Asia/Shanghai", "zh-CN", "Asia/Shanghai")]
+    [InlineData("zh-hk", "Asia/Hong_Kong", "zh-HK", "Asia/Hong_Kong")]
     [InlineData("sr-latn-rs", "UTC", "sr-Latn-RS", "UTC")]
     [InlineData("es-419", "Etc/GMT+3", "es-419", "Etc/GMT+3")]
     [InlineData("en-GB", "W. Australia Standard Time", "en-GB", "Australia/Perth")]
