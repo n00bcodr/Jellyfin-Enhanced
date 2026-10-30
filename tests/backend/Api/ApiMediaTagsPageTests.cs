@@ -284,7 +284,7 @@ public class ApiMediaTagsPageTests
         {
             Changes = new() { ["NativePosterTagsWebClientNames"] = StjSerializer.SerializeToElement(new string('a', 4096)) },
         }));
-        // The body itself: Kestrel answers 413 past the action's limit before anything is read.
+        // The body itself: reading past the action's limit fails before the action runs (Jellyfin then answers 500).
         var bodyLimit = typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.PatchConfiguration))!
             .GetCustomAttributes(typeof(RequestSizeLimitAttribute), false).Cast<RequestSizeLimitAttribute>().Single();
         Assert.Equal(64 * 1024, ((Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata)bodyLimit).MaxRequestBodySize);

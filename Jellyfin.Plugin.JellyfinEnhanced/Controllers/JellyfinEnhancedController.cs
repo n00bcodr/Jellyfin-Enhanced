@@ -8586,7 +8586,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <param name="request">The changed fields and, per field, the value read before the edit.</param>
         /// <returns>
         /// 200 with the stored values, 400 for a field the page does not own or a value outside the field's contract
-        /// (<see cref="MediaTagsPageFields.TryNormalize"/>), 409 with the conflicts, 413 for a body over 64 KB.
+        /// (<see cref="MediaTagsPageFields.TryNormalize"/>), 409 with the conflicts. A body over 64 KB is refused while
+        /// it is read, before the action runs (Jellyfin's exception middleware answers 500).
         /// </returns>
         [HttpPost("admin/configuration")]
         [Authorize]
