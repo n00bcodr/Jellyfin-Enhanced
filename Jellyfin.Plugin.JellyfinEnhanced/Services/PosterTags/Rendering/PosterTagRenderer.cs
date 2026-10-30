@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     public sealed class PosterTagRenderer : IDisposable
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
-        public const string Version = "1";
+        public const string Version = "2";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;
@@ -390,6 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
                     foreach (var item in group.Items)
                     {
+                        if (item.Hidden) continue;
                         float x = originX + ((item.X - group.X) * s);
                         float y = originY + ((item.Y - group.Y) * s);
                         var box = Snap(x, y, item.Width * s, item.Height * s);

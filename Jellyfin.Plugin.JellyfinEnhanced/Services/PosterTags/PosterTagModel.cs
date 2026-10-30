@@ -9,6 +9,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         TopRight,
         BottomLeft,
         BottomRight,
+        TopCenter,
+        BottomCenter,
+        CenterLeft,
+        CenterRight,
+        Center,
     }
 
     /// <summary>

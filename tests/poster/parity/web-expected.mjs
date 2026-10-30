@@ -235,6 +235,8 @@ const CONTAINERS = {
     'language-overlay-container': 'Language',
 };
 const cornerOf = (pos) => {
+    const centre = { 'top-center': 'TopCenter', 'bottom-center': 'BottomCenter', 'center-left': 'CenterLeft', 'center-right': 'CenterRight', center: 'Center' };
+    if (centre[pos]) return centre[pos];
     const isTop = pos.includes('top');
     const isLeft = pos.includes('left');
     return isTop ? (isLeft ? 'TopLeft' : 'TopRight') : (isLeft ? 'BottomLeft' : 'BottomRight');
@@ -348,7 +350,7 @@ async function runProfile(profile) {
     }
 
     // The corners profile's slot (a corner, or "off") wins over the position setting.
-    const SLOT_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' };
+    const SLOT_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
     const groupOf = { qualityTagsPosition: 'quality', genreTagsPosition: 'genre', languageTagsPosition: 'language', ratingTagsPosition: 'rating', ageRatingTagsPosition: 'ageRating' };
     const ownCorner = (u) => {
         const groups = s.tagLayouts?.corners?.groups ?? s.tagLayouts?.Corners?.Groups;

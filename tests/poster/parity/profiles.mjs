@@ -192,6 +192,17 @@ const synth = (name, settingsRaw, pluginOverrides = {}, jellyfinAudioPreference 
     profiles.push({ name, user: admin.id, synthetic: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference, reviews: 'synthetic' });
 
 synth('all-on-defaults', { ...allOn });
+synth('positions-centres-legacy', {
+    ...allOn, QualityTagsPosition: 'top-center', GenreTagsPosition: 'center',
+    LanguageTagsPosition: 'center-left', RatingTagsPosition: 'bottom-center', AgeRatingTagsPosition: 'center-right',
+});
+synth('positions-centres-profile', {
+    ...allOn, TagLayoutSettingsVersion: 1,
+    TagLayouts: { Corners: { Groups: [
+        { Group: 'quality', Slot: 'tc' }, { Group: 'genre', Slot: 'c' },
+        { Group: 'language', Slot: 'ml' }, { Group: 'rating', Slot: 'bc' }, { Group: 'ageRating', Slot: 'mr' },
+    ] } },
+});
 synth('positions-mirror', {
     ...allOn, QualityTagsPosition: 'bottom-right', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'top-left',
     AgeRatingTagsPosition: 'top-left', LanguageTagsPosition: 'top-right', VideoCodecTagOrder: 0,
