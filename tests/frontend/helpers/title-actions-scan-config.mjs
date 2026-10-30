@@ -102,6 +102,8 @@ export const SITES = {
   'arr/hub/hub-page.js': 1, 'arr/live/arr-live.js': 2, 'arr/manage/manage-drawer.js': 1,
   'arr/notify/notify-core.js': 9, 'arr/requests/requests-page-data.js': 6,
   'arr/requests/requests-page-render-cards.js': 1, 'arr/status/status-arrival.js': 2, 'arr/status/status-core.js': 2,
+  // F102: the open season's episode list, read as the viewer once for rows no status named (a read).
+  'arr/status/status-episodes.js': 1,
   'awards/awards.js': 3, 'core/api-client.js': 3, 'core/navigation.js': 1, 'elsewhere/elsewhere.js': 6,
   'elsewhere/reviews.js': 12, 'enhanced/bookmarks/bookmarks-library-items.js': 3,
   'enhanced/bookmarks/bookmarks-library-replacements.js': 2, 'enhanced/bookmarks/bookmarks.js': 3,

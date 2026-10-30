@@ -1554,7 +1554,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 if (copy.Mask.Hides(season, n)) continue;
                 var have = Have(files, season, n);
-                var row = files.FirstOrDefault(e => new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
+                // The episode's row is the item that plays it: while Jellyfin still lists the missing (virtual) episode a file
+                // replaced, both stand for it, and the page keeps the playable one.
+                var row = have ?? files.FirstOrDefault(e => new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
                 var arr = copy.Episodes?.Find(season, n);
                 CopyState state;
                 if (have != null)

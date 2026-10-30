@@ -557,6 +557,9 @@
      * Jellyfin's LibraryChanged message: when it names the page's item, season or series, the page's
      * status is read again (once for messages close together). A season or series page that Jellyfin
      * removed something from (the missing episode or season a file replaced) has its own list redrawn.
+     * A removed item the season page has a row for (an episode's missing item; Jellyfin names it with
+     * or without its season) has the rows reconciled at once and the status read again, also after the
+     * page's one redraw.
      * @param {Object} data Message data.
      * @returns {void}
      */
@@ -564,7 +567,9 @@
         const state = page;
         if (!state || !data || !enabled()) return;
         const ids = [].concat(data.ItemsAdded || [], data.ItemsUpdated || [], data.ItemsRemoved || [], data.FoldersAddedTo || [], data.FoldersRemovedFrom || []);
-        if (!ids.some(id => state.parents.has(norm(id)))) return;
+        const episodes = JE.internals?.arrStatusEpisodes;
+        const row = (data.ItemsRemoved || []).length > 0 && episodes?.current?.()?.page === state.view && episodes.removed?.(data.ItemsRemoved) === true;
+        if (!row && !ids.some(id => state.parents.has(norm(id)))) return;
         const self = norm(state.id);
         // Jellyfin added or removed items with the page's own item named: without the server's version
         // fingerprint the same version count can be a different set of versions now, so a redraw given up on

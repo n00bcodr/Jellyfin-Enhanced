@@ -479,17 +479,26 @@ export const SITES = {
     '(module) state collapsed': [1, 'module', 'ui'],
   },
   'arr/status/status-episodes.js': {
-    'addArrivals state pendingRows': [2, 'module', 'ui'],
-    'addArrivals state rowsByEpisode': [1, 'module', 'ui'],
+    // F102: what an open season learnt (its id history, the playable items' answers, refusals, reads in flight) lives
+    // on the season owner in `state` (not module bindings) and goes with it: another season or page, leaving it, a
+    // user switch, the person's access moving.
+    // SRD-3: the polite live region that names the episode a moved focus landed on (visually hidden, not a surface).
+    'announce state liveRegion': [1, 'module', 'ui'],
+    'announce surface insert body': [1, 'module', 'render: a visually hidden polite live region for the season rows, no foreground surface'],
+    // F105b: a rowless arrival read dropped while its season owner, route and viewer stay asks again.
+    'addArrivals state closure again': [2, 'module', 'ui'],
     'apply state closure firstRow': [1, 'module', 'ui'],
-    'apply state rowsByEpisode': [1, 'module', 'ui'],
+    'apply state closure pointed': [1, 'module', 'ui'],
+    'apply state reapplying': [2, 'module', 'ui'],
     'clear state extension': [1, 'module', 'ui'],
-    'clear state pendingRows': [1, 'module', 'ui'],
-    'clear state rowsByEpisode': [1, 'module', 'ui'],
     'clear state state': [1, 'module', 'ui'],
     'extend state extension': [1, 'module', 'ui'],
+    // A row the viewer was on that goes (its episode's other row stays): focus moves to that episode's row, announced.
+    // F105b: an item read whose answer was dropped while its season owner, route and viewer stay asks again.
+    'read state closure again': [2, 'module', 'ui'],
+    'reconcile feedback announce': [1, 'module', 'effect'],
+    'reconcile focus focus': [2, 'module', 'effect'],
     'render state observer': [1, 'module', 'ui'],
-    'render state rowsByEpisode': [1, 'module', 'ui'],
     'render state state': [1, 'module', 'ui'],
   },
   'core/access-revision.js': {
