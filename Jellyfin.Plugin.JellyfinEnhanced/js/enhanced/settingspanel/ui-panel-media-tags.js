@@ -767,19 +767,37 @@
 
         /**
          * Open the tab (and group, or locks list) a control is in, then focus it.
+         * Opening the tab or a list can rebuild the control (the first visit
+         * to Rules & locks redraws the locked items), so it is found again by
+         * its stable key afterwards, or replaced by the nearest connected
+         * stand-in: its rule row, else the tab panel's heading, else the tab.
          * @param {HTMLElement} el
          */
         const reveal = (el) => {
+            // Read where the control sits before anything redraws it.
             const panel = /** @type {HTMLElement|null} */ (el.closest('[role="tabpanel"]'));
-            if (panel) select(panel.dataset.tab || 'layout');
+            const tabId = panel?.dataset.tab || 'layout';
+            const focusKey = el.dataset.jeFocusKey || '';
+            const elId = el.id;
+            const ruleId = /** @type {HTMLElement|null} */ (el.closest('[data-je-rule-id]'))?.dataset.jeRuleId || '';
+            const inLocks = !!el.closest('.je-tag-looks-locks');
             const body = /** @type {HTMLElement|null} */ (el.closest('.je-tge-body'));
+            if (panel) select(tabId);
             if (body?.hidden) /** @type {HTMLElement|null} */ (body.closest('.je-tge-row')?.querySelector('.je-tge-expand') || null)?.click();
-            const locks = el.closest('.je-tag-looks-locks');
-            const locksToggle = /** @type {HTMLElement|null} */ (locks?.querySelector('.je-tag-looks-locks-toggle') || null);
+            const locksToggle = /** @type {HTMLElement|null} */ (inLocks ? hub.querySelector('.je-tag-looks-locks-toggle') : null);
             if (locksToggle && locksToggle.getAttribute('aria-expanded') === 'false' && locksToggle.offsetParent !== null) locksToggle.click();
-            let target = el;
-            if (el.matches('[role="group"], [role="radiogroup"]')) {
-                target = /** @type {HTMLElement} */ (el.querySelector('input:checked, button:not(:disabled), input:not(:disabled)') || el);
+            /** @param {string} attr @param {string} value @returns {HTMLElement|null} */
+            const byData = (attr, value) => /** @type {HTMLElement|null} */ (Array.from(hub.querySelectorAll(`[${attr}]`)).find((node) => node.getAttribute(attr) === value) || null);
+            let target = el.isConnected ? el
+                : (focusKey && byData('data-je-focus-key', focusKey))
+                || (elId && hub.contains(document.getElementById(elId)) && document.getElementById(elId))
+                || (ruleId && byData('data-je-rule-id', ruleId))
+                || /** @type {HTMLElement|null} */ (document.getElementById(`jeMthPanel-${tabId}`)?.querySelector('.je-mth-card-title, .je-tge-title') || null)
+                || tabs.find((t) => t.dataset.tab === tabId)
+                || el;
+            if (target !== el && !target.matches('button, input, select, a[href], [tabindex]')) target.tabIndex = -1;
+            if (target.matches('[role="group"], [role="radiogroup"]')) {
+                target = /** @type {HTMLElement} */ (target.querySelector('input:checked, button:not(:disabled), input:not(:disabled)') || target);
             }
             if (/** @type {HTMLButtonElement} */ (target).disabled) {
                 target = /** @type {HTMLElement} */ (target.parentElement?.querySelector('button:not(:disabled), input:not(:disabled), select:not(:disabled)') || target);

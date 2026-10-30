@@ -290,6 +290,42 @@ test('the settings search finds hub controls by their visible label, opens their
   assert.equal(h.$('#jePanelSearchResults').hidden, true);
 });
 
+test('search → Unlock on the first visit to Rules & locks focuses the live control, not the one the tab redrew', async t => {
+  const h = setup(t, { stored: { tagLayoutLocks: { [LOCKED]: { layout: 'bands', density: 'full', lockedAt: 5 } } } });
+  await h.open();
+  assert.equal(h.selected(), 'layout', 'Rules & locks not visited yet');
+  const results = await h.search('unlock');
+  const hit = results.find(r => r.label === `tag_looks_unlock_named:${LOCKED}`);
+  assert.ok(hit, results.map(r => r.label).join(', '));
+  const captured = h.$(`[data-je-focus-key="unlock-${LOCKED}"]`);
+  h.click(hit.button);
+  assert.equal(h.selected(), 'rules');
+  const live = h.$(`[data-je-focus-key="unlock-${LOCKED}"]`);
+  assert.notEqual(live, captured, 'the first visit redrew the locked items');
+  assert.equal(captured.isConnected, false);
+  assert.equal(h.document.activeElement, live, 'focus is on the live Unlock');
+  // The titles arrive and the list redraws again: focus follows the same item.
+  await h.settle(); await h.settle();
+  const titled = h.$(`[data-je-focus-key="unlock-${LOCKED}"]`);
+  assert.equal(titled.getAttribute('aria-label'), 'tag_looks_unlock_named:Locked Show');
+  assert.equal(h.document.activeElement, titled);
+});
+
+test('a search result whose control is gone falls back to a connected stand-in on its tab', async t => {
+  const h = setup(t, { stored: { tagLayoutLocks: { [LOCKED]: { layout: 'bands', density: 'full', lockedAt: 5 } } } });
+  await h.open();
+  const results = await h.search('unlock');
+  const hit = results.find(r => r.label === `tag_looks_unlock_named:${LOCKED}`);
+  // The item is unlocked elsewhere before the result is chosen.
+  h.JE.core.tagLook.unlockItems([LOCKED]);
+  h.click(hit.button);
+  await h.settle();
+  const active = h.document.activeElement;
+  assert.equal(h.selected(), 'rules');
+  assert.ok(active.isConnected, 'focus is on a connected element');
+  assert.ok(h.$('#jeMthPanel-rules').contains(active) || active === h.tab('rules'), `${active.outerHTML.slice(0, 60)} is on the Rules & locks tab`);
+});
+
 test('the preview names where each sample\'s look comes from, through the resolver the cards use', async t => {
   const rule = { id: 'r1', enabled: true, when: [{ field: 'library', value: KIDS }, { field: 'type', value: 'Episode' }], layout: 'caption', density: 'compact' };
   const h = setup(t, { stored: { tagLookRules: [rule], tagLayoutLocks: { [LOCKED]: { layout: 'bands', density: 'full', lockedAt: 5 } } } });
