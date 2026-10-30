@@ -52,6 +52,13 @@
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"] {
                 top: calc(6px + ${INDICATOR_OFFSET});
             }
+            /* Settings saved before layouts (data-je-legacy) keep the original
+               web geometry: only a container set to exactly top-right clears the
+               indicator (the containers stacked after it follow it). */
+            ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:first-child,
+            .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:first-child {
+                margin-top: ${INDICATOR_OFFSET};
+            }
 
             /* Genre names float toward the inside of the card. */
             .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="poster"], [data-je-slot="top"]) .genre-tag .genre-text {

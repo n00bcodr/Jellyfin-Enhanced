@@ -809,6 +809,9 @@
         } else if (slot !== 'pill') {
             const chips = buildChips(group, rec.master, slot === 'hover' || (conf.layout === 'bands' && ctrl.narrow) ? revealSettings(conf) : conf);
             if (conf.layout === 'corners') chips.dataset.jeCorner = SLOT_TO_POSITION[slot];
+            // The original web rule for settings saved before layouts: only a
+            // container set to exactly top-right clears the played indicator.
+            if (conf.layout === 'corners' && conf.legacy && conf.indicatorGap.has(group)) chips.dataset.jeIndicatorGap = '1';
             if (chips.children.length > 0) { placeSorted(ctrl, conf, slotElement(ctrl, slot), chips); nodes.push(chips); }
         }
         // Summaries (pill, dots, corner score) keep their full chips for the
@@ -823,12 +826,14 @@
     /**
      * Mark a corners card whose shown groups include one set to exactly
      * top-right, so the layout stylesheet moves its top-right stack below
-     * Jellyfin's played / unplayed-count indicator.
+     * Jellyfin's played / unplayed-count indicator (the Native Poster Tags
+     * rule). Settings saved before layouts mark that group's container
+     * instead (presentGroup), as the web always did.
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
      */
     function syncIndicatorGap(ctrl, conf) {
-        const on = conf.layout === 'corners'
+        const on = conf.layout === 'corners' && !conf.legacy
             && Array.from(ctrl.groups.keys()).some((g) => conf.indicatorGap.has(g) && (ctrl.nodes.get(g)?.length || 0) > 0);
         if (on) ctrl.host.dataset.jeIndicatorGap = '1';
         else delete ctrl.host.dataset.jeIndicatorGap;
@@ -849,6 +854,7 @@
         ctrl.outlet = null;
         ctrl.layout = null;
         delete ctrl.host.dataset.jeLayout;
+        delete ctrl.host.dataset.jeLegacy;
         delete ctrl.host.dataset.jeIndicatorGap;
     }
 
@@ -861,6 +867,9 @@
         teardown(ctrl);
         ctrl.layout = conf.layout;
         ctrl.host.dataset.jeLayout = conf.layout;
+        // Settings saved before layouts keep the original web geometry
+        // (tags/tag-layout-styles.js keys its legacy rules off this).
+        if (conf.legacy) ctrl.host.dataset.jeLegacy = '1';
         if (conf.reserveCaption && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
         const groups = Array.from(ctrl.groups.keys()).sort((a, b) => rankOf(ctrl, conf, a) - rankOf(ctrl, conf, b));
         for (const group of groups) presentGroup(ctrl, conf, group);

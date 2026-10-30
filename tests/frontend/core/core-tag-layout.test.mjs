@@ -697,3 +697,34 @@ test('turning every tag type off removes the caption strips, also from cards who
   await h.JE.reinitializeTagLayout();
   assert.equal(h.document.querySelectorAll('.je-tag-caption, .je-tag-slot').length, 0);
 });
+
+test('settings saved before layouts keep the original indicator rule: only a container set to exactly top-right moves', async t => {
+  const indicated = host => Array.from(host.querySelectorAll('[data-je-indicator-gap]'), el => el.dataset.jeGroup);
+  // No group set to exactly top-right ("top" is still drawn top-right).
+  let h = setup(t, { settings: { genreTagsPosition: 'top', statusTagsPosition: 'top' } });
+  let host = h.render();
+  assert.deepEqual(h.slot('tr'), ['genre', 'status']);
+  assert.deepEqual(indicated(host), []);
+  assert.equal(host.dataset.jeIndicatorGap, undefined);
+  // A displayed exact match: that container alone carries the gap, not the whole corner.
+  h = setup(t, { settings: { genreTagsPosition: 'top-right', statusTagsPosition: 'top' } });
+  host = h.render();
+  assert.deepEqual(indicated(host), ['genre']);
+  assert.equal(host.dataset.jeIndicatorGap, undefined, 'the corner itself does not move (that is the native rule)');
+  assert.equal(host.dataset.jeLegacy, '1');
+  // The exact-match group absent (switched off): nothing moves.
+  h = setup(t, { settings: { genreTagsEnabled: false, genreTagsPosition: 'top-right', statusTagsPosition: 'top' } });
+  host = h.render();
+  assert.deepEqual(h.slot('tr'), ['status']);
+  assert.deepEqual(indicated(host), []);
+  // A normalized document follows the native rule instead.
+  await h.apply({ tagLayoutSettingsVersion: 1, genreTagsEnabled: true });
+  h.JE.reinitializeGenreTags();
+  delete h.document.querySelector('.card').dataset.jeGenreTagged;
+  h.render();
+  assert.equal(host.dataset.jeLegacy, undefined);
+  assert.equal(host.dataset.jeIndicatorGap, '1');
+  assert.deepEqual(indicated(host).filter(Boolean), []);
+  const css = h.document.getElementById('je-tag-layout').textContent;
+  assert.match(css, /\.cardScalable:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="tr"\] > \[data-je-indicator-gap\]:first-child,/);
+});

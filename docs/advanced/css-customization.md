@@ -244,7 +244,7 @@ What does not fit is hidden whole, never cut: once a card is laid out, chips tha
 | `.age-rating-overlay-container` | `AgeRatingTagsPosition` | `bottom-right` |
 | `.status-overlay-container` | `StatusTagsPosition` | `top-right` |
 
-In the Corners layout, containers carry `data-je-corner` with one of those four corner values. Containers sharing a corner stack in their slot with a 4px gap (top corners downward, bottom corners upward) instead of inline transforms. When a group is set to top right and the card shows Jellyfin's played or unplayed-count indicator, the host gets `data-je-indicator-gap` and the `tr` slot moves below it. Position slots rather than containers when you move tags: a container's own `top`, `left` or `transform` no longer places it.
+In the Corners layout, containers carry `data-je-corner` with one of those four corner values. Containers sharing a corner stack in their slot with a 4px gap (top corners downward, bottom corners upward) instead of inline transforms. When a group is set to top right and the card shows Jellyfin's played or unplayed-count indicator, the host gets `data-je-indicator-gap` and the `tr` slot moves below it. Settings saved before layouts existed keep the original rule instead (their host carries `data-je-legacy`): only the container of a group set to exactly `top-right` carries `data-je-indicator-gap` and moves below the indicator, with the containers stacked after it. Position slots rather than containers when you move tags: a container's own `top`, `left` or `transform` no longer places it.
 
 Poster tags generally ignore pointer input. Container-query sizing adapts badges to card width, with separate mobile rules. Fixed sizes can crowd small posters.
 
