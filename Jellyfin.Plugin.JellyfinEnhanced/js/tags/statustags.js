@@ -120,6 +120,11 @@
     let seriesRetryTimer = null;
     /** @type {number} bumped on a user switch: answers for the previous user are dropped */
     let seriesEpoch = 0;
+    /** @type {ReturnType<typeof setTimeout>|null} Single local-midnight refresh timer. */
+    let midnightTimer = null;
+    /** @type {number|null} Local day used by the last live pass. */
+    let renderedDay = null;
+    let calendarEventsRegistered = false;
     /** @type {IntersectionObserver|null} One observer for all schedule-reading cards. */
     let seriesObserver = null;
     /** @type {WeakSet<HTMLElement>} Cards currently intersecting the viewport. */
@@ -711,7 +716,7 @@
      * @returns {string}
      */
     function badgeKey(badge) {
-        return badge ? `${badge.kind}|${badge.key}|${badge.label}|${badge.rank ?? ''}` : '';
+        return `${localDay(Date.now())}|${badge ? `${badge.kind}|${badge.key}|${badge.label}|${badge.rank ?? ''}` : ''}`;
     }
 
     /**
@@ -740,10 +745,9 @@
         ensureTrending(ctx);
         const readsSeries = wantsSeriesFacts(data);
         const badge = pickBadge(data);
-        if (readsSeries || (data.tmdb && (data.type === 'Movie' || data.type === 'Series'))) {
-            liveCards.set(el, { domId: el.closest('[data-id]')?.getAttribute('data-id'), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
-            el.dataset[LIVE_ATTR] = '1';
-        }
+        // All date badges can change when a local day passes.
+        liveCards.set(el, { domId: el.closest('[data-id]')?.getAttribute('data-id'), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
+        el.dataset[LIVE_ATTR] = '1';
         if (readsSeries) observeSeriesCard(ctx, el);
         applyStatusTag(ctx, el, badge);
     }
@@ -761,7 +765,10 @@
                     if (isIntersecting) intersectingCards.add(host);
                     else intersectingCards.delete(host);
                     const card = liveCards.get(host);
-                    if (isIntersecting && eligibleSeriesCard(host, card)) requestSeries(ctx, card.data.seriesId);
+                    if (isIntersecting && eligibleSeriesCard(host, card)) {
+                        requestSeries(ctx, card.data.seriesId);
+                        armSeriesRetry(ctx);
+                    }
                     if (!host.isConnected) seriesObserver.unobserve(host);
                 }
             });
@@ -863,6 +870,7 @@
      */
     function applyLivePass(ctx) {
         if (!JE.currentSettings?.statusTagsEnabled) return;
+        renderedDay = localDay(Date.now());
         const hosts = [];
         document.querySelectorAll(LIVE_SELECTOR).forEach((el) => {
             const card = liveCards.get(/** @type {HTMLElement} */ (el));
@@ -1011,7 +1019,7 @@
                 if (JSON.stringify(previous) !== JSON.stringify(facts)) changed = true;
             }
         }
-        if (changed) applyLivePass(ctx);
+        if (changed || renderedDay !== localDay(Date.now())) applyLivePass(ctx);
         armSeriesRetry(ctx);
     }
 
@@ -1031,6 +1039,30 @@
                 if (value.retry && Date.now() >= value.expires && hasVisibleSeries(id)) requestSeries(ctx, id);
             }
         }, Math.max(0, Math.min(...due) - Date.now()));
+    }
+
+    /**
+     * Re-evaluate current cards at local midnight, including after suspended tabs return.
+     * Date arithmetic uses the local calendar so DST days need not be 24 hours.
+     * @param {Object} ctx @returns {void}
+     */
+    function armMidnight(ctx) {
+        if (midnightTimer) clearTimeout(midnightTimer);
+        const now = Date.now();
+        const next = new Date(now);
+        next.setHours(24, 0, 0, 0);
+        midnightTimer = setTimeout(() => {
+            midnightTimer = null;
+            applyLivePass(ctx);
+            armMidnight(ctx);
+        }, Math.max(1, next.getTime() - now));
+    }
+
+    /** @param {Object} ctx @returns {void} Refresh a tab returning from background/sleep. */
+    function refreshCalendar(ctx) {
+        applyLivePass(ctx);
+        for (const [id] of seriesInfo) if (hasVisibleSeries(id)) requestSeries(ctx, id);
+        armMidnight(ctx);
     }
 
     /** @type {Object} Factory spec — everything status-specific lives here. */
@@ -1181,6 +1213,14 @@
         statusCtx = JE.core.tagRenderer.register('status', spec);
         statusCtx.injectCss();
         ensureTrending(statusCtx);
+        armMidnight(statusCtx);
+        if (!calendarEventsRegistered) {
+            calendarEventsRegistered = true;
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) refreshCalendar(statusCtx);
+            });
+            window.addEventListener('focus', () => refreshCalendar(statusCtx));
+        }
 
         console.log(`${logPrefix} Initialized successfully.`);
     };

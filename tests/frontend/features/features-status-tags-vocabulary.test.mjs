@@ -17,7 +17,7 @@ const card = id => `<div class="card" data-id="${id}"><div class="cardBox"><div 
  * layout controller), a fixed clock, and a /status-tags/series endpoint that
  * answers from `series` (TMDB facts per series id) and records each request.
  */
-function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout = false, failSeries = false, autoIntersect = true } = {}) {
+function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout = false, failSeries = false, autoIntersect = true, captureTimers = false } = {}) {
   const renderers = new Map();
   const seriesCalls = [];
   const userChange = new Map();
@@ -53,6 +53,16 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
   });
   t.after(() => h.close());
   h.window.Date.now = () => NOW;
+  const timers = new Map();
+  if (captureTimers) {
+    const set = h.window.setTimeout.bind(h.window);
+    const clear = h.window.clearTimeout.bind(h.window);
+    h.window.setTimeout = (fn, ms) => {
+      if (ms < 1000) return set(fn, ms);
+      const id = Symbol(); timers.set(id, { fn, ms }); return id;
+    };
+    h.window.clearTimeout = id => { if (!timers.delete(id)) clear(id); };
+  }
   // Dates in English unless a test picks a language.
   h.document.documentElement.setAttribute('lang', 'en-US');
   const files = layout
@@ -63,7 +73,7 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
   const hosts = [...h.document.querySelectorAll('.je-tag-host')];
   const renderer = renderers.get('status');
   return Object.assign(h, {
-    hosts, seriesCalls, userChange, renderer, observers,
+    hosts, seriesCalls, userChange, renderer, observers, timers,
     intersect(host, isIntersecting = true) { observers.forEach(o => o.callback([{ target: host, isIntersecting }])); },
     /** Render a server tag-cache entry into a card the way the pipeline does. */
     show(entry, host = hosts[0], id = 'item1') {
@@ -424,3 +434,30 @@ test('a per-id upstream retry marker preserves prior facts and schedules a five-
   await h.flush();
   assert.equal(h.seriesCalls.length, 3, 'retry runs without another card render');
 });
+
+
+for (const trigger of ['midnight', 'visible', 'focus', 'identical lookup']) {
+  test(`schedule labels advance to the local day on ${trigger}`, async t => {
+    const h = setup(t, { captureTimers: true, series: { [SERIES]: facts({ nextAired: { date: '2026-10-31', season: 1, episode: 2 } }) } });
+    h.show(show(), h.hosts[0], SERIES);
+    await h.flush();
+    assert.equal(h.badge(), 'Airs Tomorrow');
+    h.window.Date.now = () => NOW + DAY;
+    if (trigger === 'midnight') {
+      const nextMidnight = new h.window.Date(NOW);
+      nextMidnight.setHours(24, 0, 0, 0);
+      const midnight = [...h.timers.values()].find(timer => timer.ms === nextMidnight.getTime() - NOW);
+      assert.ok(midnight, 'one timer is armed to the next local midnight');
+      h.timers.clear();
+      midnight.fn();
+      assert.equal(h.timers.size, 1, 'midnight timer is rearmed');
+    } else if (trigger === 'visible') h.document.dispatchEvent(new h.window.Event('visibilitychange'));
+    else if (trigger === 'focus') h.window.dispatchEvent(new h.window.Event('focus'));
+    else {
+      // Same card remains rendered; the observer dispatches a fresh lookup of identical facts.
+      h.intersect(h.hosts[0]);
+      await h.flush();
+    }
+    assert.equal(h.badge(), 'Airing Today', 'the card updates without rendering again');
+  });
+}
