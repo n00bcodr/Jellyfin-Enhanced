@@ -176,7 +176,7 @@
 
         const desktop = window.matchMedia(DESKTOP_QUERY);
         let size = readSize();
-        /** @type {{pointerId: number, axis: string, x: number, y: number, width: number, height: number, centred: boolean, left: number, moved: boolean}|null} */
+        /** @type {{handle: HTMLElement, pointerId: number, axis: string, x: number, y: number, width: number, height: number, centred: boolean, left: number, moved: boolean}|null} */
         let drag = null;
 
         /** @returns {boolean} The panel was moved by its header (no longer centred). */
@@ -262,13 +262,14 @@
         });
 
         /** End a drag; a drag that changed the size stores it. */
-        const endDrag = () => {
+        const endDrag = (save = true) => {
             if (!drag) return;
-            const { moved } = drag;
+            const { moved, handle, pointerId } = drag;
             drag = null;
+            try { if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId); } catch (err) { /* already released */ }
             help.classList.remove('je-panel-resizing');
             help.removeAttribute('data-je-resize-axis');
-            if (moved) {
+            if (moved && save) {
                 const rect = help.getBoundingClientRect();
                 choose({ preset: 'custom', width: Math.round(rect.width), height: Math.round(rect.height) });
             }
@@ -281,7 +282,7 @@
                 e.stopPropagation();
                 const rect = help.getBoundingClientRect();
                 drag = {
-                    pointerId: e.pointerId, axis: handle.dataset.jeResize || 'both',
+                    handle, pointerId: e.pointerId, axis: handle.dataset.jeResize || 'both',
                     x: e.clientX, y: e.clientY, width: rect.width, height: rect.height,
                     // A centred panel grows on both sides, so the edge follows the
                     // pointer at twice the pointer's distance.
@@ -293,7 +294,7 @@
                 ctx.resetAutoCloseTimer();
             });
             handle.addEventListener('pointermove', (e) => {
-                if (!drag || e.pointerId !== drag.pointerId) return;
+                if (!desktop.matches || !drag || e.pointerId !== drag.pointerId) return;
                 const factor = drag.centred ? 2 : 1;
                 let width = drag.axis === 'y' ? drag.width : drag.width + (e.clientX - drag.x) * factor;
                 const height = drag.axis === 'x' ? drag.height : drag.height + (e.clientY - drag.y) * factor;
@@ -326,14 +327,14 @@
         // Selecting text while the pointer is captured would highlight the page.
         const blockSelection = (e) => { if (drag) e.preventDefault(); };
         document.addEventListener('selectstart', blockSelection);
-        const handleWindowResize = () => { if (!drag) apply(); };
+        const handleWindowResize = () => { endDrag(false); apply(); };
         window.addEventListener('resize', handleWindowResize);
-        desktop.addEventListener('change', apply);
+        desktop.addEventListener('change', handleWindowResize);
         ctx.onClose(() => {
             document.removeEventListener('selectstart', blockSelection);
             window.removeEventListener('resize', handleWindowResize);
-            desktop.removeEventListener('change', apply);
-            drag = null;
+            desktop.removeEventListener('change', handleWindowResize);
+            endDrag(false);
         });
 
         apply();

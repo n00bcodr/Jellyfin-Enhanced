@@ -444,3 +444,28 @@ test('a moved panel re-centres fully on screen when entering narrow mode', async
   const rect = h.panel().getBoundingClientRect();
   assert.ok(rect.left >= 0 && rect.top >= 0 && rect.right <= 850 && rect.bottom <= 700);
 });
+
+
+for (const width of [850, 1000]) test(`viewport resize to ${width}px cancels capture, restores selection and clamps immediately`, async t => {
+  const h = setup(t);
+  await h.open();
+  const grip = h.grip();
+  let captured = null;
+  grip.setPointerCapture = id => { captured = id; };
+  grip.hasPointerCapture = id => captured === id;
+  grip.releasePointerCapture = () => { captured = null; };
+  h.pointer(grip, 'pointerdown', 10, 10);
+  h.pointer(grip, 'pointermove', 80, 50);
+  h.resizeWindow(width, 650);
+  assert.equal(captured, null);
+  assert.equal(h.panel().classList.contains('je-panel-resizing'), false);
+  const select = new h.window.Event('selectstart', { bubbles: true, cancelable: true });
+  h.document.dispatchEvent(select);
+  assert.equal(select.defaultPrevented, false);
+  const size = h.size();
+  assert.ok(size[0] <= width && size[1] <= 650);
+  h.pointer(grip, 'pointermove', 900, 900);
+  h.pointer(grip, 'pointerup', 900, 900);
+  assert.deepEqual(h.size(), size, 'captured moves cannot revive the drag');
+  assert.equal(h.stored(), null, 'a cancelled drag does not overwrite the chosen size');
+});
