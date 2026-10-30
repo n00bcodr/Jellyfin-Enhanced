@@ -345,6 +345,38 @@
                                     </div>
                                 </div>
                             </details>
+                            <details id="languageDisplayAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Choose what to show</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Starting defaults for what the language tags include and how they look. Users can override these in their personal settings.</div>
+                                    <div class="checkboxContainer"><label><input id="languageTagsShowAudio" is="emby-checkbox" type="checkbox"/><span>Include audio languages</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="languageTagsShowSubtitles" is="emby-checkbox" type="checkbox"/><span>Include subtitle languages</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsShowSubtitles">
+                                        <div class="fieldDescription">Subtitle languages follow the audio ones and carry a small CC mark. Both count towards the language group's limit, audio first. Needs the server tag cache rebuilt once after updating.</div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="languageTagsStyle">Language Style</label>
+                                        <select is="emby-select" id="languageTagsStyle" name="languageTagsStyle" class="emby-select">
+                                            <option value="flags">Flags</option>
+                                            <option value="codes">Language codes (EN, JA)</option>
+                                        </select>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsStyle">
+                                        <div class="fieldDescription">Flags, or short uppercase language codes. Both show the full language name on hover.</div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="languageTagsCountBadge">Dual / Multi Audio Badge</label>
+                                        <select is="emby-select" id="languageTagsCountBadge" name="languageTagsCountBadge" class="emby-select">
+                                            <option value="off">Off</option>
+                                            <option value="only">Badge only</option>
+                                            <option value="both">Badge and flags</option>
+                                        </select>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsCountBadge">
+                                        <div class="fieldDescription">A title with two audio languages shows a "Dual" badge, three or more a "Multi" badge, either instead of the audio flags or ahead of them.</div>
+                                    </div>
+                                </div>
+                            </details>
 
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="ratingTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Rating Tags</span></label></div>
@@ -7347,6 +7379,10 @@
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
                 document.querySelector('#languageTagsMergeRegions').checked = config.LanguageTagsMergeRegions === true;
+                document.querySelector('#languageTagsShowAudio').checked = config.LanguageTagsShowAudio !== false;
+                document.querySelector('#languageTagsShowSubtitles').checked = config.LanguageTagsShowSubtitles === true;
+                document.querySelector('#languageTagsStyle').value = String(config.LanguageTagsStyle || '').toLowerCase() === 'codes' ? 'codes' : 'flags';
+                document.querySelector('#languageTagsCountBadge').value = ['only', 'both'].includes(String(config.LanguageTagsCountBadge || '').toLowerCase()) ? String(config.LanguageTagsCountBadge).toLowerCase() : 'off';
                 const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
                 // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
                 qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
@@ -7980,6 +8016,10 @@
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
             config.LanguageTagsMergeRegions = document.querySelector('#languageTagsMergeRegions').checked;
+            config.LanguageTagsShowAudio = document.querySelector('#languageTagsShowAudio').checked;
+            config.LanguageTagsShowSubtitles = document.querySelector('#languageTagsShowSubtitles').checked;
+            config.LanguageTagsStyle = document.querySelector('#languageTagsStyle').value === 'codes' ? 'codes' : 'flags';
+            config.LanguageTagsCountBadge = document.querySelector('#languageTagsCountBadge').value || 'off';
             config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
             config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
@@ -9604,7 +9644,7 @@
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'tagGroupAdminRowQuality'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition', 'tagGroupAdminRowGenre'], noHint: true },
-            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'tagGroupAdminRowLanguage'], noHint: true },
+            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'languageTagsShowAudio', 'languageTagsShowSubtitles', 'languageTagsStyle', 'languageTagsCountBadge', 'tagGroupAdminRowLanguage'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsShowCommunity', 'ratingTagsShowCritic', 'tagGroupAdminRowRating'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },

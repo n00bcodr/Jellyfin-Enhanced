@@ -3871,6 +3871,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RatingTagsOnNextUp,
                 config.RatingTagsShowCommunity,
                 config.RatingTagsShowCritic,
+                // Language Tags display starting defaults (normalized)
+                config.LanguageTagsShowAudio,
+                config.LanguageTagsShowSubtitles,
+                LanguageTagsStyle = LanguageTagDisplay.NormalizeStyle(config.LanguageTagsStyle),
+                LanguageTagsCountBadge = LanguageTagDisplay.NormalizeCountBadge(config.LanguageTagsCountBadge),
                 config.AgeRatingTagsPosition,
                 config.StatusTagsPosition,
                 config.StatusTagsJustAdded,
@@ -5382,6 +5387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                     TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
                     TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
+                    LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
                     _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
@@ -5456,6 +5462,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Unknown layouts, groups and slots are normalized away and caps
                 // clamped, so a stale client cannot store an unusable layout.
                 TagLayoutRules.Normalize(userConfiguration);
+                // Unknown language tag styles / badge modes fall back to flags / off.
+                LanguageTagDisplay.Normalize(userConfiguration);
                 // An unknown Tag Styles preset follows the admin's instead.
                 userConfiguration.TagStylePreset = TagStyleKeys.KnownPreset(userConfiguration.TagStylePreset);
                 // Rules and locks: invalid entries are dropped one by one (ids
@@ -8397,6 +8405,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             };
             TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
             TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
+            LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
 
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();

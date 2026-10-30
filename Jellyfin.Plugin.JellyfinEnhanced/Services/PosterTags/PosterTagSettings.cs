@@ -623,6 +623,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 AgeRatingTagsPosition = config.AgeRatingTagsPosition,
             };
             TagLayoutRules.ApplyDefaults(defaults, config);
+            LanguageTagDisplay.ApplyDefaults(defaults, config);
 
             // SaveUserConfiguration writes nulls; GetUserConfiguration skips them on the way back,
             // so a null admin string comes back as the JellyfinEnhancedUserSettings initializer value.
