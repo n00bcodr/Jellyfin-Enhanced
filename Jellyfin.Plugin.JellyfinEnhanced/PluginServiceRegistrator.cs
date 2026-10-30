@@ -84,6 +84,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<StatusTagsTrendingService>();
             // TMDB schedule facts for the Status Tags series badges (rate-limited lookups).
             serviceCollection.AddSingleton<StatusTagsSeriesService>();
+            // Logos tag group: daily TMDB provider/network/studio lookups and the logo image proxy cache.
+            serviceCollection.AddSingleton<TagLogoService>();
             // Size / watch-progress of an item subtree in a handful of queries
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();

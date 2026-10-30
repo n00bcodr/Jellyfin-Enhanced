@@ -124,6 +124,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsEnabled = false;
             RatingTagsEnabled = false;
             AgeRatingTagsEnabled = false;
+            LogoTagsEnabled = false;
             StatusTagsEnabled = false;
             PeopleTagsEnabled = false;
             NativePosterTagsEnabled = false;
@@ -163,6 +164,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsStyle = "flags";
             LanguageTagsCountBadge = "off";
             AgeRatingTagsPosition = "bottom-right";
+            LogoTagsPosition = "bottom-left";
+            LogoTagsMovieMode = "provider";
+            LogoTagsSeriesMode = "network";
+            LogoTagsRegion = string.Empty;
+            LogoTagsMaxLogos = 1;
             StatusTagsPosition = "top-right";
             StatusTagsJustAdded = true;
             StatusTagsNewRelease = true;
@@ -684,6 +690,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
+        /// <summary>Default for the per-user Logos tag group (streaming provider, network or studio logos).</summary>
+        public bool LogoTagsEnabled { get; set; }
         /// <summary>Default for the per-user Status Tags (Just Added / New / Trending poster badges). Also gates the trending endpoint.</summary>
         public bool StatusTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
@@ -816,6 +824,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string LanguageTagsCountBadge { get; set; } = "off";
         [AnalyticsInclude]
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        // ── Logos tag group (see LogoTagRules) ──
+        /// <summary>Default corner of the Logos group (per user, like the other positions).</summary>
+        [AnalyticsInclude]
+        public string LogoTagsPosition { get; set; } = "bottom-left";
+        /// <summary>Admin-only: a movie's logo is its streaming provider ("provider"), its first studio ("studio") or none ("off").</summary>
+        [AnalyticsInclude]
+        public string LogoTagsMovieMode { get; set; } = "provider";
+        /// <summary>Admin-only: a series' logo (also on its seasons and episodes) is its network ("network"), streaming provider ("provider") or none ("off").</summary>
+        [AnalyticsInclude]
+        public string LogoTagsSeriesMode { get; set; } = "network";
+        /// <summary>Admin-only: two-letter watch-provider region; empty uses DEFAULT_REGION.</summary>
+        public string LogoTagsRegion { get; set; } = string.Empty;
+        /// <summary>Admin-only: most logos per item (1 or 2).</summary>
+        public int LogoTagsMaxLogos { get; set; } = 1;
         [AnalyticsInclude]
         public string StatusTagsPosition { get; set; } = "top-right";
         // Which Status Tags badges may show (per-user defaults, like the rating

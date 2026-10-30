@@ -283,6 +283,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
                 }
 
+                // Logos tag group: unknown modes, regions and maximums fall back to the defaults.
+                if (configuration is PluginConfiguration logosConfig) LogoTagRules.Normalize(logosConfig);
+
                 // Tag Styles: only a valid document is stored (normalised to version 2); anything
                 // else keeps the current one, since a save can come from anywhere (API, restored backup).
                 if (configuration is PluginConfiguration stylesConfig
@@ -314,6 +317,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 Services.TagCacheService.Instance?.QueueServerModeTransition();
             }
+
+            // The Logos switch, modes, region or maximum may have changed what cache entries carry.
+            Services.TagCacheService.Instance?.OnLogoSettingsChanged();
 
             // Removing an MDBList key must also retire previously cached source scores.
             if (sourceRatingsWereConfigured != Services.TagCacheService.SourceRatingsConfigured)

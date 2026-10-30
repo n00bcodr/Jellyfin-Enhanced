@@ -63,6 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
+        public bool LogoTagsEnabled { get; set; }
         public bool StatusTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
@@ -100,6 +101,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string LanguageTagsStyle { get; set; } = "flags";
         public string LanguageTagsCountBadge { get; set; } = "off";
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        public string LogoTagsPosition { get; set; } = "bottom-left";
         public string StatusTagsPosition { get; set; } = "top-right";
         public bool StatusTagsJustAdded { get; set; } = true;
         public bool StatusTagsNewRelease { get; set; } = true;

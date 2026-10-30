@@ -151,12 +151,12 @@ public class SeriesQualityAggregationTests
         Directory.CreateDirectory(f.Core.ConfigRoot);
         var path = Path.Combine(f.Core.ConfigRoot, "tag-cache.json");
         var items = new Dictionary<string, TagCacheEntry> { [Guid.NewGuid().ToString("N")] = new() { Type = "Series", QualitySummary = SeriesQualityAggregation.Build([Fact(2160, 1)]) } };
-        foreach (var schema in new[] { 13, 14, 15, 16 })
+        foreach (var schema in new[] { 13, 14, 15, TagCacheService.CurrentCacheSchemaVersion - 1, TagCacheService.CurrentCacheSchemaVersion })
         {
             File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = schema, Version = 1, LastModified = 10, Items = items }));
             using var cache = new TagCacheService(Mock.Of<ILibraryManager>(), f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
             cache.LoadFromDisk();
-            Assert.Equal(schema == 16 ? 1 : 0, cache.Count);
+            Assert.Equal(schema == TagCacheService.CurrentCacheSchemaVersion ? 1 : 0, cache.Count);
         }
     }
 
@@ -255,6 +255,6 @@ public class SeriesQualityAggregationTests
         }
         Assert.Equal(1, low.Reads); Assert.Equal(2, high.Reads);
         var snapshot = JsonDocument.Parse(File.ReadAllText(Path.Combine(f.Core.ConfigRoot, "tag-cache.json")));
-        Assert.Equal(16, snapshot.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(TagCacheService.CurrentCacheSchemaVersion, snapshot.RootElement.GetProperty("SchemaVersion").GetInt32());
     }
 }

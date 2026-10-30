@@ -318,7 +318,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A schema mismatch discards the stale cache so it can be rebuilt.
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
-        private const int CurrentCacheSchemaVersion = 16;
+        // v17 adds Logos (the Logos tag group's provider, network or studio logos).
+        internal const int CurrentCacheSchemaVersion = 17;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -489,7 +490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, TagLogoService? logoService = null)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
@@ -497,6 +498,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger = logger;
             _languageCache = languageCache;
             _mdblistService = mdblistService;
+            _logoService = logoService;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -640,6 +642,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void BuildFullCacheBody(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
         {
             WarmSourceRatings(cancellationToken);
+            NoteLogoBaseline();
+            WarmLogos(cancellationToken);
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var languageCacheAtStart = LanguageCacheCounters();
@@ -872,6 +876,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             WarmSourceRatings(cancellationToken);
             RefreshSourceRatings();
+            WarmLogos(cancellationToken);
+            RefreshLogos();
             var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
             _logger.Info($"[TagCache] Reconciling changes since {changedSinceUtc:O}");
             var languageCacheAtStart = LanguageCacheCounters();
@@ -1380,6 +1386,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var siblingsChanged = item is MediaBrowser.Controller.Entities.TV.Season season
                 && RefreshStatusSiblings(season.Id, episodeScans);
             WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
+            WarmLogosForItems(new[] { item }, CancellationToken.None);
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return siblingsChanged;
 
@@ -2046,6 +2053,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
             WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
+            WarmLogosForItems(new[] { item }, CancellationToken.None);
             return BuildEntryForItem(item);
         }
 
@@ -2192,6 +2200,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void LoadFromDiskCore()
         {
+            NoteLogoBaseline();
             var path = CacheFilePath;
             if (!File.Exists(path))
             {
@@ -2619,6 +2628,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // (both fallbacks below read it).
                 var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
                 entry.Ratings = GetSourceRatings(series ?? item);
+                entry.Logos = GetLogos(item, series);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
 
                 if (isContainer)
