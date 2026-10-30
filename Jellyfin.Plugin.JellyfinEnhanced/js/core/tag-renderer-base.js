@@ -49,6 +49,7 @@
      * @property {Function} [onServerCacheRefresh] - (ctx, updatedIds|null, info?) => void;
      *   info.replaced is true when the pipeline swapped in a replacement cache
      *   under cards it will not re-render itself.
+     * @property {Function} [cleanup] - (ctx) => void; release feature resources on reinitialize/teardown.
      * @property {boolean} [needsFirstEpisode]
      * @property {boolean} [needsParentSeries]
      * @property {boolean} [needsLatestEpisode]
@@ -671,6 +672,7 @@
                 onServerCacheRefresh: p.onServerCacheRefresh
                     ? (updatedIds, info) => p.onServerCacheRefresh(ctx, updatedIds, info)
                     : undefined,
+                cleanup: p.cleanup ? () => p.cleanup(ctx) : undefined,
                 isEnabled: () => !!JE.currentSettings?.[spec.settingKey],
                 needsFirstEpisode: !!p.needsFirstEpisode,
                 needsParentSeries: !!p.needsParentSeries,
@@ -687,6 +689,7 @@
          */
         function reinitialize() {
             console.log(`${logPrefix} Re-initializing...`);
+            spec.pipeline?.cleanup?.(ctx);
 
             // Settings (positions, layout) may have changed: re-read them, and
             // drop this group's masters and every representation built from them.

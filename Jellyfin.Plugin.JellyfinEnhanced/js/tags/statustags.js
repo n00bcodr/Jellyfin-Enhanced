@@ -128,7 +128,11 @@
     /** @type {IntersectionObserver|null} One observer for all schedule-reading cards. */
     let seriesObserver = null;
     /** @type {WeakSet<HTMLElement>} Cards currently intersecting the viewport. */
-    const intersectingCards = new WeakSet();
+    let intersectingCards = new WeakSet();
+    /** @type {Set<HTMLElement>} Targets explicitly released when removed or recycled. */
+    const observedSeriesCards = new Set();
+    /** @type {MutationObserver|null} Shared removal/identity watcher for schedule targets. */
+    let seriesTargetObserver = null;
 
     /**
      * Every drawn card whose badge live data can change (a Movie/Series with
@@ -770,7 +774,11 @@
         const readsSeries = wantsSeriesFacts(data);
         const badge = pickBadge(data);
         // All date badges can change when a local day passes.
-        liveCards.set(el, { domId: el.closest('[data-id]')?.getAttribute('data-id'), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
+        const previous = liveCards.get(el);
+        if (!readsSeries || (previous && (previous.id !== normId(itemId) || previous.domId !== cardIdentity(el)))) {
+            unobserveSeriesCard(el);
+        }
+        liveCards.set(el, { domId: cardIdentity(el), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
         el.dataset[LIVE_ATTR] = '1';
         if (readsSeries) observeSeriesCard(ctx, el);
         applyStatusTag(ctx, el, badge);
@@ -783,29 +791,77 @@
      */
     function observeSeriesCard(ctx, el) {
         if (!seriesObserver && typeof IntersectionObserver !== 'undefined') {
-            seriesObserver = new IntersectionObserver(entries => {
+            const observer = new IntersectionObserver(entries => {
+                if (seriesObserver !== observer) return; // A queued callback from before cleanup.
                 for (const { target, isIntersecting } of entries) {
                     const host = /** @type {HTMLElement} */ (target);
+                    if (!observedSeriesCards.has(host)) continue;
+                    const card = liveCards.get(host);
+                    if (!host.isConnected || card?.domId !== cardIdentity(host)) {
+                        forgetSeriesCard(host);
+                        continue;
+                    }
                     if (isIntersecting) intersectingCards.add(host);
                     else intersectingCards.delete(host);
-                    const card = liveCards.get(host);
                     if (isIntersecting && eligibleSeriesCard(host, card)) {
                         requestSeries(ctx, card.data.seriesId);
                         armSeriesRetry(ctx);
                     }
-                    if (!host.isConnected) seriesObserver.unobserve(host);
                 }
             });
+            seriesObserver = observer;
+            seriesTargetObserver = new MutationObserver(() => {
+                for (const host of observedSeriesCards) {
+                    const card = liveCards.get(host);
+                    if (!host.isConnected || card?.domId !== cardIdentity(host)) forgetSeriesCard(host);
+                }
+            });
+            seriesTargetObserver.observe(document.body, {
+                subtree: true, childList: true, attributes: true, attributeFilter: ['data-id', 'data-itemid'],
+            });
         }
-        seriesObserver?.observe(el);
+        if (seriesObserver && !observedSeriesCards.has(el)) {
+            observedSeriesCards.add(el);
+            seriesObserver.observe(el);
+        }
         const card = liveCards.get(el);
         if (eligibleSeriesCard(el, card)) requestSeries(ctx, card.data.seriesId);
+    }
+
+    /** @param {HTMLElement} el @returns {string|null} Current pipeline card identity. */
+    function cardIdentity(el) {
+        const card = el.closest('[data-id], [data-itemid]');
+        return card?.getAttribute('data-id') || card?.getAttribute('data-itemid') || null;
+    }
+
+    /** @param {HTMLElement} el @returns {void} Release a target and its previous visibility. */
+    function unobserveSeriesCard(el) {
+        seriesObserver?.unobserve(el);
+        observedSeriesCards.delete(el);
+        intersectingCards.delete(el);
+    }
+
+    /** @param {HTMLElement} el @returns {void} Forget a removed or recycled card's live data. */
+    function forgetSeriesCard(el) {
+        unobserveSeriesCard(el);
+        liveCards.delete(el);
+        delete el.dataset[LIVE_ATTR];
+    }
+
+    /** @returns {void} Release all targets; the next schedule render creates observers lazily. */
+    function releaseSeriesObservers() {
+        for (const el of observedSeriesCards) forgetSeriesCard(el);
+        seriesObserver?.disconnect();
+        seriesObserver = null;
+        seriesTargetObserver?.disconnect();
+        seriesTargetObserver = null;
+        intersectingCards = new WeakSet();
     }
 
     /** @param {HTMLElement} el @param {Object|undefined} card @returns {boolean} */
     function eligibleSeriesCard(el, card) {
         return el.isConnected && intersectingCards.has(el) && card && isCurrentRecord(card)
-            && card.domId === el.closest('[data-id]')?.getAttribute('data-id')
+            && card.domId === cardIdentity(el)
             && !el.closest('.je-hidden') && wantsSeriesFacts(card.data);
     }
 
@@ -899,8 +955,8 @@
         document.querySelectorAll(LIVE_SELECTOR).forEach((el) => {
             const card = liveCards.get(/** @type {HTMLElement} */ (el));
             if (!card || ctx.shouldIgnore(el) || el.closest('.je-hidden')) return;
-            if (!isCurrentRecord(card) || card.domId !== el.closest('[data-id]')?.getAttribute('data-id')) {
-                liveCards.delete(/** @type {HTMLElement} */ (el));
+            if (!isCurrentRecord(card) || card.domId !== cardIdentity(el)) {
+                forgetSeriesCard(/** @type {HTMLElement} */ (el));
                 return;
             }
             const badge = pickBadge(card.data);
@@ -1206,6 +1262,9 @@
                 if (el.closest('.je-hidden')) return;
                 renderData(ctx, el, fromServerEntry(entry, itemId), itemId);
             },
+            cleanup() {
+                releaseSeriesObservers();
+            },
             onServerCacheRefresh(ctx, updatedIds, info) {
                 onCacheReplaced(ctx, updatedIds, info);
             },
@@ -1224,6 +1283,7 @@
      */
     JE.initializeStatusTags = function() {
         console.log(`${logPrefix} Starting...`);
+        releaseSeriesObservers();
 
         if (!userChangeRegistered) {
             userChangeRegistered = true;
@@ -1235,6 +1295,7 @@
                 trackRev++;
                 staleBelowRev = trackRev;
                 replacedAt.clear();
+                releaseSeriesObservers();
                 seriesEpoch++;
                 seriesInfo.clear();
                 seriesQueue.clear();

@@ -494,3 +494,55 @@ test('an episode-only page resolves its final regular episode from the confirmed
   await h.flush();
   assert.equal(h.key(), 'series_finale');
 });
+
+for (const operation of ['remove', 'reuse', 'movie', 'user switch', 'cleanup', 'reinitialise', 'initialise']) {
+  test(`schedule observer releases targets on ${operation}`, async t => {
+    const h = setup(t, { autoIntersect: false });
+    const host = h.hosts[0];
+    h.show(show(), host, SERIES);
+    h.intersect(host);
+    assert.equal(h.observers[0].targets.size, 1);
+    if (operation === 'remove') host.closest('.card').remove();
+    else if (operation === 'reuse') host.closest('.card').dataset.id = 'next';
+    else if (operation === 'movie') h.show(movie(), host, 'movie');
+    else if (operation === 'user switch') h.userChange.get('status-tags')();
+    else if (operation === 'cleanup') h.renderer.cleanup?.();
+    else if (operation === 'reinitialise') h.JE.reinitializeStatusTags();
+    else h.JE.initializeStatusTags();
+    await Promise.resolve();
+    assert.ok(h.observers.every(observer => observer.targets.size === 0), 'no retained observer target');
+    if (operation !== 'remove') {
+      h.show(show(), host, SERIES);
+      await h.flush();
+      assert.deepEqual(h.seriesCalls, [], 'released cards need a fresh intersection before dispatch');
+      h.intersect(host);
+      await h.flush();
+      assert.deepEqual(h.seriesCalls, [[SERIES]], 'active cards can be observed again');
+    }
+  });
+}
+
+test('late observer callbacks cannot reintroduce released intersection membership', async t => {
+  const h = setup(t, { autoIntersect: false });
+  h.show(show(), h.hosts[0], SERIES);
+  const old = h.observers[0];
+  h.userChange.get('status-tags')();
+  h.show(show(), h.hosts[0], SERIES);
+  old.callback([{ target: h.hosts[0], isIntersecting: true }]);
+  await h.flush();
+  assert.deepEqual(h.seriesCalls, []);
+  assert.equal(h.observers.length, 2, 'user switch disconnects and recreates lazily');
+  assert.equal(old.targets.size, 0);
+});
+
+test('rendering another series into a host resets its previous intersection', async t => {
+  const h = setup(t, { autoIntersect: false });
+  h.show(show(), h.hosts[0], SERIES);
+  h.intersect(h.hosts[0]);
+  h.show(show(), h.hosts[0], 'other');
+  await h.flush();
+  assert.deepEqual(h.seriesCalls, []);
+  h.intersect(h.hosts[0]);
+  await h.flush();
+  assert.deepEqual(h.seriesCalls, [['other']]);
+});
