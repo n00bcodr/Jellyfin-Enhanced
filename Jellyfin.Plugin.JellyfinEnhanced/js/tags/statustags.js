@@ -114,6 +114,8 @@
     const seriesInfo = new Map();
     /** @type {Set<string>} series ids waiting for the next batched request */
     const seriesQueue = new Set();
+    /** @type {Map<string, Promise<void>>} Parent refreshes while the TMDB schedule is still fresh. */
+    const parentFactsLoads = new Map();
     /** @type {ReturnType<typeof setTimeout>|null} */
     let seriesTimer = null;
     /** @type {ReturnType<typeof setTimeout>|null} One timer for failed visible lookups. */
@@ -185,6 +187,7 @@
      * @typedef {Object} SeriesFacts
      * @property {string|null} status - TMDB status ("Returning Series", "Ended", "Canceled", ...).
      * @property {{date: string, season: number|null, episode: number|null, type: string|null}|null} last
+     * @property {{date: string, season: number|null, episode: number|null, type: string|null}|null} regular
      * @property {{date: string, season: number|null, episode: number|null}|null} next
      */
 
@@ -491,23 +494,30 @@
     }
 
     /**
-     * Resolve the last aired regular episode. TMDB's regular last episode wins;
-     * a later special falls back to the caller-filtered library series aggregate.
-     * Never infer a series boundary from an individual episode's IsLast flag.
+     * Resolve one regular finale for both card types: caller-filtered series
+     * aggregate, regular TMDB last episode, season enrichment, local aggregate.
+     * Never infer a series boundary from an episode's season-local IsLast flag.
      * @param {StatusData} data
      * @param {SeriesFacts|null} facts
      * @returns {SeriesFacts['last']}
      */
     function finalRegularEpisode(data, facts) {
-        if (facts?.last?.season > 0) return facts.last;
-        if (facts?.last?.season !== 0) return null;
-        const aggregate = data.type === 'Series' ? data
-            : fromServerEntry(JE.tagPipeline?.peekServerEntry?.(data.seriesId) || {});
-        if (!(aggregate.latestIndex?.s > 0) || aggregate.latestAired === null) return null;
-        // Convert the library instant to a local calendar date, just like badge windows.
-        const date = new Date(aggregate.latestAired);
-        const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        return { date: day, season: aggregate.latestIndex.s, episode: aggregate.latestIndex.e, type: null };
+        if (!facts) return null;
+        const parent = JE.tagPipeline?.peekItemFacts?.(data.seriesId)
+            || JE.tagPipeline?.peekServerEntry?.(data.seriesId);
+        const aggregate = data.type === 'Series' ? data : readFacts(parent || {});
+        /** @param {Object} local @returns {SeriesFacts['last']} */
+        const regular = local => {
+            if (!(local.latestIndex?.s > 0) || local.latestAired === null) return null;
+            const date = new Date(local.latestAired);
+            const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            return { date: day, season: local.latestIndex.s, episode: local.latestIndex.e, type: null };
+        };
+        return regular(aggregate)
+            || (facts.last?.season > 0 ? facts.last : null)
+            || (facts.regular?.season > 0 ? facts.regular : null)
+            || regular(readFacts(JE.tagPipeline?.peekSeasonFacts?.(data.seriesId, data.season) || {}))
+            || regular(data);
     }
 
     /**
@@ -774,6 +784,11 @@
         // Cheap when fresh; refreshes a list that expired during a long session.
         activateStatus(ctx);
         ensureTrending(ctx);
+        JE.tagPipeline?.rememberItemFacts?.({
+            Type: data.type, SeriesId: data.seriesId, SeasonNumber: data.season,
+            LatestEpisodeAired: data.latestAired,
+            LatestEpisodeIndex: data.latestIndex ? { Season: data.latestIndex.s, Episode: data.latestIndex.e } : null,
+        }, itemId);
         const readsSeries = wantsSeriesFacts(data);
         const badge = pickBadge(data);
         // All date badges can change when a local day passes.
@@ -1025,7 +1040,19 @@
     function requestSeries(ctx, seriesId) {
         if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         const known = seriesInfo.get(seriesId);
-        if (known && (known.loading || Date.now() < known.expires)) return;
+        if (known && (known.loading || Date.now() < known.expires)) {
+            if (!known.loading && TMDB_ENDED.has(known.facts?.status) && JE.tagPipeline?.lookupItemFacts
+                && !JE.tagPipeline.peekItemFacts(seriesId) && !parentFactsLoads.has(seriesId)) {
+                const epoch = seriesEpoch;
+                const load = JE.tagPipeline.lookupItemFacts([seriesId]).then(() => {
+                    if (epoch === seriesEpoch && JE.tagPipeline.peekItemFacts(seriesId)) applyLivePass(ctx);
+                }).finally(() => {
+                    if (parentFactsLoads.get(seriesId) === load) parentFactsLoads.delete(seriesId);
+                });
+                parentFactsLoads.set(seriesId, load);
+            }
+            return;
+        }
         if (seriesQueue.has(seriesId) || typeof ApiClient === 'undefined') return;
         seriesInfo.set(seriesId, { facts: known?.facts ?? null, expires: known?.expires ?? 0, loading: true });
         seriesQueue.add(seriesId);
@@ -1046,6 +1073,7 @@
         return {
             status: typeof raw.status === 'string' ? raw.status : null,
             last: /** @type {SeriesFacts['last']} */ (episode(raw.lastAired, true)),
+            regular: /** @type {SeriesFacts['last']} */ (episode(raw.lastRegularAired, true)),
             next: /** @type {SeriesFacts['next']} */ (episode(raw.nextAired, false)),
         };
     }
@@ -1104,9 +1132,12 @@
             }
             // Episode-only pages may have restored just their visible entries
             // from IndexedDB. Warm the confirmed caller-filtered parent aggregates
-            // before resolving a regular finale behind TMDB's latest special.
-            const specialIds = batch.filter(id => seriesInfo.get(id)?.facts?.last?.season === 0);
-            if (specialIds.length) await JE.tagPipeline?.lookupServerEntries?.(specialIds);
+            // before resolving the same regular finale as a series card.
+            const endedIds = batch.filter(id => TMDB_ENDED.has(seriesInfo.get(id)?.facts?.status));
+            if (endedIds.length) {
+                if (JE.tagPipeline?.lookupItemFacts) await JE.tagPipeline.lookupItemFacts(endedIds);
+                else await JE.tagPipeline?.lookupServerEntries?.(endedIds);
+            }
             if (epoch !== seriesEpoch) return;
         }
         if (changed || renderedDay !== localDay(Date.now())) applyLivePass(ctx);
@@ -1172,6 +1203,7 @@
         }
         midnightTimer = seriesTimer = seriesRetryTimer = null;
         seriesQueue.clear();
+        parentFactsLoads.clear();
         for (const value of seriesInfo.values()) value.loading = false;
         releaseSeriesObservers();
         document.querySelectorAll(LIVE_SELECTOR).forEach(el => {

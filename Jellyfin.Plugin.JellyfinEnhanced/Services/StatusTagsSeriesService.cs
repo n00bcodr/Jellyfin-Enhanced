@@ -98,6 +98,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var body = await FetchBodyAsync(apiKey, "tv/" + tmdbId, cancellationToken).ConfigureAwait(false);
             var schedule = body == null ? null : Parse(body);
+            if (schedule?.LastAired?.Season == 0 && schedule.Status is "Ended" or "Canceled")
+                schedule = await EnrichRegularEpisodeAsync(apiKey, tmdbId, body!, schedule, cancellationToken).ConfigureAwait(false);
             if (schedule?.LastAired is not { Type: null, Season: { } season, Episode: { } episode } last) return schedule;
             var seasonBody = await FetchBodyAsync(apiKey, $"tv/{tmdbId}/season/{season}", cancellationToken).ConfigureAwait(false);
             if (seasonBody == null) return schedule;
@@ -117,6 +119,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
             catch (JsonException) { /* Keep the usable series facts. */ }
+            return schedule;
+        }
+
+        /// <summary>
+        /// When the latest aired episode is a special, read the newest aired
+        /// regular season. Keep its episode separate so specials retain their
+        /// own schedule facts and a recent special cannot freshen an old finale.
+        /// </summary>
+        private async Task<SeriesSchedule> EnrichRegularEpisodeAsync(string apiKey, string tmdbId, string body, SeriesSchedule schedule, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using var show = JsonDocument.Parse(body);
+                if (!show.RootElement.TryGetProperty("seasons", out var seasons) || seasons.ValueKind != JsonValueKind.Array) return schedule;
+                var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
+                var regularSeasons = seasons.EnumerateArray()
+                    .Where(s => s.ValueKind == JsonValueKind.Object
+                        && s.TryGetProperty("season_number", out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt32(out var number) && number > 0
+                        && s.TryGetProperty("air_date", out var d) && d.ValueKind == JsonValueKind.String
+                        && DateOnly.TryParseExact(d.GetString(), "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var day) && day <= today)
+                    .Select(s => s.GetProperty("season_number").GetInt32()).OrderDescending().ToArray();
+                foreach (var season in regularSeasons)
+                {
+                    var seasonBody = await FetchBodyAsync(apiKey, $"tv/{tmdbId}/season/{season}", cancellationToken).ConfigureAwait(false);
+                    if (seasonBody == null) continue;
+                    using var doc = JsonDocument.Parse(seasonBody);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Object
+                        || !doc.RootElement.TryGetProperty("episodes", out var episodes) || episodes.ValueKind != JsonValueKind.Array) continue;
+                    SeriesEpisodeRef? latest = null;
+                    foreach (var episode in episodes.EnumerateArray())
+                    {
+                        var candidate = ReadEpisodeObject(episode, withType: true);
+                        if (candidate?.Season != season || candidate.Episode is not > 0
+                            || DateOnly.ParseExact(candidate.Date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) > today) continue;
+                        if (latest == null || string.CompareOrdinal(candidate.Date, latest.Date) > 0
+                            || (candidate.Date == latest.Date && candidate.Episode > latest.Episode)) latest = candidate;
+                    }
+                    if (latest != null) return schedule with { LastRegularAired = latest };
+                }
+            }
+            catch (JsonException) { /* Retain usable series facts; local aggregates can still resolve the finale. */ }
             return schedule;
         }
 
@@ -202,7 +245,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static SeriesEpisodeRef? ReadEpisode(JsonElement root, string property, bool withType)
         {
-            if (!root.TryGetProperty(property, out var ep) || ep.ValueKind != JsonValueKind.Object) return null;
+            return root.TryGetProperty(property, out var ep) ? ReadEpisodeObject(ep, withType) : null;
+        }
+
+        /// <summary>Read either a series episode reference or a season's episode object.</summary>
+        private static SeriesEpisodeRef? ReadEpisodeObject(JsonElement ep, bool withType)
+        {
+            if (ep.ValueKind != JsonValueKind.Object) return null;
             var date = ep.TryGetProperty("air_date", out var d) && d.ValueKind == JsonValueKind.String ? d.GetString() : null;
             // TMDB dates are plain calendar dates; anything else is unusable.
             if (date == null || !DateOnly.TryParseExact(date, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)) return null;
@@ -218,7 +267,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// Series", "Ended", "Canceled", "In Production", "Planned", "Pilot"), its
     /// newest aired episode and its next scheduled one.
     /// </summary>
-    public sealed record SeriesSchedule(string? Status, SeriesEpisodeRef? LastAired, SeriesEpisodeRef? NextAired, bool Retry = false);
+    public sealed record SeriesSchedule(string? Status, SeriesEpisodeRef? LastAired, SeriesEpisodeRef? NextAired, bool Retry = false, SeriesEpisodeRef? LastRegularAired = null);
 
     /// <summary>
     /// One TMDB episode reference: air date as TMDB's calendar date

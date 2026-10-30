@@ -178,6 +178,32 @@ public class IntegrationStatusTagsSeriesTests
     }
 
     [Fact]
+    public async Task ANewerSpecialKeepsItsScheduleAndEnrichesTheLastAiredRegularEpisode()
+    {
+        using var env = new IntegrationEnvironment();
+        var asked = new List<string>();
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            asked.Add(path);
+            return Task.FromResult(IntegrationTransport.Response(path.EndsWith("/season/1", StringComparison.Ordinal)
+                ? """{"episodes":[{"air_date":"2020-01-01","season_number":1,"episode_number":9},{"air_date":"2020-01-02","season_number":1,"episode_number":10,"episode_type":"finale"},{"air_date":"2099-01-01","season_number":1,"episode_number":11},{"air_date":"2020-01-03","season_number":0,"episode_number":8}]}"""
+                : """{"status":"Ended","last_episode_to_air":{"air_date":"2020-01-03","season_number":0,"episode_number":8,"episode_type":"standard"},"seasons":[{"season_number":0,"air_date":"2020-01-03"},{"season_number":1,"air_date":"2020-01-01"},{"season_number":2,"air_date":"2099-01-01"}]}"""));
+        });
+        using var cache = new TmdbResponseCache(transport, TimeProvider.System);
+        var service = new StatusTagsSeriesService(cache, env.Logger);
+        var ids = new Dictionary<string, string> { ["item"] = "100" };
+        var schedule = (await service.GetAsync("key", ids, CancellationToken.None))["item"];
+        Assert.Equal(0, schedule.LastAired!.Season);
+        Assert.Equal(new SeriesEpisodeRef("2020-01-02", 1, 10, "finale"),
+            schedule.GetType().GetProperty("LastRegularAired")?.GetValue(schedule));
+        Assert.Equal(2, asked.Count);
+        Assert.EndsWith("/season/1", asked[1]);
+        Assert.Equal(schedule, (await service.GetAsync("key", ids, CancellationToken.None))["item"]);
+        Assert.Equal(2, asked.Count);
+    }
+
+    [Fact]
     public async Task SynchronousUpstreamResponsesAlsoConsumeTheRateWindow()
     {
         using var env = new IntegrationEnvironment();

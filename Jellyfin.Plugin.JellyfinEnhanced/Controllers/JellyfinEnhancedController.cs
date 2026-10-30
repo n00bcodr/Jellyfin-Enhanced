@@ -2500,6 +2500,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         payload[key] = new
                         {
                             status = schedule.Status,
+                            lastRegularAired = schedule.LastRegularAired == null ? null : new { date = schedule.LastRegularAired.Date, season = schedule.LastRegularAired.Season, episode = schedule.LastRegularAired.Episode, type = schedule.LastRegularAired.Type },
                             lastAired = schedule.LastAired == null ? null : new { date = schedule.LastAired.Date, season = schedule.LastAired.Season, episode = schedule.LastAired.Episode, type = schedule.LastAired.Type },
                             nextAired = schedule.NextAired == null ? null : new { date = schedule.NextAired.Date, season = schedule.NextAired.Season, episode = schedule.NextAired.Episode },
                         };
