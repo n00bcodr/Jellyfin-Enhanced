@@ -131,18 +131,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _nativeFlight = null;
                 }
                 if (_nativeCached != null && _nativeTime.GetUtcNow().UtcDateTime < _nativeUntil) return Task.FromResult(_nativeCached);
-                // A web response cached at 23:59 must not become tomorrow's daily snapshot.
-                // GetAsync still coalesces upstream work and stores the refreshed response.
-                _nativeFlight ??= FetchNativeAsync(config, bypassResponseCache: true);
+                _nativeFlight ??= FetchNativeAsync(config, bypassResponseCache: _nativeCached?.Source == null && _nativeCached != null);
                 return _nativeFlight.WaitAsync(cancellationToken);
+            }
+        }
+
+        /// <summary>Cache-only image lookup. The background worker owns refreshes.</summary>
+        public bool TryGetNative(PluginConfiguration config, out TrendingSnapshot snapshot)
+        {
+            lock (_nativeLock)
+            {
+                if (ReferenceEquals(config, _nativeConfig) && _nativeCached != null && _nativeTime.GetUtcNow().UtcDateTime < _nativeUntil)
+                {
+                    snapshot = _nativeCached;
+                    return true;
+                }
+                snapshot = Empty;
+                return false;
             }
         }
 
         private async Task<TrendingSnapshot> FetchNativeAsync(PluginConfiguration config, bool bypassResponseCache)
         {
             await Task.Yield();
+            var day = _nativeTime.GetUtcNow().UtcDateTime.Date;
             TrendingSnapshot answer;
-            try { answer = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache).ConfigureAwait(false) ?? Empty; }
+            try { answer = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache, new DateTimeOffset(day, TimeSpan.Zero)).ConfigureAwait(false) ?? Empty; }
             catch (Exception ex) { _logger.Debug($"[StatusTags] Native trending unavailable: {ex.Message}"); answer = Empty; }
             lock (_nativeLock)
             {
@@ -150,7 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _nativeCached = answer;
                     var now = _nativeTime.GetUtcNow().UtcDateTime;
-                    _nativeUntil = answer.Source == null ? now.AddMinutes(5) : now.Date.AddDays(1);
+                    _nativeUntil = answer.Source == null ? now.AddMinutes(5) : day.AddDays(1);
                     _nativeFlight = null;
                 }
             }
@@ -210,7 +224,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// empty page would otherwise outlive <see cref="EmptyCacheTtl"/> and
         /// keep every retry empty until it expired.
         /// </summary>
-        private async Task<TrendingSnapshot?> FetchTmdbAsync(string apiKey, bool bypassResponseCache)
+        private async Task<TrendingSnapshot?> FetchTmdbAsync(string apiKey, bool bypassResponseCache, DateTimeOffset? notBefore = null)
         {
             var ranks = new RankBuilder();
             for (var page = 1; page <= Pages && !ranks.Full; page++)
@@ -220,7 +234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     using var timeout = new CancellationTokenSource(TmdbTimeout);
                     response = await _tmdbResponseCache
-                        .GetAsync("trending/all/day", "?page=" + page.ToString(CultureInfo.InvariantCulture), apiKey, timeout.Token, bypassCache: bypassResponseCache)
+                        .GetAsync("trending/all/day", "?page=" + page.ToString(CultureInfo.InvariantCulture), apiKey, timeout.Token, bypassCache: bypassResponseCache, notBefore: notBefore)
                         .ConfigureAwait(false);
                 }
                 catch (Exception ex)

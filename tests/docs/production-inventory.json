@@ -431,6 +431,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeStatusRefreshService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
       "category": "Services"
     },
@@ -8793,7 +8797,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 390,
+    "files": 391,
     "routes": 182,
     "configuration_properties": 633,
     "storage_references": 75,

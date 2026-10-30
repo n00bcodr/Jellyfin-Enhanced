@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,15 +13,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 /// <summary>Shares TMDB caches with the web; parent aggregates are resolved as the image's viewer and spoiler-stripped.</summary>
 public sealed class PosterTagStatusProvider
 {
-    private readonly StatusTagsTrendingService _trending;
-    private readonly StatusTagsSeriesService _series;
+    private readonly NativeStatusRefreshService _remote;
     private readonly PosterTagDataProvider _data;
     private readonly ILibraryManager _library;
 
-    public PosterTagStatusProvider(StatusTagsTrendingService trending, StatusTagsSeriesService series, PosterTagDataProvider data, ILibraryManager library)
+    public PosterTagStatusProvider(NativeStatusRefreshService remote, PosterTagDataProvider data, ILibraryManager library)
     {
-        _trending = trending;
-        _series = series;
+        _remote = remote;
         _data = data;
         _library = library;
     }
@@ -34,7 +31,7 @@ public sealed class PosterTagStatusProvider
         int? rank = null;
         if (settings.StatusTrending && entry.Type is "Movie" or "Series" && entry.TmdbId != null)
         {
-            var list = await _trending.GetNativeAsync(config, cancellationToken).ConfigureAwait(false);
+            var list = _remote.GetTrending(config);
             var ranks = entry.Type == "Movie" ? list.Movies : list.Series;
             if (ranks.TryGetValue(entry.TmdbId, out var found)) rank = found;
         }
@@ -47,8 +44,7 @@ public sealed class PosterTagStatusProvider
         TagCacheEntry? parent = null;
         if (needsSchedule)
         {
-            var schedules = await _series.GetAsync(config.TMDB_API_KEY, new Dictionary<string, string> { ["series"] = tmdb! }, cancellationToken).ConfigureAwait(false);
-            schedules.TryGetValue("series", out schedule);
+            schedule = _remote.GetSeries(config, tmdb!);
             if (entry.Type == "Series") parent = entry;
             else if (schedule?.Status is "Ended" or "Canceled" && Guid.TryParse(entry.SeriesId, out var seriesId)
                 && _library.GetItemById<BaseItem>(seriesId, user) is { } seriesItem)

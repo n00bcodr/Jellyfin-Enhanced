@@ -725,3 +725,5 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | `more-info-needed.yml`, `stale.yml` | Issue maintenance. |
 
 `.github/ISSUE_TEMPLATE/bug.md` and `.github/ISSUE_TEMPLATE/feature_request.md` provide report templates; `.github/SECURITY_GUIDELINES.md`, `.github/codeql/codeql-config.yml`, `.github/dependabot.yml` and `.github/funding.yml` hold repository policy/configuration. Follow [CONTRIBUTING.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/CONTRIBUTING.md) for which checks apply to a contribution and [SECURITY.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/SECURITY.md) for reporting vulnerabilities.
+
+`Services/NativeStatusRefreshService.cs` owns scheduled and stale-read-triggered background refreshes for native status snapshots; image composition reads these snapshots without upstream requests.
