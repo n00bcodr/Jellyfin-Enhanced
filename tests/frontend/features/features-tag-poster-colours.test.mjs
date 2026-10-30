@@ -20,10 +20,10 @@ function pixels(width, height, paint) {
 }
 
 /** The module alone, with stubbed image decoding: `art` maps an image URL to its pixels (or an error to throw). */
-function setup(t, { html = card(ID), art = {}, store = null } = {}) {
+function setup(t, { html = card(ID), art = {}, store = null, session = {} } = {}) {
   const h = createHarness({
     html,
-    JE: { session: { getServerId: () => 's', getUserId: () => 'u', onUserChange() {} }, ...(store ? { tagCacheStore: store } : {}) },
+    JE: { session: { getServerId: () => 's', getUserId: () => 'u', onUserChange() {}, ...session }, ...(store ? { tagCacheStore: store } : {}) },
   });
   t.after(() => h.close());
   const w = h.window;
@@ -281,4 +281,54 @@ test('an image Jellyfin mounts after the tags arrived (Jellyfin 12) is picked up
   await h.settle();
   assert.equal(h.box().dataset.jePosterColour, '1');
   assert.equal(h.decoded.length, 1);
+});
+
+test('a decode still out at a user switch is dropped: nothing shown, remembered or stored for the incoming user', async t => {
+  const puts = [];
+  let user = 'A';
+  let reset = null;
+  const store = { available: () => true, getPosterColours: async () => new Map(), putPosterColours: async (...args) => { puts.push(args); } };
+  const h = setup(t, { store, session: { getUserId: () => user, onUserChange: (name, fn) => { reset = fn; } }, art: { [img(ID)]: solid([200, 30, 30]) } });
+  const realTimeout = h.window.setTimeout;
+  h.window.setTimeout = (fn, ms, ...rest) => realTimeout(fn, ms >= 1000 ? 0 : ms, ...rest);
+  // Each decode waits until the test lets it finish.
+  const decode = h.window.createImageBitmap;
+  const pending = [];
+  h.window.createImageBitmap = (...args) => new Promise((resolve) => { pending.push(() => resolve(decode(...args))); });
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(pending.length, 1, "user A's decode is out");
+  user = 'B';
+  reset({ userId: 'B', previousUserId: 'A' });
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(pending.length, 2, 'the incoming user samples the card itself');
+  pending[0]();
+  await h.settle();
+  assert.equal(h.box().hasAttribute('data-je-poster-colour'), false, "A's result never reaches B's card");
+  assert.equal(h.P.stats().remembered, 0, "nor B's memory");
+  assert.deepEqual(puts, [], "nor B's store");
+  pending[1]();
+  await h.settle();
+  assert.equal(h.box().dataset.jePosterColour, '1');
+  assert.deepEqual(plain(puts.map(([scope, , colours]) => [scope, [...colours.keys()]])), [['s:B', [`${ID}:primary:0:t1`]]]);
+});
+
+test('a store write still pending at a user switch is dropped', async t => {
+  const puts = [];
+  let user = 'A';
+  let reset = null;
+  const store = { available: () => true, getPosterColours: async () => new Map(), putPosterColours: async (...args) => { puts.push(args); } };
+  const h = setup(t, { store, session: { getUserId: () => user, onUserChange: (name, fn) => { reset = fn; } }, art: { [img(ID)]: solid([200, 30, 30]) } });
+  const timers = [];
+  const realTimeout = h.window.setTimeout;
+  // Hold the debounced write; slices run as usual.
+  h.window.setTimeout = (fn, ms, ...rest) => (ms >= 1000 ? (timers.push(fn), timers.length) : realTimeout(fn, ms, ...rest));
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(timers.length, 1, "A's colour waits to be written");
+  user = 'B';
+  reset({ userId: 'B', previousUserId: 'A' });
+  timers[0]();
+  assert.deepEqual(puts, []);
 });

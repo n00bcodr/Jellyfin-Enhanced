@@ -21,6 +21,9 @@
 // Default preset's colours. Nothing leaves the browser: the colours are kept
 // in memory and in the tag cache store (IndexedDB, per server and user,
 // capped), keyed by item, image type and image tag, so new artwork resamples.
+// Every sample and every store write belongs to the session generation it
+// started in: after a user switch, a decode still in flight is dropped, never
+// shown or stored as the incoming user's.
 //
 // The work runs in idle slices: reads (which image, is it loaded) for a batch
 // of cards, then the writes for cards whose colour is known; images still to
@@ -180,15 +183,23 @@
     // ── Runtime ────────────────────────────────────────────────────────
 
     let active = false;
+    /** Moves on at every user switch; work started under an older one is dropped. */
+    let generation = 0;
     /** @type {Map<string, {d: number[]|null}|string>} key → dominant colour, or FAILED */
     const memory = new Map();
     /** @type {Set<HTMLElement>} hosts waiting for a slice */
     const queue = new Set();
     let sliceScheduled = false;
-    /** @type {Map<string, {url: string, img: HTMLImageElement|null, hosts: Set<HTMLElement>}>} samples waiting for a decode slot */
+    /**
+     * A sample: its artwork, the cards showing it, and the generation and
+     * store scope it was started for.
+     * @typedef {{url: string, img: HTMLImageElement|null, hosts: Set<HTMLElement>, gen: number, scope: string}} Job
+     */
+    /** @type {Map<string, Job>} samples waiting for a decode slot */
     const toSample = new Map();
-    const sampling = new Set();
-    /** @type {Map<string, number[]|null>} new colours not yet persisted */
+    /** @type {Map<string, Job>} samples being decoded */
+    const sampling = new Map();
+    /** @type {Map<string, Map<string, number[]|null>>} new colours not yet persisted, per store scope */
     const unsaved = new Map();
     let persistTimer = 0;
     let primed = null;
@@ -218,28 +229,37 @@
         if (primed && primedScope === s) return primed;
         primedScope = s;
         const store = JE.tagCacheStore;
+        const gen = generation;
         primed = (async () => {
             if (!s || !store?.available?.() || typeof store.getPosterColours !== 'function') return;
             try {
                 const stored = await store.getPosterColours(s, ALGORITHM);
-                if (primedScope !== s) return;
+                if (gen !== generation || primedScope !== s) return;
                 for (const [key, d] of stored) if (!memory.has(key)) memory.set(key, { d });
             } catch { /* the store marks itself unavailable */ }
         })();
         return primed;
     }
 
-    /** Write the colours sampled since the last write (debounced). */
+    /**
+     * Write the colours sampled since the last write (debounced), each under
+     * the scope its sample started in, and only while that is still the
+     * current scope of the generation that sampled it.
+     */
     function persistSoon() {
         if (persistTimer) return;
+        const gen = generation;
         persistTimer = setTimeout(() => {
             persistTimer = 0;
-            const s = scope();
-            const store = JE.tagCacheStore;
-            const batch = new Map(unsaved);
+            const batches = new Map(unsaved);
             unsaved.clear();
-            if (!s || !batch.size || !store?.available?.() || typeof store.putPosterColours !== 'function') return;
-            store.putPosterColours(s, ALGORITHM, batch, STORE_CAP).catch(() => { /* the store marks itself unavailable */ });
+            const store = JE.tagCacheStore;
+            if (gen !== generation || !store?.available?.() || typeof store.putPosterColours !== 'function') return;
+            const now = scope();
+            for (const [s, batch] of batches) {
+                if (!s || s !== now || !batch.size) continue;
+                store.putPosterColours(s, ALGORITHM, batch, STORE_CAP).catch(() => { /* the store marks itself unavailable */ });
+            }
         }, PERSIST_DELAY_MS);
     }
 
@@ -400,7 +420,7 @@
             }
             // New artwork: the previous item's colours never linger meanwhile.
             if (target.dataset.jePosterKey && target.dataset.jePosterKey !== art.key) clear(target);
-            const job = toSample.get(art.key) || { url: art.url, img: art.img, hosts: new Set() };
+            const job = toSample.get(art.key) || { url: art.url, img: art.img, hosts: new Set(), gen: generation, scope: scope() };
             job.hosts.add(host);
             if (!job.img && art.img) job.img = art.img;
             toSample.set(art.key, job);
@@ -414,23 +434,30 @@
         if (queue.size) scheduleSlice();
     }
 
-    /** Start decodes while slots are free. */
+    /**
+     * Start decodes while slots are free. A result arriving after a user
+     * switch (another generation) is dropped: not remembered, not stored,
+     * and no card is touched.
+     */
     function pumpSamples() {
         for (const [key, job] of toSample) {
             if (sampling.size >= MAX_DECODES) return;
             toSample.delete(key);
             if (sampling.has(key)) continue;
-            sampling.add(key);
+            sampling.set(key, job);
             sample(job).then((d) => {
+                if (job.gen !== generation) return;
                 remember(key, d === FAILED ? FAILED : { d });
                 if (d === FAILED) counters.failed++;
                 else {
                     counters.sampled++;
-                    unsaved.set(key, d);
+                    if (!unsaved.has(job.scope)) unsaved.set(job.scope, new Map());
+                    unsaved.get(job.scope).set(key, d);
                     persistSoon();
                 }
             }).finally(() => {
-                sampling.delete(key);
+                if (sampling.get(key) === job) sampling.delete(key);
+                if (job.gen !== generation) return;
                 for (const host of job.hosts) track(host);
                 pumpSamples();
             });
@@ -530,12 +557,18 @@
     function clearMemory() {
         memory.clear();
         unsaved.clear();
+        clearTimeout(persistTimer);
+        persistTimer = 0;
         primed = null;
         primedScope = '';
     }
 
+    // A user switch: a new generation, so samples and store writes still out
+    // for the outgoing user are dropped when they finish.
     JE.session?.onUserChange?.('tag-poster-colours', () => {
+        generation++;
         setActive(false);
+        sampling.clear();
         clearMemory();
     });
 
