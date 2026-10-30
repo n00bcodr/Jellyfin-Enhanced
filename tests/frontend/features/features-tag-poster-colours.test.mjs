@@ -436,3 +436,26 @@ test('the layout\'s clearAll releases every card\'s artwork watch', async t => {
   assert.equal(observing.size, 0, 'no observer outlives clearAll');
   assert.equal(h.JE.tagPosterColours.stats().watching, 0);
 });
+
+test('a card arriving while its artwork is being decoded is coloured by that decode', async t => {
+  const h = setup(t, { art: { [img(ID)]: solid([200, 30, 30]) } });
+  const decode = h.window.createImageBitmap;
+  const pending = [];
+  h.window.createImageBitmap = (...args) => new Promise((resolve) => { pending.push(() => resolve(decode(...args))); });
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(pending.length, 1);
+  // A second card with the same artwork (another home row) is presented in a later slice.
+  const row = h.document.createElement('div');
+  row.innerHTML = card(ID2).replace(img(ID2), img(ID));
+  h.document.body.appendChild(row);
+  h.P.track(h.document.querySelector(`[data-id="${ID2}"] .je-tag-host`));
+  await h.settle();
+  assert.equal(pending.length, 1, 'no second decode');
+  pending[0]();
+  await h.settle();
+  const red = h.P.css(h.P.normalise([200, 30, 30]).background);
+  assert.equal(h.box(ID).style.getPropertyValue('--je-tag-bg'), red);
+  assert.equal(h.box(ID2).style.getPropertyValue('--je-tag-bg'), red, 'both waiters coloured');
+  assert.equal(h.P.stats().sampled, 1);
+});

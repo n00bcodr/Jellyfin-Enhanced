@@ -478,6 +478,9 @@
             }
             // New artwork: the previous item's colours never linger meanwhile.
             if (target.dataset.jePosterKey && target.dataset.jePosterKey !== art.key) clear(target);
+            // Already being decoded (another card with the same artwork): wait for that result.
+            const running = sampling.get(art.key);
+            if (running) { running.hosts.add(host); continue; }
             const job = toSample.get(art.key) || { url: art.url, img: art.img, hosts: new Set(), gen: generation, scope: scope() };
             job.hosts.add(host);
             if (!job.img && art.img) job.img = art.img;
@@ -493,7 +496,9 @@
     }
 
     /**
-     * Start decodes while slots are free. A result arriving after a user
+     * Start decodes while slots are free; cards showing an artwork already
+     * being decoded join that decode, and its result goes to every one of
+     * them. A result arriving after a user
      * switch (another generation) is dropped: not remembered, not stored,
      * and no card is touched.
      */
@@ -501,7 +506,11 @@
         for (const [key, job] of toSample) {
             if (sampling.size >= MAX_DECODES) return;
             toSample.delete(key);
-            if (sampling.has(key)) continue;
+            const running = sampling.get(key);
+            if (running) {
+                job.hosts.forEach((host) => running.hosts.add(host));
+                continue;
+            }
             sampling.set(key, job);
             sample(job).then((d) => {
                 if (job.gen !== generation) return;
