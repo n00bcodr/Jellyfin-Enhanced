@@ -453,14 +453,14 @@ test('a lookup still in flight when its card is reused never lands on the new it
 
 test('a large list row reused with only its artwork rewritten drops the old item\'s tags and renders the new one', async t => {
   const art = id => `background-image: url(&quot;http://jellyfin.test/Items/${id}/Images/Primary&quot;)`;
-  const h = await setupPipeline(t, { html: listRow().replace('class="listItemImage listItemImage-large"', `class="listItemImage listItemImage-large" style="${art(ID)}"`) });
+  const h = await setupPipeline(t, { html: listRow().replace(`data-id="${ID}"`, 'data-id="unresolved"').replace('class="listItemImage listItemImage-large"', `class="listItemImage listItemImage-large" style="${art(ID)}"`) });
   h.scan(); h.fetch();
   assert.deepEqual(h.calls[0].ids, [ID]);
   h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', Genres: ['Drama'] }] });
   await settle();
   assert.deepEqual(h.genres(), ['Drama']);
   assert.ok(h.document.querySelector('.listItemImage-large > .je-tag-host'), 'the tags live on the row image');
-  // The row keeps its data-id; only the artwork names another item.
+  // Without a valid Jellyfin data-id, only the artwork identifies the item.
   h.document.querySelector('.listItemImage-large').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
   await settle();
   assert.deepEqual(h.genres(), [], 'the previous item\'s chips are gone as soon as the artwork changes');
@@ -473,7 +473,9 @@ test('a large list row reused with only its artwork rewritten drops the old item
 
 for (const earlyFacts of [false, true]) test(`artwork-only reuse drops library facts when the replacement lookup is empty (early facts=${earlyFacts})`, async t => {
   const library = '22222222222222222222222222222222';
-  const h = await setupPipeline(t, { html: earlyFacts ? modernCard().replace('<div class="je-tag-host"></div>', '') : modernCard(),
+  const html = (earlyFacts ? modernCard().replace('<div class="je-tag-host"></div>', '') : modernCard())
+    .replace(`data-id="${ID}"`, 'data-id="unresolved"');
+  const h = await setupPipeline(t, { html,
     settings: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', tagLookRules: [
       { id: 'library', enabled: true, when: [{ field: 'library', value: library }], layout: 'bands', density: 'compact' },
     ] } });
@@ -494,7 +496,7 @@ for (const earlyFacts of [false, true]) test(`artwork-only reuse drops library f
   assert.equal(host.dataset.jeLayout, 'bands');
   h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
   await settle();
-  assert.equal(h.document.querySelector('.card').dataset.id, ID, 'data-id is unchanged');
+  assert.equal(h.document.querySelector('.card').dataset.id, 'unresolved', 'the non-item DOM identity is unchanged');
   h.scan(); h.fetch();
   assert.deepEqual(h.calls[1].ids, [OTHER]);
   h.calls[1].resolve({ Items: [] });
@@ -502,6 +504,21 @@ for (const earlyFacts of [false, true]) test(`artwork-only reuse drops library f
   assert.ok(host.querySelector('[data-je-group="quality"]'), 'cached chips are released after the empty lookup');
   assert.equal(host.dataset.jeLayout, 'corners', 'the replacement uses the default look');
   assert.equal(layout.resolveLayout(host).layout, 'corners', 'neither host nor original target retains old facts');
+});
+
+test('an episode keeps its own facts when its borrowed poster changes', async t => {
+  const html = modernCard().replace('data-type="Movie"', 'data-type="Episode"');
+  const h = await setupPipeline(t, { html });
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls[0].ids, [ID]);
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Episode', Genres: ['Drama'] }] });
+  await settle();
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  await settle();h.scan();h.fetch();
+  assert.ok(h.calls.every(call => call.ids.every(id => id === ID)), 'artwork never supplies the episode identity');
+  for (const call of h.calls.slice(1)) call.resolve({ Items: [{ Id: ID, Type: 'Episode', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama']);
 });
 
 test('artwork loading for the first time is not a reuse', async t => {
