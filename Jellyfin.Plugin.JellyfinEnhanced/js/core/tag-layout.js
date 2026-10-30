@@ -911,7 +911,10 @@
     //     height has room for less), lowest priority first, behind a "+N"
     //     chip whose title names them;
     // and it switches bands on cards narrower than NARROW_CARD_PX to compact
-    // labels.
+    // labels. Corners cards are left alone, except one saved before layouts
+    // with a container set to exactly top-right below another container: how
+    // far that one moves to clear Jellyfin's indicator depends on the height
+    // of the containers above it (indicatorGapsToMeasure).
 
     /**
      * Whether a slot still holds any group representation.
@@ -1020,12 +1023,38 @@
     let fitScheduled = false;
     let fitting = false;
 
+    /** Inline custom property: how far down its slot an exact top-right container sits without its margin. */
+    const INDICATOR_BEFORE = '--je-indicator-before';
+
     /**
-     * Queue a card for the next fitting pass (layouts that need one only).
+     * The top-right slot of a corners card saved before layouts, when it has
+     * a container set to exactly top-right whose indicator margin needs a
+     * measurement: one right below a container that is not (one below an
+     * exact container already clears the indicator: the stylesheet default
+     * gives it no margin), or one that kept an earlier measurement (it may
+     * have moved since). Null otherwise.
+     * @param {CardController} ctrl
+     * @returns {HTMLElement|null}
+     */
+    function indicatorGapsToMeasure(ctrl) {
+        if (ctrl.layout !== 'corners' || ctrl.host.dataset.jeLegacy !== '1') return null;
+        for (const child of ctrl.host.children) {
+            const slot = /** @type {HTMLElement} */ (child);
+            if (!slot.classList.contains('je-tag-slot') || slot.dataset.jeSlot !== 'tr') continue;
+            const items = /** @type {HTMLElement[]} */ (Array.from(slot.children));
+            const needs = items.some((el, i) => !!el.dataset.jeIndicatorGap
+                && ((i > 0 && !items[i - 1].dataset.jeIndicatorGap) || !!el.style.getPropertyValue(INDICATOR_BEFORE)));
+            return needs ? slot : null;
+        }
+        return null;
+    }
+
+    /**
+     * Queue a card for the next fitting pass (cards that need one only).
      * @param {CardController} ctrl
      */
     function scheduleFit(ctrl) {
-        if (fitting || !FIT_LAYOUTS.has(ctrl.layout || '')) return;
+        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || indicatorGapsToMeasure(ctrl))) return;
         pendingFit.add(ctrl);
         if (fitScheduled) return;
         fitScheduled = true;
@@ -1090,6 +1119,9 @@
      * @property {number} pillFacts - Pill facts to keep (-1 = no pill).
      * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[], more: boolean}>} rows -
      *   Wrapping slots; `more` is false when not even the "+N" chip has room.
+     * @property {Array<{el: HTMLElement, before: number|null}>} indicator - Exact top-right containers
+     *   of a corners card saved before layouts, with how far down their slot they sit unmoved
+     *   (null: the stylesheet default).
      */
 
     /**
@@ -1129,7 +1161,7 @@
      * @returns {FitPlan}
      */
     function measureFit(ctrl) {
-        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [] };
+        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [], indicator: measureIndicatorGaps(ctrl) };
         for (const slotEl of rowSlots(ctrl)) {
             const chips = slotChips(slotEl);
             const more = moreChipOf(slotEl);
@@ -1150,6 +1182,30 @@
             plan.rows.push({ slot: slotEl, chips, shown, more: true });
         }
         return plan;
+    }
+
+    /**
+     * Where each exact top-right container of a legacy corners card right
+     * below one that is not would sit without its indicator margin: right
+     * below that container (the margin never moves the containers above it).
+     * The first container and those below an exact one keep the stylesheet
+     * default (reads only).
+     * @param {CardController} ctrl
+     * @returns {Array<{el: HTMLElement, before: number|null}>}
+     */
+    function measureIndicatorGaps(ctrl) {
+        const slot = indicatorGapsToMeasure(ctrl);
+        if (!slot) return [];
+        const items = /** @type {HTMLElement[]} */ (Array.from(slot.children));
+        const top = slot.getBoundingClientRect().top;
+        const gap = parseFloat(getComputedStyle(slot).rowGap) || 0;
+        const out = [];
+        items.forEach((el, i) => {
+            if (!el.dataset.jeIndicatorGap) return;
+            const prev = items[i - 1];
+            out.push({ el, before: !prev || prev.dataset.jeIndicatorGap ? null : Math.max(0, prev.getBoundingClientRect().bottom + gap - top) });
+        });
+        return out;
     }
 
     /**
@@ -1205,6 +1261,12 @@
             more.title = hidden.map(chipLabel).filter(Boolean).join(', ');
         }
         describeHidden(ctrl, names);
+        for (const { el, before } of plan.indicator) {
+            const value = before === null ? '' : `${Math.round(before * 100) / 100}px`;
+            if (el.style.getPropertyValue(INDICATOR_BEFORE) === value) continue;
+            if (value) el.style.setProperty(INDICATOR_BEFORE, value);
+            else el.style.removeProperty(INDICATOR_BEFORE);
+        }
     }
 
     // ── Hidden chip names ──────────────────────────────────────────────

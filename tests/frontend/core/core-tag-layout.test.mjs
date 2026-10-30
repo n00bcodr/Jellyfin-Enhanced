@@ -879,7 +879,51 @@ test('settings saved before layouts keep the original indicator rule: only a con
   assert.equal(host.dataset.jeIndicatorGap, '1');
   assert.deepEqual(indicated(host).filter(Boolean), []);
   const css = h.document.getElementById('je-tag-layout').textContent;
-  assert.match(css, /\.cardScalable:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="tr"\] > \[data-je-indicator-gap\]:first-child,/);
+  assert.match(css, /\.cardScalable:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="tr"\] > \[data-je-indicator-gap\],/);
+});
+
+test('settings saved before layouts: an exact top-right container below a malformed one still clears the indicator', t => {
+  const h = setup(t, { settings: { genreTagsPosition: 'top', statusTagsPosition: 'top-right' } });
+  const host = h.render();
+  assert.deepEqual(h.slot('tr'), ['genre', 'status'], 'the malformed "top" genre container arrived first');
+  const genre = groupEl(h.document, 'genre', 'tr');
+  const status = groupEl(h.document, 'status', 'tr');
+  assert.equal(genre.dataset.jeIndicatorGap, undefined);
+  assert.equal(status.dataset.jeIndicatorGap, '1');
+  const css = h.document.getElementById('je-tag-layout').textContent;
+  const rule = (groups = '') => new RegExp(`\\.cardScalable:has\\(\\.countIndicator, \\.playedIndicator\\) > \\.je-tag-host\\[data-je-legacy\\] > \\.je-tag-slot\\[data-je-slot="tr"\\] > ${groups}\\[data-je-indicator-gap\\],\\s*`
+    + `\\.cardIndicators ~ \\.je-tag-host\\[data-je-legacy\\] > \\.je-tag-slot\\[data-je-slot="tr"\\] > ${groups}\\[data-je-indicator-gap\\] \\{\\s*margin-top: max\\(0px, clamp\\(20px, 3vw, 30px\\)( - 2px)? - var\\(--je-indicator-before, 0px\\)\\);`);
+  assert.match(css, rule(), 'every exact container, not only the first in the stack: at least the offset down, or right below the one before');
+  assert.match(css, rule(':is\\(\\[data-je-group="rating"\\], \\[data-je-group="ageRating"\\], \\[data-je-group="status"\\]\\)'), 'the 4px phone edge groups too');
+  assert.doesNotMatch(css, /\[data-je-indicator-gap\]:first-child/);
+  assert.match(css, /\.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="tr"\] > \[data-je-indicator-gap\]:not\(:first-child\) \{\s*--je-indicator-before: 9999px;/,
+    'unmeasured, a lower container just follows the one before');
+  // The fitting pass measures where the status container sits unmoved: right below genre.
+  const slot = status.parentElement;
+  measure(host, { width: 150 });
+  slot.getBoundingClientRect = () => ({ top: 106, bottom: 331, width: 138, height: 225, left: 0, right: 138 });
+  genre.getBoundingClientRect = () => ({ top: 106, bottom: 132, width: 26, height: 26, left: 0, right: 26 });
+  h.layout.flushFit();
+  const gap = parseFloat(h.window.getComputedStyle(slot).rowGap) || 0; // 4px in a browser
+  assert.equal(status.style.getPropertyValue('--je-indicator-before'), `${26 + gap}px`);
+  // The malformed container goes: the exact one is first again and takes the whole offset.
+  h.layout.removeGroup(host, 'genre');
+  h.layout.flushFit();
+  assert.equal(h.slot('tr').join(), 'status');
+  assert.equal(groupEl(h.document, 'status', 'tr').style.getPropertyValue('--je-indicator-before'), '');
+});
+
+test('settings saved before layouts: two exact top-right containers need no measuring, the lower one follows the upper', t => {
+  const h = setup(t, { settings: { genreTagsPosition: 'top-right', statusTagsPosition: 'top-right' } });
+  const host = h.render();
+  assert.deepEqual(h.slot('tr'), ['genre', 'status']);
+  measure(host, { width: 150 });
+  let reads = 0;
+  for (const el of host.querySelectorAll('.je-tag-slot, [data-je-group]')) el.getBoundingClientRect = () => { reads++; return { top: 0, bottom: 20, width: 20, height: 20, left: 0, right: 20 }; };
+  h.layout.refreshPresentation(host);
+  h.layout.flushFit();
+  assert.equal(reads, 0, 'no fitting pass for the default corners');
+  assert.equal(groupEl(h.document, 'status', 'tr').style.getPropertyValue('--je-indicator-before'), '');
 });
 
 test('settings saved before layouts keep the 4px phone edge offsets of rating, age rating and status', t => {
@@ -893,7 +937,7 @@ test('settings saved before layouts keep the 4px phone edge offsets of rating, a
   }
   assert.match(phone, new RegExp(`\\[data-je-slot="tl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="tr"\\] > ${groups}:first-child \\{ margin-top: -2px; \\}`), 'the edge chip of a top stack');
   assert.match(phone, new RegExp(`\\[data-je-slot="bl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="br"\\] > ${groups}:first-child \\{ margin-bottom: -2px; \\}`), 'and of a bottom stack');
-  assert.match(phone, /margin-top: calc\(clamp\(20px, 3vw, 30px\) - 2px\);/, 'a rating set to exactly top-right keeps 4px + the indicator offset');
+  assert.match(phone, /margin-top: max\(0px, clamp\(20px, 3vw, 30px\) - 2px - var\(--je-indicator-before, 0px\)\);/, 'a rating set to exactly top-right keeps 4px + the indicator offset');
   assert.match(css.slice(0, css.indexOf('@media (max-width: 480px)')), /\[data-je-slot="tl"\], .*\[data-je-slot="tr"\],\s*.*\[data-je-slot="bl"\], .*\[data-je-slot="br"\] \{\s*inset: 6px;/, 'everything else keeps 6px');
   assert.equal(h.host().dataset.jeLegacy, '1');
 });

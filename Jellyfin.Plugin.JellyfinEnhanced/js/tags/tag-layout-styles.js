@@ -70,10 +70,18 @@
             }
             /* Settings saved before layouts (data-je-legacy) keep the original
                web geometry: only a container set to exactly top-right clears the
-               indicator (the containers stacked after it follow it), ... */
-            ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:first-child,
-            .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:first-child {
-                margin-top: ${INDICATOR_OFFSET};
+               indicator, each one sitting at least the offset down or right below
+               the container before it, whichever is lower. --je-indicator-before
+               is how far down the slot a container would sit without the margin:
+               0 for the first, measured by the fitting pass for the others (until
+               then they just follow the one before, as they do once measured
+               whenever that one already cleared the indicator), ... */
+            .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:not(:first-child) {
+                --je-indicator-before: 9999px;
+            }
+            ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
+            .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
+                margin-top: max(0px, ${INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
             }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
@@ -84,9 +92,9 @@
                 ${LEGACY_EDGE('br')} { margin-right: -2px; }
                 ${LEGACY_EDGE('tl')}:first-child, ${LEGACY_EDGE('tr')}:first-child { margin-top: -2px; }
                 ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: -2px; }
-                ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap]:first-child,
-                .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap]:first-child {
-                    margin-top: calc(${INDICATOR_OFFSET} - 2px);
+                ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
+                .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
+                    margin-top: max(0px, ${INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
                 }
             }
 
