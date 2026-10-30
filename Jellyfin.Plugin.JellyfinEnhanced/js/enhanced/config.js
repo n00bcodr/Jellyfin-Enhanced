@@ -133,6 +133,8 @@
             ratingTagsOnMovies: true, ratingTagsOnSeries: true, ratingTagsOnSeasons: true, ratingTagsOnEpisodes: true, ratingTagsOnContinueWatching: true, ratingTagsOnNextUp: true, ratingTagsShowCommunity: true, ratingTagsShowCritic: true,
             statusTagsJustAdded: true, statusTagsNewRelease: true, statusTagsTrending: true,
             statusTagsSchedule: true, statusTagsMilestones: true, statusTagsSeriesStatus: false,
+            // Custom tag group (the administrator's tag/collection rules, tags/customtags.js).
+            customTagsEnabled: false, customTagsPosition: 'top-left',
             // Language Tags display (normalized in tags/languagetags.js).
             languageTagsShowAudio: true, languageTagsShowSubtitles: false, languageTagsStyle: 'flags', languageTagsCountBadge: 'off',
             // Poster tag layout scalars (0 = a document from before layouts; see core/tag-layout.js).

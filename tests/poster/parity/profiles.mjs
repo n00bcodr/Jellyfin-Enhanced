@@ -179,6 +179,11 @@ for (const code of ['tl', 'tgl', 'nb', 'nob', 'nn', 'nno', 'fil', 'srd', 'cmn'])
     synthetic[`iso-${code}`] = movie({ AudioLanguages: [code], SubtitleLanguages: [code] });
 }
 synthetic.isoAliases = movie({ AudioLanguages: ['tgl', 'tl', 'fil', 'nob', 'nb', 'nno', 'nn', 'nor'] });
+// Custom tag rule matches: one chip with an icon, one without, a retired rule id, and a series.
+synthetic.custom1 = movie({ CustomTags: ['tag:4k remaster'] });
+synthetic.custom2 = movie({ CustomTags: ['collection:criterion'] });
+synthetic.custom3 = movie({ CustomTags: ['tag:signed', 'collection:criterion', 'tag:retired', 'tag:4k remaster'] });
+synthetic.custom4 = { ...movie({ CustomTags: ['collection:criterion', 'tag:signed'] }), Type: 'Series' };
 const syntheticEntries = {};
 const syntheticUserData = {};
 const syntheticReviews = {};
@@ -364,6 +369,20 @@ for (const style of ['flags', 'codes']) {
         synth(`language-${style}-${badge}`, { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: style, LanguageTagsCountBadge: badge });
     }
 }
+// Custom tags: the administrator's rules (labels and icons by rule id), the group's corner,
+// arrival order next to quality and age rating, explicit order and cap, and "off" in corners.
+const customRules = { CustomTagRules: [
+    { Match: 'collection', Value: 'Criterion', Label: 'Criterion', Icon: null },
+    { Match: 'tag', Value: '4K Remaster', Label: 'Remaster', Icon: 'auto_awesome' },
+    { Match: 'tag', Value: 'Signed', Label: 'Signed', Icon: null },
+] };
+synth('custom-defaults', { CustomTagsEnabled: true }, customRules);
+synth('custom-shared-corner', { QualityTagsEnabled: true, AgeRatingTagsEnabled: true, AgeRatingTagsPosition: 'top-left', CustomTagsEnabled: true }, customRules);
+synth('custom-order-cap-position', { ...allOn, CustomTagsEnabled: true, CustomTagsPosition: 'top-right', TagLayoutSettingsVersion: 1, TagGroupOrder: ['custom', 'genre'], TagGroupCaps: { Custom: 1 } }, customRules);
+synth('custom-off-in-corners', { CustomTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: { Groups: [{ Group: 'custom', Slot: 'off' }] } } }, customRules);
+synth('custom-rules-group-off', { QualityTagsEnabled: true }, customRules);
+synth('custom-admin-default-on', null, { ...customRules, CustomTagsEnabled: true, CustomTagsPosition: 'bottom-left' });
+
 synth('language-subs-only', { LanguageTagsEnabled: true, LanguageTagsShowAudio: false, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes' });
 synth('language-subs-strict-merge', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes', LanguageTagsCountBadge: 'both' }, { LanguageTagsPriority: 'French, English, Hindi', LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });
 

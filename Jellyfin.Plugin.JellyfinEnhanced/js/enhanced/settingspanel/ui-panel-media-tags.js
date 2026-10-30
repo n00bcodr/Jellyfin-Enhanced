@@ -522,6 +522,7 @@
         #jellyfin-enhanced-panel .je-mth-strip-thumb i[data-group="ageRating"] { background: #ab47bc; }
         #jellyfin-enhanced-panel .je-mth-strip-thumb i[data-group="language"] { background: #66bb6a; }
         #jellyfin-enhanced-panel .je-mth-strip-thumb i[data-group="genre"] { background: #26a69a; }
+        #jellyfin-enhanced-panel .je-mth-strip-thumb i[data-group="custom"] { background: #90a4ae; }
         #jellyfin-enhanced-panel .je-mth-strip-thumb i:is([data-slot="tl"], [data-slot="top"]) { left: 2px; top: calc(2px + var(--je-mtp-n) * 5px); }
         #jellyfin-enhanced-panel .je-mth-strip-thumb[data-layout="bands"] i[data-slot="top"] { left: calc(2px + var(--je-mtp-n) * 9px); top: 2px; }
         #jellyfin-enhanced-panel .je-mth-strip-thumb[data-layout="minimal"] i[data-slot="top"], #jellyfin-enhanced-panel .je-mth-strip-thumb i:is([data-slot="tr"], [data-slot="poster"]) { left: auto; right: 2px; top: calc(2px + var(--je-mtp-n) * 5px); }

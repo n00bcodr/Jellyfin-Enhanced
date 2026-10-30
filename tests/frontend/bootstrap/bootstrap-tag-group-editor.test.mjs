@@ -77,20 +77,20 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
 
 test('rows follow the default order for a document without one; moving writes the order and keeps focus', async t => {
   const h = setup(t);
-  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre']);
+  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'custom']);
   assert.equal(h.row('status').querySelector('[data-dir="up"]').disabled, true);
-  assert.equal(h.row('genre').querySelector('[data-dir="down"]').disabled, true);
+  assert.equal(h.row('custom').querySelector('[data-dir="down"]').disabled, true);
   assert.equal(h.row('genre').querySelector('[data-dir="up"]').getAttribute('aria-label'), 'panel_settings_ui_tag_editor_move_up{"group":"panel_settings_ui_tag_group_genre"}');
 
   const up = h.row('genre').querySelector('[data-dir="up"]');
   up.focus();
   await h.click(up);
-  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'genre', 'language']);
+  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'genre', 'language', 'custom']);
   let saved = h.saved();
-  assert.deepEqual(saved.tagGroupOrder, ['status', 'quality', 'rating', 'ageRating', 'genre', 'language']);
+  assert.deepEqual(saved.tagGroupOrder, ['status', 'quality', 'rating', 'ageRating', 'genre', 'language', 'custom']);
   assert.equal(saved.tagLayoutSettingsVersion, 1);
   assert.equal(h.document.activeElement, up, 'focus stays on the moved row\'s button');
-  assert.equal(h.row('language').querySelector('[data-dir="down"]').disabled, true);
+  assert.equal(h.row('custom').querySelector('[data-dir="down"]').disabled, true);
 
   // Moving the top row down: its up button becomes enabled, the next row's disabled.
   await h.click(h.row('status').querySelector('[data-dir="down"]'));
@@ -295,7 +295,8 @@ test('expanding a row is a real button with aria-expanded; every editor control 
     assert.equal(el.tagName, 'BUTTON');
     assert.equal(el.getAttribute('type'), 'button');
   }
-  assert.equal(h.document.querySelectorAll('.je-tge-move[aria-label], .je-tge-step[aria-label]').length, 24);
+  // Two move and two cap buttons for each of the seven groups.
+  assert.equal(h.document.querySelectorAll('.je-tge-move[aria-label], .je-tge-step[aria-label]').length, 28);
 });
 
 
