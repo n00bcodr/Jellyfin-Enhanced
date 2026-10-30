@@ -283,7 +283,8 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | Group switch | Off | Turns the group's tags on or off. |
     | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corner picks also set the position Native Poster Tags use. |
     | **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
-    | **Include** | All on | Quality: the categories, their stack order and the sound language. Rating: **Community score**, **Critic score** and where to show ratings. Status: the **Badges** button opens **Status badges**. |
+    | **Include** | Audio on, subtitles off for Language; other includes on | Quality: the categories, their stack order and the sound language. Language: **Audio** and **Subtitles** (CC marker), followed by **Style: Flags / Codes** and **Audio count badge: Off / Badge only / Badge and flags**. Rating: **Community score**, **Critic score** and where to show ratings. Status: the **Badges** button opens **Status badges**. |
+    | Language **Style** / **Audio count badge** | Flags / Off | Codes show uppercase language codes with full-name tooltips. Dual means two audio languages, Multi three or more. The badge and included audio/subtitle chips share the language limit, audio first. |
     | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
 
 === "Status badges"

@@ -147,6 +147,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | `Configuration/PluginConfiguration.cs` | Server settings and administrator defaults. |
 | `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
+| `Configuration/LanguageTagDisplaySettings.cs` | Language display enums, save normalization and admin defaults for new-user seeding and reset-all. |
 | `Configuration/TagLookSettings.cs` | Tag look rules and per-item locks: models and validation (`TagLookValidation`) for `settings.json` and the administrator's default rules. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
@@ -220,7 +221,7 @@ These indexes group client modules and relevant supporting server files by web f
 | `lifecycle.js` | Registers feature observers, timers and listeners for coordinated cleanup. |
 | `navigation.js` | Deduplicated SPA navigation notifications through `onNavigate` and `onViewPage`. |
 | `session.js` | Hooks `ApiClient.setAuthenticationInfo`, follows navigation notifications and reconciles every five seconds. Runs `JE.session.onUserChange` reset handlers and emits `je:user-changed`; supplies identity epochs for async work. |
-| `media-language.js` | Shared audio-language/region-to-flag resolution through `JE.core.mediaLanguage.resolveFlag`. |
+| `media-language.js` | Shared language/region-to-flag resolution (`resolveFlag`) and canonical ISO language bases (`canonicalBase`) through `JE.core.mediaLanguage`. |
 | `tag-renderer-base.js` | Overlay creation, deduplication, caching and reinitialization for the genre, language, quality, rating, age-rating and status tags; hands each group to `tag-layout.js`. People and user-review renderers are independent. |
 | `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card; Status Tags supply translated compact labels through `data-je-compact`. `resolveLayout()` picks each card's look: lock, then first matching rule, then the default. |
 | `tag-look.js` | Tag look rules and locks (`JE.core.tagLook`): normalization, condition matching, card facts from cache entries, saving rules, locking and unlocking. |
@@ -314,7 +315,7 @@ Administrator settings under **\*arr** → **Shoko**:
 
 | File | Responsibility |
 |---|---|
-| `genretags.js`, `languagetags.js`, `qualitytags.js` | Genre badges, language flags and quality tags such as resolution, dynamic range and audio format. |
+| `genretags.js`, `languagetags.js`, `qualitytags.js` | Genre badges, language flags/codes, CC subtitle chips and Dual/Multi badges (shared with the hub preview), and quality tags such as resolution, dynamic range and audio format. |
 | `ratingtags.js` | Jellyfin `CommunityRating` and `CriticRating`, with star/tomato presentation. Metadata providers or MDBList synchronization determine the upstream scores. |
 | `ageratingtags.js` | Color-coded parental/age ratings, sharing the Colored Ratings color table. |
 | `statustags.js` | Status Tags: first-match badge per card for added/release dates, season milestones, schedules, trending and optional series status. Batches visible series through `status-tags/series`, guards stale card/user answers and supplies compact labels and `data-je-status` styling hooks. |
