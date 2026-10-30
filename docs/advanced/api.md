@@ -474,6 +474,8 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `RatingTagsOnEpisodes` | Boolean | `true` |
 | `RatingTagsOnContinueWatching` | Boolean | `true` |
 | `RatingTagsOnNextUp` | Boolean | `true` |
+| `RatingTagsShowCommunity` | Boolean | `true` |
+| `RatingTagsShowCritic` | Boolean | `true` |
 | `AgeRatingTagsPosition` | String | `"bottom-right"` |
 | `StatusTagsPosition` | String | `"top-right"` |
 | `StatusTagsJustAdded` | Boolean | `true` |
@@ -1274,7 +1276,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
     | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `LanguageTagsMergeRegions`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
-    | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
+    | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `RatingTagsShowCommunity`, `RatingTagsShowCritic`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
     | `JellyseerrShowSearchResults`, `JellyseerrSearchExcludeLibraryItems`, `JellyseerrShowReportButton`, `JellyseerrShowIssueIndicator`, `JellyseerrEnable4KRequests`, `JellyseerrEnable4KTvRequests`, `ShowCollectionsInSearch`, `JellyseerrShowAdvanced` | Boolean |
     | `JellyseerrShowQuotaInfo`, `ShowElsewhereOnJellyseerr`, `JellyseerrUseMoreInfoModal`, `JellyseerrAvailablePosterLinksToJellyfin`, `AddRequestedMediaToWatchlist`, `SyncJellyseerrWatchlist`, `JellyseerrAutoImportUsers`, `JellyseerrShowSimilar` | Boolean |
     | `JellyseerrShowRecommended`, `JellyseerrShowRequestMoreOnSeries`, `JellyseerrShowNetworkDiscovery`, `JellyseerrShowGenreDiscovery`, `JellyseerrShowTagDiscovery`, `JellyseerrShowPersonDiscovery`, `JellyseerrShowCollectionDiscovery`, `JellyseerrShowDetailPageLink` | Boolean |

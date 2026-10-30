@@ -939,16 +939,17 @@ Conditional controls appear only when their feature is available.
 | Random selection | `#randomButtonToggle`, `#randomUnwatchedOnly`, `#randomIncludeMovies`, `#randomIncludeShows`, `#randomScopeCurrentContainer`, `#randomSourceSelect` |
 | Detail display | `#showWatchProgressToggle`, `#watchProgressModeSelect`, `#watchProgressTimeFormatSelect`, `#showFileSizesToggle`, `#showAudioLanguagesToggle` |
 | Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#statusTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
-| Category layout | `.je-quality-cat-wrap`, `.je-quality-cat-expander`, `.je-cat-chevron`, `.je-quality-cat-list`, `.je-quality-cat-row`, `.je-quality-cat-label-wrap`, `.je-quality-cat-label`, `.je-cat-btn`, `.je-cat-up`, `.je-cat-down`, `.je-quality-audio-lang` |
-| Quality category controls | `#qualityTagsSubWrap`, `#qualityTagsSubToggleExpander`, `#qualityTagsSubToggles`, `#qualityTagsAudioLanguageSelect`, `#showResolutionTagToggle`, `#showSourceTagToggle`, `#showDynamicRangeTagToggle`, `#showSpecialFormatTagToggle`, `#showVideoCodecTagToggle`, `#showAudioInfoTagToggle` |
-| Rating scopes | `#ratingTagsSubWrap`, `#ratingTagsSubToggleExpander`, `#ratingTagsSubToggles`, `#ratingTagsOnMoviesToggle`, `#ratingTagsOnSeriesToggle`, `#ratingTagsOnSeasonsToggle`, `#ratingTagsOnEpisodesToggle`, `#ratingTagsOnContinueWatchingToggle`, `#ratingTagsOnNextUpToggle` |
-| Status badge choices | `#statusTagsSubWrap`, `#statusTagsSubToggleExpander`, `#statusTagsSubToggles`, `#statusTagsTrendingToggle`, `#statusTagsNewReleaseToggle`, `#statusTagsJustAddedToggle` |
-| Corner grids | `.position-selector[data-setting="qualityTagsPosition"]` (also `genreTagsPosition`, `languageTagsPosition`, `ratingTagsPosition`, `ageRatingTagsPosition`, `statusTagsPosition`); child `div[data-pos="top-left"]` (also the other three corners) |
+| Tag group editor | `#jeTagGroupEditor` (`.je-tge`), `.je-tge-head`, `#tagLayoutSelect`, `#tagLabelDensitySelect`, `#jeTgeReset`; rows `.je-tge-rows` > `.je-tge-row[data-group]` (`--je-tge-swatch`), `.je-tge-row-head`, `.je-tge-move[data-dir]`, `.je-tge-swatch`, `.je-tge-expand` (`aria-expanded`), `.je-tge-name`, `.je-tge-summary`, `.je-tge-enable`; open editor `.je-tge-body` (`#jeTgeBody-<group>`), `.je-tge-pill[data-slot]` (`aria-pressed`), `.je-tge-stepper`, `.je-tge-step[data-step]`, `.je-tge-cap`, `.je-tge-toggle-pill`, `[data-include-key]` |
+| Tag preview | `#jeTgePreview`, `.je-tge-card` (gets `.je-tag-reveal` for **Hover**), `.je-tge-card-art`, `.je-tge-card-title`, `.je-tge-view [data-view]` |
+| Category layout | `.je-tge-cats`, `.je-tge-cat`, `.je-quality-cat-list`, `.je-quality-cat-row`, `.je-quality-cat-label-wrap`, `.je-quality-cat-label`, `.je-cat-btn`, `.je-cat-up`, `.je-cat-down`, `.je-quality-audio-lang` |
+| Quality category controls | `#qualityTagsSubToggles`, `#qualityTagsAudioLanguageSelect`, `#showResolutionTagToggle`, `#showSourceTagToggle`, `#showDynamicRangeTagToggle`, `#showSpecialFormatTagToggle`, `#showVideoCodecTagToggle`, `#showAudioInfoTagToggle` |
+| Rating scopes | `#ratingTagsSubToggles`, `#ratingTagsOnMoviesToggle`, `#ratingTagsOnSeriesToggle`, `#ratingTagsOnSeasonsToggle`, `#ratingTagsOnEpisodesToggle`, `#ratingTagsOnContinueWatchingToggle`, `#ratingTagsOnNextUpToggle` |
+| Status badge choices | `#statusTagsSubToggles`, `#statusTagsTrendingToggle`, `#statusTagsNewReleaseToggle`, `#statusTagsJustAddedToggle` |
 | Language and About | `#displayLanguageSelect`, `#clearTranslationCacheButton`, `#releaseNotesBtn`, conditional `.footer-logo` |
 
 Category rows use `data-cat-key`, and quality rows also have `data-order-key` and `data-default-order`.
 
-Expanders use `aria-expanded`; arrow buttons have disabled states. Preserve those states when styling.
+Row expanders use `aria-expanded`, position pills `aria-pressed`, and the move, order and stepper buttons have disabled states. Preserve those states when styling.
 
 The conditional Hidden Content pane exposes:
 

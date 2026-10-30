@@ -1,6 +1,6 @@
 # Tags & Badges
 
-See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), and change their colors. People Tags add age and birthplace information to cast cards.
+See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), set their order and limits, and change their colors. People Tags add age and birthplace information to cast cards.
 
 ![Library posters with quality, genre, language and rating tags](../images/tags/library-tags.webp)
 *The optional tag groups are enabled for this example; all seven groups start off.*
@@ -38,8 +38,8 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 | Feature | What you see | Where it appears |
 |---|---|---|
 | [Quality Tags](#quality-tags) | Resolution, source, HDR, special format, video codec, sound | Supported library cards; series/season quality describes a representative episode |
-| [Genre Tags](#genre-tags) | Up to three genre icons, with names on hover | Supported library cards with genre metadata |
-| [Language Tags](#language-tags) | Up to three distinct flags or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies |
+| [Genre Tags](#genre-tags) | Genre icons (three by default), with names on hover | Supported library cards with genre metadata |
+| [Language Tags](#language-tags) | Distinct flags (three by default) or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies |
 | [Rating Tags](#rating-tags) | Community star score and critic percentage | Supported library cards, subject to item-type and row scopes |
 | [User-review chips](#user-review-chips) | Average visible review rating, or an optional dash | Movie, series, season, and episode cards with a usable review identity |
 | [Age Rating Tags](#age-rating-tags) | Official parental/content classification | Supported library cards with classification metadata |
@@ -58,29 +58,72 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 
     The web overlays skip the large artwork in the detail page's information area, cast cards, chapter/scene cards, **My Media**, modal dialogs, small list images, and plugin/catalog/device/library administration cards. Seerr search and discovery cards do not receive these library tags.
 
-### Positions and shared controls
+### Layouts
 
-You can place each poster group in a corner and hide badges on hover to make card buttons easier to see.
+A layout decides where the poster groups appear and how much of each you see. Pick one for your account; each layout keeps its own arrangement, so you can switch back and forth without losing it.
 
-**How to use:**
+**How to use — personal preferences:**
 
-1. In **UI Settings**, click the small four-corner selector beside a group's toggle. Administrators use **Position** for each poster group.
-2. Choose **Top Left**, **Top Right**, **Bottom Left**, or **Bottom Right**.
+1. In **UI Settings**, choose a **Tag Layout** and a **Label Density**. The preview beside them shows a sample poster in your layout as you change it.
+2. Under **Tag Groups**, open a group to choose where it goes in that layout and how many tags it shows. Use the arrow buttons to change the priority order.
 
-![Poster tag corner preferences and rating scope controls](../images/tags/tag-corners.webp)
+**How to use — admin defaults:** under **Display** → **Media Tags**, open **Tag layout defaults**, set the starting layout, density, order, positions and limits, and click **Save Settings**.
+
+| Layout | Where tags go | Default arrangement |
+|---|---|---|
+| **Corners** (default) | One stack per corner of the poster; groups sharing a corner stack with a small gap | Quality top left, genre and status top right, language bottom left, rating and age rating bottom right |
+| **Bands** | A gradient band along the top (first group left, the others right) and one along the bottom that wraps; the middle of the poster stays clear | Status and age rating on top; quality, rating and language at the bottom; genre hidden |
+| **Caption** | A strip below the poster, between the image and the title, plus a small stack at the poster's top left | Status on the poster; quality, rating, age rating and language in the caption; genre hidden |
+| **Summary** | One pill at the bottom of the poster with up to three short facts (for example `Just Added · 4K DV · ★ 8.1`); every group's full chips appear over a dark scrim on hover or keyboard focus | Status, quality and rating in the pill; genre, language and age rating on hover |
+| **Minimal** | Status at the top left, one coloured dot per quality chip (resolution blue, dynamic range orange, audio green, codec grey), the rating in the bottom-right corner; full chips on hover or focus | As listed; genre, language and age rating on hover |
+
+=== "Corners"
+
+    ![Movie posters with quality, genre, language, rating and age rating tags in the four corners](../images/tags/tag-layout-corners.webp)
+
+=== "Bands"
+
+    ![Movie posters with age rating along a top band and quality, ratings and flags in a bottom band](../images/tags/tag-layout-bands.webp)
+
+=== "Caption"
+
+    ![Movie posters with quality and rating chips in a strip below each poster](../images/tags/tag-layout-caption.webp)
+
+=== "Summary"
+
+    ![Movie posters with a short fact pill each; the hovered poster shows every tag](../images/tags/tag-layout-summary.webp)
+
+=== "Minimal"
+
+    ![Movie posters with quality dots and a corner score; the hovered poster shows every tag](../images/tags/tag-layout-minimal.webp)
+
+#### Tag groups: order, position, limits
+
+Each group has a row under **Tag Groups**, highest priority first. Groups higher in the list win when space is short: they stack nearest the edge of a shared corner, come first in a band or the caption, and take the summary pill's three places first. The row shows where the group goes in the selected layout and how many tags it shows (for example **Bottom row · up to 3**); the switch on the right turns the group on or off.
+
+Open a row to change it:
+
+- **Position:** the places the selected layout offers, plus **Hidden**. Changing the layout re-labels every row. **Dots** is offered to quality only.
+- **Show up to:** how many tags the group shows, from 1 to 10. Quality and rating also offer **All**. Age rating and status always show one.
+- **Include:** the quality categories with their stack order, or the rating group's **Community score** and **Critic score**. Other groups have nothing to choose here.
+
+The limit applies after each group's own filtering (quality categories, language grouping and priority, rating scopes). **Reset to defaults** restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.
+
+![The Tag Groups editor with the rating row open: position pills, the Show up to stepper and the community and critic score switches](../images/tags/tag-group-editor.webp)
+
+![Changing the tag layout updates the sample poster beside it](../images/tags/tag-layout-editor.gif)
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Position** — Quality Tags | **Top Left** | Admin default and personal corner choice for quality badges |
-| **Position** — Genre Tags | **Top Right** | Admin default and personal corner choice for genre icons |
-| **Position** — Language Tags | **Bottom Left** | Admin default and personal corner choice for flags |
-| **Position** — Rating Tags | **Bottom Right** | Admin default and personal corner choice for score and review chips |
-| **Position** — Age Rating Tags | **Bottom Right** | Admin default and personal corner choice for classification badges |
-| **Position** — Status Tags | **Top Right** | Admin default and personal corner choice for status badges |
-| Admin / personal: **Hide Tags on Hover** | Off | Fades web poster overlays when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
-| Admin: **Disable Tags on Search Page** | Off | Suppresses the poster overlays on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
+| Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
+| Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
+| **Tag Groups** order | Status, quality, rating, age rating, language, genre | Priority order of the groups |
+| **Show up to** | Genre 3, language 3, age rating 1, status 1, quality and rating all | The same limits as before layouts existed |
+| **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | The corner a group uses in the Corners layout; the admin **Position** selects set these defaults |
+| Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
+| Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
-Groups sharing a corner stack with a small gap rather than overlap. Top-right groups move below Jellyfin's watched or unplayed-count indicator. People Tags have their own cast-card layout and no corner selector.
+Top-right groups move below Jellyfin's watched or unplayed-count indicator. People Tags have their own cast-card layout and no position.
 
 With **Hide Tags on Hover** off, genre names expand beside their icons on hover. Turn it on to fade poster tags instead.
 
@@ -91,34 +134,19 @@ With **Hide Tags on Hover** off, genre names expand beside their icons on hover.
   <figcaption>Genre names expand with Hide Tags on Hover off; turning it on fades the tags instead.</figcaption>
 </figure>
 
-### Layouts
+#### Admin defaults
 
-A layout decides where the poster groups appear and how much of each you see. Pick one per user; each layout keeps its own arrangement, so you can switch back and forth.
+**Tag layout defaults** sets what new users start with: the layout, density, group order, each group's position per layout and the limits, in the same compact editor. Corner positions are the **Position** selects of each group; switch **Default Tag Layout** to set another layout's positions. A group's row is greyed out while its **Enable** switch is off, like its Position select. The order and limits are only stored once you change them.
 
-**How to use:** In **UI Settings**, choose a **Tag Layout** and a **Label Density**.
-
-| Layout | Where tags go | Default arrangement |
-|---|---|---|
-| **Corners** (default) | One stack per corner, as described above | Your corner choices |
-| **Bands** | A gradient band along the top (first group left, the others right) and one along the bottom that wraps; the middle of the poster stays clear | Status and age rating on top; quality, rating and language at the bottom; genre off |
-| **Caption** | A strip below the poster, between the image and the title, plus a small stack at the poster's top left | Status on the poster; quality, rating, age rating and language in the caption; genre off |
-| **Summary** | One pill at the bottom of the poster with up to three short facts (for example `Just Added · 4K DV · ★ 8.1`); every group's full chips appear over a dark scrim on hover or keyboard focus | Status, quality and rating in the pill; genre, language and age rating on hover |
-| **Minimal** | Status at the top left, one coloured dot per quality chip (resolution blue, dynamic range orange, audio green, codec grey), the rating in the bottom-right corner; full chips on hover or focus | As listed; genre, language and age rating on hover |
-
-Groups in the same place appear in priority order: status, quality, rating, age rating, language, genre. Each group shows at most a set number of chips after its own filtering (quality categories, language grouping and priority, rating scopes): genre 3, language 3, age rating 1, status 1, quality and rating unlimited — the same limits as before layouts existed.
-
-| Setting | Default | What it does |
-|---|---|---|
-| Personal: **Tag Layout** | **Corners** | Chooses one of the layouts above |
-| Personal: **Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
+![Tag layout defaults on the configuration page: default layout and density, then one row per group with move buttons, a limit stepper and position pills](../images/tags/tag-layout-admin-defaults.webp)
 
 ??? info "Upgrades, defaults, and limits"
-    - Settings saved before layouts existed keep the **Corners** layout, your corner choices, the original stacking order and limits, until you change the layout or density, or pick a corner. Administrators' new layout defaults never change an existing user's view.
-    - New users, and **Apply defaults to all users**, start from the administrator's layout defaults. Their controls on the configuration page arrive in a later release; until then the defaults are Corners with the original arrangement.
-    - Per-group slots, the priority order and per-group limits are stored with your settings but have no editor yet. Picking a corner still sets the group's place in the Corners layout.
+    - Settings saved before layouts existed keep the **Corners** layout, your corner choices, the original stacking order and limits until you change something in the layout editor. Administrators' new layout defaults never change an existing user's view.
+    - The editor shows such settings in the default order; the order is saved the first time you move a group.
+    - New users, and **Apply defaults to all users**, start from the administrator's layout defaults. A group hidden in the Corners layout on the configuration page reaches users the same way; the Position selects apply to everyone who has not picked a corner.
     - **Caption** needs a title block below the image. List rows and other cards without one show the caption groups in the poster's top-left stack instead. The caption strip has room for two rows of chips; lower-priority chips that do not fit are left out. Space for it is reserved as soon as a card appears so titles do not jump when the chips arrive.
     - **Hide Tags on Hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
-    - [Native Poster Tags](#native-poster-tags-experimental) always draw corners, whatever web layout you choose.
+    - [Native Poster Tags](#native-poster-tags-experimental) always draw corners, whatever web layout you choose. They follow the Corners positions, hidden groups, order and limits, and keep full labels.
 
 ## Quality Tags
 
@@ -126,8 +154,8 @@ Quality badges help you identify a file's picture and sound format before openin
 
 **How to use:**
 
-1. Turn on **Show Quality Tags** in **UI Settings**.
-2. Expand **Choose what to show** and select categories.
+1. Turn on the **Quality** group under **Tag Groups** in **UI Settings**.
+2. Open the row and select categories under **Include**.
 3. Use **Move up** / **Move down** to change their stacking order.
 
 Administrators configure the same defaults under **Categories and sound language** in **Media Tags**.
@@ -136,7 +164,7 @@ Administrators configure the same defaults under **Categories and sound language
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Quality Tags** / personal: **Show Quality Tags** | Off | Enables the quality group |
+| Admin: **Enable Quality Tags** / personal: **Quality** switch | Off | Enables the quality group |
 | Admin: **Show resolution (4K, 1080p, ...)** / personal: **Resolution (4K, 1080p, ...)** | On; first | Shows resolution from the first video stream |
 | Admin: **Show source (BluRay, DVD, HDTV, VHS, ...)** / personal: **Source (BluRay, DVD, HDTV, ...)** | On; second | Shows the source of a physical-media stub |
 | Admin: **Show HDR (HDR10+, Dolby Vision)** / personal: **HDR (HDR10+, Dolby Vision)** | On; third | Shows detected dynamic-range labels |
@@ -184,12 +212,12 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
 **How to use:**
 
-1. Turn on **Show Genre Tags** in **UI Settings** and choose a corner.
+1. Turn on the **Genre** group under **Tag Groups** in **UI Settings** and choose its position.
 2. Leave **Hide Tags on Hover** off to see expanded names.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Genre Tags** / personal: **Show Genre Tags** | Off | Shows up to three genre icons on supported cards |
+| Admin: **Enable Genre Tags** / personal: **Genre** switch | Off | Shows genre icons on supported cards (three by default; see [Layouts](#layouts)) |
 
 ??? info "Genre sources and hover behavior"
     Genres come from Jellyfin metadata. Unfamiliar names use a generic icon.
@@ -206,16 +234,16 @@ Language Tags show available audio as flags, helping you find a dub while browsi
 
 **How to use:**
 
-1. Turn on **Show Language Tags** in **UI Settings**.
+1. Turn on the **Language** group under **Tag Groups** in **UI Settings**.
 2. For readable language names, enable **Show Audio Languages** and use the [detail-page audio-language row](#audio-language-links).
 
 Administrators can favor particular languages under **Priority languages**.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Language Tags** / personal: **Show Language Tags** | Off | Shows up to three distinct flags/symbols on supported cards |
+| Admin: **Enable Language Tags** / personal: **Language** switch | Off | Shows distinct flags/symbols on supported cards (three by default; see [Layouts](#layouts)) |
 | Admin: **Priority Languages** | Empty | Comma-separated language names or codes; use names such as `English, Japanese` to avoid differences between two- and three-letter codes. Matching flags appear first in list order |
-| Admin: **Only Show Priority Languages** | Off | With a nonempty priority list, removes flags that do not match; an item can show fewer than three or none |
+| Admin: **Only Show Priority Languages** | Off | With a nonempty priority list, removes flags that do not match; an item can show fewer flags than its limit, or none |
 | Admin: **Merge Regional Variants** | Off | Regional and script variants such as `en-GB`, `pt-BR` or `zh-Hant` share their base language's flag, so tracks Jellyfin lists as one language show one flag |
 
 ### Grouping, regions, and partial dubs
@@ -289,20 +317,22 @@ Rating Tags show Jellyfin's community score as a yellow-star chip and its critic
 
 **How to use:**
 
-1. Turn on **Show Rating Tags** in **UI Settings**.
-2. Expand **Choose where to show** and select item types and home rows.
+1. Turn on the **Rating** group under **Tag Groups** in **UI Settings**.
+2. Open the row to choose **Community score** and **Critic score** under **Include**, and item types and home rows under **Choose where to show**.
 
 Administrators set defaults under the same heading in **Media Tags**.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Rating Tags** / personal: **Show Rating Tags** | Off | Enables poster score chips and, when configured, user-review chips |
+| Admin: **Enable Rating Tags** / personal: **Rating** switch | Off | Enables poster score chips and, when configured, user-review chips |
 | Admin: **Show on movies** / personal: **Movies** | On | Allows rating and review chips on movie cards |
 | Admin: **Show on series** / personal: **Series** | On | Allows rating and review chips on series cards |
 | Admin: **Show on seasons** / personal: **Seasons** | On | Allows rating and review chips on season cards |
 | Admin: **Show on episodes** / personal: **Episodes** | On | Allows rating and review chips on episode cards |
 | Admin: **Show in the Continue Watching row** / personal: **Continue Watching row** | On | Allows rating and review chips in that row |
 | Admin: **Show in the Next Up row** / personal: **Next Up row** | On | Allows rating and review chips in home **Next Up** and the series-page shelf |
+| Admin: **Include the community score** / personal: **Community score** | On | Shows the yellow-star community score chip |
+| Admin: **Include the critic score** / personal: **Critic score** | On | Shows the critic percentage chip; with neither score, only a user-review chip can appear |
 
 Your item-type and row choices both apply. Turn off **Episodes** to hide these chips on every episode card, including **Next Up** and **Continue Watching**. Turn off a row to hide them only in that row. These choices do not hide quality, genre, language, or age-rating badges.
 
@@ -324,7 +354,7 @@ A pink person-with-heart chip shows the average star rating from reviews visible
 
 1. As an administrator, open **Elsewhere & Reviews** → **User Reviews**.
 2. Turn on **Enable User Written Reviews** and **Show average user rating on poster cards**, then click **Save Settings**.
-3. Each viewer must also enable **Show Rating Tags**. There is no separate personal review-chip switch.
+3. Each viewer must also turn on the **Rating** group. There is no separate personal review-chip switch.
 
 To contribute, open an eligible detail page and click **Write a Review**. Choose stars, enter review text, or both.
 
@@ -357,11 +387,11 @@ Age Rating Tags show the official parental/content classification Jellyfin alrea
 
 ![Color-coded age classifications on movie and series posters](../images/tags/age-rating-tags.webp)
 
-**How to use:** Turn on **Show Age Rating Tags** in **UI Settings** and choose a corner.
+**How to use:** Turn on the **Age Rating** group under **Tag Groups** in **UI Settings** and choose its position.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Age Rating Tags** / personal: **Show Age Rating Tags** | Off | Shows the item's official classification on supported cards |
+| Admin: **Enable Age Rating Tags** / personal: **Age Rating** switch | Off | Shows the item's official classification on supported cards |
 | Admin: **Colored Ratings Backgrounds** | Off | Under **Extras** → **UI Tweaks**, colors official classification boxes on detail pages and applicable player elements |
 
 The default bottom-right position stacks with Rating Tags. Seasons and episodes normally show their own nonblank classification, or their series' classification if they have none.
@@ -380,11 +410,11 @@ Status Tags mark what is new or popular with a small translucent badge, such as 
 
 ![Just Added, New Episode, New Movie and daily trending badges on library cards](../images/tags/status-tags.webp)
 
-**How to use:** Turn on **Show Status Tags** in **UI Settings** and choose a corner. Open **Choose which badges to show** to turn single badges off.
+**How to use:** Turn on the **Status** group under **Tag Groups** in **UI Settings** and choose its position. Open the row to turn single badges off under **Choose which badges to show**.
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Status Tags** / personal: **Show Status Tags** | Off | Shows one status badge on supported cards. The admin switch also allows the server to fetch the trending list |
+| Admin: **Enable Status Tags** / personal: **Status** switch | Off | Shows one status badge on supported cards. The admin switch also allows the server to fetch the trending list |
 | Admin: **Show Trending rank** / personal: **Trending rank** | On | Shows the title's place in the trending list. Turning it off in the admin settings stops the trending list for everyone |
 | Admin: **Show New Movie / New Series / New Episode** / personal: **New Movie / New Series / New Episode** | On | Shows the release badges |
 | Admin: **Show Just Added** / personal: **Just Added** | On | Shows the badge for items recently added to the library |
@@ -585,7 +615,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 ??? info "Supported groups and preferences"
     JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, and age-classification. People Tags are not a native group.
 
-    It uses personal tag switches, corners, quality categories/order, sound-language preference, and rating item-type scopes, together with the administrator's language-priority policy. Native posters always use the corner positions, the original stacking order, the original genre and language limits and full labels, whatever web layout, slots, order, limits or density the user picked.
+    It uses personal tag switches, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the administrator's language-priority policy. Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. Labels stay full; compact density is web only. Status Tags are web only.
 
 ### Eligible clients and requests
 

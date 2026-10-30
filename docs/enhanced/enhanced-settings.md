@@ -244,12 +244,21 @@ Open **UI Settings** and turn on the options you want.
 | **Show Audio Languages** | On | Shows available audio languages on item details. |
 | **Add Remove from Continue Watching & Next Up Buttons** | Off | Adds removal buttons to home rows and keeps your playback position. |
 
-Tag toggles, corners, category ordering, rating scopes, hover behavior, and the conditional native-client preference also live in **UI Settings**, together with two tag layout controls:
+Poster tags live in **UI Settings** too: the layout, a live preview, and one **Tag Groups** row per group, plus hover behavior and the conditional native-client preference.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
 | **Tag Layout** | **Corners** | Chooses where poster tags appear: corners, top and bottom bands, a caption below the poster, a summary pill, or a minimal set. |
 | **Label Density** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
+| Preview **Resting** / **Hover** | **Resting** | Draws a sample poster with your layout and enabled groups; **Hover** shows what Summary and Minimal reveal on hover. Not saved. |
+| **Tag Groups** move up / move down | Status, quality, rating, age rating, language, genre | Sets the priority order. Higher groups win when space is short. |
+| Group switch | Off | Turns the group's tags on or off. |
+| **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corner picks also set the position Native Poster Tags use. |
+| **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
+| **Include** | All on | Quality: the categories and their stack order. Rating: **Community score** and **Critic score**. |
+| **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
+
+Each group row also keeps that group's other choices: the sound language for quality, **Choose where to show** for ratings, and **Choose which badges to show** for status.
 
 See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference.
 
