@@ -225,3 +225,20 @@ test('a user switch forgets the remembered facts and the stored copy of the outg
   await h.answer();
   assert.equal(h.hostOf(EPISODE).dataset.jeLayout, 'bands');
 });
+
+test('plain /Items fallback facts cannot complete a library rule and the next scan retries tag-data', async t => {
+  const rules = [{ id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS_LIB }], layout: 'bands', density: 'full' }];
+  const h = setupReal(t, { html: episodeCard(EPISODE, 'Movie'), settings: { tagLookRules: rules } });
+  h.window.ApiClient.ajax = async () => { throw new Error('tag-data unavailable'); };
+  h.window.ApiClient.getItem = async () => ({ Id: EPISODE, Type: 'Movie' });
+  h.scan(); h.fetch(); await h.answer();
+  h.JE._cacheManager.save();
+  const saved = JSON.parse(h.window.localStorage.getItem('JE_tagLookFacts'));
+  assert.equal(saved[EPISODE].source, 'item');
+  h.window.ApiClient.ajax = async () => ({ Items: [{ Id: EPISODE, Type: 'Movie', LibraryId: KIDS_LIB }] });
+  h.layout.clearAll();
+  h.JE.tagPipeline.clearProcessed(); h.JE.tagPipeline.scheduleScan(); h.scan();
+  assert.equal(h.shown(EPISODE), false, 'plain facts do not release the new hold');
+  h.fetch(); await h.answer();
+  assert.equal(h.hostOf(EPISODE).dataset.jeLayout, 'bands');
+});

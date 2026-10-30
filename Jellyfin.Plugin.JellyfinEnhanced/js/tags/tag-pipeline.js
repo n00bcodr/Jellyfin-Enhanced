@@ -1058,11 +1058,12 @@
      * LOOK_FACTS_MAX the oldest go).
      * @param {string} itemId - Normalised item id.
      * @param {object} item - /tag-data or /Items item.
+     * @param {'tag-data'|'item'} [source] - Whether library membership was resolved.
      */
-    function rememberLookFacts(itemId, item) {
+    function rememberLookFacts(itemId, item, source = 'tag-data') {
         if (!itemId || !item) return;
         /** @type {Object<string, *>} */
-        const facts = { at: Date.now() };
+        const facts = { at: Date.now(), source };
         for (const field of LOOK_FACT_FIELDS) {
             if (item[field] !== undefined && item[field] !== null) facts[field] = item[field];
         }
@@ -1079,6 +1080,21 @@
     }
 
     /**
+     * Whether remembered data came from the enriched endpoint. Older facts
+     * without provenance are complete only when they include a library id.
+     * @param {object|undefined} facts
+     * @returns {boolean}
+     */
+    function enrichedLookFacts(facts) {
+        return !!facts && (facts.source === 'tag-data' || (facts.source == null && /^[a-f0-9]{32}$/i.test(facts.LibraryId || '')));
+    }
+
+    /** @returns {boolean} An enabled rule needs enriched library membership. */
+    function needsLibraryFacts() {
+        return !!JE.core.tagLook?.read().rules.some((rule) => rule.enabled && rule.when.some((cond) => cond.field === 'library'));
+    }
+
+    /**
      * An item's data for tag look rules and locks, the way its cards are
      * matched: its server tag-cache entry, else the remembered facts, else
      * fetched from /tag-data (and remembered).
@@ -1086,8 +1102,10 @@
      * @returns {Promise<object|null>} Null when the server has no such item.
      */
     async function itemLookFacts(itemId) {
-        const known = serverCache?.get(itemId) || lookFactsMap().get(itemId);
-        if (known) return known;
+        const serverEntry = serverCache?.get(itemId);
+        if (serverEntry) return serverEntry;
+        const known = lookFactsMap().get(itemId);
+        if (enrichedLookFacts(known)) return known;
         const userId = ApiClient.getCurrentUserId();
         const epoch = JE.session?.getEpoch?.();
         const response = await ApiClient.ajax({
@@ -1120,7 +1138,8 @@
         // said. Without either, a card a rule or lock could restyle waits
         // for the batch fetch below before showing its tags.
         const cardId = layout?.cardIdentity?.(renderTarget) ?? '';
-        const known = serverEntry || lookFactsMap().get(itemId);
+        const remembered = lookFactsMap().get(itemId);
+        const known = serverEntry || (!needsLibraryFacts() || enrichedLookFacts(remembered) ? remembered : null);
         let awaiting = false;
         if (known) layout?.setCardContext?.(renderTarget, known, itemId, cardId);
         else awaiting = !!layout?.awaitCardContext?.(renderTarget, cardId, itemType);
@@ -1585,7 +1604,7 @@
                         : await ApiClient.getItem(userId, itemId);
                     if (!isCurrent()) return;
                     if (!item || !MEDIA_TYPES.has(item.Type)) continue;
-                    rememberLookFacts(itemId, item);
+                    rememberLookFacts(itemId, item, 'item');
 
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
@@ -1596,7 +1615,7 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
-                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, cardId);
+                    if (!needsLibraryFacts()) JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, cardId);
 
                     for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;

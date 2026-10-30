@@ -361,3 +361,19 @@ for (const switchedBack of [false, true]) test(`a detail lock drops facts and sa
   await h.JE.tagPipeline.itemLookFacts(MOVIE);
   assert.equal(h.requests.filter(u => u.includes('/tag-data/')).length, 2);
 });
+
+for (const available of [true, false]) for (const explicitSource of [false, true]) test(`a plain remembered DTO cannot freeze the default look (retry available=${available}, source=${explicitSource})`, async t => {
+  const h = setup(t, { html: detailPage(), tagData: () => available ? { Id: MOVIE, Type: 'Movie', LibraryId: KIDS } : null,
+    settings: { tagLookRules: [{ ...kidsRule, when: [{ field: 'library', value: KIDS }] }] } });
+  h.JE.pluginConfig.TagCacheServerMode = false;
+  h.window.localStorage.setItem('JE_tagLookFacts:identity-owner', ':user-a');
+  // Also covers persisted facts written before source provenance was recorded.
+  h.window.localStorage.setItem('JE_tagLookFacts', JSON.stringify({ [MOVIE]: { Type: 'Movie', Genres: ['Drama'], at: Date.now(), ...(explicitSource ? { source: 'item', LibraryId: '33333333333333333333333333333333' } : {}) } }));
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
+  h.click(page.querySelector('.je-tag-look-lock-btn'));
+  await h.settle(); await h.settle();
+  assert.equal(h.requests.filter(u => u.includes('/tag-data/')).length, 1, 'plain facts require an enriched retry');
+  if (available) assert.equal(h.writes.at(-1).tagLayoutLocks[MOVIE].layout, 'caption');
+  else { assert.equal(h.writes.length, 0); assert.equal(h.toasts.at(-1), 'tag_look_error_toast'); }
+});
