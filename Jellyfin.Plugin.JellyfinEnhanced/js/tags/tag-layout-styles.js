@@ -12,6 +12,7 @@
     const host = (layout) => `.je-tag-host[data-je-layout="${layout}"] > .je-tag-slot`;
     const INDICATORS = '.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host';
     const INDICATOR_OFFSET = 'clamp(20px, 3vw, 30px)';
+    const CORNER = `${SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`;
     /** Groups whose containers had 4px phone edge offsets before layouts existed. */
     const LEGACY_MOBILE_GROUPS = ':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])';
     const LEGACY_EDGE = (slot) => `.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${slot}"] > ${LEGACY_MOBILE_GROUPS}`;
@@ -49,6 +50,18 @@
             ${SLOT}[data-je-slot="br"] { flex-direction: column-reverse; align-items: flex-end; }
             ${SLOT}:is([data-je-slot="tl"], [data-je-slot="bl"]) > [data-je-group] { align-items: flex-start; }
             ${SLOT}:is([data-je-slot="tr"], [data-je-slot="br"]) > [data-je-group] { align-items: flex-end; }
+            /* The containers' own size limits were written against the whole card
+               (a 100% that a corner slot, inset 6px, makes 12px smaller): restate
+               them so narrow cards clip chips exactly where they always did. */
+            ${CORNER} > :is(.quality-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container) {
+                max-width: 100%;
+            }
+            ${CORNER} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
+                max-height: calc(90% + 10.8px);
+            }
+            @media (max-width: 480px) {
+                ${CORNER} > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 10.2px); }
+            }
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
                with a group set to top-right moves that stack below it. */
             ${INDICATORS}[data-je-indicator-gap] > .je-tag-slot[data-je-slot="tr"],

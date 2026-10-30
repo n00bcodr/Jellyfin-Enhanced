@@ -744,3 +744,15 @@ test('settings saved before layouts keep the 4px phone edge offsets of rating, a
   assert.match(css.slice(0, css.indexOf('@media (max-width: 480px)')), /\[data-je-slot="tl"\], .*\[data-je-slot="tr"\],\s*.*\[data-je-slot="bl"\], .*\[data-je-slot="br"\] \{\s*inset: 6px;/, 'everything else keeps 6px');
   assert.equal(h.host().dataset.jeLegacy, '1');
 });
+
+test('corner slots restate the containers\' card-relative size limits, so narrow cards clip chips where they always did', t => {
+  const h = setup(t);
+  h.render();
+  const css = h.document.getElementById('je-tag-layout').textContent;
+  const corner = '\\.je-tag-host > \\.je-tag-slot:is\\(\\[data-je-slot="tl"\\], \\[data-je-slot="tr"\\], \\[data-je-slot="bl"\\], \\[data-je-slot="br"\\]\\)';
+  assert.match(css, new RegExp(`${corner} > :is\\(\\.quality-overlay-container, \\.rating-overlay-container, \\.age-rating-overlay-container, \\.status-overlay-container\\) \\{\\s*max-width: 100%;`),
+    'calc(100% - 12px) of the card is the whole 6px-inset slot');
+  assert.match(css, new RegExp(`${corner} > :is\\(\\.quality-overlay-container, \\.language-overlay-container, \\.genre-overlay-container\\) \\{\\s*max-height: calc\\(90% \\+ 10\\.8px\\);`),
+    '90% of the card, against a slot 12px shorter');
+  assert.match(css, /@media \(max-width: 480px\) \{\s*[^{]+> :is\(\.quality-overlay-container, \.genre-overlay-container\) \{ max-height: calc\(85% \+ 10\.2px\); \}/);
+});
