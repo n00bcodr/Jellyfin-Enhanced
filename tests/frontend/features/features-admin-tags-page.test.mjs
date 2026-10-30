@@ -60,10 +60,10 @@ function serverPatch(server, body) {
  * mocked server (`server`), without a page built yet. Field saves go through
  * `patch` (default: serverPatch) and are recorded in `patches`.
  * @param {import('node:test').TestContext} t
- * @param {{server: object, url?: string, apiClient?: object, globals?: object, patch?: Function, routes?: Object<string, Function>}} options
- *   routes: GET path suffix → answer, before the defaults.
+ * @param {{server: object, url?: string, apiClient?: object, globals?: object, patch?: Function, routes?: Object<string, Function>, session?: boolean}} options
+ *   routes: GET path suffix → answer, before the defaults. session: run the real core/session.js first.
  */
-function boot(t, { server, url, apiClient = {}, globals = {}, patch, routes = {} }) {
+function boot(t, { server, url, apiClient = {}, globals = {}, patch, routes = {}, session = false }) {
   const posts = [];
   const patches = [];
   const h = createHarness({
@@ -102,7 +102,12 @@ function boot(t, { server, url, apiClient = {}, globals = {}, patch, routes = {}
     return { get fillStyle() { return fill; }, set fillStyle(v) { if (/^(#[0-9a-f]{6}|rgba?\([\d.,\s]+\))$/i.test(String(v).trim())) fill = String(v).trim().toLowerCase(); } };
   };
   h.window.Element.prototype.scrollIntoView = function () {};
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/rating-sources.js', 'enhanced/settingspanel/ui-panel-tag-editor.js', 'enhanced/admintags/admin-tags.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/rating-sources.js', 'enhanced/settingspanel/ui-panel-tag-editor.js']) h.load(file);
+  if (session) {
+    h.JE.core.navigation = { onNavigate: () => {} };
+    h.load('core/session.js');
+  }
+  h.load('enhanced/admintags/admin-tags.js');
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   const A = h.JE.adminTags;
   for (const file of A.SECTION_FILES) h.load(`enhanced/admintags/${file}`);
@@ -390,6 +395,122 @@ test('a failed save survives navigating to another Media Tags view: still pendin
   assert.equal(writes.length, 1);
   assert.equal(chip.dataset.state, 'saved');
   assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
+});
+
+/**
+ * The dashboard's ApiClient identity, switched the way Jellyfin signs out and in
+ * (setAuthenticationInfo, which core/session.js follows).
+ */
+function signedIn(user = 'admin-a', server = 'server-a') {
+  const who = { user, server };
+  return {
+    who,
+    apiClient: {
+      getCurrentUserId: () => who.user,
+      serverId: () => who.server,
+      setAuthenticationInfo(token, userId) { who.user = userId || null; },
+    },
+  };
+}
+
+test('signing out drops the pending edits and the view; the next administrator sees none of them', async t => {
+  const server = structuredClone(BASE);
+  let fail = true;
+  const { who, apiClient } = signedIn();
+  const h = boot(t, { server, session: true, apiClient, patch: (body) => { if (fail) throw new Error('offline'); return serverPatch(server, body); } });
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  h.document.body.innerHTML = TWO_PAGES;
+  const [first, second] = h.document.querySelectorAll('.page');
+  const a = await h.A.activate(first);
+  h.cleanup.push(() => a.dispose());
+  h.change(first.querySelector('#tagsHideOnHover'), true);
+  assert.equal(await a.flush(), false);
+  assert.deepEqual(plain(h.A.pendingState()), { state: 'error', fields: ['TagsHideOnHover'], failed: ['TagsHideOnHover'] });
+  // Jellyfin's logout: the credentials go, the document stays.
+  h.window.ApiClient.setAuthenticationInfo(null, null);
+  assert.equal(h.JE.session.getUserId(), null);
+  assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
+  assert.equal(a.disposed, true);
+  assert.equal(first.querySelector('.je-ta-tabs'), null, 'the view is emptied');
+  // Another administrator signs in and opens the page: nothing of the first one's.
+  h.window.ApiClient.setAuthenticationInfo('token-b', 'admin-b');
+  assert.equal(who.user, 'admin-b');
+  fail = false;
+  const b = await h.A.activate(second);
+  h.cleanup.push(() => b.dispose());
+  assert.equal(second.querySelector('#tagsHideOnHover').checked, false);
+  assert.equal(b.config.TagsHideOnHover, false);
+  assert.equal(second.querySelector('#jeTaSaved').dataset.state, 'saved');
+  assert.equal(await b.flush(), true);
+  assert.equal(h.patches.length, 1, 'only the failed attempt, made while the first administrator was signed in');
+  assert.equal(server.TagsHideOnHover, false, 'the first administrator\'s edit was never sent with the new credentials');
+  // Their own edits save as usual.
+  h.change(second.querySelector('#disableTagsOnSearchPage'), true);
+  await b.flush();
+  assert.deepEqual(h.patches.at(-1).Changes, { DisableTagsOnSearchPage: true });
+});
+
+test('answers for the signed-out session are ignored: a save on its way, and settings still loading', async t => {
+  const server = structuredClone(BASE);
+  const held = deferred();
+  const load = deferred();
+  let holdLoad = false;
+  const { apiClient } = signedIn();
+  const h = boot(t, {
+    server, session: true,
+    apiClient: { ...apiClient, getPluginConfiguration: async () => { if (holdLoad) { holdLoad = false; await load.promise; } return structuredClone(server); } },
+    patch: async () => { await held.promise; throw new Error('offline'); },
+  });
+  h.document.body.innerHTML = TWO_PAGES;
+  const [first, second] = h.document.querySelectorAll('.page');
+  const a = await h.A.activate(first);
+  h.cleanup.push(() => a.dispose());
+  h.change(first.querySelector('#tagsHideOnHover'), true);
+  const saving = a.flush();
+  await h.settle();
+  assert.equal(h.patches.length, 1, 'the save is on its way');
+  h.window.ApiClient.setAuthenticationInfo(null, null);
+  // The old request fails after the sign-out: no error, no retry, nothing pending.
+  held.resolve();
+  assert.equal(await saving, false);
+  await h.settle();
+  assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
+  assert.equal(h.patches.length, 1);
+  // The page opened while signed in as A, its settings answering after A signed out: not built.
+  h.window.ApiClient.setAuthenticationInfo('token-a', 'admin-a');
+  holdLoad = true;
+  const opening = h.A.activate(second);
+  await h.settle();
+  h.window.ApiClient.setAuthenticationInfo(null, null);
+  load.resolve();
+  assert.equal(await opening, null);
+  assert.equal(second.querySelector('.je-ta-tabs'), null);
+});
+
+test('another server (or a missed sign-out) is noticed before saving or showing the page', async t => {
+  const server = structuredClone(BASE);
+  let fail = true;
+  const { who, apiClient } = signedIn();
+  // No core/session.js: the page compares the ApiClient identity itself.
+  const h = boot(t, { server, apiClient, patch: (body) => { if (fail) throw new Error('offline'); return serverPatch(server, body); } });
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  h.document.body.innerHTML = TWO_PAGES;
+  const [first, second] = h.document.querySelectorAll('.page');
+  const a = await h.A.activate(first);
+  h.cleanup.push(() => a.dispose());
+  h.change(first.querySelector('#tagsHideOnHover'), true);
+  assert.equal(await a.flush(), false);
+  fail = false;
+  // Same administrator id, another server.
+  who.server = 'server-b';
+  first.querySelector('[data-je-retry]')?.click();
+  await h.settle();
+  assert.equal(h.patches.length, 1, 'Retry sends nothing to the other server');
+  assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
+  const b = await h.A.activate(second);
+  h.cleanup.push(() => b.dispose());
+  assert.equal(second.querySelector('#tagsHideOnHover').checked, false);
+  assert.equal(server.TagsHideOnHover, false);
 });
 
 test('a torn-down page saves nothing: a reused root has one set of listeners, and Back/Forward saves a change once', async t => {

@@ -312,6 +312,9 @@
      * not to one view: Jellyfin replaces the page element when the URL
      * changes, and an edit whose save failed must outlive that view until it
      * is retried. Every live view draws its save indicator from here.
+     * They also belong to one administrator on one server: signing out,
+     * signing in as someone else or switching servers drops them
+     * (resetSession), and work started before that is ignored when it ends.
      */
     const store = {
         /** @type {Map<string, *>} field → the value to save */
@@ -332,7 +335,61 @@
         host: null,
         /** @type {Set<(event: {type: string, values?: Object}) => void>} live views */
         views: new Set(),
+        /** @type {string|null} the server and administrator the edits belong to */
+        owner: null,
+        /** bumped by resetSession: requests from before it are ignored when they answer */
+        generation: 0,
     };
+
+    /**
+     * Who is signed in where: the server id and user id of the dashboard's
+     * ApiClient (what JE.session tracks).
+     * @returns {string}
+     */
+    function identity() {
+        try {
+            if (typeof ApiClient === 'undefined' || !ApiClient) return '|';
+            const server = typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+            const user = typeof ApiClient.getCurrentUserId === 'function' ? ApiClient.getCurrentUserId() : null;
+            return `${server || ''}|${user || ''}`;
+        } catch {
+            return '|';
+        }
+    }
+
+    /**
+     * Another administrator, no one, or another server: drop the previous
+     * session's edits, timer and live view. Saves still on their way are
+     * ignored when they answer; nothing is sent with the new credentials.
+     */
+    function resetSession() {
+        store.generation++;
+        clearTimeout(store.timer);
+        store.timer = null;
+        store.saving = null;
+        store.values.clear();
+        store.base.clear();
+        store.conflicts.clear();
+        store.failed = [];
+        store.host = null;
+        store.owner = null;
+        store.state = 'saved';
+        if (active) {
+            const previous = active;
+            active = null;
+            previous.ctx.dispose();
+            previous.root.replaceChildren();
+            delete previous.root.dataset.tab;
+        }
+        notify({ type: 'state' });
+    }
+
+    /** The edits belong to whoever is signed in now; anything else is dropped first. */
+    function checkSession() {
+        const now = identity();
+        if (store.owner !== null && store.owner !== now) resetSession();
+        store.owner = now;
+    }
 
     /**
      * Tell every live view about a change of state or a completed save.
@@ -390,6 +447,7 @@
     function flushStore() {
         clearTimeout(store.timer);
         store.timer = null;
+        checkSession();
         if (store.saving) return store.saving.then((ok) => (ok && store.values.size ? flushStore() : ok));
         const sent = new Map(Array.from(store.values).filter(([key]) => !store.conflicts.has(key)));
         if (!sent.size) {
@@ -397,6 +455,7 @@
             return Promise.resolve(!store.conflicts.size);
         }
         const host = store.host;
+        const generation = store.generation;
         // The values are snapshotted here and stay in the store until the
         // server took them: a reload meanwhile keeps them, and an edit made
         // meanwhile is the next save's.
@@ -405,9 +464,11 @@
         for (const key of sent.keys()) if (store.base.has(key)) expected[key] = store.base.get(key);
         setStoreState('saving');
         let refused = false;
-        store.saving = (async () => {
+        const saving = (async () => {
             try {
                 const result = await host.patch(changes, expected);
+                // Signed out (or someone else signed in) meanwhile: not this session's any more.
+                if (generation !== store.generation) return false;
                 const stored = result && result.values && typeof result.values === 'object' ? result.values : changes;
                 for (const [key, value] of sent) {
                     const saved = key in stored ? stored[key] : changes[key];
@@ -424,6 +485,7 @@
                 return true;
             } catch (err) {
                 const conflicts = await conflictsOf(err);
+                if (generation !== store.generation) return false;
                 if (conflicts && Object.keys(conflicts).length) {
                     for (const [key, theirs] of Object.entries(conflicts)) store.conflicts.set(key, theirs);
                     refused = true;
@@ -433,10 +495,12 @@
                 }
                 return false;
             } finally {
-                store.saving = null;
+                if (generation === store.generation) store.saving = null;
             }
         })();
-        return store.saving.then((ok) => {
+        store.saving = saving;
+        return saving.then((ok) => {
+            if (generation !== store.generation) return false;
             // Refused fields wait for a choice; the others in that request still save.
             if (refused) return flushStore();
             if (!ok) setStoreState('error');
@@ -514,6 +578,7 @@
                 dataType: 'json',
             }),
         };
+        checkSession();
         store.host = host;
         // Edits a failed save left behind (another view's) show here too.
         for (const [key, value] of store.values) config[key] = value;
@@ -1055,8 +1120,10 @@
      */
     async function leaveWithPending() {
         if (!hasPending()) return;
+        const generation = store.generation;
         const ok = await flushStore();
-        if (ok || onMediaTagsPage()) return;
+        // Signed out meanwhile: the edits went with that session, nothing to go back to.
+        if (ok || generation !== store.generation || onMediaTagsPage()) return;
         const names = Array.from(new Set((store.failed.length ? store.failed : Array.from(store.values.keys())).map(fieldName))).join(', ');
         const back = await askConfirm(JE.t('admin_tags_leave_confirm', { fields: names }), JE.t('admin_tags_leave_title'));
         if (back && !onMediaTagsPage()) window.location.href = pageUrl();
@@ -1114,8 +1181,15 @@
         queue = queue.then(async () => {
             const root = /** @type {HTMLElement} */ (page.querySelector('.je-tag-admin'));
             detectTheme(root);
+            // Another administrator (or server) since the last view: start from nothing.
+            checkSession();
+            const generation = store.generation;
             if (active && active.page === page && root.contains(active.ctx.root.firstElementChild)) {
-                try { active.ctx.reload(await ApiClient.getPluginConfiguration(PLUGIN_ID)); } catch (err) { console.warn('🪼 Jellyfin Enhanced: could not reload the configuration', err); }
+                let fresh = null;
+                try { fresh = await ApiClient.getPluginConfiguration(PLUGIN_ID); } catch (err) { console.warn('🪼 Jellyfin Enhanced: could not reload the configuration', err); }
+                // Signed out while it loaded: resetSession already emptied the view.
+                if (generation !== store.generation || !active) return null;
+                if (fresh) active.ctx.reload(fresh);
                 const target = requestedTarget();
                 if (target.tab) active.ctx.openTab(target.tab, { group: target.group });
                 return active.ctx;
@@ -1133,12 +1207,15 @@
             try {
                 config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
             } catch (err) {
+                if (generation !== store.generation) return null;
                 console.error('🪼 Jellyfin Enhanced: could not load the Media Tags settings', err);
                 showLoadError(page, root);
                 return null;
             } finally {
                 Dashboard.hideLoadingMsg?.();
             }
+            // The previous administrator's settings, answered after they signed out: not shown to anyone.
+            if (generation !== store.generation) return null;
             const ctx = createPage(root, config);
             active = { page, root, ctx };
             return ctx;
@@ -1198,6 +1275,9 @@
         }
         return activate(page);
     }
+
+    // Signing out, another administrator or another server: the edits and the view go with the old session.
+    JE.session?.onUserChange?.('admin-tags', resetSession);
 
     JE.adminTags = {
         TABS,
