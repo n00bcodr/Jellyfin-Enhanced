@@ -97,3 +97,61 @@ test('a stored tag cache copy with the current entry schema is restored and only
   assert.deepEqual(cleared, []);
   assert.ok(calls.some(url => url.includes('since=40')), 'the delta since the stored cursor');
 });
+
+/** Track the private fact maps without exposing production-only diagnostics. */
+function factsHarness(t) {
+  const maps = [];
+  class TrackedMap extends Map {
+    constructor(...args) { super(...args); maps.push(this); }
+  }
+  const h = createHarness({ globals: { Map: TrackedMap, requestIdleCallback() {} } });
+  t.after(() => h.close());
+  h.load('tags/tag-pipeline.js');
+  let now = 1000000;
+  h.window.Date.now = () => now;
+  const pipeline = h.JE.tagPipeline;
+  pipeline.rememberItemFacts({ Id: 'seed', Type: 'Season', SeriesId: 'series', IndexNumber: 1 });
+  const seasons = maps.find(map => map.get('series:1') === 'seed');
+  const items = maps.find(map => map.get('seed')?.entry?.Id === 'seed');
+  return { pipeline, items, seasons, advance() { now += 11 * 60 * 1000; } };
+}
+
+test('20,000 expired season facts also evict their season lookups', t => {
+  const h = factsHarness(t);
+  for (let i = 0; i < 20000; i++) {
+    h.pipeline.rememberItemFacts({ Id: `season${i}`, Type: 'Season', SeriesId: 'series', IndexNumber: i + 2 });
+    h.advance();
+    assert.equal(h.pipeline.peekItemFacts(`season${i}`), null);
+  }
+  assert.equal(h.pipeline.peekItemFacts('seed'), null);
+  assert.equal(h.items.size, 0);
+  assert.equal(h.seasons.size, 0, 'expired items leave no orphan season keys');
+});
+
+test('replacing season identities and reusing a season key keep both maps consistent', t => {
+  const h = factsHarness(t);
+  for (let i = 0; i < 20000; i++) {
+    h.pipeline.rememberItemFacts({ Id: 'seed', Type: 'Season', SeriesId: 'series', IndexNumber: i + 2 });
+  }
+  assert.equal(h.items.size, 1);
+  assert.equal(h.seasons.size, 1, 'a changed series/season removes its previous key');
+  assert.equal(h.pipeline.peekSeasonFacts('series', 1), null);
+  h.pipeline.rememberItemFacts({ Id: 'replacement', Type: 'Season', SeriesId: 'series', IndexNumber: 20001 });
+  assert.equal(h.pipeline.peekSeasonFacts('series', 20001).Id, 'replacement');
+  for (const [key, id] of h.seasons) assert.equal(h.items.get(id)?.seasonKey, key);
+  h.pipeline.rememberItemFacts({ Id: 'replacement', Type: 'Series' });
+  assert.equal(h.seasons.size, 0, 'replacing a season with another type removes its lookup');
+});
+
+test('container facts evict the oldest entries and their lookups at the memory cap', t => {
+  const h = factsHarness(t);
+  for (let i = 0; i < 20000; i++) {
+    h.pipeline.rememberItemFacts({ Id: `season${i}`, Type: 'Season', SeriesId: 'series', IndexNumber: i + 2 });
+  }
+  assert.equal(h.items.size, 20000);
+  assert.equal(h.seasons.size, 20000);
+  assert.equal(h.pipeline.peekItemFacts('seed'), null, 'oldest fact evicted first');
+  assert.equal(h.pipeline.peekSeasonFacts('series', 1), null);
+  assert.equal(h.pipeline.peekSeasonFacts('series', 2).Id, 'season0', 'newer facts survive the cap');
+  for (const [key, id] of h.seasons) assert.equal(h.items.get(id)?.seasonKey, key);
+});

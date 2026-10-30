@@ -84,7 +84,7 @@
     const firstEpisodeCache = new Map(); // seriesId → Promise<item|null>
     // Caller-filtered Series/Season facts from /tag-data, shared with server-cache readers.
     const seasonFactIds = new Map(); // seriesId:season → normalized season id
-    const itemFacts = new Map(); // normalized id → { entry, fetchedAt, expires }
+    const itemFacts = new Map(); // normalized id → { entry, fetchedAt, expires, seasonKey }
     const ITEM_FACTS_TTL_MS = 10 * 60 * 1000;
     const parentSeriesCache = new Map(); // seriesId → Promise<item|null>
     let fetchTimer = null;
@@ -96,6 +96,17 @@
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
     let requestQueue = [];               // { el, itemId, itemType, reuse }
     const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
+
+    /**
+     * Remove a container fact and the season lookup owned by it.
+     * @param {string} id - Normalized item id.
+     * @returns {void}
+     */
+    function forgetItemFacts(id) {
+        const saved = itemFacts.get(id);
+        if (saved?.seasonKey && seasonFactIds.get(saved.seasonKey) === id) seasonFactIds.delete(saved.seasonKey);
+        itemFacts.delete(id);
+    }
 
     /**
      * Retain only caller-filtered container projections, including stripped facts.
@@ -110,11 +121,21 @@
         // A redraw cannot revive an expired fetch or replace newer shared facts.
         if (!Number.isFinite(fetchedAt) || fetchedAt + ITEM_FACTS_TTL_MS <= Date.now()
             || (itemFacts.get(itemId)?.fetchedAt ?? -Infinity) > fetchedAt) return;
-        if (itemFacts.size >= MEMORY_SOFT_CAP) { itemFacts.clear(); seasonFactIds.clear(); }
-        itemFacts.set(itemId, { entry, fetchedAt, expires: fetchedAt + ITEM_FACTS_TTL_MS });
-        if (entry.Type === 'Season' && entry.SeriesId) {
-            const seriesId = String(entry.SeriesId).replace(/-/g, '').toLowerCase();
-            seasonFactIds.set(`${seriesId}:${entry.SeasonNumber ?? entry.IndexNumber}`, itemId);
+        forgetItemFacts(itemId);
+        const seriesId = entry.SeriesId ? String(entry.SeriesId).replace(/-/g, '').toLowerCase() : null;
+        const seasonKey = entry.Type === 'Season' && seriesId ? `${seriesId}:${entry.SeasonNumber ?? entry.IndexNumber}` : null;
+        if (seasonKey) {
+            const previousId = seasonFactIds.get(seasonKey);
+            if (previousId) forgetItemFacts(previousId);
+            seasonFactIds.set(seasonKey, itemId);
+        }
+        itemFacts.set(itemId, { entry, fetchedAt, expires: fetchedAt + ITEM_FACTS_TTL_MS, seasonKey });
+        // Map insertion order implements oldest-first eviction for each store.
+        while (itemFacts.size > MEMORY_SOFT_CAP) forgetItemFacts(itemFacts.keys().next().value);
+        while (seasonFactIds.size > MEMORY_SOFT_CAP) {
+            const [key, seasonId] = seasonFactIds.entries().next().value;
+            seasonFactIds.delete(key);
+            forgetItemFacts(seasonId);
         }
     }
 
@@ -124,7 +145,7 @@
         if (entry) return entry;
         const saved = itemFacts.get(id);
         if (saved && saved.expires > Date.now()) return saved.entry;
-        itemFacts.delete(id);
+        forgetItemFacts(id);
         return null;
     }
 
@@ -894,7 +915,7 @@
             const newEntries = Object.entries(resp.items);
             if (newEntries.length > 0) {
                 for (const [id, entry] of newEntries) {
-                    itemFacts.delete(id);
+                    forgetItemFacts(id);
                     serverCache.set(id, entry);
                     storeMisses.delete(id);
                     deltaIds.add(id);
