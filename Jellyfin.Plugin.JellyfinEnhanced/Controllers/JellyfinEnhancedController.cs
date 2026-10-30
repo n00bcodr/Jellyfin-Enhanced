@@ -3880,6 +3880,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RatingTagsSources = RatingSourceSettings.Defaults(config),
                 RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(config.RatingTagsMinScore),
                 config.RatingTagsColorByScore,
+                // Language Tags display starting defaults (normalized)
+                config.LanguageTagsShowAudio,
+                config.LanguageTagsShowSubtitles,
+                LanguageTagsStyle = LanguageTagDisplay.NormalizeStyle(config.LanguageTagsStyle),
+                LanguageTagsCountBadge = LanguageTagDisplay.NormalizeCountBadge(config.LanguageTagsCountBadge),
                 config.AgeRatingTagsPosition,
                 config.StatusTagsPosition,
                 config.StatusTagsJustAdded,
@@ -5401,6 +5406,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     };
                     TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
                     TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
+                    LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
                     _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
@@ -5478,6 +5484,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagLayoutRules.Normalize(userConfiguration);
                 if (userConfiguration.SeriesQualityAggregation != null)
                     userConfiguration.SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(userConfiguration.SeriesQualityAggregation);
+                // Unknown language tag styles / badge modes fall back to flags / off.
+                LanguageTagDisplay.Normalize(userConfiguration);
                 // An unknown Tag Styles preset follows the admin's instead.
                 userConfiguration.TagStylePreset = TagStyleKeys.KnownPreset(userConfiguration.TagStylePreset);
                 // Rules and locks: invalid entries are dropped one by one (ids
@@ -8429,6 +8437,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             };
             TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
             TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
+            LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
 
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();
@@ -8883,6 +8892,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     .ToList();
             }
 
+            // Subtitle languages for the Language Tags overlay, the way the server
+            // tag cache stores them (TagCacheService.ExtractMediaData): lower-cased,
+            // "und"/"root" dropped, one per language however many forced / SDH
+            // tracks carry it. Subtitle languages are Jellyfin's own (the Matroska
+            // BCP-47 reader only aligns audio tracks).
+            static string[] TagDataSubtitleLanguages(List<MediaSourceInfo> sources) => sources
+                .SelectMany(source => (IEnumerable<MediaStream>?)source.MediaStreams ?? Array.Empty<MediaStream>())
+                .Where(stream => stream.Type == MediaStreamType.Subtitle)
+                .Select(stream => Services.TagCacheService.NormalizeStreamLanguage(stream.Language))
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
             // Age rating for the Age Rating Tags overlay. Seasons/Episodes rarely
             // carry their own, so fall back to the Series — resolved here (not on
             // the client) so batch mode matches the server tag cache, which does
@@ -9039,10 +9061,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // stripped episodes only is the correct trade-off.
                     List<object>? stubStreams = null;
                     List<object>? stubSources = null;
+                    string[]? stubSubtitles = null;
                     if (!spStripGenres)
                     {
                         var stubMediaSources =
                             SelectTagDataMediaSources(spEp.GetMediaSources(false));
+                        stubSubtitles = TagDataSubtitleLanguages(stubMediaSources);
                         stubStreams = stubMediaSources
                             .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache))
                             .Where(resolved =>
@@ -9097,6 +9121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Path = (string?)null,
                         MediaStreams = stubStreams,
                         MediaSources = stubSources,
+                        SubtitleLanguages = stubSubtitles,
                         FirstEpisode = (object?)null,
                         // Align with the field-strip filter (which empties Tags).
                         Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
@@ -9165,10 +9190,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     string? stubName = item.Name;
 
                     List<object>? stubStreams = null;
+                    string[]? stubSubtitles = null;
                     if (!spStripGenres)
                     {
                         var stubMs =
                             SelectTagDataMediaSources(spMovie.GetMediaSources(false));
+                        stubSubtitles = TagDataSubtitleLanguages(stubMs);
                         stubStreams = stubMs
                             .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache))
                             .Where(resolved =>
@@ -9210,6 +9237,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Path = (string?)null,
                         MediaStreams = stubStreams,
                         MediaSources = (List<object>?)null,
+                        SubtitleLanguages = stubSubtitles,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
                         DateCreated = Services.TagCacheService.ToUnixMilliseconds(spMovie.DateCreated),
@@ -9269,11 +9297,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 List<object>? trimmedStreams = null;
                 List<object>? trimmedSources = null;
                 var namingTags = new Services.MediaNamingTags();
+                string[]? subtitleLanguages = null;
                 if (!isContainer)
                 {
                     var mediaSources =
                         SelectTagDataMediaSources(item.GetMediaSources(false));
                     namingTags = Services.MediaNamingTags.Detect(item.Path, mediaSources, item.Name);
+                    subtitleLanguages = TagDataSubtitleLanguages(mediaSources);
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
                         .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache))
@@ -9353,6 +9383,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Edition = namingTags.Edition,
                     MediaStreams = trimmedStreams,
                     MediaSources = trimmedSources,
+                    SubtitleLanguages = subtitleLanguages,
                     FirstEpisode = firstEpisodeData,
                     QualitySummary = isContainer ? _tagCacheService.GetQualitySummaryForUser(item, user) : null,
                     DateCreated = Services.TagCacheService.ToUnixMilliseconds(item.DateCreated),

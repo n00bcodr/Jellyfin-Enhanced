@@ -135,7 +135,7 @@
     "panel_settings_ui_genre_tags": "Show Genre Tags",
     "panel_settings_ui_genre_tags_desc": "Display genre icons on posters.",
     "panel_settings_ui_language_tags": "Show Language Tags",
-    "panel_settings_ui_language_tags_desc": "Display audio language flags on posters.",
+    "panel_settings_ui_language_tags_desc": "Display audio and subtitle languages as flags or codes, with optional Dual/Multi badges.",
     "panel_settings_ui_quality_tags_desc": "Display 4K, HDR, etc., tags on posters.",
     "panel_settings_ui_quality_tags_categories_label": "Choose what to show",
     "panel_settings_ui_quality_tags_resolution": "Resolution (4K, 1080p, ...)",
@@ -1085,5 +1085,17 @@
     "series_quality_aggregation_shared": "Only what every episode has",
     "series_quality_aggregation_mixed": "Best, marked when mixed",
     "series_quality_mixed": "Mixed",
-    "series_quality_mixed_compact": "±"
+    "series_quality_mixed_compact": "±",
+    "language_tags_audio": "Audio",
+    "language_tags_subtitles": "Subtitles",
+    "language_tags_style": "Style",
+    "language_tags_flags": "Flags",
+    "language_tags_codes": "Codes",
+    "language_tags_count_badge": "Audio count badge",
+    "language_tags_badge_off": "Off",
+    "language_tags_badge_only": "Badge only",
+    "language_tags_badge_both": "Badge and flags",
+    "language_tags_dual": "Dual",
+    "language_tags_multi": "Multi",
+    "language_tags_count_tooltip": "{count} audio languages"
 }

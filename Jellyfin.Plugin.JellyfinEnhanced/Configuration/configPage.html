@@ -341,7 +341,7 @@
                                 </div>
                             </div>
                             <div class="je-setting-description" data-desc-for="languageTagsEnabled">
-                                <div class="fieldDescription">Display available audio languages as country flags on poster cards.</div>
+                                <div class="fieldDescription">Display audio and subtitle languages as country flags or codes, with an optional Dual/Multi audio badge.</div>
                             </div>
                             <details id="languagePriorityAdminDetails" class="je-details-section" style="margin-left: 20px;">
                                 <summary>Priority languages</summary>
@@ -360,6 +360,38 @@
                                     <div class="checkboxContainer"><label><input id="languageTagsMergeRegions" is="emby-checkbox" type="checkbox"/><span>Merge Regional Variants</span></label></div>
                                     <div class="je-setting-description" data-desc-for="languageTagsMergeRegions">
                                         <div class="fieldDescription">Show one flag per language, matching Jellyfin's own audio language filter. For example, English and English (United Kingdom) share a single flag instead of two.</div>
+                                    </div>
+                                </div>
+                            </details>
+                            <details id="languageDisplayAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Choose what to show</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Starting defaults for what the language tags include and how they look. Users can override these in their personal settings.</div>
+                                    <div class="checkboxContainer"><label><input id="languageTagsShowAudio" is="emby-checkbox" type="checkbox"/><span>Include audio languages</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="languageTagsShowSubtitles" is="emby-checkbox" type="checkbox"/><span>Include subtitle languages</span></label></div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsShowSubtitles">
+                                        <div class="fieldDescription">Subtitle languages follow the audio ones and carry a small CC mark. Both count towards the language group's limit, audio first. Needs the server tag cache rebuilt once after updating.</div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="languageTagsStyle">Language Style</label>
+                                        <select is="emby-select" id="languageTagsStyle" name="languageTagsStyle" class="emby-select">
+                                            <option value="flags">Flags</option>
+                                            <option value="codes">Language codes (EN, JA)</option>
+                                        </select>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsStyle">
+                                        <div class="fieldDescription">Flags, or short uppercase language codes. Both show the full language name on hover.</div>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="languageTagsCountBadge">Dual / Multi Audio Badge</label>
+                                        <select is="emby-select" id="languageTagsCountBadge" name="languageTagsCountBadge" class="emby-select">
+                                            <option value="off">Off</option>
+                                            <option value="only">Badge only</option>
+                                            <option value="both">Badge and flags</option>
+                                        </select>
+                                    </div>
+                                    <div class="je-setting-description" data-desc-for="languageTagsCountBadge">
+                                        <div class="fieldDescription">A title with two audio languages shows a "Dual" badge, three or more a "Multi" badge, either instead of the audio flags or ahead of them.</div>
                                     </div>
                                 </div>
                             </details>
@@ -6821,6 +6853,8 @@
                     n.appendChild(el('i', 'material-icons', 'theaters'));
                 } else if (g === 'status') {
                     n = el('span', 'je-ts-chip je-ts-status status-tag', STATUS_SAMPLES[label.key] || label.name);
+                } else if (label.key === 'countBadge' || label.key === 'subtitles') {
+                    n = el('span', 'je-ts-chip language-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
                 } else {
                     n = el('img', 'je-ts-chip je-ts-flag language-flag');
                     n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');
@@ -7020,7 +7054,8 @@
                     rating: map('rating'),
                     genre: web(effective('genre', 'genre')),
                     status: map('status'),
-                    language: { border: effective('language', 'flag').border }
+                    language: { border: effective('language', 'flag').border },
+                    languageLabels: Object.fromEntries(['flag', 'subtitles', 'countBadge'].map(key => [key, { border: effective('language', key).border }]))
                 };
             }
 
@@ -7065,6 +7100,9 @@
                     n.dataset.jeStatus = label.key;
                     if (label.key === 'trending') n.append(el('span', 'status-tag-rank', '#3'), ' Today');
                     else n.textContent = STATUS_SAMPLES[label.key] || label.name;
+                } else if (label.key === 'countBadge' || label.key === 'subtitles') {
+                    n = el('span', 'language-chip je-ts-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
+                    n.dataset.jeLanguage = label.key;
                 } else {
                     n = el('img', 'language-flag je-ts-chip je-ts-flag');
                     n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');
@@ -7455,6 +7493,10 @@
                 document.querySelector('#languageTagsMergeRegions').checked = config.LanguageTagsMergeRegions === true;
                 const aggregationSelect = document.querySelector('#seriesQualityAggregation');
                 aggregationSelect.value = config.SeriesQualityAggregation || 'representative';
+                document.querySelector('#languageTagsShowAudio').checked = config.LanguageTagsShowAudio !== false;
+                document.querySelector('#languageTagsShowSubtitles').checked = config.LanguageTagsShowSubtitles === true;
+                document.querySelector('#languageTagsStyle').value = String(config.LanguageTagsStyle || '').toLowerCase() === 'codes' ? 'codes' : 'flags';
+                document.querySelector('#languageTagsCountBadge').value = ['only', 'both'].includes(String(config.LanguageTagsCountBadge || '').toLowerCase()) ? String(config.LanguageTagsCountBadge).toLowerCase() : 'off';
                 const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
                 // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
                 qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
@@ -8090,6 +8132,10 @@
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
             config.LanguageTagsMergeRegions = document.querySelector('#languageTagsMergeRegions').checked;
             config.SeriesQualityAggregation = document.querySelector('#seriesQualityAggregation').value || 'representative';
+            config.LanguageTagsShowAudio = document.querySelector('#languageTagsShowAudio').checked;
+            config.LanguageTagsShowSubtitles = document.querySelector('#languageTagsShowSubtitles').checked;
+            config.LanguageTagsStyle = document.querySelector('#languageTagsStyle').value === 'codes' ? 'codes' : 'flags';
+            config.LanguageTagsCountBadge = document.querySelector('#languageTagsCountBadge').value || 'off';
             config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
             config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
@@ -9715,7 +9761,7 @@
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
             { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showEditionTag', 'showLowQualitySourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'seriesQualityAggregation', 'tagGroupAdminRowQuality'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition', 'tagGroupAdminRowGenre'], noHint: true },
-            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'tagGroupAdminRowLanguage'], noHint: true },
+            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'languageTagsShowAudio', 'languageTagsShowSubtitles', 'languageTagsStyle', 'languageTagsCountBadge', 'tagGroupAdminRowLanguage'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsSources', 'ratingTagsSourceRows', 'ratingTagsMinScore', 'ratingTagsColorByScore', 'tagGroupAdminRowRating'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },

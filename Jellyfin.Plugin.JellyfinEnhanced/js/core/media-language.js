@@ -337,6 +337,7 @@
 
     JE.core.mediaLanguage = {
         parseLanguageTag,
+        canonicalBase,
         displayName,
         resolveFlag,
         flagSrc,

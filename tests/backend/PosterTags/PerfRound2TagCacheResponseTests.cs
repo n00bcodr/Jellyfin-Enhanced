@@ -55,7 +55,7 @@ public class PerfRound2TagCacheResponseTests
             Directory.CreateDirectory(Fixture.Core.ConfigRoot);
             File.WriteAllText(Path.Combine(Fixture.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new
             {
-                SchemaVersion = 15, Version = 9, LastModified = 200,
+                SchemaVersion = 16, Version = 9, LastModified = 200,
                 Items = new Dictionary<string, TagCacheEntry>
                 {
                     [First.ToString("N")] = new() { Type = "Movie", Genres = ["First secret"], LastUpdated = 100 },
@@ -285,6 +285,53 @@ public class PerfRound2TagCacheResponseTests
         var tagData = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [series.Id.ToString()]));
         var json = JsonSerializer.Serialize(tagData.Value);
         Assert.Contains(series.Id.ToString(), json); Assert.DoesNotContain("Series secret", json);
+    }
+
+    [Fact]
+    public async Task SubtitleLanguagesReachTagCacheAndTagDataAndFollowTheSpoilerStrip()
+    {
+        var subbed = Guid.NewGuid();
+        var guardedEpisode = Guid.NewGuid();
+        using var endpoint = new Endpoint(e => new()
+        {
+            [subbed.ToString("N")] = new() { Type = "Movie", AudioLanguages = ["eng"], SubtitleLanguages = ["eng", "fre"], LastUpdated = 120 },
+            [guardedEpisode.ToString("N")] = new() { Type = "Episode", SeriesId = e.SeriesId.ToString("N"), AudioLanguages = ["eng"], SubtitleLanguages = ["spa"], LastUpdated = 130 },
+        });
+        endpoint.AliceAccess = [endpoint.First, subbed, guardedEpisode];
+        var open = await endpoint.Read(endpoint.Alice);
+        Assert.Contains("\"SubtitleLanguages\":[\"eng\",\"fre\"]", open.Body);
+        Assert.Contains("\"SubtitleLanguages\":[\"spa\"]", open.Body);
+        // Bob's access set leaves both entries out entirely.
+        Assert.DoesNotContain("SubtitleLanguages", (await endpoint.Read(endpoint.Bob)).Body);
+
+        // Spoiler Guard's tag strip drops subtitle languages together with the audio ones,
+        // and the strip fingerprint (part of filterRevision) changes with it.
+        endpoint.GuardSeries();
+        var guarded = await endpoint.Read(endpoint.Alice);
+        Assert.Contains("\"SubtitleLanguages\":[\"eng\",\"fre\"]", guarded.Body);
+        Assert.DoesNotContain("\"spa\"", guarded.Body);
+        Assert.NotEqual(FilterRevision(open.Body), FilterRevision(guarded.Body));
+
+        // /tag-data: one language per subtitle track language (forced / SDH / external
+        // tracks count once, untagged ones not at all); streams stay audio/video only.
+        var movie = new TagCacheSubtitleLanguagesTests.Movie
+        {
+            Id = Guid.NewGuid(), Name = "Subbed",
+            Sources = [new() { MediaStreams = [
+                new() { Type = MediaBrowser.Model.Entities.MediaStreamType.Audio, Language = "eng" },
+                new() { Type = MediaBrowser.Model.Entities.MediaStreamType.Subtitle, Language = "eng", IsForced = true },
+                new() { Type = MediaBrowser.Model.Entities.MediaStreamType.Subtitle, Language = "ENG", IsHearingImpaired = true },
+                new() { Type = MediaBrowser.Model.Entities.MediaStreamType.Subtitle, Language = "fre", IsExternal = true },
+                new() { Type = MediaBrowser.Model.Entities.MediaStreamType.Subtitle, Language = "und" },
+            ] }],
+        };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(movie.Id, It.IsAny<User>())).Returns(movie);
+        endpoint.SignIn(endpoint.Alice);
+        var ok = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [movie.Id.ToString()]));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        var item = json.RootElement.GetProperty("Items")[0];
+        Assert.Equal(["eng", "fre"], item.GetProperty("SubtitleLanguages").EnumerateArray().Select(v => v.GetString()!).ToArray());
+        Assert.DoesNotContain(item.GetProperty("MediaStreams").EnumerateArray(), s => s.GetProperty("Type").GetString() == "Subtitle");
     }
 
     [Fact]

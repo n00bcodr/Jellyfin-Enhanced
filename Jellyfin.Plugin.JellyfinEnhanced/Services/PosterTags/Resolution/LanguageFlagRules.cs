@@ -230,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// in display order. Null when the web renders no language container (nothing resolved, or
         /// the web would throw while building it).
         /// </summary>
-        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict, bool mergeRegions = false, int cap = MaxFlags)
+        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict, bool mergeRegions = false, int cap = MaxFlags, bool codesStyle = false, bool validateFlags = true)
         {
             if (codes is null || codes.Length == 0) return null;
 
@@ -254,15 +254,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 var partial = partialCodes is not null && Array.IndexOf(partialCodes, code) >= 0;
                 var name = info.Name;
                 var countryCode = flag;
-                if (countryCode is null) continue;
-                var existing = flags.Find(f => f.CountryCode == countryCode);
+                if (countryCode is null && !codesStyle) continue;
+                if (codesStyle && ShortCode(code).Length == 0) continue;
+                var key = codesStyle ? CodeIdentity(code, mergeRegions) : countryCode;
+                var existing = flags.Find(f => (codesStyle ? CodeIdentity(f.Code, mergeRegions) : f.CountryCode) == key);
                 if (existing is null)
                 {
-                    flags.Add(new FlagInfo(countryCode, code, name, partial));
+                    flags.Add(new FlagInfo(countryCode ?? string.Empty, code, name, partial));
                 }
-                else if (!existing.AllLanguages.Contains(name))
+                else
                 {
-                    existing.AllLanguages.Add(name);
+                    if (!existing.AllLanguages.Contains(name)) existing.AllLanguages.Add(name);
                     existing.Partial = existing.Partial && partial;
                 }
             }
@@ -273,8 +275,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (cap > 0 && ordered.Count > cap) ordered.RemoveRange(cap, ordered.Count - cap);
 
             // A visible broken token throws (countryCode.toLowerCase is not a function): no container.
-            if (ordered.Exists(f => f.IsBroken)) return null;
+            if (validateFlags && !codesStyle && ordered.Exists(f => f.IsBroken)) return null;
             return ordered.Count == 0 ? null : ordered;
+        }
+
+        /// <summary>Canonical ISO 639-1 code, or the three-letter fallback, for a Codes chip.</summary>
+        internal static string ShortCode(string code) => Parse(code, out var parsed) && parsed.Base is not null
+            ? JsText.ToUpper(CanonicalBase(parsed.Base) ?? parsed.Base) : string.Empty;
+
+        /// <summary>Codes retain explicit regional/script variants unless the administrator merges them.</summary>
+        private static string CodeIdentity(string code, bool mergeRegions)
+        {
+            Parse(code, out var parsed);
+            return ShortCode(code) + (mergeRegions ? string.Empty : ":" + (parsed.Region ?? parsed.Script ?? string.Empty));
+        }
+
+        /// <summary>Language chips in the combined cap order: badge, audio, subtitles.</summary>
+        internal static List<PosterTag>? ResolveGroup(Model.TagCacheEntry entry, PosterTagSettings settings)
+        {
+            bool codes = settings.LanguageStyle == "codes";
+            List<FlagInfo>? ResolveTracks(string[]? tracks, string[]? partial, bool asCodes) => Resolve(
+                tracks, partial, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict,
+                settings.LanguageMergeRegions, cap: 0, codesStyle: asCodes, validateFlags: false);
+            var audio = settings.LanguageShowAudio ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, codes) : null;
+            var subtitles = settings.LanguageShowSubtitles ? ResolveTracks(entry.SubtitleLanguages, null, codes) : null;
+            var count = settings.LanguageShowAudio && settings.LanguageCountBadge != "off"
+                ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, true)?.Select(f => ShortCode(f.Code)).Where(c => c != "ZXX").Distinct().Count() ?? 0 : 0;
+            bool badge = settings.LanguageCountBadge != "off" && count >= 2;
+            var tags = new List<PosterTag>();
+            if (badge) tags.Add(new LanguageTag(string.Empty, string.Empty, false) { CountBadge = count == 2 ? "Dual" : "Multi" });
+            void Add(List<FlagInfo>? flags, bool subtitle)
+            {
+                foreach (var flag in flags ?? new List<FlagInfo>())
+                {
+                    tags.Add(new LanguageTag(ToFlagCode(flag.CountryCode), string.Join(", ", flag.AllLanguages), flag.Partial)
+                    { Subtitle = subtitle, Code = codes ? ShortCode(flag.Code) : null });
+                }
+            }
+            if (!badge || settings.LanguageCountBadge != "only") Add(audio, false);
+            Add(subtitles, true);
+            if (settings.LanguageCap > 0 && tags.Count > settings.LanguageCap) tags.RemoveRange(settings.LanguageCap, tags.Count - settings.LanguageCap);
+            if (!codes && tags.OfType<LanguageTag>().Any(t => t.FlagCode.StartsWith("\0", StringComparison.Ordinal))) return null;
+            return tags.Count > 0 ? tags : null;
         }
 
         /// <summary>

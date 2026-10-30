@@ -214,6 +214,7 @@ public class CoreTagLookSettingsTests
     [InlineData(10)]
     [InlineData(13)]
     [InlineData(14)]
+    [InlineData(15)]
     public void OlderSnapshotsAreDiscardedForRebuild(int oldSchema)
     {
         using var f = new ApiPluginFixture();
@@ -231,7 +232,7 @@ public class CoreTagLookSettingsTests
             Assert.Equal(0, old.Count);
         }
 
-        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 15, Version = 7, LastModified = 200, Items = items }));
+        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 16, Version = 7, LastModified = 200, Items = items }));
         using var current = Create();
         current.LoadFromDisk();
         Assert.Equal(1, current.Count);

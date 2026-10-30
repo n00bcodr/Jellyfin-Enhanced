@@ -79,6 +79,28 @@ public class PrivacyCacheTests
     }
 
     [Fact]
+    public void SubtitleEntriesFollowAccessFilteringAndItsRevisionForFullLoadsAndDeltas()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var first = Guid.NewGuid(); var second = Guid.NewGuid(); var allowed = new[] { first };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(() => allowed);
+        var a = Entry(100); a.SubtitleLanguages = ["en"];
+        var b = Entry(200); b.SubtitleLanguages = ["ja"];
+        Seed(f, new() { [first.ToString("N")] = a, [second.ToString("N")] = b });
+        using var cache = Create(f, library); cache.LoadFromDisk();
+        var initial = cache.GetCacheForUser(user, out _, out _, out var revision);
+        Assert.Equal(new[] { "en" }, Assert.Single(initial).Value.SubtitleLanguages);
+        Assert.Empty(cache.GetCacheForUser(user, out _, out _, out var deltaRevision, since: 100));
+        Assert.Equal(revision, deltaRevision);
+        allowed = [first, second]; cache.InvalidateUserAccess();
+        var expanded = cache.GetCacheForUser(user, out _, out _, out var changed);
+        Assert.NotEqual(revision, changed);
+        Assert.Equal(new[] { "ja" }, expanded[second.ToString("N")].SubtitleLanguages);
+    }
+
+    [Fact]
     public void LatestEpisodeDateIsDroppedForUsersWhoCannotSeeTheEpisodeItCameFrom()
     {
         using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
@@ -166,6 +188,6 @@ public class PrivacyCacheTests
     {
         Directory.CreateDirectory(f.Core.ConfigRoot);
         // Schema 8 fixture exercises the persisted contract consumed across process restarts.
-        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 15, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
+        File.WriteAllText(SnapshotPath(f), JsonSerializer.Serialize(new { SchemaVersion = 16, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks, Items = items }));
     }
 }

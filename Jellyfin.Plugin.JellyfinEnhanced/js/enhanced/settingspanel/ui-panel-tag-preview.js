@@ -134,19 +134,24 @@
             case 'ageRating':
                 add('age-rating-tag', sample.age).setAttribute('rating', sample.age);
                 break;
-            case 'language':
+            case 'language': {
+                const codes = { fr: 'fr', jp: 'ja', de: 'de', it: 'it' };
+                const data = { audio: sample.flags.map(flag => codes[flag]), subtitles: ['fr', 'de'] };
+                const group = JE.core.languageTags?.buildGroup(data, 0, code => FLAGS[code]
+                    ? `data:image/svg+xml,${encodeURIComponent(FLAGS[code].svg)}` : JE.core.mediaLanguage.flagSrc(code));
+                if (group) return group.children.length ? group : null;
+                // Standalone preview harnesses without the renderer still show the sample flags.
                 for (const code of sample.flags) {
-                    const flag = FLAGS[code];
                     const img = document.createElement('img');
                     img.className = 'language-flag';
-                    img.src = `data:image/svg+xml,${encodeURIComponent(flag.svg)}`;
-                    img.alt = flag.name;
-                    img.title = flag.name;
+                    img.src = `data:image/svg+xml,${encodeURIComponent(FLAGS[code].svg)}`;
+                    img.alt = img.title = FLAGS[code].name;
                     img.dataset.lang = code;
-                    img.dataset.langName = flag.name;
+                    img.dataset.langName = FLAGS[code].name;
                     wrap.appendChild(img);
                 }
                 break;
+            }
             case 'genre':
                 for (const [name, icon] of sample.genres) {
                     const chip = add('genre-tag');
@@ -263,9 +268,10 @@
         const L = layoutApi();
         const lead = [];
         const rest = [];
-        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .genre-tag, .status-tag, .je-tag-pill-fact, .je-tag-more)');
+        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .language-chip, .genre-tag, .status-tag, .je-tag-pill-fact, .je-tag-more)');
         for (const chip of chips) {
             const el = /** @type {HTMLElement} */ (chip);
+            if (el.parentElement?.classList.contains('language-subtitle')) continue;
             let text;
             if (el.classList.contains('language-flag')) text = String(el.dataset.lang || '').toUpperCase();
             else if (el.classList.contains('genre-tag')) text = el.title || el.textContent || '';

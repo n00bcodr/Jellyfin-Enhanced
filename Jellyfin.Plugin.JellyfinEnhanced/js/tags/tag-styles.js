@@ -126,6 +126,11 @@
         if (styles.language) {
             push(rules, `${P}.language-overlay-container .language-flag:not(.language-flag-partial)`, ring(styles.language.border));
         }
+        for (const label of ['flag', 'subtitles', 'countBadge']) {
+            const color = styles.languageLabels?.[label];
+            if (!color) continue;
+            push(rules, `${P}.language-overlay-container.language-overlay-container [data-je-language="${label}"]:not(.language-flag-partial)`, ring(color.border));
+        }
         return rules.join('\n');
     }
 

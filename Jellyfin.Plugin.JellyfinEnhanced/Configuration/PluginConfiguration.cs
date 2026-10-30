@@ -157,6 +157,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RatingTagsOnNextUp = true;
             RatingTagsShowCommunity = true;
             RatingTagsShowCritic = true;
+            // Language Tags display defaults (today's look: audio flags, no badge).
+            LanguageTagsShowAudio = true;
+            LanguageTagsShowSubtitles = false;
+            LanguageTagsStyle = "flags";
+            LanguageTagsCountBadge = "off";
             AgeRatingTagsPosition = "bottom-right";
             StatusTagsPosition = "top-right";
             StatusTagsJustAdded = true;
@@ -797,6 +802,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public double RatingTagsMinScore { get; set; } = 0;
         /// <summary>Colour rating text by score, below explicit Tag Styles.</summary>
         public bool RatingTagsColorByScore { get; set; } = false;
+        // ── Language Tags display (per-user defaults, see LanguageTagDisplay) ──
+        /// <summary>Starting default: the language group shows audio track languages.</summary>
+        public bool LanguageTagsShowAudio { get; set; } = true;
+        /// <summary>Starting default: the language group also shows subtitle languages (with a CC mark).</summary>
+        public bool LanguageTagsShowSubtitles { get; set; }
+        /// <summary>Starting default: "flags" or "codes" (uppercase ISO 639 codes with tooltips).</summary>
+        [AnalyticsInclude]
+        public string LanguageTagsStyle { get; set; } = "flags";
+        /// <summary>Starting default for the Dual/Multi audio badge: "off", "only" (instead of the audio chips) or "both".</summary>
+        [AnalyticsInclude]
+        public string LanguageTagsCountBadge { get; set; } = "off";
         [AnalyticsInclude]
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         [AnalyticsInclude]

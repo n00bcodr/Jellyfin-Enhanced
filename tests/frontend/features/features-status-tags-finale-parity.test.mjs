@@ -15,7 +15,7 @@ const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, 
 const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
 
 /** Real pipeline + renderer, with only the HTTP boundaries replaced by caller-filtered fixtures. */
-async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null, scanCost = 0 } = {}) {
+async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null, scanCost = 0, batchDelay = 0 } = {}) {
   const changes = new Map(), calls = [], idle = [], timers = new Map();
   let clock = 0, timerId = 0;
   /** Drive idle slices and their debounce timers in order, independent of CPU load. */
@@ -66,6 +66,7 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
         calls.push(options);
         if (options.url.includes('/tag-cache/')) return { items: Object.fromEntries(items), count: items.size, version: 1, timestamp: 1, filterRevision: 'caller' };
         if (options.url.includes('/tag-data/')) {
+          if (batchDelay) await new Promise(resolve => h.window.setTimeout(resolve, batchDelay));
           const ids = JSON.parse(options.data);
           if (parentResponse && ids.length === 1 && ids[0] === SERIES) return parentResponse.promise;
           return { Items: ids.map(id => items.get(id)).filter(Boolean) };
@@ -152,6 +153,23 @@ test('an episode hot-cache hit refreshes expired parent facts while its schedule
   await h.flush(60);
   assert.equal(h.key(EPISODE), 'series_finale');
   assert.equal(h.calls.filter(c => c.url.includes('/status-tags/series')).length, 1, 'schedule remains fresh');
+});
+
+/** Drain idle slices until async schedule/parent facts have actually re-badged every episode. */
+async function waitForFinales(h, episodes) {
+  const deadline = performance.now() + 10000;
+  while (!episodes.every(item => h.key(item.Id) === 'series_finale')) {
+    if (performance.now() >= deadline) assert.fail('schedule/parent facts did not settle');
+    while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+    await h.flush(1000);
+  }
+}
+
+test('initial finale assertions wait for a delayed batch and the subsequent schedule timer', async t => {
+  const h = await setup(t, { cards: [finale], batchDelay: 350 });
+  await waitForFinales(h, [finale]);
+  assert.equal(h.key(EPISODE), 'series_finale');
+  assert.equal(h.calls.filter(c => c.url.includes('/tag-data/')).length, 2);
 });
 
 for (const count of [30, 230]) {

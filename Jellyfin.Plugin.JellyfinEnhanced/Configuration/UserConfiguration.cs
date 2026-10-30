@@ -93,6 +93,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public double RatingTagsMinScore { get; set; } = 0;
         /// <summary>Colour rating text by score, below explicit Tag Styles.</summary>
         public bool RatingTagsColorByScore { get; set; } = false;
+        // Language Tags display (see LanguageTagDisplay): which tracks the
+        // group shows, flags or codes, and the Dual/Multi audio count badge.
+        public bool LanguageTagsShowAudio { get; set; } = true;
+        public bool LanguageTagsShowSubtitles { get; set; }
+        public string LanguageTagsStyle { get; set; } = "flags";
+        public string LanguageTagsCountBadge { get; set; } = "off";
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public string StatusTagsPosition { get; set; } = "top-right";
         public bool StatusTagsJustAdded { get; set; } = true;

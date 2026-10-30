@@ -434,6 +434,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 stripped.Genres = System.Array.Empty<string>();
                 stripped.AudioLanguages = null;
                 stripped.PartialAudioLanguages = null;
+                stripped.SubtitleLanguages = null;
                 stripped.StreamData = null;
                 stripped.QualitySummary = null;
                 stripped.QualityEpisodeIds = null;

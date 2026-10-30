@@ -43,8 +43,8 @@
     const KEY_SEP = '|';
     // The server's tag-cache entry schema (TagCacheService
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
-    // from another schema is never restored. v15 combines naming labels, source ratings and quality summaries.
-    const ENTRY_SCHEMA = 15;
+    // from another schema is never restored. v16 combines naming labels, source ratings, quality summaries and subtitle languages.
+    const ENTRY_SCHEMA = 16;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;

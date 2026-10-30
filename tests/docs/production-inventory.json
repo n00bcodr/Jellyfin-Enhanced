@@ -39,6 +39,10 @@
       "category": "Assets"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/LanguageTagDisplaySettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
       "category": "Configuration"
     },
@@ -4410,6 +4414,38 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "LanguageTagsShowAudio",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LanguageTagsShowSubtitles",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LanguageTagsStyle",
+      "type": "string",
+      "initializer": "\"flags\"",
+      "constructor_assignment": "\"flags\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LanguageTagsCountBadge",
+      "type": "string",
+      "initializer": "\"off\"",
+      "constructor_assignment": "\"off\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -7146,6 +7182,38 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "LanguageTagsShowAudio",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "LanguageTagsShowSubtitles",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "LanguageTagsStyle",
+      "type": "string",
+      "initializer": "\"flags\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "LanguageTagsCountBadge",
+      "type": "string",
+      "initializer": "\"off\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -8605,9 +8673,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 384,
+    "files": 385,
     "routes": 182,
-    "configuration_properties": 613,
+    "configuration_properties": 621,
     "storage_references": 74,
     "scheduled_tasks": 13,
     "locales": 33

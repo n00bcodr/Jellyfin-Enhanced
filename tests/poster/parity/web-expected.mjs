@@ -151,6 +151,7 @@ function createSandbox(profile, pluginConfig, webSettings, reviews) {
     const css = {};
     const document = {
         createElement: (tag) => new Element(tag),
+        createTextNode: (text) => { const node = new Element('#text'); node.textContent = text; return node; },
         querySelector: () => null,
         querySelectorAll: () => [],
         getElementById: () => null,
@@ -268,7 +269,9 @@ function readTags(group, container) {
                 break;
             case 'Language': {
                 const flag = child.dataset.lang === 'zxx' ? 'no-dialogue' : child.dataset.lang;
-                tags.push(`${flag}|${child.dataset.langName}|${child.dataset.partial === 'true'}`);
+                if (child.classList.contains('language-count-badge')) tags.push(`badge|${child.textContent}`);
+                else if (child.classList.contains('language-code')) tags.push(`code|${child.dataset.lang.toUpperCase()}|${child.dataset.langName}|${child.dataset.partial === 'true'}|${child.dataset.jeLanguage === 'subtitles'}`);
+                else tags.push(`${flag}|${child.dataset.langName}|${child.dataset.partial === 'true'}${child.dataset.jeLanguage === 'subtitles' ? '|true' : ''}`);
                 break;
             }
         }
@@ -371,6 +374,8 @@ async function runProfile(profile) {
         qualityTagsPosition: pos('qualityTagsPosition', 'QualityTagsPosition', 'top-left'),
         genreTagsPosition: pos('genreTagsPosition', 'GenreTagsPosition', 'top-right'),
         languageTagsPosition: pos('languageTagsPosition', 'LanguageTagsPosition', 'bottom-left'),
+        languageTagsShowAudio: s.languageTagsShowAudio, languageTagsShowSubtitles: s.languageTagsShowSubtitles,
+        languageTagsStyle: s.languageTagsStyle, languageTagsCountBadge: s.languageTagsCountBadge,
         ratingTagsPosition: pos('ratingTagsPosition', 'RatingTagsPosition', 'bottom-right'),
         ageRatingTagsPosition: pos('ageRatingTagsPosition', 'AgeRatingTagsPosition', 'bottom-right'),
         showResolutionTag: typeof s.showResolutionTag === 'boolean' ? s.showResolutionTag : true,

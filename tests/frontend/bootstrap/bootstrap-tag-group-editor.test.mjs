@@ -30,9 +30,12 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
   t.after(() => h.close());
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
+  h.JE.cdn = { flagSvg: code => `/flags/${code}.svg` };
+  h.load('core/media-language.js');
+  h.load('tags/languagetags.js');
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   h.JE.toast = message => toasts.push(message);
-  for (const name of ['reinitializeTagLayout', 'reinitializeRatingTags', 'reinitializeGenreTags']) {
+  for (const name of ['reinitializeTagLayout', 'reinitializeRatingTags', 'reinitializeGenreTags', 'reinitializeLanguageTags']) {
     const real = h.JE[name];
     h.JE[name] = (...args) => { calls.push(name); return real?.(...args); };
   }
@@ -361,4 +364,22 @@ test('quality row exposes all aggregation policies, inherits the admin default, 
   await h.change(select, 'mixed');
   assert.equal(h.saved().seriesQualityAggregation, 'mixed');
   assert.equal(refreshed, 1);
+});
+
+test('Language includes, style and badge controls save, reinitialize and refresh the real preview', async t => {
+  const h = setup(t, { stored: { languageTagsEnabled: true } });
+  const control = key => h.row('language').querySelector(`[data-language-key="${key}"]`);
+  await h.change(control('languageTagsShowSubtitles'), true);
+  assert.equal(h.saved().languageTagsShowSubtitles, true);
+  await h.change(control('languageTagsStyle'), 'codes');
+  assert.equal(h.saved().languageTagsStyle, 'codes');
+  assert.ok(h.card().querySelector('.language-code'));
+  await h.change(control('languageTagsCountBadge'), 'only');
+  assert.equal(h.saved().languageTagsCountBadge, 'only');
+  assert.ok(h.card().querySelector('.language-count-badge'));
+  assert.ok(h.card().querySelector('.language-cc'));
+  await h.change(control('languageTagsShowAudio'), false);
+  assert.equal(h.saved().languageTagsShowAudio, false);
+  assert.equal(h.card().querySelector('.language-count-badge'), null);
+  assert.ok(h.calls.includes('reinitializeLanguageTags'));
 });

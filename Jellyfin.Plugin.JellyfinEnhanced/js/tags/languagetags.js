@@ -39,18 +39,19 @@
     // zh-Hant → Taiwanese — while a bare pt/es/zh keeps its default flag.
 
     /**
-     * Extracts audio languages from a Jellyfin item's media sources.
+     * Extracts languages of one track type from a Jellyfin item's media sources.
      * @param {Object} sourceItem - The item (or first episode) to extract languages from.
+     * @param {string} [type='Audio'] - Audio or Subtitle.
      * @returns {Array<{name: string, code: string}>} Normalized array of language objects.
      */
-    function extractLanguagesFromItem(sourceItem) {
+    function extractLanguagesFromItem(sourceItem, type = 'Audio') {
         if (!sourceItem) return [];
         const languages = new Set();
 
         // Process audio streams from a flat list
         const processStreams = function(streams) {
             if (!streams) return;
-            streams.filter(function(s) { return s.Type === 'Audio'; }).forEach(function(stream) {
+            streams.filter(function(s) { return s.Type === type; }).forEach(function(stream) {
                 var langCode = stream.Language;
                 if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
                     languages.add(JSON.stringify({ name: displayName(langCode), code: langCode }));
@@ -174,85 +175,149 @@
             .map(entry => entry.flag);
     }
 
-    /**
-     * Build and attach the flag overlay for a card.
-     * @param {Object} ctx - Factory context (tagged/ignore/cache helpers).
-     * @param {HTMLElement} container - The render target element.
-     * @param {Array} languages - Languages in any supported shape.
-     */
-    function insertLanguageTags(ctx, container, languages) {
-        if (!container) return;
-        if (ctx.isTagged(container)) return;
-        // Always re-render to handle cache migrations or setting changes
-        ctx.removeExistingOverlay(container);
-        // Avoid forced reflow from getComputedStyle (and a style write per card when already set)
-        if (container.style.position !== 'relative') container.style.position = 'relative';
+    /** Effective display settings: user override, admin default, built-in default. */
+    function readSettings() {
+        const value = (key, fallback) => JE.currentSettings?.[key] ?? JE.pluginConfig?.[key[0].toUpperCase() + key.slice(1)] ?? fallback;
+        const style = String(value('languageTagsStyle', 'flags')).trim().toLowerCase();
+        const badge = String(value('languageTagsCountBadge', 'off')).trim().toLowerCase();
+        return {
+            audio: value('languageTagsShowAudio', true) !== false,
+            subtitles: value('languageTagsShowSubtitles', false) === true,
+            style: style === 'codes' ? 'codes' : 'flags',
+            badge: ['only', 'both'].includes(badge) ? badge : 'off',
+        };
+    }
 
-        // Placement (and the indicator offset) comes from the layout stylesheet.
+    /** ISO 639-1 when available, otherwise the canonical three-letter base. @param {string} code */
+    function shortCode(code) {
+        const parsed = JE.core.mediaLanguage.parseLanguageTag(code);
+        return parsed?.base ? JE.core.mediaLanguage.canonicalBase(parsed.base).toUpperCase() : '';
+    }
+
+    /**
+     * Deduplicated chips for one track type, full coverage first, then admin priority.
+     * Flags preserve country grouping; codes group canonical languages, retaining
+     * explicit regions unless the administrator merges regional variants.
+     * @param {Array} languages
+     * @param {string} style
+     * @returns {Array}
+     */
+    function resolveChips(languages, style) {
+        const unique = new Map();
+        for (const lang of normalizeLanguages(languages)) {
+            const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
+            const code = shortCode(lang.code);
+            const parsed = JE.core.mediaLanguage.parseLanguageTag(lang.code);
+            const key = style === 'codes' ? code + (JE.pluginConfig?.LanguageTagsMergeRegions ? '' : ':' + (parsed?.region || parsed?.script || '')) : countryCode;
+            if (!key || (style === 'codes' && !code)) continue;
+            const name = lang.name || lang.code.toUpperCase();
+            const existing = unique.get(key);
+            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
+            else {
+                existing.partial = existing.partial && !!lang.partial;
+                if (!existing.allLanguages.includes(name)) existing.allLanguages.push(name);
+                const label = languageLabel({ name, partial: lang.partial });
+                if (!existing.labels.includes(label)) existing.labels.push(label);
+            }
+        }
+        return orderByPriority(Array.from(unique.values()).sort((a, b) => Number(a.partial) - Number(b.partial)));
+    }
+
+    /**
+     * Build the real language group, also used by the hub preview. The layout
+     * applies the combined cap to its children: badge, audio, then subtitles.
+     * @param {Array|Object} languages - Legacy audio array or {audio, subtitles}.
+     * @param {number} [cap] - Used only to preserve the invalid-flag guard.
+     * @param {Function} [flagSource] - Preview's inline flag source.
+     * @returns {HTMLElement}
+     */
+    function buildGroup(languages, cap = 3, flagSource = JE.core.mediaLanguage.flagSrc) {
+        const data = Array.isArray(languages) ? { audio: languages } : (languages || {});
+        const conf = readSettings();
+        const audio = conf.audio ? resolveChips(data.audio, conf.style) : [];
+        const subtitles = conf.subtitles ? resolveChips(data.subtitles, conf.style) : [];
+        // Count languages rather than countries: Hindi and Tamil share a flag.
+        const count = conf.audio && conf.badge !== 'off' ? new Set(resolveChips(data.audio, 'codes').map(chip => chip.text).filter(code => code !== 'ZXX')).size : 0;
+        const badge = conf.badge !== 'off' && count >= 2;
+        const chips = [];
+        if (badge) chips.push({ badge: count === 2 ? 'dual' : 'multi' });
+        if (!badge || conf.badge !== 'only') chips.push(...audio);
+        chips.push(...subtitles.map(chip => ({ ...chip, subtitle: true })));
         const wrap = document.createElement('div');
         wrap.className = containerClass;
-
-        const normalized = normalizeLanguages(languages);
-        const seenCountries = new Set();
-        const uniqueFlags = [];
-
-        // Deduplicate by flag while preserving language info for tooltips.
-        // Regional variants resolve to distinct flags (pt vs pt-BR), so a
-        // movie carrying both tracks correctly shows both. A flag is only
-        // "partial" when every language behind it is: Hindi on all episodes
-        // plus Telugu on a few still earns the Indian flag its full look.
-        normalized.forEach(lang => {
-            const codeKey = (lang.code || '').toString();
-            const nameKey = (lang.name || '').toString();
-            const name = nameKey || codeKey.toUpperCase();
-            const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
-            if (countryCode && !seenCountries.has(countryCode)) {
-                seenCountries.add(countryCode);
-                uniqueFlags.push({ countryCode, code: codeKey, name, partial: !!lang.partial, allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
-            } else if (countryCode && seenCountries.has(countryCode)) {
-                // Add language name to existing country's tooltip
-                const existingFlag = uniqueFlags.find(f => f.countryCode === countryCode);
-                if (existingFlag && !existingFlag.allLanguages.includes(name)) {
-                    existingFlag.allLanguages.push(name);
-                    existingFlag.labels.push(languageLabel({ name, partial: lang.partial }));
-                    existingFlag.partial = existingFlag.partial && !!lang.partial;
+        const visible = cap > 0 ? chips.slice(0, cap) : chips;
+        if (conf.style === 'flags' && visible.some(chip => !chip.badge && typeof chip.countryCode !== 'string')) return wrap;
+        for (const info of chips) {
+            if (!info.badge && conf.style === 'flags' && typeof info.countryCode !== 'string') continue;
+            const chip = document.createElement(info.badge || info.subtitle || conf.style === 'codes' ? 'span' : 'img');
+            chip.className = info.badge ? 'language-count-badge language-chip' : conf.style === 'codes' ? 'language-code language-chip' : info.subtitle ? 'language-subtitle language-chip' : flagClass;
+            if (info.partial) { chip.classList.add(partialFlagClass); chip.dataset.partial = 'true'; }
+            chip.dataset.jeLanguage = info.badge ? 'countBadge' : info.subtitle ? 'subtitles' : 'flag';
+            if (info.badge) {
+                chip.textContent = JE.t(`language_tags_${info.badge}`);
+                chip.title = JE.t('language_tags_count_tooltip', { count });
+            } else {
+                const label = info.labels.join(', ');
+                chip.title = info.subtitle ? `${JE.t('language_tags_subtitles')}: ${label}` : label;
+                chip.dataset.langName = info.allLanguages.join(', ');
+                chip.dataset.lang = conf.style === 'codes' ? info.text.toLowerCase() : info.countryCode.toLowerCase();
+                if (info.subtitle) {
+                    const cc = document.createElement('span');
+                    cc.className = 'language-cc';
+                    cc.textContent = 'CC';
+                    cc.setAttribute('aria-hidden', 'true');
+                    chip.appendChild(cc);
+                }
+                if (conf.style === 'codes') chip.appendChild(document.createTextNode(info.text));
+                else {
+                    const img = info.subtitle ? document.createElement('img') : chip;
+                    img.src = flagSource(info.countryCode);
+                    img.className = info.subtitle ? flagClass : chip.className;
+                    img.alt = chip.title;
+                    img.loading = 'lazy';
+                    img.onerror = () => chip.remove();
+                    if (info.subtitle) chip.appendChild(img);
                 }
             }
-        });
-
-        // Full-series languages before partial ones (stable sort keeps detection
-        // order within each group), so the visible flags favour what every
-        // episode has. The admin priority list still wins over this. Every
-        // flag is committed; the layout's language cap (3 by default) decides
-        // how many show.
-        uniqueFlags.sort((a, b) => (a.partial ? 1 : 0) - (b.partial ? 1 : 0));
-
-        const ordered = orderByPriority(uniqueFlags);
-        // A code the lookup tables answer with a non-string (an Object.prototype
-        // key such as "constructor") cannot be drawn. Among the flags the cap
-        // shows it drops the whole group, as it always has (Native Poster Tags
-        // mirror that); past the cap it is simply left out.
-        const cap = JE.core.tagLayout ? JE.core.tagLayout.resolveLayout(container).caps.language : 3;
-        const visible = cap > 0 ? ordered.slice(0, cap) : ordered;
-        if (visible.some(flagInfo => typeof flagInfo.countryCode !== 'string')) return;
-
-        ordered.filter(flagInfo => typeof flagInfo.countryCode === 'string').forEach(flagInfo => {
-            const img = document.createElement('img');
-            img.src = JE.core.mediaLanguage.flagSrc(flagInfo.countryCode);
-            img.className = flagInfo.partial ? `${flagClass} ${partialFlagClass}` : flagClass;
-            img.alt = flagInfo.labels.join(', ');
-            img.title = flagInfo.labels.join(', ');
-            img.loading = 'lazy';
-            img.dataset.lang = flagInfo.countryCode.toLowerCase();
-            img.dataset.langName = flagInfo.allLanguages.join(', ');
-            if (flagInfo.partial) img.dataset.partial = 'true';
-            // A region subtag from the wild can name a country the flag set
-            // lacks; drop the broken image rather than showing it.
-            img.onerror = () => img.remove();
-            wrap.appendChild(img);
-        });
-        ctx.commitOverlay(container, wrap);
+            wrap.appendChild(chip);
+        }
+        return wrap;
     }
+
+    const clickOwners = new WeakSet();
+
+    /**
+     * Chips receive title hover above Jellyfin's card link. Delegate from the
+     * card because the layout clones groups and may move them into captions.
+     * @param {MouseEvent} event
+     */
+    function forwardLanguageClick(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const group = target?.closest('.language-overlay-container');
+        const card = group?.closest('.card');
+        const link = card?.querySelector('.cardOverlayContainer a.cardImageContainer, a.cardImageContainer[href]');
+        if (!link || event.defaultPrevented) return;
+        event.preventDefault();
+        event.stopPropagation();
+        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true,
+            ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey, altKey: event.altKey, button: event.button }));
+    }
+
+    /** Attach the language group through the shared renderer/layout controller. */
+    function insertLanguageTags(ctx, container, languages) {
+        if (!container || ctx.isTagged(container)) return;
+        ctx.removeExistingOverlay(container);
+        const owner = container.closest('.card') || container;
+        if (!clickOwners.has(owner)) {
+            clickOwners.add(owner);
+            owner.addEventListener('click', forwardLanguageClick);
+        }
+        if (container.style.position !== 'relative') container.style.position = 'relative';
+        const cap = JE.core.tagLayout ? JE.core.tagLayout.resolveLayout(container).caps.language : 3;
+        ctx.commitOverlay(container, buildGroup(languages, cap));
+    }
+
+    JE.core.languageTags = { readSettings, buildGroup };
 
     /** @type {Object} Factory spec — everything language-specific lives here. */
     const spec = {
@@ -263,13 +328,13 @@
         styleId: 'language-tags-styles',
         position: { userKey: 'languageTagsPosition', pluginKey: 'LanguageTagsPosition', fallback: 'bottom-left' },
         cache: {
-            // v2: entries now keep region subtags (pt-BR) instead of stripped
+            // v3: entries keep both audio and subtitle facts. v2 kept region subtags instead of stripped
             // base codes; the old key is cleaned up via legacyPrefix so stale
             // stripped entries can't pin the wrong flag for the 30-day TTL.
             // Both prior generations are listed — dropping the ancient
             // un-namespaced stem would leave its keys orphaned forever.
-            key: 'JellyfinEnhanced-languageTagsCache-v2',
-            legacyPrefix: ['JellyfinEnhanced-languageTagsCache', 'languageTagsCache'],
+            key: 'JellyfinEnhanced-languageTagsCache-v3',
+            legacyPrefix: ['JellyfinEnhanced-languageTagsCache-v2', 'JellyfinEnhanced-languageTagsCache', 'languageTagsCache'],
             hotBucket: 'language',
         },
         buildCss() {
@@ -291,6 +356,21 @@
                     flex-shrink: 0;
                     object-fit: cover;
                 }
+                /* The host is otherwise below Jellyfin's full-card image link.
+                   Its empty space remains pointer-transparent; only language
+                   chips receive hover, and forward clicks to the image link. */
+                .je-tag-host:has(.${containerClass}) { z-index: 2; }
+                .${containerClass} > * { pointer-events: auto; }
+                .language-chip {
+                    display: inline-flex; align-items: center; gap: 3px;
+                    align-self: flex-start; flex-shrink: 0; width: max-content;
+                    padding: 2px 4px; border: 1px solid rgba(255,255,255,0.8);
+                    border-radius: 3px; background: rgba(0,0,0,0.75); color: #fff;
+                    font: 700 clamp(9px, 6cqw, 12px)/1 sans-serif;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                }
+                .language-cc { font-size: 0.7em; }
+                .language-subtitle .language-flag { box-shadow: none; }
                 /* Dub that doesn't cover every episode: dimmed, washed out and
                    dash-outlined so it reads as "incomplete" next to a full flag.
                    The dark ring keeps the white dashes (and a white flag's edge)
@@ -335,7 +415,7 @@
                 // Check hot cache first
                 const hot = ctx.hot?.get(itemId);
                 if (hot && (Date.now() - hot.timestamp) < ctx.cacheTtl) {
-                    if (hot.value && hot.value.length) insertLanguageTags(ctx, el, hot.value);
+                    if (hot.value) insertLanguageTags(ctx, el, hot.value);
                     return;
                 }
 
@@ -348,9 +428,9 @@
                     }
                 }
 
-                var languages = extractLanguagesFromItem(sourceItem);
+                var languages = { audio: extractLanguagesFromItem(sourceItem), subtitles: sourceItem.SubtitleLanguages || item.SubtitleLanguages || extractLanguagesFromItem(sourceItem, 'Subtitle') };
 
-                if (languages.length > 0) {
+                if (languages.audio.length || languages.subtitles.length) {
                     ctx.setPersistent(itemId, languages);
                     ctx.hot?.set(itemId, { value: languages, timestamp: Date.now() });
                     insertLanguageTags(ctx, el, languages);
@@ -364,7 +444,7 @@
                 const cached = hot || ctx.getPersistent(itemId);
                 if (cached) {
                     const languages = Array.isArray(cached) ? cached : (cached.value || cached.languages);
-                    if (languages && languages.length > 0) {
+                    if (languages && !Array.isArray(languages)) {
                         insertLanguageTags(ctx, el, languages);
                         return true;
                     }
@@ -375,14 +455,14 @@
                 if (ctx.isTagged(el)) return;
                 if (ctx.shouldIgnore(el)) return;
                 var codes = entry.AudioLanguages;
-                if (!codes || codes.length === 0) return;
+                codes = codes || [];
                 // Series/Season: AudioLanguages is the union over all episodes and
                 // PartialAudioLanguages the ones missing from some of them.
                 var partial = new Set(entry.PartialAudioLanguages || []);
                 var languages = codes.map(function(code) {
                     return { name: displayName(code), code: code, partial: partial.has(code) };
                 });
-                insertLanguageTags(ctx, el, languages);
+                insertLanguageTags(ctx, el, { audio: languages, subtitles: entry.SubtitleLanguages || [] });
             },
         },
     };
