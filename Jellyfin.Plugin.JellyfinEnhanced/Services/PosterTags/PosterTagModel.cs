@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 {
-    /// <summary>Card corner a tag group is anchored to.</summary>
+    /// <summary>Card anchor for a tag group (four corners and five centre positions).</summary>
     public enum PosterTagCorner
     {
         TopLeft,
