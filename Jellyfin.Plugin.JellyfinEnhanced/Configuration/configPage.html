@@ -368,6 +368,9 @@
                                     <div class="checkboxContainer"><label><input id="ratingTagsOnEpisodes" is="emby-checkbox" type="checkbox"/><span>Show on episodes</span></label></div>
                                     <div class="checkboxContainer"><label><input id="ratingTagsOnContinueWatching" is="emby-checkbox" type="checkbox"/><span>Show in the Continue Watching row</span></label></div>
                                     <div class="checkboxContainer"><label><input id="ratingTagsOnNextUp" is="emby-checkbox" type="checkbox"/><span>Show in the Next Up row</span></label></div>
+                                    <div class="fieldDescription je-field-desc-sm">Which scores the rating tags include. Users can override these in their personal settings.</div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsShowCommunity" is="emby-checkbox" type="checkbox"/><span>Include the community score</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="ratingTagsShowCritic" is="emby-checkbox" type="checkbox"/><span>Include the critic score</span></label></div>
                                 </div>
                             </details>
 
@@ -420,6 +423,32 @@
                                     <div class="je-setting-description" data-desc-for="statusTagsJustAddedDays">
                                         <div class="fieldDescription">An item counts as just added (and a series or season shows New Episode) for this many days after it reached the library.</div>
                                     </div>
+                                </div>
+                            </details>
+
+                            <details id="tagLayoutAdminDetails" class="je-details-section">
+                                <summary>Tag layout defaults</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">The layout, label density, group order, positions and limits new users start with. Users change them in their personal settings; "Apply defaults to all users" copies them to everyone. The corner positions are the Position selects above. Native Poster Tags always draw corners (with the order, limits and hidden groups chosen here) and keep full labels.</div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagLayout">Default Tag Layout</label>
+                                        <select is="emby-select" id="tagLayout" name="tagLayout" class="emby-select">
+                                            <option value="corners">Corners: each group in a corner of the poster</option>
+                                            <option value="bands">Bands: a strip along the top and bottom, the middle stays clear</option>
+                                            <option value="caption">Caption: tags in a line below the poster</option>
+                                            <option value="summary">Summary: one short fact pill, every tag on hover</option>
+                                            <option value="minimal">Minimal: status, quality dots and score, the rest on hover</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagLabelDensity">Default Label Density</label>
+                                        <select is="emby-select" id="tagLabelDensity" name="tagLabelDensity" class="emby-select">
+                                            <option value="full">Full</option>
+                                            <option value="compact">Compact (DV, Atmos; no critic score next to a community score)</option>
+                                        </select>
+                                    </div>
+                                    <div class="fieldDescription je-field-desc-sm">Tag groups, highest priority first: groups higher in the list win when space is short and stack nearest the edge. Position and limit apply to the layout selected above; switch the layout to set another one's positions.</div>
+                                    <ol id="tagGroupAdminRows" class="je-tla-rows"></ol>
                                 </div>
                             </details>
 
@@ -5668,6 +5697,229 @@
             });
         })();
 
+        // ── Poster tag layout defaults (Media Tags → Tag layout defaults) ──
+        // A compact copy of the personal settings panel's group editor
+        // (js/enhanced/settingspanel/ui-panel-tag-editor.js; this page cannot
+        // load the client bundle or its translations): rows in priority order
+        // with move buttons, the group's position pills for the selected
+        // default layout and its limit. Corner picks write the Position selects
+        // above (the corners profile only stores "Hidden"); other layouts store
+        // explicit picks only, the rest keep the built-in profile. The order
+        // and limits are written only once changed, so new users keep
+        // inheriting the built-in arrival order and limits until then.
+        var tagLayoutAdmin = (function () {
+            var GROUPS = {
+                status: { name: 'Status', position: 'statusTagsPosition', capFixed: true },
+                quality: { name: 'Quality', position: 'qualityTagsPosition', capAll: true },
+                rating: { name: 'Rating', position: 'ratingTagsPosition', capAll: true },
+                ageRating: { name: 'Age Rating', position: 'ageRatingTagsPosition', capFixed: true },
+                language: { name: 'Language', position: 'languageTagsPosition' },
+                genre: { name: 'Genre', position: 'genreTagsPosition' }
+            };
+            var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre'];
+            var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 };
+            var LAYOUT_SLOTS = {
+                corners: ['tl', 'tr', 'bl', 'br', 'off'],
+                bands: ['top', 'bottom', 'off'],
+                caption: ['poster', 'caption', 'off'],
+                summary: ['pill', 'hover', 'off'],
+                minimal: ['top', 'dots', 'corner', 'hover', 'off']
+            };
+            var DEFAULT_PROFILES = {
+                bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top' },
+                caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster' },
+                summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill' },
+                minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top' }
+            };
+            var SLOT_LABELS = {
+                corners: { tl: 'Top left', tr: 'Top right', bl: 'Bottom left', br: 'Bottom right' },
+                bands: { top: 'Top band', bottom: 'Bottom row' },
+                caption: { poster: 'On poster', caption: 'Caption' },
+                summary: { pill: 'In pill', hover: 'On hover' },
+                minimal: { top: 'Top', dots: 'Dots', corner: 'Corner', hover: 'On hover' }
+            };
+            var POS_TO_SLOT = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br' };
+            var SLOT_TO_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' };
+            var MAX_CAP = 10;
+            // Explicit administrator values; null / missing = built-in.
+            var state = { order: null, caps: {}, profiles: { corners: {}, bands: {}, caption: {}, summary: {}, minimal: {} } };
+
+            /** Case-insensitive group id ("agerating" -> "ageRating"), or null. */
+            function groupId(name) {
+                var lowered = String(name || '').trim().toLowerCase();
+                for (var i = 0; i < DEFAULT_ORDER.length; i++) if (DEFAULT_ORDER[i].toLowerCase() === lowered) return DEFAULT_ORDER[i];
+                return null;
+            }
+            /** Read a key in either case (the server sends PascalCase). */
+            function pick(obj, key) {
+                if (!obj || typeof obj !== 'object') return undefined;
+                if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+                var pascal = key.charAt(0).toUpperCase() + key.slice(1);
+                return obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
+            }
+            function layout() {
+                var select = document.getElementById('tagLayout');
+                return select && LAYOUT_SLOTS[select.value] ? select.value : 'corners';
+            }
+            function order() { return state.order ? state.order.slice() : DEFAULT_ORDER.slice(); }
+            /** The slot a group shows for a layout: explicit pick, else the Position select (corners) or the built-in profile. */
+            function slotOf(name, group) {
+                if (state.profiles[name][group]) return state.profiles[name][group];
+                if (name === 'corners') return POS_TO_SLOT[(document.getElementById(GROUPS[group].position) || {}).value] || 'tl';
+                return DEFAULT_PROFILES[name][group];
+            }
+            function capOf(group) {
+                if (GROUPS[group].capFixed) return 1;
+                return Number.isFinite(state.caps[group]) ? state.caps[group] : DEFAULT_CAPS[group];
+            }
+            function capText(cap) { return cap === 0 ? 'All' : String(cap); }
+
+            /** Rebuild the rows (they hold no other state). */
+            function render() {
+                var list = document.getElementById('tagGroupAdminRows');
+                if (!list) return;
+                var name = layout();
+                var groups = order();
+                list.innerHTML = '';
+                groups.forEach(function (group, index) {
+                    var meta = GROUPS[group];
+                    var cap = capOf(group);
+                    var li = document.createElement('li');
+                    li.className = 'je-tla-row';
+                    li.dataset.group = group;
+                    // A fieldset, so the group's "Enable" switch disables the whole row (PARENT_DEPS).
+                    var fieldset = document.createElement('fieldset');
+                    fieldset.id = 'tagGroupAdminRow' + group.charAt(0).toUpperCase() + group.slice(1);
+                    var head = '<div class="je-tla-head">'
+                        + '<button type="button" class="raised raised-mini je-tla-move" data-dir="up" aria-label="Move ' + meta.name + ' up"' + (index === 0 ? ' disabled' : '') + '><i class="material-icons" aria-hidden="true">arrow_upward</i></button>'
+                        + '<button type="button" class="raised raised-mini je-tla-move" data-dir="down" aria-label="Move ' + meta.name + ' down"' + (index === groups.length - 1 ? ' disabled' : '') + '><i class="material-icons" aria-hidden="true">arrow_downward</i></button>'
+                        + '<span class="je-tla-name">' + meta.name + '</span>'
+                        + '<span class="je-tla-cap" role="group" aria-label="' + meta.name + ' limit">'
+                        + '<button type="button" class="raised raised-mini je-tla-step" data-step="-1" aria-label="Show fewer ' + meta.name + ' tags"' + (meta.capFixed || cap === 1 ? ' disabled' : '') + '><i class="material-icons" aria-hidden="true">remove</i></button>'
+                        + '<output>' + capText(cap) + '</output>'
+                        + '<button type="button" class="raised raised-mini je-tla-step" data-step="1" aria-label="Show more ' + meta.name + ' tags"' + (meta.capFixed || cap === 0 || (cap === MAX_CAP && !meta.capAll) ? ' disabled' : '') + '><i class="material-icons" aria-hidden="true">add</i></button>'
+                        + '</span></div>';
+                    var current = slotOf(name, group);
+                    var pills = LAYOUT_SLOTS[name].filter(function (slot) { return slot !== 'dots' || group === 'quality'; }).map(function (slot) {
+                        var label = slot === 'off' ? 'Hidden' : SLOT_LABELS[name][slot];
+                        return '<button type="button" class="je-tla-pill" data-slot="' + slot + '" aria-pressed="' + (slot === current) + '" aria-label="' + meta.name + ': ' + label + '">' + label + '</button>';
+                    }).join('');
+                    fieldset.innerHTML = '<legend class="je-tla-legend">' + meta.name + '</legend>' + head + '<div class="je-tla-pills" role="group" aria-label="' + meta.name + ' position">' + pills + '</div>';
+                    li.appendChild(fieldset);
+                    list.appendChild(li);
+                });
+                if (typeof updateAllDependencies === 'function') updateAllDependencies();
+            }
+
+            /** Load the administrator's defaults from the plugin configuration. */
+            function load(config) {
+                var select = document.getElementById('tagLayout');
+                var savedLayout = String(config.TagLayout || '').toLowerCase();
+                if (select) select.value = LAYOUT_SLOTS[savedLayout] ? savedLayout : 'corners';
+                var density = document.getElementById('tagLabelDensity');
+                if (density) density.value = String(config.TagLabelDensity || '').toLowerCase() === 'compact' ? 'compact' : 'full';
+                state.order = null;
+                if (Array.isArray(config.TagGroupOrder)) {
+                    var seen = [];
+                    config.TagGroupOrder.forEach(function (g) { var id = groupId(g); if (id && seen.indexOf(id) < 0) seen.push(id); });
+                    if (seen.length) state.order = seen.concat(DEFAULT_ORDER.filter(function (g) { return seen.indexOf(g) < 0; }));
+                }
+                state.caps = {};
+                DEFAULT_ORDER.forEach(function (g) {
+                    var value = Number(pick(config.TagGroupCaps, g));
+                    if (pick(config.TagGroupCaps, g) !== undefined && Number.isFinite(value)) state.caps[g] = Math.max(0, Math.min(MAX_CAP, Math.round(value)));
+                });
+                Object.keys(LAYOUT_SLOTS).forEach(function (name) {
+                    var profile = {};
+                    var entries = pick(pick(config.TagLayouts, name), 'groups');
+                    (Array.isArray(entries) ? entries : []).forEach(function (entry) {
+                        var g = groupId(pick(entry, 'group'));
+                        var slot = String(pick(entry, 'slot') || '').toLowerCase();
+                        if (!g || profile[g] || LAYOUT_SLOTS[name].indexOf(slot) < 0 || (slot === 'dots' && g !== 'quality')) return;
+                        // Corners keeps only "Hidden"; corner picks live in the Position selects.
+                        if (name === 'corners' && slot !== 'off') return;
+                        profile[g] = slot;
+                    });
+                    state.profiles[name] = profile;
+                });
+                render();
+            }
+
+            /** Write the administrator's defaults into the configuration being saved. */
+            function collect(config) {
+                config.TagLayout = layout();
+                config.TagLabelDensity = (document.getElementById('tagLabelDensity') || {}).value === 'compact' ? 'compact' : 'full';
+                config.TagGroupOrder = state.order ? state.order.slice() : null;
+                var caps = {};
+                var anyCap = false;
+                DEFAULT_ORDER.forEach(function (g) {
+                    if (Number.isFinite(state.caps[g])) { caps[g.charAt(0).toUpperCase() + g.slice(1)] = state.caps[g]; anyCap = true; }
+                });
+                config.TagGroupCaps = anyCap ? caps : null;
+                var layouts = {};
+                var anyProfile = false;
+                Object.keys(LAYOUT_SLOTS).forEach(function (name) {
+                    var groups = Object.keys(state.profiles[name]).map(function (g) { return { Group: g, Slot: state.profiles[name][g] }; });
+                    layouts[name.charAt(0).toUpperCase() + name.slice(1)] = groups.length ? { Groups: groups } : null;
+                    if (groups.length) anyProfile = true;
+                });
+                config.TagLayouts = anyProfile ? layouts : null;
+            }
+
+            document.addEventListener('click', function (e) {
+                var target = e.target.closest && e.target.closest('#tagGroupAdminRows button');
+                if (!target || target.disabled) return;
+                e.preventDefault();
+                var group = target.closest('.je-tla-row').dataset.group;
+                var keep = null;
+                if (target.classList.contains('je-tla-move')) {
+                    var list = order();
+                    var from = list.indexOf(group);
+                    var to = from + (target.dataset.dir === 'up' ? -1 : 1);
+                    if (to < 0 || to >= list.length) return;
+                    list.splice(to, 0, list.splice(from, 1)[0]);
+                    state.order = list;
+                    keep = '.je-tla-move[data-dir="' + target.dataset.dir + '"]';
+                } else if (target.classList.contains('je-tla-step')) {
+                    var cap = capOf(group);
+                    var next = Number(target.dataset.step) < 0 ? (cap === 0 ? MAX_CAP : cap - 1) : (cap === MAX_CAP ? 0 : cap + 1);
+                    state.caps[group] = Math.max(0, Math.min(MAX_CAP, next));
+                    keep = '.je-tla-step[data-step="' + target.dataset.step + '"]';
+                } else if (target.classList.contains('je-tla-pill')) {
+                    var name = layout();
+                    var slot = target.dataset.slot;
+                    if (name === 'corners') {
+                        if (slot === 'off') {
+                            state.profiles.corners[group] = 'off';
+                        } else {
+                            delete state.profiles.corners[group];
+                            var select = document.getElementById(GROUPS[group].position);
+                            if (select) select.value = SLOT_TO_POS[slot];
+                        }
+                    } else {
+                        state.profiles[name][group] = slot;
+                    }
+                    keep = '.je-tla-pill[data-slot="' + slot + '"]';
+                }
+                render();
+                // Keep keyboard focus on the same control (or the row's other one at an end).
+                var row = document.querySelector('#tagGroupAdminRows .je-tla-row[data-group="' + group + '"]');
+                var focus = row && keep ? row.querySelector(keep) : null;
+                if (focus && focus.disabled) focus = row.querySelector('.je-tla-move:not([disabled]), .je-tla-step:not([disabled])');
+                if (focus) focus.focus();
+            });
+            document.addEventListener('change', function (e) {
+                var id = e.target && e.target.id;
+                if (id === 'tagLayout') { render(); return; }
+                // A Position select picked directly: that group is shown in its corner again.
+                Object.keys(GROUPS).forEach(function (g) {
+                    if (GROUPS[g].position === id) { delete state.profiles.corners[g]; render(); }
+                });
+            });
+
+            return { load: load, collect: collect, render: render };
+        })();
+
         // MDBList rating sources: key (matches the API's source string), display
         // label, and logo filename (served via the "mdblist-logos" CDN source,
         // see CdnAssetService.cs).
@@ -6636,6 +6888,9 @@
                 document.querySelector('#ratingTagsOnEpisodes').checked = config.RatingTagsOnEpisodes !== false;
                 document.querySelector('#ratingTagsOnContinueWatching').checked = config.RatingTagsOnContinueWatching !== false;
                 document.querySelector('#ratingTagsOnNextUp').checked = config.RatingTagsOnNextUp !== false;
+                document.querySelector('#ratingTagsShowCommunity').checked = config.RatingTagsShowCommunity !== false;
+                document.querySelector('#ratingTagsShowCritic').checked = config.RatingTagsShowCritic !== false;
+                tagLayoutAdmin.load(config);
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
                 document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
@@ -7224,6 +7479,9 @@
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
             config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
             config.StatusTagsPosition = document.querySelector('#statusTagsPosition').value;
+            config.RatingTagsShowCommunity = document.querySelector('#ratingTagsShowCommunity').checked;
+            config.RatingTagsShowCritic = document.querySelector('#ratingTagsShowCritic').checked;
+            tagLayoutAdmin.collect(config);
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.StatusTagsJustAddedDays = Math.min(365, Math.max(1, parseInt(document.querySelector('#statusTagsJustAddedDays').value, 10) || 7));
@@ -8781,12 +9039,14 @@
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser'], noHint: true },
-            { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition'], noHint: true },
-            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions'], noHint: true },
-            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp'], noHint: true },
-            { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition'], noHint: true },
-            { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays'], noHint: true },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'tagGroupAdminRowQuality'], noHint: true },
+            { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition', 'tagGroupAdminRowGenre'], noHint: true },
+            { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'tagGroupAdminRowLanguage'], noHint: true },
+            { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsShowCommunity', 'ratingTagsShowCritic', 'tagGroupAdminRowRating'], noHint: true },
+            { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
+            { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
+            // Layout and density matter once any poster tag group is on by default.
+            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
