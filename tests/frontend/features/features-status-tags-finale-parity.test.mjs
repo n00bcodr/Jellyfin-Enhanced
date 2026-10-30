@@ -15,15 +15,38 @@ const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, 
 const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
 
 /** Real pipeline + renderer, with only the HTTP boundaries replaced by caller-filtered fixtures. */
-async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null } = {}) {
-  const changes = new Map(), calls = [], idle = [];
+async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null, scanCost = 0 } = {}) {
+  const changes = new Map(), calls = [], idle = [], timers = new Map();
+  let clock = 0, timerId = 0;
+  /** Drive idle slices and their debounce timers in order, independent of CPU load. */
+  const flush = async (ms = 0) => {
+    const until = clock + ms;
+    for (let steps = 0; steps < 10000; steps++) {
+      // Let async fixture responses enqueue their continuation before deciding we are idle.
+      await delay(0);
+      if (idle.length) {
+        idle.shift()({ timeRemaining: () => 50 });
+        continue;
+      }
+      const next = [...timers].filter(([, timer]) => timer.at <= until).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!next) { clock = until; return; }
+      const [id, timer] = next;
+      timers.delete(id);
+      clock = timer.at;
+      timer.run();
+    }
+    assert.fail('tag scheduler did not settle');
+  };
   const items = new Map(cards.map(item => [item.Id, item]));
   if (parent) items.set(SERIES, parent);
   for (const item of parents) items.set(item.Id, item);
   let epoch = 0;
   const h = createHarness({
     html: cards.map(item => card(item.Id, item.Type)).join(''),
-    globals: { requestIdleCallback: fn => idle.push(fn), IntersectionObserver: class {
+    globals: {
+      setTimeout: (fn, ms = 0, ...args) => { const id = ++timerId; timers.set(id, { at: clock + ms, run: () => fn(...args) }); return id; },
+      clearTimeout: id => timers.delete(id),
+      requestIdleCallback: fn => idle.push(fn), IntersectionObserver: class {
       constructor(fn) { this.fn = fn; } observe(target) { queueMicrotask(() => this.fn([{ target, isIntersecting: true }])); }
       unobserve() {} disconnect() {}
     } },
@@ -57,18 +80,12 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
   });
   t.after(() => h.close());
   h.window.Date.now = () => NOW;
+  if (scanCost) { let elapsed = 0; h.window.performance.now = () => (elapsed += scanCost); }
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'tags/tag-pipeline.js', 'tags/statustags.js']) h.load(file);
   h.JE.initializeStatusTags();
   h.JE.tagPipeline.initialize();
-  await delay(0);
-  while (idle.length) idle.shift()({ timeRemaining: () => 50 });
-  await delay(240);
-  // Large pages yield between render slices and enqueue the next idle scan.
-  while (idle.length) {
-    while (idle.length) idle.shift()({ timeRemaining: () => 50 });
-    await delay(60);
-  }
-  return Object.assign(h, { calls, changes, idle, items, key(id) { return h.document.querySelector(`[data-id="${id}"] .status-tag`)?.dataset.jeStatus ?? null; },
+  await flush(500);
+  return Object.assign(h, { calls, changes, idle, items, flush, key(id) { return h.document.querySelector(`[data-id="${id}"] .status-tag`)?.dataset.jeStatus ?? null; },
     switchUser() { epoch++; for (const fn of changes.values()) fn({ userId: 'user-b' }); } });
 }
 
@@ -121,7 +138,7 @@ test('a parent response arriving after user change cannot populate the facts sto
   const h = await setup(t, { cards: [finale], parentResponse: response });
   h.switchUser();
   response.resolve({ Items: [aggregate] });
-  await delay(10);
+  await h.flush(10);
   assert.equal(h.JE.tagPipeline.peekItemFacts?.(SERIES) ?? null, null);
 });
 
@@ -132,7 +149,7 @@ test('an episode hot-cache hit refreshes expired parent facts while its schedule
   h.window.Date.now = () => NOW + 11 * 60 * 1000;
   h.JE.reinitializeStatusTags();
   while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
-  await delay(60);
+  await h.flush(60);
   assert.equal(h.key(EPISODE), 'series_finale');
   assert.equal(h.calls.filter(c => c.url.includes('/status-tags/series')).length, 1, 'schedule remains fresh');
 });
@@ -142,7 +159,7 @@ for (const count of [30, 230]) {
     const parents = Array.from({ length: count }, (_, i) => ({ ...aggregate, Id: (i + 1).toString(16).padStart(32, '0') }));
     const episodes = parents.map((parent, i) => ({ ...finale, Id: (i + 1001).toString(16).padStart(32, '0'), SeriesId: parent.Id }));
     // Two cards for one episode also exercise parent-id deduplication.
-    const h = await setup(t, { parent: null, parents, cards: [...episodes, episodes[0]] });
+    const h = await setup(t, { parent: null, parents, cards: [...episodes, episodes[0]], scanCost: 100 });
     assert.ok(episodes.every(item => h.key(item.Id) === 'series_finale'));
     if (count === 30) assert.equal(h.calls.filter(c => c.url.includes('/tag-data/')).length, 2, 'initial episodes and parent facts each use one batch');
     const initialRequests = h.calls.length;
@@ -152,7 +169,7 @@ for (const count of [30, 230]) {
       if (!options.url.includes('/tag-data/')) return ajax(options);
       maxInFlight = Math.max(maxInFlight, ++inFlight);
       try {
-        await delay(5);
+        await Promise.resolve();
         return await ajax(options);
       } finally { inFlight--; }
     };
@@ -170,10 +187,10 @@ for (const count of [30, 230]) {
       }
       return nodes;
     };
-    await delay(500);
+    await h.flush(500);
     while (h.idle.length) {
       while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
-      await delay(60);
+      await h.flush(60);
     }
     const refreshed = h.calls.slice(initialRequests).filter(c => c.url.includes('/tag-data/'));
     assert.equal(refreshed.length, Math.ceil(count / 200), 'expired parents share the existing 200-id lookup batches');
@@ -202,14 +219,14 @@ test('reinitialising during a parent refresh keeps one drain and recomputes the 
   h.window.Date.now = () => NOW + 11 * 60 * 1000;
   h.JE.reinitializeStatusTags();
   while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
-  await delay(50);
+  await h.flush(50);
   assert.equal(requests, 1);
   h.JE.reinitializeStatusTags();
   while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
-  await delay(50);
+  await h.flush(50);
   assert.equal(requests, 1, 'cleanup must not open a second drain while the old one is in flight');
   response.resolve();
-  await delay(100);
+  await h.flush(100);
   assert.equal(requests, 1, 'the new drain reuses facts completed by the previous lifetime');
   assert.equal(h.key(EPISODE), 'series_finale', 'the current cards are recomputed after the stale completion');
 });
@@ -248,14 +265,14 @@ test('a series hot-cache redraw fetches expired facts in the existing card batch
   h.window.Date.now = () => NOW + 5 * 60 * 1000;
   h.JE.reinitializeStatusTags();
   while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
-  await delay(200);
+  await h.flush(200);
   assert.equal(batches().length, 1, 'a fresh snapshot needs no request and retains its age');
   h.window.Date.now = () => NOW + 11 * 60 * 1000;
   h.items.set(SERIES, { ...aggregate, LatestEpisodeIndex: { Season: 1, Episode: 11 } });
   h.JE.reinitializeStatusTags();
   while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
   assert.equal(h.JE.tagPipeline.peekItemFacts(SERIES), null, 'the old snapshot cannot renew expired facts');
-  await delay(200);
+  await h.flush(200);
   assert.equal(batches().length, 2, 'expiry queues one normal /tag-data batch without a schedule lookup');
   assert.deepEqual(JSON.parse(batches()[1].data), [SERIES], 'fresh episode snapshots need no refetch');
   assert.equal(h.JE.tagPipeline.peekItemFacts(SERIES).LatestEpisodeIndex.Episode, 11);
