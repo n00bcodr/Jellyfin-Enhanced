@@ -946,8 +946,8 @@
     /**
      * The identity of the item a card shows (its data-id), to capture when
      * the card's item data is requested and hand back with setCardContext.
-     * Distinct from the artwork id the pipeline resolves, which can name the
-     * series an episode card borrows its image from.
+     * Cards without this DOM identity can still use the artwork URL for a
+     * pipeline lookup; an episode's borrowed poster never overrides its id.
      * @param {HTMLElement} target - Render target.
      * @returns {string}
      */

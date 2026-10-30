@@ -96,6 +96,48 @@ test('cache-off navigation cancels the old debounce and requeues every pending s
  assert.equal(h.calls.length,1,'completed cards keep their processed markers');
 });
 
+for (const attribute of ['data-id', 'data-itemid']) for (const artworkReady of [false, true]) {
+ test(`episode identity uses ${attribute} before and after borrowed artwork loads (ready=${artworkReady})`, async t => {
+  const episode='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',season='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const html=card.replace('data-id="AA-BB"',`${attribute}="AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"`).replace('Movie','Episode');
+  const h=setup(t,html),image=h.document.querySelector('.cardImageContainer');
+  const loadArtwork=()=>{image.style.backgroundImage=`url("/Items/${season}/Images/Primary")`;};
+  if(artworkReady)loadArtwork();
+  h.scan();
+  if(!artworkReady)loadArtwork();
+  h.fetch();
+  assert.deepEqual(JSON.parse(h.calls[0].data),[episode],'the episode, never its season artwork, supplies tag data');
+  h.response.resolve({Items:[{Id:episode,Type:'Episode',CommunityRating:9.1},{Id:season,Type:'Season',CommunityRating:4.2}]});await settle();
+  assert.equal(h.rendered.length,1);
+  assert.equal(h.rendered[0].item.Id,episode);
+  assert.equal(h.rendered[0].item.CommunityRating,9.1);
+ });
+}
+
+test('valid card identity wins for other media types while artwork remains a fallback', async t => {
+ const item='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',poster='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+ const withImage=card.replace('AA-BB',item).replace('class="cardImageContainer"',`class="cardImageContainer" style='background-image:url("/Items/${poster.toUpperCase()}/Images/Primary")'`);
+ const h=setup(t,withImage+withImage.replace(`data-id="${item}"`,'')+withImage.replace(item,'not-an-item'));
+ h.scan();h.fetch();
+ assert.deepEqual(JSON.parse(h.calls[0].data).sort(),[item,poster]);
+ h.response.resolve({Items:[{Id:item,Type:'Movie'},{Id:poster,Type:'Movie'}]});await settle();
+ assert.equal(h.rendered.length,3,'missing or invalid attributes retain the poster URL fallback');
+});
+
+test('borrowed episode artwork also uses the episode entry from the server cache', async t => {
+ const episode='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',season='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+ const rendered=[],calls=[];
+ const h=createHarness({html:card.replace('AA-BB',episode).replace('Movie','Episode').replace('class="cardImageContainer"',`class="cardImageContainer" style='background-image:url("/Items/${season}/Images/Primary")'`),
+  globals:{requestIdleCallback(){}},apiClient:{ajax:async options=>{calls.push(options.url);return {items:{[episode]:{Type:'Episode',CommunityRating:9.1},[season]:{Type:'Season',CommunityRating:4.2}},count:2};}},
+  JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{qualityTagsEnabled:true},helpers:{onBodyMutation(){},onNavigate(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}}}});
+ t.after(()=>h.close());h.load('tags/tag-pipeline.js');
+ h.JE.tagPipeline.registerRenderer('probe',{isEnabled:()=>true,renderFromServerCache:(host,entry,id)=>rendered.push({id,entry})});
+ h.JE.tagPipeline.initialize();await h.JE.tagPipeline.invalidateServerCache();await settle();
+ assert.ok(rendered.length>0);
+ assert.ok(rendered.every(({id,entry})=>id===episode&&entry.Type==='Episode'&&entry.CommunityRating===9.1));
+ assert.ok(calls.every(url=>url.includes('/tag-cache/')),'no batch fallback is needed');
+});
+
 /**
  * The pipeline over a stub IndexedDB store holding one complete copy with the
  * given meta; records which requests and store calls happen.

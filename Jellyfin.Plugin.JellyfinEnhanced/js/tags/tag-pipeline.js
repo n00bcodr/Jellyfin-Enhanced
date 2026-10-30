@@ -1534,15 +1534,14 @@
      * @returns {string|null} The item ID or null if not found.
      */
     function getItemId(el) {
-        // From background image URL
-        if (el.style?.backgroundImage) {
-            const match = el.style.backgroundImage.match(/Items\/([a-f0-9]{32})\//i);
-            if (match) return match[1];
-        }
-        // From parent data-id or data-itemid attribute (normalize to 32-char lowercase hex)
+        // The card identifies the item; an episode can borrow a season or
+        // series poster. Keep that identity stable as lazy artwork loads.
         const parent = el.closest('[data-id]') || el.closest('[data-itemid]');
         const attrId = parent?.getAttribute('data-id') || parent?.getAttribute('data-itemid');
-        return attrId ? attrId.replace(/-/g, '').toLowerCase() : null;
+        const itemId = attrId ? attrId.replace(/-/g, '').toLowerCase() : null;
+        if (itemId && /^[a-f0-9]{32}$/.test(itemId)) return itemId;
+        // Cards without a valid item attribute can still identify their artwork.
+        return imageItemId(el.style?.backgroundImage) || itemId;
     }
 
     /**
