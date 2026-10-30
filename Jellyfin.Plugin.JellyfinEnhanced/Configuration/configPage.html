@@ -6129,6 +6129,15 @@
             }
 
             /**
+             * A label of punctuation only, such as "*" (Tag Styles' whole-group key): the
+             * server drops such rules (CustomTagRuleSet.IsReservedLabel).
+             */
+            function isReservedLabel(text) {
+                var label = clean(text);
+                return label !== '' && /^[\p{P}\s]+$/u.test(label);
+            }
+
+            /**
              * The rows as the server stores them: complete rows only, labels cut to
              * 24 characters, repeated match/name pairs dropped (the first wins).
              * @returns {Array<{Match: string, Value: string, Label: string, Icon: string|null}>}
@@ -6140,7 +6149,7 @@
                     var value = clean(r.value);
                     var label = clean(r.label).slice(0, MAX_LABEL).trim();
                     var key = r.match + ':' + value.toLowerCase();
-                    if (!value || !label || seen[key] || out.length >= MAX_RULES) return;
+                    if (!value || !label || isReservedLabel(label) || seen[key] || out.length >= MAX_RULES) return;
                     seen[key] = true;
                     out.push({ Match: r.match, Value: value, Label: label, Icon: ICONS.indexOf(r.icon) >= 0 ? r.icon : null });
                 });
@@ -6238,9 +6247,19 @@
                     label.value = r.label;
                     label.placeholder = 'e.g. Remaster';
                     label.setAttribute('aria-label', 'Rule ' + n + ' label');
-                    label.setAttribute('aria-invalid', String(!clean(r.label)));
-                    label.addEventListener('input', function () { r.label = label.value; label.setAttribute('aria-invalid', String(!clean(r.label))); changed(); });
-                    cell('je-ct-label', label);
+                    var hint = document.createElement('span');
+                    hint.className = 'je-ct-hint fieldDescription';
+                    hint.id = 'customTagRuleLabelHint' + index;
+                    label.setAttribute('aria-describedby', hint.id);
+                    var checkLabel = function () {
+                        var reserved = isReservedLabel(r.label);
+                        label.setAttribute('aria-invalid', String(!clean(r.label) || reserved));
+                        hint.textContent = reserved ? 'Use a letter, number or symbol: punctuation alone (such as *) is reserved, and this rule will not be saved.' : '';
+                        hint.hidden = !reserved;
+                    };
+                    checkLabel();
+                    label.addEventListener('input', function () { r.label = label.value; checkLabel(); changed(); });
+                    cell('je-ct-label', label).parentNode.appendChild(hint);
                     var icon = document.createElement('select');
                     icon.setAttribute('aria-label', 'Rule ' + n + ' icon');
                     [''].concat(ICONS).forEach(function (name) {

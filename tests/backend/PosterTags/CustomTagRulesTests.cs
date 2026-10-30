@@ -65,6 +65,16 @@ public class CustomTagRulesTests
     }
 
     [Fact]
+    public void PunctuationOnlyLabelsAreReservedForRulesAndTagStylesAlike()
+    {
+        // "*" is Tag Styles' whole-group key: a rule labelled "*" could never have a colour of its own.
+        var rules = CustomTagRuleSet.Normalize(new[] { Rule("tag", "A", "*"), Rule("tag", "B", " !? "), Rule("tag", "C", "+"), Rule("tag", "D", "*Star*") });
+        Assert.Equal(new[] { "+", "*Star*" }, rules.Select(r => r.Label));
+        Assert.False(TagStyleSet.TryValidate("{\"v\":2,\"labels\":{\"custom:!?\":{\"text\":\"#fff\"}}}", "default", out _, out _));
+        Assert.True(TagStyleSet.TryValidate("{\"v\":2,\"labels\":{\"custom:*Star*\":{\"text\":\"#fff\"}}}", "default", out _, out var error), error);
+    }
+
+    [Fact]
     public void NormalizeKeepsAtMostTwentyRules()
     {
         var rules = CustomTagRuleSet.Normalize(Enumerable.Range(0, 30).Select(i => Rule("tag", "Tag " + i, "Label " + i)));
@@ -109,6 +119,10 @@ public class CustomTagRulesTests
     [InlineData("", false)]
     [InlineData("tab\tinside", false)]
     [InlineData("twenty-five characters!!!", false)]
+    [InlineData("*", false)]
+    [InlineData("?! -", false)]
+    [InlineData("+", true)]
+    [InlineData("*Star*", true)]
     public void LabelValidationMatchesTheRuleLabels(string label, bool valid) =>
         Assert.Equal(valid, CustomTagRuleSet.IsValidLabel(label));
 

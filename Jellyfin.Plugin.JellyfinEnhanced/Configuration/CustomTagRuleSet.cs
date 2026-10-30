@@ -65,7 +65,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>
         /// Rules as they are stored and served: unknown match types and rules without a value
-        /// or label dropped, value and label trimmed with inner whitespace collapsed, the
+        /// or with a reserved label (<see cref="IsReservedLabel"/>) dropped, value and label
+        /// trimmed with inner whitespace collapsed, the
         /// label cut to <see cref="MaxLabelLength"/> characters, an icon not in
         /// <see cref="Icons"/> dropped, repeated match/value pairs collapsed (the first
         /// wins) and at most <see cref="MaxRules"/> rules. Never null.
@@ -84,8 +85,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var match = NormalizeMatch(rule.Match);
                 var value = Collapse(rule.Value);
                 var label = Collapse(rule.Label);
-                if (match == null || value.Length == 0 || value.Length > MaxValueLength || label.Length == 0) continue;
                 if (label.Length > MaxLabelLength) label = label[..MaxLabelLength].TrimEnd();
+                if (match == null || value.Length == 0 || value.Length > MaxValueLength || label.Length == 0 || IsReservedLabel(label)) continue;
                 var normalized = new CustomTagRule { Match = match, Value = value, Label = label, Icon = NormalizeIcon(rule.Icon) };
                 if (!seen.Add(ContentKey(normalized))) continue;
                 result.Add(normalized);
@@ -125,15 +126,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>
         /// Whether a string can be a Custom chip label (a Tag Styles <c>custom:</c> label):
         /// non-empty after trimming, at most <see cref="MaxLabelLength"/> characters, no
-        /// control characters.
+        /// control characters, not reserved (<see cref="IsReservedLabel"/>).
         /// </summary>
         /// <param name="label">A label.</param>
         /// <returns>True when valid.</returns>
         public static bool IsValidLabel(string? label)
         {
             if (string.IsNullOrWhiteSpace(label) || label.Length > MaxLabelLength) return false;
-            return label == label.Trim() && !label.Any(char.IsControl);
+            return label == label.Trim() && !label.Any(char.IsControl) && !IsReservedLabel(label);
         }
+
+        /// <summary>
+        /// Whether a label is reserved: punctuation only (with spaces), which includes <c>*</c>,
+        /// the Tag Styles sentinel for the whole group, so such a label could never have colours
+        /// of its own. The rules table explains this next to the label.
+        /// </summary>
+        /// <param name="label">A label.</param>
+        /// <returns>True when reserved.</returns>
+        public static bool IsReservedLabel(string label) => label.All(c => char.IsPunctuation(c) || char.IsWhiteSpace(c));
 
         /// <summary>
         /// What decides which items match (match types and values in rule order, not labels

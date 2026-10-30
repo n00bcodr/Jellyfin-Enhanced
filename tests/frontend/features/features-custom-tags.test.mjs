@@ -240,6 +240,38 @@ test('the icon list is the bundled genre icon set, the same on the server and th
   assert.deepEqual(cs, genreIcons);
 });
 
+test('the rules table flags punctuation-only labels such as "*" and leaves them out of the save', t => {
+  const page = readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8');
+  const cut = (from, to) => page.slice(page.indexOf(from), page.indexOf(to, page.indexOf(from)) + to.length);
+  const markup = cut('<details id="customTagsAdminDetails"', '</details>');
+  const source = cut('        var customTagRules = (function () {', '        })();');
+  const h = createHarness({ html: markup });
+  t.after(() => h.close());
+  h.window.eval(`window.__rules = (function () {\n${source}\nreturn customTagRules; })();`);
+  const rules = h.window.__rules;
+  rules.load({ CustomTagRules: [
+    { Match: 'tag', Value: 'Signed', Label: '*', Icon: null },
+    { Match: 'tag', Value: 'Remaster', Label: ' ?! ', Icon: null },
+    { Match: 'tag', Value: 'Plus', Label: '+', Icon: null },
+    { Match: 'collection', Value: 'Criterion', Label: '*Criterion*', Icon: null },
+  ] });
+  const labels = [...h.document.querySelectorAll('.je-ct-label input')];
+  const hints = [...h.document.querySelectorAll('.je-ct-label .je-ct-hint')];
+  assert.deepEqual(labels.map(el => el.getAttribute('aria-invalid')), ['true', 'true', 'false', 'false']);
+  assert.deepEqual(hints.map(el => el.hidden), [false, false, true, true]);
+  assert.match(hints[0].textContent, /\*/);
+  assert.equal(labels[0].getAttribute('aria-describedby'), hints[0].id);
+  const config = {};
+  rules.collect(config);
+  assert.deepEqual(plain(config.CustomTagRules.map(r => r.Label)), ['+', '*Criterion*'], 'as the server stores them');
+
+  // Typing a real label clears the flag.
+  labels[0].value = 'Signed';
+  labels[0].dispatchEvent(new h.window.Event('input'));
+  assert.equal(labels[0].getAttribute('aria-invalid'), 'false');
+  assert.equal(hints[0].hidden, true);
+});
+
 test('the layout controller knows the group: defaults, recommended shape looks and its wrapper class', t => {
   const h = setup(t);
   const L = h.JE.core.tagLayout;

@@ -2014,6 +2014,11 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
 .je-ct-row input[aria-invalid="true"] {
     border-color: #ef5350;
 }
+.je-ct-hint {
+    display: block;
+    margin-top: 2px;
+    color: #ef9a9a;
+}
 .je-ct-remove {
     min-width: 32px;
     padding: 4px 6px;
