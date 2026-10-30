@@ -2327,6 +2327,8 @@
         if (contextOf(awaitingData, ctrl.host)?.cardId === ctrl.itemId) endAwait(ctrl.host);
         teardown(ctrl);
         controllers.delete(ctrl.host);
+        // Its artwork watch (tags/tag-poster-colours.js) goes with it.
+        JE.tagPosterColours?.release(ctrl.host);
     }
 
     /**

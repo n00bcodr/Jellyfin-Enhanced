@@ -21,6 +21,9 @@
 // Default preset's colours. Nothing leaves the browser: the colours are kept
 // in memory and in the tag cache store (IndexedDB, per server and user,
 // capped), keyed by item, image type and image tag, so new artwork resamples.
+// Each coloured or waiting card has an artwork watch (its image container
+// and its item id): new artwork or a card recycled for another item
+// resamples it; the watch goes with the card.
 // Every sample and every store write belongs to the session generation it
 // started in: after a user switch, a decode still in flight is dropped, never
 // shown or stored as the incoming user's.
@@ -31,7 +34,7 @@
 // decoding) and their cards are queued for the next slice.
 //
 // Public surface: JE.tagPosterColours { ALGORITHM, dominant, normalise,
-// coloursOf, keyOf, setActive, isActive, track, stats, clearMemory }.
+// coloursOf, keyOf, setActive, isActive, track, release, stats, clearMemory }.
 (function (JE) {
     'use strict';
 
@@ -204,11 +207,19 @@
     let persistTimer = 0;
     let primed = null;
     let primedScope = '';
-    /** @type {WeakSet<Element>} artwork elements a listener or the observer already watches */
-    const watched = new WeakSet();
-    /** @type {WeakMap<Element, HTMLElement>} watched artwork → its host */
-    const hostOfArt = new WeakMap();
-    let observer = null;
+    /**
+     * A card's artwork watch: one observer on its image container (a new
+     * src, srcset or background image, an <img> mounted or replaced) and on
+     * the card's item id (a virtual list recycling the card), and a load
+     * listener on an image still loading. `key` is the artwork last seen
+     * ready (null while waiting), `id` the item id last seen.
+     * @typedef {{owner: Element, host: HTMLElement, container: Element|null, card: Element|null, id: string|null, key: string|null,
+     *   img: HTMLImageElement|null, observer: MutationObserver|null, onLoad: () => void}} Watch
+     */
+    /** @type {Map<Element, Watch>} a host's parent (the card's render target) → its watch */
+    const watches = new Map();
+    /** @type {WeakMap<HTMLElement, Watch>} host → its watch */
+    const watchOf = new WeakMap();
     let canvas = null;
     const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0, sampleMs: 0, maxSampleMs: 0 };
 
@@ -291,7 +302,7 @@
      * an element declaring its colour (data-je-poster-rgb, the settings
      * panel's sample cards).
      * @param {HTMLElement} host
-     * @returns {{key: string, url: string, img: HTMLImageElement|null, rgb?: number[]}|{wait: Element, img: HTMLImageElement|null}|null}
+     * @returns {{key: string, url: string, img: HTMLImageElement|null, container: Element, rgb?: number[]}|{wait: Element, img: HTMLImageElement|null}|null}
      */
     function artworkOf(host) {
         const parent = host.parentElement;
@@ -303,55 +314,99 @@
         const declared = container.getAttribute('data-je-poster-rgb') || container.querySelector(':scope > [data-je-poster-rgb]')?.getAttribute('data-je-poster-rgb');
         if (declared) {
             const rgb = declared.split(',').map((v) => Number(v.trim()));
-            return rgb.length === 3 && rgb.every((v) => Number.isInteger(v) && v >= 0 && v <= 255) ? { key: `declared:${rgb.join(',')}`, url: '', img: null, rgb } : null;
+            return rgb.length === 3 && rgb.every((v) => Number.isInteger(v) && v >= 0 && v <= 255) ? { key: `declared:${rgb.join(',')}`, url: '', img: null, container, rgb } : null;
         }
         const img = /** @type {HTMLImageElement|null} */ (container.querySelector('img'));
         if (img) {
             const url = img.currentSrc || img.src;
             const key = keyOf(url);
             if (!key) return { wait: container, img: null };
-            return img.complete && img.naturalWidth > 0 ? { key, url, img } : { wait: container, img };
+            return img.complete && img.naturalWidth > 0 ? { key, url, img, container } : { wait: container, img };
         }
         const bg = /url\(["']?([^"')]+)["']?\)/.exec(container.style?.backgroundImage || '');
         const key = bg ? keyOf(bg[1]) : null;
-        return key ? { key, url: bg[1], img: null } : { wait: container, img: null };
+        return key ? { key, url: bg[1], img: null, container } : { wait: container, img: null };
+    }
+
+    /** @param {Element|null} card @returns {string|null} */
+    const idOf = (card) => card?.getAttribute('data-id') || card?.getAttribute('data-itemid') || null;
+
+    /**
+     * Track a card again whenever its artwork arrives or changes: an <img>
+     * finishing, a new src or srcset, the lazy loader setting a background
+     * image, Jellyfin 12 mounting (or replacing) the <img> inside the image
+     * container, or the card being recycled for another item. Called on
+     * every slice that reads the card, so a recycled card's new host takes
+     * the watch over.
+     * @param {HTMLElement} host
+     * @param {Element} container - The image container.
+     * @param {HTMLImageElement|null} img - An image still loading.
+     * @param {string|null} key - The artwork shown, null while waiting.
+     */
+    function watch(host, container, img, key) {
+        const owner = host.parentElement;
+        if (!owner) return;
+        let w = watches.get(owner);
+        if (!w) {
+            const created = /** @type {Watch} */ ({ owner, host, container: null, card: null, id: null, key: null, img: null, observer: null, onLoad: () => changed(created) });
+            w = created;
+            watches.set(owner, w);
+        }
+        if (w.host !== host) watchOf.delete(w.host);
+        w.host = host;
+        watchOf.set(host, w);
+        w.key = key;
+        if (w.container !== container) {
+            w.observer?.disconnect();
+            w.container = container;
+            w.card = owner.closest('[data-id], [data-itemid]');
+            if (!w.observer && typeof MutationObserver === 'function') w.observer = new MutationObserver(() => changed(w));
+            w.observer?.observe(container, { attributes: true, attributeFilter: ['style', 'src', 'srcset'], childList: true, subtree: true });
+            if (w.card) w.observer?.observe(w.card, { attributes: true, attributeFilter: ['data-id', 'data-itemid'] });
+        }
+        w.id = idOf(w.card);
+        if (w.img !== img) {
+            w.img?.removeEventListener('load', w.onLoad);
+            w.img = img;
+            img?.addEventListener('load', w.onLoad);
+        }
     }
 
     /**
-     * Track a card again once its artwork arrives or changes: an <img>
-     * finishing, a new src, the lazy loader setting a background image, or
-     * Jellyfin 12 mounting (or replacing) the <img> inside the image
-     * container after the tags arrived. The container's subtree is watched.
-     * @param {Element} container - The image container.
-     * @param {HTMLElement} host
-     * @param {HTMLImageElement|null} img - An image still loading.
+     * A watched card's container or item id changed: track it again if its
+     * artwork, its item or its host did (the observer also sees the card's
+     * own colour writes and chips, which change none of these).
+     * @param {Watch} w
      */
-    function waitFor(container, host, img) {
-        hostOfArt.set(container, host);
-        if (img && !watched.has(img)) {
-            watched.add(img);
-            img.addEventListener('load', () => {
-                const owner = img.closest('.cardImageContainer') || img.parentElement;
-                const h = owner ? hostOfArt.get(owner) : null;
-                if (h) track(h);
-            });
-        }
-        if (watched.has(container)) return;
-        watched.add(container);
-        if (!observer && typeof MutationObserver === 'function') {
-            observer = new MutationObserver((records) => {
-                const hosts = new Set();
-                for (const record of records) {
-                    // The watched container, or one whose subtree changed.
-                    let el = /** @type {Element|null} */ (record.target);
-                    while (el && !hostOfArt.has(el)) el = el.parentElement;
-                    const h = el ? hostOfArt.get(el) : null;
-                    if (h) hosts.add(h);
-                }
-                hosts.forEach(track);
-            });
-        }
-        observer?.observe(container, { attributes: true, attributeFilter: ['style', 'src'], childList: true, subtree: true });
+    function changed(w) {
+        if (watches.get(w.owner) !== w) return;
+        const host = w.owner.isConnected
+            ? (w.host.parentElement === w.owner ? w.host : /** @type {HTMLElement|undefined} */ (Array.from(w.owner.children).find((c) => c.classList.contains('je-tag-host'))))
+            : null;
+        if (!host) { drop(w); return; }
+        const art = artworkOf(host);
+        const key = art && 'key' in art ? art.key : null;
+        if (host !== w.host || key !== w.key || idOf(w.card) !== w.id) track(host);
+    }
+
+    /** @param {Watch} w Disconnect a card's watch. */
+    function drop(w) {
+        w.observer?.disconnect();
+        w.observer = null;
+        w.img?.removeEventListener('load', w.onLoad);
+        w.img = null;
+        if (watches.get(w.owner) === w) watches.delete(w.owner);
+        if (watchOf.get(w.host) === w) watchOf.delete(w.host);
+    }
+
+    /**
+     * Stop watching a card's artwork; core/tag-layout.js calls this when it
+     * drops the card's controller. Presenting the card again re-watches it.
+     * @param {HTMLElement} host
+     */
+    function release(host) {
+        const w = host ? watchOf.get(host) : null;
+        if (w) drop(w);
     }
 
     /**
@@ -399,6 +454,8 @@
         sliceScheduled = false;
         if (!active) return;
         const started = performance.now();
+        // Cards gone from the page take their watches with them.
+        for (const w of watches.values()) if (!w.owner.isConnected) drop(w);
         const batch = [];
         for (const host of queue) {
             queue.delete(host);
@@ -410,8 +467,9 @@
         // Writes.
         for (const { host, target, art } of reads) {
             if (!art) { clear(target); continue; }
-            if ('wait' in art) { clear(target); waitFor(art.wait, host, art.img); continue; }
+            if ('wait' in art) { clear(target); watch(host, art.wait, art.img, null); continue; }
             if (art.rgb) { apply(target, art.key, { d: art.rgb }); continue; }
+            watch(host, art.container, null, art.key);
             const known = memory.get(art.key);
             if (known !== undefined) {
                 counters.fromMemory++;
@@ -550,6 +608,7 @@
         }
         queue.clear();
         toSample.clear();
+        for (const w of Array.from(watches.values())) drop(w);
         document.querySelectorAll('[data-je-poster-colour], [data-je-poster-key]').forEach((el) => clear(/** @type {HTMLElement} */ (el)));
     }
 
@@ -583,8 +642,9 @@
         setActive,
         isActive: () => active,
         track,
+        release,
         /** @returns {Object} Slice timings and counts (performance checks). */
-        stats: () => ({ ...counters, queued: queue.size, waiting: toSample.size, decoding: sampling.size, remembered: memory.size }),
+        stats: () => ({ ...counters, queued: queue.size, waiting: toSample.size, decoding: sampling.size, remembered: memory.size, watching: watches.size }),
         clearMemory,
     };
 })(window.JellyfinEnhanced);

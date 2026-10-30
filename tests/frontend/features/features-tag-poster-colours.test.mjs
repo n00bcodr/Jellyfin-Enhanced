@@ -19,16 +19,18 @@ function pixels(width, height, paint) {
   return data;
 }
 
-/** The module alone, with stubbed image decoding: `art` maps an image URL to its pixels (or an error to throw). */
-function setup(t, { html = card(ID), art = {}, store = null, session = {} } = {}) {
-  const h = createHarness({
-    html,
-    JE: { session: { getServerId: () => 's', getUserId: () => 'u', onUserChange() {}, ...session }, ...(store ? { tagCacheStore: store } : {}) },
-  });
-  t.after(() => h.close());
-  const w = h.window;
+/**
+ * Stubbed image decoding: every <img> is loaded at 200×300, createImageBitmap
+ * records each decode and the canvas returns the pixels `art` maps the image
+ * URL to (or throws its error). Observers still observing are counted.
+ */
+function stubImages(w, art) {
   const decoded = [];
-  // Every <img> is loaded at 200×300; createImageBitmap remembers the source for the canvas stub.
+  const observing = new Set();
+  w.MutationObserver = class extends w.MutationObserver {
+    observe(...args) { observing.add(this); return super.observe(...args); }
+    disconnect() { observing.delete(this); return super.disconnect(); }
+  };
   Object.defineProperty(w.HTMLImageElement.prototype, 'complete', { configurable: true, get() { return true; } });
   Object.defineProperty(w.HTMLImageElement.prototype, 'naturalWidth', { configurable: true, get() { return 200; } });
   Object.defineProperty(w.HTMLImageElement.prototype, 'naturalHeight', { configurable: true, get() { return 300; } });
@@ -44,12 +46,24 @@ function setup(t, { html = card(ID), art = {}, store = null, session = {} } = {}
       },
     };
   };
+  return { decoded, observing };
+}
+
+/** The module alone, with stubbed image decoding: `art` maps an image URL to its pixels (or an error to throw). */
+function setup(t, { html = card(ID), art = {}, store = null, session = {} } = {}) {
+  const h = createHarness({
+    html,
+    JE: { session: { getServerId: () => 's', getUserId: () => 'u', onUserChange() {}, ...session }, ...(store ? { tagCacheStore: store } : {}) },
+  });
+  t.after(() => h.close());
+  const w = h.window;
+  const { decoded, observing } = stubImages(w, art);
   h.load('tags/tag-poster-colours.js');
   const P = h.JE.tagPosterColours;
   /** Let queued slices and decodes run to the end. */
   const settle = async () => { for (let i = 0; i < 12; i++) await new Promise(r => w.setTimeout(r, 20)); };
   const box = (id = ID) => h.document.querySelector(`[data-id="${id}"] .cardBox`);
-  return { ...h, P, decoded, settle, box };
+  return { ...h, P, decoded, observing, settle, box };
 }
 
 const solid = rgb => (w, h) => pixels(w, h, () => [...rgb, 255]);
@@ -133,9 +147,8 @@ test('colours are reused per artwork and resampled when the image tag changes', 
   await h.settle();
   assert.equal(h.decoded.length, 1, 'one decode for one artwork');
   assert.equal(h.box(ID2).style.getPropertyValue('--je-tag-bg'), h.box(ID).style.getPropertyValue('--je-tag-bg'));
-  // New artwork for the first card: a new image tag, resampled; the old colour never lingers.
+  // New artwork for the first card: a new image tag, resampled (the card's watch sees it); the old colour never lingers.
   h.document.querySelector(`[data-id="${ID}"] img`).src = img(ID, 't2');
-  h.P.track(h.document.querySelector(`[data-id="${ID}"] .je-tag-host`));
   await h.settle();
   assert.equal(h.decoded.length, 2);
   assert.equal(h.box(ID).dataset.jePosterKey, `${ID}:primary:0:t2`);
@@ -331,4 +344,95 @@ test('a store write still pending at a user switch is dropped', async t => {
   reset({ userId: 'B', previousUserId: 'A' });
   timers[0]();
   assert.deepEqual(puts, []);
+});
+
+test('a loaded image replaced in place is resampled without the card being presented again', async t => {
+  const h = setup(t, { art: { [img(ID)]: solid([200, 30, 30]), [img(ID, 't2')]: solid([30, 60, 200]) } });
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(h.box().dataset.jePosterKey, `${ID}:primary:0:t1`);
+  assert.equal(h.P.stats().watching, 1, 'an image that was already loaded is watched too');
+  const image = h.document.querySelector('img');
+  image.setAttribute('srcset', `${img(ID, 't2')} 1x`);
+  image.src = img(ID, 't2');
+  await h.settle();
+  assert.equal(h.box().dataset.jePosterKey, `${ID}:primary:0:t2`);
+  assert.equal(h.box().style.getPropertyValue('--je-tag-bg'), h.P.css(h.P.normalise([30, 60, 200]).background));
+  // The card's own colour writes and chips are not artwork changes.
+  const slices = h.P.stats().slices;
+  h.document.querySelector('.je-tag-host').appendChild(h.document.createElement('span'));
+  h.box().style.setProperty('--je-tag-bg', 'rgb(1, 2, 3)');
+  await h.settle();
+  assert.equal(h.P.stats().slices, slices);
+});
+
+test('a card recycled for another item, even with a new host, takes the other item\'s colour', async t => {
+  const h = setup(t, { art: { [img(ID)]: solid([200, 30, 30]), [img(ID2)]: solid([30, 60, 200]) } });
+  h.P.setActive(true);
+  await h.settle();
+  const blue = h.P.css(h.P.normalise([30, 60, 200]).background);
+  // A virtual list reuses the card: new item id, then its image.
+  const el = h.document.querySelector('.card');
+  el.setAttribute('data-id', ID2);
+  h.document.querySelector('img').src = img(ID2);
+  await h.settle();
+  assert.equal(h.box(ID2).dataset.jePosterKey, `${ID2}:primary:0:t1`);
+  assert.equal(h.box(ID2).style.getPropertyValue('--je-tag-bg'), blue);
+  // Recycled again, its host replaced: the new host owns the watch.
+  const old = h.document.querySelector('.je-tag-host');
+  const fresh = h.document.createElement('div');
+  fresh.className = 'je-tag-host';
+  old.replaceWith(fresh);
+  el.setAttribute('data-id', ID);
+  h.document.querySelector('img').src = img(ID);
+  await h.settle();
+  assert.equal(h.box(ID).dataset.jePosterKey, `${ID}:primary:0:t1`);
+  assert.equal(h.box(ID).style.getPropertyValue('--je-tag-bg'), h.P.css(h.P.normalise([200, 30, 30]).background));
+  assert.equal(h.P.stats().watching, 1);
+});
+
+test('artwork watches go with their cards: cleared, removed or switched off', async t => {
+  const h = setup(t, { html: card(ID) + card(ID2), art: { [img(ID)]: solid([200, 30, 30]), [img(ID2)]: solid([30, 60, 200]) } });
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(h.observing.size, 2);
+  h.P.release(h.document.querySelector(`[data-id="${ID}"] .je-tag-host`));
+  assert.equal(h.observing.size, 1, 'released with its card');
+  h.document.querySelector(`[data-id="${ID2}"]`).remove();
+  h.P.track(h.document.querySelector(`[data-id="${ID}"] .je-tag-host`));
+  await h.settle();
+  assert.equal(h.P.stats().watching, 1, 'a card gone from the page loses its watch at the next slice');
+  assert.equal(h.observing.size, 1);
+  h.P.setActive(false);
+  assert.equal(h.observing.size, 0);
+  assert.equal(h.P.stats().watching, 0);
+});
+
+test('the layout\'s clearAll releases every card\'s artwork watch', async t => {
+  const layoutCard = id => `<div class="card overflowPortraitCard" data-id="${id}" data-type="Movie"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer coveredImage cardContent"><img src="${img(id)}"></div><div class="cardOverlayContainer"></div></div><div class="cardText cardText-first">Title</div></div></div>`;
+  const renderers = new Map();
+  const h = createHarness({
+    html: layoutCard(ID) + layoutCard(ID2),
+    JE: {
+      currentSettings: { qualityTagsEnabled: true, qualityTagsPreferredAudioLanguage: 'none' },
+      pluginConfig: { TagCacheServerMode: true },
+      t: key => key,
+      session: { getUserId: () => 'u', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      _cacheManager: { register() {}, markDirty() {} },
+      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() {}, scheduleScan() {} },
+    },
+  });
+  t.after(() => h.close());
+  const { observing } = stubImages(h.window, { [img(ID)]: solid([200, 30, 30]), [img(ID2)]: solid([30, 60, 200]) });
+  for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/qualitytags.js', 'tags/tag-poster-colours.js']) h.load(file);
+  h.JE.initializeQualityTags();
+  h.JE.tagPosterColours.setActive(true);
+  const entry = { Type: 'Movie', StreamData: { Streams: [{ Type: 'Video', Codec: 'hevc', Height: 2160, DisplayTitle: '4K HEVC' }], Sources: [], ItemName: 'Movie' } };
+  for (const id of [ID, ID2]) renderers.get('quality').renderFromServerCache(h.document.querySelector(`[data-id="${id}"] .cardScalable`), entry, id);
+  for (let i = 0; i < 12; i++) await new Promise(r => h.window.setTimeout(r, 20));
+  assert.equal(h.document.querySelectorAll('[data-je-poster-colour]').length, 2, 'both cards coloured through the layout');
+  assert.equal(observing.size, 2);
+  h.JE.core.tagLayout.clearAll();
+  assert.equal(observing.size, 0, 'no observer outlives clearAll');
+  assert.equal(h.JE.tagPosterColours.stats().watching, 0);
 });
