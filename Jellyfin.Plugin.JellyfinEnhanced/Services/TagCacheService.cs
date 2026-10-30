@@ -126,6 +126,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public IReadOnlySet<Guid>? Pending { get; init; }
 
             public ContainerEpisodeIndex? ContainerIndex { get; set; }
+
+            public Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode[]> StatusSiblings { get; } = new();
         }
 
         /// <summary>
@@ -1341,8 +1343,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // and the version, the only way clients holding the entry learn it is gone.
             if (IsInExcludedLibrary(item)) return RemoveEntry(id);
 
+            // A season is queued alongside every episode add/update/removal. Repair
+            // every cached sibling, including ones not otherwise in this batch.
+            var siblingsChanged = item is MediaBrowser.Controller.Entities.TV.Season season
+                && RefreshStatusSiblings(season.Id, episodeScans);
             var entry = BuildEntryForItem(item, episodeScans);
-            if (entry == null) return false;
+            if (entry == null) return siblingsChanged;
 
             // Before the no-op guard: tags can be missing while the entry is unchanged
             SyncAudioLanguageTags(item, kind, entry);
@@ -1357,7 +1363,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // LastUpdated stamp, so delta requests (?since=) correctly skip it.
             if (_cache.TryGetValue(key, out var existing) && TagCacheEntry.ContentEquals(existing, entry))
             {
-                return false;
+                return siblingsChanged;
             }
 
             // Raised before the store so no reader can see the entry under a
@@ -2630,7 +2636,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         else
                         {
-                            entry.EpisodeIndex = BuildStatusEpisodeIndex(ep, null, out var statusSources);
+                            entry.EpisodeIndex = BuildStatusEpisodeIndex(ep, null, out var statusSources, episodeScans);
                             entry.StatusEpisodeIds = statusSources;
                         }
                         // Age rating: Episodes inherit the Series rating when they have none.
@@ -2656,19 +2662,55 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// aggregate through the same access-revision path as container facts.
         /// </summary>
         internal TagEpisodeIndex? BuildStatusEpisodeIndex(MediaBrowser.Controller.Entities.TV.Episode episode, JUser? user, out string[]? sources)
+            => BuildStatusEpisodeIndex(episode, user, out sources, null);
+
+        private TagEpisodeIndex? BuildStatusEpisodeIndex(MediaBrowser.Controller.Entities.TV.Episode episode, JUser? user, out string[]? sources, EpisodeScanMemo? memo)
         {
             sources = null;
             if (episode.ParentIndexNumber is not { } season || episode.IndexNumber is not { } number) return null;
             if (episode.SeasonId == Guid.Empty) return new TagEpisodeIndex { Season = season, Episode = number };
-            var siblings = _libraryManager.GetItemList(new InternalItemsQuery(user)
-            {
-                ParentId = episode.SeasonId, Recursive = true, IsVirtualItem = false,
-                IncludeItemTypes = new[] { BaseItemKind.Episode },
-                DtoOptions = new DtoOptions(false) { EnableImages = false, EnableUserData = false },
-            }).OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToArray();
+            var siblings = StatusSiblings(episode.SeasonId, user, memo);
             sources = siblings.Select(e => e.Id.ToString("N")).Order(StringComparer.Ordinal).ToArray();
             return new TagEpisodeIndex { Season = season, Episode = number,
                 IsLast = siblings.Length > 0 ? number == siblings.Max(e => e.IndexNumber ?? -1) : null };
+        }
+
+        /// <summary>One shared sibling query per affected season and update pass.</summary>
+        private MediaBrowser.Controller.Entities.TV.Episode[] StatusSiblings(Guid seasonId, JUser? user, EpisodeScanMemo? memo)
+        {
+            if (memo != null && memo.StatusSiblings.TryGetValue(seasonId, out var known)) return known;
+            var siblings = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            {
+                ParentId = seasonId, Recursive = true, IsVirtualItem = false,
+                IncludeItemTypes = new[] { BaseItemKind.Episode },
+                DtoOptions = new DtoOptions(false) { EnableImages = false, EnableUserData = false },
+            }).OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToArray();
+            if (memo != null) memo.StatusSiblings[seasonId] = siblings;
+            return siblings;
+        }
+
+        /// <summary>Refresh sibling indexes and access contributors without probing their streams.</summary>
+        private bool RefreshStatusSiblings(Guid seasonId, EpisodeScanMemo memo)
+        {
+            var siblings = StatusSiblings(seasonId, null, memo);
+            var sources = siblings.Select(e => e.Id.ToString("N")).Order(StringComparer.Ordinal).ToArray();
+            var last = siblings.Select(e => e.IndexNumber ?? -1).DefaultIfEmpty(-1).Max();
+            var changed = false;
+            foreach (var episode in siblings)
+            {
+                var key = episode.Id.ToString("N");
+                if (!_cache.TryGetValue(key, out var old)) continue;
+                var entry = old.Clone();
+                entry.EpisodeIndex = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number
+                    ? new TagEpisodeIndex { Season = season, Episode = number, IsLast = number == last } : null;
+                entry.StatusEpisodeIds = sources;
+                if (TagCacheEntry.ContentEquals(old, entry)) continue;
+                entry.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                RaiseMaxLastUpdated(entry.LastUpdated);
+                StoreEntry(key, entry);
+                changed = true;
+            }
+            return changed;
         }
 
         /// <summary>

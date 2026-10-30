@@ -32,6 +32,55 @@ public class StatusTagsCacheFactsTests
     private static long Ms(DateTime value) => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
 
     [Theory]
+    [InlineData("add")]
+    [InlineData("remove")]
+    [InlineData("hide")]
+    public void IncrementalEpisodeChangesRefreshEverySibling(string change)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var series = new Series { Id = Guid.NewGuid() };
+        var season = new Season { Id = Guid.NewGuid(), SeriesId = series.Id, ParentId = series.Id, IndexNumber = 1 };
+        Episode Make(int number) => new() { Id = Guid.NewGuid(), SeriesId = series.Id, SeasonId = season.Id,
+            ParentId = season.Id, ParentIndexNumber = 1, IndexNumber = number, DateCreated = DateTime.UtcNow.AddDays(-1) };
+        var e5 = Make(5);
+        var e6 = Make(6);
+        var all = new List<BaseItem> { series, season, e5 };
+        if (change == "remove") all.Add(e6);
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var library = new Mock<ILibraryManager>();
+        IEnumerable<BaseItem> Select(InternalItemsQuery q)
+        {
+            IEnumerable<BaseItem> selected = all;
+            if (q.User != null && change == "hide") selected = selected.Where(i => i.Id != e6.Id);
+            if (q.ItemIds?.Length > 0) selected = selected.Where(i => q.ItemIds.Contains(i.Id));
+            else if (q.IncludeItemTypes?.Length > 0) selected = selected.Where(i => q.IncludeItemTypes.Contains(i.GetBaseItemKind()));
+            if (q.ParentId != Guid.Empty) selected = selected.Where(i => i is Episode e && (q.ParentId == series.Id || e.SeasonId == q.ParentId));
+            return selected.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue);
+        }
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).Select(i => i.Id).ToArray());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).ToArray());
+        library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        cache.BuildFullCache(null, CancellationToken.None);
+        if (change == "remove") { all.Remove(e6); cache.EnqueueRemoval(e6.Id); }
+        else { all.Add(e6); cache.EnqueueUpdate(e6.Id); }
+        cache.EnqueueUpdate(season.Id);
+        cache.EnqueueUpdate(series.Id);
+        typeof(TagCacheService).GetMethod("FlushPending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(cache, null);
+        Assert.True(cache.TryGetEntry(e5.Id, out var entry));
+        Assert.Equal(change == "remove", entry.EpisodeIndex!.IsLast);
+        Assert.Equal(all.OfType<Episode>().Select(e => e.Id.ToString("N")).Order(StringComparer.Ordinal), entry.StatusEpisodeIds);
+        if (change == "hide")
+        {
+            var filtered = cache.GetCacheForUser(user, out _, out _, out var revision)[e5.Id.ToString("N")];
+            Assert.Null(filtered.EpisodeIndex);
+            Assert.NotEqual("all", revision);
+        }
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public void SnapshotLoadAgesFutureEpisodesWithoutMetadataChanges(bool legacySnapshot)
