@@ -532,3 +532,59 @@ test('a summary pill too wide for its card drops its lowest-priority facts whole
   h.layout.flushFit();
   assert.equal(wider.querySelector('[data-je-overflow]'), null, 'everything fits on a wider card');
 });
+
+test('chipsThatFit wraps like flex-wrap and leaves room for the "+N" chip', t => {
+  const h = setup(t);
+  const fit = h.layout.chipsThatFit;
+  assert.equal(fit([30, 30, 30, 30], 100, 3, 2, 20), 4, 'two rows of two... of three and one: everything fits');
+  assert.equal(fit([30, 30, 30, 30, 30, 30, 30], 100, 3, 2, 20), 5, 'row two keeps room for "+2"');
+  assert.equal(fit([30, 30, 30, 30, 30, 30], 100, 3, 2, 20), 6, 'exactly two full rows need no "+N"');
+  assert.equal(fit([150, 30], 100, 3, 1, 20), 0, 'a chip wider than the row cannot be shown whole next to "+N"');
+});
+
+/** Give a caption card's outlet, chips and "+N" chip fixed widths, then run the fitting pass. */
+function fitCaption(h, { card = 120, outlet = 100, chip = 30, more = 20 } = {}) {
+  const host = h.host();
+  h.layout.refreshPresentation(host); // queues the card for the fitting pass
+  const strip = h.document.querySelector('.je-tag-caption');
+  measure(host, { width: card });
+  measure(strip, { width: outlet });
+  for (const el of strip.querySelectorAll(':scope > [data-je-group] > *')) measure(el, { width: chip });
+  // The pass adds the "+N" chip before measuring: size it as it appears.
+  const proto = h.window.HTMLElement.prototype;
+  const original = proto.getBoundingClientRect;
+  proto.getBoundingClientRect = function () { return this.classList.contains('je-tag-more') ? { width: more, height: 18 } : original.call(this); };
+  try { h.layout.flushFit(); } finally { proto.getBoundingClientRect = original; }
+  return strip;
+}
+
+test('the caption strip keeps two rows, hides the lowest-priority chips whole and counts them in a "+N" chip', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption' } });
+  h.render();
+  const strip = fitCaption(h);
+  const chips = Array.from(strip.querySelectorAll(':scope > [data-je-group] > *'));
+  assert.equal(chips.length, 10, 'quality 4, rating 2, age 1, language 3');
+  const shown = chips.filter(c => !c.hasAttribute('data-je-overflow'));
+  assert.deepEqual(shown.map(c => c.closest('[data-je-group]').dataset.jeGroup), ['quality', 'quality', 'quality', 'quality', 'rating'],
+    'priority order: the lowest-priority groups go first');
+  const more = strip.lastElementChild;
+  assert.ok(more.classList.contains('je-tag-more'));
+  assert.equal(more.textContent, '+5');
+  assert.equal(more.hasAttribute('data-je-overflow'), false);
+  assert.match(more.title, /^8\.1, PG-13, /, 'the title names the hidden chips');
+  // A wide card shows everything: no "+N".
+  const wide = fitCaption(h, { outlet: 400 });
+  assert.equal(wide.querySelectorAll('[data-je-group] [data-je-overflow]').length, 0);
+  assert.equal(wide.lastElementChild.hasAttribute('data-je-overflow'), true, 'the "+N" chip is hidden');
+  assert.equal(h.document.getElementById('je-tag-layout').textContent.includes('.je-tag-host [data-je-overflow], .je-tag-caption [data-je-overflow] { display: none !important; }'), true);
+});
+
+test('compact caption chips get the same two-row treatment, and a late group lands before the "+N" chip', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption', tagLabelDensity: 'compact', statusTagsEnabled: false } });
+  h.render();
+  const strip = fitCaption(h);
+  assert.equal(strip.lastElementChild.textContent, '+4', 'compact drops the critic chip: 9 chips, 5 shown');
+  h.layout.commitGroup(h.host(), 'language', h.layout.getGroup(h.host(), 'language'));
+  assert.ok(strip.lastElementChild.classList.contains('je-tag-more'), 'the overflow chip stays last');
+  assert.equal(strip.lastElementChild.previousElementSibling.dataset.jeGroup, 'language');
+});

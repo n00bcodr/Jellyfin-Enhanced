@@ -85,6 +85,8 @@
 
     /** Layouts whose representations are fitted to the card's measured size. */
     const FIT_LAYOUTS = new Set(['bands', 'caption', 'summary', 'minimal']);
+    /** Rows a wrapping slot (caption strip) shows before its "+N" overflow chip. */
+    const FIT_MAX_ROWS = 2;
 
     /** Compact quality labels; audio "<codec> <channels>" is handled in compactQualityLabel. */
     const COMPACT_QUALITY = { 'Dolby Vision': 'DV', 'HDR10+': 'HDR+', 'Dolby Digital+': 'DD+' };
@@ -312,11 +314,30 @@
     let outletSeq = 0;
     let stylesInjected = false;
 
-    /** Inject the shared layout stylesheet once (tags/tag-layout-styles.js provides it). */
+    /**
+     * Inject the shared layout stylesheet once (tags/tag-layout-styles.js
+     * provides it), and start re-fitting cards when the window resizes.
+     */
     function injectStyles() {
         if (stylesInjected || typeof api.buildStyles !== 'function' || !JE.core.ui?.injectCss) return;
         stylesInjected = true;
         JE.core.ui.injectCss('je-tag-layout', api.buildStyles());
+        window.addEventListener('resize', refitOnResize, { passive: true });
+    }
+
+    let resizeQueued = false;
+
+    /** Card sizes follow the window: re-fit every fitted card once per frame of resizing. */
+    function refitOnResize() {
+        if (resizeQueued) return;
+        resizeQueued = true;
+        requestAnimationFrame(() => {
+            resizeQueued = false;
+            for (const host of document.querySelectorAll('.je-tag-host')) {
+                const ctrl = controllers.get(/** @type {HTMLElement} */ (host));
+                if (ctrl) scheduleFit(ctrl);
+            }
+        });
     }
 
     /**
@@ -643,7 +664,8 @@
             const group = /** @type {HTMLElement} */ (sibling).dataset.jeGroup;
             if (group && rankOf(ctrl, conf, group) > rank) { before = sibling; break; }
         }
-        slotEl.insertBefore(node, before);
+        // The "+N" overflow chip stays last.
+        slotEl.insertBefore(node, before || moreChipOf(slotEl));
     }
 
     /**
@@ -659,7 +681,7 @@
         for (const node of nodes) {
             const slot = node.parentElement;
             node.remove();
-            if (slot && slot !== ctrl.outlet && slot.classList.contains('je-tag-slot') && slot.children.length === 0) slot.remove();
+            if (slot && slot !== ctrl.outlet && slot.classList.contains('je-tag-slot') && !holdsGroups(slot)) slot.remove();
         }
     }
 
@@ -821,9 +843,94 @@
     // ── Fitting ────────────────────────────────────────────────────────
     // What fits on a card depends on its rendered size, which only the
     // browser knows. After cards are presented, one pass after the next
-    // paint measures every card queued by then — every read before any
-    // write, so a page of cards costs one layout, not one per card — and
-    // hides what does not fit: the summary pill's lowest-priority facts.
+    // paint measures every card queued by then — reads and writes in
+    // separate phases, so a page of cards costs two layouts, not one per
+    // card — and hides what does not fit, never half a chip or fact:
+    //   - the summary pill's lowest-priority facts;
+    //   - in the caption strip, chips past its two rows, lowest priority
+    //     first, behind a "+N" chip whose title names them.
+
+    /**
+     * Whether a slot still holds any group representation.
+     * @param {Element} slotEl
+     * @returns {boolean}
+     */
+    function holdsGroups(slotEl) {
+        return Array.from(slotEl.children).some((c) => !!(/** @type {HTMLElement} */ (c).dataset.jeGroup));
+    }
+
+    /**
+     * A slot's "+N" overflow chip, or null.
+     * @param {Element} slotEl
+     * @returns {HTMLElement|null}
+     */
+    function moreChipOf(slotEl) {
+        const last = slotEl.lastElementChild;
+        return last && last.classList.contains('je-tag-more') ? /** @type {HTMLElement} */ (last) : null;
+    }
+
+    /**
+     * The wrapping slots of a card that are limited to FIT_MAX_ROWS rows.
+     * @param {CardController} ctrl
+     * @returns {HTMLElement[]}
+     */
+    function rowSlots(ctrl) {
+        return ctrl.outlet && ctrl.outlet.isConnected ? [ctrl.outlet] : [];
+    }
+
+    /**
+     * The chips of a wrapping slot in display order (its groups flow as one
+     * row of chips, in priority order).
+     * @param {HTMLElement} slotEl
+     * @returns {HTMLElement[]}
+     */
+    function slotChips(slotEl) {
+        const chips = [];
+        for (const child of slotEl.children) {
+            if (/** @type {HTMLElement} */ (child).dataset.jeGroup) chips.push(.../** @type {HTMLElement[]} */ (Array.from(child.children)));
+        }
+        return chips;
+    }
+
+    /**
+     * A chip's name for the "+N" chip's title: its title or alt text (genre
+     * icons, flags), its rating number, or its text.
+     * @param {HTMLElement} chip
+     * @returns {string}
+     */
+    function chipLabel(chip) {
+        return chip.getAttribute('title') || chip.getAttribute('alt')
+            || chip.querySelector('.rating-text')?.textContent?.trim()
+            || (chip.textContent || '').trim();
+    }
+
+    /**
+     * How many chips, in order, a wrapping row shows within maxRows rows,
+     * leaving room for a "+N" chip after them when some are left out. Mirrors
+     * flex-wrap: a chip joins the current row if it fits after the gap, else
+     * starts the next one.
+     * @param {number[]} widths - Chip widths in display order.
+     * @param {number} available - Content width of the row.
+     * @param {number} gap - Gap between chips.
+     * @param {number} maxRows
+     * @param {number} moreWidth - Width of the "+N" chip.
+     * @returns {number}
+     */
+    function chipsThatFit(widths, available, gap, maxRows, moreWidth) {
+        const rowsFor = (list) => {
+            let rows = 0;
+            let x = 0;
+            for (const w of list) {
+                if (rows === 0 || x + gap + w > available + 0.5) { rows++; x = w; } else x += gap + w;
+            }
+            return rows;
+        };
+        if (rowsFor(widths) <= maxRows) return widths.length;
+        for (let keep = widths.length - 1; keep > 0; keep--) {
+            if (rowsFor(widths.slice(0, keep).concat(moreWidth)) <= maxRows) return keep;
+        }
+        return 0;
+    }
 
     /** @type {Set<CardController>} cards waiting for the next fitting pass */
     const pendingFit = new Set();
@@ -851,24 +958,46 @@
         if (list.length === 0) return;
         fitting = true;
         try {
-            // Writes: show what an earlier pass hid, so it is measured afresh.
-            for (const ctrl of list) {
-                for (const root of [ctrl.host, ctrl.outlet]) {
-                    root?.querySelectorAll('[data-je-overflow]').forEach((el) => el.removeAttribute('data-je-overflow'));
-                }
-            }
+            // Reads: cards not laid out (hidden, detached tab) are left as they are.
+            const shown = list.filter((ctrl) => ctrl.host.clientWidth > 0);
+            // Writes: show what an earlier pass hid, and give every wrapping
+            // slot its "+N" chip, so both are measured afresh.
+            for (const ctrl of shown) prepareFit(ctrl);
             // Reads, then writes.
-            const plans = list.map(measureFit);
-            list.forEach((ctrl, i) => applyFit(ctrl, plans[i]));
+            const plans = shown.map(measureFit);
+            shown.forEach((ctrl, i) => applyFit(ctrl, plans[i]));
         } finally {
             fitting = false;
         }
     }
 
     /**
+     * Undo an earlier pass and put a "+N" chip (sized for the worst case)
+     * last in every wrapping slot that has chips (writes only).
+     * @param {CardController} ctrl
+     */
+    function prepareFit(ctrl) {
+        for (const root of [ctrl.host, ctrl.outlet]) {
+            root?.querySelectorAll('[data-je-overflow]').forEach((el) => el.removeAttribute('data-je-overflow'));
+        }
+        for (const slotEl of rowSlots(ctrl)) {
+            const count = slotChips(slotEl).length;
+            let more = moreChipOf(slotEl) || slotEl.querySelector(':scope > .je-tag-more');
+            if (count === 0) { more?.remove(); continue; }
+            if (!more) {
+                more = document.createElement('span');
+                more.className = 'je-tag-more';
+            }
+            if (more !== slotEl.lastElementChild) slotEl.appendChild(more);
+            const text = `+${count}`;
+            if (more.textContent !== text) more.textContent = text;
+        }
+    }
+
+    /**
      * @typedef {Object} FitPlan
-     * @property {number} width - The card image's width (0 = not laid out: leave it be).
      * @property {number} pillFacts - Pill facts to keep (-1 = no pill).
+     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], keep: number}>} rows - Wrapping slots.
      */
 
     /**
@@ -877,8 +1006,20 @@
      * @returns {FitPlan}
      */
     function measureFit(ctrl) {
-        const plan = { width: ctrl.host.clientWidth, pillFacts: -1 };
-        if (plan.width > 0 && ctrl.pill) plan.pillFacts = pillFactsThatFit(ctrl.pill);
+        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [] };
+        for (const slotEl of rowSlots(ctrl)) {
+            const chips = slotChips(slotEl);
+            const more = moreChipOf(slotEl);
+            if (chips.length === 0 || !more) continue;
+            const style = getComputedStyle(slotEl);
+            const available = slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+            const gap = parseFloat(style.columnGap) || 0;
+            const widths = chips.map((chip) => chip.getBoundingClientRect().width);
+            const keep = available > 0
+                ? chipsThatFit(widths, available, gap, FIT_MAX_ROWS, more.getBoundingClientRect().width)
+                : chips.length;
+            plan.rows.push({ slot: slotEl, chips, keep });
+        }
         return plan;
     }
 
@@ -915,6 +1056,19 @@
                 fact.setAttribute('data-je-overflow', '');
                 fact.previousElementSibling?.setAttribute('data-je-overflow', '');
             });
+        }
+        for (const { slot, chips, keep } of plan.rows) {
+            const more = moreChipOf(slot);
+            if (!more) continue;
+            const hidden = chips.slice(keep);
+            for (const chip of hidden) chip.setAttribute('data-je-overflow', '');
+            if (hidden.length === 0) {
+                more.setAttribute('data-je-overflow', '');
+                more.removeAttribute('title');
+                continue;
+            }
+            more.textContent = `+${hidden.length}`;
+            more.title = hidden.map(chipLabel).filter(Boolean).join(', ');
         }
     }
 
@@ -1164,6 +1318,7 @@
         reinitialize,
         /** Run the pending fitting pass now (tests; the page runs it after the next paint). */
         flushFit,
+        chipsThatFit,
         isGroup: (name) => GROUPS.has(/** @type {string} */ (normalizeGroup(name))),
     };
     JE.core.tagLayout = api;

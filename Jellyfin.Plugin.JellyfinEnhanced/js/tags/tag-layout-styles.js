@@ -124,8 +124,9 @@
                 gap: 3px;
                 box-sizing: content-box;
                 /* Fixed two-row budget, reserved before the chips arrive, so every
-                   card in a row keeps the same height: chips that would wrap to a
-                   third row are clipped, lowest priority first. */
+                   card in a row keeps the same height: the fitting pass hides chips
+                   that would wrap to a third row, lowest priority first, behind a
+                   "+N" chip. */
                 height: 43px;
                 margin: 5px 0 1px;
                 padding: 0 2px;
@@ -149,6 +150,31 @@
             .je-tag-caption .language-flag { width: 20px; box-shadow: none; }
             .je-tag-caption .genre-tag { width: 20px; height: 20px; min-width: 20px; box-shadow: none; }
             .je-tag-caption .genre-tag .je-msym-outlined { font-size: 13px; }
+
+            /* "+N": the chips a wrapping slot had no room for (title names them) */
+            .je-tag-more {
+                display: inline-flex;
+                align-items: center;
+                flex-shrink: 0;
+                box-sizing: border-box;
+                padding: 2px 5px;
+                border-radius: 3px;
+                border: 1px solid rgba(255, 255, 255, 0.22);
+                background: rgba(0, 0, 0, 0.72);
+                color: #fff;
+                font-size: 11px;
+                font-weight: 700;
+                line-height: 1.15;
+                white-space: nowrap;
+                pointer-events: none;
+            }
+            .je-tag-caption .je-tag-more {
+                font-size: clamp(9px, 6.4cqw, 11.5px);
+                background: rgba(255, 255, 255, 0.12);
+                /* Below the image nothing is covered: let the title show. */
+                pointer-events: auto;
+                cursor: default;
+            }
 
             /* summary: one fact pill; full chips on hover / focus */
             ${SLOT}[data-je-slot="pill"] {
