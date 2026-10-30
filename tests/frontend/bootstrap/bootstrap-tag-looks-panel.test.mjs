@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, plain } from '../helpers/harness.mjs';
+import { createHarness, plain, deferred } from '../helpers/harness.mjs';
 
 const KIDS = '22222222222222222222222222222222';
 const MOVIE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -9,11 +9,12 @@ const SERIES = 'cccccccccccccccccccccccccccccccc';
 /**
  * The real "Where each look applies" section (and the detail-page lock
  * button) over the real layout controller and tag look module, with the
- * Jellyfin API mocked: /UserViews, /Genres and /Users/{id}/Items. With realSave
+ * Jellyfin API mocked: /UserViews, /Genres, /Users/{id}/Items and the
+ * tag pipeline's /tag-data (batch mode: no server tag cache). With realSave
  * the real JE.saveUserSettings posts the settings, failing with HTTP 500
  * while saveStatus is 500.
  */
-function setup(t, { settings = {}, genresFail = false, html = '', realSave = false } = {}) {
+function setup(t, { settings = {}, genresFail = false, html = '', tagData = id => ({ Id: id, Type: 'Movie', Genres: ['Drama'] }), realSave = false } = {}) {
   const writes = [], toasts = [], requests = [], reinit = [];
   const io = { saveStatus: 200 };
   const h = createHarness({
@@ -30,6 +31,7 @@ function setup(t, { settings = {}, genresFail = false, html = '', realSave = fal
       ajax: async ({ url, data }) => {
         requests.push(url);
         const u = new URL(url);
+        if (u.pathname.includes('/JellyfinEnhanced/tag-data/')) return { Items: (await Promise.all(JSON.parse(data).map(tagData))).filter(Boolean) };
         if (u.pathname.includes('/JellyfinEnhanced/user-settings/')) {
           if (io.saveStatus !== 200) throw Object.assign(new Error('Internal Server Error'), { status: io.saveStatus });
           writes.push(JSON.parse(data));
@@ -45,7 +47,7 @@ function setup(t, { settings = {}, genresFail = false, html = '', realSave = fal
     },
   });
   t.after(() => h.close());
-  const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-look-lock.js'];
+  const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-pipeline.js', 'tags/tag-look-lock.js'];
   if (realSave) files.unshift('enhanced/config.js');
   for (const file of files) h.load(file);
   h.JE.toast = message => toasts.push(message);
@@ -253,6 +255,47 @@ test('the detail-page button is absent with every poster tag off or for non-medi
   assert.ok(page.querySelector('.je-tag-look-lock-btn'));
   h.JE.tagLookLock.addLockButton('not-an-id', page, 'Series');
   assert.equal(page.querySelector('.je-tag-look-lock-btn'), null);
+});
+
+test('locking without a cached entry waits for /tag-data and stores the library rule\'s look, not the default', async t => {
+  const answer = deferred();
+  const h = setup(t, {
+    html: detailPage(),
+    settings: { tagLayout: 'corners', tagLookRules: [{ ...kidsRule, when: [{ field: 'library', value: KIDS }] }] },
+    tagData: () => answer.promise,
+  });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
+  const button = page.querySelector('.je-tag-look-lock-btn');
+  h.click(button);
+  await h.settle();
+  assert.equal(button.disabled, true, 'disabled while the item data loads');
+  assert.equal(button.getAttribute('aria-label'), 'tag_looks_loading');
+  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
+  assert.equal(button.getAttribute('aria-label'), 'tag_looks_loading', 'a details re-run keeps the busy state');
+  assert.equal(h.writes.length, 0, 'nothing saved before the data is known');
+  assert.ok(h.requests.some(u => u.includes(`/JellyfinEnhanced/tag-data/`)), 'fetched through the tag pipeline');
+
+  answer.resolve({ Id: MOVIE, Type: 'Movie', LibraryId: KIDS, Genres: [] });
+  await h.settle(); await h.settle();
+  const lock = h.writes.at(-1).tagLayoutLocks[MOVIE];
+  assert.equal(lock.layout, 'caption', 'the library rule\'s look (the grid shows caption)');
+  assert.equal(lock.density, 'compact');
+  assert.equal(button.disabled, false);
+  assert.equal(button.getAttribute('aria-label'), 'tag_look_unlock_button');
+});
+
+test('locking an item the server has no tag data for saves nothing and says it failed', async t => {
+  const h = setup(t, { html: detailPage(), tagData: () => null });
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
+  const button = page.querySelector('.je-tag-look-lock-btn');
+  h.click(button);
+  await h.settle(); await h.settle();
+  assert.equal(h.writes.length, 0);
+  assert.equal(h.toasts.at(-1), 'tag_look_error_toast');
+  assert.equal(button.getAttribute('aria-pressed'), 'false');
+  assert.equal(button.disabled, false);
 });
 
 test('a save that fails with HTTP 500 resolves false, restores the locks and rules and says so', async t => {

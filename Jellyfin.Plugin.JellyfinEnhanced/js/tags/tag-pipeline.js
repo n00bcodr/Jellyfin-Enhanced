@@ -992,6 +992,26 @@
     }
 
     /**
+     * An item's data for tag look rules and locks, the way its cards are
+     * matched: its server tag-cache entry, else fetched from /tag-data.
+     * @param {string} itemId - Normalised item id.
+     * @returns {Promise<object|null>} Null when the server has no such item.
+     */
+    async function itemLookFacts(itemId) {
+        const known = serverCache?.get(itemId);
+        if (known) return known;
+        const userId = ApiClient.getCurrentUserId();
+        const response = await ApiClient.ajax({
+            type: 'POST',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+            data: JSON.stringify([itemId]),
+            contentType: 'application/json',
+            dataType: 'json'
+        });
+        return (response?.Items || []).find((i) => String(i?.Id ?? '').replace(/-/g, '').toLowerCase() === itemId) || null;
+    }
+
+    /**
      * Render one classified card from its server entry, or from the local
      * caches with a batch-fetch fallback. The host is collected for one
      * corner-stacking pass over the whole slice instead of a layout per card.
@@ -1638,6 +1658,8 @@
          * @returns {object|null}
          */
         peekServerEntry(itemId) { return serverCache?.get(itemId) || null; },
+        /** The item data an item's cards are matched on by tag look rules (server entry, else fetched). */
+        itemLookFacts,
         /**
          * Every server tag-cache entry in memory (empty without one).
          * @returns {Iterable<object>}

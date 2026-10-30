@@ -68,20 +68,32 @@
     }
 
     /**
-     * What the item's cards are matched on: the server tag-cache entry when
-     * it is in memory (it carries the library), else the item itself.
+     * What the item's cards are matched on: the same item data the tag
+     * pipeline gives them (server tag-cache entry, else /tag-data, which
+     * carry the library; a plain item does not, so a library rule would be
+     * missed).
      * @param {string} id
      * @param {string} itemType
      * @returns {Promise<Object>}
      */
     async function itemFacts(id, itemType) {
-        const entry = JE.tagPipeline?.peekServerEntry?.(id);
-        if (entry) return { ...entry, itemId: id, cardType: itemType };
-        const userId = ApiClient.getCurrentUserId();
-        const item = JE.helpers?.getItemCached
-            ? await JE.helpers.getItemCached(id, { userId })
-            : await ApiClient.getItem(userId, id);
-        return { ...(item || {}), itemId: id, cardType: itemType };
+        const entry = await JE.tagPipeline.itemLookFacts(id);
+        if (!entry) throw new Error(`no tag data for ${id}`);
+        return { ...entry, itemId: id, cardType: itemType };
+    }
+
+    /**
+     * Show the button busy (disabled, "Loading…") while the item data and
+     * the save are pending.
+     * @param {HTMLButtonElement} button
+     */
+    function renderBusy(button) {
+        const label = JE.t('tag_looks_loading');
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        button.setAttribute('aria-busy', 'true');
+        const icon = button.querySelector('.detailButton-icon');
+        if (icon) icon.textContent = 'hourglass_empty';
     }
 
     /**
@@ -94,6 +106,7 @@
         const itemType = button.getAttribute('data-je-item-type') || '';
         if (!id) return;
         button.disabled = true;
+        renderBusy(button);
         const wasLocked = isLocked(id);
         let saved = false;
         try {
@@ -102,7 +115,8 @@
                 if (saved) JE.toast?.(JE.t('tag_look_unlocked_toast'));
             } else {
                 // The look the item's cards have now (rule or default; a
-                // season/episode of a locked series inherits the series' lock).
+                // season/episode of a locked series inherits the series'
+                // lock), decided only once the item data is known.
                 const conf = JE.core.tagLayout.resolveLayout(await itemFacts(id, itemType));
                 saved = await JE.core.tagLook.lockItem(id, { layout: conf.layout, density: conf.density, slots: conf.slots });
                 if (saved) {
@@ -116,6 +130,7 @@
             console.warn(`${logPrefix} lock toggle failed:`, err);
         } finally {
             if (!saved) JE.toast?.(JE.t('tag_look_error_toast'));
+            button.removeAttribute('aria-busy');
             button.disabled = false;
             const locked = isLocked(id);
             button.setAttribute('data-je-lock-state', locked ? 'on' : 'off');
@@ -163,6 +178,8 @@
             });
         }
         placeButton(button, container);
+        // A toggle in flight redraws the button when it settles.
+        if (button.getAttribute('aria-busy') === 'true') return;
         const state = locked ? 'on' : 'off';
         if (button.getAttribute('data-je-item-id') !== id || button.getAttribute('data-je-lock-state') !== state
             || button.getAttribute('data-je-item-type') !== itemType) {
