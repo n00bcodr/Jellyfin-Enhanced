@@ -8,8 +8,14 @@ const lab = process.env.JE_LANGUAGE_LAB_URL;
 async function prepare(page, style, slot) {
   if (lab) {
     await page.goto(`${lab}/web/index.html#/login`);
-    await page.getByText('Manual Login', { exact: true }).click();
-    await page.locator('#txtManualName').fill(process.env.JE_LANGUAGE_LAB_USER || 'real-admin');
+    // The public user picker can swallow the first "Manual Login" click while the page is still
+    // settling, leaving the manual form hidden; click again until the name field is visible.
+    const manualName = page.locator('#txtManualName');
+    await expect(async () => {
+      if (!(await manualName.isVisible())) await page.getByText('Manual Login', { exact: true }).click();
+      await expect(manualName).toBeVisible({ timeout: 2000 });
+    }).toPass({ timeout: 30000 });
+    await manualName.fill(process.env.JE_LANGUAGE_LAB_USER || 'real-admin');
     await page.locator('#txtManualPassword').fill(process.env.JE_LANGUAGE_LAB_PASSWORD);
     await page.locator('#txtManualPassword').press('Enter');
     await page.waitForFunction(() => window.ApiClient?.getCurrentUserId());
