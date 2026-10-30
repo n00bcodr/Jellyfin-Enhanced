@@ -16,8 +16,9 @@ const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSk
 function setup(t, stored = {}, cards = '') {
   const writes = [], toasts = [], reinit = [];
   const html = toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button>'
-    + `<select id="tagLayoutSelect">${['corners', 'bands', 'caption', 'summary', 'minimal'].map(v => `<option value="${v}">${v}</option>`).join('')}</select>`
-    + '<select id="tagLabelDensitySelect"><option value="full">full</option><option value="compact">compact</option></select>'
+    // The Media Tags hub's layout tiles and density pills (radio groups, as ui-panel-media-tags.js renders them).
+    + `<div id="jeTagLayoutChoice" role="radiogroup">${['corners', 'bands', 'caption', 'summary', 'minimal'].map(v => `<input type="radio" name="jeTagLayout" value="${v}">`).join('')}</div>`
+    + '<div id="jeTagDensityChoice" role="radiogroup"><input type="radio" name="jeTagDensity" value="full"><input type="radio" name="jeTagDensity" value="compact"></div>'
     + '<div id="panel"></div>' + cards;
   const h = createHarness({ html,
     JE: { pluginConfig: {}, userConfig: { settings: { ageRatingTagsPosition: 'bottom-right', ...stored }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
@@ -34,23 +35,23 @@ function setup(t, stored = {}, cards = '') {
   h.JE.internals.enhancedUi.wireSettingsListeners(ctx);
   h.JE.internals.enhancedUi.wireMiscSettingsControls(ctx);
   const settle = () => new Promise(resolve => setImmediate(resolve));
-  return { ...h, writes, toasts, reinit, settle, async select(id, value) {
-    const el = h.document.getElementById(id); el.value = value;
+  return { ...h, writes, toasts, reinit, settle, async choose(name, value) {
+    const el = h.document.querySelector(`input[name="${name}"][value="${value}"]`); el.checked = true;
     el.dispatchEvent(new h.window.Event('change', { bubbles: true })); await settle();
   } };
 }
 
-test('layout and density selects save a normalized document and re-present the cards', async t => {
+test('the layout tiles and density pills save a normalized document and re-present the cards', async t => {
   const h = setup(t);
   assert.equal(h.JE.currentSettings.tagLayoutSettingsVersion, 0, 'a document from before layouts');
-  await h.select('tagLayoutSelect', 'caption');
+  await h.choose('jeTagLayout', 'caption');
   let saved = JSON.parse(h.writes.at(-1).data);
   assert.equal(saved.tagLayout, 'caption');
   assert.equal(saved.tagLayoutSettingsVersion, 1, 'saving a layout setting promotes the document');
   assert.equal(saved.tagLayouts, null, 'profiles keep inheriting until edited');
   assert.deepEqual(h.reinit, ['caption']);
   assert.equal(h.JE.core.tagLayout.normalizeSettings().layout, 'caption');
-  await h.select('tagLabelDensitySelect', 'compact');
+  await h.choose('jeTagDensity', 'compact');
   saved = JSON.parse(h.writes.at(-1).data);
   assert.equal(saved.tagLabelDensity, 'compact');
   assert.equal(h.reinit.length, 2);

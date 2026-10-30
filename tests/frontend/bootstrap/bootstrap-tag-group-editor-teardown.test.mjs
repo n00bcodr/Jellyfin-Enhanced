@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
 /**
- * The real panel host (ui-panel.js) with the real tag group editor in it;
- * the other sections are stubbed out. A fake IntersectionObserver records
- * what the editor watches so tests can fire it or check it was released.
+ * The real panel host (ui-panel.js) with the real Media Tags hub in it (its
+ * group editor and live preview); the other sections are stubbed out. A
+ * fake IntersectionObserver records what the hub watches so tests can fire
+ * it or check it was released.
  * @param {import('node:test').TestContext} t
  */
 function setup(t) {
@@ -36,12 +37,12 @@ function setup(t) {
     if (fn === h.JE.keyListener) shortcutRestores++;
     return addEventListener(type, fn, options);
   };
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'enhanced/config.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
-  h.load('enhanced/settingspanel/ui-panel-tag-editor.js');
+  for (const file of ['ui-panel-tag-editor.js', 'ui-panel-tag-preview.js', 'ui-panel-media-tags.js']) h.load(`enhanced/settingspanel/${file}`);
   const ui = h.JE.internals.enhancedUi;
-  ui.buildPanelHtml = ctx => `<div class="panel-header"><button id="closeSettingsPanel">x</button></div>${ui.buildTagGroupEditorHtml(ctx)}`;
+  ui.buildPanelHtml = ctx => `<div class="panel-header"><button id="closeSettingsPanel">x</button></div>${ui.buildMediaTagsHubHtml(ctx)}`;
   for (const name of ['wireShortcutEditor', 'wireSettingsListeners', 'wireHiddenContentListeners', 'wireMiscSettingsControls', 'wireLanguageControls']) ui[name] = () => {};
   h.load('enhanced/settingspanel/ui-panel.js');
   const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -68,33 +69,35 @@ const closePaths = {
 };
 
 for (const [path, close] of Object.entries(closePaths)) {
-  test(`closing the panel (${path}) before Media Tags was on screen releases the editor; reopening works`, async t => {
+  test(`closing the panel (${path}) before Media Tags was on screen releases the hub and its preview; reopening works`, async t => {
     const h = setup(t);
     const first = await h.open();
     assert.ok(h.panel());
-    assert.equal(first.targets[0]?.id, 'jeTgePreview', 'the editor waits for its preview mount to be on screen');
-    const firstApi = h.ui.tagGroupEditor;
-    assert.ok(firstApi);
+    assert.equal(first.targets[0]?.id, 'jeMediaTagsHub', 'the preview waits for the Media Tags section to be on screen');
+    assert.equal(h.document.querySelector('.je-mtp-card'), null, 'nothing drawn before that');
+    const firstHub = h.ui.mediaTagsHub;
+    assert.ok(firstHub && h.ui.tagGroupEditor);
 
     await close(h);
     assert.equal(h.panel(), null, 'panel removed');
     assert.equal(first.disconnected, true, 'observer disconnected');
+    assert.equal(h.ui.mediaTagsHub, null, 'no hub retained after close');
     assert.equal(h.ui.tagGroupEditor, null, 'no editor (or its rows) retained after close');
     assert.equal(h.shortcutRestores(), 1, 'keyboard shortcuts restored');
     first.fire();
-    assert.equal(h.document.querySelector('.je-tge-card'), null, 'a late observer callback builds nothing');
+    assert.equal(h.document.querySelector('.je-mtp-card'), null, 'a late observer callback builds nothing');
 
-    // Open again: a fresh editor that works.
+    // Open again: a fresh hub whose preview builds once it is on screen and follows edits.
     const second = await h.open();
     assert.notEqual(second, first);
-    assert.notEqual(h.ui.tagGroupEditor, firstApi);
+    assert.notEqual(h.ui.mediaTagsHub, firstHub);
     second.fire();
     assert.equal(second.disconnected, true, 'the observer is released once the preview is built');
-    assert.ok(h.panel().querySelector('.je-tge-card .je-tag-host'), 'the preview is drawn');
+    assert.equal(h.panel().querySelectorAll('.je-mtp-card .je-tag-host').length, 3, 'three samples are drawn');
     h.panel().querySelector('.je-tge-row[data-group="quality"] [data-slot="br"]').click();
     await h.settle();
     assert.equal(JSON.parse(h.writes.at(-1).data).qualityTagsPosition, 'bottom-right');
-    assert.equal(h.panel().querySelector('.je-tge-card .je-tag-slot[data-je-slot="br"] .quality-overlay-container') !== null, true, 'the preview follows the edit');
+    assert.ok(h.panel().querySelector('.je-mtp-sample[data-sample="movie"] .je-tag-slot[data-je-slot="br"] .quality-overlay-container'), 'the preview follows the edit');
   });
 }
 
@@ -102,7 +105,7 @@ test('preview work queued just before the panel closes is dropped', async t => {
   const h = setup(t);
   const io = await h.open();
   io.fire();
-  const card = h.panel().querySelector('.je-tge-card');
+  const card = h.panel().querySelector('.je-mtp-card');
   assert.ok(card);
   // A pill click queues a preview refresh for the next microtask; close first.
   h.panel().querySelector('.je-tge-row[data-group="rating"] [data-slot="tl"]').click();
@@ -110,14 +113,18 @@ test('preview work queued just before the panel closes is dropped', async t => {
   await h.settle();
   assert.equal(card.isConnected, false);
   assert.equal(card.querySelector('.je-tag-host .je-tag-slot'), null, 'the dropped preview was cleared, not re-drawn');
+  assert.equal(h.ui.mediaTagsHub, null);
   assert.equal(h.ui.tagGroupEditor, null);
 });
 
-test('wiring the editor again disposes the previous one even without a panel close', async t => {
+test('wiring the hub or the editor again disposes the previous one even without a panel close', async t => {
   const h = setup(t);
   const io = await h.open();
-  const old = h.ui.tagGroupEditor;
-  h.ui.wireTagGroupEditor({ resetAutoCloseTimer() {} });
+  const oldHub = h.ui.mediaTagsHub;
+  const oldEditor = h.ui.tagGroupEditor;
+  h.ui.wireMediaTagsHub({ resetAutoCloseTimer() {} });
   assert.equal(io.disconnected, true);
-  assert.notEqual(h.ui.tagGroupEditor, old);
+  assert.notEqual(h.ui.mediaTagsHub, oldHub);
+  h.ui.wireTagGroupEditor({ resetAutoCloseTimer() {} });
+  assert.notEqual(h.ui.tagGroupEditor, oldEditor);
 });

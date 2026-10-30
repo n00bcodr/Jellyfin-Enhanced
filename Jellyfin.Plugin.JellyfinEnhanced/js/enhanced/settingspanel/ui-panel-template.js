@@ -356,51 +356,9 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_file_sizes')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_file_sizes_desc')}</div></div>
                                 </label>
                             </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="showAudioLanguagesToggle" ${JE.currentSettings.showAudioLanguages ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_audio_languages')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_audio_languages_desc')}</div></div>
-                                </label>
-                            </div>
-                            ${JE.pluginConfig?.NativePosterTagsEnabled === true ? `
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="nativePosterTagsToggle" ${JE.currentSettings.useNativePosterTags !== false ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer; flex-shrink:0;">
-                                    <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags_desc'))}</div></div>
-                                </label>
-                            </div>` : ''}
-                            ${/* Layout, density, live preview and the six poster tag groups (ui-panel-tag-editor.js) */ ''}
-                            ${internal.buildTagGroupEditorHtml(ctx)}
-                            ${(() => {
-                                // Tag Styles: user presets. Only while the admin lets users pick
-                                // one; the empty value follows the admin's preset.
-                                if (!JE.pluginConfig?.TagStylesAllowUserPreset) return '';
-                                const presets = JE.tagStyles?.PRESETS || ['default', 'glass', 'outline', 'dark', 'light', 'mono'];
-                                const mine = presets.includes(JE.currentSettings.tagStylePreset) ? JE.currentSettings.tagStylePreset : '';
-                                const server = presets.includes(JE.pluginConfig.TagStylePreset) ? JE.pluginConfig.TagStylePreset : 'default';
-                                const selectStyle = `width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;`;
-                                return `
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label for="tagStylePresetSelect" style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_tag_style_preset'))}</label>
-                                <div id="tagStylePresetDesc" style="font-size:12px; color:rgba(255,255,255,0.6); margin:2px 0 8px;">${escapeHtml(JE.t('panel_settings_ui_tag_style_preset_desc'))}</div>
-                                <select id="tagStylePresetSelect" aria-describedby="tagStylePresetDesc" style="${selectStyle}">
-                                    <option value="" ${mine === '' ? 'selected' : ''}>${escapeHtml(JE.t('panel_settings_ui_tag_style_preset_server', { preset: JE.t(`panel_settings_ui_tag_style_preset_${server}`) }))}</option>
-                                    ${presets.map((id) => `<option value="${id}" ${mine === id ? 'selected' : ''}>${escapeHtml(JE.t(`panel_settings_ui_tag_style_preset_${id}`))}</option>`).join('')}
-                                </select>
-                            </div>`;
-                            })()}
-                            <div id="jeTagLooksMount" style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};"></div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="peopleTagsToggle" ${JE.currentSettings.peopleTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_people_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_people_tags_desc')}</div></div>
-                                </label>
-                            </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="tagsHideOnHoverToggle" ${JE.currentSettings.tagsHideOnHover ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_hide_tags_on_hover')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_hide_tags_on_hover_desc')}</div></div>
-                                </label>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor}; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;">
+                                <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_media_tags_moved'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_media_tags_moved_desc'))}</div></div>
+                                <button type="button" id="jeOpenMediaTags" data-je-open-pane="media-tags" style="font-family:inherit; font-size:13px; font-weight:600; color:#fff; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.22); border-radius:6px; min-height:36px; padding:0 12px; cursor:pointer;">${escapeHtml(JE.t('panel_media_tags_open'))}</button>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -410,6 +368,8 @@
                             </div>
                         </div>
                     </section>
+                    ${/* Media Tags hub: layout, groups, status badges, rules and locks, colours, server pointers (ui-panel-media-tags.js) */ ''}
+                    ${internal.buildMediaTagsHubHtml ? internal.buildMediaTagsHubHtml(ctx) : ''}
                     ${/* Hidden Content settings — only rendered when the module is initialized (controlled by HiddenContentEnabled config) */ ''}
                     ${JE.hiddenContent ? `<section class="je-pane" data-pane="hidden-content">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.EYE)} ${JE.t('hidden_content_settings_title')}</h3>

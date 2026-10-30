@@ -1,14 +1,15 @@
 /**
- * @file Poster tag group editor in the personal settings panel (Media Tags):
- * one row per tag group in the user's priority order, each with move
- * up/down buttons, its enable toggle and an inline editor for the group's
- * slot in the selected layout, its cap and what it includes; plus the layout
- * and density selects, a reset button and a live preview card drawn through
- * the real layout controller (core/tag-layout.js) and chip classes.
+ * @file Poster tag group editor, the Groups tab of the settings panel's
+ * Media Tags hub (ui-panel-media-tags.js): one row per tag group in the
+ * user's priority order, each with move up/down buttons, its enable toggle
+ * and an inline editor for the group's slot in the selected layout, its cap
+ * and what it includes, plus a reset button. The Status row links to the
+ * hub's Status badges tab, where the badge families live; the layout and
+ * density choices and the live preview are the hub's.
  *
- * The enable toggles, quality categories, rating scopes, status badges and
- * sound language keep their element ids, so ui-panel-settings.js wires them
- * exactly as before; this module only adds the editor-owned controls.
+ * The enable toggles, quality categories, rating scopes and sound language
+ * keep their element ids, so ui-panel-settings.js wires them exactly as
+ * before; this module only adds the editor-owned controls.
  */
 (function(JE) {
     'use strict';
@@ -49,13 +50,6 @@
         { settingKey: 'ratingTagsShowCommunity', pluginKey: 'RatingTagsShowCommunity', labelKey: 'panel_settings_ui_tag_editor_rating_community' },
         { settingKey: 'ratingTagsShowCritic', pluginKey: 'RatingTagsShowCritic', labelKey: 'panel_settings_ui_tag_editor_rating_critic' },
     ];
-
-    /** Two flags drawn inline (data URIs), so the preview never touches the network. */
-    const PREVIEW_FLAGS = [
-        { code: 'jp', name: 'Japanese', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20"><rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="6" fill="#bc002d"/></svg>' },
-        { code: 'fr', name: 'French', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#002395"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ed2939"/></svg>' },
-    ];
-    const PREVIEW_GENRES = [['Science Fiction', 'science'], ['Thriller', 'psychology']];
 
     const escapeHtml = (value) => JE.escapeHtml(String(value));
 
@@ -230,7 +224,8 @@
 
     /**
      * Group-specific settings that existed before the editor (sound
-     * language, rating scope, status badges), kept with their ids.
+     * language, rating scope), kept with their ids. The status badges are
+     * the hub's Status badges tab.
      * @param {string} group
      * @param {Object} ctx - Panel context (colours).
      * @returns {string}
@@ -271,20 +266,6 @@
                     </div>
                 </div>`;
         }
-        if (group === 'status') {
-            return `
-                <div class="je-tge-extra">
-                    <div class="je-tge-label">${escapeHtml(JE.t('panel_settings_ui_status_tags_scope_label'))}</div>
-                    <div id="statusTagsSubToggles" class="je-quality-cat-list je-tge-list-box">
-                        ${scopeRow('statusTagsTrendingToggle', 'statusTagsTrending', 'StatusTagsTrending', 'panel_settings_ui_status_tags_trending')}
-                        ${scopeRow('statusTagsNewReleaseToggle', 'statusTagsNewRelease', 'StatusTagsNewRelease', 'panel_settings_ui_status_tags_new_release')}
-                        ${scopeRow('statusTagsJustAddedToggle', 'statusTagsJustAdded', 'StatusTagsJustAdded', 'panel_settings_ui_status_tags_just_added')}
-                        ${scopeRow('statusTagsScheduleToggle', 'statusTagsSchedule', 'StatusTagsSchedule', 'panel_settings_ui_status_tags_schedule')}
-                        ${scopeRow('statusTagsMilestonesToggle', 'statusTagsMilestones', 'StatusTagsMilestones', 'panel_settings_ui_status_tags_milestones')}
-                        ${scopeRow('statusTagsSeriesStatusToggle', 'statusTagsSeriesStatus', 'StatusTagsSeriesStatus', 'panel_settings_ui_status_tags_series_status', false)}
-                    </div>
-                </div>`;
-        }
         return '';
     }
 
@@ -305,7 +286,12 @@
         let include;
         if (group === 'quality') include = qualityIncludeHtml();
         else if (group === 'rating') include = ratingIncludeHtml();
+        else if (group === 'status') include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_media_tags_badges_include'))}</div>`;
         else include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_nothing_to_include'))}</div>`;
+        // The Status row opens the hub's Status badges tab (its include list).
+        const badges = group === 'status'
+            ? `<button type="button" class="je-tge-badges" data-je-goto="badges">${escapeHtml(JE.t('panel_media_tags_badges_link'))}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>`
+            : '';
         return `
             <li class="je-tge-row" data-group="${group}" style="--je-tge-swatch:${meta.color};">
                 <div class="je-tge-row-head">
@@ -316,11 +302,12 @@
                     <span class="je-tge-swatch" aria-hidden="true"></span>
                     <button type="button" class="je-tge-expand" aria-expanded="false" aria-controls="${bodyId}">
                         <span class="je-tge-text">
-                            <span class="je-tge-name">${escapeHtml(name)}</span>
+                            <span class="je-tge-name" data-je-label>${escapeHtml(name)}</span>
                             <span class="je-tge-summary">${escapeHtml(summaryOf(conf, group))}</span>
                         </span>
                         <span class="material-icons je-tge-chevron" aria-hidden="true">expand_more</span>
                     </button>
+                    ${badges}
                     <input type="checkbox" class="je-tge-enable" id="${meta.toggleId}" ${JE.currentSettings?.[meta.settingKey] ? 'checked' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_enable', { group: name }))}" style="accent-color:${ctx.toggleAccentColor};">
                 </div>
                 <div class="je-tge-body" id="${bodyId}" hidden>
@@ -347,50 +334,26 @@
     }
 
     /**
-     * The whole Media Tags editor: layout/density selects, reset and the
-     * preview mount, then the group rows in priority order.
+     * The group editor: its title, the group rows in priority order and the
+     * reset button.
      * @param {Object} ctx - Panel context from ui-panel.js.
      * @returns {string}
      */
     internal.buildTagGroupEditorHtml = function(ctx) {
-        const { detailsBackground, presetBoxBackground, toggleAccentColor } = ctx;
-        const L = layoutApi();
-        if (!L) return '';
+        const { presetBoxBackground, toggleAccentColor } = ctx;
+        if (!layoutApi()) return '';
         const conf = readConf();
-        const selectStyle = `width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;`;
         const rows = displayOrder(conf).map((group, i) => rowHtml(conf, group, i, ctx)).join('');
         return `
             <div class="je-tge" id="jeTagGroupEditor" style="--je-tge-box:${presetBoxBackground}; --je-tge-accent:${toggleAccentColor};">
-                <div class="je-tge-head">
-                    <div class="je-tge-controls">
-                        <div class="je-tge-select">
-                            <label for="tagLayoutSelect">${escapeHtml(JE.t('panel_settings_ui_tag_layout'))}</label>
-                            <div id="tagLayoutSelectDesc" class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_layout_desc'))}</div>
-                            <select id="tagLayoutSelect" aria-describedby="tagLayoutSelectDesc" style="${selectStyle}">
-                                ${LAYOUTS.map((id) => `<option value="${id}" ${conf.layout === id ? 'selected' : ''}>${escapeHtml(JE.t(`panel_settings_ui_tag_layout_${id}`))}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="je-tge-select">
-                            <label for="tagLabelDensitySelect">${escapeHtml(JE.t('panel_settings_ui_tag_density'))}</label>
-                            <div id="tagLabelDensityDesc" class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_density_desc'))}</div>
-                            <select id="tagLabelDensitySelect" aria-describedby="tagLabelDensityDesc" style="${selectStyle}">
-                                <option value="full" ${conf.density !== 'compact' ? 'selected' : ''}>${escapeHtml(JE.t('panel_settings_ui_tag_density_full'))}</option>
-                                <option value="compact" ${conf.density === 'compact' ? 'selected' : ''}>${escapeHtml(JE.t('panel_settings_ui_tag_density_compact'))}</option>
-                            </select>
-                        </div>
-                        <button type="button" class="je-tge-reset" id="jeTgeReset"><span class="material-icons" aria-hidden="true">restart_alt</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reset'))}</span></button>
+                <div class="je-tge-top">
+                    <div>
+                        <h4 class="je-tge-title" id="jeTgeTitle">${escapeHtml(JE.t('panel_settings_ui_tag_editor_title'))}</h4>
+                        <div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_desc'))}</div>
                     </div>
-                    <figure class="je-tge-preview" aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_preview'))}">
-                        <div class="je-tge-preview-mount" id="jeTgePreview"></div>
-                        <figcaption class="je-tge-view" role="group" aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_preview'))}">
-                            <button type="button" data-view="rest" aria-pressed="true">${escapeHtml(JE.t('panel_settings_ui_tag_editor_preview_resting'))}</button>
-                            <button type="button" data-view="hover" aria-pressed="false">${escapeHtml(JE.t('panel_settings_ui_tag_editor_preview_hover'))}</button>
-                        </figcaption>
-                    </figure>
+                    <button type="button" class="je-tge-reset" id="jeTgeReset"><span class="material-icons" aria-hidden="true">restart_alt</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reset'))}</span></button>
                 </div>
-                <div class="je-tge-title">${escapeHtml(JE.t('panel_settings_ui_tag_editor_title'))}</div>
-                <div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_desc'))}</div>
-                <ol class="je-tge-rows">${rows}</ol>
+                <ol class="je-tge-rows" aria-labelledby="jeTgeTitle">${rows}</ol>
             </div>`;
     };
 
@@ -517,164 +480,18 @@
         refillGenres();
     }
 
-    // ── Live preview ───────────────────────────────────────────────────
-
-    /**
-     * Build a sample group wrapper with the renderer's real classes.
-     * @param {string} group
-     * @returns {HTMLElement|null} Null when the group has nothing to show.
-     */
-    function sampleGroup(group) {
-        const L = layoutApi();
-        const wrap = document.createElement('div');
-        wrap.className = L.CONTAINER_CLASS[group];
-        const add = (className, text) => {
-            const el = document.createElement('div');
-            el.className = className;
-            if (text !== undefined) el.textContent = text;
-            wrap.appendChild(el);
-            return el;
-        };
-        switch (group) {
-            case 'quality':
-                for (const cat of sortedQualityCats()) {
-                    if (!cat.sample || !effectiveBool(cat.settingKey, cat.pluginKey)) continue;
-                    const [label, key, kind] = cat.sample;
-                    add(`quality-overlay-label ${kind}`, label).dataset.quality = key;
-                }
-                break;
-            case 'rating':
-                if (effectiveBool('ratingTagsShowCritic', 'RatingTagsShowCritic')) {
-                    const chip = add('rating-tag rating-tag-critic');
-                    const icon = document.createElement('span');
-                    icon.className = 'rating-tomato-icon fresh';
-                    const text = document.createElement('span');
-                    text.className = 'rating-text';
-                    text.textContent = '88%';
-                    chip.append(icon, text);
-                }
-                if (effectiveBool('ratingTagsShowCommunity', 'RatingTagsShowCommunity')) {
-                    const chip = add('rating-tag rating-tag-tmdb');
-                    const star = document.createElement('span');
-                    star.className = 'material-icons rating-star-icon';
-                    star.textContent = 'star';
-                    const text = document.createElement('span');
-                    text.className = 'rating-text';
-                    text.textContent = '8.1';
-                    chip.append(star, text);
-                }
-                break;
-            case 'ageRating':
-                add('age-rating-tag', 'PG-13').setAttribute('rating', 'PG-13');
-                break;
-            case 'language':
-                for (const flag of PREVIEW_FLAGS) {
-                    const img = document.createElement('img');
-                    img.className = 'language-flag';
-                    img.src = `data:image/svg+xml,${encodeURIComponent(flag.svg)}`;
-                    img.alt = flag.name;
-                    img.title = flag.name;
-                    img.dataset.lang = flag.code;
-                    img.dataset.langName = flag.name;
-                    wrap.appendChild(img);
-                }
-                break;
-            case 'genre':
-                for (const [name, icon] of PREVIEW_GENRES) {
-                    const chip = add('genre-tag');
-                    chip.title = name;
-                    const glyph = document.createElement('span');
-                    glyph.className = 'je-msym-outlined';
-                    glyph.textContent = icon;
-                    chip.appendChild(glyph);
-                    if (!JE.currentSettings?.tagsHideOnHover) {
-                        const text = document.createElement('span');
-                        text.className = 'genre-text';
-                        text.textContent = name;
-                        chip.appendChild(text);
-                    }
-                }
-                break;
-            case 'status':
-                add('status-tag status-tag--added', JE.t('status_tag_just_added'));
-                break;
-            default:
-                return null;
-        }
-        return wrap.children.length ? wrap : null;
-    }
-
-    /**
-     * The synthetic poster card the preview draws into. It carries the card
-     * structure the layout controller needs (.cardBox > .cardScalable + a
-     * title block for the caption outlet) but neither .card nor
-     * .cardImageContainer, so the tag pipeline and other card features never
-     * pick it up, and only the Resting/Hover switch reveals hover chips.
-     * @returns {HTMLElement}
-     */
-    function buildPreviewCard() {
-        const card = document.createElement('div');
-        card.className = 'je-tge-card';
-        card.setAttribute('aria-hidden', 'true');
-        const box = document.createElement('div');
-        box.className = 'cardBox';
-        const scalable = document.createElement('div');
-        scalable.className = 'cardScalable je-tge-card-scalable';
-        const art = document.createElement('div');
-        art.className = 'je-tge-card-art';
-        const overlay = document.createElement('div');
-        overlay.className = 'cardOverlayContainer';
-        scalable.append(art, overlay);
-        const title = document.createElement('div');
-        title.className = 'cardText je-tge-card-title';
-        title.textContent = JE.t('panel_settings_ui_tag_editor_preview_title');
-        box.append(scalable, title);
-        card.appendChild(box);
-        return card;
-    }
-
-    /**
-     * Re-feed the preview card's sample groups (enabled groups only) and
-     * re-present it through the layout controller.
-     * @param {HTMLElement} card
-     */
-    function refreshPreview(card) {
-        const L = layoutApi();
-        if (!L || !card?.isConnected) return;
-        const target = /** @type {HTMLElement} */ (card.querySelector('.cardScalable'));
-        L.invalidateSettings();
-        for (const group of GROUP_IDS) {
-            const sample = JE.currentSettings?.[GROUP_META[group].settingKey] ? sampleGroup(group) : null;
-            if (sample) L.commitGroup(target, group, sample);
-            else L.removeGroup(target, group);
-        }
-        L.refreshPresentation(target);
-    }
-
-    /** CSS for the editor and its preview (panel-scoped). */
+    /** CSS for the editor (panel-scoped). */
     const EDITOR_CSS = `
         #jellyfin-enhanced-panel .je-tge { margin-bottom: 16px; padding: 12px; background: var(--je-tge-box); border-radius: 6px; border-left: 3px solid var(--je-tge-accent); }
-        #jellyfin-enhanced-panel .je-tge-head { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; }
-        #jellyfin-enhanced-panel .je-tge-controls { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-        #jellyfin-enhanced-panel .je-tge-select label, #jellyfin-enhanced-panel .je-tge-title { font-weight: 500; }
-        #jellyfin-enhanced-panel .je-tge-title { margin-top: 16px; }
+        #jellyfin-enhanced-panel .je-tge-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
+        #jellyfin-enhanced-panel .je-tge-top > div { flex: 1 1 220px; min-width: 0; }
+        #jellyfin-enhanced-panel .je-tge-title { margin: 0; font-size: 15px; font-weight: 600; }
+        #jellyfin-enhanced-panel .je-tge-badges { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-tge-badges .material-icons { font-size: 16px; }
         #jellyfin-enhanced-panel .je-tge-hint { font-size: 12px; color: rgba(255,255,255,0.6); margin: 2px 0 6px; }
         #jellyfin-enhanced-panel .je-tge-label { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.75); margin-bottom: 6px; }
         #jellyfin-enhanced-panel .je-tge-reset { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-reset .material-icons { font-size: 18px; }
-        #jellyfin-enhanced-panel .je-tge-preview { flex: 0 0 auto; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-        #jellyfin-enhanced-panel .je-tge-preview-mount { width: 150px; min-height: 225px; }
-        #jellyfin-enhanced-panel .je-tge-card { width: 150px; }
-        #jellyfin-enhanced-panel .je-tge-card .cardBox { margin: 0; }
-        #jellyfin-enhanced-panel .je-tge-card-scalable { position: relative; width: 150px; height: 225px; border-radius: 6px; overflow: hidden; contain: paint; }
-        #jellyfin-enhanced-panel .je-tge-card-art { position: absolute; inset: 0; background: linear-gradient(160deg, #3a4a6b 0%, #1c2233 55%, #0d1018 100%); }
-        #jellyfin-enhanced-panel .je-tge-card-art::after { content: ''; position: absolute; left: 22%; right: 22%; top: 30%; height: 34%; border-radius: 50% 50% 8px 8px; background: rgba(255,255,255,0.07); }
-        #jellyfin-enhanced-panel .je-tge-card .cardOverlayContainer { display: none; }
-        #jellyfin-enhanced-panel .je-tge-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
-        #jellyfin-enhanced-panel .je-tge-card-title { font-size: 13px; padding: 4px 2px 0; color: rgba(255,255,255,0.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-        #jellyfin-enhanced-panel .je-tge-view { display: inline-flex; border: 1px solid rgba(255,255,255,0.2); border-radius: 999px; overflow: hidden; }
-        #jellyfin-enhanced-panel .je-tge-view button { background: transparent; color: rgba(255,255,255,0.8); border: 0; padding: 4px 12px; font: inherit; font-size: 12px; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-tge-view button[aria-pressed="true"] { background: var(--je-tge-accent); color: #fff; }
         #jellyfin-enhanced-panel .je-tge-rows { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
         #jellyfin-enhanced-panel .je-tge-row { border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; background: rgba(0,0,0,0.15); }
         #jellyfin-enhanced-panel .je-tge-row-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
@@ -705,14 +522,20 @@
         #jellyfin-enhanced-panel .je-tge-list-box { margin: 0; }
         #jellyfin-enhanced-panel .je-tge :is(button, select, input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         @media (prefers-reduced-motion: reduce) { #jellyfin-enhanced-panel .je-tge-chevron { transition: none; } }
+        /* A narrow pane puts Badges on its own line under the Status name, clear of the checkbox. */
+        @container je-mth (max-width: 560px) {
+            #jellyfin-enhanced-panel .je-tge-row[data-group="status"] .je-tge-row-head { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 4px; }
+            #jellyfin-enhanced-panel .je-tge-badges { grid-column: 3; grid-row: 2; justify-self: start; min-height: 40px; }
+            #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step { width: 36px; height: 36px; }
+        }
     `;
 
     /**
      * Wire the editor-owned controls (moves, expand, pills, stepper, rating
-     * includes, reset, preview switch), keep the rows in step with the
-     * settings after any change, and build the preview card once the editor
-     * is first on screen. The editor is disposed when the panel closes
-     * (ctx.onClose) or is wired again.
+     * includes, reset, the Status row's Badges button) and keep the rows in
+     * step with the settings after any change, including layout and density
+     * changes made on the hub's Layout tab (je:tag-layout-changed). The
+     * editor is disposed when the panel closes (ctx.onClose) or is wired again.
      * @param {Object} ctx - Panel context ({ resetAutoCloseTimer, onClose }).
      */
     internal.wireTagGroupEditor = function(ctx) {
@@ -723,31 +546,21 @@
         JE.core.ui?.injectCss?.('je-tag-group-editor', EDITOR_CSS);
         const list = /** @type {HTMLElement} */ (root.querySelector('.je-tge-rows'));
         const touch = () => ctx.resetAutoCloseTimer?.();
-        /** @type {HTMLElement|null} */
-        let previewCard = null;
-        let refreshQueued = false;
         let disposed = false;
-        /** @type {IntersectionObserver|null} */
-        let io = null;
 
-        /** Re-render the preview after the current event's handlers ran. */
-        const queuePreview = () => {
-            if (refreshQueued || !previewCard || disposed) return;
-            refreshQueued = true;
-            Promise.resolve().then(() => {
-                refreshQueued = false;
-                if (!disposed && previewCard) refreshPreview(previewCard);
-            });
-        };
-
-        /** Bring every row (order, summary, pills, stepper, move buttons) and both selects in step with the settings. */
+        /** Bring every row (order, summary, pills, stepper, move buttons) in step with the settings. */
         const sync = () => {
+            if (disposed || !root.isConnected) return;
             const conf = readConf();
             const order = displayOrder(conf);
+            const focusedRow = /** @type {HTMLElement|null} */ (document.activeElement)?.closest?.('.je-tge-row');
+            const focused = focusedRow && list.contains(focusedRow) ? /** @type {HTMLElement} */ (document.activeElement) : null;
             for (const group of order) {
                 const row = list.querySelector(`.je-tge-row[data-group="${group}"]`);
-                if (row) list.appendChild(row);
+                if (row && list.lastElementChild !== row) list.appendChild(row);
             }
+            // appendChild moves the node, which drops its focus: put it back.
+            if (focused && document.activeElement !== focused && focused.isConnected) focused.focus();
             const rows = Array.from(list.querySelectorAll('.je-tge-row'));
             rows.forEach((row, index) => {
                 const group = /** @type {HTMLElement} */ (row).dataset.group || '';
@@ -755,18 +568,14 @@
                 /** @type {HTMLButtonElement} */ (row.querySelector('.je-tge-move[data-dir="down"]')).disabled = index === rows.length - 1;
                 /** @type {HTMLElement} */ (row.querySelector('.je-tge-summary')).textContent = summaryOf(conf, group);
                 const pills = /** @type {HTMLElement} */ (row.querySelector('.je-tge-pills'));
-                const focused = pills.contains(document.activeElement) ? /** @type {HTMLElement} */ (document.activeElement).dataset.slot : null;
+                const pillFocus = pills.contains(document.activeElement) ? /** @type {HTMLElement} */ (document.activeElement).dataset.slot : null;
                 pills.innerHTML = pillsHtml(conf, group);
-                if (focused) /** @type {HTMLElement|null} */ (pills.querySelector(`[data-slot="${focused}"]`))?.focus();
+                if (pillFocus) /** @type {HTMLElement|null} */ (pills.querySelector(`[data-slot="${pillFocus}"]`))?.focus();
                 const step = stepperState(conf, group);
                 /** @type {HTMLElement} */ (row.querySelector('.je-tge-cap')).textContent = step.text;
                 /** @type {HTMLButtonElement} */ (row.querySelector('.je-tge-step[data-step="-1"]')).disabled = !step.canDown;
                 /** @type {HTMLButtonElement} */ (row.querySelector('.je-tge-step[data-step="1"]')).disabled = !step.canUp;
             });
-            const layoutSelect = /** @type {HTMLSelectElement|null} */ (document.getElementById('tagLayoutSelect'));
-            if (layoutSelect) layoutSelect.value = conf.layout;
-            const densitySelect = /** @type {HTMLSelectElement|null} */ (document.getElementById('tagLabelDensitySelect'));
-            if (densitySelect) densitySelect.value = conf.density;
         };
 
         root.addEventListener('click', (e) => {
@@ -788,7 +597,7 @@
                 // Keep focus on the group's control; at an end, on its other move button.
                 const same = /** @type {HTMLButtonElement} */ (row.querySelector(`.je-tge-move[data-dir="${move.dataset.dir}"]`));
                 (same.disabled ? /** @type {HTMLElement} */ (row.querySelector('.je-tge-move:not(:disabled)')) : same)?.focus();
-                queuePreview();
+                internal.mediaTagsHub?.announce?.(JE.t('panel_media_tags_group_moved', { group: JE.t(GROUP_META[group].nameKey), n: to + 1 }));
                 touch();
                 return;
             }
@@ -802,11 +611,16 @@
                 return;
             }
 
+            if (target.closest('.je-tge-badges')) {
+                internal.mediaTagsHub?.openTab?.('badges', { focus: true });
+                touch();
+                return;
+            }
+
             const pill = /** @type {HTMLElement|null} */ (target.closest('.je-tge-pill'));
             if (pill && row) {
                 writeSlot(readConf().layout, group, pill.dataset.slot || 'off');
                 sync();
-                queuePreview();
                 touch();
                 return;
             }
@@ -818,7 +632,6 @@
                 sync();
                 // The pressed button may have just been disabled (an end of the range).
                 if (step.disabled) /** @type {HTMLElement|null} */ (row.querySelector('.je-tge-step:not(:disabled)'))?.focus();
-                queuePreview();
                 touch();
                 return;
             }
@@ -826,23 +639,9 @@
             if (target.closest('#jeTgeReset')) {
                 resetToDefaults();
                 sync();
-                queuePreview();
                 JE.toast(JE.t('toast_tag_layout_reset'));
                 touch();
-                return;
             }
-
-            const view = /** @type {HTMLElement|null} */ (target.closest('.je-tge-view [data-view]'));
-            if (view) {
-                const hover = view.dataset.view === 'hover';
-                root.querySelectorAll('.je-tge-view [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b === view)));
-                previewCard?.classList.toggle('je-tag-reveal', hover);
-                touch();
-                return;
-            }
-
-            // Quality category order buttons (wired in ui-panel-settings.js).
-            if (target.closest('.je-cat-btn')) queuePreview();
         });
 
         root.addEventListener('change', (e) => {
@@ -856,52 +655,24 @@
                 }
                 touch();
             }
-            // Layout / density selects and enable toggles are saved by
-            // ui-panel-settings.js (its listeners run first); re-label here.
-            if (target.id === 'tagLayoutSelect' || target.id === 'tagLabelDensitySelect') sync();
-            queuePreview();
         });
 
-        // Build the preview the first time the editor is on screen (the
-        // panel opens on another section most of the time).
-        let mount = document.getElementById('jeTgePreview');
-        const build = () => {
-            if (previewCard || !mount || disposed) return;
-            previewCard = buildPreviewCard();
-            mount.appendChild(previewCard);
-            refreshPreview(previewCard);
-        };
-        if (mount && typeof window.IntersectionObserver === 'function') {
-            io = new window.IntersectionObserver((entries) => {
-                if (entries.some((entry) => entry.isIntersecting)) {
-                    io?.disconnect();
-                    io = null;
-                    build();
-                }
-            });
-            io.observe(mount);
-        } else {
-            build();
-        }
+        // Layout and density are chosen on the hub's Layout tab (and Reset or
+        // another tab may change them): re-label the rows for the new layout.
+        document.addEventListener('je:tag-layout-changed', sync);
 
-        /**
-         * Tear the editor down: stop watching for the preview, drop the
-         * preview card and the element references, and ignore preview work
-         * still queued. The panel's markup goes with the panel.
-         */
+        /** Tear the editor down: stop following layout changes. The panel's markup goes with the panel. */
         const dispose = () => {
             if (disposed) return;
             disposed = true;
-            io?.disconnect();
-            io = null;
-            if (previewCard) L.clearCard(previewCard.querySelector('.cardScalable'));
-            previewCard?.remove();
-            previewCard = null;
-            mount = null;
+            document.removeEventListener('je:tag-layout-changed', sync);
             if (internal.tagGroupEditor === api) internal.tagGroupEditor = null;
         };
-        const api = { sync, refreshPreview: () => previewCard && refreshPreview(previewCard), nextCap, dispose };
+        const api = { sync, nextCap, dispose };
         internal.tagGroupEditor = api;
         ctx.onClose?.(dispose);
     };
+
+    // Read by the hub's live preview (ui-panel-tag-preview.js) at draw time.
+    internal.tagGroupEditorData = { GROUP_META, QUALITY_CATS, sortedQualityCats, effectiveBool };
 })(window.JellyfinEnhanced);

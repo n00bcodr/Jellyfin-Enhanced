@@ -202,11 +202,11 @@ test('a user switch re-applies the incoming user\'s preset', async t => {
   assert.equal(h.requests.at(-1), 'http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=dark');
 });
 
-test('the settings panel preset select saves the choice and re-applies the styles', async t => {
+test('the Media Tags hub preset tiles save the choice and re-apply the styles', async t => {
   const writes = [], toasts = [];
   const h = createHarness({
     html: toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button>'
-      + '<select id="tagStylePresetSelect"><option value="">server</option><option value="mono">mono</option></select>',
+      + '<div id="jeTagPresetChoice" role="radiogroup"><input type="radio" name="jeTagPreset" value=""><input type="radio" name="jeTagPreset" value="mono"></div>',
     JE: { pluginConfig: { TagStylesAllowUserPreset: true }, userConfig: { settings: {}, shortcuts: { Shortcuts: [] } }, currentSettings: {}, t: key => key, toast: m => toasts.push(m) },
     apiClient: { ajax: async request => { writes.push(request); } }
   });
@@ -219,15 +219,17 @@ test('the settings panel preset select saves the choice and re-applies the style
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   const ctx = { createToast: () => '', resetAutoCloseTimer() {}, help: h.document.body, primaryAccentColor: '#fff' };
   h.JE.internals.enhancedUi.wireSettingsListeners(ctx);
-  const select = h.document.getElementById('tagStylePresetSelect');
-  select.value = 'mono';
-  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  const pick = value => {
+    const tile = h.document.querySelector(`input[name="jeTagPreset"][value="${value}"]`);
+    tile.checked = true;
+    tile.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  };
+  pick('mono');
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(JSON.parse(writes.at(-1).data).tagStylePreset, 'mono');
   assert.equal(applied, 1);
   assert.equal(toasts.at(-1), 'toast_tag_style_preset_updated');
-  select.value = '';
-  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  pick('');
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(JSON.parse(writes.at(-1).data).tagStylePreset, null, 'back to the admin\'s preset');
   assert.equal(applied, 2);

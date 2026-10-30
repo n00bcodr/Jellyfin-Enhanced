@@ -1,0 +1,553 @@
+/**
+ * @file Live preview of the poster tags in the settings panel's Media Tags
+ * hub: three synthetic cards (a movie poster, a series poster and an episode
+ * still) drawn through the real layout controller (core/tag-layout.js) and
+ * the tag modules' chip classes. Each card's look is decided by the same
+ * lock → first matching rule → default resolver as the real cards
+ * (lookSource/resolveLayout): the series sample carries the id of the most
+ * recently locked item, the episode sample the facts of the first enabled
+ * rule, so the labels "Locked" and "Rule N" are what the resolver answered,
+ * never what the preview assumed.
+ *
+ * The cards carry the card structure the layout controller needs
+ * (.cardBox > .cardScalable + a title block for the caption outlet) but
+ * neither .card nor .cardImageContainer, so the tag pipeline and other card
+ * features never pick them up. Built lazily by the hub (ui-panel-media-tags.js)
+ * when the Media Tags section first shows, disposed when the panel closes.
+ */
+(function(JE) {
+    'use strict';
+
+    JE.internals = JE.internals || {};
+    const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
+
+    /** The setting that turns each group's renderer on (same keys as the panel toggles). */
+    const ENABLED = {
+        status: 'statusTagsEnabled',
+        quality: 'qualityTagsEnabled',
+        rating: 'ratingTagsEnabled',
+        ageRating: 'ageRatingTagsEnabled',
+        language: 'languageTagsEnabled',
+        genre: 'genreTagsEnabled',
+    };
+    const GROUP_IDS = Object.keys(ENABLED);
+
+    /** Inline flags (data URIs), so the preview never touches the network. */
+    const FLAGS = {
+        fr: { name: 'French', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#002395"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ed2939"/></svg>' },
+        jp: { name: 'Japanese', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20"><rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="6" fill="#bc002d"/></svg>' },
+        de: { name: 'German', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 3"><rect width="5" height="1" fill="#000"/><rect y="1" width="5" height="1" fill="#d00"/><rect y="2" width="5" height="1" fill="#ffce00"/></svg>' },
+        it: { name: 'Italian', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ce2b37"/></svg>' },
+    };
+
+    /**
+     * The three samples. `quality` maps a quality category's setting key to
+     * the chip it shows ([label, data-quality, kind class]); `status` lists
+     * candidate badges in the status module's precedence (a card shows the
+     * first whose family is on), each [family setting, kind, label key,
+     * compact label key, label params].
+     */
+    const SAMPLES = [
+        {
+            key: 'movie', type: 'Movie', shape: 'poster', titleKey: 'panel_media_tags_preview_title_movie',
+            id: 'a11ce0000000000000000000000000a1',
+            facts: { Genres: ['Science Fiction', 'Thriller'], OfficialRating: 'PG-13' },
+            quality: { showResolutionTag: ['4K', '4K', 'resolution'], showDynamicRangeTag: ['Dolby Vision', 'Dolby Vision', 'video-codec'], showSpecialFormatTag: ['IMAX', 'IMAX', 'video-codec'], showVideoCodecTag: ['HEVC', 'HEVC', 'video-format'], showAudioInfoTag: ['ATMOS 7.1', 'ATMOS', 'audio-codec'] },
+            rating: { critic: '92%', community: '8.1' },
+            age: 'PG-13', flags: ['fr', 'jp', 'de'], genres: [['Science Fiction', 'science'], ['Thriller', 'psychology']],
+            status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added']],
+        },
+        {
+            key: 'series', type: 'Series', shape: 'poster', titleKey: 'panel_media_tags_preview_title_series',
+            id: 'a11ce0000000000000000000000000b2',
+            facts: { Genres: ['Drama', 'Mystery'], OfficialRating: 'TV-MA' },
+            quality: { showResolutionTag: ['4K', '4K', 'resolution'], showDynamicRangeTag: ['HDR10', 'HDR10', 'video-codec'], showAudioInfoTag: ['Dolby Digital+ 5.1', 'Dolby Digital+', 'audio-codec'] },
+            rating: { critic: '97%', community: '8.7' },
+            age: 'TV-MA', flags: ['it'], genres: [['Drama', 'theater_comedy'], ['Mystery', 'psychology_alt']],
+            status: [['statusTagsSchedule', 'schedule', 'status_tag_airs_date', null, { date: 'Fri' }], ['statusTagsSeriesStatus', 'status', 'status_tag_returning']],
+        },
+        {
+            key: 'episode', type: 'Episode', shape: 'thumb', titleKey: 'panel_media_tags_preview_title_episode',
+            id: 'a11ce0000000000000000000000000c3',
+            facts: { Genres: ['Animation', 'Family'], OfficialRating: 'TV-Y' },
+            quality: { showResolutionTag: ['1080p', '1080p', 'resolution'], showAudioInfoTag: ['AAC 2.0', 'AAC', 'audio-codec'] },
+            rating: { community: '9.3' },
+            age: 'TV-Y', flags: ['jp'], genres: [['Animation', 'animation'], ['Family', 'family_restroom']],
+            status: [['statusTagsMilestones', 'milestone', 'status_tag_season_finale', 'status_tag_compact_finale'], ['statusTagsNewRelease', 'new', 'status_tag_new_episode', 'status_tag_compact_new_episode']],
+        },
+    ];
+
+    /** @returns {any} The layout controller, or null. */
+    const layoutApi = () => JE.core?.tagLayout || null;
+
+    /**
+     * Resolve a boolean setting: user override, then admin default, then the built-in default.
+     * @param {string} userKey
+     * @param {string} pluginKey
+     * @param {boolean} [fallback=true]
+     * @returns {boolean}
+     */
+    function effectiveBool(userKey, pluginKey, fallback = true) {
+        const u = JE.currentSettings?.[userKey];
+        if (typeof u === 'boolean') return u;
+        const a = JE.pluginConfig?.[pluginKey];
+        return typeof a === 'boolean' ? a : fallback;
+    }
+
+    /** @param {string} key @returns {string} The setting's PascalCase plugin key. */
+    const pluginKeyOf = (key) => key.charAt(0).toUpperCase() + key.slice(1);
+
+    /**
+     * The sample group wrapper for one card, with the renderers' real classes.
+     * @param {Object} sample - One of SAMPLES.
+     * @param {string} group
+     * @returns {HTMLElement|null} Null when the group has nothing to show.
+     */
+    function sampleGroup(sample, group) {
+        const L = layoutApi();
+        const wrap = document.createElement('div');
+        wrap.className = L.CONTAINER_CLASS[group];
+        const add = (className, text) => {
+            const el = document.createElement('div');
+            el.className = className;
+            if (text !== undefined) el.textContent = text;
+            wrap.appendChild(el);
+            return el;
+        };
+        switch (group) {
+            case 'quality': {
+                const cats = internal.tagGroupEditorData?.sortedQualityCats?.() || [];
+                for (const cat of cats) {
+                    const chip = sample.quality[cat.settingKey];
+                    if (!chip || !effectiveBool(cat.settingKey, cat.pluginKey)) continue;
+                    const [label, key, kind] = chip;
+                    add(`quality-overlay-label ${kind}`, label).dataset.quality = key;
+                }
+                break;
+            }
+            case 'rating':
+                if (sample.rating.critic && effectiveBool('ratingTagsShowCritic', 'RatingTagsShowCritic')) {
+                    const chip = add('rating-tag rating-tag-critic');
+                    const icon = document.createElement('span');
+                    icon.className = 'rating-tomato-icon fresh';
+                    const text = document.createElement('span');
+                    text.className = 'rating-text';
+                    text.textContent = sample.rating.critic;
+                    chip.append(icon, text);
+                }
+                if (sample.rating.community && effectiveBool('ratingTagsShowCommunity', 'RatingTagsShowCommunity')) {
+                    const chip = add('rating-tag rating-tag-tmdb');
+                    const star = document.createElement('span');
+                    star.className = 'material-icons rating-star-icon';
+                    star.textContent = 'star';
+                    const text = document.createElement('span');
+                    text.className = 'rating-text';
+                    text.textContent = sample.rating.community;
+                    chip.append(star, text);
+                }
+                break;
+            case 'ageRating':
+                add('age-rating-tag', sample.age).setAttribute('rating', sample.age);
+                break;
+            case 'language':
+                for (const code of sample.flags) {
+                    const flag = FLAGS[code];
+                    const img = document.createElement('img');
+                    img.className = 'language-flag';
+                    img.src = `data:image/svg+xml,${encodeURIComponent(flag.svg)}`;
+                    img.alt = flag.name;
+                    img.title = flag.name;
+                    img.dataset.lang = code;
+                    img.dataset.langName = flag.name;
+                    wrap.appendChild(img);
+                }
+                break;
+            case 'genre':
+                for (const [name, icon] of sample.genres) {
+                    const chip = add('genre-tag');
+                    chip.title = name;
+                    const glyph = document.createElement('span');
+                    glyph.className = 'je-msym-outlined';
+                    glyph.textContent = icon;
+                    chip.appendChild(glyph);
+                    if (!JE.currentSettings?.tagsHideOnHover) {
+                        const text = document.createElement('span');
+                        text.className = 'genre-text';
+                        text.textContent = name;
+                        chip.appendChild(text);
+                    }
+                }
+                break;
+            case 'status': {
+                // One badge per card, the first whose family is on (as statustags.js picks).
+                const badge = sample.status.find(([key]) => effectiveBool(key, pluginKeyOf(key), key !== 'statusTagsSeriesStatus'));
+                if (!badge) break;
+                const [, kind, labelKey, compactKey, params] = badge;
+                const tag = add(`status-tag status-tag--${kind}`);
+                if (compactKey) tag.dataset.jeCompact = JE.t(compactKey);
+                if (kind === 'trending') {
+                    // "#{rank} Today" with the rank in its own span, as the status module draws it.
+                    const [before, after = ''] = JE.t(labelKey, { rank: '\u0001' }).split('\u0001');
+                    const hash = before.endsWith('#') ? '#' : '';
+                    const rank = document.createElement('span');
+                    rank.className = 'status-tag-rank';
+                    rank.textContent = `${hash}${params.rank}`;
+                    tag.append(before.slice(0, before.length - hash.length), rank, after);
+                } else {
+                    tag.textContent = JE.t(labelKey, params);
+                }
+                break;
+            }
+            default:
+                return null;
+        }
+        return wrap.children.length ? wrap : null;
+    }
+
+    /**
+     * The item data a sample hands the resolver (setCardContext): the
+     * movie as it is; the series under the id of the most recently locked
+     * item; the episode with the conditions of the first enabled rule (its
+     * type included), so the resolver can find them.
+     * @param {Object} sample
+     * @returns {{id: string, type: string, entry: Object}}
+     */
+    function sampleFacts(sample) {
+        const look = JE.core.tagLook;
+        const { rules, locks } = look ? look.read() : { rules: [], locks: new Map() };
+        let id = sample.id;
+        let type = sample.type;
+        const entry = { ...sample.facts, Genres: sample.facts.Genres.slice() };
+        if (sample.key === 'series' && locks.size) {
+            id = Array.from(locks.entries()).sort((a, b) => b[1].lockedAt - a[1].lockedAt)[0][0];
+        }
+        if (sample.key === 'episode') {
+            const rule = rules.find((r) => r.enabled && r.when.length);
+            for (const cond of rule?.when || []) {
+                if (cond.field === 'library') entry.LibraryId = cond.value;
+                else if (cond.field === 'type') type = cond.value;
+                else if (cond.field === 'genre') entry.Genres = [cond.value];
+                else if (cond.field === 'ageRating') entry.OfficialRating = cond.value;
+            }
+        }
+        return { id, type, entry: { ...entry, Id: id, Type: type } };
+    }
+
+    /**
+     * One sample card: the poster or still the layout controller draws on,
+     * and the line under it naming the item, where its look comes from and
+     * the look.
+     * @param {Object} sample
+     * @returns {HTMLElement}
+     */
+    function buildSample(sample) {
+        const figure = document.createElement('figure');
+        figure.className = 'je-mtp-sample';
+        figure.dataset.sample = sample.key;
+        const card = document.createElement('div');
+        card.className = `je-mtp-card je-mtp-card--${sample.shape}`;
+        card.setAttribute('aria-hidden', 'true');
+        const box = document.createElement('div');
+        box.className = 'cardBox';
+        const scalable = document.createElement('div');
+        scalable.className = 'cardScalable je-mtp-scalable';
+        const art = document.createElement('div');
+        art.className = `je-mtp-art je-mtp-art--${sample.key}`;
+        const overlay = document.createElement('div');
+        overlay.className = 'cardOverlayContainer';
+        scalable.append(art, overlay);
+        const title = document.createElement('div');
+        title.className = 'cardText je-mtp-card-title';
+        title.textContent = JE.t(sample.titleKey);
+        box.append(scalable, title);
+        card.appendChild(box);
+        const meta = document.createElement('figcaption');
+        meta.className = 'je-mtp-meta';
+        figure.append(card, meta);
+        return figure;
+    }
+
+    /**
+     * The visible chips of a drawn card in the order they read: one short
+     * text per chip, flags by language code, "+N" overflow chips as they are.
+     * @param {HTMLElement} card
+     * @param {string|null} first - A group whose chips go first (the one being edited).
+     * @returns {string[]}
+     */
+    function chipTexts(card, first) {
+        const L = layoutApi();
+        const lead = [];
+        const rest = [];
+        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .genre-tag, .status-tag, .je-tag-pill-fact, .je-tag-more)');
+        for (const chip of chips) {
+            const el = /** @type {HTMLElement} */ (chip);
+            let text;
+            if (el.classList.contains('language-flag')) text = String(el.dataset.lang || '').toUpperCase();
+            else if (el.classList.contains('genre-tag')) text = el.title || el.textContent || '';
+            // Rating chips: their score only (the star is an icon ligature).
+            else if (el.classList.contains('rating-tag')) text = `${el.classList.contains('rating-tag-tmdb') ? '★' : ''}${el.querySelector('.rating-text')?.textContent || ''}`;
+            else text = el.textContent || '';
+            text = text.replace(/\s+/g, ' ').trim();
+            if (!text) continue;
+            const inFirst = first && el.closest(`.${L.CONTAINER_CLASS[first]}`);
+            (inFirst ? lead : rest).push(text);
+        }
+        return lead.concat(rest);
+    }
+
+    /** The preview's stylesheet (panel-scoped). */
+    const PREVIEW_CSS = `
+        #jellyfin-enhanced-panel .je-mtp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+        #jellyfin-enhanced-panel .je-mtp-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; margin: 0; }
+        #jellyfin-enhanced-panel .je-mtp-title::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
+        #jellyfin-enhanced-panel .je-mtp-view { display: inline-flex; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; overflow: hidden; }
+        #jellyfin-enhanced-panel .je-mtp-view button { background: transparent; color: rgba(255,255,255,0.85); border: 0; padding: 5px 12px; min-height: 30px; font: inherit; font-size: 12px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-mtp-view button[aria-pressed="true"] { background: rgba(255,255,255,0.9); color: #111; font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-view button:focus-visible { outline: 2px solid #fff; outline-offset: -3px; }
+        #jellyfin-enhanced-panel .je-mtp-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
+        #jellyfin-enhanced-panel .je-mtp-sample { margin: 0; min-width: 0; }
+        #jellyfin-enhanced-panel .je-mtp-sample[data-sample="episode"] { grid-column: 1 / -1; display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 4px 10px; align-items: start; }
+        #jellyfin-enhanced-panel .je-mtp-card .cardBox { margin: 0; }
+        #jellyfin-enhanced-panel .je-mtp-card--poster .je-mtp-scalable { width: 100%; aspect-ratio: 2 / 3; }
+        #jellyfin-enhanced-panel .je-mtp-card--thumb { width: 140px; }
+        #jellyfin-enhanced-panel .je-mtp-card--thumb .je-mtp-scalable { width: 140px; aspect-ratio: 16 / 9; }
+        #jellyfin-enhanced-panel .je-mtp-scalable { position: relative; border-radius: 6px; overflow: hidden; contain: paint; }
+        #jellyfin-enhanced-panel .je-mtp-art { position: absolute; inset: 0; }
+        #jellyfin-enhanced-panel .je-mtp-art--movie { background: linear-gradient(170deg, #e2a35d 0%, #b5562f 48%, #3a1d14 100%); }
+        #jellyfin-enhanced-panel .je-mtp-art--movie::after { content: ''; position: absolute; left: 0; right: 0; bottom: 18%; height: 22%; background: linear-gradient(175deg, transparent 30%, rgba(60,25,12,0.85) 31%); }
+        #jellyfin-enhanced-panel .je-mtp-art--series { background: radial-gradient(ellipse at 50% 58%, #f2f7f7 0%, #9ccfd2 22%, #2c6f7a 55%, #0d2a31 100%); }
+        #jellyfin-enhanced-panel .je-mtp-art--series::after { content: ''; position: absolute; left: 46%; width: 8%; top: 52%; height: 14%; border-radius: 40% 40% 4px 4px; background: #111; }
+        #jellyfin-enhanced-panel .je-mtp-art--episode { background: linear-gradient(180deg, #8fd0f2 0%, #bfe6f7 55%, #6fbf5a 56%, #3f8d3a 100%); }
+        #jellyfin-enhanced-panel .je-mtp-art--episode::after { content: ''; position: absolute; left: 18%; bottom: 14%; width: 22%; height: 16%; border-radius: 50%; background: #3f6fd8; box-shadow: 34px 4px 0 -4px #e8a04c; }
+        #jellyfin-enhanced-panel .je-mtp-card .cardOverlayContainer { display: none; }
+        #jellyfin-enhanced-panel .je-mtp-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
+        #jellyfin-enhanced-panel .je-mtp-card-title { font-size: 12px; padding: 3px 2px 0; color: rgba(255,255,255,0.9); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #jellyfin-enhanced-panel .je-mtp-meta { font-size: 12px; line-height: 1.35; color: rgba(255,255,255,0.7); padding: 2px 2px 0; overflow-wrap: anywhere; }
+        #jellyfin-enhanced-panel .je-mtp-meta strong { color: #fff; font-weight: 600; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mtp-meta [data-source="lock"] { color: #ffd166; }
+        #jellyfin-enhanced-panel .je-mtp-meta [data-source="rule"] { color: #7fd3ff; }
+        #jellyfin-enhanced-panel .je-mtp-meta .je-mtp-look { display: block; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mtp-foot { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: rgba(255,255,255,0.7); }
+        #jellyfin-enhanced-panel .je-mtp-foot strong { color: #fff; }
+        #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: #ffd166; }
+        #jellyfin-enhanced-panel .je-mtp-note[hidden] { display: none; }
+        /* Spotlight: the group being edited stays bright, the others step back. */
+        #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }
+    `;
+
+    /**
+     * The spotlight rule for each group: its chips stay at full strength
+     * with a quiet outline.
+     * @param {Object<string, string>} containerClass - Group id → wrapper class.
+     * @returns {string}
+     */
+    function spotlightCss(containerClass) {
+        return GROUP_IDS.map((g) => `#jellyfin-enhanced-panel .je-mtp[data-spot="${g}"] .je-mtp-card .${containerClass[g]} { opacity: 1; outline: 1px solid rgba(255,255,255,0.8); outline-offset: 1px; border-radius: 4px; }`).join('\n');
+    }
+
+    /**
+     * Build the preview into its mount and keep it in step. Returns the
+     * handle the hub drives: refresh after a change, the Resting/Hover view,
+     * the group spotlight, which sample the phone strip follows, and dispose.
+     * @param {HTMLElement} mount - The preview column (#jeMthPreviewBody).
+     * @param {{strip?: HTMLElement|null, touch?: () => void}} [options] - The
+     *   phone strip's summary element, and the panel's auto-close reset.
+     * @returns {{refresh: () => void, setSpotlight: (group: string|null) => void, follow: (key: string) => void, dispose: () => void, root: HTMLElement}|null}
+     */
+    internal.createTagPreview = function(mount, options = {}) {
+        const L = layoutApi();
+        if (!L || !mount) return null;
+        JE.core.ui?.injectCss?.('je-tag-preview', PREVIEW_CSS + spotlightCss(L.CONTAINER_CLASS));
+        const root = document.createElement('div');
+        root.className = 'je-mtp';
+        const head = document.createElement('div');
+        head.className = 'je-mtp-head';
+        const title = document.createElement('h4');
+        title.className = 'je-mtp-title';
+        title.id = 'jeMtpTitle';
+        title.textContent = JE.t('panel_media_tags_preview');
+        const view = document.createElement('div');
+        view.className = 'je-mtp-view';
+        view.setAttribute('role', 'group');
+        view.setAttribute('aria-label', JE.t('panel_media_tags_preview_view'));
+        for (const [mode, key] of [['rest', 'panel_settings_ui_tag_editor_preview_resting'], ['hover', 'panel_settings_ui_tag_editor_preview_hover']]) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.dataset.view = mode;
+            b.setAttribute('aria-pressed', String(mode === 'rest'));
+            b.textContent = JE.t(key);
+            view.appendChild(b);
+        }
+        head.append(title, view);
+        const grid = document.createElement('div');
+        grid.className = 'je-mtp-samples';
+        const figures = SAMPLES.map((sample) => buildSample(sample));
+        grid.append(...figures);
+        const foot = document.createElement('p');
+        foot.className = 'je-mtp-foot';
+        const note = document.createElement('p');
+        note.className = 'je-mtp-note';
+        note.hidden = true;
+        note.textContent = JE.t('panel_media_tags_preview_hover_hidden');
+        root.append(head, grid, foot, note);
+        root.setAttribute('aria-labelledby', title.id);
+        mount.replaceChildren(root);
+
+        let disposed = false;
+        let queued = false;
+        let followKey = 'movie';
+        let hover = false;
+        /** @type {Map<string, {figure: HTMLElement, card: HTMLElement, target: HTMLElement, look: string, source: string}>} */
+        const drawn = new Map();
+
+        /** Re-feed and re-present every sample, then rewrite the labels and the strip. */
+        const draw = () => {
+            if (disposed || !root.isConnected) return;
+            L.invalidateSettings();
+            SAMPLES.forEach((sample, i) => {
+                const figure = figures[i];
+                const card = /** @type {HTMLElement} */ (figure.querySelector('.je-mtp-card'));
+                const target = /** @type {HTMLElement} */ (card.querySelector('.cardScalable'));
+                const { id, type, entry } = sampleFacts(sample);
+                card.dataset.id = id;
+                card.dataset.type = type;
+                const host = L.ensureHost(target);
+                L.setCardContext(target, entry, id);
+                for (const group of GROUP_IDS) {
+                    const wrap = JE.currentSettings?.[ENABLED[group]] ? sampleGroup(sample, group) : null;
+                    if (wrap) L.commitGroup(target, group, wrap);
+                    else L.removeGroup(target, group);
+                }
+                L.refreshPresentation(target);
+                const conf = L.resolveLayout(host);
+                const source = L.lookSource(host);
+                const look = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${conf.layout}`), density: JE.t(conf.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
+                const sourceText = source.source === 'lock' ? JE.t('panel_media_tags_preview_source_lock')
+                    : source.source === 'rule' ? JE.t('panel_media_tags_preview_source_rule', { n: source.index + 1 })
+                    : JE.t('panel_media_tags_preview_source_default');
+                const meta = /** @type {HTMLElement} */ (figure.querySelector('.je-mtp-meta'));
+                const typeLabel = JE.t(`tag_looks_type_${type.toLowerCase()}`);
+                const strong = document.createElement('strong');
+                strong.dataset.source = source.source;
+                strong.textContent = source.source === 'lock' ? `🔒 ${sourceText}` : sourceText;
+                const lookLine = document.createElement('span');
+                lookLine.className = 'je-mtp-look';
+                lookLine.textContent = look;
+                meta.replaceChildren(document.createTextNode(`${typeLabel} · `), strong, lookLine);
+                drawn.set(sample.key, { figure, card, target, look, source: sourceText });
+            });
+            const base = L.normalizeSettings();
+            const preset = JE.pluginConfig?.TagStylesAllowUserPreset && JE.currentSettings?.tagStylePreset
+                ? JE.t(`panel_settings_ui_tag_style_preset_${JE.currentSettings.tagStylePreset}`) : null;
+            const defaultLook = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${base.layout}`), density: JE.t(base.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
+            const strong = document.createElement('strong');
+            strong.textContent = preset ? `${defaultLook} · ${preset}` : defaultLook;
+            foot.replaceChildren(document.createTextNode(`${JE.t('panel_media_tags_preview_default')} `), strong, document.createTextNode(`. ${JE.t('panel_media_tags_preview_precedence')}`));
+            note.hidden = !(hover && JE.currentSettings?.tagsHideOnHover);
+            drawStrip();
+        };
+
+        /**
+         * The phone strip: a small copy of the followed sample and one line
+         * naming it, its source and look, with its chips (the edited group's first).
+         */
+        const drawStrip = () => {
+            const strip = options.strip;
+            const item = drawn.get(followKey);
+            if (!strip || !item) return;
+            const thumb = /** @type {HTMLElement|null} */ (strip.querySelector('.je-mth-strip-thumb'));
+            const text = /** @type {HTMLElement|null} */ (strip.querySelector('.je-mth-strip-text'));
+            const chips = /** @type {HTMLElement|null} */ (strip.querySelector('.je-mth-strip-chips'));
+            if (thumb) {
+                // A small drawing of where each group sits, never a copy of the
+                // card: a copied .je-tag-host would be picked up by the layout
+                // controller on the next re-present.
+                thumb.dataset.shape = item.card.classList.contains('je-mtp-card--thumb') ? 'thumb' : 'poster';
+                const marks = [];
+                const perSlot = new Map();
+                for (const placed of L.describe(item.target)) {
+                    if (placed.slot === 'off' || placed.slot === 'hover') continue;
+                    const n = perSlot.get(placed.slot) || 0;
+                    perSlot.set(placed.slot, n + 1);
+                    const mark = document.createElement('i');
+                    mark.dataset.slot = placed.slot;
+                    mark.dataset.group = placed.group;
+                    mark.style.setProperty('--je-mtp-n', String(n));
+                    marks.push(mark);
+                }
+                thumb.dataset.layout = item.card.querySelector('.je-tag-host')?.getAttribute('data-je-layout') || '';
+                thumb.replaceChildren(...marks);
+            }
+            const sample = SAMPLES.find((s) => s.key === followKey);
+            if (text && sample) text.textContent = JE.t('panel_media_tags_preview_summary', { title: JE.t(sample.titleKey), source: item.source, look: item.look });
+            if (chips) {
+                const all = chipTexts(item.card, root.dataset.spot || null);
+                const shown = all.slice(0, 4);
+                const more = all.length - shown.length;
+                chips.textContent = shown.join(' · ') + (more > 0 ? ` +${more}` : '');
+                if (!all.length) chips.textContent = JE.t('panel_media_tags_preview_none');
+            }
+        };
+
+        /** Redraw after the current event's handlers ran (a burst of changes draws once). */
+        const refresh = () => {
+            if (queued || disposed) return;
+            queued = true;
+            Promise.resolve().then(() => {
+                queued = false;
+                draw();
+            });
+        };
+
+        view.addEventListener('click', (e) => {
+            const button = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-view]'));
+            if (!button) return;
+            hover = button.dataset.view === 'hover';
+            view.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
+            for (const figure of figures) figure.querySelector('.je-mtp-card')?.classList.toggle('je-tag-reveal', hover);
+            note.hidden = !(hover && JE.currentSettings?.tagsHideOnHover);
+            options.touch?.();
+        });
+
+        // Cards re-present on every layout reinitialisation (a rule saved, a
+        // lock removed, a reset): redraw the labels and the strip with them.
+        document.addEventListener('je:tag-layout-changed', refresh);
+        draw();
+
+        /** Tear the preview down: drop the cards' controllers and ignore queued redraws. */
+        const dispose = () => {
+            if (disposed) return;
+            disposed = true;
+            document.removeEventListener('je:tag-layout-changed', refresh);
+            // Clear the cards while they are still in the document, then drop them.
+            for (const figure of figures) {
+                const target = figure.querySelector('.cardScalable');
+                if (target) L.clearCard(target);
+            }
+            root.remove();
+            options.strip?.querySelector('.je-mth-strip-thumb')?.replaceChildren();
+            drawn.clear();
+        };
+
+        return {
+            root,
+            refresh,
+            /** @param {string|null} group - Outline this group's chips (null: none). */
+            setSpotlight(group) {
+                if (group) root.dataset.spot = group;
+                else delete root.dataset.spot;
+                drawStrip();
+            },
+            /** @param {string} key - The sample the phone strip shows ('movie', 'series', 'episode'). */
+            follow(key) {
+                if (!SAMPLES.some((s) => s.key === key) || key === followKey) return;
+                followKey = key;
+                drawStrip();
+            },
+            dispose,
+        };
+    };
+
+    // Exposed for tests.
+    internal.tagPreviewData = { SAMPLES, sampleFacts, chipTexts };
+})(window.JellyfinEnhanced);

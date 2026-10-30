@@ -1,12 +1,19 @@
 // @ts-check
 /**
- * @file "Where each look applies" in the settings panel's Media Tags
- * section: the tag look rules (ordered, first match wins, each with an
- * On/Off switch, Edit and Delete), the add/edit rule form, the "Otherwise"
- * row (the default layout) and the locked items list (lazy titles, Unlock,
- * Unlock all). Data and saving live in core/tag-look.js; every change
- * re-presents the cards through JE.reinitializeTagLayout() without a refetch.
- * Everything is built with DOM APIs (textContent), never innerHTML.
+ * @file The Rules & locks tab of the settings panel's Media Tags hub: the
+ * tag look rules (ordered, first match wins, each with move buttons, an
+ * On/Off switch, Edit and Delete), the "Otherwise" row (the default layout)
+ * and the locked items (titles loaded once the tab shows, Unlock, Unlock
+ * all) on the left; the add/edit rule form, always open, on the right (below
+ * on a narrow pane, where the locks fold into a "Locked items · N" line).
+ * Data and saving live in core/tag-look.js; every change re-presents the
+ * cards through JE.reinitializeTagLayout() without a refetch.
+ *
+ * Rows are keyed by rule and item id and updated in place, so a change never
+ * rebuilds the form under the user's hands, and focus is put back on purpose
+ * after every change: the moved rule's button, the next row after a delete
+ * or unlock, the list's empty state when nothing is left, the new rule after
+ * Add rule. Everything is built with DOM APIs (textContent), never innerHTML.
  */
 (function (JE) {
     'use strict';
@@ -22,41 +29,86 @@
 
     const PANEL_CSS = `
         .je-tag-looks { margin: 0; }
-        .je-tag-looks-title { font-weight: 500; }
-        .je-tag-looks-desc { font-size: 12px; color: rgba(255,255,255,0.6); margin: 2px 0 8px; }
+        .je-tag-looks-cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+        .je-tag-looks-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; }
+        .je-tag-looks-heading { margin: 0; font-size: 14px; font-weight: 600; color: #fff; }
+        .je-tag-looks-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: rgba(255,255,255,0.12); font-size: 12px; font-weight: 600; }
+        .je-tag-looks-sub { font-size: 12px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-        .je-tag-looks-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px; border-radius: 6px; background: rgba(255,255,255,0.05); }
+        .je-tag-looks-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.18); }
         .je-tag-looks-row[data-off="1"] .je-tag-looks-text { opacity: 0.55; }
-        .je-tag-looks-text { flex: 1 1 180px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
-        .je-tag-looks-outcome { display: block; font-size: 12px; color: rgba(255,255,255,0.65); margin-top: 2px; }
-        .je-tag-looks-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+        .je-tag-looks-row:focus { outline: none; }
+        .je-tag-looks-text { min-width: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+        .je-tag-looks-outcome { color: #7fd3ff; font-weight: 600; }
+        .je-tag-looks-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+        .je-tag-looks-empty { margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.18); font-size: 12px; color: rgba(255,255,255,0.65); }
+        .je-tag-looks-empty:focus { outline: none; }
+        .je-tag-looks-empty:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        .je-tag-looks-otherwise { margin-top: 8px; border-style: dashed; }
+        .je-tag-looks-otherwise .je-tag-looks-text { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
         .je-tag-looks button, .je-tag-looks select, .je-tag-looks input {
             font: inherit; font-size: 12px; color: #fff; background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 8px; min-height: 28px;
+            border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 7px; min-height: 32px; box-sizing: border-box;
         }
-        .je-tag-looks button { cursor: pointer; }
+        .je-tag-looks button { cursor: pointer; font-weight: 600; }
         .je-tag-looks button:hover:not(:disabled) { background: rgba(255,255,255,0.16); }
         .je-tag-looks button:disabled { opacity: 0.4; cursor: default; }
         .je-tag-looks button:focus-visible, .je-tag-looks select:focus-visible, .je-tag-looks input:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
         .je-tag-looks select option { background: #222; color: #fff; }
+        .je-tag-looks-move { width: 28px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; }
+        .je-tag-looks-move .material-icons { font-size: 16px; }
         .je-tag-looks-pill[aria-pressed="true"] { background: rgba(76,175,80,0.35); border-color: rgba(76,175,80,0.8); }
-        .je-tag-looks-locked-list { list-style: none; margin: 6px 0 0; padding: 0; width: 100%; display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow: auto; }
-        .je-tag-looks-locked-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; padding: 4px 6px; border-radius: 4px; background: rgba(0,0,0,0.2); }
-        .je-tag-looks-locked-list li > span { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; }
-        .je-tag-looks-add { margin-top: 8px; }
-        .je-tag-looks-form { margin-top: 8px; padding: 10px; border-radius: 6px; background: rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 8px; }
+        .je-tag-looks-danger { color: #ff8a80 !important; }
+        .je-tag-looks-locks { margin-top: 14px; }
+        .je-tag-looks-locks-toggle { display: none; }
+        .je-tag-looks [hidden] { display: none !important; }
+        .je-tag-looks-locks-head .je-tag-looks-unlock-all { margin-left: auto; }
+        .je-tag-looks-locked-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow: auto; }
+        .je-tag-looks-locked-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18); }
+        .je-tag-looks-locked-list li > span { flex: 1 1 auto; min-width: 0; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+        .je-tag-looks-locked-list li strong { display: block; font-size: 13px; color: #fff; }
+        .je-tag-looks-form { padding: 12px; border-radius: 8px; border: 1px solid rgba(0,164,220,0.45); background: rgba(0,164,220,0.06); display: flex; flex-direction: column; gap: 10px; }
+        .je-tag-looks-form-title { margin: 0; font-size: 14px; font-weight: 600; }
+        .je-tag-looks-form-hint { margin: -6px 0 0; font-size: 12px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-        .je-tag-looks-form fieldset > button { align-self: flex-start; }
-        .je-tag-looks-form legend { font-size: 12px; font-weight: 500; padding: 0; margin-bottom: 4px; }
-        .je-tag-looks-cond { display: flex; gap: 6px; align-items: center; }
-        .je-tag-looks-cond > select, .je-tag-looks-cond > input { flex: 1 1 0; min-width: 0; }
-        .je-tag-looks-cond > select:first-of-type { flex: 0 1 35%; }
-        .je-tag-looks-cond > button { flex: 0 0 auto; }
+        .je-tag-looks-form legend { font-size: 12px; font-weight: 600; padding: 0; margin-bottom: 4px; }
+        /* Condition N / [field] [✕] / is [value]: two lines, so both selects keep their width. */
+        .je-tag-looks-cond { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 6px; align-items: center; }
+        .je-tag-looks-cond-label { grid-column: 1 / -1; grid-row: 1; font-size: 12px; color: rgba(255,255,255,0.7); }
+        .je-tag-looks-cond > [data-je-cond-field] { grid-column: 1 / 3; grid-row: 2; }
+        .je-tag-looks-cond > [data-je-cond-remove] { grid-column: 3; grid-row: 2; }
+        .je-tag-looks-cond-is { grid-column: 1; grid-row: 3; font-size: 12px; color: rgba(255,255,255,0.7); }
+        .je-tag-looks-cond > [data-je-cond-value] { grid-column: 2 / 4; grid-row: 3; }
+        .je-tag-looks-cond > select, .je-tag-looks-cond > input { min-width: 0; width: 100%; }
+        .je-tag-looks-cond + .je-tag-looks-cond { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
+        /* A wide enough form (the phone's full width) puts each condition on one line. */
+        .je-tag-looks-side { container: je-looks-form / inline-size; }
+        @container je-looks-form (min-width: 300px) {
+            .je-tag-looks-cond { grid-template-columns: minmax(0, 2fr) auto minmax(0, 3fr) auto; }
+            .je-tag-looks-cond > [data-je-cond-field] { grid-column: 1; grid-row: 2; }
+            .je-tag-looks-cond-is { grid-column: 2; grid-row: 2; }
+            .je-tag-looks-cond > [data-je-cond-value] { grid-column: 3; grid-row: 2; }
+            .je-tag-looks-cond > [data-je-cond-remove] { grid-column: 4; grid-row: 2; }
+        }
+        .je-tag-looks-cond [aria-invalid="true"] { border-color: #ff8a80; }
+        .je-tag-looks-add-cond { display: flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-outcome-row { display: flex; flex-wrap: wrap; gap: 8px; }
-        .je-tag-looks-outcome-row label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; flex: 1 1 140px; min-width: 0; }
-        .je-tag-looks-error { color: #ff8a80; font-size: 12px; min-height: 1em; }
-        .je-tag-looks-buttons { display: flex; gap: 6px; justify-content: flex-end; }
-        .je-tag-looks-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+        .je-tag-looks-outcome-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; flex: 1 1 120px; min-width: 0; }
+        .je-tag-looks-error { color: #ff8a80; font-size: 12px; }
+        .je-tag-looks-error:empty { display: none; }
+        .je-tag-looks-buttons { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 -12px -12px; padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 8px 8px; background: rgb(22, 30, 34); }
+        .je-tag-looks-buttons .je-tag-looks-save { background: #0b7fb0; border-color: #0b7fb0; min-height: 36px; padding: 0 14px; font-size: 13px; }
+        .je-tag-looks-buttons-hint { font-size: 12px; color: rgba(255,255,255,0.6); }
+        .je-tag-looks-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+        @container je-mth (max-width: 679px) {
+            .je-tag-looks-cols { grid-template-columns: minmax(0, 1fr); }
+            .je-tag-looks button, .je-tag-looks select, .je-tag-looks input { min-height: 40px; }
+            .je-tag-looks-move { width: 40px; }
+            .je-tag-looks-locks-toggle { display: inline-flex; margin-left: auto; }
+            .je-tag-looks-locks:not(.je-open) .je-tag-looks-locks-body { display: none; }
+            .je-tag-looks-locks-head .je-tag-looks-unlock-all { margin-left: 0; }
+            .je-tag-looks-locks-head { flex-wrap: nowrap; }
+        }
     `;
 
     /**
@@ -65,8 +117,9 @@
      * @property {Map<string, string>|null} libraries - library id → name.
      * @property {string[]|null} genres - null until loaded; [] when the request failed.
      * @property {Map<string, {name: string, type: string}>} titles - item id → title and type.
-     * @property {boolean} lockedOpen
-     * @property {string|null} editing - Rule id being edited, '' for a new rule, null when no form.
+     * @property {boolean} lockedOpen - The locked items list is unfolded (narrow panes only fold it).
+     * @property {boolean} shown - The tab has been shown: the locked items' titles may load.
+     * @property {string} editing - Rule id the form edits, '' for a new rule.
      */
 
     /**
@@ -242,60 +295,105 @@
     }
 
     /**
-     * Render the whole section into its mount.
+     * A small icon button (move up/down).
+     * @param {string} icon - Material icon name.
+     * @param {() => void} onClick
+     * @param {string} ariaLabel
+     * @returns {HTMLButtonElement}
+     */
+    function iconButton(icon, onClick, ariaLabel) {
+        const b = button('', onClick, ariaLabel);
+        b.className = 'je-tag-looks-move';
+        const glyph = el('span', 'material-icons', icon);
+        glyph.setAttribute('aria-hidden', 'true');
+        b.appendChild(glyph);
+        return b;
+    }
+
+    /**
+     * Focus an element without scrolling the panel past it.
+     * @param {Element|null|undefined} node
+     */
+    function focusOn(node) {
+        const target = /** @type {HTMLElement|null|undefined} */ (node);
+        if (!target || !target.isConnected) return;
+        target.focus({ preventScroll: true });
+        target.scrollIntoView?.({ block: 'nearest' });
+    }
+
+    /**
+     * The section's lasting DOM: built once per panel, then updated in place.
+     * @typedef {Object} LooksView
+     * @property {HTMLElement} root
+     * @property {HTMLElement} rulesCount
+     * @property {HTMLElement} list - The rules <ol>.
+     * @property {HTMLElement} empty - Shown (and focusable) when there are no rules.
+     * @property {HTMLElement} otherwiseOutcome
+     * @property {HTMLElement} locks
+     * @property {HTMLElement} locksCount
+     * @property {HTMLButtonElement} locksToggle
+     * @property {HTMLButtonElement} unlockAll
+     * @property {HTMLElement} lockedList
+     * @property {HTMLElement} locksEmpty
+     * @property {HTMLElement} side - Holds the form.
+     * @property {Map<string, Object>} rows - Rule id → its row and controls.
+     * @property {(message: string) => void} announce
+     */
+
+    /**
+     * Build the section skeleton into its mount.
      * @param {HTMLElement} mount
      * @param {LooksState} state
-     * @param {() => void} touch - Resets the panel's auto-close timer.
+     * @param {() => void} touch
+     * @param {() => void} renderAll
+     * @returns {LooksView}
      */
-    function render(mount, state, touch) {
-        const look = JE.core.tagLook;
-        const { rules: ownOrInherited } = look.read();
-        const rules = ownOrInherited;
-        const locks = look.normalizeLocks(JE.currentSettings.tagLayoutLocks);
-        const defaults = JE.core.tagLayout.normalizeSettings();
-        const focusKey = /** @type {HTMLElement|null} */ (document.activeElement)?.dataset?.jeFocusKey || null;
-        const hadFocus = mount.contains(document.activeElement);
-
-        const rerender = () => render(mount, state, touch);
-        // Changes show at once; a failed save puts the previous rules or
-        // locks back (core/tag-look.js), says so and redraws the list.
-        const settle = (saving, doneKey) => {
-            saving.then((saved) => {
-                if (saved) {
-                    if (doneKey) JE.toast?.(JE.t(doneKey));
-                    return;
-                }
-                JE.toast?.(JE.t('tag_looks_save_failed_toast'));
-                if (mount.isConnected && state.editing === null) rerender();
-            });
-        };
-        const saveRules = (next, doneKey) => { touch(); settle(look.saveRules(next), doneKey); rerender(); };
-
+    function buildView(mount, state, touch, renderAll) {
         const root = el('section', 'je-tag-looks');
-        root.setAttribute('aria-labelledby', 'jeTagLooksTitle');
-        const title = el('div', 'je-tag-looks-title', JE.t('tag_looks_title'));
-        title.id = 'jeTagLooksTitle';
-        root.append(title, el('div', 'je-tag-looks-desc', JE.t('tag_looks_desc')));
+        root.setAttribute('aria-label', JE.t('tag_looks_title'));
+        const cols = el('div', 'je-tag-looks-cols');
+        const main = el('div', 'je-tag-looks-main');
+        const side = el('div', 'je-tag-looks-side');
 
+        const head = el('div', 'je-tag-looks-head');
+        const heading = el('h5', 'je-tag-looks-heading', JE.t('tag_looks_rules_heading'));
+        heading.id = 'jeTagLooksRulesTitle';
+        const rulesCount = el('span', 'je-tag-looks-count');
+        head.append(heading, rulesCount, el('span', 'je-tag-looks-sub', JE.t('tag_looks_first_match')));
         const list = el('ol', 'je-tag-looks-list');
+        list.setAttribute('aria-labelledby', heading.id);
+        const empty = el('p', 'je-tag-looks-empty', JE.t('tag_looks_no_rules'));
+        empty.tabIndex = -1;
 
-        // Locked items: always win.
-        const lockedRow = el('li', 'je-tag-looks-row');
-        lockedRow.dataset.jeRow = 'locked';
-        const lockedText = el('div', 'je-tag-looks-text');
-        lockedText.append(el('strong', '', JE.t('tag_looks_locked_count', { count: String(locks.size) })),
-            el('span', 'je-tag-looks-outcome', JE.t('tag_looks_locked_desc')));
-        lockedRow.appendChild(lockedText);
-        const lockedActions = el('div', 'je-tag-looks-actions');
-        const toggle = button(JE.t(state.lockedOpen ? 'tag_looks_hide' : 'tag_looks_show'), () => {
+        const otherwise = el('div', 'je-tag-looks-row je-tag-looks-otherwise');
+        otherwise.dataset.jeRow = 'otherwise';
+        const otherText = el('div', 'je-tag-looks-text');
+        const otherwiseOutcome = el('span', 'je-tag-looks-outcome');
+        otherText.append(el('span', '', JE.t('tag_looks_otherwise')), otherwiseOutcome);
+        const change = button(JE.t('tag_looks_change_default'), () => {
+            touch();
+            // The default layout is the hub's Layout tab; without the hub, the tiles wherever they are.
+            internal.mediaTagsHub?.openTab?.('layout');
+            const tile = document.querySelector('input[name="jeTagLayout"]:checked') || document.querySelector('input[name="jeTagLayout"]');
+            focusOn(tile);
+        }, JE.t('tag_looks_change_default_named'));
+        otherText.appendChild(change);
+        otherwise.appendChild(otherText);
+
+        // Locked items: always win. A narrow pane folds them into one line.
+        const locks = el('div', 'je-tag-looks-locks');
+        locks.dataset.jeRow = 'locked';
+        const locksHead = el('div', 'je-tag-looks-head je-tag-looks-locks-head');
+        const locksTitle = el('h5', 'je-tag-looks-heading', JE.t('tag_looks_locked_heading'));
+        locksTitle.id = 'jeTagLooksLocksTitle';
+        const locksCount = el('span', 'je-tag-looks-count');
+        const locksToggle = button(JE.t('tag_looks_show'), () => {
             state.lockedOpen = !state.lockedOpen;
             touch();
-            rerender();
+            renderAll();
         });
-        toggle.dataset.jeFocusKey = 'locked-toggle';
-        toggle.setAttribute('aria-expanded', state.lockedOpen ? 'true' : 'false');
-        toggle.setAttribute('aria-controls', 'jeTagLooksLockedList');
-        toggle.disabled = locks.size === 0;
+        locksToggle.classList.add('je-tag-looks-locks-toggle');
+        locksToggle.setAttribute('aria-controls', 'jeTagLooksLocksBody');
         const unlockAll = button(JE.t('tag_looks_unlock_all'), () => {
             touch();
             if (unlockAll.dataset.confirm !== '1') {
@@ -308,135 +406,233 @@
                 }, CONFIRM_MS);
                 return;
             }
-            settle(look.unlockItems(), 'tag_looks_unlocked_all_toast');
-            state.lockedOpen = false;
-            rerender();
+            delete unlockAll.dataset.confirm;
+            unlockAll.textContent = JE.t('tag_looks_unlock_all');
+            view.settle(JE.core.tagLook.unlockItems(), 'tag_looks_unlocked_all_toast');
+            renderAll();
+            view.announce(JE.t('tag_looks_unlocked_all_toast'));
+            focusOn(locksEmpty);
         });
-        unlockAll.dataset.jeFocusKey = 'unlock-all';
-        unlockAll.disabled = locks.size === 0;
-        lockedActions.append(toggle, unlockAll);
-        lockedRow.appendChild(lockedActions);
-        if (state.lockedOpen && locks.size) {
-            const lockedList = el('ul', 'je-tag-looks-locked-list');
-            lockedList.id = 'jeTagLooksLockedList';
-            const ordered = Array.from(locks.entries()).sort((a, b) => b[1].lockedAt - a[1].lockedAt);
-            const pending = [];
-            for (const [id, lock] of ordered) {
-                const info = state.titles.get(id);
-                if (!info) pending.push(id);
-                const row = el('li');
-                const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('tag_looks_loading');
-                const type = info?.type ? ` · ${typeName(info.type)}` : '';
-                row.append(el('span', '', `${name}${type} — ${outcomeText(lock)}`));
-                const unlock = button(JE.t('tag_looks_unlock'), () => {
-                    settle(look.unlockItems([id]), 'tag_look_unlocked_toast');
-                    touch();
-                    rerender();
-                }, JE.t('tag_looks_unlock_named', { name: info?.name || id }));
-                unlock.dataset.jeFocusKey = `unlock-${id}`;
-                row.appendChild(unlock);
-                lockedList.appendChild(row);
-            }
-            lockedRow.appendChild(lockedList);
-            if (pending.length) loadTitles(state, pending).then(() => { if (mount.isConnected && state.editing === null) rerender(); });
-        }
-        list.appendChild(lockedRow);
+        unlockAll.classList.add('je-tag-looks-unlock-all');
+        locksHead.append(locksTitle, locksCount, locksToggle);
+        const body = el('div', 'je-tag-looks-locks-body');
+        body.id = 'jeTagLooksLocksBody';
+        const bodyHead = el('div', 'je-tag-looks-head je-tag-looks-locks-head');
+        bodyHead.append(el('span', 'je-tag-looks-sub', JE.t('tag_looks_locked_desc')), unlockAll);
+        const lockedList = el('ul', 'je-tag-looks-locked-list');
+        lockedList.id = 'jeTagLooksLockedList';
+        lockedList.setAttribute('aria-labelledby', locksTitle.id);
+        const locksEmpty = el('p', 'je-tag-looks-empty', JE.t('tag_looks_no_locks'));
+        locksEmpty.tabIndex = -1;
+        body.append(bodyHead, lockedList, locksEmpty);
+        locks.append(locksHead, body);
 
-        // Rules in order.
-        rules.forEach((rule, index) => {
-            const row = el('li', 'je-tag-looks-row');
-            row.dataset.jeRow = 'rule';
-            row.dataset.jeRuleId = rule.id;
-            if (!rule.enabled) row.dataset.off = '1';
-            const text = el('div', 'je-tag-looks-text');
-            const condition = conditionText(rule.when, state);
-            text.append(el('span', '', condition), el('span', 'je-tag-looks-outcome', `→ ${outcomeText(rule)}`));
-            row.appendChild(text);
-            const actions = el('div', 'je-tag-looks-actions');
-            const move = (delta) => {
-                const next = rules.slice();
-                const [moved] = next.splice(index, 1);
-                next.splice(index + delta, 0, moved);
-                saveRules(next);
-            };
-            const up = button('▲', () => move(-1), JE.t('tag_looks_move_up', { rule: condition }));
-            up.disabled = index === 0;
-            up.dataset.jeFocusKey = `up-${rule.id}`;
-            const down = button('▼', () => move(1), JE.t('tag_looks_move_down', { rule: condition }));
-            down.disabled = index === rules.length - 1;
-            down.dataset.jeFocusKey = `down-${rule.id}`;
-            const pill = button(JE.t(rule.enabled ? 'tag_looks_on' : 'tag_looks_off'), () => {
-                saveRules(rules.map((r) => (r.id === rule.id ? { ...r, enabled: !r.enabled } : r)));
-            }, JE.t('tag_looks_enabled_named', { rule: condition }));
-            pill.className = 'je-tag-looks-pill';
-            pill.setAttribute('aria-pressed', rule.enabled ? 'true' : 'false');
-            pill.dataset.jeFocusKey = `pill-${rule.id}`;
-            const edit = button(JE.t('tag_looks_edit'), () => { state.editing = rule.id; touch(); rerender(); }, JE.t('tag_looks_edit_named', { rule: condition }));
-            edit.dataset.jeFocusKey = `edit-${rule.id}`;
-            const del = button(JE.t('tag_looks_delete'), () => {
-                if (state.editing === rule.id) state.editing = null;
-                saveRules(rules.filter((r) => r.id !== rule.id));
-            }, JE.t('tag_looks_delete_named', { rule: condition }));
-            del.dataset.jeFocusKey = `delete-${rule.id}`;
-            actions.append(up, down, pill, edit, del);
-            row.appendChild(actions);
-            list.appendChild(row);
-        });
-
-        // Otherwise: the default layout (read-only; the Layout select above changes it).
-        const otherwise = el('li', 'je-tag-looks-row');
-        otherwise.dataset.jeRow = 'otherwise';
-        const otherText = el('div', 'je-tag-looks-text');
-        otherText.append(el('span', '', JE.t('tag_looks_otherwise')), el('span', 'je-tag-looks-outcome', `→ ${outcomeText(defaults)}`));
-        otherwise.appendChild(otherText);
-        const change = button(JE.t('tag_looks_change_default'), () => {
-            const layoutSelect = /** @type {HTMLElement|null} */ (document.getElementById('tagLayoutSelect'));
-            layoutSelect?.scrollIntoView?.({ block: 'center' });
-            layoutSelect?.focus();
-            touch();
-        });
-        otherwise.appendChild(el('div', 'je-tag-looks-actions')).appendChild(change);
-        list.appendChild(otherwise);
-        root.appendChild(list);
-
-        if (state.editing === null) {
-            const add = button(JE.t('tag_looks_add_rule'), () => { state.editing = ''; touch(); rerender(); });
-            add.className = 'je-tag-looks-add';
-            add.dataset.jeFocusKey = 'add';
-            add.disabled = rules.length >= look.MAX_RULES;
-            root.appendChild(add);
-        } else {
-            root.appendChild(buildForm(state, rules, touch, rerender, saveRules));
-        }
-
+        main.append(head, list, empty, otherwise, locks);
+        cols.append(main, side);
+        root.appendChild(cols);
         mount.replaceChildren(root);
-        // Keep keyboard focus on the control the user just used.
-        if (!hadFocus || state.editing !== null) return;
-        const again = Array.from(mount.querySelectorAll('[data-je-focus-key]'))
-            .find((node) => /** @type {HTMLElement} */ (node).dataset.jeFocusKey === focusKey);
-        const target = again && !(/** @type {HTMLButtonElement} */ (again).disabled) ? again
-            : mount.querySelector('[data-je-focus-key="add"]');
-        /** @type {HTMLElement|null} */ (target)?.focus();
+
+        const live = el('div', 'je-tag-looks-sr');
+        live.setAttribute('role', 'status');
+        live.setAttribute('aria-live', 'polite');
+        root.appendChild(live);
+
+        /** @type {LooksView & {settle: (saving: Promise<boolean>, doneKey?: string) => void}} */
+        const view = {
+            root, rulesCount, list, empty, otherwiseOutcome, locks, locksCount, locksToggle, unlockAll, lockedList, locksEmpty, side,
+            rows: new Map(),
+            announce: (message) => {
+                live.textContent = '';
+                setTimeout(() => { if (live.isConnected) live.textContent = message; }, 30);
+            },
+            // Changes show at once; a failed save puts the previous rules or
+            // locks back (core/tag-look.js), says so and redraws the lists.
+            settle: (saving, doneKey) => {
+                saving.then((saved) => {
+                    if (saved) {
+                        if (doneKey) JE.toast?.(JE.t(doneKey));
+                        return;
+                    }
+                    JE.toast?.(JE.t('tag_looks_save_failed_toast'));
+                    if (mount.isConnected) renderAll();
+                });
+            },
+        };
+        return view;
     }
 
     /**
-     * The add/edit rule form.
+     * Bring the rule rows in step with the rules: rows are reused by rule
+     * id and moved (not rebuilt), texts and button states updated.
+     * @param {LooksView & {settle: Function}} view
      * @param {LooksState} state
      * @param {Array<Object>} rules
      * @param {() => void} touch
-     * @param {() => void} rerender
-     * @param {(rules: Array<Object>, doneKey?: string) => void} saveRules - Saves; doneKey is the toast once saved.
+     * @param {(next: Array<Object>, doneKey?: string) => void} saveRules
+     * @param {() => void} openForm - Rebuild the form (state.editing changed).
+     */
+    function renderRules(view, state, rules, touch, saveRules, openForm) {
+        const look = JE.core.tagLook;
+        const focused = /** @type {HTMLElement|null} */ (document.activeElement);
+        const ids = new Set(rules.map((r) => r.id));
+        for (const [id, row] of view.rows) {
+            if (!ids.has(id)) { row.li.remove(); view.rows.delete(id); }
+        }
+        rules.forEach((rule, index) => {
+            let row = view.rows.get(rule.id);
+            if (!row) {
+                row = { li: el('li', 'je-tag-looks-row'), text: el('div', 'je-tag-looks-text') };
+                row.li.dataset.jeRow = 'rule';
+                row.li.dataset.jeRuleId = rule.id;
+                row.li.tabIndex = -1;
+                const id = rule.id;
+                /** The rule as it is now (the row outlives the rules array it was built from). */
+                const now = () => {
+                    const all = look.read().rules;
+                    return { all, index: all.findIndex((r) => r.id === id) };
+                };
+                const move = (delta) => {
+                    const { all, index: at } = now();
+                    if (at < 0 || at + delta < 0 || at + delta >= all.length) return;
+                    const next = all.slice();
+                    const [moved] = next.splice(at, 1);
+                    next.splice(at + delta, 0, moved);
+                    const pressed = delta < 0 ? row.up : row.down;
+                    saveRules(next);
+                    // Keep focus on the moved rule: the same button, or at an end its other one.
+                    focusOn(pressed.disabled ? (delta < 0 ? row.down : row.up) : pressed);
+                    view.announce(JE.t('tag_looks_rule_moved', { rule: conditionText(moved.when, state), n: String(at + delta + 1) }));
+                };
+                row.up = iconButton('arrow_upward', () => move(-1), '');
+                row.down = iconButton('arrow_downward', () => move(1), '');
+                row.pill = button('', () => {
+                    const { all } = now();
+                    saveRules(all.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
+                });
+                row.pill.className = 'je-tag-looks-pill';
+                row.edit = button(JE.t('tag_looks_edit'), () => {
+                    state.editing = id;
+                    touch();
+                    openForm();
+                });
+                        row.del = button(JE.t('tag_looks_delete'), () => {
+                    const { all, index: at } = now();
+                    if (at < 0) return;
+                    // Focus goes to the next rule's Delete, else the previous one's, else the empty list.
+                    const neighbour = all[at + 1] || all[at - 1] || null;
+                    if (state.editing === id) {
+                        state.editing = '';
+                        openForm();
+                    }
+                    saveRules(all.filter((r) => r.id !== id));
+                    focusOn(neighbour ? view.rows.get(neighbour.id)?.del : view.empty);
+                    view.announce(JE.t('tag_looks_rule_deleted', { rule: conditionText(all[at].when, state) }));
+                });
+                row.del.classList.add('je-tag-looks-danger');
+                const actions = el('div', 'je-tag-looks-actions');
+                actions.append(row.up, row.down, row.pill, row.edit, row.del);
+                row.li.append(row.text, actions);
+                view.rows.set(rule.id, row);
+            }
+            const condition = conditionText(rule.when, state);
+            row.text.replaceChildren(el('span', '', `${index + 1}. ${condition} `), el('span', 'je-tag-looks-outcome', `→ ${outcomeText(rule)}`));
+            if (rule.enabled) delete row.li.dataset.off;
+            else row.li.dataset.off = '1';
+            row.up.disabled = index === 0;
+            row.down.disabled = index === rules.length - 1;
+            row.up.setAttribute('aria-label', JE.t('tag_looks_move_up', { rule: condition }));
+            row.down.setAttribute('aria-label', JE.t('tag_looks_move_down', { rule: condition }));
+            row.pill.textContent = JE.t(rule.enabled ? 'tag_looks_on' : 'tag_looks_off');
+            row.pill.setAttribute('aria-pressed', rule.enabled ? 'true' : 'false');
+            row.pill.setAttribute('aria-label', JE.t('tag_looks_enabled_named', { rule: condition }));
+            row.edit.setAttribute('aria-label', JE.t('tag_looks_edit_named', { rule: condition }));
+            row.del.setAttribute('aria-label', JE.t('tag_looks_delete_named', { rule: condition }));
+            // appendChild moves an existing row into place (and drops its focus; put back below).
+            if (view.list.children[index] !== row.li) view.list.insertBefore(row.li, view.list.children[index] || null);
+        });
+        if (focused && focused.isConnected && document.activeElement !== focused && view.list.contains(focused)) focused.focus({ preventScroll: true });
+        view.rulesCount.textContent = String(rules.length);
+        view.empty.hidden = rules.length > 0;
+    }
+
+    /**
+     * Rebuild the locked items list (keyed focus is restored by data-je-focus-key).
+     * @param {LooksView & {settle: Function}} view
+     * @param {LooksState} state
+     * @param {() => void} touch
+     * @param {() => void} renderAll
+     */
+    function renderLocks(view, state, touch, renderAll) {
+        const look = JE.core.tagLook;
+        const locks = look.normalizeLocks(JE.currentSettings.tagLayoutLocks);
+        const focusKey = /** @type {HTMLElement|null} */ (document.activeElement)?.dataset?.jeFocusKey || null;
+        const hadFocus = view.lockedList.contains(document.activeElement);
+        view.locksCount.textContent = String(locks.size);
+        view.locks.classList.toggle('je-open', state.lockedOpen);
+        view.locksToggle.textContent = JE.t(state.lockedOpen ? 'tag_looks_hide' : 'tag_looks_show');
+        view.locksToggle.setAttribute('aria-expanded', state.lockedOpen ? 'true' : 'false');
+        view.locksToggle.setAttribute('aria-label', JE.t(state.lockedOpen ? 'tag_looks_locks_hide' : 'tag_looks_locks_show', { count: String(locks.size) }));
+        view.unlockAll.disabled = locks.size === 0;
+        // Nothing to unfold without locks (a narrow pane shows only the count then).
+        view.locksToggle.hidden = locks.size === 0;
+        view.locksEmpty.hidden = locks.size > 0;
+        const ordered = Array.from(locks.entries()).sort((a, b) => b[1].lockedAt - a[1].lockedAt);
+        const pending = [];
+        const items = ordered.map(([id, lock], index) => {
+            const info = state.titles.get(id);
+            if (!info) pending.push(id);
+            const li = el('li');
+            const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('tag_looks_loading');
+            const type = info?.type ? `${typeName(info.type)} → ` : '→ ';
+            const text = el('span');
+            text.append(el('strong', '', name), document.createTextNode(`${type}${outcomeText(lock)}`));
+            const unlock = button(JE.t('tag_looks_unlock'), () => {
+                touch();
+                // Focus goes to the next item's Unlock, else the previous one's, else the empty list.
+                const neighbour = ordered[index + 1]?.[0] || ordered[index - 1]?.[0] || null;
+                view.settle(look.unlockItems([id]), 'tag_look_unlocked_toast');
+                renderAll();
+                focusOn(neighbour ? view.lockedList.querySelector(`[data-je-focus-key="unlock-${neighbour}"]`) : view.locksEmpty);
+                view.announce(JE.t('tag_looks_unlocked_named', { name: info?.name || id }));
+            }, JE.t('tag_looks_unlock_named', { name: info?.name || id }));
+            unlock.dataset.jeFocusKey = `unlock-${id}`;
+            li.append(text, unlock);
+            return li;
+        });
+        view.lockedList.replaceChildren(...items);
+        if (hadFocus && focusKey) {
+            const again = view.lockedList.querySelector(`[data-je-focus-key="${focusKey}"]`);
+            if (again) /** @type {HTMLElement} */ (again).focus({ preventScroll: true });
+        }
+        // Titles load once the tab has been shown, 50 ids per request.
+        if (state.shown && pending.length) loadTitles(state, pending).then(() => { if (view.root.isConnected) renderLocks(view, state, touch, renderAll); });
+    }
+
+    /**
+     * The add/edit rule form (always open). New rules default to Caption and
+     * Compact; every condition needs a value; at most five conditions.
+     * @param {LooksState} state
+     * @param {Array<Object>} rules
+     * @param {() => void} touch
+     * @param {(rules: Array<Object>, doneKey?: string) => string|void} saveRules
+     * @param {(savedId: string, added: boolean) => void} onSaved - Reset the form and focus the rule.
+     * @param {() => void} onCancel
      * @returns {HTMLElement}
      */
-    function buildForm(state, rules, touch, rerender, saveRules) {
+    function buildForm(state, rules, touch, saveRules, onSaved, onCancel) {
         const look = JE.core.tagLook;
-        const existing = rules.find((r) => r.id === state.editing) || null;
+        const existing = (state.editing && rules.find((r) => r.id === state.editing)) || null;
+        const full = !existing && rules.length >= look.MAX_RULES;
         const form = /** @type {HTMLFormElement} */ (el('form', 'je-tag-looks-form'));
-        form.setAttribute('aria-label', JE.t(existing ? 'tag_looks_edit_rule' : 'tag_looks_add_rule'));
+        const title = el('h5', 'je-tag-looks-form-title', JE.t(existing ? 'tag_looks_edit_rule' : 'tag_looks_add_a_rule'));
+        title.id = 'jeTagLooksFormTitle';
+        form.setAttribute('aria-labelledby', title.id);
         form.noValidate = true;
+        form.append(title, el('p', 'je-tag-looks-form-hint', JE.t('tag_looks_conditions')));
 
+        const errorId = 'jeTagLooksError';
         const conditions = el('fieldset');
-        conditions.appendChild(el('legend', '', JE.t('tag_looks_conditions')));
+        conditions.appendChild(el('legend', 'je-tag-looks-sr', JE.t('tag_looks_conditions')));
         const condList = el('div');
         conditions.appendChild(condList);
         form.appendChild(conditions);
@@ -484,11 +680,35 @@
             }
             control.id = id;
             control.dataset.jeCondValue = '1';
+            control.setAttribute('aria-required', 'true');
+            control.addEventListener('change', () => clearError(control));
             return control;
         };
 
+        /** @param {Element} control - Drop a value's invalid mark once it changes. */
+        const clearError = (control) => {
+            control.removeAttribute('aria-invalid');
+            control.removeAttribute('aria-describedby');
+        };
+
+        /** Renumber the condition rows' labels and enable "+ Condition" / remove for the row count. */
+        const syncRows = () => {
+            const rows = Array.from(condList.querySelectorAll('[data-je-cond]'));
+            rows.forEach((r, i) => {
+                const n = String(i + 1);
+                /** @type {HTMLElement} */ (r.querySelector('.je-tag-looks-cond-label')).textContent = JE.t('tag_looks_condition', { n });
+                /** @type {HTMLElement} */ (r.querySelector('[data-je-field-label]')).textContent = JE.t('tag_looks_condition_field', { n });
+                /** @type {HTMLElement} */ (r.querySelector('[data-je-value-label]')).textContent = JE.t('tag_looks_condition_value', { n });
+                const remove = /** @type {HTMLButtonElement} */ (r.querySelector('[data-je-cond-remove]'));
+                remove.disabled = rows.length <= 1;
+                remove.setAttribute('aria-label', JE.t('tag_looks_remove_condition_named', { n }));
+            });
+            addCondition.disabled = rows.length >= look.MAX_CONDITIONS;
+            condCount.textContent = JE.t('tag_looks_condition_count', { count: String(rows.length), max: String(look.MAX_CONDITIONS) });
+        };
+
         /**
-         * Add one condition row.
+         * Add one condition row: "Condition N", the field, "is", the value, ✕.
          * @param {{field: string, value: string}} cond
          */
         const addRow = (cond) => {
@@ -497,48 +717,53 @@
             row.dataset.jeCond = '1';
             const fieldId = `jeTagLooksField${n}`;
             const valueId = `jeTagLooksValue${n}`;
-            const fieldLabel = el('label', 'je-tag-looks-sr', JE.t('tag_looks_field'));
+            const fieldLabel = el('label', 'je-tag-looks-sr');
+            fieldLabel.dataset.jeFieldLabel = '1';
             fieldLabel.setAttribute('for', fieldId);
             const fieldSelect = select(look.FIELDS.map((f) => /** @type {[string, string]} */ ([f, JE.t(`tag_looks_field_${f.toLowerCase()}`)])), cond.field);
             fieldSelect.id = fieldId;
             fieldSelect.dataset.jeCondField = '1';
-            const valueLabel = el('label', 'je-tag-looks-sr', JE.t('tag_looks_value'));
+            const valueLabel = el('label', 'je-tag-looks-sr');
+            valueLabel.dataset.jeValueLabel = '1';
             valueLabel.setAttribute('for', valueId);
             let control = valueControl(cond.field, cond.value, valueId);
             fieldSelect.addEventListener('change', () => {
                 touch();
                 const next = valueControl(fieldSelect.value, '', valueId);
-                control.replaceWith(next);
                 control.nextElementSibling?.tagName === 'DATALIST' && control.nextElementSibling.remove();
+                control.replaceWith(next);
                 control = next;
             });
             const remove = button('✕', () => {
                 touch();
+                const rows = Array.from(condList.querySelectorAll('[data-je-cond]'));
+                const at = rows.indexOf(row);
                 row.remove();
                 syncRows();
-                /** @type {HTMLElement|null} */ (condList.querySelector('[data-je-cond-field]'))?.focus();
-            }, JE.t('tag_looks_remove_condition'));
+                // Focus the field of the row that took its place, else the one before it.
+                const left = condList.querySelectorAll('[data-je-cond-field]');
+                focusOn(left[Math.min(at, left.length - 1)]);
+            });
             remove.dataset.jeCondRemove = '1';
-            row.append(fieldLabel, fieldSelect, valueLabel, control, remove);
+            row.append(el('span', 'je-tag-looks-cond-label'), fieldLabel, fieldSelect, el('span', 'je-tag-looks-cond-is', JE.t('tag_looks_is')), valueLabel, control, remove);
+            const is = row.querySelector('.je-tag-looks-cond-is');
+            is?.setAttribute('aria-hidden', 'true');
             condList.appendChild(row);
-            syncRows();
         };
 
+        const addLine = el('div', 'je-tag-looks-add-cond');
         const addCondition = button(JE.t('tag_looks_add_condition'), () => {
             touch();
             addRow({ field: 'type', value: '' });
-            /** @type {HTMLElement|null} */ (condList.lastElementChild?.querySelector('[data-je-cond-field]'))?.focus();
+            syncRows();
+            focusOn(condList.lastElementChild?.querySelector('[data-je-cond-field]'));
         });
-        conditions.appendChild(addCondition);
-
-        /** Enable/disable "+ condition" and the remove buttons for the row count. */
-        function syncRows() {
-            const rows = condList.querySelectorAll('[data-je-cond]');
-            addCondition.disabled = rows.length >= look.MAX_CONDITIONS;
-            rows.forEach((r) => { /** @type {HTMLButtonElement} */ (r.querySelector('[data-je-cond-remove]')).disabled = rows.length <= 1; });
-        }
+        const condCount = el('span');
+        addLine.append(addCondition, condCount);
+        conditions.appendChild(addLine);
 
         for (const cond of existing?.when?.length ? existing.when : [{ field: 'library', value: '' }]) addRow(cond);
+        syncRows();
 
         const outcome = el('fieldset');
         outcome.appendChild(el('legend', '', JE.t('tag_looks_use_look')));
@@ -548,7 +773,7 @@
         layoutSelect.dataset.jeRuleLayout = '1';
         layoutLabel.appendChild(layoutSelect);
         const densityLabel = el('label', '', JE.t('panel_settings_ui_tag_density'));
-        const densitySelect = select([['full', densityName('full')], ['compact', densityName('compact')]], existing?.density || 'full');
+        const densitySelect = select([['full', densityName('full')], ['compact', densityName('compact')]], existing?.density || 'compact');
         densitySelect.dataset.jeRuleDensity = '1';
         densityLabel.appendChild(densitySelect);
         outcomeRow.append(layoutLabel, densityLabel);
@@ -556,49 +781,61 @@
         form.appendChild(outcome);
 
         const error = el('div', 'je-tag-looks-error');
+        error.id = errorId;
         error.setAttribute('role', 'alert');
         form.appendChild(error);
 
         const buttons = el('div', 'je-tag-looks-buttons');
-        const cancel = button(JE.t('tag_looks_cancel'), () => { state.editing = null; touch(); rerender(); });
-        const save = /** @type {HTMLButtonElement} */ (el('button', '', JE.t('tag_looks_save')));
+        const save = /** @type {HTMLButtonElement} */ (el('button', 'je-tag-looks-save', JE.t(existing ? 'tag_looks_save' : 'tag_looks_add_rule')));
         save.type = 'submit';
-        buttons.append(cancel, save);
+        save.disabled = full;
+        buttons.appendChild(save);
+        if (existing) buttons.appendChild(button(JE.t('tag_looks_cancel'), () => { touch(); onCancel(); }));
+        buttons.appendChild(el('span', 'je-tag-looks-buttons-hint', JE.t(full ? 'tag_looks_limit' : existing ? 'tag_looks_edit_hint' : 'tag_looks_add_hint', { count: String(look.MAX_RULES) })));
         form.appendChild(buttons);
 
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             touch();
+            if (full) return;
             const when = [];
             for (const row of condList.querySelectorAll('[data-je-cond]')) {
                 const field = /** @type {HTMLSelectElement} */ (row.querySelector('[data-je-cond-field]')).value;
-                const value = /** @type {HTMLInputElement} */ (row.querySelector('[data-je-cond-value]')).value.trim();
+                const control = /** @type {HTMLInputElement} */ (row.querySelector('[data-je-cond-value]'));
+                const value = control.value.trim();
                 if (!value) {
                     error.textContent = JE.t('tag_looks_error_value');
-                    /** @type {HTMLElement} */ (row.querySelector('[data-je-cond-value]')).focus();
+                    control.setAttribute('aria-invalid', 'true');
+                    control.setAttribute('aria-describedby', errorId);
+                    control.focus();
                     return;
                 }
                 when.push({ field, value });
             }
-            const candidate = { id: existing?.id || look.newRuleId(new Set(rules.map((r) => r.id))), enabled: existing ? existing.enabled : true,
-                when, layout: layoutSelect.value, density: densitySelect.value, colourPreset: existing?.colourPreset || null, slots: existing?.slots || null };
+            const current = look.read().rules;
+            const still = existing ? current.find((r) => r.id === existing.id) : null;
+            // Editing keeps the rule's On/Off state (a switched-off rule stays off).
+            const candidate = { id: still?.id || look.newRuleId(new Set(current.map((r) => r.id))), enabled: still ? still.enabled : true,
+                when, layout: layoutSelect.value, density: densitySelect.value, colourPreset: still?.colourPreset || null, slots: still?.slots || null };
             if (look.normalizeRules([candidate]).length !== 1) {
                 error.textContent = JE.t('tag_looks_error_value');
                 return;
             }
-            const next = existing ? rules.map((r) => (r.id === existing.id ? candidate : r)) : rules.concat([candidate]);
-            state.editing = null;
+            error.textContent = '';
+            const next = still ? current.map((r) => (r.id === still.id ? candidate : r)) : current.concat([candidate]);
             saveRules(next, 'tag_looks_saved_toast');
+            onSaved(candidate.id, !still);
         });
-
-        queueMicrotask(() => { /** @type {HTMLElement|null} */ (form.querySelector('[data-je-cond-field]'))?.focus(); });
         return form;
     }
+
+    /** @type {{show: () => void}|null} The open panel's section, for the hub's tab switch. */
+    let active = null;
 
     /**
      * Wire the section into the open settings panel (the template renders
      * an empty #jeTagLooksMount). Libraries and genres load in the
-     * background; the list renders first and again once they arrive.
+     * background; the lists render first and again once they arrive.
      * @param {{resetAutoCloseTimer?: () => void, onClose?: (fn: () => void) => void}} ctx Shared panel context.
      */
     internal.wireTagLooks = function (ctx) {
@@ -607,31 +844,80 @@
         if (!mount || !JE.core?.tagLook || !JE.core?.tagLayout) return;
         JE.core.ui?.injectCss?.('je-tag-looks-panel', PANEL_CSS);
         /** @type {LooksState} */
-        const state = { libraries: null, genres: null, titles: new Map(), lockedOpen: false, editing: null };
+        const state = { libraries: null, genres: null, titles: new Map(), lockedOpen: false, shown: false, editing: '' };
         const touch = () => { try { ctx?.resetAutoCloseTimer?.(); } catch { /* panel closing */ } };
-        render(mount, state, touch);
+        const look = JE.core.tagLook;
+
+        /** Save the rules (shown at once, put back on failure) and redraw the lists. */
+        const saveRules = (next, doneKey) => {
+            touch();
+            view.settle(look.saveRules(next), doneKey);
+            renderLists();
+        };
+        const renderOtherwise = () => {
+            view.otherwiseOutcome.textContent = `→ ${outcomeText(JE.core.tagLayout.normalizeSettings())}`;
+        };
+        const renderLists = () => {
+            if (!mount.isConnected) return;
+            const rules = look.read().rules;
+            renderRules(view, state, rules, touch, saveRules, openForm);
+            renderLocks(view, state, touch, renderLists);
+            renderOtherwise();
+        };
+        /** (Re)build the form for state.editing; focus its first field when asked. */
+        const openForm = (focus = true) => {
+            const rules = look.read().rules;
+            if (state.editing && !rules.some((r) => r.id === state.editing)) state.editing = '';
+            const form = buildForm(state, rules, touch, saveRules, (savedId, added) => {
+                state.editing = '';
+                openForm(false);
+                const row = view.rows.get(savedId);
+                focusOn(row?.edit);
+                const index = look.read().rules.findIndex((r) => r.id === savedId);
+                const rule = look.read().rules[index];
+                if (rule) view.announce(JE.t(added ? 'tag_looks_rule_added' : 'tag_looks_rule_saved', { n: String(index + 1), rule: conditionText(rule.when, state) }));
+            }, () => {
+                const was = state.editing;
+                state.editing = '';
+                openForm(false);
+                focusOn(view.rows.get(was)?.edit);
+            });
+            view.side.replaceChildren(form);
+            if (focus) focusOn(form.querySelector('[data-je-cond-field]'));
+        };
+
+        const view = buildView(mount, state, touch, renderLists);
+        renderLists();
+        openForm(false);
         Promise.all([loadLibraries(state), loadGenres(state)]).then(() => {
             if (!mount.isConnected) return;
-            // Don't rebuild an open form under the user's hands (it would lose
-            // their input); the next render picks the lists up.
-            if (state.editing === null) render(mount, state, touch);
+            renderLists();
+            // Rebuild the form for the lists unless the user started on it.
+            if (!view.side.contains(document.activeElement)) openForm(false);
         });
+        active = {
+            /** The tab is on screen: load the locked items' titles. */
+            show() {
+                if (state.shown || !mount.isConnected) return;
+                state.shown = true;
+                renderLists();
+            },
+        };
         // Reinitialization also covers Reset and programmatic changes. Update
-        // only this outcome so an open rule form keeps its input and focus.
+        // only the Otherwise outcome so the form keeps its input and focus.
         const refreshDefault = () => {
-            if (!mount.isConnected) return;
-            const outcome = mount.querySelector('[data-je-row="otherwise"] .je-tag-looks-outcome');
-            if (outcome) outcome.textContent = `→ ${outcomeText(JE.core.tagLayout.normalizeSettings())}`;
+            if (mount.isConnected) renderOtherwise();
         };
         document.addEventListener('je:tag-layout-changed', refreshDefault);
         const stopWatching = () => {
             document.removeEventListener('je:tag-layout-changed', refreshDefault);
             if (unwatchLayout === stopWatching) unwatchLayout = null;
+            active = null;
         };
         unwatchLayout = stopWatching;
         ctx?.onClose?.(stopWatching);
     };
 
-    // Exposed for tests.
-    internal.tagLooksPanel = { render, conditionText, loadTitles };
+    // The hub tells the open section when its tab shows; tests use the rest.
+    internal.tagLooksPanel = { show: () => active?.show(), conditionText, loadTitles };
 })(window.JellyfinEnhanced);

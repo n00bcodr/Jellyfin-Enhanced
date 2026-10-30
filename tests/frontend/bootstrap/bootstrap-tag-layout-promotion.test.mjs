@@ -12,11 +12,10 @@ const LIBRARY = '22222222222222222222222222222222';
 const ADMIN_RULE = { id: 'movies', enabled: true, when: [{ field: 'library', value: LIBRARY }], layout: 'caption', density: 'compact' };
 const card = `<div class="card overflowPortraitCard" data-id="${ID}" data-type="Movie"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer coveredImage cardContent"></div><div class="je-tag-host"></div><div class="cardOverlayContainer"></div></div><div class="cardText cardText-first">Title</div></div></div>`;
 
-// Panel controls outside the tag group editor that the settings wiring binds by id.
+// Panel controls outside the Media Tags hub that the settings wiring binds by id.
 const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
-  'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'pauseScreenToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
-  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /** Administrator defaults that differ from the legacy view in every layout dimension. */
 const ADMIN = {
@@ -85,17 +84,19 @@ function setup(t, settings = {}) {
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
     'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js',
-    'enhanced/config.js']) h.load(file);
+    'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
   const JE = h.JE;
   JE.currentSettings = JE.loadSettings();
   JE.escapeHtml = JE.core.ui.escapeHtml;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags(); JE.initializeStatusTags(); JE.initializeLanguageTags();
   h.load('enhanced/settingspanel/ui-panel-settings.js');
   h.load('enhanced/settingspanel/ui-panel-tag-editor.js');
+  h.load('enhanced/settingspanel/ui-panel-media-tags.js');
   const ui = JE.internals.enhancedUi;
   const ctx = { createToast: () => '', resetAutoCloseTimer() {}, help: h.document.getElementById('jellyfin-enhanced-panel'),
     primaryAccentColor: '#fff', toggleAccentColor: '#0af', detailsBackground: '#222', presetBoxBackground: '#111' };
-  ctx.help.innerHTML = ui.buildTagGroupEditorHtml(ctx);
+  // The Media Tags hub holds the group editor, the layout tiles and the density pills.
+  ctx.help.innerHTML = ui.buildMediaTagsHubHtml(ctx);
   ui.wireSettingsListeners(ctx);
   ui.wireMiscSettingsControls(ctx);
   ui.wireTagGroupEditor(ctx);
@@ -117,7 +118,10 @@ function setup(t, settings = {}) {
     ...h, host, writes, row, render,
     saved: () => JSON.parse(writes.at(-1).data),
     async click(el) { el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true })); await settle(); },
-    async change(el, value) { el.value = value; el.dispatchEvent(new h.window.Event('change', { bubbles: true })); await settle(); },
+    async change(el, value) {
+      if (typeof value === 'boolean') el.checked = value; else el.value = value;
+      el.dispatchEvent(new h.window.Event('change', { bubbles: true })); await settle();
+    },
   };
 }
 
@@ -224,7 +228,7 @@ test('one cap step on a legacy document changes only that group', async t => {
 test('one density change on a legacy document changes only the labels it shortens', async t => {
   const h = setup(t);
   const before = snapshot(h.host);
-  await h.change(h.document.getElementById('tagLabelDensitySelect'), 'compact');
+  await h.change(h.document.querySelector('input[name="jeTagDensity"][value="compact"]'), true);
   const after = snapshot(h.host);
   // Compact shortens quality/status labels and drops the critic chip beside a community one.
   assertOnlyChanged(before, after, ['quality', 'rating', 'status']);
@@ -239,7 +243,7 @@ test('one density change on a legacy document changes only the labels it shorten
 
 test('a layout change on a legacy document keeps the legacy limits and full labels', async t => {
   const h = setup(t);
-  await h.change(h.document.getElementById('tagLayoutSelect'), 'bands');
+  await h.change(h.document.querySelector('input[name="jeTagLayout"][value="bands"]'), true);
   const s = h.JE.core.tagLayout.normalizeSettings();
   assert.equal(s.layout, 'bands');
   assert.equal(s.density, 'full', 'not the admin density');

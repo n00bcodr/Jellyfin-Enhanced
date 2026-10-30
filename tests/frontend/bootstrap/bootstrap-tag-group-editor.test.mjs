@@ -2,16 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
-// Panel controls outside the tag group editor that the settings wiring binds by id.
+// Panel controls outside the Media Tags hub that the settings wiring binds by id.
 const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
-  'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'pauseScreenToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
-  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /**
- * The real tag group editor markup (from ui-panel-tag-editor.js) inside the
- * panel, wired by the real settings panel modules over the real layout
- * controller and settings transport (writes are captured).
+ * The real Media Tags hub (ui-panel-media-tags.js) with the real tag group
+ * editor (ui-panel-tag-editor.js) on its Groups tab and its live preview
+ * (ui-panel-tag-preview.js), wired by the real settings panel modules over
+ * the real layout controller and settings transport (writes are captured).
+ * jsdom has no IntersectionObserver, so the hub builds its preview at once.
  * @param {import('node:test').TestContext} t
  * @param {{stored?: object, plugin?: object}} [options]
  */
@@ -27,7 +28,7 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
       ajax: async request => { if (request.type === 'GET') return []; writes.push(request); },
     } });
   t.after(() => h.close());
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'enhanced/config.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   h.JE.toast = message => toasts.push(message);
@@ -35,21 +36,20 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
     const real = h.JE[name];
     h.JE[name] = (...args) => { calls.push(name); return real?.(...args); };
   }
-  h.load('enhanced/settingspanel/ui-panel-settings.js');
-  h.load('enhanced/settingspanel/ui-panel-tag-editor.js');
+  for (const file of ['ui-panel-settings.js', 'ui-panel-tag-editor.js', 'ui-panel-tag-preview.js', 'ui-panel-media-tags.js']) h.load(`enhanced/settingspanel/${file}`);
   const ui = h.JE.internals.enhancedUi;
   const ctx = { createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {}, help: h.document.getElementById('jellyfin-enhanced-panel'),
     primaryAccentColor: '#fff', toggleAccentColor: '#0af', detailsBackground: '#222', presetBoxBackground: '#111' };
-  ctx.help.innerHTML = ui.buildTagGroupEditorHtml(ctx);
+  ctx.help.innerHTML = ui.buildMediaTagsHubHtml(ctx);
   if (looks) {
     h.load('core/tag-look.js');
     h.load('enhanced/settingspanel/ui-panel-tag-looks.js');
-    ctx.help.insertAdjacentHTML('beforeend', '<div id="jeTagLooksMount"></div>');
     ui.wireTagLooks(ctx);
   }
   ui.wireSettingsListeners(ctx);
   ui.wireMiscSettingsControls(ctx);
   ui.wireTagGroupEditor(ctx);
+  ui.wireMediaTagsHub(ctx);
   const settle = () => new Promise(resolve => setImmediate(resolve));
   const $ = selector => h.document.querySelector(selector);
   const row = group => $(`.je-tge-row[data-group="${group}"]`);
@@ -61,7 +61,14 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
       if (typeof value === 'boolean') el.checked = value; else el.value = value;
       el.dispatchEvent(new h.window.Event('change', { bubbles: true })); await settle();
     },
-    preview: () => $('.je-tge-card .je-tag-host'),
+    /** Pick a layout tile on the hub's Layout tab. */
+    async layout(value) {
+      const tile = $(`input[name="jeTagLayout"][value="${value}"]`);
+      tile.checked = true;
+      tile.dispatchEvent(new h.window.Event('change', { bubbles: true })); await settle();
+    },
+    preview: () => $('.je-mtp-sample[data-sample="movie"] .je-tag-host'),
+    card: () => $('.je-mtp-sample[data-sample="movie"] .je-mtp-card'),
   };
 }
 
@@ -110,7 +117,7 @@ test('a position pill writes the selected layout\'s profile; corners also keeps 
   assert.equal(h.row('ageRating').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_off');
 
   // Another layout: its pills, its own profile, the corners pick untouched.
-  await h.change(h.$('#tagLayoutSelect'), 'minimal');
+  await h.layout('minimal');
   assert.deepEqual(pills(), ['top', 'corner', 'hover', 'off'], 'dots are offered to quality only');
   assert.deepEqual(Array.from(h.row('quality').querySelectorAll('.je-tge-pill')).map(p => p.dataset.slot), ['top', 'dots', 'corner', 'hover', 'off']);
   assert.equal(h.row('quality').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_minimal_dots · panel_settings_ui_tag_editor_summary_all');
@@ -185,8 +192,8 @@ test('reset restores the administrator\'s layout defaults and keeps the enable t
   assert.equal(saved.genreTagsPosition, 'top-right', 'an unset admin position falls back to the built-in one');
   assert.equal(saved.qualityTagsEnabled, true);
   assert.equal(saved.ratingTagsShowCritic, false);
-  assert.equal(h.$('#tagLayoutSelect').value, 'bands');
-  assert.equal(h.$('#tagLabelDensitySelect').value, 'compact');
+  assert.equal(h.$('input[name="jeTagLayout"]:checked').value, 'bands', 'the Layout tab\'s tiles follow');
+  assert.equal(h.$('input[name="jeTagDensity"]:checked').value, 'compact');
   assert.deepEqual(h.order().slice(0, 3), ['genre', 'quality', 'status']);
   assert.equal(h.row('genre').querySelector('.je-tge-cap').textContent, '5');
   assert.equal(h.toasts.at(-1), 'toast_tag_layout_reset');
@@ -198,8 +205,8 @@ test('Reset refreshes Otherwise to the admin layout and density with one save an
   await h.settle();
   const summary = () => h.$('[data-je-row="otherwise"] .je-tag-looks-outcome').textContent;
   assert.match(summary(), /tag_looks_layout_minimal.*tag_density_full/);
-  await h.click(h.$('.je-tag-looks-add'));
   const form = h.$('.je-tag-looks-form');
+  assert.ok(form, 'the add form is always open');
   const input = form.querySelector('select');
   input.focus();
   await h.click(h.$('#jeTgeReset'));
@@ -237,14 +244,14 @@ test('reset leaves genre tags alone when the group is off', async t => {
 test('the preview re-renders through the layout controller on every editor change', async t => {
   const h = setup(t, { stored: { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true, ratingTagsEnabled: true, statusTagsEnabled: true, genreTagsEnabled: false } });
   const host = h.preview();
-  assert.ok(host, 'the preview card is built when the editor shows');
-  assert.equal(h.$('.je-tge-card').closest('.card'), null, 'not a .card: the pipeline and hover rules leave it alone');
-  assert.equal(h.document.querySelector('.je-tge-card .cardImageContainer'), null);
+  assert.ok(host, 'the preview cards are built with the hub');
+  assert.equal(h.card().closest('.card'), null, 'not a .card: the pipeline and hover rules leave it alone');
+  assert.equal(h.document.querySelector('.je-mtp-card .cardImageContainer'), null);
   assert.equal(host.dataset.jeLayout, 'corners');
-  assert.deepEqual(Array.from(host.querySelectorAll('.quality-overlay-label')).map(c => c.textContent), ['4K', 'Dolby Vision', 'HEVC', 'ATMOS 7.1']);
+  assert.deepEqual(Array.from(host.querySelectorAll('.quality-overlay-label')).map(c => c.textContent), ['4K', 'Dolby Vision', 'IMAX', 'HEVC', 'ATMOS 7.1']);
   assert.equal(host.querySelector('.genre-overlay-container'), null, 'disabled groups are not sampled');
 
-  await h.change(h.$('#tagLayoutSelect'), 'summary');
+  await h.layout('summary');
   assert.equal(host.dataset.jeLayout, 'summary');
   assert.ok(host.querySelector('.je-tag-pill'), 'summary draws its pill');
 
@@ -252,16 +259,16 @@ test('the preview re-renders through the layout controller on every editor chang
   assert.equal(host.querySelector('.je-tag-pill [data-je-group="quality"]'), null, 'quality left the pill');
   assert.ok(host.querySelector('.je-tag-slot[data-je-slot="hover"] .quality-overlay-container'));
 
-  await h.click(h.$('.je-tge-view [data-view="hover"]'));
-  assert.ok(h.$('.je-tge-card').classList.contains('je-tag-reveal'));
-  assert.equal(h.$('.je-tge-view [data-view="hover"]').getAttribute('aria-pressed'), 'true');
-  await h.click(h.$('.je-tge-view [data-view="rest"]'));
-  assert.equal(h.$('.je-tge-card').classList.contains('je-tag-reveal'), false);
+  await h.click(h.$('.je-mtp-view [data-view="hover"]'));
+  assert.ok(h.card().classList.contains('je-tag-reveal'));
+  assert.equal(h.$('.je-mtp-view [data-view="hover"]').getAttribute('aria-pressed'), 'true');
+  await h.click(h.$('.je-mtp-view [data-view="rest"]'));
+  assert.equal(h.card().classList.contains('je-tag-reveal'), false);
 
   // A quality category toggle (ui-panel-settings.js) and the enable toggle reach the preview too.
   await h.change(h.$('#showVideoCodecTagToggle'), false);
   // The hover reveal always uses compact labels, whatever the density setting.
-  assert.deepEqual(Array.from(host.querySelectorAll('.je-tag-slot[data-je-slot="hover"] .quality-overlay-label')).map(c => c.textContent), ['4K', 'DV', 'ATMOS']);
+  assert.deepEqual(Array.from(host.querySelectorAll('.je-tag-slot[data-je-slot="hover"] .quality-overlay-label')).map(c => c.textContent), ['4K', 'DV', 'IMAX', 'ATMOS']);
   await h.change(h.$('#qualityTagsToggle'), false);
   assert.equal(host.querySelector('.quality-overlay-container'), null);
   await h.change(h.$('#genreTagsToggle'), true);
@@ -281,7 +288,7 @@ test('expanding a row is a real button with aria-expanded; every editor control 
   assert.equal(expand.getAttribute('aria-controls'), body.id);
   await h.click(expand);
   assert.equal(body.hidden, true);
-  for (const el of h.document.querySelectorAll('.je-tge-pill, .je-tge-step, .je-tge-move, .je-tge-view button, #jeTgeReset')) {
+  for (const el of h.document.querySelectorAll('.je-tge-pill, .je-tge-step, .je-tge-move, .je-tge-badges, .je-mtp-view button, #jeTgeReset')) {
     assert.equal(el.tagName, 'BUTTON');
     assert.equal(el.getAttribute('type'), 'button');
   }
@@ -289,10 +296,11 @@ test('expanding a row is a real button with aria-expanded; every editor control 
 });
 
 
-test('status badge families survive in the group editor with defaults and personal overrides', async t => {
+test('status badge families live on the Status badges tab with defaults and personal overrides', async t => {
   const h = setup(t, { stored: { statusTagsEnabled: true } });
   h.JE.reinitializeStatusTags = () => h.calls.push('status');
-  assert.equal(h.row('status').querySelectorAll('#statusTagsSubToggles input').length, 6);
+  assert.equal(h.$('#jeMthPanel-badges').querySelectorAll('#statusTagsSubToggles input').length, 6);
+  assert.equal(h.row('status').querySelector('#statusTagsSubToggles'), null, 'not duplicated in the Status row');
   for (const [name, expected] of [['Schedule', true], ['Milestones', true], ['SeriesStatus', false]]) {
     const input = h.$(`#statusTags${name}Toggle`);
     assert.equal(input.checked, expected, name);

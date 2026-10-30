@@ -18,7 +18,7 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
   const writes = [], toasts = [], requests = [], reinit = [];
   const io = { saveStatus: 200, user: 'user-a', epoch: 0 };
   const h = createHarness({
-    html: '<select id="tagLayoutSelect"><option value="corners">corners</option><option value="bands">bands</option></select><div id="jeTagLooksMount"></div>' + html,
+    html: '<div id="jeTagLayoutChoice"><input type="radio" name="jeTagLayout" value="corners" checked><input type="radio" name="jeTagLayout" value="bands"></div><div id="jeTagLooksMount"></div>' + html,
     JE: {
       currentSettings: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', qualityTagsEnabled: true, ...settings },
       pluginConfig: {},
@@ -56,11 +56,17 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
   h.JE.reinitializeTagLayout = () => { reinit.push(1); return real(); };
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
   const mount = () => h.document.getElementById('jeTagLooksMount');
-  const rows = () => Array.from(mount().querySelectorAll('.je-tag-looks-list > li'), li => li.dataset.jeRow === 'rule' ? li.querySelector('.je-tag-looks-text').textContent : li.dataset.jeRow);
+  const rows = () => Array.from(mount().querySelectorAll('.je-tag-looks-list > li'), li => li.querySelector('.je-tag-looks-text').textContent);
   const click = el => el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
   const buttonIn = (root, label) => Array.from(root.querySelectorAll('button')).find(b => b.textContent === label);
   return { ...h, writes, toasts, requests, reinit, settle, mount, rows, click, buttonIn, io,
-    async open() { h.JE.internals.enhancedUi.wireTagLooks({ resetAutoCloseTimer() {} }); await settle(); await settle(); } };
+    form: () => mount().querySelector('form'),
+    /** Wire the section; `show` also tells it its tab is on screen (the hub does on the Rules & locks tab). */
+    async open({ show = true } = {}) {
+      h.JE.internals.enhancedUi.wireTagLooks({ resetAutoCloseTimer() {} });
+      if (show) h.JE.internals.enhancedUi.tagLooksPanel.show();
+      await settle(); await settle();
+    } };
 }
 
 const kidsRule = { id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS }, { field: 'type', value: 'Episode' }], layout: 'caption', density: 'compact', colourPreset: null, slots: null };
@@ -85,30 +91,36 @@ test('closing or rewiring the rules panel removes its layout subscription', asyn
   assert.equal(outcome.textContent, before, 'closed panels receive no further layout updates');
 });
 
-test('the list shows locked items first, the rules in order with their outcome, then the default', async t => {
+test('the rules list in order with their outcome, the default after them and the locked items with their count', async t => {
   const h = setup(t, { settings: { tagLookRules: [kidsRule, { ...kidsRule, id: 'off', enabled: false, when: [{ field: 'genre', value: 'Drama' }], layout: 'bands', density: 'full' }],
     tagLayoutLocks: { [MOVIE]: { layout: 'minimal', density: 'full', lockedAt: 1 } } } });
   await h.open();
   assert.deepEqual(h.rows(), [
-    'locked',
-    'tag_looks_when:tag_looks_cond_library:Kids' + 'tag_looks_and' + 'tag_looks_cond_type:tag_looks_type_episode→ tag_looks_outcome:tag_looks_layout_caption|panel_settings_ui_tag_density_compact',
-    'tag_looks_when:tag_looks_cond_genre:Drama→ tag_looks_outcome:tag_looks_layout_bands|panel_settings_ui_tag_density_full',
-    'otherwise',
+    '1. tag_looks_when:tag_looks_cond_library:Kids' + 'tag_looks_and' + 'tag_looks_cond_type:tag_looks_type_episode → tag_looks_outcome:tag_looks_layout_caption|panel_settings_ui_tag_density_compact',
+    '2. tag_looks_when:tag_looks_cond_genre:Drama → tag_looks_outcome:tag_looks_layout_bands|panel_settings_ui_tag_density_full',
   ]);
-  assert.match(h.mount().querySelector('[data-je-row="locked"]').textContent, /tag_looks_locked_count:1/);
+  assert.equal(h.mount().querySelector('.je-tag-looks-main [data-je-row="locked"] .je-tag-looks-count').textContent, '1');
+  assert.ok(h.mount().querySelector('[data-je-row="otherwise"]').compareDocumentPosition(h.mount().querySelector('[data-je-row="locked"]')) & h.window.Node.DOCUMENT_POSITION_FOLLOWING, 'the locked items follow the rules and the default');
   const off = h.mount().querySelector('[data-je-rule-id="off"]');
   assert.equal(off.dataset.off, '1');
   assert.equal(off.querySelector('.je-tag-looks-pill').getAttribute('aria-pressed'), 'false');
   assert.match(h.mount().querySelector('[data-je-row="otherwise"]').textContent, /tag_looks_layout_corners/);
+  assert.ok(h.form(), 'the add form is open next to the list');
+  assert.equal(h.form().closest('.je-tag-looks-side')?.parentElement, h.mount().querySelector('.je-tag-looks-cols'), 'in its own column');
 });
 
 test('reorder, switch off and delete save the rules and re-present the cards', async t => {
   const second = { ...kidsRule, id: 'second', when: [{ field: 'type', value: 'Movie' }] };
   const h = setup(t, { settings: { tagLookRules: [kidsRule, second] } });
   await h.open();
-  h.click(h.mount().querySelector('[data-je-rule-id="second"] [aria-label^="tag_looks_move_up"]'));
+  const up = h.mount().querySelector('[data-je-rule-id="second"] [aria-label^="tag_looks_move_up"]');
+  const row = up.closest('li');
+  up.focus();
+  h.click(up);
   await h.settle();
   assert.deepEqual(h.writes.at(-1).tagLookRules.map(r => r.id), ['second', 'kids']);
+  assert.equal(h.mount().querySelector('.je-tag-looks-list > li'), row, 'the same row node moved to the top');
+  assert.equal(h.document.activeElement, row.querySelector('[aria-label^="tag_looks_move_down"]'), 'at the top its up button is off: focus moves to its down button');
   h.click(h.mount().querySelector('[data-je-rule-id="kids"] .je-tag-looks-pill'));
   await h.settle();
   assert.equal(h.writes.at(-1).tagLookRules.find(r => r.id === 'kids').enabled, false);
@@ -122,27 +134,34 @@ test('reorder, switch off and delete save the rules and re-present the cards', a
 test('the add-rule form builds conditions from libraries, types and genres, validates, and saves', async t => {
   const h = setup(t, { settings: { tagLookRules: [] } });
   await h.open();
-  h.click(h.buttonIn(h.mount(), 'tag_looks_add_rule'));
-  await h.settle();
-  const form = h.mount().querySelector('form');
-  assert.ok(form);
-  assert.equal(h.document.activeElement, form.querySelector('[data-je-cond-field]'), 'focus moves into the form');
+  const form = h.form();
+  assert.ok(form, 'always open: no Add rule button to press first');
+  assert.equal(form.querySelector('[data-je-rule-layout]').value, 'caption', 'new rules start as Caption');
+  assert.equal(form.querySelector('[data-je-rule-density]').value, 'compact', 'and Compact');
   // Library is the first condition: its options come from /UserViews.
   const libSelect = form.querySelector('[data-je-cond-value]');
   assert.deepEqual(Array.from(libSelect.options, o => o.textContent), ['tag_looks_choose', 'Kids', 'Movies']);
   for (const control of form.querySelectorAll('select, input')) {
     assert.ok(form.querySelector(`label[for="${control.id}"]`) || control.closest('label'), `${control.outerHTML.slice(0, 40)} is labelled`);
   }
-  // Saving with an empty value is refused with a message.
+  assert.equal(form.querySelector(`label[for="${libSelect.id}"]`).textContent, 'tag_looks_condition_value:1');
+  // Saving with an empty value is refused: an alert, the value marked invalid and focused.
   form.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
-  assert.equal(form.querySelector('[role="alert"]').textContent, 'tag_looks_error_value');
+  const alert = form.querySelector('[role="alert"]');
+  assert.equal(alert.textContent, 'tag_looks_error_value');
+  assert.equal(libSelect.getAttribute('aria-invalid'), 'true');
+  assert.equal(libSelect.getAttribute('aria-describedby'), alert.id);
+  assert.equal(h.document.activeElement, libSelect);
   assert.equal(h.writes.length, 0);
 
   libSelect.value = KIDS;
+  libSelect.dispatchEvent(new h.window.Event('change'));
+  assert.equal(libSelect.hasAttribute('aria-invalid'), false, 'cleared once a value is chosen');
   // + condition (genre: a select of /Genres), up to five rows.
   const add = h.buttonIn(form, 'tag_looks_add_condition');
   h.click(add);
   const field = form.querySelectorAll('[data-je-cond-field]')[1];
+  assert.equal(h.document.activeElement, field, 'focus moves to the new condition');
   field.value = 'genre';
   field.dispatchEvent(new h.window.Event('change'));
   const genre = form.querySelectorAll('[data-je-cond-value]')[1];
@@ -151,9 +170,10 @@ test('the add-rule form builds conditions from libraries, types and genres, vali
   for (let i = 0; i < 3; i++) h.click(add);
   assert.equal(form.querySelectorAll('[data-je-cond]').length, 5);
   assert.equal(add.disabled, true, 'at most five conditions');
+  assert.match(form.textContent, /tag_looks_condition_count:5\|5/);
   for (let i = 0; i < 3; i++) h.click(form.querySelectorAll('[data-je-cond-remove]')[4 - i]);
+  assert.equal(form.querySelectorAll('[data-je-cond-remove]')[1].getAttribute('aria-label'), 'tag_looks_remove_condition_named:2');
   form.querySelector('[data-je-rule-layout]').value = 'bands';
-  form.querySelector('[data-je-rule-density]').value = 'compact';
   form.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
   await h.settle();
   const saved = h.writes.at(-1).tagLookRules;
@@ -161,29 +181,77 @@ test('the add-rule form builds conditions from libraries, types and genres, vali
   assert.deepEqual(saved[0].when, [{ field: 'library', value: KIDS }, { field: 'genre', value: 'Animation' }]);
   assert.equal(saved[0].layout, 'bands');
   assert.equal(saved[0].density, 'compact');
-  assert.equal(h.mount().querySelector('form'), null, 'the form closes');
   assert.equal(h.toasts.at(-1), 'tag_looks_saved_toast');
+  const fresh = h.form();
+  assert.notEqual(fresh, form, 'a fresh add form takes its place');
+  assert.equal(fresh.querySelectorAll('[data-je-cond]').length, 1);
+  const newRow = h.mount().querySelector(`[data-je-rule-id="${saved[0].id}"]`);
+  assert.equal(h.document.activeElement, h.buttonIn(newRow, 'tag_looks_edit'), 'focus moves to the new rule');
 
-  // Editing reuses the form with the rule's values.
-  h.click(h.buttonIn(h.mount().querySelector('[data-je-row="rule"]'), 'tag_looks_edit'));
+  // Editing reuses the form with the rule's values; Cancel goes back to adding.
+  h.click(h.buttonIn(newRow, 'tag_looks_edit'));
   await h.settle();
-  const edit = h.mount().querySelector('form');
+  const edit = h.form();
   assert.equal(edit.querySelectorAll('[data-je-cond]').length, 2);
   assert.equal(edit.querySelector('[data-je-rule-layout]').value, 'bands');
-  edit.querySelector('[data-je-rule-layout]').value = 'minimal';
-  edit.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
+  assert.equal(h.document.activeElement, edit.querySelector('[data-je-cond-field]'));
+  h.click(h.buttonIn(edit, 'tag_looks_cancel'));
+  assert.equal(h.form().querySelectorAll('[data-je-cond]').length, 1, 'back to a new rule');
+  assert.equal(h.document.activeElement, h.buttonIn(newRow, 'tag_looks_edit'));
+  h.click(h.buttonIn(newRow, 'tag_looks_edit'));
+  const again = h.form();
+  again.querySelector('[data-je-rule-layout]').value = 'minimal';
+  again.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
   await h.settle();
   assert.equal(h.writes.at(-1).tagLookRules.length, 1);
   assert.equal(h.writes.at(-1).tagLookRules[0].layout, 'minimal');
   assert.equal(h.writes.at(-1).tagLookRules[0].id, saved[0].id);
 });
 
+test('editing a switched-off rule saves its edits and keeps it off', async t => {
+  const h = setup(t, { settings: { tagLookRules: [{ ...kidsRule, enabled: false }] } });
+  await h.open();
+  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="kids"]'), 'tag_looks_edit'));
+  const form = h.form();
+  form.querySelector('[data-je-rule-layout]').value = 'bands';
+  form.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
+  await h.settle();
+  const [rule] = h.writes.at(-1).tagLookRules;
+  assert.equal(rule.layout, 'bands', 'the edit is saved');
+  assert.equal(rule.enabled, false, 'the rule stays off');
+  assert.equal(h.mount().querySelector('[data-je-rule-id="kids"]').dataset.off, '1');
+});
+
+test('focus recovers after every rule change: moves to an end, deletes in the middle and of the last rule', async t => {
+  const rules = ['a', 'b', 'c'].map(id => ({ ...kidsRule, id, when: [{ field: 'genre', value: id }] }));
+  const h = setup(t, { settings: { tagLookRules: rules } });
+  await h.open();
+  const row = id => h.mount().querySelector(`[data-je-rule-id="${id}"]`);
+  // Moving the first rule down to the last place: focus stays on that rule.
+  const down = row('a').querySelector('[aria-label^="tag_looks_move_down"]');
+  down.focus();
+  h.click(down); h.click(down);
+  assert.deepEqual(h.writes.at(-1).tagLookRules.map(r => r.id), ['b', 'c', 'a']);
+  assert.equal(h.document.activeElement, row('a').querySelector('[aria-label^="tag_looks_move_up"]'), 'at the bottom: its up button');
+  // Deleting a middle rule: the next rule's Delete.
+  h.click(h.buttonIn(row('c'), 'tag_looks_delete'));
+  assert.equal(h.document.activeElement, h.buttonIn(row('a'), 'tag_looks_delete'));
+  // Deleting the last one left: the previous rule's, then the empty list.
+  h.click(h.buttonIn(row('a'), 'tag_looks_delete'));
+  assert.equal(h.document.activeElement, h.buttonIn(row('b'), 'tag_looks_delete'));
+  h.click(h.buttonIn(row('b'), 'tag_looks_delete'));
+  const empty = h.mount().querySelector('.je-tag-looks-empty');
+  assert.equal(h.document.activeElement, empty, 'a named empty state, never the page body');
+  assert.equal(empty.hidden, false);
+  assert.equal(empty.textContent, 'tag_looks_no_rules');
+  await h.settle();
+  assert.deepEqual(h.writes.at(-1).tagLookRules, []);
+});
+
 test('genre falls back to a text box when /Genres fails; age rating is a text box', async t => {
   const h = setup(t, { genresFail: true, settings: { tagLookRules: [] } });
   await h.open();
-  h.click(h.buttonIn(h.mount(), 'tag_looks_add_rule'));
-  await h.settle();
-  const form = h.mount().querySelector('form');
+  const form = h.form();
   const field = form.querySelector('[data-je-cond-field]');
   for (const name of ['genre', 'ageRating']) {
     field.value = name;
@@ -194,38 +262,51 @@ test('genre falls back to a text box when /Genres fails; age rating is a text bo
   }
 });
 
-test('the locked list loads titles lazily in batches of 50 and unlocks one or all', async t => {
+test('the locked list loads titles once its tab shows, in batches of 50, and unlocks one or all', async t => {
   const locks = {};
   for (let i = 0; i < 60; i++) locks[i.toString(16).padStart(32, i % 2 ? 'a' : 'f')] = { layout: 'bands', density: 'full', lockedAt: i };
   const h = setup(t, { settings: { tagLayoutLocks: locks } });
-  await h.open();
-  assert.equal(h.requests.filter(u => u.includes('/Items')).length, 0, 'no titles until the list is opened');
-  const toggle = h.buttonIn(h.mount(), 'tag_looks_show');
-  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
-  h.click(toggle);
+  await h.open({ show: false });
+  assert.equal(h.requests.filter(u => u.includes('/Items')).length, 0, 'no titles until the Rules & locks tab shows');
+  h.JE.internals.enhancedUi.tagLooksPanel.show();
   await h.settle(); await h.settle();
   const itemRequests = h.requests.filter(u => u.includes('/Items'));
   assert.equal(itemRequests.length, 2);
   assert.deepEqual(itemRequests.map(u => new URL(u).searchParams.get('Ids').split(',').length), [50, 10]);
-  const items = Array.from(h.mount().querySelectorAll('.je-tag-looks-locked-list li'));
-  assert.equal(items.length, 60);
-  assert.match(items[0].textContent, /^Title 3b/, 'newest first, titled');
-  assert.ok(items.some(li => /tag_looks_unknown_item/.test(li.textContent)), 'an id the server did not return');
-  assert.match(items[0].textContent, /tag_looks_outcome:tag_looks_layout_bands/);
+  const items = () => Array.from(h.mount().querySelectorAll('.je-tag-looks-locked-list li'));
+  assert.equal(items().length, 60);
+  assert.match(items()[0].textContent, /^Title 3b/, 'newest first, titled');
+  assert.ok(items().some(li => /tag_looks_unknown_item/.test(li.textContent)), 'an id the server did not return');
+  assert.match(items()[0].textContent, /tag_looks_outcome:tag_looks_layout_bands/);
 
-  h.click(items[0].querySelector('button'));
+  // A narrow pane folds the list into "Locked items · N": Unlock all is inside what unfolds.
+  const toggle = h.mount().querySelector('.je-tag-looks-locks-toggle');
+  const body = h.mount().querySelector('#jeTagLooksLocksBody');
+  assert.equal(toggle.getAttribute('aria-controls'), body.id);
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(toggle.getAttribute('aria-label'), 'tag_looks_locks_show:60');
+  h.click(toggle);
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  assert.ok(h.mount().querySelector('[data-je-row="locked"]').classList.contains('je-open'));
+  const all = h.buttonIn(h.mount(), 'tag_looks_unlock_all');
+  assert.ok(body.contains(all), 'bulk unlock lives in the unfolded list, reachable on a phone');
+
+  const second = items()[1].querySelector('button');
+  items()[0].querySelector('button').focus();
+  h.click(items()[0].querySelector('button'));
   await h.settle();
   assert.equal(Object.keys(h.writes.at(-1).tagLayoutLocks).length, 59);
   assert.equal(h.toasts.at(-1), 'tag_look_unlocked_toast');
+  assert.equal(h.document.activeElement?.dataset.jeFocusKey, second.dataset.jeFocusKey, 'focus moves to the next item\'s Unlock');
 
-  const all = h.buttonIn(h.mount(), 'tag_looks_unlock_all');
   h.click(all);
   assert.equal(all.textContent, 'tag_looks_unlock_all_confirm', 'asks for a second click');
   assert.equal(h.writes.length, 1);
   h.click(all);
   await h.settle();
   assert.equal(h.writes.at(-1).tagLayoutLocks, null);
-  assert.match(h.mount().querySelector('[data-je-row="locked"]').textContent, /tag_looks_locked_count:0/);
+  assert.equal(h.mount().querySelector('[data-je-row="locked"] .je-tag-looks-count').textContent, '0');
+  assert.equal(h.document.activeElement, h.mount().querySelector('.je-tag-looks-locks .je-tag-looks-empty'), 'focus goes to the empty list');
 });
 
 test('names from the server are text, never markup', async t => {
@@ -345,12 +426,12 @@ test('a save that fails with HTTP 500 resolves false, restores the locks and rul
 
   // The panel: deleting the rule shows at once, then comes back with a toast.
   await h.open();
-  assert.equal(h.rows().length, 3);
+  assert.equal(h.rows().length, 1);
   h.click(h.buttonIn(h.mount(), 'tag_looks_delete'));
-  assert.equal(h.rows().length, 2, 'optimistic');
+  assert.equal(h.rows().length, 0, 'optimistic');
   await h.settle(); await h.settle();
   assert.equal(h.toasts.at(-1), 'tag_looks_save_failed_toast');
-  assert.equal(h.rows().length, 3, 'the rule is back');
+  assert.equal(h.rows().length, 1, 'the rule is back');
   assert.equal(h.writes.length, 0, 'nothing reached the server');
 
   // Once the server answers again the same change saves.
@@ -358,7 +439,7 @@ test('a save that fails with HTTP 500 resolves false, restores the locks and rul
   h.click(h.buttonIn(h.mount(), 'tag_looks_delete'));
   await h.settle(); await h.settle();
   assert.deepEqual(h.writes.at(-1).TagLookRules ?? h.writes.at(-1).tagLookRules, []);
-  assert.equal(h.rows().length, 2);
+  assert.equal(h.rows().length, 0);
 });
 
 for (const switchedBack of [false, true]) test(`a detail lock drops facts and saves nothing after a session change (back=${switchedBack})`, async t => {

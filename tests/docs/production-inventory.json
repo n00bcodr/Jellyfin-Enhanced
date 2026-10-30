@@ -999,6 +999,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-media-tags.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js",
       "category": "js"
     },
@@ -1012,6 +1016,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-looks.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-preview.js",
       "category": "js"
     },
     {
@@ -8441,7 +8449,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 373,
+    "files": 375,
     "routes": 182,
     "configuration_properties": 599,
     "storage_references": 72,
