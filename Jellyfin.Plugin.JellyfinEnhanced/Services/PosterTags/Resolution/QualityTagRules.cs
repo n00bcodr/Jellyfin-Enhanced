@@ -50,7 +50,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private const string WordEnd = "(?![A-Za-z0-9_])";
         private const RegexOptions Options = RegexOptions.CultureInvariant | RegexOptions.Compiled;
 
-        private static readonly Regex ResolutionRegex = new(WordStart + "(8k|4320p|4k|2160p|1440p|1080p|720p|576p|480p|360p|404p|384p|520p)" + WordEnd, Options);
+        /// <summary>Lowercase resolution tokens recognised in stream display titles (also the bare-WEB filename vocabulary).</summary>
+        internal static readonly string[] ResolutionTokens = { "8k", "4320p", "4k", "2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "404p", "384p", "520p" };
+
+        private static readonly Regex ResolutionRegex = new(WordStart + "(" + string.Join("|", ResolutionTokens) + ")" + WordEnd, Options);
         private static readonly Regex ImaxRegex = new(WordStart + "imax(?:[ ._-]?enhanced)?" + WordEnd, Options);
         private static readonly Regex NonImaxRegex = new(WordStart + "non[ ._-]?imax" + WordEnd, Options);
         private static readonly Regex DolbyVisionRegex = new("dolby" + JsSpace + "*vision|dv", Options);
@@ -77,6 +80,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             ("vp8", "VP8"), ("xvid", "XVID"), ("divx", "DIVX"), ("wmv", "WMV"), ("vc1", "WMV"), ("mpeg2", "MPEG2"),
             ("mpeg4", "MPEG4"), ("mjpeg", "MJPEG"), ("theora", "THEORA"),
         };
+
+        /// <summary>Lowercase video codec needles, in detection order (also the bare-WEB filename vocabulary).</summary>
+        internal static readonly string[] CodecTokens = Array.ConvertAll(CodecNeedles, n => n.Needle);
 
         /// <summary>A quality category, as the web's CATEGORIES table.</summary>
         private sealed record Category(string Key, string[] Items, int DefaultOrder);

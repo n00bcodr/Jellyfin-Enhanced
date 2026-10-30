@@ -7,6 +7,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
@@ -39,6 +40,23 @@ public class SourceEditionTagsTests
     public void NamingTable(string path, string? source, string? edition)
     {
         Assert.Equal(new MediaNamingTags(source, edition), MediaNamingTags.FromPath(path));
+    }
+
+    public static IEnumerable<object[]> QualityTokens() => QualityTagRules.ResolutionTokens
+        .Concat(QualityTagRules.CodecTokens).Distinct().Select(token => new object[] { token });
+
+    [Theory]
+    [MemberData(nameof(QualityTokens))]
+    public void BareWebAcceptsEveryQualityRuleTokenWithTokenBoundaries(string token)
+    {
+        foreach (var spelling in new[] { token, token.ToUpperInvariant() })
+        {
+            Assert.Equal("WEB", MediaNamingTags.FromPath($"Movie.2020.WEB.{spelling}.mkv").Source);
+            Assert.Equal("WEB", MediaNamingTags.FromPath($"Movie 2020 [WEB] [{spelling}].mkv").Source);
+            Assert.Null(MediaNamingTags.FromPath($"Movie.2020.WEB.{spelling}ish.mkv").Source);
+            Assert.Null(MediaNamingTags.FromPath($"Movie.2020.WEBSITE.{spelling}.mkv").Source);
+            Assert.Null(MediaNamingTags.FromPath($"Webb.{spelling}.mkv").Source);
+        }
     }
 
     private static MediaSourceInfo Version(string path, int height) => new()
