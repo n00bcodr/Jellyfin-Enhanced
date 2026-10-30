@@ -1030,5 +1030,17 @@
     "catchup_top_watched": "Most watched",
     "catchup_top_dismissed": "Most dismissed",
     "catchup_top_watchlisted": "Most watchlisted",
-    "catchup_failed": "Failed: {error}"
+    "catchup_failed": "Failed: {error}",
+    "language_tags_audio": "Audio",
+    "language_tags_subtitles": "Subtitles",
+    "language_tags_style": "Style",
+    "language_tags_flags": "Flags",
+    "language_tags_codes": "Codes",
+    "language_tags_count_badge": "Audio count badge",
+    "language_tags_badge_off": "Off",
+    "language_tags_badge_only": "Badge only",
+    "language_tags_badge_both": "Badge and flags",
+    "language_tags_dual": "Dual",
+    "language_tags_multi": "Multi",
+    "language_tags_count_tooltip": "{count} audio languages"
 }

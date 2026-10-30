@@ -239,6 +239,10 @@
             mergedSettings.removeContinueWatchingEnabled = true;
         }
 
+        // Language presentation enums are normalized on both load and server save.
+        mergedSettings.languageTagsStyle = String(mergedSettings.languageTagsStyle).trim().toLowerCase() === 'codes' ? 'codes' : 'flags';
+        const languageBadge = String(mergedSettings.languageTagsCountBadge).trim().toLowerCase();
+        mergedSettings.languageTagsCountBadge = ['only', 'both'].includes(languageBadge) ? languageBadge : 'off';
         return mergedSettings;
     };
 

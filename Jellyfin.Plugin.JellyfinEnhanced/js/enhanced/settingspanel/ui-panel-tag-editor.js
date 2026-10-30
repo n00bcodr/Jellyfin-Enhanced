@@ -222,6 +222,20 @@
         </div>`;
     }
 
+    /** The language group's track includes and presentation controls. */
+    function languageIncludeHtml() {
+        const conf = JE.core.languageTags?.readSettings() || {
+            audio: effectiveBool('languageTagsShowAudio', 'LanguageTagsShowAudio'),
+            subtitles: effectiveBool('languageTagsShowSubtitles', 'LanguageTagsShowSubtitles', false),
+            style: 'flags', badge: 'off',
+        };
+        const select = (key, label, current, values) => `<label class="je-tge-extra"><span class="je-tge-label">${escapeHtml(JE.t(label))}</span>
+            <select data-language-key="${key}" style="background:#222;color:#fff;padding:6px;border-radius:6px;">${values.map(([value, text]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(JE.t(text))}</option>`).join('')}</select></label>`;
+        return `<div class="je-tge-includes">${[['Audio', conf.audio], ['Subtitles', conf.subtitles]].map(([kind, on]) => `<label class="je-tge-toggle-pill"><input type="checkbox" data-language-key="languageTagsShow${kind}" ${on ? 'checked' : ''}><span>${escapeHtml(JE.t('language_tags_' + kind.toLowerCase()))}</span></label>`).join('')}</div>
+            ${select('languageTagsStyle', 'language_tags_style', conf.style, [['flags', 'language_tags_flags'], ['codes', 'language_tags_codes']])}
+            ${select('languageTagsCountBadge', 'language_tags_count_badge', conf.badge, [['off', 'language_tags_badge_off'], ['only', 'language_tags_badge_only'], ['both', 'language_tags_badge_both']])}`;
+    }
+
     /**
      * Group-specific settings that existed before the editor (sound
      * language, rating scope), kept with their ids. The status badges are
@@ -286,6 +300,7 @@
         let include;
         if (group === 'quality') include = qualityIncludeHtml();
         else if (group === 'rating') include = ratingIncludeHtml();
+        else if (group === 'language') include = languageIncludeHtml();
         else if (group === 'status') include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_media_tags_badges_include'))}</div>`;
         else include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_nothing_to_include'))}</div>`;
         // The Status row opens the hub's Status badges tab (its include list).
@@ -646,6 +661,15 @@
 
         root.addEventListener('change', (e) => {
             const target = /** @type {HTMLInputElement} */ (e.target);
+            const languageKey = target.dataset?.languageKey;
+            if (languageKey) {
+                JE.currentSettings[languageKey] = target.type === 'checkbox' ? target.checked : target.value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                if (JE.currentSettings.languageTagsEnabled) JE.reinitializeLanguageTags?.();
+                document.dispatchEvent(new CustomEvent('je:tag-layout-changed'));
+                touch();
+                return;
+            }
             const includeKey = target.dataset?.includeKey;
             if (includeKey) {
                 JE.currentSettings[includeKey] = target.checked;
