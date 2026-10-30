@@ -6603,20 +6603,106 @@
             }
 
             /**
-             * Draws a synthetic card with chips in the default corners.
+             * The editor's effective colours in the web model's shape (GET tag-styles), for the
+             * shared stylesheet generator.
+             * @returns {Object}
+             */
+            function webModel() {
+                const web = (c) => ({ background: c.background, border: c.border, color: c.text });
+                const map = (g) => {
+                    const out = {};
+                    labelsOf(g).forEach((l) => { out[l.key] = web(effective(g, l.key)); });
+                    return out;
+                };
+                return {
+                    quality: map('quality'),
+                    age: labelsOf('ageRating').map((l) => Object.assign(
+                        { ratings: ((cat.age.find((a) => a.id === l.key) || {}).ratings || []).slice() },
+                        web(effective('ageRating', l.key)))),
+                    rating: map('rating'),
+                    genre: web(effective('genre', 'genre')),
+                    status: map('status'),
+                    language: { border: effective('language', 'flag').border }
+                };
+            }
+
+            /**
+             * A chip as the tag modules draw it (their element, classes and attributes), plus the
+             * editor's look classes. Its colours come from the preview stylesheet, or with
+             * `inline` (no generator on this page) from inline styles.
+             * @param {string} g
+             * @param {{key: string, name: string}} label
+             * @param {boolean} inline
+             * @returns {HTMLElement}
+             */
+            function productionChip(g, label, inline) {
+                let n;
+                if (g === 'quality') {
+                    n = el('div', 'quality-overlay-label je-ts-chip je-ts-q', label.name);
+                    n.dataset.quality = label.key;
+                } else if (g === 'ageRating') {
+                    n = el('div', 'age-rating-tag je-ts-chip je-ts-age', label.name);
+                    n.setAttribute('rating', label.name);
+                } else if (g === 'rating') {
+                    const [icon, text] = RATING_SAMPLES[label.key] || ['star', '8.1'];
+                    const kind = { community: 'rating-tag-tmdb', critic: 'rating-tag-critic', userReview: 'rating-tag-userreview je-userreview-tag' }[label.key] || 'rating-tag-tmdb';
+                    n = el('div', 'rating-tag ' + kind + ' je-ts-chip je-ts-rate');
+                    if (label.key === 'community') n.appendChild(el('i', 'material-icons rating-star-icon je-ts-rate-icon', icon));
+                    else if (label.key === 'userReview') {
+                        // The glyph sits inside: the review module's own icon rules set a font this page may not have.
+                        const wrap = el('span', 'je-userreview-icon je-ts-rate-icon');
+                        wrap.appendChild(el('i', 'material-icons je-ts-rate-icon', icon));
+                        n.appendChild(wrap);
+                    }
+                    else n.appendChild(el('i', 'rating-tomato-icon fresh je-ts-tomato'));
+                    n.appendChild(el('span', 'rating-text', text));
+                } else if (g === 'genre') {
+                    n = el('div', 'genre-tag je-ts-chip je-ts-genre');
+                    n.appendChild(el('i', 'material-icons', 'theaters'));
+                } else if (g === 'status') {
+                    n = el('div', 'status-tag status-tag--' + label.key + ' je-ts-chip je-ts-status');
+                    n.dataset.jeStatus = label.key;
+                    if (label.key === 'trending') n.append(el('span', 'status-tag-rank', '#3'), ' Today');
+                    else n.textContent = STATUS_SAMPLES[label.key] || label.name;
+                } else {
+                    n = el('img', 'language-flag je-ts-chip je-ts-flag');
+                    n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');
+                    n.alt = '';
+                    n.dataset.lang = 'gb';
+                }
+                return inline ? paint(n, g, effective(g, label.key)) : n;
+            }
+
+            // The container class each group's chips sit in on a poster.
+            const CONTAINERS = {
+                quality: 'quality-overlay-container', ageRating: 'age-rating-overlay-container', rating: 'rating-overlay-container',
+                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container'
+            };
+
+            /**
+             * Draws a synthetic card with chips in the default corners, each group in its
+             * production container.
              * @param {string} cls
              * @param {string} title
              * @param {Object<string, Array<[string, string]>>} corners - corner → [group, label] list.
+             * @param {boolean} inline - Paint inline (no stylesheet generator).
              * @returns {HTMLElement}
              */
-            function card(cls, title, corners) {
+            function card(cls, title, corners, inline) {
                 const n = el('div', 'je-ts-card ' + cls);
                 const art = el('div', 'je-ts-art');
                 Object.keys(corners).forEach((corner) => {
                     const stack = el('div', 'je-ts-corner je-ts-corner-' + corner);
+                    let box = null;
                     corners[corner].forEach(([g, l]) => {
                         const label = labelsOf(g).find((x) => x.key === l || x.name === l);
-                        if (label) stack.appendChild(chip(g, label, effective(g, label.key)));
+                        if (!label) return;
+                        if (!box || box.dataset.group !== g) {
+                            box = el('div', CONTAINERS[g] + ' je-ts-corner-group');
+                            box.dataset.group = g;
+                            stack.appendChild(box);
+                        }
+                        box.appendChild(productionChip(g, label, inline));
                     });
                     art.appendChild(stack);
                 });
@@ -6625,22 +6711,36 @@
                 return n;
             }
 
-            /** @returns {void} */
+            /**
+             * Redraws the preview: production-shaped chips styled by the web's own stylesheet
+             * generator (tag-styles.js), limited to the preview so unsaved colours never reach
+             * the rest of the page. A broken production selector breaks the preview too.
+             * @returns {void}
+             */
             function renderPreview() {
                 const box = document.querySelector('#tagStylePreview');
                 box.textContent = '';
+                const je = window.JellyfinEnhanced;
+                const generate = je && je.tagStyles && typeof je.tagStyles.buildCss === 'function' ? je.tagStyles.buildCss : null;
+                box.dataset.styles = generate ? 'generated' : 'inline';
+                if (generate) {
+                    const sheet = el('style');
+                    sheet.id = 'tagStylePreviewCss';
+                    sheet.textContent = generate(webModel(), '#tagStylePreview');
+                    box.appendChild(sheet);
+                }
                 box.appendChild(card('je-ts-card-movie', 'Movie', {
                     tl: [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']],
                     tr: [['status', 'trending'], ['genre', 'genre']],
                     bl: [['language', 'flag']],
                     br: [['rating', 'critic'], ['rating', 'community'], ['ageRating', 'PG-13']]
-                }));
+                }, !generate));
                 box.appendChild(card('je-ts-card-episode', 'Episode', {
                     tl: [['quality', '1080p'], ['quality', 'HEVC']],
                     tr: [['status', 'newEpisode']],
                     bl: [['language', 'flag']],
                     br: [['rating', 'userReview'], ['ageRating', 'R']]
-                }));
+                }, !generate));
             }
 
             /** @returns {void} */

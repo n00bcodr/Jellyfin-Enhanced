@@ -59,12 +59,15 @@
     /**
      * Builds the stylesheet from the server's web model (GET tag-styles).
      * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language}`.
+     * @param {string} [scope] - A trusted selector every rule is limited to (the
+     *   config page's live preview); omitted, the rules style the whole page.
      * @returns {string} The CSS, empty when nothing is styled.
      */
-    function buildCss(styles) {
+    function buildCss(styles, scope) {
         const rules = [];
+        const P = scope ? `${scope} ` : '';
         const quality = styles.quality || {};
-        const Q = '.quality-overlay-container.quality-overlay-container .quality-overlay-label';
+        const Q = `${P}.quality-overlay-container.quality-overlay-container .quality-overlay-label`;
         // The "*" rule covers labels outside the catalog; per-label rules win on specificity.
         if (quality['*']) push(rules, Q, `${decl('background', quality['*'].background)}${decl('color', quality['*'].color)}${decl('border-color', quality['*'].border)}`);
         for (const [label, c] of Object.entries(quality)) {
@@ -72,8 +75,8 @@
             push(rules, `${Q}[data-quality="${attr(label)}"]`, `${decl('background', c.background)}${decl('color', c.color)}${decl('border-color', c.border)}`);
         }
 
-        const A = '.age-rating-overlay-container .age-rating-tag';
-        if (styles.ageDefault) push(rules, `.age-rating-overlay-container${A}`, box(styles.ageDefault));
+        const A = `${P}.age-rating-overlay-container .age-rating-tag`;
+        if (styles.ageDefault) push(rules, `${P}.age-rating-overlay-container.age-rating-overlay-container .age-rating-tag`, box(styles.ageDefault));
         for (const board of Array.isArray(styles.age) ? styles.age : []) {
             const ratings = Array.isArray(board?.ratings) ? board.ratings : [];
             if (!ratings.length) continue;
@@ -81,7 +84,7 @@
         }
 
         const chips = styles.rating || {};
-        const R = '.rating-overlay-container .rating-tag';
+        const R = `${P}.rating-overlay-container .rating-tag`;
         if (chips.community) {
             push(rules, `${R}.rating-tag-tmdb`, decl('background', chips.community.background) + decl('color', chips.community.color) + ring(chips.community.border));
             push(rules, `${R}.rating-tag-tmdb .rating-star-icon`, decl('color', chips.community.color));
@@ -94,20 +97,20 @@
             push(rules, `${R}.rating-tag-userreview .je-userreview-icon`, decl('color', chips.userReview.color));
         }
 
-        if (styles.genre) push(rules, '.genre-overlay-container .genre-tag', box(styles.genre));
+        if (styles.genre) push(rules, `${P}.genre-overlay-container .genre-tag`, box(styles.genre));
 
         const status = styles.status || {};
         for (const key of STATUS_LABELS) {
             const c = status[key];
             if (!c) continue;
-            const S = `.status-overlay-container .status-tag[data-je-status="${key}"]`;
+            const S = `${P}.status-overlay-container .status-tag[data-je-status="${key}"]`;
             push(rules, S, box(c));
             // The rank ("#3") keeps its accent unless the text colour is styled.
             if (key === 'trending') push(rules, `${S} .status-tag-rank`, decl('color', c.color));
         }
 
         if (styles.language) {
-            push(rules, '.language-overlay-container .language-flag:not(.language-flag-partial)', ring(styles.language.border));
+            push(rules, `${P}.language-overlay-container .language-flag:not(.language-flag-partial)`, ring(styles.language.border));
         }
         return rules.join('\n');
     }

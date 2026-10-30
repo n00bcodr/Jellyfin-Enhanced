@@ -31,7 +31,7 @@ const catalog = {
     ageRating: [{ key: '9', name: 'PG-13' }, { key: '7', name: 'R' }],
     rating: [{ key: 'community', name: 'Community' }, { key: 'critic', name: 'Critic' }, { key: 'userReview', name: 'User review' }],
     genre: [{ key: 'genre', name: 'Genre' }],
-    status: [{ key: 'added', name: 'Just Added' }, { key: 'trending', name: 'Trending' }],
+    status: [{ key: 'added', name: 'Just Added' }, { key: 'newEpisode', name: 'New Episode' }, { key: 'trending', name: 'Trending' }],
     language: [{ key: 'flag', name: 'Flag' }]
   },
   palettes: {
@@ -67,11 +67,16 @@ function fakeCanvas(window) {
   };
 }
 
-/** The editor over its real markup, with the catalog answered locally. */
-async function setup(t, json = '', preset = 'default') {
+/**
+ * The editor over its real markup, with the catalog answered locally. The web
+ * client's tag-styles.js is loaded too (as on the dashboard), unless `generator`
+ * is false: the preview styles itself with its buildCss.
+ */
+async function setup(t, json = '', preset = 'default', { generator = true } = {}) {
   const h = createHarness({ html: markup, apiClient: { ajax: async () => catalog }, globals: { jeCdnUrl: path => `http://jellyfin.test/cdn/${path}` } });
   t.after(() => h.close());
   fakeCanvas(h.window);
+  if (generator) h.load('tags/tag-styles.js');
   h.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
   const editor = h.window.__editor;
   editor.load(json, preset);
@@ -170,7 +175,7 @@ test('presets apply at once, tiles preview their palette and overrides survive a
   assert.equal(hevc.style.background, 'rgb(30, 136, 229)');
   assert.equal(hevc.style.color, 'rgb(17, 17, 17)');
   assert.equal(hevc.style.borderColor, 'rgba(255, 255, 255, 0.349)');
-  assert.equal(h.$('.je-ts-card-movie .je-ts-corner-tl .je-ts-q').style.background, 'rgb(30, 136, 229)', 'the preview follows');
+  assert.equal(h.window.getComputedStyle(h.$('.je-ts-card-movie .je-ts-corner-tl .quality-overlay-label')).backgroundColor, 'rgb(30, 136, 229)', 'the preview follows');
 });
 
 test('opacity pills, Default buttons and the contrast badge follow the editing target', async t => {
@@ -248,4 +253,48 @@ test('an opacity-only edit makes the page dirty; redrawn pickers and a version 1
   await new Promise(resolve => setImmediate(resolve));
   assert.notEqual(late.window.__editor.serialize(), JSON.stringify({ quality: { '4K': { background: '#ff0000' } } }), 'migrated');
   assert.equal(lateSnapshot(), before);
+});
+
+test('the preview is styled by the web stylesheet generator over production-shaped chips', async t => {
+  const h = await setup(t);
+  const preview = h.$('#tagStylePreview');
+  assert.equal(preview.dataset.styles, 'generated');
+  // Production shapes: container classes, data-quality, rating subclasses, data-je-status, the flag wrapper.
+  assert.ok(h.$('#tagStylePreview .quality-overlay-container .quality-overlay-label[data-quality="4K"]'));
+  assert.ok(h.$('#tagStylePreview .rating-overlay-container .rating-tag.rating-tag-tmdb .rating-star-icon'));
+  assert.ok(h.$('#tagStylePreview .rating-overlay-container .rating-tag.rating-tag-critic'));
+  assert.ok(h.$('#tagStylePreview .rating-overlay-container .rating-tag.rating-tag-userreview .je-userreview-icon'));
+  assert.ok(h.$('#tagStylePreview .age-rating-overlay-container .age-rating-tag[rating="PG-13"]'));
+  assert.ok(h.$('#tagStylePreview .status-overlay-container .status-tag[data-je-status="trending"] .status-tag-rank'));
+  assert.ok(h.$('#tagStylePreview .genre-overlay-container .genre-tag'));
+  assert.ok(h.$('#tagStylePreview .language-overlay-container img.language-flag'));
+  assert.equal(h.$$('#tagStylePreview .je-ts-chip').filter(n => n.getAttribute('style')).length, 0, 'no inline colours');
+
+  // A group override: a rule in the preview's stylesheet, limited to the preview, and the chip's computed colour.
+  h.click('.je-ts-tab[data-group="status"]');
+  h.$('.je-ts-field-row[data-field="text"] .je-ts-swatch[title="#2e7d32"]').click();
+  h.$('.je-ts-field-row[data-field="background"] .je-ts-swatch[title="#111111"]').click();
+  const sheet = h.$('#tagStylePreviewCss');
+  assert.match(sheet.textContent, /#tagStylePreview \.status-overlay-container \.status-tag\[data-je-status="trending"\] \{ background-color: rgba\(17, 17, 17, 1\) !important;color: rgba\(46, 125, 50, 1\) !important;/);
+  assert.ok([...sheet.textContent.split('\n')].every(rule => rule.startsWith('#tagStylePreview ')), 'every rule is scoped to the preview');
+  const trending = h.$('#tagStylePreview .status-tag[data-je-status="trending"]');
+  assert.equal(h.window.getComputedStyle(trending).color, 'rgb(46, 125, 50)');
+  assert.equal(h.window.getComputedStyle(trending).backgroundColor, 'rgb(17, 17, 17)');
+  assert.equal(h.window.getComputedStyle(h.$('#tagStylePreview .status-tag-rank')).color, 'rgb(46, 125, 50)');
+  assert.equal(h.window.getComputedStyle(h.$('#tagStylePreview .status-tag[data-je-status="newEpisode"]')).color, 'rgb(46, 125, 50)');
+
+  // A label override reaches only its chip; nothing outside the preview is styled.
+  h.click('.je-ts-tab[data-group="rating"]');
+  h.click('.je-ts-target[data-label="community"]');
+  h.$('.je-ts-field-row[data-field="text"] .je-ts-swatch[title="#ff6b6b"]').click();
+  assert.equal(h.window.getComputedStyle(h.$('#tagStylePreview .rating-tag-tmdb .rating-star-icon')).color, 'rgb(255, 107, 107)');
+  h.document.body.insertAdjacentHTML('beforeend', '<div class="rating-overlay-container"><div class="rating-tag rating-tag-tmdb" id="outside">8.1</div></div>');
+  assert.notEqual(h.window.getComputedStyle(h.$('#outside')).color, 'rgb(255, 107, 107)', 'unsaved colours stay in the preview');
+});
+
+test('without the web client on the page the preview paints the chips inline', async t => {
+  const h = await setup(t, JSON.stringify({ v: 2, preset: 'default', groups: { quality: { background: 'rgba(30, 136, 229, 1)' } } }), 'default', { generator: false });
+  assert.equal(h.$('#tagStylePreview').dataset.styles, 'inline');
+  assert.equal(h.$('#tagStylePreviewCss'), null);
+  assert.equal(h.$('#tagStylePreview .quality-overlay-label[data-quality="4K"]').style.background, 'rgb(30, 136, 229)');
 });

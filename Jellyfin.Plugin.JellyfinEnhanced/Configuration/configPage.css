@@ -2395,6 +2395,9 @@ div#bazarrMappingsValidationResult {
 .je-ts-corner-tr { top: 6px; right: 6px; align-items: flex-end; }
 .je-ts-corner-bl { bottom: 6px; left: 6px; align-items: flex-start; }
 .je-ts-corner-br { bottom: 6px; right: 6px; align-items: flex-end; }
+/* A group's production container inside a preview corner: laid out by the corner, never by tag CSS. */
+.je-ts-preview .je-ts-corner-group { position: static !important; display: flex; flex-direction: column; align-items: inherit; gap: 4px; margin: 0; padding: 0; transform: none; max-width: none; max-height: none; overflow: visible; }
+.je-ts-preview .je-userreview-icon { display: inline-flex; font-family: inherit; }
 .je-ts-art .je-ts-chip { font-size: 11px; }
 .je-ts-art .je-ts-q { padding: 1px 7px; }
 .je-ts-art .je-ts-genre { width: 24px; height: 24px; }
