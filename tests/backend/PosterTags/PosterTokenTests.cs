@@ -34,6 +34,16 @@ public class PosterTokenTests : IDisposable
         Assert.True(Tokens().Verify(token, user, item, "settings", "renderer", out _));
     }
 
+    [Fact]
+    public void Posters_from_the_category_blind_tile_cache_are_invalidated()
+    {
+        var service = Tokens();
+        var old = service.Mint(user, item, "settings", "2.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
+        var current = service.Mint(user, item, "settings", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, "settings", PosterTagComposer.PixelVersion, out _));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
