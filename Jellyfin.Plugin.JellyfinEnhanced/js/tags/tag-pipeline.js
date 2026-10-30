@@ -991,14 +991,102 @@
         msPerCard = msPerCard * 0.5 + (elapsedMs / cards) * 0.5;
     }
 
+    // ── Tag look facts ─────────────────────────────────────────────────
+    //
+    // What item data said about an item that tag look rules and locks match
+    // on (type, series, library, genres, official rating; see factsFrom in
+    // core/tag-look.js), remembered from every /tag-data answer. A card
+    // rendered later from the renderers' local caches alone (no fetch) is
+    // matched on these, so library/genre/age rules apply to it and a season
+    // or episode inherits its series' lock. Kept in memory, and in
+    // localStorage alongside the renderers' caches when those persist (same
+    // server:user owner rule and admin clear). A card with nothing
+    // remembered is fetched when a rule or lock needs its data.
+
+    const LOOK_FACTS_KEY = 'JE_tagLookFacts';
+    const LOOK_FACTS_MAX = 3000;
+    const LOOK_FACT_FIELDS = ['Type', 'SeriesId', 'LibraryId', 'Genres', 'OfficialRating'];
+    /** @type {Map<string, object>|null} itemId → { Type, SeriesId, LibraryId, Genres, OfficialRating, at }; null = not loaded */
+    let lookFacts = null;
+    let lookFactsSaveRegistered = false;
+
+    /** @returns {boolean} The renderers' local caches persist, so the facts do too. */
+    function lookFactsPersist() {
+        return JE.pluginConfig?.TagCacheServerMode === false || JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
+    }
+
+    /** @returns {Map<string, object>} The remembered facts, loaded on first use. */
+    function lookFactsMap() {
+        if (lookFacts) return lookFacts;
+        lookFacts = new Map();
+        if (!lookFactsPersist()) return lookFacts;
+        try {
+            const ownerKey = `${LOOK_FACTS_KEY}:identity-owner`;
+            const userId = JE.session?.getUserId?.()
+                || (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || '';
+            const owner = `${JE.session?.getServerId?.() || ''}:${userId}`;
+            if (localStorage.getItem(ownerKey) !== owner) {
+                localStorage.removeItem(LOOK_FACTS_KEY);
+                localStorage.setItem(ownerKey, owner);
+                return lookFacts;
+            }
+            const stored = JSON.parse(localStorage.getItem(LOOK_FACTS_KEY) || '{}');
+            const clearedAt = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
+            if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+                for (const [id, facts] of Object.entries(stored)) {
+                    if (facts && typeof facts === 'object' && Number(facts.at) > clearedAt) lookFacts.set(id, facts);
+                }
+            }
+        } catch (err) {
+            console.warn(`${logPrefix} Ignoring unreadable tag look facts`, err);
+        }
+        return lookFacts;
+    }
+
+    /** Write the remembered facts (registered with JE._cacheManager). */
+    function saveLookFacts() {
+        if (!lookFacts || !lookFactsPersist()) return;
+        try {
+            localStorage.setItem(LOOK_FACTS_KEY, JSON.stringify(Object.fromEntries(lookFacts)));
+        } catch (err) {
+            console.warn(`${logPrefix} Failed to save tag look facts`, err);
+        }
+    }
+
+    /**
+     * Remember what an item's data says for tag looks (newest last; past
+     * LOOK_FACTS_MAX the oldest go).
+     * @param {string} itemId - Normalised item id.
+     * @param {object} item - /tag-data or /Items item.
+     */
+    function rememberLookFacts(itemId, item) {
+        if (!itemId || !item) return;
+        /** @type {Object<string, *>} */
+        const facts = { at: Date.now() };
+        for (const field of LOOK_FACT_FIELDS) {
+            if (item[field] !== undefined && item[field] !== null) facts[field] = item[field];
+        }
+        const map = lookFactsMap();
+        map.delete(itemId);
+        map.set(itemId, facts);
+        while (map.size > LOOK_FACTS_MAX) map.delete(map.keys().next().value);
+        if (!lookFactsPersist() || !JE._cacheManager) return;
+        if (!lookFactsSaveRegistered) {
+            JE._cacheManager.register(saveLookFacts);
+            lookFactsSaveRegistered = true;
+        }
+        JE._cacheManager.markDirty();
+    }
+
     /**
      * An item's data for tag look rules and locks, the way its cards are
-     * matched: its server tag-cache entry, else fetched from /tag-data.
+     * matched: its server tag-cache entry, else the remembered facts, else
+     * fetched from /tag-data (and remembered).
      * @param {string} itemId - Normalised item id.
      * @returns {Promise<object|null>} Null when the server has no such item.
      */
     async function itemLookFacts(itemId) {
-        const known = serverCache?.get(itemId);
+        const known = serverCache?.get(itemId) || lookFactsMap().get(itemId);
         if (known) return known;
         const userId = ApiClient.getCurrentUserId();
         const response = await ApiClient.ajax({
@@ -1008,7 +1096,9 @@
             contentType: 'application/json',
             dataType: 'json'
         });
-        return (response?.Items || []).find((i) => String(i?.Id ?? '').replace(/-/g, '').toLowerCase() === itemId) || null;
+        const item = (response?.Items || []).find((i) => String(i?.Id ?? '').replace(/-/g, '').toLowerCase() === itemId) || null;
+        if (item) rememberLookFacts(itemId, item);
+        return item;
     }
 
     /**
@@ -1024,12 +1114,13 @@
         const renderTarget = resolveRenderTarget(el);
         const layout = JE.core.tagLayout;
         // Tag look rules match on the item data (library, genres, age
-        // rating): the server entry. Without it, a card a rule or lock
-        // could restyle waits for the batch fetch below before showing its
-        // tags.
+        // rating, series): the server entry, else what an earlier fetch
+        // said. Without either, a card a rule or lock could restyle waits
+        // for the batch fetch below before showing its tags.
         const cardId = layout?.cardIdentity?.(renderTarget) ?? '';
+        const known = serverEntry || lookFactsMap().get(itemId);
         let awaiting = false;
-        if (serverEntry) layout?.setCardContext?.(renderTarget, serverEntry, itemId, cardId);
+        if (known) layout?.setCardContext?.(renderTarget, known, itemId, cardId);
         else awaiting = !!layout?.awaitCardContext?.(renderTarget, cardId, itemType);
         // Caption layout: reserve the strip below the image now, before the
         // tag data (possibly a batch fetch away) arrives.
@@ -1393,6 +1484,7 @@
                 const batchEntries = elMap.get(itemId);
                 if (!batchEntries || batchEntries.length === 0) return;
                 if (!MEDIA_TYPES.has(item.Type)) return;
+                rememberLookFacts(itemId, item);
 
                 let parentSeries = null;
                 let ratingParentSeries = null;
@@ -1484,6 +1576,7 @@
                         ? await JE.helpers.getItemCached(itemId, { userId })
                         : await ApiClient.getItem(userId, itemId);
                     if (!item || !MEDIA_TYPES.has(item.Type)) continue;
+                    rememberLookFacts(itemId, item);
 
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
@@ -1671,7 +1764,7 @@
          * @returns {object|null}
          */
         peekServerEntry(itemId) { return serverCache?.get(itemId) || null; },
-        /** The item data an item's cards are matched on by tag look rules (server entry, else fetched). */
+        /** The item data an item's cards are matched on by tag look rules (server entry, remembered, else fetched). */
         itemLookFacts,
         /**
          * Every server tag-cache entry in memory (empty without one).
@@ -1804,6 +1897,9 @@
     // outgoing user's is deleted when the incoming user's opens.
     JE.session?.onUserChange('tag-pipeline', () => {
         dropServerCache();
+        // The outgoing user's remembered tag look facts; the incoming user's
+        // stored copy loads (owner checked) on first use.
+        lookFacts = null;
         reviewRatings = null;
         reviewRatingsRequestedAt = 0;
         skipStoreThisSession = false;

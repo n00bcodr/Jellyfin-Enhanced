@@ -158,7 +158,7 @@ Each card gets its look from the first of these that applies:
     - Up to 50 rules, each with up to 5 conditions, and up to 500 locked items; past 500 the oldest lock is released. The server drops an invalid rule or lock (an unknown layout, a malformed id) on its own and keeps the rest.
     - A lock stores the layout, the density and where every group sits in that layout at that moment, so later changes to your arrangement do not move a locked item. Group order and per-group limits still follow your settings.
     - A rule uses your arrangement for its layout. Group order and limits are yours for every look.
-    - Rules on library, genre and age rating read the item's data: its entry in the server tag cache, or the batch lookup when the cache is off or does not have the item yet. Cards drawn from the browser's per-tag fallback cache are looked up too when a rule needs their data.
+    - Rules on library, genre and age rating, and a series lock on its seasons and episodes, read the item's data: its entry in the server tag cache, or the batch lookup when the cache is off or does not have the item yet. The browser remembers what the lookup said about each item (type, series, library, genres, age rating), so cards drawn from the per-tag fallback cache match every rule as well; an item it knows nothing about is looked up once.
     - While a card's data is on its way and a rule or lock could change its look, its chips wait for the data instead of appearing in your default look and then moving. Type-only rules never make a card wait. Space for the caption strip follows your default in the meantime, so when a rule gives a card Caption (or takes it away) the strip appears (or goes) once the data arrives, the first time this browser sees that item. A card whose data does not come shows its tags in your default look once the lookup ends, or after 8 seconds at most.
     - Locking from an item's page looks the item up first when its data is not loaded yet (the padlock shows an hourglass meanwhile), so the lock keeps the look its cards really have. If a rule or lock change cannot be saved, it is undone on screen and a message says so.
     - Mixing Caption with other looks on one row is allowed; caption cards are taller than their neighbours.
@@ -588,6 +588,8 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
     Saving with the server cache off forces **Persist Tag Fallback Cache in Browser Storage** on. The client enables localStorage fallback whenever server mode is off.
 
     Batch fallback fetches the items needed for the current page and keeps frequently used entries in memory. With server mode off, it also persists fallback entries in localStorage, using **Tags Cache Duration (days)**. This is separate from the full server-payload copy in IndexedDB. Browser storage failures leave tags able to fetch data again. Average-review lookups in fallback mode are batched separately.
+
+    For [rules and locked items](#rules-and-locked-items), the batch lookup's type, series, library, genres and age rating of each item are remembered beside those entries (`JE_tagLookFacts`, at most 3,000 items, newest kept). Like the per-tag entries, they belong to the signed-in user and are dropped when another account signs in or by **Clear All Client Caches**.
 
 ### Related routes
 

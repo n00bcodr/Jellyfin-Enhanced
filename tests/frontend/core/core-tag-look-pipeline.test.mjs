@@ -108,6 +108,49 @@ function setupReal(t, { html = episodeCard(), settings = {}, storage = {}, cache
 }
 
 let user = 'a';
+const seriesLock = { [SERIES]: { layout: 'bands', density: 'compact', lockedAt: 1 } };
+
+test('an episode rendered from the local caches fetches its series once, then follows the series lock', async t => {
+  const h = setupReal(t, { settings: { tagLayoutLocks: seriesLock } });
+  h.scan();
+  assert.equal(h.shown(EPISODE), false, 'its chips wait for the item data (they could move)');
+  h.fetch();
+  assert.equal(h.requests.filter(u => u.includes('/tag-data/')).length, 1, 'fetched although every renderer hit its cache');
+  await h.answer();
+  assert.equal(h.hostOf(EPISODE).dataset.jeLayout, 'bands', 'inherits the series lock');
+  assert.equal(h.hostOf(EPISODE).dataset.jeLocked, '1');
+  assert.ok(h.shown(EPISODE));
+
+  // Remembered with the series id: stored beside the renderer caches.
+  h.JE._cacheManager.save();
+  const stored = JSON.parse(h.window.localStorage.getItem('JE_tagLookFacts'));
+  assert.equal(stored[EPISODE].SeriesId, SERIES);
+  assert.equal(h.window.localStorage.getItem('JE_tagLookFacts:identity-owner'), 's:a');
+});
+
+test('after a reload the remembered series id applies the lock at first paint, without a fetch', async t => {
+  const storage = {
+    JE_tagLookFacts: JSON.stringify({ [EPISODE]: { Type: 'Episode', SeriesId: SERIES, at: Date.now() } }),
+    'JE_tagLookFacts:identity-owner': 's:a',
+  };
+  const h = setupReal(t, { settings: { tagLayoutLocks: seriesLock }, storage });
+  h.scan();
+  assert.equal(h.hostOf(EPISODE).dataset.jeLayout, 'bands');
+  assert.ok(h.shown(EPISODE), 'shown at once');
+  h.fetch();
+  assert.equal(h.requests.length, 0, 'no fetch');
+});
+
+test('remembered facts of another user are never used', async t => {
+  const storage = {
+    JE_tagLookFacts: JSON.stringify({ [EPISODE]: { Type: 'Episode', SeriesId: SERIES, at: Date.now() } }),
+    'JE_tagLookFacts:identity-owner': 's:someone-else',
+  };
+  const h = setupReal(t, { settings: { tagLayoutLocks: seriesLock }, storage });
+  h.scan();
+  assert.equal(h.shown(EPISODE), false);
+  assert.equal(h.window.localStorage.getItem('JE_tagLookFacts'), null, 'their copy is dropped');
+});
 
 test('a library rule waits for the batch data instead of showing the default look first', async t => {
   const html = episodeCard(EPISODE, 'Movie') + episodeCard(OTHER, 'Movie');
@@ -159,4 +202,26 @@ test('a batch answer for a card reused for another item meanwhile leaves the new
   h.layout.setCardContext(host, { Id: OTHER, Type: 'Movie' }, OTHER, OTHER);
   await h.answer();
   assert.equal(h.layout.resolveLayout(host).layout, 'corners', 'OTHER keeps its own facts');
+});
+
+test('a user switch forgets the remembered facts and the stored copy of the outgoing user', async t => {
+  const h = setupReal(t, { settings: { tagLayoutLocks: seriesLock } });
+  h.scan(); h.fetch(); await h.answer();
+  h.JE._cacheManager.save();
+  assert.equal(h.hostOf(EPISODE).dataset.jeLayout, 'bands');
+  const tagData = () => h.requests.filter(u => u.includes('/tag-data/')).length;
+  const fetches = tagData();
+
+  user = 'b';
+  h.switchUser();
+  assert.equal(h.layout.resolveLayout(h.hostOf(EPISODE)).layout, 'corners', 'the card\'s facts went with the outgoing user');
+  h.JE.tagPipeline.scheduleScan();
+  h.scan();
+  assert.equal(h.shown(EPISODE), false, 'waits for its own data again');
+  h.fetch();
+  assert.equal(tagData(), fetches + 1, 'fetched for the incoming user');
+  assert.equal(h.window.localStorage.getItem('JE_tagLookFacts:identity-owner'), 's:b');
+  assert.equal(h.window.localStorage.getItem('JE_tagLookFacts'), null);
+  await h.answer();
+  assert.equal(h.hostOf(EPISODE).dataset.jeLayout, 'bands');
 });

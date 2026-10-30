@@ -527,8 +527,8 @@
 
     /**
      * Whether some rule or lock could give this card another look once its
-     * item data (library, genres, rating) is known. Without rules, or with
-     * type-only rules on a typed card, it cannot.
+     * item data (library, genres, rating, series) is known. Without rules
+     * and locks, or with type-only rules on a typed card, it cannot.
      * @param {string|null} cardType - The card's data-type.
      * @returns {boolean}
      */
@@ -536,7 +536,9 @@
         const looks = currentLooks();
         if (!looks.rules.length && !looks.locks.size) return false;
         if (!cardType) return true;
-        return looks.rules.some((rule) => rule.enabled && rule.when.some((cond) => cond.field !== 'type'));
+        if (looks.rules.some((rule) => rule.enabled && rule.when.some((cond) => cond.field !== 'type'))) return true;
+        // A season or episode inherits its series' lock: the series id comes with the data.
+        return looks.locks.size > 0 && (cardType === 'Season' || cardType === 'Episode');
     }
 
     /**
@@ -587,7 +589,7 @@
      * Record what the item data says about a card (type, genres, rating,
      * library, series) so rules can match it, and re-present the card if its
      * look changes. The pipeline calls this before rendering a card from a
-     * server-cache entry or a fetched item. Data for a
+     * server-cache entry, remembered item data or a fetched item. Data for a
      * card that shows another item by now (a reused virtualised card) is
      * dropped.
      * @param {HTMLElement} target - Render target.
