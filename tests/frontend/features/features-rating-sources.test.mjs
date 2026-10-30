@@ -82,3 +82,16 @@ test('every persistent tag entry schema matches server schema 15, including Inde
   const server = readFileSync(`${jsRoot}/../Services/TagCacheService.cs`, 'utf8');
   assert.match(server, /CurrentCacheSchemaVersion = 15;/);
 });
+
+test('tag cache reference docs consistently name the current invalidating schema', () => {
+  const server = readFileSync(`${jsRoot}/../Services/TagCacheService.cs`, 'utf8');
+  const schema = Number(server.match(/CurrentCacheSchemaVersion = (\d+);/)[1]);
+  const api = readFileSync(`${jsRoot}/../../docs/advanced/api.md`, 'utf8');
+  assert.ok(api.includes(`Schema ${schema} invalidates older disk and IndexedDB copies`));
+  for (const file of ['advanced/api.md', 'advanced/project-structure.md', 'enhanced/tags.md']) {
+    const doc = readFileSync(`${jsRoot}/../../docs/${file}`, 'utf8');
+    const schemas = [...doc.matchAll(/[Ss]chema (\d+)/g)].map(match => Number(match[1]));
+    assert.ok(schemas.length > 0, `${file} documents the cache schema`);
+    assert.ok(schemas.every(value => value === schema), `${file} names the current schema`);
+  }
+});

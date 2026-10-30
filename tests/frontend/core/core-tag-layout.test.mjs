@@ -246,6 +246,18 @@ test('summary shows up to three facts in priority order in one pill and every gr
   assert.equal(host.querySelectorAll('.je-tag-slot[data-je-slot="hover"] .genre-tag').length, 3, 'hover chips are capped too');
 });
 
+test('summary pill displays named-source rating text with an accessible label', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary',
+    ratingTagsSources: ['imdb'], statusTagsEnabled: false, qualityTagsEnabled: false } });
+  const host = h.render(entry({ Ratings: { imdb: 8.1 } }));
+  const source = host.querySelector('.rating-tag--source');
+  const fact = host.querySelector('.je-tag-pill-fact[data-je-group="rating"]');
+  assert.equal(fact.textContent, source.getAttribute('aria-label'));
+  assert.match(fact.textContent, /8\.1/);
+  assert.ok(host.querySelector('.je-tag-pill').getAttribute('aria-label').includes(fact.textContent));
+  assert.ok(!host.querySelector('.je-tag-pill').textContent.includes('undefined'));
+});
+
 test('summary pill facts for language and genre, and the three-fact limit', async t => {
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary', statusTagsEnabled: false, qualityTagsEnabled: false,
     tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }, { group: 'genre', slot: 'pill' }, { group: 'ageRating', slot: 'pill' }] } } } });

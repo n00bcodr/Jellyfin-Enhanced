@@ -334,3 +334,6 @@ scripts/deploy*
 /coverage/
 /playwright-report/
 /test-results/
+
+# Local implementation briefs, reports and verification evidence.
+/.notes/

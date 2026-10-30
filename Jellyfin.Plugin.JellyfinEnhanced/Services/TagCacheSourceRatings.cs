@@ -3,6 +3,7 @@ using System.Threading;
 using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using MediaBrowser.Controller.Entities;
 
@@ -26,7 +27,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>Publish a key-availability transition using existing MDBList data, without network I/O.</summary>
-        internal void RefreshRatingSourceAvailability() => RefreshSourceRatings();
+        internal void RefreshRatingSourceAvailability()
+        {
+            _rebuildLock.Wait();
+            try { RefreshSourceRatings(); }
+            finally { _rebuildLock.Release(); }
+        }
 
         /// <summary>Cache-only projection for batch DTOs, cache builds and native posters. Children use the series.</summary>
         public TagSourceRatings? GetSourceRatings(BaseItem item)
@@ -39,31 +45,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return id == null ? null : TagSourceRatings.FromMdblist(_mdblistService.GetCachedEntry(item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", id));
         }
 
+        /// <summary>Only named-source consumers may trigger upstream enrichment; legacy scores remain cache-only.</summary>
+        private bool HasSourceRatingDemand()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !SourceRatingsConfigured) return false;
+            static bool Named(string[]? sources) => RatingSourceSettings.NormalizeSources(sources)?.Any(id => id is not ("community" or "critic")) == true;
+            if (config.RatingTagsEnabled && Named(config.RatingTagsSources)) return true;
+            var users = new UserConfigurationManager(_applicationPaths, _logger);
+            return users.GetAllUserIds().Any(id =>
+            {
+                var settings = users.GetUserConfiguration<JellyfinEnhancedUserSettings>(id, "settings.json");
+                return settings.RatingTagsEnabled && Named(settings.RatingTagsSources);
+            });
+        }
+
         /// <summary>Warm only accessible request items, deduplicating children by series. Used without the bulk cache too.</summary>
         public void WarmSourceRatingsForItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken)
         {
-            if (_mdblistService == null || string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
+            if (_mdblistService == null || !HasSourceRatingDemand()) return;
             var titles = items.Select(item => item is MediaBrowser.Controller.Entities.TV.Season or MediaBrowser.Controller.Entities.TV.Episode ? GetParentSeries(item) ?? item : item)
                 .Where(item => item is MediaBrowser.Controller.Entities.Movies.Movie or MediaBrowser.Controller.Entities.TV.Series)
                 .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie",
                     Id: item.ProviderIds?.TryGetValue("Tmdb", out var id) == true ? id : null))
                 .Where(title => title.Id != null && title.Id.Length > 0 && title.Id.All(char.IsAsciiDigit))
                 .Select(title => (title.MediaType, Id: title.Id!)).Distinct().ToArray();
-            _mdblistService.WarmTagRatingsAsync(titles, cancellationToken).GetAwaiter().GetResult();
+            _mdblistService.WarmTagRatingsAsync(titles, cancellationToken, JellyfinEnhanced.Instance!.Configuration.MdblistFetchReserve).GetAwaiter().GetResult();
         }
 
         /// <summary>Reuse MDBList's bounded batches, seven-day TTL, pacing and quota reserve before a build.</summary>
         private void WarmSourceRatings(CancellationToken cancellationToken)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (_mdblistService == null || string.IsNullOrWhiteSpace(config?.MdblistApiKey)) return;
+            if (_mdblistService == null || config == null || !HasSourceRatingDemand()) return;
             MdblistRatingsFetchRunner.RunAsync(_libraryManager, _mdblistService, _logger,
                 Math.Max(MdblistService.SafetyMargin, config.MdblistFetchReserve), null, cancellationToken).GetAwaiter().GetResult();
         }
 
-        /// <summary>Publish changed source facts even when the library metadata itself has not changed.</summary>
+        /// <summary>Publish changed source facts under the caller's rebuild lock, including the reader mutation scope.</summary>
         private void RefreshSourceRatings()
         {
+            using var writes = BeginInPlaceWrites();
             var changed = false;
             foreach (var pair in _cache)
             {
