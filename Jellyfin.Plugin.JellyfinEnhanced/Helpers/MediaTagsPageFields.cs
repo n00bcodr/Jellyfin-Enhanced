@@ -155,7 +155,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     if (TagStyleSet.TryValidate(value as string, null, out _, out error)) return true;
                     return false;
                 case "TagStylePreset":
-                    if (string.IsNullOrEmpty(value as string)) break;
+                    // The administrator's preset has no empty "follow" value (only a user's document has one).
+                    if (string.IsNullOrWhiteSpace(value as string))
+                    {
+                        error = $"must be one of {string.Join(", ", TagStyleKeys.Presets)}";
+                        return false;
+                    }
+
                     if (TagStyleSet.TryValidate(null, value as string, out var styles, out error))
                     {
                         normalized = styles.Preset;
@@ -200,7 +206,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return false;
             }
 
-            if (value == null && field != "TagStylePreset")
+            if (value == null)
             {
                 error = "must not be null";
                 return false;
@@ -209,13 +215,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             return true;
         }
 
-        // An enum-like text: accepted when the normaliser only respells it (case, spaces), stored as it spells it.
+        // An enum-like text: accepted when it is one of the known values and the normaliser only respells it (case,
+        // spaces), stored as it spells it. Membership is checked too: some normalisers answer "" for a value they do
+        // not know, which an empty or blank value would otherwise match.
         private static bool OneOf(string? value, Func<string?, string> normalize, IEnumerable<string> known, out object? normalized, out string? error)
         {
             var canonical = normalize(value);
             normalized = canonical;
             error = null;
-            if (value != null && string.Equals(canonical, value.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+            if (value != null && known.Contains(canonical, StringComparer.Ordinal)
+                && string.Equals(canonical, value.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
             error = $"must be one of {string.Join(", ", known)}";
             return false;
         }

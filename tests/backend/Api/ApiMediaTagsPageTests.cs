@@ -290,6 +290,51 @@ public class ApiMediaTagsPageTests
         Assert.Equal(64 * 1024, ((Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata)bodyLimit).MaxRequestBodySize);
     }
 
+    /// <summary>Every field whose value is one of a known set (none of them has an empty "inherit" value).</summary>
+    public static TheoryData<string, string> EnumFieldsWithValuesOutsideTheirSet()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var field in new[]
+        {
+            "TagLayout", "TagLabelDensity", "LanguageTagsStyle", "LanguageTagsCountBadge", "SeriesQualityAggregation", "TagStyleTarget", "TagStylePreset",
+            "QualityTagsPosition", "GenreTagsPosition", "LanguageTagsPosition", "RatingTagsPosition", "AgeRatingTagsPosition", "StatusTagsPosition",
+        })
+        {
+            foreach (var value in new[] { "", "   ", "unknown-value" }) data.Add(field, value);
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(EnumFieldsWithValuesOutsideTheirSet))]
+    public void EmptyBlankAndUnknownEnumValuesAreRefusedAndNothingIsWritten(string field, string value)
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        Assert.False(MediaTagsPageFields.TryNormalize(field, value, out var stored, out _), $"'{value}' accepted for {field} as '{stored}'");
+        var before = StjSerializer.Serialize(f.Plugin.Configuration);
+        var refused = Assert.IsType<BadRequestObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest
+        {
+            Changes = new() { ["TagsHideOnHover"] = StjSerializer.SerializeToElement(true), [field] = StjSerializer.SerializeToElement(value) },
+        }));
+        var reason = JsonConvert.SerializeObject(refused.Value);
+        Assert.Contains($"Invalid value for '{field}': ", reason, StringComparison.Ordinal);
+        if (string.IsNullOrWhiteSpace(value)) Assert.Contains("must be one of", reason, StringComparison.Ordinal);
+        Assert.Equal(before, StjSerializer.Serialize(f.Plugin.Configuration));
+    }
+
+    [Theory]
+    [InlineData("QualityTagsPosition", " Top-Right ", "top-right")]
+    [InlineData("TagStyleTarget", " BOTH ", "both")]
+    [InlineData("TagStylePreset", " Glass ", "glass")]
+    [InlineData("TagLayout", "Bands", "bands")]
+    public void KnownEnumValuesAreStoredInTheirCanonicalSpelling(string field, string value, string stored)
+    {
+        Assert.True(MediaTagsPageFields.TryNormalize(field, value, out var normalized, out var error), error);
+        Assert.Equal(stored, normalized);
+    }
+
     [Fact]
     public void DocumentsAreStoredNormalisedAndNullStillInherits()
     {
