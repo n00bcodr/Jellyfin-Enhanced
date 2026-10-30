@@ -1744,7 +1744,9 @@
     }
 
     /**
-     * Drop everything a card shows and holds.
+     * Drop everything a card shows, knows and holds. Explicit cleanup also
+     * clears facts recorded before its host existed; automatic controller
+     * retirement in forget() must leave replacement context intact.
      * @param {HTMLElement} target
      */
     function clearCard(target) {
@@ -1752,8 +1754,11 @@
         // image of a card without one): a lookup still out for the old item
         // checks it before adding its chip.
         if (target?.dataset) delete target.dataset.jeReviewKey;
+        if (target) cardData.delete(target);
         const host = findHost(target);
         if (!host) return;
+        cardData.delete(host);
+        if (host.parentElement) cardData.delete(host.parentElement);
         delete host.dataset.jeReviewKey;
         endAwait(host);
         const ctrl = host ? controllers.get(host) : null;

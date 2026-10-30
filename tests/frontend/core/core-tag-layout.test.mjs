@@ -381,7 +381,7 @@ async function setupPipeline(t, { html = modernCard(), settings = {} } = {}) {
     },
   });
   t.after(() => h.close());
-  for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-pipeline.js', 'tags/tag-layout-styles.js', 'tags/genretags.js']) h.load(file);
+  for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-pipeline.js', 'tags/tag-layout-styles.js', 'tags/genretags.js']) h.load(file);
   h.JE.initializeGenreTags();
   h.JE.tagPipeline.initialize();
   await settle(); // the start-up rescan once the (disabled) server cache "loaded"
@@ -456,6 +456,39 @@ test('a large list row reused with only its artwork rewritten drops the old item
   h.calls[1].resolve({ Items: [{ Id: OTHER, Type: 'Movie', Genres: ['War'] }] });
   await settle();
   assert.deepEqual(h.genres(), ['War']);
+});
+
+for (const earlyFacts of [false, true]) test(`artwork-only reuse drops library facts when the replacement lookup is empty (early facts=${earlyFacts})`, async t => {
+  const library = '22222222222222222222222222222222';
+  const h = await setupPipeline(t, { html: earlyFacts ? modernCard().replace('<div class="je-tag-host"></div>', '') : modernCard(),
+    settings: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', tagLookRules: [
+      { id: 'library', enabled: true, when: [{ field: 'library', value: library }], layout: 'bands', density: 'compact' },
+    ] } });
+  const layout = h.JE.core.tagLayout;
+  if (earlyFacts) layout.setCardContext(h.document.querySelector('.cardScalable'), { Type: 'Movie', LibraryId: library }, ID);
+  // A renderer cache can still supply chips when /tag-data returns no item.
+  const render = target => {
+    const chip = h.document.createElement('div');
+    chip.innerHTML = '<span class="quality-overlay-label">4K</span>';
+    layout.commitGroup(target, 'quality', chip);
+    return true;
+  };
+  h.JE.tagPipeline.registerRenderer('quality', { isEnabled: () => true, renderFromCache: render, render });
+  h.scan(); h.fetch();
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', LibraryId: library, Genres: ['Drama'] }] });
+  await settle();
+  const host = h.document.querySelector('.je-tag-host');
+  assert.equal(host.dataset.jeLayout, 'bands');
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  await settle();
+  assert.equal(h.document.querySelector('.card').dataset.id, ID, 'data-id is unchanged');
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls[1].ids, [OTHER]);
+  h.calls[1].resolve({ Items: [] });
+  await settle();
+  assert.ok(host.querySelector('[data-je-group="quality"]'), 'cached chips are released after the empty lookup');
+  assert.equal(host.dataset.jeLayout, 'corners', 'the replacement uses the default look');
+  assert.equal(layout.resolveLayout(host).layout, 'corners', 'neither host nor original target retains old facts');
 });
 
 test('artwork loading for the first time is not a reuse', async t => {
