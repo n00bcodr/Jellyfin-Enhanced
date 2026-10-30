@@ -251,7 +251,7 @@ test('a failed save says so, keeps the change and retries', async t => {
   const server = structuredClone(BASE);
   const root = h.document.getElementById('jeTaRoot');
   const ctx = h.A.createPage(root, structuredClone(server), { api: { get: async () => structuredClone(server), patch: async (changes, expected) => { if (fail) throw new Error('offline'); return serverPatch(server, { Changes: changes, Expected: expected }); } }, confirm: () => true });
-  t.after(() => ctx.dispose());
+  h.cleanup.push(() => ctx.dispose());
   h.change(root.querySelector('#disableTagsOnSearchPage'), true);
   assert.equal(await ctx.flush(), false);
   assert.equal(root.querySelector('#jeTaSaved').dataset.state, 'error');
