@@ -104,6 +104,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             QualityTagsEnabled = false;
             ShowResolutionTag = true;
             ShowSourceTag = true;
+
+            // Source and edition defaults.
+            ShowEditionTag = true;
+            EditionTagOrder = 7;
+            ShowLowQualitySourceTag = false;
+
             ShowDynamicRangeTag = true;
             ShowSpecialFormatTag = true;
             ShowVideoCodecTag = true;
@@ -651,6 +657,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;
+
+        // Source and edition defaults.
+        public bool ShowEditionTag { get; set; } = true;
+        public int EditionTagOrder { get; set; } = 7;
+        public bool ShowLowQualitySourceTag { get; set; } = false;
+
         public bool ShowDynamicRangeTag { get; set; } = true;
         public bool ShowSpecialFormatTag { get; set; } = true;
         public bool ShowVideoCodecTag { get; set; } = true;

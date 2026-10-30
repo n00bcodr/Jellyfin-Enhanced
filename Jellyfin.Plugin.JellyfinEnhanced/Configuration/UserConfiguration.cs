@@ -40,6 +40,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;
+
+        // Source and edition preferences.
+        /// <summary>Show the edition quality category; absent values inherit the admin default.</summary>
+        public bool? ShowEditionTag { get; set; }
+        /// <summary>Edition stack position after the six existing quality categories.</summary>
+        public int? EditionTagOrder { get; set; }
+        /// <summary>Allow CAM, TS, TC and SCR source tags; absent values inherit the admin default.</summary>
+        public bool? ShowLowQualitySourceTag { get; set; }
+
         public bool ShowDynamicRangeTag { get; set; } = true;
         public bool ShowSpecialFormatTag { get; set; } = true;
         public bool ShowVideoCodecTag { get; set; } = true;

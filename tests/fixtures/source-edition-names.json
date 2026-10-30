@@ -1,0 +1,352 @@
+[
+  {
+    "path": "Movie.2020.REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BluRay.REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BDRemux.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BD-REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Blu-Ray.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BDRip.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BRRip.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BD-Rip.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBDL.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEBRip.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB_Rip.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.web x265.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.HEVC.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVD.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVDRip.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVD-Rip.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.CAM.mkv",
+    "source": "CAM",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDCAM.mkv",
+    "source": "CAM",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TELESYNC.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TS.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDTS.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TC.mkv",
+    "source": "TC",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.TELECINE.mkv",
+    "source": "TC",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.SCR.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.DVDSCR.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.SCREENER.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Web of Lies (2016).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Blue Ruin (2013).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Web (2013).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.1080p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "MyBluRayMovie.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "DVDish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Remuxed.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "The.Cambridge.Story.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.ts",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.m2ts",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "/HDTV/Unmarked/Movie.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.NON-IMAX.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Director's Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.2020.Directors.Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.2020.Director’s Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.2020.Extended.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "Movie.2020.Unrated.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Unrated"
+  },
+  {
+    "path": "Movie.2020.Theatrical.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Theatrical"
+  },
+  {
+    "path": "Movie.2020.IMAX.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "IMAX"
+  },
+  {
+    "path": "Movie.2020.Remaster.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Remastered"
+  },
+  {
+    "path": "Movie.2020.Remastered.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Remastered"
+  },
+  {
+    "path": "Movie.2020.Criterion.Collection.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Criterion"
+  },
+  {
+    "path": "Movie.2020.Uncut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Uncut"
+  },
+  {
+    "path": "Movie.2020.Final.Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Final Cut"
+  },
+  {
+    "path": "Movie.2020.Special.Edition.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Special Edition"
+  },
+  {
+    "path": "/movies/Movie (2020) {edition-Director's Cut}/Movie.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "/movies/Movie.2160p.REMUX/Movie.mkv",
+    "source": "REMUX",
+    "edition": null
+  },
+  {
+    "path": "/movies/Movie.BluRay/Movie.WEBRip.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "/movies/Movie {edition-Extended}/Movie {edition-Unrated}.mkv",
+    "source": null,
+    "edition": "Unrated"
+  },
+  {
+    "path": "C:\\Movies\\Movie.BluRay.{edition-Criterion}\\Movie.mkv",
+    "source": "BluRay",
+    "edition": "Criterion"
+  },
+  {
+    "path": "Movie.{edition-Fan Edit}.mkv",
+    "source": null,
+    "edition": "Fan Edit"
+  },
+  {
+    "path": "Movie.bluray.disc",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.DVD.disc",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.disc",
+    "source": "Physical",
+    "edition": null
+  },
+  {
+    "path": "Movie.HD-DVD.disc",
+    "source": "HD DVD",
+    "edition": null
+  },
+  {
+    "path": "Movie.VHS.disc",
+    "source": "VHS",
+    "edition": null
+  },
+  {
+    "path": "Movie.HDTV.disc",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "/movies/Film {edition-Director's Cut}/Film.Remastered.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Director's Cut"
+  },
+  {
+    "path": "Movie.DVD.SCR.mkv",
+    "source": "SCR",
+    "edition": null
+  },
+  {
+    "path": "Movie.{edition-constructor}.mkv",
+    "source": null,
+    "edition": "constructor"
+  }
+]

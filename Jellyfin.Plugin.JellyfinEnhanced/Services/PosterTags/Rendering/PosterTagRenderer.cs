@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     public sealed class PosterTagRenderer : IDisposable
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
-        public const string Version = "1";
+        public const string Version = "2";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;
@@ -509,7 +509,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             private void PaintQuality(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
                 var css = plan.Css;
-                var (background, text) = QualityColours(item.Text);
+                var (background, text) = item.Tag is QualityTag { Category: "edition" }
+                    ? (new SKColor(106, 27, 154, 242), SKColors.White)
+                    : QualityColours(item.Text);
                 var edge = QualityBorder;
                 if (item.Style.Length > 0)
                 {

@@ -225,8 +225,8 @@ def quality_colours() -> dict:
     if not m:
         sys.exit("qualitytags.js: qualityColors not found")
     colours = {}
-    for label, bg, text in re.findall(r"'([^']+)':\s*\{\s*bg:\s*'([^']+)',\s*text:\s*'([^']+)'\s*\}", m.group(1)):
-        colours[label] = {"background": bg, "color": text}
+    for label, bg, text in re.findall(r"'((?:\\.|[^'\\])+)':\s*\{\s*bg:\s*'([^']+)',\s*text:\s*'([^']+)'\s*\}", m.group(1)):
+        colours[label.replace("\\'", "'")] = {"background": bg, "color": text}
     # The generic LOW-RES rule lives in the CSS template, not in qualityColors.
     lm = re.search(r'\[data-quality="LOW-RES"\]\s*\{([^}]*)\}', js)
     if not lm:

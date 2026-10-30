@@ -15,7 +15,9 @@
 
     // Within-category sort orders (more important = lower index inside each category).
     const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '576p', '480p', 'LOW-RES', 'SD'];
-    const sourceOrder = ['BluRay', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'Physical'];
+    const sourceOrder = ['REMUX', 'BluRay', 'WEB', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'Physical', 'CAM', 'TS', 'TC', 'SCR'];
+    const EDITION_PREFIX = 'edition:';
+    const editionOrder = [];
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR'];
     const specialFormatOrder = ['IMAX', '3D'];
     const codecOrder = ['AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA'];
@@ -29,6 +31,7 @@
         { key: 'specialFormat', items: specialFormatOrder, settingKey: 'showSpecialFormatTag', pluginKey: 'ShowSpecialFormatTag', orderUserKey: 'specialFormatTagOrder', orderPluginKey: 'SpecialFormatTagOrder', defaultOrder: 4 },
         { key: 'videoCodec',    items: codecOrder,         settingKey: 'showVideoCodecTag',    pluginKey: 'ShowVideoCodecTag',    orderUserKey: 'videoCodecTagOrder',    orderPluginKey: 'VideoCodecTagOrder',    defaultOrder: 5 },
         { key: 'audio',         items: audioOrder,         settingKey: 'showAudioInfoTag',     pluginKey: 'ShowAudioInfoTag',     orderUserKey: 'audioInfoTagOrder',     orderPluginKey: 'AudioInfoTagOrder',     defaultOrder: 6 },
+        { key: 'edition', items: editionOrder, settingKey: 'showEditionTag', pluginKey: 'ShowEditionTag', orderUserKey: 'editionTagOrder', orderPluginKey: 'EditionTagOrder', defaultOrder: 7 },
     ];
 
     const TAG_TO_CATEGORY = new Map();
@@ -73,11 +76,26 @@
         'MPEG4': { bg: 'rgba(158, 158, 158, 0.9)', text: '#ffffff' },
         'MJPEG': { bg: 'rgba(233, 30, 99, 0.9)', text: '#ffffff' },
         'THEORA': { bg: 'rgba(139, 195, 74, 0.9)', text: '#ffffff' },
+        'REMUX': { bg: 'rgba(13, 71, 161, 0.95)', text: '#ffffff' },
+        'WEB': { bg: 'rgba(0, 121, 107, 0.95)', text: '#ffffff' },
+        'CAM': { bg: 'rgba(183, 28, 28, 0.95)', text: '#ffffff' },
+        'TS': { bg: 'rgba(183, 28, 28, 0.95)', text: '#ffffff' },
+        'TC': { bg: 'rgba(183, 28, 28, 0.95)', text: '#ffffff' },
+        'SCR': { bg: 'rgba(183, 28, 28, 0.95)', text: '#ffffff' },
+        'Director\'s Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Extended': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Unrated': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Theatrical': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Remastered': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Criterion': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Uncut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Final Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Special Edition': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'BluRay': { bg: 'rgba(0, 102, 204, 0.95)', text: '#ffffff' },
         'HD DVD': { bg: 'rgba(128, 0, 32, 0.95)', text: '#ffffff' },
-        'DVD': { bg: 'rgba(153, 76, 0, 0.95)', text: '#ffffff' },
+        'DVD': { bg: 'rgba(102, 102, 102, 0.95)', text: '#ffffff' },
         'VHS': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
-        'HDTV': { bg: 'rgba(192, 192, 192, 0.9)', text: '#000000' },
+        'HDTV': { bg: 'rgba(69, 90, 100, 0.95)', text: '#ffffff' },
         'Physical': { bg: 'rgba(102, 102, 102, 0.9)', text: '#ffffff' }
     };
 
@@ -231,7 +249,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 1 && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     /**
@@ -260,7 +278,9 @@
     function createResponsiveLabel(label) {
         const normalizedLabel = normalizeQualityLabel(label);
         const badge = document.createElement('div');
-        badge.textContent = label;
+        const edition = label.startsWith(EDITION_PREFIX);
+        const displayLabel = edition ? label.slice(EDITION_PREFIX.length) : label;
+        badge.textContent = edition ? editionLabel(displayLabel) : label;
         badge.className = overlayClass;
 
         // Existing class names preserved for backward-compat with user CSS.
@@ -277,8 +297,24 @@
         } else {
             badge.classList.add('other-quality');
         }
-        badge.dataset.quality = normalizedLabel;
+        badge.dataset.quality = edition ? displayLabel : normalizedLabel;
+        if (edition) {
+            badge.dataset.jeEdition = 'true';
+            badge.dataset.jeCompact = compactEditionLabel(displayLabel);
+        }
         return badge;
+    }
+
+    /** @param {string} label Canonical server edition. @returns {string} Localized full label. */
+    function editionLabel(label) {
+        const keys = {"Director's Cut": 'directors_cut', 'Extended': 'extended', 'Unrated': 'unrated', 'Theatrical': 'theatrical', 'IMAX': 'imax', 'Remastered': 'remastered', 'Criterion': 'criterion', 'Uncut': 'uncut', 'Final Cut': 'final_cut', 'Special Edition': 'special'};
+        return Object.hasOwn(keys, label) ? JE.t('quality_edition_' + keys[label]) : label;
+    }
+
+    /** @param {string} label Canonical server edition. @returns {string} Localized compact label. */
+    function compactEditionLabel(label) {
+        const keys = {"Director's Cut": 'directors_cut', 'Extended': 'extended', 'Unrated': 'unrated', 'Theatrical': 'theatrical', 'IMAX': 'imax', 'Remastered': 'remastered', 'Criterion': 'criterion', 'Uncut': 'uncut', 'Final Cut': 'final_cut', 'Special Edition': 'special'};
+        return Object.hasOwn(keys, label) ? JE.t('quality_edition_' + keys[label] + '_compact') : label;
     }
 
     /**
@@ -352,7 +388,7 @@
      * @returns {Array<string>} A list of detected quality tags.
      */
     function getEnhancedQuality(mediaStreams, mediaSources, itemData = null) {
-        if (!mediaStreams && !mediaSources) return [];
+        if (!mediaStreams && !mediaSources && !itemData?.Source && !itemData?.Edition) return [];
 
         const qualities = new Set();
         let videoStreams = [];
@@ -711,7 +747,7 @@
         const stubContext = stubSignals.filter(Boolean).join(' | ').toLowerCase();
 
         // Check for .disc extension (media stub indicator)
-        if (stubContext.includes('.disc')) {
+        if (/\.disc(?:$|\s*\|)/.test(stubContext)) {
             // Parse filename/path for specific media type patterns
             const blurayRegex = /bluray|blu-ray|bdrip|bd-rip|bdremux/;
             const hddvdRegex = /hddvd|hd-dvd|hd dvd/;
@@ -734,6 +770,12 @@
             }
         }
 
+        // Naming facts are computed before server paths are trimmed. Legacy stubs remain a fallback.
+        if (itemData?.Source && sourceOrder.includes(itemData.Source)) {
+            for (const source of sourceOrder) qualities.delete(source);
+            qualities.add(itemData.Source);
+        }
+        if (itemData?.Edition) qualities.add(EDITION_PREFIX + itemData.Edition);
         return Array.from(qualities);
     }
 
@@ -745,7 +787,7 @@
      * @returns {boolean} The resolved boolean
      */
     function readBool(userKey, fallback) {
-        const userVal = JE.currentSettings?.[userKey];
+        const userVal = JE.currentSettings?.[userKey] ?? JE.pluginConfig?.[userKey[0].toUpperCase() + userKey.slice(1)];
         if (typeof userVal === 'boolean') return userVal;
         return fallback;
     }
@@ -757,7 +799,7 @@
      * @returns {number} The resolved number
      */
     function readInt(userKey, fallback) {
-        const userVal = JE.currentSettings?.[userKey];
+        const userVal = JE.currentSettings?.[userKey] ?? JE.pluginConfig?.[userKey[0].toUpperCase() + userKey.slice(1)];
         if (Number.isFinite(userVal)) return userVal;
         return fallback;
     }
@@ -768,6 +810,7 @@
      * @returns {string|null} The category key, or null if uncategorized
      */
     function categorize(tag) {
+        if (tag.startsWith(EDITION_PREFIX)) return 'edition';
         const norm = normalizeQualityLabel(tag);
         const direct = TAG_TO_CATEGORY.get(norm);
         if (direct) return direct;
@@ -795,6 +838,8 @@
         const buckets = new Map();
         const otherBucket = [];
         for (const q of qualities) {
+            if (['CAM', 'TS', 'TC', 'SCR'].includes(q) && !readBool('showLowQualitySourceTag', false)) continue;
+            if (q === EDITION_PREFIX + 'IMAX' && qualities.includes('IMAX') && readBool('showSpecialFormatTag', true)) continue;
             const catKey = categorize(q);
             if (catKey) {
                 const cat = CATEGORY_BY_KEY.get(catKey);
@@ -960,6 +1005,10 @@
                     color: #ffffff !important;
                 }
                 ${rules}
+                .${containerClass} .${overlayClass}[data-je-edition] {
+                    background: rgba(106, 27, 154, 0.95) !important;
+                    color: #ffffff !important;
+                }
             `;
         },
         pipeline: {
@@ -991,8 +1040,8 @@
 
                 if (qualities.length > 0) {
                     const audioLang = audioPreferenceKey();
-                    ctx.setPersistent(itemId, { qualities, timestamp: Date.now(), audioLang });
-                    ctx.hot?.set(itemId, { qualities, timestamp: Date.now(), audioLang });
+                    ctx.setPersistent(itemId, { qualities, timestamp: Date.now(), audioLang, namingVersion: 1 });
+                    ctx.hot?.set(itemId, { qualities, timestamp: Date.now(), audioLang, namingVersion: 1 });
                     insertOverlay(ctx, el, qualities);
                 }
             },
@@ -1022,9 +1071,8 @@
                 }
                 const audioLang = audioPreferenceKey();
                 const sd = entry.StreamData;
-                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, { audioLang, qualities: [] }); return; }
-                const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath });
-                serverQualityCache.set(itemId, { audioLang, qualities });
+                const qualities = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, Source: entry.Source, Edition: entry.Edition });
+                serverQualityCache.set(itemId, { audioLang, qualities, namingVersion: 1 });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

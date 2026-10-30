@@ -45,9 +45,11 @@ public class PrivacySpoilerStripTests
         var policy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = false,
             SpoilerStripRatings = false, SpoilerReplaceTitle = true, SpoilerStripOverview = false }, state)!;
         var stripper = new SpoilerTagDataStripper(Mock.Of<ILibraryManager>(), Mock.Of<IUserDataManager>(), null!);
-        var source = Entry(series.Id); source.Type = "Series";
+        var source = Entry(series.Id); source.Type = "Series"; source.Source = "WEB"; source.Edition = "Custom episode reveal";
         var result = stripper.StripEntry(policy, user, series, source, out var stripped);
         Assert.True(stripped); Assert.NotSame(source.StreamData, result.StreamData);
+        Assert.Null(result.Source); Assert.Null(result.Edition);
+        Assert.Equal("WEB", source.Source); Assert.Equal("Custom episode reveal", source.Edition);
         Assert.Null(result.StreamData!.ItemName); Assert.Null(result.StreamData.ItemPath);
         var stream = Assert.Single(result.StreamData.Streams!); Assert.Null(stream.DisplayTitle); Assert.Equal("hevc", stream.Codec); Assert.Equal(2160, stream.Height);
         var sourceInfo = Assert.Single(result.StreamData.Sources!); Assert.Null(sourceInfo.Name); Assert.Null(sourceInfo.Path);

@@ -43,6 +43,7 @@
         { id: 'showSpecialFormatTagToggle', settingKey: 'showSpecialFormatTag', pluginKey: 'ShowSpecialFormatTag', orderKey: 'specialFormatTagOrder', orderPluginKey: 'SpecialFormatTagOrder', defaultOrder: 4, labelKey: 'panel_settings_ui_quality_tags_special_format', sample: null },
         { id: 'showVideoCodecTagToggle', settingKey: 'showVideoCodecTag', pluginKey: 'ShowVideoCodecTag', orderKey: 'videoCodecTagOrder', orderPluginKey: 'VideoCodecTagOrder', defaultOrder: 5, labelKey: 'panel_settings_ui_quality_tags_video_codec', sample: ['HEVC', 'HEVC', 'video-format'] },
         { id: 'showAudioInfoTagToggle', settingKey: 'showAudioInfoTag', pluginKey: 'ShowAudioInfoTag', orderKey: 'audioInfoTagOrder', orderPluginKey: 'AudioInfoTagOrder', defaultOrder: 6, labelKey: 'panel_settings_ui_quality_tags_audio_info', sample: ['ATMOS 7.1', 'ATMOS', 'audio-codec'] },
+        { id: 'showEditionTagToggle', settingKey: 'showEditionTag', pluginKey: 'ShowEditionTag', orderKey: 'editionTagOrder', orderPluginKey: 'EditionTagOrder', defaultOrder: 7, labelKey: 'panel_settings_ui_quality_tags_edition', sample: null },
     ];
 
     /** The rating group's include switches (user override → admin default → on). */
@@ -242,6 +243,7 @@
             </div>`;
         if (group === 'quality') {
             return `
+                ${scopeRow('showLowQualitySourceTagToggle', 'showLowQualitySourceTag', 'ShowLowQualitySourceTag', 'panel_settings_ui_quality_tags_low_source', false)}
                 <div class="je-quality-audio-lang je-tge-extra">
                     <label for="qualityTagsAudioLanguageSelect" class="je-tge-label">${escapeHtml(JE.t('panel_settings_ui_quality_tags_audio_language'))}</label>
                     <select id="qualityTagsAudioLanguageSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">

@@ -259,7 +259,7 @@
                                             <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
                                         </div>
                                         <div class="je-quality-cat-admin-row" data-cat-key="ShowSourceTag" data-order-key="SourceTagOrder" data-default-order="2">
-                                            <div class="checkboxContainer"><label><input id="showSourceTag" is="emby-checkbox" type="checkbox"/><span>Show source (BluRay, DVD, HDTV, VHS, ...)</span></label></div>
+                                            <div class="checkboxContainer"><label><input id="showSourceTag" is="emby-checkbox" type="checkbox"/><span data-je-source-label="panel_settings_ui_quality_tags_source"></span></label></div>
                                             <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
                                             <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
                                         </div>
@@ -283,7 +283,14 @@
                                             <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
                                             <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
                                         </div>
+                                        <!-- Source and edition controls. -->
+                                        <div class="je-quality-cat-admin-row" data-cat-key="ShowEditionTag" data-order-key="EditionTagOrder" data-default-order="7">
+                                            <div class="checkboxContainer"><label><input id="showEditionTag" is="emby-checkbox" type="checkbox"/><span data-je-source-label="panel_settings_ui_quality_tags_edition"></span></label></div>
+                                            <button type="button" class="raised raised-mini je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>
+                                            <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
+                                        </div>
                                     </div>
+                                    <div class="checkboxContainer"><label><input id="showLowQualitySourceTag" is="emby-checkbox" type="checkbox"/><span data-je-source-label="panel_settings_ui_quality_tags_low_source"></span></label></div>
                                     <div class="inputContainer">
                                         <label class="inputLabel inputLabelUnfocused" for="qualityTagsPreferredAudioLanguage">Preferred Audio Language for Sound Tags</label>
                                         <select is="emby-select" id="qualityTagsPreferredAudioLanguage" name="qualityTagsPreferredAudioLanguage" class="emby-select">
@@ -7196,8 +7203,8 @@
         async function loadStatusTagLabels() {
             const en = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/locales/en.json'), dataType: 'json' });
             const JE = window.JellyfinEnhanced?.t ? window.JellyfinEnhanced : { t: key => en[key] || key };
-            document.querySelectorAll('[data-je-status-label]').forEach(element => {
-                const key = element.dataset.jeStatusLabel;
+            document.querySelectorAll('[data-je-status-label], [data-je-source-label]').forEach(element => {
+                const key = element.dataset.jeStatusLabel || element.dataset.jeSourceLabel;
                 const translated = JE.t(key);
                 element.textContent = translated === key ? en[key] || key : translated;
             });
@@ -7307,6 +7314,9 @@
                 tagStyles.renderTargetPills();
                 document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
                 document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
+                document.querySelector('#showEditionTag').checked = config.ShowEditionTag !== false;
+                document.querySelector('#showLowQualitySourceTag').checked = config.ShowLowQualitySourceTag === true;
+
                 document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
                 document.querySelector('#showSpecialFormatTag').checked = config.ShowSpecialFormatTag !== false;
                 document.querySelector('#showVideoCodecTag').checked = config.ShowVideoCodecTag !== false;
@@ -7933,6 +7943,8 @@
             config.TagStylesAllowUserPreset = document.querySelector('#tagStylesAllowUserPreset').checked;
             config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
             config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
+            config.ShowEditionTag = document.querySelector('#showEditionTag').checked;
+            config.ShowLowQualitySourceTag = document.querySelector('#showLowQualitySourceTag').checked;
             config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;
             config.ShowSpecialFormatTag = document.querySelector('#showSpecialFormatTag').checked;
             config.ShowVideoCodecTag = document.querySelector('#showVideoCodecTag').checked;
@@ -9602,7 +9614,7 @@
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'tagGroupAdminRowQuality'], noHint: true },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showEditionTag', 'showLowQualitySourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'tagGroupAdminRowQuality'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition', 'tagGroupAdminRowGenre'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'tagGroupAdminRowLanguage'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsShowCommunity', 'ratingTagsShowCritic', 'tagGroupAdminRowRating'], noHint: true },

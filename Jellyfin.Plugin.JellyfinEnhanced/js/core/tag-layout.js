@@ -111,7 +111,7 @@
     const NARROW_CARD_PX = 160;
 
     /** Compact quality labels; audio "<codec> <channels>" is handled in compactQualityLabel. */
-    const COMPACT_QUALITY = { 'Dolby Vision': 'DV', 'HDR10+': 'HDR+', 'Dolby Digital+': 'DD+' };
+    const COMPACT_QUALITY = { 'Dolby Vision': 'DV', 'HDR10+': 'HDR+', 'Dolby Digital+': 'DD+', 'BluRay': 'BD' };
     const DYNAMIC_RANGE = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR'];
 
     /** Dot kind per quality chip class (minimal layout). */
@@ -826,7 +826,7 @@
             if (group === 'quality') {
                 for (const chip of node.querySelectorAll('.quality-overlay-label')) {
                     const text = chip.textContent || '';
-                    const short = compactQualityLabel(text);
+                    const short = chip.dataset.jeCompact || compactQualityLabel(text);
                     if (short !== text) chip.textContent = short;
                 }
             } else if (group === 'rating' && node.querySelector('.rating-tag-tmdb')) {

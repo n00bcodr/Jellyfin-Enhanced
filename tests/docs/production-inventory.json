@@ -399,6 +399,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MediaNamingTags.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/MovieCollectionsBatch.cs",
       "category": "Services"
     },
@@ -3894,6 +3898,30 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ShowEditionTag",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": "true",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "EditionTagOrder",
+      "type": "int",
+      "initializer": "7",
+      "constructor_assignment": "7",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ShowLowQualitySourceTag",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowDynamicRangeTag",
       "type": "bool",
       "initializer": "true",
@@ -6758,6 +6786,30 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "ShowEditionTag",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "EditionTagOrder",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "ShowLowQualitySourceTag",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowDynamicRangeTag",
       "type": "bool",
       "initializer": "true",
@@ -8449,9 +8501,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 375,
+    "files": 376,
     "routes": 182,
-    "configuration_properties": 599,
+    "configuration_properties": 605,
     "storage_references": 72,
     "scheduled_tasks": 13,
     "locales": 33
