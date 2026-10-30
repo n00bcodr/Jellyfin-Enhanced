@@ -10,17 +10,25 @@ const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSk
   'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
   'disableCustomSubtitleStyles', 'longPress2xEnabled', 'nativePosterTagsToggle', 'randomIncludeMovies', 'randomIncludeShows'];
 
-/** tag-styles.js with ui-kit's injectCss and a captured tag-styles endpoint. */
-function setup(t, { pluginConfig = {}, currentSettings = {}, respond } = {}) {
+/**
+ * tag-styles.js with ui-kit's injectCss and a captured tag-styles endpoint;
+ * withSession also runs the real core/session.js (signed in as user-a).
+ */
+function setup(t, { pluginConfig = {}, currentSettings = {}, respond, withSession = false } = {}) {
   const requests = [];
   const h = createHarness({
     JE: { pluginConfig: { TagStyleWebActive: true, ...pluginConfig }, currentSettings, t: key => key },
     apiClient: {
       getUrl: (path, params) => `http://jellyfin.test/${path}${params ? `?${new URLSearchParams(params)}` : ''}`,
+      getCurrentUserId: () => 'user-a',
       ajax: async request => { requests.push(request.url); return respond ? respond(request.url) : {}; }
     }
   });
   t.after(() => h.close());
+  if (withSession) {
+    h.JE.core = { navigation: { onNavigate: () => {} } };
+    h.load('core/session.js');
+  }
   h.load('core/ui-kit.js');
   h.load('tags/tag-styles.js');
   const css = () => h.document.getElementById('je-tag-style-overrides')?.textContent ?? '';
@@ -113,6 +121,65 @@ test('the user preset is sent only while the admin allows it, and the latest ans
   h.JE.initializeTagStyles();
   assert.deepEqual(h.requests.slice(2), ['http://jellyfin.test/JellyfinEnhanced/tag-styles', 'http://jellyfin.test/JellyfinEnhanced/tag-styles']);
   answers[2].resolve({}); answers[3].resolve({});
+});
+
+test('an answer that arrives after the styles were deactivated injects nothing', async t => {
+  const answers = [];
+  const h = setup(t, { respond: () => { const d = deferred(); answers.push(d); return d.promise; } });
+  const first = h.JE.initializeTagStyles();
+  answers[0].resolve({ genre: c('rgba(1, 1, 1, 1)', null, null) });
+  await first;
+  assert.notEqual(h.css(), '');
+
+  // Admin turns web styles off while a refresh is on its way (the next user-data-loaded sees it).
+  const stale = h.JE.initializeTagStyles();
+  h.JE.pluginConfig.TagStyleWebActive = false;
+  h.document.dispatchEvent(new h.window.CustomEvent('je:user-data-loaded', { detail: {} }));
+  assert.equal(h.document.getElementById('je-tag-style-overrides'), null, 'removed synchronously');
+  answers[1].resolve({ genre: c('rgba(2, 2, 2, 1)', null, null) });
+  await stale;
+  assert.equal(h.document.getElementById('je-tag-style-overrides'), null, 'the earlier answer is dropped');
+
+  // A direct call while inactive deactivates too, and its stale peers stay dropped.
+  h.JE.pluginConfig.TagStyleWebActive = true;
+  const again = h.JE.initializeTagStyles();
+  h.JE.pluginConfig.TagStyleWebActive = false;
+  await h.JE.initializeTagStyles();
+  answers[2].resolve({ genre: c('rgba(3, 3, 3, 1)', null, null) });
+  await again;
+  assert.equal(h.document.getElementById('je-tag-style-overrides'), null);
+  assert.equal(h.requests.length, 3, 'an inactive call fetches nothing');
+});
+
+test('a user switch removes the styles at once and drops the previous user\'s answer', async t => {
+  const answers = [];
+  const h = setup(t, {
+    withSession: true,
+    pluginConfig: { TagStylesAllowUserPreset: true },
+    currentSettings: { tagStylePreset: 'glass' },
+    respond: () => { const d = deferred(); answers.push(d); return d.promise; }
+  });
+  const first = h.JE.initializeTagStyles();
+  answers[0].resolve({ genre: c('rgba(1, 1, 1, 1)', null, null) });
+  await first;
+  assert.notEqual(h.css(), '');
+
+  // user-a's preset change is still on its way when user-b signs in.
+  const stale = h.JE.initializeTagStyles();
+  h.window.ApiClient.getCurrentUserId = () => 'user-b';
+  h.JE.session.checkNow('regression-user-switch');
+  assert.equal(h.document.getElementById('je-tag-style-overrides'), null, 'removed in the reset, before any reload');
+  answers[1].resolve({ genre: c('rgba(9, 9, 9, 1)', null, null) });
+  await stale;
+  assert.equal(h.document.getElementById('je-tag-style-overrides'), null, 'user-a\'s answer is dropped');
+
+  // user-b's own styles still apply once their data is loaded.
+  h.JE.currentSettings = { tagStylePreset: 'dark' };
+  h.document.dispatchEvent(new h.window.CustomEvent('je:user-data-loaded', { detail: {} }));
+  answers[2].resolve({ genre: c('rgba(2, 2, 2, 1)', null, null) });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.requests.at(-1), 'http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=dark');
+  assert.match(h.css(), /rgba\(2, 2, 2, 1\)/);
 });
 
 test('a user switch re-applies the incoming user\'s preset', async t => {

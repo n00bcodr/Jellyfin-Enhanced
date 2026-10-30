@@ -123,8 +123,24 @@
     }
 
     /**
+     * Removes the stylesheet and invalidates every request in flight, so a
+     * slower answer cannot bring the styles back. Synchronous on purpose.
+     * @returns {void}
+     */
+    function deactivate() {
+        requestSeq++;
+        JE.core?.ui?.removeCss(styleId);
+    }
+
+    // On a user switch or logout the previous user's styles (their preset) go
+    // at once; je:user-data-loaded re-applies them for the incoming user.
+    JE.session?.onUserChange('tag-styles', deactivate);
+
+    /**
      * Fetches the effective styles and (re)injects the stylesheet. Overlapping
-     * calls (a quick preset change, a user switch) keep only the latest answer.
+     * calls (a quick preset change, a user switch) keep only the latest answer,
+     * and an answer is dropped once the styles were deactivated or the
+     * signed-in user changed while it was on its way.
      * @returns {Promise<void>}
      */
     JE.initializeTagStyles = async function() {
@@ -133,10 +149,15 @@
             // The incoming user's settings (and preset) are loaded by then.
             document.addEventListener('je:user-data-loaded', () => {
                 if (JE.pluginConfig?.TagStyleWebActive) JE.initializeTagStyles();
-                else JE.core.ui.removeCss(styleId);
+                else deactivate();
             });
         }
+        if (!JE.pluginConfig?.TagStyleWebActive) {
+            deactivate();
+            return;
+        }
         const seq = ++requestSeq;
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
         try {
             const preset = userPreset();
             const styles = await ApiClient.ajax({
@@ -144,7 +165,7 @@
                 url: ApiClient.getUrl('JellyfinEnhanced/tag-styles', preset ? { preset } : undefined),
                 dataType: 'json'
             });
-            if (seq !== requestSeq) return;
+            if (seq !== requestSeq || (JE.session && !JE.session.isCurrent(epoch)) || !JE.pluginConfig?.TagStyleWebActive) return;
             const css = buildCss(styles || {});
             if (css) JE.core.ui.injectCss(styleId, css);
             else JE.core.ui.removeCss(styleId);
@@ -153,5 +174,5 @@
         }
     };
 
-    JE.tagStyles = { PRESETS, buildCss };
+    JE.tagStyles = { PRESETS, buildCss, deactivate };
 })(window.JellyfinEnhanced);
