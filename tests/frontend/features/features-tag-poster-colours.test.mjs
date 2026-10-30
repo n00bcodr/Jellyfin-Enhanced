@@ -269,3 +269,16 @@ test('tag-styles turns the Poster colours on for the poster preset and off other
   assert.deepEqual(calls, [true, false, false]);
   assert.ok(h.JE.tagStyles.PRESETS.includes('poster'));
 });
+
+test('an image Jellyfin mounts after the tags arrived (Jellyfin 12) is picked up', async t => {
+  const h = setup(t, { html: card(ID).replace(/<div><img src="[^"]*"><\/div>/, ''), art: { [img(ID)]: solid([30, 60, 200]) } });
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(h.box().hasAttribute('data-je-poster-colour'), false, 'no artwork yet');
+  const wrap = h.document.createElement('div');
+  wrap.innerHTML = `<img src="${img(ID)}">`;
+  h.document.querySelector('.cardImageContainer').appendChild(wrap);
+  await h.settle();
+  assert.equal(h.box().dataset.jePosterColour, '1');
+  assert.equal(h.decoded.length, 1);
+});

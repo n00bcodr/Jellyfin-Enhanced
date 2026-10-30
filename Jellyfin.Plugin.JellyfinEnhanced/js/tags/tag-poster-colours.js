@@ -199,7 +199,7 @@
     const hostOfArt = new WeakMap();
     let observer = null;
     let canvas = null;
-    const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0 };
+    const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0, sampleMs: 0, maxSampleMs: 0 };
 
     /** @returns {string} `${serverId}:${userId}`, the tag cache store's scope. */
     function scope() {
@@ -271,7 +271,7 @@
      * an element declaring its colour (data-je-poster-rgb, the settings
      * panel's sample cards).
      * @param {HTMLElement} host
-     * @returns {{key: string, url: string, img: HTMLImageElement|null, rgb?: number[]}|{wait: Element}|null}
+     * @returns {{key: string, url: string, img: HTMLImageElement|null, rgb?: number[]}|{wait: Element, img: HTMLImageElement|null}|null}
      */
     function artworkOf(host) {
         const parent = host.parentElement;
@@ -289,33 +289,49 @@
         if (img) {
             const url = img.currentSrc || img.src;
             const key = keyOf(url);
-            if (!key) return { wait: img };
-            return img.complete && img.naturalWidth > 0 ? { key, url, img } : { wait: img };
+            if (!key) return { wait: container, img: null };
+            return img.complete && img.naturalWidth > 0 ? { key, url, img } : { wait: container, img };
         }
         const bg = /url\(["']?([^"')]+)["']?\)/.exec(container.style?.backgroundImage || '');
         const key = bg ? keyOf(bg[1]) : null;
-        return key ? { key, url: bg[1], img: null } : { wait: container };
+        return key ? { key, url: bg[1], img: null } : { wait: container, img: null };
     }
 
     /**
-     * Track a card again once its artwork element loads or changes.
-     * @param {Element} art
+     * Track a card again once its artwork arrives or changes: an <img>
+     * finishing, a new src, the lazy loader setting a background image, or
+     * Jellyfin 12 mounting (or replacing) the <img> inside the image
+     * container after the tags arrived. The container's subtree is watched.
+     * @param {Element} container - The image container.
      * @param {HTMLElement} host
+     * @param {HTMLImageElement|null} img - An image still loading.
      */
-    function waitFor(art, host) {
-        hostOfArt.set(art, host);
-        if (watched.has(art)) return;
-        watched.add(art);
-        if (art.tagName === 'IMG') art.addEventListener('load', () => { const h = hostOfArt.get(art); if (h) track(h); });
-        if (!observer && typeof MutationObserver === 'function') {
-            observer = new MutationObserver((records) => {
-                for (const record of records) {
-                    const h = hostOfArt.get(/** @type {Element} */ (record.target));
-                    if (h) track(h);
-                }
+    function waitFor(container, host, img) {
+        hostOfArt.set(container, host);
+        if (img && !watched.has(img)) {
+            watched.add(img);
+            img.addEventListener('load', () => {
+                const owner = img.closest('.cardImageContainer') || img.parentElement;
+                const h = owner ? hostOfArt.get(owner) : null;
+                if (h) track(h);
             });
         }
-        observer?.observe(art, { attributes: true, attributeFilter: ['style', 'src'] });
+        if (watched.has(container)) return;
+        watched.add(container);
+        if (!observer && typeof MutationObserver === 'function') {
+            observer = new MutationObserver((records) => {
+                const hosts = new Set();
+                for (const record of records) {
+                    // The watched container, or one whose subtree changed.
+                    let el = /** @type {Element|null} */ (record.target);
+                    while (el && !hostOfArt.has(el)) el = el.parentElement;
+                    const h = el ? hostOfArt.get(el) : null;
+                    if (h) hosts.add(h);
+                }
+                hosts.forEach(track);
+            });
+        }
+        observer?.observe(container, { attributes: true, attributeFilter: ['style', 'src'], childList: true, subtree: true });
     }
 
     /**
@@ -374,7 +390,7 @@
         // Writes.
         for (const { host, target, art } of reads) {
             if (!art) { clear(target); continue; }
-            if ('wait' in art) { clear(target); waitFor(art.wait, host); continue; }
+            if ('wait' in art) { clear(target); waitFor(art.wait, host, art.img); continue; }
             if (art.rgb) { apply(target, art.key, { d: art.rgb }); continue; }
             const known = memory.get(art.key);
             if (known !== undefined) {
@@ -450,6 +466,8 @@
                 bitmap = await createImageBitmap(source, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' });
                 drawable = bitmap;
             }
+            // The synchronous part (draw, read back, histogram) runs on the main thread: timed.
+            const started = performance.now();
             canvas = canvas || (typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(w, h) : document.createElement('canvas'));
             canvas.width = w;
             canvas.height = h;
@@ -460,7 +478,11 @@
             ctx.drawImage(drawable, 0, 0, w, h);
             bitmap?.close?.();
             const data = ctx.getImageData(0, 0, w, h).data;
-            return dominant(data, w, h);
+            const result = dominant(data, w, h);
+            const spent = performance.now() - started;
+            counters.sampleMs += spent;
+            counters.maxSampleMs = Math.max(counters.maxSampleMs, spent);
+            return result;
         } catch (err) {
             if (err?.name !== 'SecurityError' && err?.name !== 'InvalidStateError' && err?.name !== 'EncodingError') {
                 console.debug(`${logPrefix} could not sample artwork`, err);
