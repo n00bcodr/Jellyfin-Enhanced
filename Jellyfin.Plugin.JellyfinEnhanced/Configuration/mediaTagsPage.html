@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Jellyfin Enhanced: Media Tags</title>
+</head>
+<body>
+<div class="page type-interior pluginConfigurationPage" data-role="page" id="JellyfinEnhancedMediaTagsPage">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="je-tag-admin"><p class="je-ta-wait" role="status">Loading Media Tags settings…</p></div>
+        </div>
+    </div>
+    <script>
+        // The page itself lives in js/enhanced/admintags/ (admin-tags.js and its
+        // section modules); this only loads it. It runs on the JE client bundle
+        // that the dashboard already has (JE.t, the layout controller, the
+        // settings panel's tag preview), so wait for that first.
+        (function () {
+            var pages = document.querySelectorAll('#JellyfinEnhancedMediaTagsPage');
+            var page = pages[pages.length - 1];
+            if (!page || page.dataset.jeInit) return;
+            page.dataset.jeInit = '1';
+            var scriptTag = document.querySelector('script[plugin="Jellyfin Enhanced"]');
+            var version = (scriptTag && scriptTag.getAttribute('version')) || '';
+            var query = version ? { v: version } : undefined;
+            if (!document.getElementById('jeTagAdminCss')) {
+                var link = document.createElement('link');
+                link.id = 'jeTagAdminCss';
+                link.rel = 'stylesheet';
+                link.href = ApiClient.getUrl('/JellyfinEnhanced/js/enhanced/admintags/admin-tags.css', query);
+                document.head.appendChild(link);
+            }
+            // Local CDN route, as on the main configuration page (flags in the colour editor).
+            window.jeCdnUrl = window.jeCdnUrl || function (subpath) {
+                return ApiClient.getUrl('/JellyfinEnhanced/cdn/' + subpath);
+            };
+            var root = page.querySelector('.je-tag-admin');
+            var started = Date.now();
+            function ready() {
+                var JE = window.JellyfinEnhanced;
+                return JE && typeof JE.t === 'function' && JE.core && JE.core.tagLayout && JE.internals && JE.internals.enhancedUi;
+            }
+            function notReady() {
+                var main = ApiClient.getUrl('/web/index.html').replace(/\/web\/index\.html.*$/, '/web/index.html');
+                root.innerHTML = '<div class="je-ta-wait" role="alert">Jellyfin Enhanced has not finished loading in this browser, so the Media Tags settings cannot be shown. Reload the page; if this stays, check the plugin is active and see the browser console. <a class="je-ta-link" href="' + main + '#/configurationpage?name=Jellyfin%20Enhanced">Back to Jellyfin Enhanced</a></div>';
+            }
+            function load() {
+                if (!ready()) {
+                    if (Date.now() - started > 10000) { notReady(); return; }
+                    setTimeout(load, 150);
+                    return;
+                }
+                var JE = window.JellyfinEnhanced;
+                var go = function () {
+                    JE.adminTags.mount(page, version).catch(function (err) {
+                        console.error('🪼 Jellyfin Enhanced: the Media Tags page failed to load', err);
+                        notReady();
+                    });
+                };
+                if (JE.adminTags && JE.adminTags.mount) { go(); return; }
+                var script = document.createElement('script');
+                script.src = ApiClient.getUrl('/JellyfinEnhanced/js/enhanced/admintags/admin-tags.js', query);
+                script.onload = go;
+                script.onerror = notReady;
+                document.head.appendChild(script);
+            }
+            load();
+        })();
+    </script>
+</div>
+</body>
+</html>

@@ -5,21 +5,30 @@ import { resolve } from 'node:path';
 import { createHarness } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
 
-// The Tag Styles editor is an inline script of the config page: run the real
-// markup and the real IIFE, cut out of configPage.html.
-const page = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html'), 'utf8');
+// The Tag Styles editor lives on the Media Tags admin page
+// (js/enhanced/admintags/tag-styles-editor.js): run the real module over its
+// own markup.
+const source = readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/tag-styles-editor.js'), 'utf8');
 const between = (from, to) => {
-  const start = page.indexOf(from);
-  const end = page.indexOf(to, start);
-  assert.ok(start >= 0 && end > start, `${from} … ${to} not found in configPage.html`);
-  return page.slice(start, end + to.length);
+  const start = source.indexOf(from);
+  const end = source.indexOf(to, start);
+  assert.ok(start >= 0 && end > start, `${from} … ${to} not found in tag-styles-editor.js`);
+  return source.slice(start, end + to.length);
 };
 const contrastSource = between('// <tag-style-contrast>', '// </tag-style-contrast>');
-const editorSource = between('        const tagStyles = (() => {', '            return { load, serialize, settings, snapshot, renderTargetPills };\n        })();');
-// The page's unsaved-changes snapshot, run over the editor markup.
-const snapshotSource = between('            function jeSnapshotFormState() {', '/** Call once the form reflects a known-saved state. */');
-const markup = between('<div class="checkboxContainer"><label><input id="tagStylesEnabled"', '<div id="tagStylesBody">')
-  + between('<div id="tagStyleEditor"', '<div class="je-setting-description" data-desc-for="tagStylesAllowUserPreset">') + '</div></div></div>';
+const markup = '<div id="jeTaRoot"><input id="tagStylesEnabled" type="checkbox" checked><div id="tagStylesBody"></div></div>';
+
+/**
+ * Build the editor in a harness: load the module, put its markup in the page
+ * and create it over the page root.
+ * @param {ReturnType<typeof createHarness>} h
+ * @returns {Object} The editor.
+ */
+function createEditor(h) {
+  h.load('enhanced/admintags/tag-styles-editor.js');
+  h.document.querySelector('#tagStylesBody').innerHTML = h.JE.adminTags.EDITOR_HTML;
+  return h.JE.adminTags.createTagStylesEditor(h.document.querySelector('#jeTaRoot'));
+}
 
 const pal = (background, border, color) => ({ background, border, color });
 // A tiny catalog in the server's shape: two presets, a few labels per group.
@@ -83,8 +92,7 @@ async function setup(t, json = '', preset = 'default', { generator = true } = {}
   t.after(() => h.close());
   fakeCanvas(h.window);
   if (generator) h.load('tags/tag-styles.js');
-  h.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
-  const editor = h.window.__editor;
+  const editor = createEditor(h);
   editor.load(json, preset);
   await new Promise(resolve => setImmediate(resolve));
   const $ = sel => h.document.querySelector(sel);
@@ -143,8 +151,7 @@ test('a version 1 document waits for the catalog and is handed back untouched un
   const h = createHarness({ html: markup, apiClient: { ajax: () => new Promise(resolve => { answer = resolve; }) }, globals: { jeCdnUrl: path => path } });
   t.after(() => h.close());
   fakeCanvas(h.window);
-  h.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
-  const editor = h.window.__editor;
+  const editor = createEditor(h);
   editor.load(v1, 'glass');
   assert.equal(editor.serialize(), v1, 'the server migrates it the same way');
   assert.equal(editor.settings().preset, 'default');
@@ -210,20 +217,16 @@ test('language edits only the border ring and reset all clears everything', asyn
   assert.match(h.$('#tagStyleGroupNote').textContent, /border ring/);
   assert.equal(h.$('.je-ts-target[data-label="flag"] .je-ts-flag').style.outline, '1px solid rgba(255, 255, 255, 0.349)');
 
-  h.click('#tagStyleResetAll');
+  // Reset all colours (the Colours section: confirmation and undo) loads an empty document.
+  h.editor.load('', 'default');
   assert.equal(h.editor.serialize(), '');
   assert.equal(h.editor.settings().preset, 'default');
-
-  // Apply-to pills drive the hidden TagStyleTarget value.
-  h.click('#tagStyleTargetPills [data-target="native"]');
-  assert.equal(h.$('#tagStyleTarget').value, 'native');
-  assert.equal(h.$('#tagStyleTargetPills [data-target="native"]').getAttribute('aria-checked'), 'true');
 });
 
-test('an opacity-only edit makes the page dirty; redrawn pickers and a version 1 migration do not', async t => {
+test('an opacity-only edit is a change to save; redrawn pickers and a version 1 migration are not', async t => {
   const h = await setup(t, JSON.stringify({ v: 2, preset: 'default', labels: { 'quality:4K': { background: 'rgba(255, 255, 255, 1)' } } }));
-  h.window.eval(`window.__snapshot = (function (form, shortcutOverrides, tagStyles) {\n${snapshotSource}\nreturn jeSnapshotFormState; })`);
-  const snapshot = () => h.window.__snapshot(h.document.body, [], h.editor)();
+  // The Colours section saves whenever the editor's snapshot changes.
+  const snapshot = () => h.editor.snapshot();
   h.click('.je-ts-target[data-label="4K"]');
   const saved = snapshot();
 
@@ -237,9 +240,9 @@ test('an opacity-only edit makes the page dirty; redrawn pickers and a version 1
   const picker = h.$('.je-ts-field-row[data-field="background"] .je-ts-any').value;
   h.$$('.je-ts-field-row[data-field="background"] .je-ts-opacity-pill').find(b => b.textContent === '40%').click();
   assert.equal(h.$('.je-ts-field-row[data-field="background"] .je-ts-any').value, picker);
-  assert.notEqual(snapshot(), saved, 'the page is dirty');
+  assert.notEqual(snapshot(), saved, 'a change to save');
   h.$$('.je-ts-field-row[data-field="background"] .je-ts-opacity-pill').find(b => b.textContent === '100%').click();
-  assert.equal(snapshot(), saved, 'back to the saved colour: clean again');
+  assert.equal(snapshot(), saved, 'back to the saved colour: nothing to save');
 
   // The preset alone is part of it too.
   h.click('.je-ts-preset[data-preset="glass"]');
@@ -250,9 +253,8 @@ test('an opacity-only edit makes the page dirty; redrawn pickers and a version 1
   const late = createHarness({ html: markup, apiClient: { ajax: () => new Promise(resolve => { answer = resolve; }) }, globals: { jeCdnUrl: path => path } });
   t.after(() => late.close());
   fakeCanvas(late.window);
-  late.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
-  late.window.eval(`window.__snapshot = (function (form, shortcutOverrides, tagStyles) {\n${snapshotSource}\nreturn jeSnapshotFormState; })`);
-  const lateSnapshot = () => late.window.__snapshot(late.document.body, [], late.window.__editor)();
+  late.window.__editor = createEditor(late);
+  const lateSnapshot = () => late.window.__editor.snapshot();
   late.window.__editor.load(JSON.stringify({ quality: { '4K': { background: '#ff0000' } } }), 'glass');
   const before = lateSnapshot();
   answer(catalog);

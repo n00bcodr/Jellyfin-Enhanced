@@ -79,6 +79,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/mediaTagsPage.html",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/whats-new-seed.json",
       "category": "Configuration"
     },
@@ -824,6 +828,70 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/reviews.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.css",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/agerating.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/badges.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/colours.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/genre.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/language.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/layout.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/overview.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/people.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/quality.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/rating.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/rules.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/server.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/status.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/tag-styles-editor.js",
       "category": "js"
     },
     {
@@ -2880,6 +2948,16 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/tag-cache/summary",
+      "method": "GetTagCacheSummary",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
       ]
     },
     {
@@ -8761,8 +8839,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 386,
-    "routes": 182,
+    "files": 403,
+    "routes": 183,
     "configuration_properties": 631,
     "storage_references": 75,
     "scheduled_tasks": 13,

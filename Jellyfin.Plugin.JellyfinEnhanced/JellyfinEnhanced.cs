@@ -749,6 +749,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     // MenuIcon was previously ignored - jellyfin-web hardcoded <Folder /> regardless of
                     // this value. Jellyfin 12 reads it https://github.com/jellyfin/jellyfin-web/commit/ca55f7998bb774b3c05af3ae410b1b24f72805a5
                     MenuIcon = "tune"
+                },
+                // The Media Tags settings page: reached from the main page's Media Tags
+                // card, the settings panel and the docs, not from the dashboard menu.
+                new PluginPageInfo
+                {
+                    Name = "JellyfinEnhancedMediaTags",
+                    DisplayName = "Jellyfin Enhanced: Media Tags",
+                    EnableInMainMenu = false,
+                    EmbeddedResourcePath = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.mediaTagsPage.html",
                 }
             };
         }

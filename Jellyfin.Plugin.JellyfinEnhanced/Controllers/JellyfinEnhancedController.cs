@@ -8552,6 +8552,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true, message = "Tag cache rebuild started in the background." });
         }
 
+        /// <summary>
+        /// Server tag cache state for the Media Tags admin page's Overview: whether
+        /// the cache is on, how many items it holds, when it last changed (Unix ms,
+        /// 0 = never) and whether a full build is running. Admin only.
+        /// </summary>
+        [HttpGet("tag-cache/summary")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetTagCacheSummary()
+        {
+            if (!IsAdminUser()) return Forbid();
+
+            var enabled = JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode == true;
+            return Ok(new
+            {
+                enabled,
+                entries = enabled ? _tagCacheService.Count : 0,
+                lastModified = enabled ? _tagCacheService.LastModified : 0,
+                rebuilding = enabled && _tagCacheService.IsRebuilding,
+            });
+        }
+
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [Produces("application/json")]

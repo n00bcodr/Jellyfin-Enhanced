@@ -348,14 +348,17 @@
      * handle the hub drives: refresh after a change, the Resting/Hover view,
      * the group spotlight, which sample the phone strip follows, and dispose.
      * @param {HTMLElement} mount - The preview column (#jeMthPreviewBody).
-     * @param {{strip?: HTMLElement|null, touch?: () => void}} [options] - The
-     *   phone strip's summary element, and the panel's auto-close reset.
+     * @param {{strip?: HTMLElement|null, touch?: () => void, source?: () => {settings: Object, plugin: Object}}} [options] - The
+     *   phone strip's summary element, the panel's auto-close reset, and
+     *   (the Media Tags admin page) the settings and plugin configuration to
+     *   draw instead of the signed-in user's.
      * @returns {{refresh: () => void, setSpotlight: (group: string|null) => void, follow: (key: string) => void, dispose: () => void, root: HTMLElement}|null}
      */
     internal.createTagPreview = function(mount, options = {}) {
         const L = layoutApi();
         if (!L || !mount) return null;
-        JE.core.ui?.injectCss?.('je-tag-preview', PREVIEW_CSS + spotlightCss(L.CONTAINER_CLASS));
+        // The admin page (.je-tag-admin) shows the same preview outside the panel.
+        JE.core.ui?.injectCss?.('je-tag-preview', (PREVIEW_CSS + spotlightCss(L.CONTAINER_CLASS)).replaceAll('#jellyfin-enhanced-panel ', ':is(#jellyfin-enhanced-panel, .je-tag-admin) '));
         const root = document.createElement('div');
         root.className = 'je-mtp';
         const head = document.createElement('div');
@@ -398,8 +401,28 @@
         /** @type {Map<string, {figure: HTMLElement, card: HTMLElement, target: HTMLElement, look: string, source: string}>} */
         const drawn = new Map();
 
+        /**
+         * Run with options.source's settings and configuration standing in for
+         * the signed-in user's (synchronously, so nothing else sees them).
+         * @param {() => void} fn
+         */
+        const withSource = (fn) => {
+            if (!options.source) { fn(); return; }
+            const saved = [JE.currentSettings, JE.pluginConfig];
+            const { settings, plugin } = options.source();
+            JE.currentSettings = settings;
+            JE.pluginConfig = plugin;
+            L.invalidateSettings();
+            try { fn(); } finally {
+                JE.currentSettings = saved[0];
+                JE.pluginConfig = saved[1];
+                L.invalidateSettings();
+            }
+        };
+
         /** Re-feed and re-present every sample, then rewrite the labels and the strip. */
-        const draw = () => {
+        const draw = () => withSource(drawSamples);
+        const drawSamples = () => {
             if (disposed || !root.isConnected) return;
             L.invalidateSettings();
             SAMPLES.forEach((sample, i) => {
@@ -504,7 +527,7 @@
             hover = button.dataset.view === 'hover';
             view.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
             for (const figure of figures) figure.querySelector('.je-mtp-card')?.classList.toggle('je-tag-reveal', hover);
-            note.hidden = !(hover && JE.currentSettings?.tagsHideOnHover);
+            withSource(() => { note.hidden = !(hover && JE.currentSettings?.tagsHideOnHover); });
             options.touch?.();
         });
 
