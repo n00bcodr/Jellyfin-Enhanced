@@ -15,7 +15,7 @@ const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, 
 const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
 
 /** Real pipeline + renderer, with only the HTTP boundaries replaced by caller-filtered fixtures. */
-async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null } = {}) {
+async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null, tagDataDelay = 0 } = {}) {
   const changes = new Map(), calls = [], idle = [];
   const items = new Map(cards.map(item => [item.Id, item]));
   if (parent) items.set(SERIES, parent);
@@ -43,6 +43,7 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
         calls.push(options);
         if (options.url.includes('/tag-cache/')) return { items: Object.fromEntries(items), count: items.size, version: 1, timestamp: 1, filterRevision: 'caller' };
         if (options.url.includes('/tag-data/')) {
+          if (tagDataDelay) await delay(tagDataDelay);
           const ids = JSON.parse(options.data);
           if (parentResponse && ids.length === 1 && ids[0] === SERIES) return parentResponse.promise;
           return { Items: ids.map(id => items.get(id)).filter(Boolean) };
@@ -71,6 +72,21 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
   return Object.assign(h, { calls, changes, idle, items, key(id) { return h.document.querySelector(`[data-id="${id}"] .status-tag`)?.dataset.jeStatus ?? null; },
     switchUser() { epoch++; for (const fn of changes.values()) fn({ userId: 'user-b' }); } });
 }
+
+/** Drain yielded render slices until the actual badges arrive; elapsed timers alone do not imply completion. */
+async function waitForBadges(h, ready) {
+  for (let attempt = 0; attempt < 300 && !ready(); attempt++) {
+    while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+    await delay(10);
+  }
+  assert.ok(ready(), 'badges did not settle after all asynchronous render slices');
+}
+
+test('episode-page assertions await a delayed batch response and subsequent schedule enrichment', async t => {
+  const h = await setup(t, { cards: [finale], tagDataDelay: 300 });
+  await waitForBadges(h, () => h.key(EPISODE) === 'series_finale');
+  assert.equal(h.key(EPISODE), 'series_finale');
+});
 
 for (const cache of [false, true]) {
   test(`series and final regular episode agree with server cache ${cache ? 'on' : 'off'}`, async t => {
@@ -143,7 +159,7 @@ for (const count of [30, 230]) {
     const episodes = parents.map((parent, i) => ({ ...finale, Id: (i + 1001).toString(16).padStart(32, '0'), SeriesId: parent.Id }));
     // Two cards for one episode also exercise parent-id deduplication.
     const h = await setup(t, { parent: null, parents, cards: [...episodes, episodes[0]] });
-    assert.ok(episodes.every(item => h.key(item.Id) === 'series_finale'));
+    await waitForBadges(h, () => episodes.every(item => h.key(item.Id) === 'series_finale'));
     if (count === 30) assert.equal(h.calls.filter(c => c.url.includes('/tag-data/')).length, 2, 'initial episodes and parent facts each use one batch');
     const initialRequests = h.calls.length;
     const ajax = h.window.ApiClient.ajax;
@@ -184,7 +200,7 @@ for (const count of [30, 230]) {
     assert.deepEqual(new Set(ids), new Set(parents.map(item => item.Id)));
     assert.equal(passes, refreshed.length, 'one live recomputation per completed batch');
     assert.equal(h.calls.slice(initialRequests).filter(c => c.url.includes('/status-tags/series')).length, 0, 'schedules remain fresh');
-    assert.ok(episodes.every(item => h.key(item.Id) === 'series_finale'));
+    await waitForBadges(h, () => episodes.every(item => h.key(item.Id) === 'series_finale'));
   });
 }
 
