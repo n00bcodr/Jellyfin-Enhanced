@@ -87,6 +87,17 @@ test('nothing but a colour reaches the stylesheet', async t => {
   for (const rule of sheet.cssRules) assert.doesNotMatch(rule.selectorText, /^body$/);
 });
 
+test('buildCss accepts one element id as its scope and nothing wider', async t => {
+  const h = setup(t, { respond: () => ({}) });
+  const model = { quality: { '*': c('rgba(1, 1, 1, 1)', null, null) } };
+  const scoped = h.JE.tagStyles.buildCss(model, '#tagStylePreview');
+  assert.match(scoped, /^#tagStylePreview \.quality-overlay-container/);
+  for (const bad of ['#tagStylePreview, body', 'body', '#a b', '#a{}', '#a>.b', '.preview', '#']) {
+    assert.throws(() => h.JE.tagStyles.buildCss(model, bad), /single #id/, bad);
+  }
+  assert.doesNotMatch(h.JE.tagStyles.buildCss(model, ''), /^#/, 'an empty scope styles the page');
+});
+
 test('an empty model removes the stylesheet', async t => {
   let model = { genre: c('rgba(1, 1, 1, 1)', null, null) };
   const h = setup(t, { respond: () => model });

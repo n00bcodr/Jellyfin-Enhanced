@@ -301,6 +301,14 @@ public class TagStyleTests
         Assert.True(huge.Length > TagStyleSet.MaxDocumentLength);
         Assert.False(TagStyleSet.TryValidate(huge, "default", out _, out var error));
         Assert.Contains("larger", error);
+        var blank = new string(' ', TagStyleSet.MaxDocumentLength + 1);
+        Assert.False(TagStyleSet.TryValidate(blank, "default", out _, out var blankError), "oversized whitespace must not count as an empty document");
+        Assert.Contains("larger", blankError);
+        var keep = new PluginConfiguration { TagStyleOverrides = blank, TagStylePreset = "default" };
+        var kept = new PluginConfiguration { TagStyleOverrides = V2, TagStylePreset = "glass" };
+        Assert.False(TagStyleSet.ApplyToSave(keep, kept, out _));
+        Assert.Equal(V2, keep.TagStyleOverrides);
+        Assert.Equal("glass", keep.TagStylePreset);
         Assert.False(TagStyleSet.TryValidate("", "neon", out _, out _));
 
         Assert.True(TagStyleSet.TryValidate(V1Valid, "glass", out var converted, out _));

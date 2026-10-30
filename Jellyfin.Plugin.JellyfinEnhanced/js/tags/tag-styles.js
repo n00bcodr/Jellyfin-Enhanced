@@ -52,6 +52,9 @@
      * @param {string} body
      * @returns {void}
      */
+    // One element id, as `#tagStylePreview`: no combinators, lists or braces.
+    const SCOPE_ID = /^#[A-Za-z_][A-Za-z0-9_-]*$/;
+
     function push(rules, selector, body) {
         if (body) rules.push(`${selector} { ${body} }`);
     }
@@ -59,12 +62,17 @@
     /**
      * Builds the stylesheet from the server's web model (GET tag-styles).
      * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language}`.
-     * @param {string} [scope] - A trusted selector every rule is limited to (the
-     *   config page's live preview); omitted, the rules style the whole page.
+     * @param {string} [scope] - The id selector of one element every rule is
+     *   limited to (`#tagStylePreview` for the config page's live preview);
+     *   omitted, the rules style the whole page. Anything but a single `#id`
+     *   is refused, so a caller can never widen the rules to other elements.
      * @returns {string} The CSS, empty when nothing is styled.
      */
     function buildCss(styles, scope) {
         const rules = [];
+        if (scope !== undefined && scope !== null && scope !== '' && !SCOPE_ID.test(scope)) {
+            throw new Error('tag-styles: scope must be a single #id selector');
+        }
         const P = scope ? `${scope} ` : '';
         const quality = styles.quality || {};
         const Q = `${P}.quality-overlay-container.quality-overlay-container .quality-overlay-label`;

@@ -139,16 +139,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return false;
             }
 
+            if (json is not null && json.Length > MaxDocumentLength)
+            {
+                error = $"document is larger than {MaxDocumentLength} characters";
+                return false;
+            }
+
             if (string.IsNullOrWhiteSpace(json))
             {
                 set = Create(stored ?? TagStyleKeys.DefaultPreset, NoEntries, NoEntries);
                 return true;
-            }
-
-            if (json.Length > MaxDocumentLength)
-            {
-                error = $"document is larger than {MaxDocumentLength} characters";
-                return false;
             }
 
             try
