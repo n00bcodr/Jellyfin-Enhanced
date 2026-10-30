@@ -492,3 +492,50 @@ test('turning inherited shape defaults off persists an explicit opt-out through 
   assert.equal(reload.$('[data-shape="landscape"] [data-shape-action="enabled"]').checked, false);
   assert.equal(reload.$('.je-mtp-sample[data-sample="episode"] .je-tag-host').dataset.jeLayout, 'corners');
 });
+
+// Exercise the actual panel host, delegated clicks, settings transport and
+// preview resolver at both ends of the 1..10, All sequence in each editor.
+for (const editor of ['landscape', 'list', 'default']) {
+  for (const initial of [0, 1, 10]) {
+    test(`${editor} quality cap boundary ${initial}: saved limits, disabled controls and preview agree`, async t => {
+      const shape = editor !== 'default';
+      const h = setup(t, { stored: shape
+        ? { tagShapeOverrides: { [editor]: { layout: 'bands', density: 'compact', caps: { quality: initial } } } }
+        : { tagGroupCaps: { quality: initial } } });
+      await h.open();
+      h.click(h.tab(shape ? 'layout' : 'groups'));
+      const row = () => h.$(shape ? `[data-shape="${editor}"] [data-shape-group="quality"]` : '.je-tge-row[data-group="quality"]');
+      if (!shape) h.click(row().querySelector('.je-tge-expand'));
+      const step = dir => row().querySelector(shape ? `[data-shape-action="cap"][data-value="${dir}"]` : `[data-step="${dir}"]`);
+      const value = () => row().querySelector('output').textContent;
+      const sample = shape ? editor === 'landscape' ? 'episode' : 'list' : 'movie';
+      const chips = () => h.$(`.je-mtp-sample[data-sample="${sample}"]`).querySelectorAll('[data-je-group="quality"] .quality-overlay-label').length;
+      const available = shape ? 2 : 5;
+      assert.equal(chips(), initial === 0 ? available : Math.min(initial, available));
+      assert.equal(step(-1).disabled, initial === 1);
+      assert.equal(step(1).disabled, initial === 0);
+      if (initial !== 10) {
+        const count = h.writes.length;
+        h.click(step(initial === 0 ? 1 : -1)); await h.settle();
+        assert.equal(h.writes.length, count, 'a disabled boundary press does not save');
+      }
+      let current = initial;
+      // Travel across 10/All in both directions, and down to 1 and back.
+      const directions = initial === 0 ? [-1, 1, -1, ...Array(9).fill(-1), 1]
+        : initial === 1 ? [1, -1] : [1, -1, -1, 1];
+      for (const dir of directions) {
+        current = dir < 0 ? current === 0 ? 10 : current - 1 : current === 10 ? 0 : current + 1;
+        h.click(step(dir)); await h.settle();
+        const saved = h.saved();
+        assert.equal(shape ? saved.tagShapeOverrides[editor].caps.quality : saved.tagGroupCaps.quality, current);
+        if (shape) assert.equal(saved.tagGroupCaps, null, 'shape edits leave the default caps alone');
+        assert.equal(value(), current === 0
+          ? shape ? 'panel_settings_ui_tag_editor_summary_all' : 'panel_settings_ui_tag_editor_cap_all'
+          : String(current));
+        assert.equal(step(-1).disabled, current === 1);
+        assert.equal(step(1).disabled, current === 0);
+        assert.equal(chips(), current === 0 ? available : Math.min(current, available), 'preview follows the saved cap');
+      }
+    });
+  }
+}

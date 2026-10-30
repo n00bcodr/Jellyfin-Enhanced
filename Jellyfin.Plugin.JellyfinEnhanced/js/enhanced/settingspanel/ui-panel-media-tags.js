@@ -170,9 +170,9 @@
                         ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : `panel_settings_ui_tag_slot_${conf.layout}_${slot}`)}</button>`).join('')}
                     </div>
                     <div class="je-mth-shape-cap" role="group" aria-label="${tx('tag_shapes_cap_for', { group: groupName, shape: shapeName })}">
-                        <button type="button" data-shape-action="cap" data-value="-1" ${cap === 0 ? 'disabled' : ''} aria-label="${tx('tag_shapes_fewer', { group: groupName })}">−</button>
+                        <button type="button" data-shape-action="cap" data-value="-1" ${internal.tagGroupEditorData.stepCap(cap, -1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_fewer', { group: groupName })}">−</button>
                         <output aria-live="polite">${cap === 0 ? tx('panel_settings_ui_tag_editor_summary_all') : cap}</output>
-                        <button type="button" data-shape-action="cap" data-value="1" ${cap === L.MAX_CAP ? 'disabled' : ''} aria-label="${tx('tag_shapes_more', { group: groupName })}">+</button>
+                        <button type="button" data-shape-action="cap" data-value="1" ${internal.tagGroupEditorData.stepCap(cap, 1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_more', { group: groupName })}">+</button>
                     </div>
                 </div>`;
             }).join('')}</div>` : '';
@@ -727,7 +727,7 @@
         const editShape = (event) => {
             const control = event.target.closest('[data-shape-action]');
             const row = control?.closest('[data-shape]');
-            if (!control || !row || !shapeMount?.contains(row)) return;
+            if (!control || control.disabled || !row || !shapeMount?.contains(row)) return;
             const action = control.dataset.shapeAction;
             if ((event.type === 'change') !== ['enabled', 'layout', 'density'].includes(action)) return;
             const L = JE.core.tagLayout;
@@ -746,7 +746,9 @@
                 if (action === 'slot') look.slots = { ...(look.slots || {}), [group]: control.dataset.value };
                 if (action === 'cap') {
                     const cap = L.resolveLayout({ shape }).caps[group];
-                    look.caps = { ...(look.caps || {}), [group]: Math.max(0, Math.min(L.MAX_CAP, cap + Number(control.dataset.value))) };
+                    const next = internal.tagGroupEditorData.stepCap(cap, Number(control.dataset.value), { capAll: true });
+                    if (next === null) return;
+                    look.caps = { ...(look.caps || {}), [group]: next };
                 }
             }
             shapes[shape] = look;

@@ -137,6 +137,8 @@ The choice for each card is **item lock → first matching rule → shape overri
 
 The episode and list samples in the live preview follow their own shape settings. **Caption** on list rows still puts caption chips on the image; choose another layout to avoid this fallback. **Native Poster Tags** draw on poster images only and ignore shape overrides.
 
+Shape chip limits run from **1** to **10**, then **All**. From **All**, press **−** to return to **10**; at **1**, **−** is disabled.
+
 Administrators can choose **Same look as posters** or the recommended look for each shape under **Card shape defaults**. This seeds new users and applies when overwriting personal settings. Existing version-0 documents keep their old look until an explicit edit; merely loading or saving unrelated preferences does not enable overrides.
 
 ![The episode thumbnail layout editor and its live samples](../images/tags/tag-shape-settings.webp)

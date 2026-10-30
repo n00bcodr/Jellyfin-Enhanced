@@ -186,8 +186,8 @@
         if (meta.capFixed) return { text: '1', canDown: false, canUp: false };
         return {
             text: cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap),
-            canDown: cap === 0 || cap > 1,
-            canUp: cap !== 0 && (cap < MAX_CAP || !!meta.capAll),
+            canDown: stepCap(cap, -1, meta) !== null,
+            canUp: stepCap(cap, 1, meta) !== null,
         };
     }
 
@@ -438,13 +438,12 @@
     /**
      * The next cap a stepper press gives: 1..10, with "All" (0) above 10 for
      * groups that allow it.
-     * @param {string} group
      * @param {number} cap - Current cap (0 = all).
      * @param {number} dir - +1 or -1.
+     * @param {{capFixed?: boolean, capAll?: boolean}} meta - The editor's cap policy.
      * @returns {number|null} Null when the press does nothing.
      */
-    function nextCap(group, cap, dir) {
-        const meta = GROUP_META[group];
+    function stepCap(cap, dir, meta) {
         if (meta.capFixed) return null;
         if (dir < 0) {
             if (cap === 0) return MAX_CAP;
@@ -453,6 +452,17 @@
         if (cap === 0) return null;
         if (cap < MAX_CAP) return cap + 1;
         return meta.capAll ? 0 : null;
+    }
+
+    /**
+     * Apply the default group editor's cap policy to a stepper press.
+     * @param {string} group
+     * @param {number} cap
+     * @param {number} dir
+     * @returns {number|null}
+     */
+    function nextCap(group, cap, dir) {
+        return stepCap(cap, dir, GROUP_META[group]);
     }
 
     /**
@@ -674,5 +684,5 @@
     };
 
     // Read by the hub's live preview (ui-panel-tag-preview.js) at draw time.
-    internal.tagGroupEditorData = { GROUP_META, QUALITY_CATS, sortedQualityCats, effectiveBool };
+    internal.tagGroupEditorData = { GROUP_META, QUALITY_CATS, sortedQualityCats, effectiveBool, stepCap };
 })(window.JellyfinEnhanced);
