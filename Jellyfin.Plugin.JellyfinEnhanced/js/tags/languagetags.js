@@ -427,7 +427,7 @@
                     }
                 }
 
-                var languages = { audio: extractLanguagesFromItem(sourceItem), subtitles: item.SubtitleLanguages || extractLanguagesFromItem(sourceItem, 'Subtitle') };
+                var languages = { audio: extractLanguagesFromItem(sourceItem), subtitles: sourceItem.SubtitleLanguages || item.SubtitleLanguages || extractLanguagesFromItem(sourceItem, 'Subtitle') };
 
                 if (languages.audio.length || languages.subtitles.length) {
                     ctx.setPersistent(itemId, languages);

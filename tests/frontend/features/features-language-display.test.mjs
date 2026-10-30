@@ -105,3 +105,11 @@ test('hoverable language chips retain Jellyfin link clicks and modifier keys', t
   h.renderer.injectCss();
   assert.match(h.document.getElementById('language-tags-styles').textContent, /\.je-tag-host:has\(\.language-overlay-container\) \{ z-index: 2;/);
 });
+
+test('container batch fallback reads subtitle facts from the projected first episode', t => {
+  const h = setup(t, { languageTagsShowSubtitles: true, languageTagsStyle: 'codes' });
+  h.renderer.render(h.target, { Id: 'a', Type: 'Series', SubtitleLanguages: null }, {
+    firstEpisode: { Id: 'episode', Type: 'Episode', SubtitleLanguages: ['fr'], MediaStreams: [{ Type: 'Audio', Language: 'en' }] }
+  });
+  assert.deepEqual(h.chips().map(el => el.textContent), ['EN', 'CCFR']);
+});
