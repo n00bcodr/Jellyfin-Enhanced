@@ -10,3 +10,5 @@
 | P4a-6 | How should new dashboard text be translated when injected JE is absent? | Load the embedded English dictionary and use a local JE.t adapter; injected JE.t is preferred when available. Badge labels use the shared JE.t only. | Adopt the dashboard's future translation framework. |
 
 | F4a-1 | Which transient-failure response shape? | Use a per-ID `{retry:true}` marker, preserving the existing ID-keyed response and omitting only authoritative no-data. Retry responses are not HTTP cached. | Replace with a top-level retry list if a later endpoint version needs it. |
+
+| F4a-2 | How to resolve a regular finale after a TMDB special? | Prefer TMDB when its latest is regular; otherwise use the confirmed caller-filtered series aggregate (memory or the stored copy) for both series and episodes, with its own air date. No additional upstream query. If the parent is unavailable or stripped, omit the finale. | Add season enrichment as an additional source later. |

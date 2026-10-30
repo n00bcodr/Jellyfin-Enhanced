@@ -421,7 +421,7 @@ First match wins, with one badge per card:
 | **New Season** | Series | The newest regular season's episode 1 aired within the new-release window; season number must exceed 1 |
 | **Season Premiere** | Season, episode | The season's episode 1 aired within the new-release window; an episode card must itself be episode 1 of a regular season and have aired within the just-added window |
 | **Season Finale** | Season, episode | The latest aired TMDB episode matches the library episode and is within the new-release window. TMDB `episode_type=finale` confirms it; if absent, the local episode must be last in its season and TMDB must have no next episode, or one in a later season |
-| **Series Finale** | Series, episode | TMDB status is Ended or Canceled, and its latest aired episode matches the visible library episode and falls within the new-release window |
+| **Series Finale** | Series, episode | TMDB status is Ended or Canceled, and the last aired regular episode matches the visible library episode and falls within the new-release window. When TMDB's latest is a special, use the caller-filtered library series aggregate and its air date; season 0 never supplies a series finale |
 | **Complete Season** | Season | Every non-virtual episode available in the library has an added date within the just-added window. This describes the available episodes; it does not certify acquisition of missing TMDB episodes |
 | **Airing Today** | Series | TMDB's next episode air date is today in the user's local calendar |
 | **Airs {date}** | Series | TMDB's next episode airs in the next seven days |

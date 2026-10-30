@@ -17,7 +17,7 @@ const card = id => `<div class="card" data-id="${id}"><div class="cardBox"><div 
  * layout controller), a fixed clock, and a /status-tags/series endpoint that
  * answers from `series` (TMDB facts per series id) and records each request.
  */
-function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout = false, failSeries = false, autoIntersect = true, captureTimers = false } = {}) {
+function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout = false, failSeries = false, autoIntersect = true, captureTimers = false, seriesAggregate = null, storedSeriesAggregate = null } = {}) {
   const renderers = new Map();
   const seriesCalls = [];
   const userChange = new Map();
@@ -37,7 +37,7 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
       t: translate,
       session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange: (name, fn) => userChange.set(name, fn) },
       _cacheManager: { register() {}, markDirty() {} },
-      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() {}, scheduleScan() {} }
+      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), peekServerEntry: id => id === SERIES ? seriesAggregate : null, lookupServerEntries: async () => { seriesAggregate ||= await storedSeriesAggregate; }, clearProcessed() {}, scheduleScan() {} }
     },
     apiClient: {
       getUrl: (path, params) => (params ? `${path}?${new URLSearchParams(params)}` : path),
@@ -461,3 +461,36 @@ for (const trigger of ['midnight', 'visible', 'focus', 'identical lookup']) {
     assert.equal(h.badge(), 'Airing Today', 'the card updates without rendering again');
   });
 }
+
+for (const type of ['Series', 'Episode']) {
+  test(`final regular ${type} remains a series finale when TMDB latest is a special`, async t => {
+    const aggregate = show({ LatestEpisodeIndex: { Season: 1, Episode: 10 }, LatestEpisodeAired: ago(2), LatestEpisodeAdded: ago(1) });
+    const h = setup(t, { seriesAggregate: aggregate, series: { [SERIES]: facts({ status: 'Ended',
+      lastAired: { date: '2026-10-29', season: 0, episode: 8, type: 'standard' } }) } });
+    h.show(type === 'Series' ? aggregate : episode({ SeasonNumber: 1, EpisodeNumber: 10, PremiereDate: ago(2) }), h.hosts[0], type === 'Series' ? SERIES : 'final');
+    h.show(episode({ SeasonNumber: 0, EpisodeNumber: 8, PremiereDate: ago(1) }), h.hosts[1], 'special');
+    await h.flush();
+    assert.equal(h.key(), 'series_finale');
+    assert.equal(h.key(h.hosts[1]), 'new_episode', 'the special is never a finale');
+  });
+}
+
+test('a recent special cannot freshen an old final regular episode', async t => {
+  const aggregate = show({ LatestEpisodeIndex: { Season: 1, Episode: 10 }, LatestEpisodeAired: OLD });
+  const h = setup(t, { seriesAggregate: aggregate, series: { [SERIES]: facts({ status: 'Ended',
+    lastAired: { date: '2026-10-29', season: 0, episode: 8, type: 'standard' } }) } });
+  h.show(aggregate, h.hosts[0], SERIES);
+  h.show(episode({ SeasonNumber: 1, EpisodeNumber: 10, PremiereDate: OLD }), h.hosts[1], 'final');
+  await h.flush();
+  assert.equal(h.key(), null);
+  assert.equal(h.key(h.hosts[1]), null);
+});
+
+test('an episode-only page resolves its final regular episode from the confirmed stored parent aggregate', async t => {
+  const h = setup(t, { storedSeriesAggregate: Promise.resolve(show({
+    LatestEpisodeIndex: { Season: 1, Episode: 10 }, LatestEpisodeAired: ago(2) })),
+    series: { [SERIES]: facts({ status: 'Ended', lastAired: { date: '2026-10-29', season: 0, episode: 8 } }) } });
+  h.show(episode({ SeasonNumber: 1, EpisodeNumber: 10, PremiereDate: ago(2) }));
+  await h.flush();
+  assert.equal(h.key(), 'series_finale');
+});

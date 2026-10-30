@@ -485,6 +485,26 @@
     }
 
     /**
+     * Resolve the last aired regular episode. TMDB's regular last episode wins;
+     * a later special falls back to the caller-filtered library series aggregate.
+     * Never infer a series boundary from an individual episode's IsLast flag.
+     * @param {StatusData} data
+     * @param {SeriesFacts|null} facts
+     * @returns {SeriesFacts['last']}
+     */
+    function finalRegularEpisode(data, facts) {
+        if (facts?.last?.season > 0) return facts.last;
+        if (facts?.last?.season !== 0) return null;
+        const aggregate = data.type === 'Series' ? data
+            : fromServerEntry(JE.tagPipeline?.peekServerEntry?.(data.seriesId) || {});
+        if (!(aggregate.latestIndex?.s > 0) || aggregate.latestAired === null) return null;
+        // Convert the library instant to a local calendar date, just like badge windows.
+        const date = new Date(aggregate.latestAired);
+        const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        return { date: day, season: aggregate.latestIndex.s, episode: aggregate.latestIndex.e, type: null };
+    }
+
+    /**
      * Pick the one badge a card shows (first match wins), or null.
      * @param {StatusData} data
      * @returns {{kind: string, key: string, label: string, compact?: string, rank?: number}|null}
@@ -502,7 +522,9 @@
         const facts = wantsSeriesFacts(data) ? seriesFactsFor(data) : null;
 
         // Match the series aggregate: specials never identify a final regular episode.
-        const finalRegular = facts?.last?.season > 0 ? facts.last : null;
+        const finalRegular = finalRegularEpisode(data, facts);
+        const finalDay = airDay(finalRegular?.date);
+        const finalAiredRecently = finalDay !== null && finalDay <= today && (today - finalDay) * DAY_MS <= newReleaseMs;
         const isNewRelease = data.premiere !== null && data.premiere <= now && now - data.premiere <= newReleaseMs;
         const comingSoon = data.premiere !== null && data.premiere > now;
         const addedRecently = isWithin(data.created, now, justAddedMs);
@@ -533,7 +555,7 @@
             case 'Series': {
                 if (showSchedule && daysToNext === 0) return makeBadge('schedule', 'airing_today');
                 // The finale of an ended show, aired recently and in the library.
-                if (showMilestones && finalRegular && TMDB_ENDED.has(facts.status || '') && lastAiredRecently
+                if (showMilestones && finalRegular && TMDB_ENDED.has(facts.status || '') && finalAiredRecently
                     && data.latestIndex && data.latestIndex.s === finalRegular.season && data.latestIndex.e === finalRegular.episode) {
                     return makeBadge('milestone', 'series_finale');
                 }
@@ -576,9 +598,11 @@
                     && isWithin(data.premiere, now, justAddedMs)) {
                     return makeBadge('milestone', 'season_premiere');
                 }
+                if (showMilestones && airedRecently && finalRegular && finalAiredRecently
+                    && data.season === finalRegular.season && data.episode === finalRegular.episode
+                    && TMDB_ENDED.has(facts.status || '')) return makeBadge('milestone', 'series_finale');
                 if (showMilestones && airedRecently && facts?.last && lastAiredRecently
                     && data.season === facts.last.season && data.episode === facts.last.episode) {
-                    if (finalRegular && data.season > 0 && TMDB_ENDED.has(facts.status || '')) return makeBadge('milestone', 'series_finale');
                     if (lastAiredEndsSeason(facts, data.isLast)) return makeBadge('milestone', 'season_finale');
                 }
                 if (showNew && ((airedRecently && isWithin(data.premiere, now, justAddedMs)) || addedRecently)) return makeBadge('new', 'new_episode');
@@ -1018,6 +1042,12 @@
                 seriesInfo.set(id, { facts, expires: now + (failed ? SERIES_RETRY_MS : SERIES_TTL_MS), retry: failed });
                 if (JSON.stringify(previous) !== JSON.stringify(facts)) changed = true;
             }
+            // Episode-only pages may have restored just their visible entries
+            // from IndexedDB. Warm the confirmed caller-filtered parent aggregates
+            // before resolving a regular finale behind TMDB's latest special.
+            const specialIds = batch.filter(id => seriesInfo.get(id)?.facts?.last?.season === 0);
+            if (specialIds.length) await JE.tagPipeline?.lookupServerEntries?.(specialIds);
+            if (epoch !== seriesEpoch) return;
         }
         if (changed || renderedDay !== localDay(Date.now())) applyLivePass(ctx);
         armSeriesRetry(ctx);

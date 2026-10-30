@@ -1726,6 +1726,14 @@
         initialize,
         getFirstEpisode,
         getParentSeries,
+        lookupServerEntries,
+        /**
+         * Peek at an already loaded, caller-filtered entry without fetching.
+         * Consumers must treat the shared entry as read-only; a memory miss is null.
+         * @param {string} id - Normalized item id.
+         * @returns {Object|null}
+         */
+        peekServerEntry(id) { return serverCache?.get(id) || null; },
         /** @param {string} name - Renderer name (e.g. 'quality'). */
         getRenderer(name) { return renderers.get(name); },
         /**
