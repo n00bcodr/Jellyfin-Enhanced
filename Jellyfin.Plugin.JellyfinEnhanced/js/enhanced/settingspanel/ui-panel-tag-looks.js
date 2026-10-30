@@ -933,6 +933,18 @@
 
         renderLists();
         openForm(false);
+        const phone = window.matchMedia?.('(max-width: 760px)');
+        /** Put the editable form first on phones, regardless of saved-rule count. */
+        const orderPhoneForm = () => {
+            const cols = view.side.parentElement;
+            const focused = document.activeElement;
+            if (phone?.matches) cols.prepend(view.side);
+            else cols.append(view.side);
+            if (focused instanceof HTMLElement && focused.isConnected && document.activeElement !== focused) focused.focus({ preventScroll: true });
+            scheduleActions();
+        };
+        orderPhoneForm();
+        phone?.addEventListener('change', orderPhoneForm);
         scroller?.addEventListener('scroll', scheduleActions, { passive: true });
         window.addEventListener('resize', scheduleActions);
         Promise.all([loadLibraries(state), loadGenres(state)]).then(() => {
@@ -957,6 +969,7 @@
         document.addEventListener('je:tag-layout-changed', refreshDefault);
         const stopWatching = () => {
             document.removeEventListener('je:tag-layout-changed', refreshDefault);
+            phone?.removeEventListener('change', orderPhoneForm);
             scroller?.removeEventListener('scroll', scheduleActions);
             window.removeEventListener('resize', scheduleActions);
             formObserver?.disconnect();

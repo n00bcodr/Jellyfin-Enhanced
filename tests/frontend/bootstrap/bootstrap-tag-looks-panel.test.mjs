@@ -545,3 +545,20 @@ test('rule actions only stick when the entire form fits in the visible scroller'
   await sync();
   assert.equal(h.form().classList.contains('je-form-visible'), false, 'partly above scroller returns actions to flow');
 });
+
+
+test('the phone landing puts the form before saved rules, and restores desktop order without losing focus', async t => {
+  const h = setup(t, { settings: { tagLookRules: [kidsRule] } });
+  let change;
+  const media = { matches: true, addEventListener: (_, fn) => { change = fn; }, removeEventListener() {} };
+  h.window.matchMedia = () => media;
+  await h.open();
+  const side = h.form().parentElement;
+  assert.equal(side.parentElement.firstElementChild, side);
+  const field = h.form().querySelector('select');
+  field.focus();
+  media.matches = false;
+  change();
+  assert.equal(side.parentElement.lastElementChild, side);
+  assert.equal(h.document.activeElement, field);
+});
