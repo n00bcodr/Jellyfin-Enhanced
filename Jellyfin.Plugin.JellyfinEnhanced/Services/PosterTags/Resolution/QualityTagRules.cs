@@ -285,6 +285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         {
             var displayTitle = JsText.AsciiLower(video.DisplayTitle);
             var height = video.Height ?? 0;
+            var width = video.Width ?? 0;
             var match = ResolutionRegex.Match(displayTitle);
             var found = match.Success ? match.Groups[1].Value : null;
             var falsely4K = found is "4k" or "2160p" && height > 0 && height < 1250;
@@ -303,12 +304,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 };
             }
 
-            // Dimension fallback; the tag cache carries no Width (always 0 in the server path).
-            if (height >= 3000) return "8K";
-            if (height >= 1550) return "4K";
-            if (height >= 1250) return "1440p";
-            if (height >= 1000) return "1080p";
-            if (height >= 700) return "720p";
+            // Dimension fallback; width covers cropped scope encodes (1920x800 is 1080p). Old cache entries have no Width (0).
+            if (height >= 3000 || width >= 7000) return "8K";
+            if (height >= 1550 || width >= 3500) return "4K";
+            if (height >= 1250 || width >= 2400) return "1440p";
+            if (height >= 1000 || width >= 1800) return "1080p";
+            if (height >= 700 || width >= 1200) return "720p";
             if (height >= 528) return "576p";
             if (height >= 400) return "480p";
             return height > 0 ? "LOW-RES" : null;

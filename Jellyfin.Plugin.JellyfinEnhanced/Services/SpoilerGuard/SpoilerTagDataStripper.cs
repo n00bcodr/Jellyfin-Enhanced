@@ -468,6 +468,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         CodecTag = st.CodecTag,
                         Profile = st.Profile,
                         Height = st.Height,
+                        Width = st.Width,
                         Channels = st.Channels,
                         ChannelLayout = st.ChannelLayout,
                         VideoRangeType = st.VideoRangeType,

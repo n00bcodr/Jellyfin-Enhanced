@@ -198,6 +198,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string? CodecTag { get; set; }
         public string? Profile { get; set; }
         public int? Height { get; set; }
+        public int? Width { get; set; }
         public int? Channels { get; set; }
         public string? ChannelLayout { get; set; }
         public string? VideoRangeType { get; set; }
@@ -214,6 +215,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             && a.CodecTag == b.CodecTag
             && a.Profile == b.Profile
             && a.Height == b.Height
+            && a.Width == b.Width
             && a.Channels == b.Channels
             && a.ChannelLayout == b.ChannelLayout
             && a.VideoRangeType == b.VideoRangeType

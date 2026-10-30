@@ -455,11 +455,11 @@
                     resolutionTag = '8K';
                 } else if (height >= 1550 || width >= 3500) {
                     resolutionTag = '4K';
-                } else if (height >= 1250) {
+                } else if (height >= 1250 || width >= 2400) {
                     resolutionTag = '1440p';
-                } else if (height >= 1000) {
+                } else if (height >= 1000 || width >= 1800) {
                     resolutionTag = '1080p';
-                } else if (height >= 700) {
+                } else if (height >= 700 || width >= 1200) {
                     resolutionTag = '720p';
                 } else if (height >= 528) {
                     // PAL DVD is 720x576; NTSC DVD is 720x480. 528 splits the two evenly.
