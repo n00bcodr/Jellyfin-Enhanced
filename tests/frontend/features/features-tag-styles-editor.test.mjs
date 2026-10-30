@@ -15,7 +15,9 @@ const between = (from, to) => {
   return page.slice(start, end + to.length);
 };
 const contrastSource = between('// <tag-style-contrast>', '// </tag-style-contrast>');
-const editorSource = between('        const tagStyles = (() => {', '            return { load, serialize, settings, renderTargetPills };\n        })();');
+const editorSource = between('        const tagStyles = (() => {', '            return { load, serialize, settings, snapshot, renderTargetPills };\n        })();');
+// The page's unsaved-changes snapshot, run over the editor markup.
+const snapshotSource = between('            function jeSnapshotFormState() {', '/** Call once the form reflects a known-saved state. */');
 const markup = between('<div class="checkboxContainer"><label><input id="tagStylesEnabled"', '<div id="tagStylesBody">')
   + between('<div id="tagStyleEditor"', '<div class="je-setting-description" data-desc-for="tagStylesAllowUserPreset">') + '</div></div></div>';
 
@@ -205,4 +207,45 @@ test('language edits only the border ring and reset all clears everything', asyn
   h.click('#tagStyleTargetPills [data-target="native"]');
   assert.equal(h.$('#tagStyleTarget').value, 'native');
   assert.equal(h.$('#tagStyleTargetPills [data-target="native"]').getAttribute('aria-checked'), 'true');
+});
+
+test('an opacity-only edit makes the page dirty; redrawn pickers and a version 1 migration do not', async t => {
+  const h = await setup(t, JSON.stringify({ v: 2, preset: 'default', labels: { 'quality:4K': { background: 'rgba(255, 255, 255, 1)' } } }));
+  h.window.eval(`window.__snapshot = (function (form, shortcutOverrides, tagStyles) {\n${snapshotSource}\nreturn jeSnapshotFormState; })`);
+  const snapshot = () => h.window.__snapshot(h.document.body, [], h.editor)();
+  h.click('.je-ts-target[data-label="4K"]');
+  const saved = snapshot();
+
+  // Redrawing the rows (another target, another tab) changes the colour pickers' values, not the document.
+  h.click('.je-ts-tab[data-group="rating"]');
+  h.click('.je-ts-tab[data-group="quality"]');
+  h.click('.je-ts-target[data-label="4K"]');
+  assert.equal(snapshot(), saved, 'transient editor controls are not part of the snapshot');
+
+  // 40% keeps the hex colour (so no <input> value changes): only the document says it changed.
+  const picker = h.$('.je-ts-field-row[data-field="background"] .je-ts-any').value;
+  h.$$('.je-ts-field-row[data-field="background"] .je-ts-opacity-pill').find(b => b.textContent === '40%').click();
+  assert.equal(h.$('.je-ts-field-row[data-field="background"] .je-ts-any').value, picker);
+  assert.notEqual(snapshot(), saved, 'the page is dirty');
+  h.$$('.je-ts-field-row[data-field="background"] .je-ts-opacity-pill').find(b => b.textContent === '100%').click();
+  assert.equal(snapshot(), saved, 'back to the saved colour: clean again');
+
+  // The preset alone is part of it too.
+  h.click('.je-ts-preset[data-preset="glass"]');
+  assert.notEqual(snapshot(), saved);
+
+  // A version 1 document migrated once the catalog arrives is not an unsaved change.
+  let answer;
+  const late = createHarness({ html: markup, apiClient: { ajax: () => new Promise(resolve => { answer = resolve; }) }, globals: { jeCdnUrl: path => path } });
+  t.after(() => late.close());
+  fakeCanvas(late.window);
+  late.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
+  late.window.eval(`window.__snapshot = (function (form, shortcutOverrides, tagStyles) {\n${snapshotSource}\nreturn jeSnapshotFormState; })`);
+  const lateSnapshot = () => late.window.__snapshot(late.document.body, [], late.window.__editor)();
+  late.window.__editor.load(JSON.stringify({ quality: { '4K': { background: '#ff0000' } } }), 'glass');
+  const before = lateSnapshot();
+  answer(catalog);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.notEqual(late.window.__editor.serialize(), JSON.stringify({ quality: { '4K': { background: '#ff0000' } } }), 'migrated');
+  assert.equal(lateSnapshot(), before);
 });

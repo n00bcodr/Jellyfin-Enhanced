@@ -4198,11 +4198,14 @@
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
+                    if (el.closest('#tagStyleRows')) return; // Tag Styles colour pickers: redrawn per editing target, the state is pushed below
                     const key = el.id || el.name || ('#' + i);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
                 // shortcutOverrides is JS state, not bound to persistent <input> elements.
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
+                // So is the Tag Styles document (preset tiles, swatches and opacity pills are buttons).
+                parts.push('tagStyles=' + tagStyles.snapshot());
                 return parts.join('');
             }
 
@@ -6192,6 +6195,8 @@
             let canvas = null;
             // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
             let legacy = null;
+            // A version 1 document migrated since load: the snapshots before (from) and after (to).
+            let migrated = null;
 
             // <tag-style-contrast> pure helpers (tests/frontend extracts and runs this block)
             /**
@@ -6699,6 +6704,17 @@
             }
 
             /**
+             * Migrates the loaded version 1 document, remembering both snapshots (see snapshot()).
+             * @param {string} json - The document as stored.
+             * @param {Object} doc - The same, parsed.
+             * @returns {void}
+             */
+            function migrateLoaded(json, doc) {
+                migrateV1(doc);
+                migrated = { from: json + '|default', to: serialize() + '|' + state.preset };
+            }
+
+            /**
              * Loads the stored document (version 1 or 2) and preset. A version 1 document is migrated
              * once the catalog is in; until then serialize() hands it back untouched (the server
              * migrates it the same way).
@@ -6711,6 +6727,7 @@
                 current = 'quality';
                 target = ALL;
                 legacy = null;
+                migrated = null;
                 try {
                     const p = json ? JSON.parse(json) : {};
                     if (p && p.v === 2) {
@@ -6718,19 +6735,29 @@
                         Object.keys(p.labels || {}).forEach((k) => { const c = readColours(p.labels[k], 'text'); if (c) state.labels[k] = c; });
                     } else if (p && typeof p === 'object' && !Array.isArray(p) && Object.keys(p).length) {
                         state.preset = 'default';
-                        if (cat) migrateV1(p); else legacy = { json, doc: p };
+                        if (cat) migrateLoaded(json, p); else legacy = { json, doc: p };
                     }
                 } catch (e) { /* unreadable value: start clean */ }
                 if (!cat) {
                     ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog'), dataType: 'json' }).then((c) => {
                         cat = c;
-                        if (legacy) { migrateV1(legacy.doc); legacy = null; }
+                        if (legacy) { const l = legacy; legacy = null; migrateLoaded(l.json, l.doc); }
                         render();
                     }).catch(() => {
                         document.querySelector('#tagStylePresets').textContent = 'Could not load the tag list.';
                     });
                 }
                 render();
+            }
+
+            /**
+             * What the unsaved-changes check compares: the stored document and the preset. A version 1
+             * document migrated on load still reads as loaded, so the migration alone is no change.
+             * @returns {string}
+             */
+            function snapshot() {
+                const now = serialize() + '|' + state.preset;
+                return migrated && now === migrated.to ? migrated.from : now;
             }
 
             /** @returns {string} The stored document, or '' when nothing is overridden. */
@@ -6763,7 +6790,7 @@
                 render();
             });
 
-            return { load, serialize, settings, renderTargetPills };
+            return { load, serialize, settings, snapshot, renderTargetPills };
         })();
 
         function loadConfig() {
