@@ -43,7 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan RetryTtl = TimeSpan.FromHours(1);
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan SaveMaxWait = TimeSpan.FromMinutes(2);
-        private const int CurrentSchemaVersion = 1;
+        private const int CurrentSchemaVersion = 2;
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IApplicationPaths _applicationPaths;
@@ -427,16 +427,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        /// <summary>Account for a request made by the Awards list consumer under the shared quota budget.</summary>
+        internal void RecordAwardListRequest()
+        {
+            lock (_accountStatusLock)
+            {
+                if (_accountStatus != null) _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
+            }
+        }
+
         private readonly SemaphoreSlim _tagRatingsGate = new(1, 1);
 
         /// <summary>Bounded, serialized request-time enrichment, sharing the existing seven-day cache and quota floor.</summary>
-        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin)
+        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin, TimeSpan? maxAge = null)
         {
             if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
             await _tagRatingsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                foreach (var group in titles.Distinct().Where(t => NeedsFetch(t.MediaType, t.Id)).GroupBy(t => t.MediaType))
+                foreach (var group in titles.Distinct().Where(t => NeedsFetch(t.MediaType, t.Id)
+                    || (maxAge != null && GetCachedEntry(t.MediaType, t.Id) is { Found: true } entry
+                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - entry.FetchedAtUnixMs >= maxAge.Value.TotalMilliseconds)).GroupBy(t => t.MediaType))
                 {
                     foreach (var chunk in group.Chunk(150))
                     {
@@ -536,6 +547,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         // non-string value here is simply skipped.
                         Url = r.TryGetProperty("url", out var urlEl) && urlEl.ValueKind == JsonValueKind.String ? urlEl.GetString() : null,
                         Fresh = GetNullableInt(r, "fresh"),
+                        Certified = r.TryGetProperty("certified", out var certified)
+                            ? certified.ValueKind == JsonValueKind.True || (certified.ValueKind == JsonValueKind.Number && certified.TryGetInt32(out var flag) && flag == 1)
+                            : null,
                     });
                 }
             }

@@ -64,6 +64,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
         public bool StatusTagsEnabled { get; set; }
+
+        /// <summary>Opt-in Awards poster group; administrator also gates refresh work.</summary>
+        public bool AwardsTagsEnabled { get; set; }
+        /// <summary>Legacy corner fallback for Awards.</summary>
+        public string AwardsTagsPosition { get; set; } = "top-left";
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";

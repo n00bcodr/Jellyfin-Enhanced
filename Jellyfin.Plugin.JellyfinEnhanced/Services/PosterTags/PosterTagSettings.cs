@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "6";
+        public const string ResolverVersion = "7";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>True when at least one of the five card tag groups is on and not set to "off" in the corners layout.</summary>
         public bool AnyGroupEnabled => Shows(PosterTagGroup.Quality) || Shows(PosterTagGroup.Genre) || Shows(PosterTagGroup.Language)
-            || Shows(PosterTagGroup.Rating) || Shows(PosterTagGroup.AgeRating);
+            || Shows(PosterTagGroup.Rating) || Shows(PosterTagGroup.AgeRating) || Shows(PosterTagGroup.Awards);
 
         /// <summary>
         /// Stable lowercase hex hash (16 characters) over every rendering-relevant effective value,
@@ -81,6 +81,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Effective <c>ageRatingTagsEnabled</c>.</summary>
         public bool AgeRatingTagsEnabled { get; private init; }
+        public bool AwardsTagsEnabled { get; private init; }
+        public string AwardsTagsPosition { get; private init; } = "top-left";
+        public int AwardsCap { get; private init; } = 2;
+        public bool AwardsImdb { get; private init; }
+        public bool AwardsCertifiedFresh { get; private init; }
+        public bool AwardsOscar { get; private init; }
+        public bool AwardsEmmy { get; private init; }
+        public bool AwardsLetterboxd { get; private init; }
 
         /// <summary>
         /// Groups the user set to "off" in their corners layout profile: the web's corners layout
@@ -264,7 +272,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             || (Shows(PosterTagGroup.Genre) && IsTopRight(GenreTagsPosition))
             || (Shows(PosterTagGroup.Rating) && IsTopRight(RatingTagsPosition))
             || (Shows(PosterTagGroup.AgeRating) && IsTopRight(AgeRatingTagsPosition))
-            || (Shows(PosterTagGroup.Language) && IsTopRight(LanguageTagsPosition));
+            || (Shows(PosterTagGroup.Language) && IsTopRight(LanguageTagsPosition))
+            || (Shows(PosterTagGroup.Awards) && IsTopRight(AwardsTagsPosition));
 
         /// <summary>Whether the user-review chip can appear: reviews, posters chip and a shown rating group.</summary>
         public bool UserReviewChipEnabled => ShowUserReviews && ShowUserRatingOnPosters && Shows(PosterTagGroup.Rating);
@@ -372,6 +381,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsEnabled = user.LanguageTagsEnabled,
                 RatingTagsEnabled = user.RatingTagsEnabled,
                 AgeRatingTagsEnabled = user.AgeRatingTagsEnabled,
+                AwardsTagsEnabled = user.AwardsTagsEnabled && config.AwardsTagsEnabled,
+                AwardsTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Awards) ?? Position(user.AwardsTagsPosition, config.AwardsTagsPosition, "top-left"),
+                AwardsCap = layout.Cap("awards"),
+                AwardsImdb = config.AwardsTagsImdb,
+                AwardsCertifiedFresh = config.AwardsTagsCertifiedFresh,
+                AwardsOscar = config.AwardsTagsOscar,
+                AwardsEmmy = config.AwardsTagsEmmy,
+                AwardsLetterboxd = config.AwardsTagsLetterboxd,
                 QualityTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Quality) ?? Position(user.QualityTagsPosition, config.QualityTagsPosition, "top-left"),
                 GenreTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Genre) ?? Position(user.GenreTagsPosition, config.GenreTagsPosition, "top-right"),
                 LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
@@ -462,6 +479,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreTagsEnabled,
             PosterTagGroup.Rating => RatingTagsEnabled,
             PosterTagGroup.AgeRating => AgeRatingTagsEnabled,
+            PosterTagGroup.Awards => AwardsTagsEnabled,
             _ => LanguageTagsEnabled,
         };
 
@@ -474,6 +492,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreCap,
             PosterTagGroup.Rating => RatingCap,
             PosterTagGroup.AgeRating => AgeRatingCap,
+            PosterTagGroup.Awards => AwardsCap,
             _ => LanguageCap,
         };
 
@@ -486,6 +505,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreTagsPosition,
             PosterTagGroup.Rating => RatingTagsPosition,
             PosterTagGroup.AgeRating => AgeRatingTagsPosition,
+            PosterTagGroup.Awards => AwardsTagsPosition,
             _ => LanguageTagsPosition,
         };
 
@@ -541,6 +561,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => "genre",
             PosterTagGroup.Rating => "rating",
             PosterTagGroup.AgeRating => "ageRating",
+            PosterTagGroup.Awards => "awards",
             _ => "language",
         };
 
@@ -613,6 +634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 "genre" => 3,
                 "language" => 3,
+                "awards" => 2,
                 "ageRating" => 1,
                 _ => 0,
             };
@@ -623,6 +645,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 "genre" => caps?.Genre,
                 "language" => caps?.Language,
                 "rating" => caps?.Rating,
+                "awards" => caps?.Awards,
                 _ => caps?.AgeRating,
             };
         }
@@ -666,6 +689,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsEnabled = config.LanguageTagsEnabled,
                 RatingTagsEnabled = config.RatingTagsEnabled,
                 AgeRatingTagsEnabled = config.AgeRatingTagsEnabled,
+                AwardsTagsEnabled = config.AwardsTagsEnabled,
+                AwardsTagsPosition = config.AwardsTagsPosition,
                 PeopleTagsEnabled = config.PeopleTagsEnabled,
                 QualityTagsPosition = config.QualityTagsPosition,
                 SeriesQualityAggregation = config.SeriesQualityAggregation,
@@ -777,6 +802,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 values["ageRating.position"] = AgeRatingTagsPosition;
                 values["ageRating.cap"] = Int(AgeRatingCap);
+            }
+
+            if (Shows(PosterTagGroup.Awards))
+            {
+                values["awards.enabled"] = "1";
+                values["awards.position"] = AwardsTagsPosition;
+                values["awards.cap"] = Int(AwardsCap);
+                values["awards.includes"] = $"{AwardsImdb},{AwardsCertifiedFresh},{AwardsOscar},{AwardsEmmy},{AwardsLetterboxd}";
             }
 
             if (!Styles.IsEmpty)

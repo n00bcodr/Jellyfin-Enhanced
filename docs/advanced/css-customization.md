@@ -1119,3 +1119,7 @@ The table shows factory plugin/client defaults. New user settings are seeded fro
 The animation override stops both random-button hover and loading animation. Keep loading and disabled actions identifiable.
 
 In the Seerr form, the radio input must remain immediately before its option span. Checked/focus styles use that sibling relationship and consume `--primary-accent-color` with a fallback.
+
+### Awards chips
+
+The Awards wrapper is `.awards-overlay-container`, placed by the shared tag layout controller. Each `.awards-tag[data-je-award]` contains `.awards-tag-logo` (decorative bundled SVG) and a text span. Stable ids are `imdbTop250`, `certifiedFresh`, `oscar`, `emmy`, `letterboxdTop250`. The chip's title and accessible label include rank/year when known. Layout slots, caption outlets, caps and hover suppression apply as for other groups. Tag Styles supplies Awards group and per-label background/text/inner-border colours. SVG source colours remain their identifying colours; CSS cannot change native image pixels.

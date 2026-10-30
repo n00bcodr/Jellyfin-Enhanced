@@ -790,3 +790,7 @@ Open **Docs** to load **Documentation** from the GitHub Pages site, or choose **
     The tab needs connectivity from your browser; it is not an offline copy bundled with the plugin. It loads the document when first opened and retains it when you switch tabs.
 
     If no iframe load event arrives within eight seconds, a fallback message and link replace it. **Open in new tab** is always an alternative.
+
+### Awards poster group
+
+**Media Tags → Groups → Awards** enables chart and winner chips, with the usual position, priority and cap controls (default two). Existing users start off. Administrators first enable Awards under **Display → Media Tags → Awards Tags**, choose ribbons, configure the two MDBList lists and a freshness interval (24 hours), and run **Refresh Awards Tags**. IMDb/Letterboxd charts and Certified Fresh require the server MDBList key; Wikidata Oscar/Emmy wins do not. Native posters follow the same group preference. See [Awards Tags](tags.md#awards-tags).

@@ -73,6 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // endpoint (no API key), cached to disk indefinitely for hits / with a TTL
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
+            serviceCollection.AddSingleton<AwardTagsService>();
             serviceCollection.AddSingleton<AnilistReviewsService>();
             serviceCollection.AddSingleton<ReviewTranslationService>();
             serviceCollection.AddSingleton<MdblistService>();
@@ -102,6 +103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<MdblistRatingsFetchTask>();
             serviceCollection.AddTransient<MdblistRatingsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();
+            serviceCollection.AddTransient<RefreshAwardTagsTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();

@@ -287,6 +287,7 @@
   "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "0558d2c62c20e512b4164efdfa5155c7092d65000e97d116d9d1066fecafd052",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsoutlined.woff2": "5741bbaa09c4b7d9654753144a38133072ca51cf0c931d13ab93bd391c3fc8be",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded.woff2": "05cc9b9f8de1f641e9f8e54106c8fa665a834c7fbfab573b4f5a81704e78170a",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/awardstags.js": "a64e0af6235fcf080a99f2393a7644f7b60ca2a622904d6a3d11e4353f8c266a",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "2086644d04573b36a859000735848831c88725f83608c4cda9fe273c116bc79e",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "00f4a25fc0f7e64c138273da3406670f6851a8a78798e91a6812e60ac14ca125",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/rating-sources.js": "ff7874f3c8bb2941c799390ae05a6b1439bdaaa22df0ce5bc90696f0016e727d",
@@ -315,6 +316,10 @@
   "age-rating-colours.json": {
    "bytes": 4563,
    "sha256": "1be4462df3f53a849d24e5425bcacfe6828cd8dcb1a8a61538ff696865aedf12"
+  },
+  "award-icons.json": {
+   "bytes": 992,
+   "sha256": "75f2d93d82f864f03ecb30f916eebd96d0debd59ef4e9e9c1f3e42125a4c2d5b"
   },
   "flags/ad.webp": {
    "bytes": 3660,

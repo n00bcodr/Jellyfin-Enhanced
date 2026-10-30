@@ -453,6 +453,7 @@
                             <div class="je-setting-description" data-desc-for="statusTagsEnabled">
                                 <div class="fieldDescription" data-je-status-label="admin_status_tags_description"></div>
                             </div>
+
                             <details id="statusTagsAdminDetails" class="je-details-section" style="margin-left: 20px;">
                                 <summary>Choose which badges to show</summary>
                                 <div class="je-details-body">
@@ -492,6 +493,20 @@
                                 </div>
                             </details>
 
+                        <details class="je-details-section" id="awardsTagsAdminDetails">
+                            <summary data-je-awards-label="awards_tags_admin_title">Awards Tags</summary>
+                            <div class="checkboxContainer"><label><input id="awardsTagsEnabled" is="emby-checkbox" type="checkbox"/><span data-je-awards-label="awards_tags_admin_enable">Enable Awards Tags</span></label></div>
+                            <div class="je-setting-description" data-je-awards-label="awards_tags_admin_description">Opt in to shared server refreshes and seed the Awards group for new users. Existing users enable Awards in Media Tags. IMDb, Letterboxd and Certified Fresh need the server MDBList key; Oscar/Emmy use Wikidata without a key. No score is treated as certification.</div>
+                            <div class="selectContainer"><label for="awardsTagsPosition">Position</label><select id="awardsTagsPosition" is="emby-select"><option value="top-left">Top Left</option><option value="top-center">Top Centre</option><option value="top-right">Top Right</option><option value="center-left">Left Centre</option><option value="center">Centre</option><option value="center-right">Right Centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom Centre</option><option value="bottom-right">Bottom Right</option></select></div>
+                            <div class="checkboxContainer"><label><input id="awardsTagsImdb" is="emby-checkbox" type="checkbox"/><span data-je-awards-label="awards_tags_imdbTop250">IMDb Top 250</span></label></div>
+<div class="checkboxContainer"><label><input id="awardsTagsCertifiedFresh" is="emby-checkbox" type="checkbox"/><span data-je-awards-label="awards_tags_certifiedFresh">Rotten Tomatoes Certified Fresh</span></label></div>
+<div class="checkboxContainer"><label><input id="awardsTagsOscar" is="emby-checkbox" type="checkbox"/><span data-je-awards-label="awards_tags_oscar">Oscar winner</span></label></div>
+<div class="checkboxContainer"><label><input id="awardsTagsEmmy" is="emby-checkbox" type="checkbox"/><span data-je-awards-label="awards_tags_emmy">Emmy winner</span></label></div>
+<div class="checkboxContainer"><label><input id="awardsTagsLetterboxd" is="emby-checkbox" type="checkbox"/><span data-je-awards-label="awards_tags_letterboxdTop250">Letterboxd Top 250</span></label></div>
+                            <div class="inputContainer"><label for="awardsTagsImdbList" data-je-awards-label="awards_tags_admin_imdb_list">IMDb Top 250 MDBList id or owner/slug</label><input id="awardsTagsImdbList" is="emby-input" type="text" pattern="(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_-]{1,80}/[a-zA-Z0-9_-]{1,160})"/></div>
+                            <div class="inputContainer"><label for="awardsTagsLetterboxdList" data-je-awards-label="awards_tags_admin_letterboxd_list">Letterboxd Top 250 MDBList id or owner/slug</label><input id="awardsTagsLetterboxdList" is="emby-input" type="text" pattern="(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_-]{1,80}/[a-zA-Z0-9_-]{1,160})"/></div>
+                            <div class="inputContainer"><label for="awardsTagsRefreshHours" data-je-awards-label="awards_tags_admin_interval">Refresh interval (hours)</label><input id="awardsTagsRefreshHours" is="emby-input" type="number" min="1" max="168" step="1"/><div class="fieldDescription" data-je-awards-label="awards_tags_admin_refresh_help">Default 24. Run Refresh Awards Tags in Scheduled Tasks on demand; configure its trigger there for a shorter cadence. Failed lookups retry in one hour; Wikidata retains its existing longer cache TTLs.</div></div>
+                        </details>
                             <details id="tagLayoutAdminDetails" class="je-details-section">
                                 <summary>Tag layout defaults</summary>
                                 <div class="je-details-body">
@@ -3947,7 +3962,7 @@
             // Deep link from the settings panel's Media Tags hub
             // (#/configurationpage?name=…&jeSection=<id>): open the tab that
             // holds the section and scroll to it. Only these ids are accepted.
-            const JE_SECTION_LINKS = ['tagLayoutAdminDetails', 'statusTagsAdminDetails', 'tagStylesEnabled', 'tagCacheServerMode', 'nativePosterTagsEnabled'];
+            const JE_SECTION_LINKS = ['tagLayoutAdminDetails', 'statusTagsAdminDetails', 'awardsTagsAdminDetails', 'tagStylesEnabled', 'tagCacheServerMode', 'nativePosterTagsEnabled'];
             function jeOpenRequestedSection() {
                 let id = null;
                 try { id = new URLSearchParams(window.location.hash.split('?')[1] || '').get('jeSection'); } catch (e) { return; }
@@ -5851,14 +5866,15 @@
         var tagLayoutAdmin = (function () {
             var GROUPS = {
                 status: { name: 'Status', position: 'statusTagsPosition', capFixed: true },
+                awards: { name: 'Awards', position: 'awardsTagsPosition', capAll: true },
                 quality: { name: 'Quality', position: 'qualityTagsPosition', capAll: true },
                 rating: { name: 'Rating', position: 'ratingTagsPosition', capAll: true },
                 ageRating: { name: 'Age Rating', position: 'ageRatingTagsPosition', capFixed: true },
                 language: { name: 'Language', position: 'languageTagsPosition' },
                 genre: { name: 'Genre', position: 'genreTagsPosition' }
             };
-            var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre'];
-            var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 };
+            var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards'];
+            var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 };
             var LAYOUT_SLOTS = {
                 corners: ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br', 'off'],
                 bands: ['top', 'bottom', 'off'],
@@ -5867,10 +5883,10 @@
                 minimal: ['top', 'dots', 'corner', 'hover', 'off']
             };
             var DEFAULT_PROFILES = {
-                bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top' },
-                caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster' },
-                summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill' },
-                minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top' }
+                bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom' },
+                caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption' },
+                summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover' },
+                minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover' }
             };
             var SLOT_LABELS = {
                 corners: { tl: 'Top left', tc: 'Top centre', tr: 'Top right', ml: 'Left centre', c: 'Centre', mr: 'Right centre', bl: 'Bottom left', bc: 'Bottom centre', br: 'Bottom right' },
@@ -6686,7 +6702,7 @@
         const tagStyles = (() => {
             const GROUPS = [
                 { key: 'quality', title: 'Quality' }, { key: 'ageRating', title: 'Age' }, { key: 'rating', title: 'Rating' },
-                { key: 'genre', title: 'Genre' }, { key: 'status', title: 'Status' }, { key: 'language', title: 'Language' }
+                { key: 'genre', title: 'Genre' }, { key: 'status', title: 'Status' }, { key: 'language', title: 'Language' }, { key: 'awards', title: 'Awards' }
             ];
             const PRESET_TITLES = { default: 'Default', glass: 'Glass', outline: 'Outline', dark: 'Dark', light: 'Light', mono: 'Mono' };
             const FIELDS = [['background', 'Background'], ['border', 'Border'], ['text', 'Text']];
@@ -6950,6 +6966,9 @@
                     n = el('span', 'je-ts-chip je-ts-rate rating-tag');
                     n.appendChild(icon ? el('i', 'material-icons je-ts-rate-icon', icon) : el('i', 'je-ts-tomato'));
                     n.appendChild(document.createTextNode(text));
+                } else if (g === 'awards') {
+                    n = el('div', 'awards-tag je-ts-chip je-ts-rate', label.name.includes('250') ? 'Top 250' : label.name);
+                    n.dataset.jeAward = label.key;
                 } else if (g === 'genre') {
                     n = el('span', 'je-ts-chip je-ts-genre genre-tag');
                     n.appendChild(el('i', 'material-icons', 'theaters'));
@@ -7156,6 +7175,7 @@
                     rating: map('rating'),
                     genre: web(effective('genre', 'genre')),
                     status: map('status'),
+                    awards: map('awards'),
                     language: { border: effective('language', 'flag').border },
                     languageLabels: Object.fromEntries(['flag', 'subtitles', 'countBadge'].map(key => [key, { border: effective('language', key).border }]))
                 };
@@ -7194,6 +7214,9 @@
                     else if (label.key === 'critic') n.appendChild(el('i', 'rating-tomato-icon fresh je-ts-tomato'));
                     else { n.dataset.jeRatingSource = label.key; n.appendChild(el('span', 'je-rating-source-logo', label.name)); }
                     n.appendChild(el('span', 'rating-text', text));
+                } else if (g === 'awards') {
+                    n = el('div', 'awards-tag je-ts-chip je-ts-rate', label.name.includes('250') ? 'Top 250' : label.name);
+                    n.dataset.jeAward = label.key;
                 } else if (g === 'genre') {
                     n = el('div', 'genre-tag je-ts-chip je-ts-genre');
                     n.appendChild(el('i', 'material-icons', 'theaters'));
@@ -7217,7 +7240,7 @@
             // The container class each group's chips sit in on a poster.
             const CONTAINERS = {
                 quality: 'quality-overlay-container', ageRating: 'age-rating-overlay-container', rating: 'rating-overlay-container',
-                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container'
+                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container', awards: 'awards-overlay-container'
             };
 
             /**
@@ -7439,8 +7462,8 @@
             const en = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/locales/en.json'), dataType: 'json' });
             const JE = window.JellyfinEnhanced?.t ? window.JellyfinEnhanced : { t: key => en[key] || key };
             posterRatingSources.translate(en);
-            document.querySelectorAll('[data-je-status-label], [data-je-source-label], [data-je-aggregation-label]').forEach(element => {
-                const key = element.dataset.jeStatusLabel || element.dataset.jeSourceLabel || element.dataset.jeAggregationLabel;
+            document.querySelectorAll('[data-je-status-label], [data-je-source-label], [data-je-aggregation-label], [data-je-awards-label]').forEach(element => {
+                const key = element.dataset.jeStatusLabel || element.dataset.jeSourceLabel || element.dataset.jeAggregationLabel || element.dataset.jeAwardsLabel;
                 const translated = JE.t(key);
                 element.textContent = translated === key ? en[key] || key : translated;
             });
@@ -7607,6 +7630,17 @@
                 if (rChk) rChk.checked = ratingEnabled;
                 if (arChk) arChk.checked = ageRatingEnabled;
                 document.querySelector('#statusTagsEnabled').checked = config.StatusTagsEnabled === true;
+                document.querySelector('#awardsTagsEnabled').checked = config.AwardsTagsEnabled === true;
+                document.querySelector('#awardsTagsPosition').value = config.AwardsTagsPosition || 'top-left';
+                document.querySelector('#awardsTagsImdb').checked = config.AwardsTagsImdb !== false;
+                document.querySelector('#awardsTagsCertifiedFresh').checked = config.AwardsTagsCertifiedFresh !== false;
+                document.querySelector('#awardsTagsOscar').checked = config.AwardsTagsOscar !== false;
+                document.querySelector('#awardsTagsEmmy').checked = config.AwardsTagsEmmy !== false;
+                document.querySelector('#awardsTagsLetterboxd').checked = config.AwardsTagsLetterboxd !== false;
+                document.querySelector('#awardsTagsImdbList').value = config.AwardsTagsImdbList || 'sacwooky/imdb-top-250';
+                document.querySelector('#awardsTagsLetterboxdList').value = config.AwardsTagsLetterboxdList || 'abdulwahabaa/letterboxd-top-250';
+                document.querySelector('#awardsTagsRefreshHours').value = config.AwardsTagsRefreshHours || 24;
+
                 document.querySelector('#statusTagsJustAdded').checked = config.StatusTagsJustAdded !== false;
                 document.querySelector('#statusTagsNewRelease').checked = config.StatusTagsNewRelease !== false;
                 document.querySelector('#statusTagsTrending').checked = config.StatusTagsTrending !== false;
@@ -8207,6 +8241,17 @@
             config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
             config.AgeRatingTagsEnabled = document.querySelector('#ageRatingTagsEnabled').checked;
             config.StatusTagsEnabled = document.querySelector('#statusTagsEnabled').checked;
+            config.AwardsTagsEnabled = document.querySelector('#awardsTagsEnabled').checked;
+            config.AwardsTagsPosition = document.querySelector('#awardsTagsPosition').value;
+            config.AwardsTagsImdb = document.querySelector('#awardsTagsImdb').checked;
+            config.AwardsTagsCertifiedFresh = document.querySelector('#awardsTagsCertifiedFresh').checked;
+            config.AwardsTagsOscar = document.querySelector('#awardsTagsOscar').checked;
+            config.AwardsTagsEmmy = document.querySelector('#awardsTagsEmmy').checked;
+            config.AwardsTagsLetterboxd = document.querySelector('#awardsTagsLetterboxd').checked;
+            config.AwardsTagsImdbList = document.querySelector('#awardsTagsImdbList').value.trim();
+            config.AwardsTagsLetterboxdList = document.querySelector('#awardsTagsLetterboxdList').value.trim();
+            config.AwardsTagsRefreshHours = Math.max(1, Math.min(168, parseInt(document.querySelector('#awardsTagsRefreshHours').value, 10) || 24));
+
             config.StatusTagsJustAdded = document.querySelector('#statusTagsJustAdded').checked;
             config.StatusTagsNewRelease = document.querySelector('#statusTagsNewRelease').checked;
             config.StatusTagsTrending = document.querySelector('#statusTagsTrending').checked;
@@ -9868,9 +9913,10 @@
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'languageTagsShowAudio', 'languageTagsShowSubtitles', 'languageTagsStyle', 'languageTagsCountBadge', 'tagGroupAdminRowLanguage'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsSources', 'ratingTagsSourceRows', 'ratingTagsMinScore', 'ratingTagsColorByScore', 'tagGroupAdminRowRating'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
+            { parent: 'awardsTagsEnabled', label: 'Enable Awards Tags', children: ['awardsTagsPosition', 'awardsTagsImdb', 'awardsTagsCertifiedFresh', 'awardsTagsOscar', 'awardsTagsEmmy', 'awardsTagsLetterboxd', 'awardsTagsImdbList', 'awardsTagsLetterboxdList', 'awardsTagsRefreshHours', 'tagGroupAdminRowAwards'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
             // Layout and density matter once any poster tag group is on by default.
-            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity'], noHint: true },
+            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },

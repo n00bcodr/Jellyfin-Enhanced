@@ -179,6 +179,9 @@ for (const code of ['tl', 'tgl', 'nb', 'nob', 'nn', 'nno', 'fil', 'srd', 'cmn'])
     synthetic[`iso-${code}`] = movie({ AudioLanguages: [code], SubtitleLanguages: [code] });
 }
 synthetic.isoAliases = movie({ AudioLanguages: ['tgl', 'tl', 'fil', 'nob', 'nb', 'nno', 'nn', 'nor'] });
+synthetic.awardsMovie = movie({ Awards: { ImdbRank: 12, CertifiedFresh: true, OscarWinner: true, OscarYear: 2024, LetterboxdRank: 24 } });
+synthetic.awardsSeries = { Type: 'Series', Awards: { EmmyWinner: true, EmmyYear: 2023 } };
+synthetic.awardsEmpty = movie({ Awards: { ImdbRank: 251, CertifiedFresh: false } });
 const syntheticEntries = {};
 const syntheticUserData = {};
 const syntheticReviews = {};
@@ -367,5 +370,9 @@ for (const style of ['flags', 'codes']) {
 synth('language-subs-only', { LanguageTagsEnabled: true, LanguageTagsShowAudio: false, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes' });
 synth('language-subs-strict-merge', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes', LanguageTagsCountBadge: 'both' }, { LanguageTagsPriority: 'French, English, Hindi', LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });
 
+synth('awards-all', { AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Awards: 0 } }, { AwardsTagsEnabled: true });
+synth('awards-cap', { AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Awards: 2 }, AwardsTagsPosition: 'bottom-right' }, { AwardsTagsEnabled: true });
+synth('awards-disabled', { AwardsTagsEnabled: true }, { AwardsTagsEnabled: false });
+synth('awards-combined', { ...allOn, AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupOrder: ['awards', 'quality', 'rating'] }, { AwardsTagsEnabled: true, AwardsTagsCertifiedFresh: false });
 writeFileSync(join(dataDir, 'profiles.json'), JSON.stringify(profiles, null, 1));
 console.log(`${profiles.length} profiles (${users.length} real users), ${Object.keys(syntheticEntries).length} synthetic entries, ${Object.keys(syntheticReviews).length} synthetic review keys`);

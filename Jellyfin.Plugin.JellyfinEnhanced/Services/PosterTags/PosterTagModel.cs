@@ -27,6 +27,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         Rating,
         AgeRating,
         Language,
+        Awards,
     }
 
     /// <summary>Rating chip source.</summary>
@@ -87,6 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
     /// <summary>An age rating badge. <paramref name="ColorKey"/> is the normalised key used by the web's rating colours.</summary>
     public sealed record AgeRatingTag(string Text, string ColorKey) : PosterTag;
+
+    /// <summary>One chart/certification/winner chip, with a stable bundled logo id.</summary>
+    public sealed record AwardTag(string Id, string Text) : PosterTag;
 
     /// <summary>The tags of one group and where they go.</summary>
     public sealed record PosterTagGroupLayout(PosterTagGroup Group, PosterTagCorner Corner, IReadOnlyList<PosterTag> Tags);

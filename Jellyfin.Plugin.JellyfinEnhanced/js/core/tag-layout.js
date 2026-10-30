@@ -38,7 +38,7 @@
     JE.core = JE.core || {};
 
     /** Group ids in the default priority order. */
-    const DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre'];
+    const DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards'];
     const GROUPS = new Set(DEFAULT_ORDER);
 
     /** Valid slots per layout; "off" hides a group in any layout. */
@@ -53,10 +53,10 @@
 
     /** Built-in profiles (corners comes from the position settings instead). */
     const DEFAULT_PROFILES = {
-        bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top' },
-        caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster' },
-        summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill' },
-        minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top' },
+        bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom' },
+        caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption' },
+        summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover' },
+        minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover' },
     };
 
     /** Card shapes with a look of their own; every other card is a portrait (the default look). */
@@ -86,7 +86,7 @@
     };
 
     /** Built-in chip limits (0 = unlimited): the limits each group had before caps existed. */
-    const DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 };
+    const DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 };
     const MAX_CAP = 10;
 
     /** The legacy per-group position settings the corners profile migrates from. */
@@ -96,6 +96,7 @@
         language: { userKey: 'languageTagsPosition', pluginKey: 'LanguageTagsPosition', fallback: 'bottom-left' },
         rating: { userKey: 'ratingTagsPosition', pluginKey: 'RatingTagsPosition', fallback: 'bottom-right' },
         ageRating: { userKey: 'ageRatingTagsPosition', pluginKey: 'AgeRatingTagsPosition', fallback: 'bottom-right' },
+        awards: { userKey: 'awardsTagsPosition', pluginKey: 'AwardsTagsPosition', fallback: 'top-left' },
         status: { userKey: 'statusTagsPosition', pluginKey: 'StatusTagsPosition', fallback: 'top-right' },
     };
     const POSITION_TO_SLOT = Object.assign(Object.create(null), { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br', 'top-center': 'tc', 'bottom-center': 'bc', 'center-left': 'ml', 'center-right': 'mr', 'center': 'c' });
@@ -108,6 +109,7 @@
         rating: 'ratingTagsEnabled',
         ageRating: 'ageRatingTagsEnabled',
         status: 'statusTagsEnabled',
+        awards: 'awardsTagsEnabled',
     };
     const SLOT_TO_POSITION = Object.assign(Object.create(null), { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' });
 
@@ -119,6 +121,7 @@
         rating: 'rating-overlay-container',
         ageRating: 'age-rating-overlay-container',
         status: 'status-overlay-container',
+        awards: 'awards-overlay-container',
     };
 
     /** Slots that summarise a group; its full chips are added to the hover scrim. */
@@ -435,7 +438,7 @@
 
         // Only a group that is switched on can still fill the caption strip.
         const reserveCaption = layout === 'caption'
-            && DEFAULT_ORDER.some((g) => profiles.caption[g] === 'caption' && !!s[ENABLED_SETTING[g]]);
+            && DEFAULT_ORDER.some((g) => profiles.caption[g] === 'caption' && !!s[ENABLED_SETTING[g]] && (g !== 'awards' || p.AwardsTagsEnabled !== false));
 
         // Per-shape looks: the document's own; without one, a normalized
         // document inherits the administrator's and a legacy one has none.
@@ -595,7 +598,7 @@
             indicatorGap: Object.keys(own).length && layout === 'corners'
                 ? new Set(DEFAULT_ORDER.filter((g) => slots[g] === 'tr')) : base.indicatorGap,
             reserveCaption: layout === 'caption'
-                && DEFAULT_ORDER.some((g) => slots[g] === 'caption' && !!JE.currentSettings?.[ENABLED_SETTING[g]]),
+                && DEFAULT_ORDER.some((g) => slots[g] === 'caption' && !!JE.currentSettings?.[ENABLED_SETTING[g]] && (g !== 'awards' || JE.pluginConfig?.AwardsTagsEnabled !== false)),
             locked,
             lookKey: '',
         };
@@ -1187,6 +1190,10 @@
                 if (critic) return { text: critic };
                 const review = master.querySelector('.je-userreview-tag .rating-text')?.textContent;
                 return review ? { text: review, glyph: '♥' } : null;
+            }
+            case 'awards': {
+                const chip = master.firstElementChild;
+                return chip ? { text: chip.textContent, title: chip.title } : null;
             }
             case 'status':
             case 'ageRating': {

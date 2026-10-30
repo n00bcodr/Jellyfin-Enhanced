@@ -24,6 +24,7 @@
     /** The setting that turns each group's renderer on (same keys as the panel toggles). */
     const ENABLED = {
         status: 'statusTagsEnabled',
+        awards: 'awardsTagsEnabled',
         quality: 'qualityTagsEnabled',
         rating: 'ratingTagsEnabled',
         ageRating: 'ageRatingTagsEnabled',
@@ -126,6 +127,13 @@
                 }
                 break;
             }
+            case 'awards':
+                if (sample.type === 'Movie' || sample.type === 'Series') {
+                    for (const fact of JE.awardsTags?.resolve(sample.type === 'Movie'
+                        ? { ImdbRank: 12, CertifiedFresh: true, OscarWinner: true, OscarYear: 2024, LetterboxdRank: 24 }
+                        : { EmmyWinner: true, EmmyYear: 2023 }) || []) wrap.appendChild(JE.awardsTags.chip(fact));
+                }
+                break;
             case 'rating':
                 for (const fact of JE.ratingSources.resolve(sample.rating.community, sample.rating.critic?.replace('%', ''),
                     { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 })) {
@@ -270,7 +278,7 @@
         const L = layoutApi();
         const lead = [];
         const rest = [];
-        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .language-chip, .genre-tag, .status-tag, .je-tag-pill-fact, .je-tag-more)');
+        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .language-chip, .genre-tag, .status-tag, .awards-tag, .je-tag-pill-fact, .je-tag-more)');
         for (const chip of chips) {
             const el = /** @type {HTMLElement} */ (chip);
             if (el.parentElement?.classList.contains('language-subtitle')) continue;
@@ -289,7 +297,7 @@
     }
 
     /** The preview's stylesheet (panel-scoped). */
-    const PREVIEW_CSS = `
+    const PREVIEW_CSS = (JE.awardsTags?.CSS || '') + `
         #jellyfin-enhanced-panel .je-mtp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
         #jellyfin-enhanced-panel .je-mtp-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; margin: 0; }
         #jellyfin-enhanced-panel .je-mtp-title::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
@@ -330,7 +338,7 @@
         #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: #ffd166; }
         #jellyfin-enhanced-panel .je-mtp-note[hidden] { display: none; }
         /* Spotlight: the group being edited stays bright, the others step back. */
-        #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }
+        #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }
     `;
 
     /**

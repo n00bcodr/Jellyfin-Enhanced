@@ -124,7 +124,7 @@
             pauseScreenEnabled: true,
             pauseScreenDelaySeconds: 5,
             useNativePosterTags: true,
-            qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false, peopleTagsEnabled: false, tagsHideOnHover: false,
+            qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false, awardsTagsEnabled: false, awardsTagsPosition: 'top-left', peopleTagsEnabled: false, tagsHideOnHover: false,
             showResolutionTag: true, showSourceTag: true, showDynamicRangeTag: true, showSpecialFormatTag: true, showVideoCodecTag: true, showAudioInfoTag: true,
             // Source and edition preferences.
             showEditionTag: true, editionTagOrder: 7, showLowQualitySourceTag: false,

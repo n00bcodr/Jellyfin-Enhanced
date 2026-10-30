@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     public sealed class PosterTagRenderer : IDisposable
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
-        public const string Version = "4";
+        public const string Version = "5";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;
@@ -495,6 +495,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     case PosterTagTileKind.Rating:
                         PaintRating(canvas, plan, item, local, border, space);
                         break;
+                    case PosterTagTileKind.Award:
+                        PaintAward(canvas, plan, item, local, border, space);
+                        break;
                     case PosterTagTileKind.AgeRating:
                         PaintAge(canvas, plan, item, local, border, space);
                         break;
@@ -639,6 +642,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float textX = x + item.IconWidth + PosterTagCss.Lu(css.RatingInnerGap);
                 float textTop = contentTop + PosterTagCss.Lu((contentHeight - textHeight) / 2f);
                 DrawText(canvas, item.TextLayout!, textX, textTop + Assets.TextMetrics.BaselineOffset(fontSize, textHeight), textColor, null, space);
+            }
+
+            private void PaintAward(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
+            {
+                var tag = (AwardTag)item.Tag;
+                var css = plan.Css;
+                var background = new SKColor(15, 15, 15, 217);
+                var text = SKColors.White;
+                SKColor? ring = null;
+                var nl = item.Style.IndexOf('\n');
+                if (nl >= 0)
+                {
+                    var over = TagColors.Decode(item.Style[(nl + 1)..]);
+                    background = over.Background ?? background;
+                    text = over.Text ?? text;
+                    ring = over.Border;
+                }
+                using var box = new SKRoundRect(local, 4f);
+                PaintBox(canvas, box, background, ring, ring == null ? 0 : border, ChipShadow);
+                var x = PosterTagCss.Lu(css.ChipPaddingH);
+                if (Assets.GetVectorIcon("award-" + tag.Id) is { } icon)
+                    DrawVectorContain(canvas, icon, SKRect.Create(x, (local.Height - 14) / 2, 14, 14));
+                var textHeight = PosterTagCss.Lu(css.ChipFontSize);
+                DrawText(canvas, item.TextLayout!, x + 14 + PosterTagCss.Lu(css.RatingInnerGap),
+                    (local.Height - textHeight) / 2 + Assets.TextMetrics.BaselineOffset(css.ChipFontSize, textHeight), text, null, space);
             }
 
             private void PaintAge(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)

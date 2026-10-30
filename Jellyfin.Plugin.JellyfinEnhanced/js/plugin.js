@@ -1152,6 +1152,7 @@
                     if (JE.currentSettings?.ratingTagsEnabled && typeof JE.initializeRatingTags === 'function') JE.initializeRatingTags();
                     if (JE.currentSettings?.ageRatingTagsEnabled && typeof JE.initializeAgeRatingTags === 'function') JE.initializeAgeRatingTags();
                     if (JE.currentSettings?.statusTagsEnabled && typeof JE.initializeStatusTags === 'function') JE.initializeStatusTags();
+                    if (JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false && typeof JE.initializeAwardsTags === 'function') JE.initializeAwardsTags();
                     if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
 
                     // Translations follow the per-user language choice.
@@ -1354,6 +1355,7 @@
             if (typeof JE.initializeRatingTags === 'function' && JE.currentSettings?.ratingTagsEnabled) JE.initializeRatingTags();
             if (typeof JE.initializeAgeRatingTags === 'function' && JE.currentSettings?.ageRatingTagsEnabled) JE.initializeAgeRatingTags();
             if (typeof JE.initializeStatusTags === 'function' && JE.currentSettings?.statusTagsEnabled) JE.initializeStatusTags();
+            if (typeof JE.initializeAwardsTags === 'function' && JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false) JE.initializeAwardsTags();
             if (typeof JE.initializeTagStyles === 'function' && JE.pluginConfig?.TagStyleWebActive) JE.initializeTagStyles();
             if (typeof JE.initializeUserReviewTags === 'function' && JE.pluginConfig?.ShowUserReviews && JE.pluginConfig?.ShowUserRatingOnPosters && JE.currentSettings?.ratingTagsEnabled) JE.initializeUserReviewTags();
             if (typeof JE.initializeArrLinksScript === 'function' && JE.pluginConfig?.ArrLinksEnabled) JE.initializeArrLinksScript();

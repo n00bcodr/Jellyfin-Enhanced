@@ -113,6 +113,10 @@
 
         if (styles.genre) push(rules, `${P}.genre-overlay-container .genre-tag`, box(styles.genre));
 
+        for (const [id, color] of Object.entries(styles.awards || {})) {
+            if (color) push(rules, `${P}.awards-overlay-container .awards-tag[data-je-award="${attr(id)}"]`, decl('background', color.background) + decl('color', color.color) + ring(color.border));
+        }
+
         const status = styles.status || {};
         for (const key of STATUS_LABELS) {
             const c = status[key];

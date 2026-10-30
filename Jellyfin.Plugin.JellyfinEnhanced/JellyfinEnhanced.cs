@@ -237,6 +237,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // from an unrelated config save (this method fires on every save).
             var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
             var sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
+            var awardsBefore = Services.AwardTagsService.ConfigurationIdentity(Configuration);
             var analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
 
             // The Analytics* identity/bookkeeping fields are server-minted and
@@ -318,6 +319,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // Removing an MDBList key must also retire previously cached source scores.
             if (sourceRatingsWereConfigured != Services.TagCacheService.SourceRatingsConfigured)
                 Services.TagCacheService.Instance?.RefreshRatingSourceAvailability();
+
+            if (awardsBefore != Services.AwardTagsService.ConfigurationIdentity(Configuration))
+                Services.TagCacheService.Instance?.RefreshAwardAvailability();
 
             // ON->OFF: flag this install as opted out on the backend so it
             // drops out of every public view without deleting its history.

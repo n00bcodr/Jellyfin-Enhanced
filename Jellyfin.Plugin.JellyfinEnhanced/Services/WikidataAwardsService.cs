@@ -60,6 +60,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const int CurrentSchemaVersion = 1;
 
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly SemaphoreSlim _upstreamGate = new(1, 1);
+        private DateTimeOffset _nextQuery;
         private readonly IApplicationPaths _applicationPaths;
         private readonly Logger _logger;
 
@@ -110,7 +112,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     return cached;
                 }
 
-                var fetched = await FetchFromWikidataAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                AwardsCacheEntry fetched;
+                await _upstreamGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    var delay = _nextQuery - DateTimeOffset.UtcNow;
+                    if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                    fetched = await FetchFromWikidataAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                    if (_nextQuery < DateTimeOffset.UtcNow.AddSeconds(1)) _nextQuery = DateTimeOffset.UtcNow.AddSeconds(1);
+                }
+                finally { _upstreamGate.Release(); }
                 _cache[key] = fetched;
                 ScheduleDebouncedSave();
                 return fetched;
@@ -118,12 +129,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             finally
             {
                 gate.Release();
-                // Best-effort cleanup: drop the gate once nobody's using it so this
-                // dictionary doesn't grow by one entry per distinct title forever.
-                if (gate.CurrentCount == 1)
-                {
-                    _inFlight.TryRemove(key, out _);
-                }
+                // Retain title gates: a waiter can already hold the reference when
+                // CurrentCount reaches one; removing it would allow duplicate fetches.
             }
         }
 
@@ -152,6 +159,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
+                    if ((int)response.StatusCode is 429 or 503)
+                    {
+                        var retry = response.Headers.RetryAfter?.Delta
+                            ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow)
+                            ?? TimeSpan.FromMinutes(1);
+                        _nextQuery = DateTimeOffset.UtcNow.Add(retry > TimeSpan.FromSeconds(1) ? retry : TimeSpan.FromSeconds(1));
+                    }
                     _logger.Warning($"[Awards] Wikidata query failed ({(int)response.StatusCode}) for {mediaType}:{tmdbId}");
                     return new AwardsCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
                 }
@@ -161,6 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 return ParseResults(doc, now, isPerson);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 // Network hiccup, timeout, malformed response, WDQS overload (it does

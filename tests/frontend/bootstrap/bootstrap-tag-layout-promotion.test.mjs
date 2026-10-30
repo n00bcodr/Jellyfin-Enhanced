@@ -190,7 +190,7 @@ test('one slot pill on a legacy document changes only that group, on the web and
   assert.equal(saved.tagLayout, 'corners', 'not the admin layout');
   assert.equal(saved.tagLabelDensity, 'full', 'not the admin density');
   assert.equal(saved.tagGroupOrder, null, 'arrival order, not the admin order');
-  assert.deepEqual(saved.tagGroupCaps, { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 }, 'the legacy limits, explicitly');
+  assert.deepEqual(saved.tagGroupCaps, { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 }, 'the legacy limits, explicitly');
   assert.equal(saved.ageRatingTagsPosition, 'top-left');
 });
 
@@ -222,7 +222,7 @@ test('one cap step on a legacy document changes only that group', async t => {
   const after = snapshot(h.host);
   assertOnlyChanged(before, after, ['genre']);
   assert.equal(h.host.querySelectorAll('.genre-tag').length, 2);
-  assert.deepEqual(h.saved().tagGroupCaps, { quality: 0, genre: 2, language: 3, rating: 0, ageRating: 1, status: 1 });
+  assert.deepEqual(h.saved().tagGroupCaps, { quality: 0, genre: 2, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 });
 });
 
 test('one density change on a legacy document changes only the labels it shortens', async t => {
@@ -247,7 +247,7 @@ test('a layout change on a legacy document keeps the legacy limits and full labe
   const s = h.JE.core.tagLayout.normalizeSettings();
   assert.equal(s.layout, 'bands');
   assert.equal(s.density, 'full', 'not the admin density');
-  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 }, 'not the admin caps');
+  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 }, 'not the admin caps');
   assert.equal(h.host.querySelectorAll('.quality-overlay-label').length, 4);
 });
 
@@ -255,7 +255,7 @@ test('the first move on a legacy document writes the shown order and nothing els
   const h = setup(t);
   await h.click(h.row('genre').querySelector('[data-dir="up"]'));
   const saved = h.saved();
-  assert.deepEqual(saved.tagGroupOrder, ['status', 'quality', 'rating', 'ageRating', 'genre', 'language']);
+  assert.deepEqual(saved.tagGroupOrder, ['status', 'quality', 'rating', 'ageRating', 'genre', 'language', 'awards']);
   assert.equal(saved.tagLabelDensity, 'full');
-  assert.deepEqual(saved.tagGroupCaps, { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 });
+  assert.deepEqual(saved.tagGroupCaps, { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 });
 });

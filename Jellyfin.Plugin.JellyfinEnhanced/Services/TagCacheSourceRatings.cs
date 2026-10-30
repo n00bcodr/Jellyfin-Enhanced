@@ -20,9 +20,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Drop stale source facts after a key is removed, without mutating shared metadata.</summary>
         internal static TagCacheEntry ApplySourceRatingAvailability(TagCacheEntry entry)
         {
-            if (SourceRatingsConfigured || entry.Ratings == null) return entry;
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var hideRatings = !SourceRatingsConfigured && entry.Ratings != null;
+            var hideAwards = config?.AwardsTagsEnabled != true && entry.Awards != null;
+            if (!hideRatings && !hideAwards) return entry;
             var copy = entry.Clone();
-            copy.Ratings = null;
+            if (hideRatings) copy.Ratings = null;
+            if (hideAwards) copy.Awards = null;
             return copy;
         }
 

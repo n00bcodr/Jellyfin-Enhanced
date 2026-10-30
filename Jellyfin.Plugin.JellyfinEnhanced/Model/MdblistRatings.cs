@@ -25,6 +25,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// including "popcorn" (audience). 1 = Fresh, 0 = Rotten, null when
         /// MDBList doesn't report it for this title.</summary>
         public int? Fresh { get; set; }
+        /// <summary>Provider-reported certification; never inferred from the score or fresh flag.</summary>
+        public bool? Certified { get; set; }
     }
 
     /// <summary>

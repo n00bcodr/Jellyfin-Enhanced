@@ -318,7 +318,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A schema mismatch discards the stale cache so it can be rebuilt.
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
-        private const int CurrentCacheSchemaVersion = 16;
+        // v17 adds independently refreshed Awards facts.
+        internal const int CurrentCacheSchemaVersion = 17;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -489,7 +490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
@@ -497,6 +498,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _logger = logger;
             _languageCache = languageCache;
             _mdblistService = mdblistService;
+            _awardTagsService = awardTagsService;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -2279,6 +2281,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 && e.PremiereDate > (container.LatestEpisodeAired ?? 0))
                             .Select(e => e.PremiereDate).Min();
                     }
+                    PublishAwards();
                     RefreshDueStatusContainers();
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
@@ -2619,6 +2622,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // (both fallbacks below read it).
                 var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
                 entry.Ratings = GetSourceRatings(series ?? item);
+                entry.Awards = GetAwards(item);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
 
                 if (isContainer)

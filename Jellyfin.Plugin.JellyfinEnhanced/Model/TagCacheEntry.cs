@@ -23,6 +23,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         // Multi-source ratings (schema v15). Immutable, shared across users.
         /// <summary>MDBList source values in their native units; absent without a configured key.</summary>
         public TagSourceRatings? Ratings { get; set; }
+        /// <summary>Cached title-level awards/chart facts, refreshed independently of library metadata.</summary>
+        public TagAwards? Awards { get; set; }
 
         /// <summary>
         /// Parental / age rating as stored by Jellyfin (e.g. "PG-13", "TV-MA",
@@ -180,6 +182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && NullableFloatEquals(a.CommunityRating, b.CommunityRating)
                 && NullableFloatEquals(a.CriticRating, b.CriticRating)
                 && a.Ratings == b.Ratings
+                && a.Awards == b.Awards
                 && a.OfficialRating == b.OfficialRating
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
@@ -253,6 +256,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             CommunityRating = CommunityRating,
             CriticRating = CriticRating,
             Ratings = Ratings,
+            Awards = Awards,
             OfficialRating = OfficialRating,
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,

@@ -19,6 +19,10 @@
       "category": "Assets"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/award-icons.json",
+      "category": "Assets"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/icons.json",
       "category": "Assets"
     },
@@ -235,6 +239,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagAwards.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagCacheEntry.cs",
       "category": "Model"
     },
@@ -327,6 +335,10 @@
       "category": "ScheduledTasks"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshAwardTagsTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshCdnAssetsTask.cs",
       "category": "ScheduledTasks"
     },
@@ -368,6 +380,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AutoSeasonRequestService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/AwardTagsService.cs",
       "category": "Services"
     },
     {
@@ -652,6 +668,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsTrendingService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheAwards.cs",
       "category": "Services"
     },
     {
@@ -1496,6 +1516,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/ageratingtags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/awardstags.js",
       "category": "js"
     },
     {
@@ -4074,6 +4098,86 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "AwardsTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsImdb",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsCertifiedFresh",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsOscar",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsEmmy",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsLetterboxd",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsImdbList",
+      "type": "string",
+      "initializer": "\"sacwooky/imdb-top-250\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsLetterboxdList",
+      "type": "string",
+      "initializer": "\"abdulwahabaa/letterboxd-top-250\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsRefreshHours",
+      "type": "int",
+      "initializer": "24",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AwardsTagsPosition",
+      "type": "string",
+      "initializer": "\"top-left\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "PeopleTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -6521,6 +6625,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
     },
     {
+      "class": "TagGroupCaps",
+      "name": "Awards",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
       "class": "TagLookCondition",
       "name": "Field",
       "type": "string",
@@ -7101,6 +7213,22 @@
       "name": "StatusTagsEnabled",
       "type": "bool",
       "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "AwardsTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "AwardsTagsPosition",
+      "type": "string",
+      "initializer": "\"top-left\"",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -8403,6 +8531,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AnalyticsReportingService.cs"
     },
     {
+      "literal": "award-tags.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/AwardTagsService.cs"
+    },
+    {
       "literal": ".meta.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/CdnAssetService.cs"
     },
@@ -8440,6 +8572,10 @@
     },
     {
       "literal": "age-rating-colours.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs"
+    },
+    {
+      "literal": "award-icons.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs"
     },
     {
@@ -8643,6 +8779,11 @@
       "key": "JellyfinEnhancedMdblistRatingsSync"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshAwardTagsTask.cs",
+      "class": "RefreshAwardTagsTask",
+      "key": "JellyfinEnhancedRefreshAwardTags"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshCdnAssetsTask.cs",
       "class": "RefreshCdnAssetsTask",
       "key": "JellyfinEnhancedRefreshCdnAssets"
@@ -8761,11 +8902,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 386,
+    "files": 392,
     "routes": 182,
-    "configuration_properties": 631,
-    "storage_references": 75,
-    "scheduled_tasks": 13,
+    "configuration_properties": 644,
+    "storage_references": 77,
+    "scheduled_tasks": 14,
     "locales": 33
   }
 }

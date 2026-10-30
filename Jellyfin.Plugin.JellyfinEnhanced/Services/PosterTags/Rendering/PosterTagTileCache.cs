@@ -222,6 +222,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         Quality,
         Genre,
         Rating,
+        Award,
         AgeRating,
         Flag,
         LanguageChip,

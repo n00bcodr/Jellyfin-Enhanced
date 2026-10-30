@@ -75,12 +75,12 @@ test('Spoiler Guard suppresses sources on series and local fallback cache withou
   assert.equal(h.chips().length, 0);
 });
 
-test('every persistent tag entry schema matches server schema 16, including IndexedDB restore', () => {
-  for (const file of ['tags/tag-cache-store.js', 'tags/tag-pipeline.js']) {
-    assert.match(readFileSync(`${jsRoot}/${file}`, 'utf8'), /const (?:ENTRY_SCHEMA|STORED_ENTRY_SCHEMA) = 16;/);
-  }
+test('every persistent tag entry schema matches the server constant, including IndexedDB restore', () => {
   const server = readFileSync(`${jsRoot}/../Services/TagCacheService.cs`, 'utf8');
-  assert.match(server, /CurrentCacheSchemaVersion = 16;/);
+  const schema = server.match(/CurrentCacheSchemaVersion = (\d+);/)[1];
+  for (const file of ['tags/tag-cache-store.js', 'tags/tag-pipeline.js']) {
+    assert.match(readFileSync(`${jsRoot}/${file}`, 'utf8'), new RegExp(`const (?:ENTRY_SCHEMA|STORED_ENTRY_SCHEMA) = ${schema};`));
+  }
 });
 
 test('tag cache reference docs consistently name the current invalidating schema', () => {
