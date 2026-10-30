@@ -668,13 +668,29 @@
      */
     function resolveLayout(cardContext) {
         const base = currentSettings();
+        const source = lookSource(cardContext);
+        if (source.lock) return lookSettings(base, source.lock, true);
+        return source.rule ? lookSettings(base, source.rule, false) : base;
+    }
+
+    /**
+     * Where a card's look comes from: its lock, the first enabled rule that
+     * matches (with its position in the user's rule list), or the default.
+     * resolveLayout() decides through this, so a caller that names the
+     * source (the settings panel's preview) always agrees with the cards.
+     * @param {CardController|HTMLElement|Object} cardContext - As for resolveLayout.
+     * @returns {{source: 'lock'|'rule'|'default', lock: Object|null, rule: Object|null, index: number}}
+     *   index is the rule's position in the list (-1 for a lock or the default).
+     */
+    function lookSource(cardContext) {
         const looks = currentLooks();
-        if (!looks.rules.length && !looks.locks.size) return base;
+        const none = { source: /** @type {'default'} */ ('default'), lock: null, rule: null, index: -1 };
+        if (!looks.rules.length && !looks.locks.size) return none;
         const facts = cardFacts(cardContext);
         const lock = JE.core.tagLook.findLock(looks.locks, facts);
-        if (lock) return lookSettings(base, lock, true);
+        if (lock) return { source: 'lock', lock, rule: null, index: -1 };
         const rule = JE.core.tagLook.firstMatch(looks.rules, facts);
-        return rule ? lookSettings(base, rule, false) : base;
+        return rule ? { source: 'rule', lock: null, rule, index: looks.rules.indexOf(rule) } : none;
     }
 
     /**
@@ -1944,6 +1960,7 @@
         promoteLegacySettings,
         invalidateSettings,
         resolveLayout,
+        lookSource,
         setCardContext,
         cardIdentity,
         awaitCardContext,
