@@ -208,6 +208,49 @@ test('the add-rule form builds conditions from libraries, types and genres, vali
   assert.equal(h.writes.at(-1).tagLookRules[0].id, saved[0].id);
 });
 
+test('at the 50-rule limit Add rule is off; deleting one turns it back on and keeps what was typed; a submit at 50 is refused', async t => {
+  const fifty = Array.from({ length: 50 }, (_, i) => ({ ...kidsRule, id: `r${String(i).padStart(2, '0')}`, when: [{ field: 'genre', value: `G${i}` }] }));
+  const h = setup(t, { settings: { tagLookRules: fifty } });
+  await h.open();
+  const form = h.form();
+  const save = () => form.querySelector('.je-tag-looks-save');
+  const hint = () => form.querySelector('.je-tag-looks-buttons-hint').textContent;
+  assert.equal(save().disabled, true);
+  assert.equal(hint(), 'tag_looks_limit:50');
+  const value = form.querySelector('[data-je-cond-value]');
+  value.value = KIDS;
+  form.querySelector('[data-je-rule-layout]').value = 'bands';
+
+  // Delete the first rule: the form is not rebuilt, and it may add again.
+  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="r00"]'), 'tag_looks_delete'));
+  await h.settle();
+  assert.equal(h.writes.at(-1).tagLookRules.length, 49);
+  assert.equal(h.form(), form, 'the form keeps its values');
+  assert.equal(value.value, KIDS);
+  assert.equal(save().disabled, false, 'Add rule is enabled again');
+  assert.equal(hint(), 'tag_looks_add_hint:50');
+
+  form.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
+  await h.settle();
+  const rules = h.writes.at(-1).tagLookRules;
+  assert.equal(rules.length, 50);
+  assert.deepEqual(rules.at(-1).when, [{ field: 'library', value: KIDS }]);
+  assert.equal(rules.at(-1).layout, 'bands');
+  const fresh = h.form();
+  assert.equal(fresh.querySelector('.je-tag-looks-save').disabled, true, 'full again');
+
+  // A submit that gets past the disabled button (Enter in a field, a script) adds nothing.
+  const writes = h.writes.length;
+  fresh.querySelector('.je-tag-looks-save').disabled = false;
+  const v = fresh.querySelector('[data-je-cond-value]');
+  v.value = KIDS;
+  fresh.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
+  await h.settle();
+  assert.equal(h.writes.length, writes, 'nothing saved at 50');
+  assert.equal(fresh.querySelector('.je-tag-looks-save').disabled, true);
+  assert.equal(h.JE.core.tagLook.read().rules.length, 50);
+});
+
 test('editing a switched-off rule saves its edits and keeps it off', async t => {
   const h = setup(t, { settings: { tagLookRules: [{ ...kidsRule, enabled: false }] } });
   await h.open();

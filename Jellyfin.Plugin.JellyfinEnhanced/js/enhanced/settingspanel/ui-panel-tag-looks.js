@@ -617,12 +617,12 @@
      * @param {(rules: Array<Object>, doneKey?: string) => string|void} saveRules
      * @param {(savedId: string, added: boolean) => void} onSaved - Reset the form and focus the rule.
      * @param {() => void} onCancel
-     * @returns {HTMLElement}
+     * @returns {{form: HTMLElement, syncCapacity: () => void}} The form, and a
+     *   re-check of the rule limit for after a change made outside it.
      */
     function buildForm(state, rules, touch, saveRules, onSaved, onCancel) {
         const look = JE.core.tagLook;
         const existing = (state.editing && rules.find((r) => r.id === state.editing)) || null;
-        const full = !existing && rules.length >= look.MAX_RULES;
         const form = /** @type {HTMLFormElement} */ (el('form', 'je-tag-looks-form'));
         const title = el('h5', 'je-tag-looks-form-title', JE.t(existing ? 'tag_looks_edit_rule' : 'tag_looks_add_a_rule'));
         title.id = 'jeTagLooksFormTitle';
@@ -788,16 +788,30 @@
         const buttons = el('div', 'je-tag-looks-buttons');
         const save = /** @type {HTMLButtonElement} */ (el('button', 'je-tag-looks-save', JE.t(existing ? 'tag_looks_save' : 'tag_looks_add_rule')));
         save.type = 'submit';
-        save.disabled = full;
         buttons.appendChild(save);
         if (existing) buttons.appendChild(button(JE.t('tag_looks_cancel'), () => { touch(); onCancel(); }));
-        buttons.appendChild(el('span', 'je-tag-looks-buttons-hint', JE.t(full ? 'tag_looks_limit' : existing ? 'tag_looks_edit_hint' : 'tag_looks_add_hint', { count: String(look.MAX_RULES) })));
+        const hint = el('span', 'je-tag-looks-buttons-hint');
+        buttons.appendChild(hint);
         form.appendChild(buttons);
+
+        /**
+         * A new rule can be added only below the limit: re-read the rules
+         * now (a delete or a failed save changes the count under the form,
+         * which keeps what was typed).
+         * @returns {boolean} The limit is reached.
+         */
+        const syncCapacity = () => {
+            const full = !existing && look.read().rules.length >= look.MAX_RULES;
+            save.disabled = full;
+            hint.textContent = JE.t(full ? 'tag_looks_limit' : existing ? 'tag_looks_edit_hint' : 'tag_looks_add_hint', { count: String(look.MAX_RULES) });
+            return full;
+        };
+        syncCapacity();
 
         form.addEventListener('submit', (e) => {
             e.preventDefault();
             touch();
-            if (full) return;
+            if (syncCapacity()) return;
             const when = [];
             for (const row of condList.querySelectorAll('[data-je-cond]')) {
                 const field = /** @type {HTMLSelectElement} */ (row.querySelector('[data-je-cond-field]')).value;
@@ -814,6 +828,11 @@
             }
             const current = look.read().rules;
             const still = existing ? current.find((r) => r.id === existing.id) : null;
+            // The rule being edited was deleted meanwhile: this would add one.
+            if (!still && current.length >= look.MAX_RULES) {
+                error.textContent = JE.t('tag_looks_limit', { count: String(look.MAX_RULES) });
+                return;
+            }
             // Editing keeps the rule's On/Off state (a switched-off rule stays off).
             const candidate = { id: still?.id || look.newRuleId(new Set(current.map((r) => r.id))), enabled: still ? still.enabled : true,
                 when, layout: layoutSelect.value, density: densitySelect.value, colourPreset: still?.colourPreset || null, slots: still?.slots || null };
@@ -826,7 +845,7 @@
             saveRules(next, 'tag_looks_saved_toast');
             onSaved(candidate.id, !still);
         });
-        return form;
+        return { form, syncCapacity };
     }
 
     /** @type {{show: () => void}|null} The open panel's section, for the hub's tab switch. */
@@ -847,6 +866,8 @@
         const state = { libraries: null, genres: null, titles: new Map(), lockedOpen: false, shown: false, editing: '' };
         const touch = () => { try { ctx?.resetAutoCloseTimer?.(); } catch { /* panel closing */ } };
         const look = JE.core.tagLook;
+        /** @type {(() => void)|null} The open form's rule-limit check. */
+        let syncFormCapacity = null;
 
         /** Save the rules (shown at once, put back on failure) and redraw the lists. */
         const saveRules = (next, doneKey) => {
@@ -863,12 +884,14 @@
             renderRules(view, state, rules, touch, saveRules, openForm);
             renderLocks(view, state, touch, renderLists);
             renderOtherwise();
+            // Every change to the rules goes through here: Add rule follows the count.
+            syncFormCapacity?.();
         };
         /** (Re)build the form for state.editing; focus its first field when asked. */
         const openForm = (focus = true) => {
             const rules = look.read().rules;
             if (state.editing && !rules.some((r) => r.id === state.editing)) state.editing = '';
-            const form = buildForm(state, rules, touch, saveRules, (savedId, added) => {
+            const { form, syncCapacity } = buildForm(state, rules, touch, saveRules, (savedId, added) => {
                 state.editing = '';
                 openForm(false);
                 const row = view.rows.get(savedId);
@@ -883,6 +906,7 @@
                 focusOn(view.rows.get(was)?.edit);
             });
             view.side.replaceChildren(form);
+            syncFormCapacity = syncCapacity;
             if (focus) focusOn(form.querySelector('[data-je-cond-field]'));
         };
 
