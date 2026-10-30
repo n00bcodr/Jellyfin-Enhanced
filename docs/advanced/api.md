@@ -446,6 +446,9 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `QualityTagsEnabled` | Boolean | `false` |
 | `ShowResolutionTag` | Boolean | `true` |
 | `ShowSourceTag` | Boolean | `true` |
+| `ShowEditionTag` | Nullable boolean (inherits admin default `true`) | `null` |
+| `ShowLowQualitySourceTag` | Nullable boolean (inherits admin default `false`) | `null` |
+| `EditionTagOrder` | Nullable integer (inherits admin default `7`) | `null` |
 | `ShowDynamicRangeTag` | Boolean | `true` |
 | `ShowSpecialFormatTag` | Boolean | `true` |
 | `ShowVideoCodecTag` | Boolean | `true` |
@@ -1111,18 +1114,19 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `SeasonPremiere` | Nullable `{Season,Aired}`; newest regular season's episode 1 for a series, the season's own episode 1 for a season |
 | `SeasonAddedSpan` | Nullable `{First,Last,Count}` for season episode added dates |
 | `StreamData` | Nullable `{Streams,Sources,ItemName,ItemPath}` |
+| `Source`, `Edition` | Nullable canonical naming labels, computed server-side before basename trimming |
 
-`LibraryId` is the library (collection folder) holding the item in N format; seasons and episodes carry their series'. Entries are cache schema 13; older snapshots are discarded and rebuilt. `DateCreated` is when the item was added to the library. `PremiereDate` is set for movies, series and episodes. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
+`LibraryId` is the library (collection folder) holding the item in N format; seasons and episodes carry their series'. Entries are cache schema 14; older snapshots are discarded and rebuilt. `DateCreated` is when the item was added to the library. `PremiereDate` is set for movies, series and episodes. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
 
-`StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs.
+`StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs. Directory paths are never returned; `Path` and `ItemPath` are basenames, including for Windows paths on a Unix server. Persisted entry schema 14 adds `Source` and `Edition`, and old snapshots rebuild.
 
-Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `LibraryId`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
+Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `LibraryId`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, nullable `Source` and `Edition`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
 
-With `latestEpisode=true`, batch items also carry the applicable `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex`, `SeasonPremiere`, `SeasonAddedSpan` and `EpisodeIndex` facts. Episode sibling lookups use the target user too. The shared cache conservatively omits episode-derived aggregates if any contributor is inaccessible; its server-only `StatusEpisodeIds`/`LatestEpisodeId` are excluded from serialization. A changed `filterRevision` requires replacing stored data. Schema 13 invalidates older disk and IndexedDB copies.
+With `latestEpisode=true`, batch items also carry the applicable `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex`, `SeasonPremiere`, `SeasonAddedSpan` and `EpisodeIndex` facts. Episode sibling lookups use the target user too. The shared cache conservatively omits episode-derived aggregates if any contributor is inaccessible; its server-only `StatusEpisodeIds`/`LatestEpisodeId` are excluded from serialization. A changed `filterRevision` requires replacing stored data. Schema 14 invalidates older disk and IndexedDB copies.
 
 Streams use the trimmed stream fields listed above, and sources contain basename-only `Path` and `Name`.
 
-Container `FirstEpisode` has `{Id,Type,Genres,NeedsStreamFetch:true}`; fetch that episode through `tag-data` for its streams.
+Container `FirstEpisode` has `{Id,Type,Genres,NeedsStreamFetch:true}`; fetch that episode through `tag-data` for its streams and naming labels. A playable item chooses its naming labels from the highest-resolution version, then source quality for ties. `mediaSourceId` limits this choice to the requested version. Explicit edition markers precede known words; file and immediate parent-folder names are examined, and `.disc` stubs take precedence for source. Source/edition labels are removed with the corresponding Spoiler Guard title/tag stripping.
 
 Spoiler Guard can strip metadata before return and add `Tags` on stripped stubs. Series and movie stubs have no `ProviderIds` but keep the item's `TmdbId`, so Status Tags can still show a trending rank. `mediaSourceId` selects a media version; this route does not require cached delivery enabled.
 
@@ -1320,7 +1324,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `AutoSkipOutro`, `LongPress2xEnabled`, `RandomButtonEnabled`, `RandomIncludeMovies`, `RandomIncludeShows`, `RandomUnwatchedOnly`, `RandomScopeCurrentContainer`, `ShowWatchProgress` | Boolean |
     | `ShowFileSizes`, `RemoveContinueWatchingEnabled`, `ShowAudioLanguages`, `ShowReviews`, `ShowUserReviews`, `ReviewsExpandedByDefault`, `HideReviewsFromHiddenUsers`, `HideReviewsFromDisabledUsers` | Boolean |
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
-    | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowDynamicRangeTag` | Boolean |
+    | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowEditionTag`, `ShowLowQualitySourceTag`, `ShowDynamicRangeTag` | Boolean |
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
     | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending`, `StatusTagsSchedule`, `StatusTagsMilestones`, `StatusTagsSeriesStatus`, `TagStylesAllowUserPreset` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `LanguageTagsMergeRegions`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
@@ -1338,7 +1342,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `ActivityFeedShowActiveStreams`, `HiddenContentEnabled`, `HiddenContentUsePluginPages`, `HiddenContentUseCustomTabs`, `HiddenContentUseNativeTab`, `HiddenContentAdmin`, `CatchUpEnabled`, `CatchUpUsePluginPages` | Boolean |
     | `CatchUpUseCustomTabs`, `CatchUpUseNativeTab`, `MaintenanceModeEnabled`, `SpoilerBlurEnabled`, `SpoilerBlurStrictRefresh`, `SpoilerStripSeriesOverview`, `SpoilerStripOverview`, `SpoilerStripTags` | Boolean |
     | `SpoilerStripChapters`, `SpoilerStripTaglines`, `SpoilerStripRatings`, `SpoilerStripPremiereDate`, `SpoilerReplaceTitle`, `SpoilerStripCast`, `SpoilerStripReviews`, `SpoilerBlurTrickplay`, `SpoilerAdvancedMode` | Boolean |
-    | `ToastDuration`, `HelpPanelAutocloseDelay`, `PauseScreenDelaySeconds`, `ResolutionTagOrder`, `SourceTagOrder`, `DynamicRangeTagOrder`, `SpecialFormatTagOrder`, `VideoCodecTagOrder` | Integer |
+    | `ToastDuration`, `HelpPanelAutocloseDelay`, `PauseScreenDelaySeconds`, `ResolutionTagOrder`, `SourceTagOrder`, `EditionTagOrder`, `DynamicRangeTagOrder`, `SpecialFormatTagOrder`, `VideoCodecTagOrder` | Integer |
     | `AudioInfoTagOrder`, `DefaultSubtitleStyle`, `DefaultSubtitleSize`, `DefaultSubtitleFont`, `DefaultSubtitleTextEffect`, `TagsCacheTtlDays`, `DownloadsPollIntervalSeconds`, `SpoilerBlurIntensity` | Integer |
     | `StatusTagsJustAddedDays`, `StatusTagsNewReleaseDays` | Integer |
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
