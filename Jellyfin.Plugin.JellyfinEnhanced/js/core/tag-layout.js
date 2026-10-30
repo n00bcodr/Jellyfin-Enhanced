@@ -1280,9 +1280,12 @@
      * @param {number} maxRows
      * @param {number} moreWidth - Width of the "+N" chip.
      * @param {number[]} [rowsOut] - Filled with each chip's row (1-based; 0 when hidden).
+     * @param {{row: number}} [moreOut] - Receives the row the "+N" chip lands on
+     *   (0 when every chip is shown): the last row with chips when it has room
+     *   after them, else the row below, which flex wraps it onto.
      * @returns {boolean[]} Per chip, whether it is shown.
      */
-    function chipsThatFit(widths, available, gap, maxRows, moreWidth, rowsOut) {
+    function chipsThatFit(widths, available, gap, maxRows, moreWidth, rowsOut, moreOut) {
         // Flex wraps a chip that overflows by any fraction of a pixel.
         const fits = (need, room) => need <= room + 0.01;
         /** @type {number[]} */
@@ -1295,12 +1298,13 @@
         }
         if (rows <= maxRows && widths.every((w) => fits(w, available))) {
             rowsOut?.push(...rowOf);
+            if (moreOut) moreOut.row = 0;
             return widths.map(() => true);
         }
         const roomOn = (row) => (row === maxRows ? available - gap - moreWidth : available);
         let row = 1;
         x = 0;
-        return widths.map((w) => {
+        const shown = widths.map((w) => {
             if (fits(x === 0 ? w : x + gap + w, roomOn(row))) {
                 x = x === 0 ? w : x + gap + w;
                 rowsOut?.push(row);
@@ -1315,6 +1319,10 @@
             rowsOut?.push(0);
             return false;
         });
+        // Room for "+N" is only reserved on the last allowed row; when the shown
+        // chips stop on an earlier row it wraps below them unless it fits after them.
+        if (moreOut) moreOut.row = x === 0 || fits(x + gap + moreWidth, available) ? Math.max(1, row) : row + 1;
+        return shown;
     }
 
     /** @type {Set<CardController>} cards waiting for the next fitting pass */
@@ -1458,16 +1466,14 @@
      * @param {number[]} heights - Chip heights.
      * @param {number} moreHeight
      * @param {number} gap - Gap between rows.
+     * @param {number} moreRow - Row the "+N" chip lands on (chipsThatFit's moreOut), 0 when none.
      * @returns {number}
      */
-    function rowsHeight(shown, rows, heights, moreHeight, gap) {
+    function rowsHeight(shown, rows, heights, moreHeight, gap, moreRow) {
         /** @type {number[]} */
         const tallest = [];
         shown.forEach((on, i) => { if (on) tallest[rows[i] - 1] = Math.max(tallest[rows[i] - 1] || 0, heights[i]); });
-        if (shown.includes(false)) {
-            const last = Math.max(0, tallest.length - 1);
-            tallest[last] = Math.max(tallest[last] || 0, moreHeight);
-        }
+        if (shown.includes(false) && moreRow > 0) tallest[moreRow - 1] = Math.max(tallest[moreRow - 1] || 0, moreHeight);
         const used = tallest.filter((h) => h !== undefined);
         return used.reduce((sum, h) => sum + h, 0) + gap * Math.max(0, used.length - 1);
     }
@@ -1502,8 +1508,9 @@
             let shown = null;
             for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
                 const rows = [];
-                const fit = chipsThatFit(widths, available, gap, n, moreRect.width, rows);
-                const height = rowsHeight(fit, rows, rects.map((r) => r.height), moreRect.height, room.gap);
+                const more = { row: 0 };
+                const fit = chipsThatFit(widths, available, gap, n, moreRect.width, rows, more);
+                const height = rowsHeight(fit, rows, rects.map((r) => r.height), moreRect.height, room.gap, more.row);
                 if (height <= room.inside + 0.01 || (n === 1 && height <= room.oneRow + 0.01)) shown = fit;
             }
             plan.rows.push(shown
@@ -1958,6 +1965,7 @@
         /** Run the pending fitting pass now (tests; the page runs it after the next paint). */
         flushFit,
         chipsThatFit,
+        rowsHeight,
         isGroup: (name) => GROUPS.has(/** @type {string} */ (normalizeGroup(name))),
     };
     JE.core.tagLayout = api;

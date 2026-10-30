@@ -609,6 +609,30 @@ test('chipsThatFit wraps like flex-wrap and leaves room for the "+N" chip', t =>
     '"Dolby Digital+ 5.1" fits a row only without "+N" after it: the rating chips fill row two instead of leaving it empty');
 });
 
+test('chipsThatFit reports the row the "+N" chip lands on, and rowsHeight counts it', t => {
+  const h = setup(t);
+  const more = { row: -1 };
+  const rows = [];
+  // Three narrow chips fill row one (96 of 101px); both wide chips are hidden, so "+2" has
+  // no room after the chips and wraps onto a second row of its own.
+  assert.equal(h.layout.chipsThatFit([30, 30, 30, 80, 80], 101, 3, 2, 20, rows, more).map(Number).join(''), '11100');
+  assert.deepEqual(rows, [1, 1, 1, 0, 0]);
+  assert.equal(more.row, 2, '"+N" wraps below the shown chips');
+  assert.equal(h.layout.rowsHeight([true, true, true, false, false], rows, [18, 18, 18, 18, 18], 18, 3, more.row), 39, 'two rows: the chips and the "+N" row');
+  // With room after the last shown chip, "+N" shares its row.
+  rows.length = 0;
+  assert.equal(h.layout.chipsThatFit([30, 30, 80, 80], 101, 3, 2, 20, rows, more).map(Number).join(''), '1100');
+  assert.equal(more.row, 1);
+  assert.equal(h.layout.rowsHeight([true, true, false, false], rows, [18, 18, 18, 18], 18, 3, more.row), 18);
+  // On the last allowed row the room was reserved, so it always shares the row.
+  rows.length = 0;
+  h.layout.chipsThatFit([30, 30, 30, 30, 30, 30, 30], 100, 3, 2, 20, rows, more);
+  assert.equal(more.row, 2);
+  // Everything shown: no "+N" row.
+  h.layout.chipsThatFit([30, 30], 100, 3, 2, 20, [], more);
+  assert.equal(more.row, 0);
+});
+
 /** Give a card's wrapping slot (default: the caption strip), its chips and "+N" chip fixed widths, then run the fitting pass. */
 function fitCaption(h, { card = 120, outlet = 100, chip = 30, more = 20, slot = () => h.document.querySelector('.je-tag-caption') } = {}) {
   const host = h.host();
