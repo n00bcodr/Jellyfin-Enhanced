@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHarness, plain } from '../helpers/harness.mjs';
+import { setImmediate as settle } from 'node:timers/promises';
+import { createHarness, deferred, plain } from '../helpers/harness.mjs';
 
 const DAY = 24 * 60 * 60 * 1000;
 const ID = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -350,17 +351,95 @@ test('a user switch drops the outgoing user\'s facts; the incoming user\'s layou
   assert.deepEqual(h.slot('bottom'), ['quality', 'rating', 'language']);
 });
 
-test('a virtualised card reused for another item sheds the previous item\'s groups', t => {
-  const h = setup(t);
-  const host = h.render();
-  assert.ok(host.querySelector('.quality-overlay-container'));
-  const card = h.document.querySelector('.card');
-  card.setAttribute('data-id', 'cccccccccccccccccccccccccccccccc');
-  assert.equal(h.layout.hasGroup(host, 'quality'), false, 'the old item\'s quality is not "tagged" for the new one');
-  assert.equal(host.querySelector('.quality-overlay-container'), null, 'and no longer shown');
-  h.renderers.get('genre').renderFromServerCache(host, entry({ Genres: ['War'] }), 'cccccccccccccccccccccccccccccccc');
-  assert.deepEqual(h.slot('tr'), ['genre']);
-  assert.equal(host.querySelectorAll('.genre-tag').length, 1);
+/**
+ * The real tag pipeline (batch path, no server cache), shared DOM observer,
+ * layout controller and genre renderer over one page of cards. Idle slices,
+ * the fetch debounce and each /tag-data response are driven by the test.
+ */
+async function setupPipeline(t, { html = modernCard(), settings = {} } = {}) {
+  const idle = [], timers = new Map(), calls = [];
+  let seq = 0;
+  const h = createHarness({
+    html,
+    globals: { requestIdleCallback: fn => idle.push(fn), setTimeout: (fn, ms) => { timers.set(++seq, { fn, ms }); return seq; }, clearTimeout: id => timers.delete(id) },
+    apiClient: { ajax: options => { const d = deferred(); calls.push({ ids: JSON.parse(options.data), resolve: d.resolve }); return d.promise; } },
+    JE: {
+      currentSettings: { genreTagsEnabled: true, ...settings },
+      pluginConfig: { TagCacheServerMode: false },
+      t: key => key,
+      session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      _cacheManager: { register() {}, markDirty() {} },
+      helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
+    },
+  });
+  t.after(() => h.close());
+  for (const file of ['core/dom-observer.js', 'core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-pipeline.js', 'tags/tag-layout-styles.js', 'tags/genretags.js']) h.load(file);
+  h.JE.initializeGenreTags();
+  h.JE.tagPipeline.initialize();
+  await settle(); // the start-up rescan once the (disabled) server cache "loaded"
+  return Object.assign(h, {
+    calls,
+    /** Run every queued idle slice (scan chunks), including ones they queue. */
+    scan() { while (idle.length) idle.shift()({ timeRemaining: () => 50 }); },
+    /** Fire the batch fetch debounce. */
+    fetch() { for (const [id, timer] of [...timers]) if (timer.ms === 150) { timers.delete(id); timer.fn(); } },
+    genres: () => Array.from(h.document.querySelectorAll('.je-tag-host .genre-tag'), g => g.title),
+  });
+}
+
+const OTHER = 'cccccccccccccccccccccccccccccccc';
+/** Rewrite a card in place for another item (id and artwork), the way a virtualised list reuses it. */
+function reuseCard(h, id) {
+  h.document.querySelector('.card').setAttribute('data-id', id);
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${id}/Images/Primary")`;
+}
+
+test('a card reused in place for another item drops the old item\'s tags and the pipeline renders the new one', async t => {
+  const h = await setupPipeline(t);
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls[0].ids, [ID]);
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama']);
+  reuseCard(h, OTHER);
+  await settle();
+  assert.deepEqual(h.genres(), [], 'the previous item\'s chips are gone as soon as the card changes');
+  assert.equal(h.document.querySelector('.je-tag-slot'), null, 'and so are its slots');
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls[1].ids, [OTHER], 'the reused card is scanned again for its new item');
+  h.calls[1].resolve({ Items: [{ Id: OTHER, Type: 'Movie', Genres: ['War'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['War']);
+});
+
+test('a lookup still in flight when its card is reused never lands on the new item; a caption outlet goes with the old item', async t => {
+  const h = await setupPipeline(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption', tagLayouts: { caption: { groups: [{ group: 'genre', slot: 'caption' }] } } } });
+  h.scan(); h.fetch();
+  assert.equal(h.document.querySelectorAll('.je-tag-caption').length, 1, 'caption space reserved at discovery');
+  reuseCard(h, OTHER);
+  await settle();
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), []);
+  assert.equal(h.document.querySelector('.je-tag-caption .genre-tag'), null, 'the late answer for the old item is dropped');
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls[1].ids, [OTHER]);
+  h.calls[1].resolve({ Items: [{ Id: OTHER, Type: 'Movie', Genres: ['War'] }] });
+  await settle();
+  assert.deepEqual(Array.from(h.document.querySelectorAll('.je-tag-caption .genre-tag'), g => g.title), ['War']);
+  assert.equal(h.document.querySelectorAll('.je-tag-caption').length, 1);
+});
+
+test('artwork loading for the first time is not a reuse', async t => {
+  const h = await setupPipeline(t, { html: modernCard().replace(/ style="[^"]*"/, '') });
+  h.scan(); h.fetch();
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  h.document.querySelector('.cardImageContainer').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama'], 'an episode card\'s artwork may name its series');
+  h.scan(); h.fetch();
+  assert.equal(h.calls.length, 1);
 });
 
 test('the user review chip joins the rating group and follows its slot and summary', async t => {

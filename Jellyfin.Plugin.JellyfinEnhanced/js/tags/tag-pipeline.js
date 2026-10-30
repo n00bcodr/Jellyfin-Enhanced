@@ -85,7 +85,8 @@
     let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
-    let requestQueue = [];               // { el, itemId, itemType }
+    let requestQueue = [];               // { el, itemId, itemType, reuse }
+    const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
 
     // ── Pipeline-level exclusions ─────────────────────────────────────
     // Elements matching these selectors are skipped before any renderer runs.
@@ -992,7 +993,7 @@
      * Render one classified card from its server entry, or from the local
      * caches with a batch-fetch fallback. The host is collected for one
      * corner-stacking pass over the whole slice instead of a layout per card.
-     * @param {{el: HTMLElement, itemId: string, itemType: string|null}} card
+     * @param {{el: HTMLElement, itemId: string, itemType: string|null, reuse: number}} card
      * @param {object|undefined} serverEntry
      * @param {HTMLElement[]} hosts
      */
@@ -1028,7 +1029,7 @@
         hosts.push(renderTarget);
 
         if (!allCacheHits) {
-            requestQueue.push({ el, renderTarget, itemId, itemType });
+            requestQueue.push({ el, renderTarget, itemId, itemType, reuse: card.reuse });
         }
     }
 
@@ -1074,7 +1075,7 @@
 
         /**
          * Render a classified chunk from the looked-up entries.
-         * @param {Array<{el: HTMLElement, itemId: string, itemType: string|null}>} chunk
+         * @param {Array<{el: HTMLElement, itemId: string, itemType: string|null, reuse: number}>} chunk
          * @param {Map<string, object>} entries
          */
         function renderChunk(chunk, entries) {
@@ -1087,6 +1088,9 @@
                     processedCards.delete(card.el);
                     continue;
                 }
+                // Reused for another item while its entry was looked up: it was
+                // released then, and the next scan renders the new item.
+                if (!stillShows(card)) continue;
                 renderCard(card, entries.get(card.itemId), hosts);
             }
             // One coalesced layout pass for the slice instead of one per card.
@@ -1130,7 +1134,7 @@
                 }
 
                 processedCards.add(el);
-                chunk.push({ el, itemId, itemType });
+                chunk.push({ el, itemId, itemType, reuse: cardReuse.get(el) || 0 });
                 ids.push(itemId);
             }
 
@@ -1184,6 +1188,82 @@
             scalable.insertBefore(tagHost, overlay);
         }
         return tagHost;
+    }
+
+    /**
+     * Whether a scanned or queued card still shows the item it was scanned
+     * for (it has not been reused for another item since).
+     * @param {{el: HTMLElement, reuse: number}} card
+     * @returns {boolean}
+     */
+    function stillShows(card) {
+        return (cardReuse.get(card.el) || 0) === card.reuse;
+    }
+
+    /** Card images whose item id lives on an ancestor's data-id / data-itemid. */
+    const CARD_IMAGE_SELECTOR = '.cardImageContainer, div.listItemImage';
+
+    /**
+     * The item id in an image URL (".../Items/<id>/Images/..."), or ''.
+     * @param {string|null} text - A style attribute or background-image value.
+     * @returns {string}
+     */
+    function imageItemId(text) {
+        const match = text ? /Items\/([a-f0-9]{32})\//i.exec(text) : null;
+        return match ? match[1].toLowerCase() : '';
+    }
+
+    /**
+     * Whether an attribute record says a card now shows another item: its
+     * data-id / data-itemid changed, or its artwork moved from one item's
+     * image to another's. The artwork's first load (from no image) is not a
+     * change: the scan may have read the id from data-id before it, and the
+     * artwork can name the series of an episode card.
+     * @param {MutationRecord} record
+     * @returns {boolean}
+     */
+    function isIdentityChange(record) {
+        const target = /** @type {HTMLElement} */ (record.target);
+        if (target.nodeType !== 1 || !record.attributeName) return false;
+        if (record.attributeName === 'style') {
+            if (!target.classList.contains('cardImageContainer')) return false;
+            const before = imageItemId(record.oldValue);
+            const after = imageItemId(target.getAttribute('style'));
+            return !!before && !!after && before !== after;
+        }
+        const norm = (value) => (value || '').replace(/-/g, '').toLowerCase();
+        return norm(target.getAttribute(record.attributeName)) !== norm(record.oldValue);
+    }
+
+    /**
+     * A virtualised list reuses a card for another item by rewriting it in
+     * place: no node is added, so the body subscriber never hears of it and
+     * the card stays processed with the previous item's tags. Release every
+     * scanned card under a changed identity (its layout controller, slots,
+     * caption outlet and review key go with it, and lookups still in flight
+     * for it are dropped by stillShows), then scan again so the new item
+     * renders.
+     * @param {MutationRecord[]} mutations - Attribute records with old values.
+     */
+    function releaseReusedCards(mutations) {
+        let released = false;
+        for (const record of mutations) {
+            if (!isIdentityChange(record)) continue;
+            const target = /** @type {HTMLElement} */ (record.target);
+            const images = target.matches(CARD_IMAGE_SELECTOR)
+                ? [target]
+                : Array.from(target.querySelectorAll(CARD_IMAGE_SELECTOR));
+            for (const el of images) {
+                const owner = /** @type {HTMLElement} */ (el.closest('.cardScalable') || el);
+                const hasHost = Array.from(owner.children).some((c) => c.classList.contains('je-tag-host'));
+                if (!processedCards.has(el) && !hasHost) continue;
+                processedCards.delete(el);
+                cardReuse.set(el, (cardReuse.get(el) || 0) + 1);
+                JE.core.tagLayout?.clearCard(owner);
+                released = true;
+            }
+        }
+        if (released) scheduleScan();
     }
 
     /**
@@ -1266,7 +1346,7 @@
 
     /**
      * Fetch item data for a batch of cards and fan out to all enabled renderers.
-     * @param {Array<{el: HTMLElement, renderTarget: HTMLElement, itemId: string, itemType: string}>} batch - Queued card entries.
+     * @param {Array<{el: HTMLElement, renderTarget: HTMLElement, itemId: string, itemType: string, reuse: number}>} batch - Queued card entries.
      * @param {number} generation - Batch generation counter to detect stale navigations.
      * @returns {Promise<void>}
      */
@@ -1371,6 +1451,7 @@
                 // Render to ALL cards with this ID (same item can appear in multiple rows)
                 for (const entry of batchEntries) {
                     let { el, renderTarget } = entry;
+                    if (!stillShows(entry)) continue; // the card now shows another item
                     // The queued renderTarget can go stale between scan and render
                     // (Series/Season wait on a first-episode fetch first, giving
                     // Jellyfin time to rebuild the card's subtree). Re-resolve from
@@ -1438,7 +1519,8 @@
         } catch (err) {
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
-            for (const { el, renderTarget: queuedRenderTarget, itemId } of batch) {
+            for (const queued of batch) {
+                const { el, renderTarget: queuedRenderTarget, itemId } = queued;
                 if (generation !== batchGeneration) break; // navigation or user switch
                 try {
                     const item = JE.helpers?.getItemCached
@@ -1449,6 +1531,7 @@
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
                     if (generation !== batchGeneration) break; // switched during the awaits above
+                    if (!stillShows(queued)) continue; // the card now shows another item
                     let renderTarget = queuedRenderTarget;
                     if (!renderTarget.isConnected) {
                         if (!el.isConnected) continue; // card itself is gone
@@ -1501,6 +1584,15 @@
                 }
             }
         }, { priority: 0 });
+
+        // Cards reused in place for another item (see releaseReusedCards):
+        // one attribute observer for the page, never one per card.
+        const createObserver = JE.core?.dom?.createObserver || JE.helpers?.createObserver;
+        if (typeof createObserver === 'function') {
+            createObserver('tag-pipeline-card-identity', releaseReusedCards, document.body, {
+                subtree: true, attributes: true, attributeFilter: ['data-id', 'data-itemid', 'style'], attributeOldValue: true,
+            });
+        }
 
         // Also trigger on navigation
         if (JE.helpers.onNavigate) {
