@@ -76,3 +76,10 @@ registered language renderer, whose `markTagged()` bookkeeping and renderer
 guards protect against later same-card scans and batch renders. The fixture
 also owns language priority, group order/caps, look rules/locks and shape settings
 in browser memory, so saved lab policies cannot change the requested badges.
+
+Awards-chip navigation (`awards-navigation.spec.cjs`) checks rank/year hover hit
+testing, titles, `tabindex=-1`, and native left/modifier/middle navigation in
+Corners, Caption and Summary. Set `JE_AWARDS_LAB_URL`, `JE_AWARDS_LAB_USER` and
+`JE_AWARDS_LAB_PASSWORD` for the real Jellyfin mode; `JE_AWARDS_SHOTS` saves
+successful captures. Synthetic award facts are injected into browser cache
+responses only; server metadata and saved preferences remain unchanged.

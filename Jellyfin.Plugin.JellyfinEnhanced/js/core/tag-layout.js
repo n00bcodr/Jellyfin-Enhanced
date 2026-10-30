@@ -1105,7 +1105,7 @@
      * @param {string} group
      * @param {HTMLElement} master
      * @param {TagLayoutSettings} conf
-     * @param {HTMLElement} [host] - Card host for native language-chip links.
+     * @param {HTMLElement} [host] - Card host for native language/Awards chip links.
      * @returns {HTMLElement}
      */
     function buildChips(group, master, conf, host) {
@@ -1115,12 +1115,12 @@
         // missing from the flag set still removes itself.
         for (const img of node.querySelectorAll('img')) img.onerror = () => img.remove();
         applyDensityAndCap(group, node, conf);
-        if (group === 'language' && host) {
+        if ((group === 'language' || group === 'awards') && host) {
             const link = cardLinkOf(host);
             if (link?.matches('a[href]') && !link.contains(host)) {
                 for (const chip of Array.from(node.children)) {
                     const anchor = document.createElement('a');
-                    anchor.className = 'language-link';
+                    anchor.className = group === 'language' ? 'language-link' : 'awards-link';
                     anchor.href = link.getAttribute('href');
                     anchor.title = chip.getAttribute('title') || '';
                     // Mouse/touch only: keyboard focus stays on the poster's own link.
@@ -1361,7 +1361,7 @@
             if (facts.length >= PILL_MAX_FACTS) break;
         }
         if (facts.length === 0) return;
-        const link = facts.some(f => f.group === 'language') ? cardLinkOf(ctrl.host) : null;
+        const link = facts.some(f => f.group === 'language' || f.group === 'awards') ? cardLinkOf(ctrl.host) : null;
         const pill = document.createElement(link?.matches('a[href]') && !link.contains(ctrl.host) ? 'a' : 'div');
         if (pill.tagName === 'A') {
             pill.setAttribute('href', link.getAttribute('href'));

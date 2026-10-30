@@ -6,7 +6,7 @@ import { createHarness, plain, jsRoot } from '../helpers/harness.mjs';
 /** Render through the real factory/controller using both cache and fallback DTOs. */
 function setup(t, settings = {}, plugin = {}) {
     const renderers = new Map();
-    const h = createHarness({ html: '<div class="card" data-id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-type="Movie"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div><div class="cardText">Title</div></div></div>',
+    const h = createHarness({ html: '<div class="card" data-id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" data-type="Movie"><div class="cardBox"><div class="cardScalable"><a class="cardImageContainer" href="#details"></a><div class="je-tag-host"></div></div><div class="cardText">Title</div></div></div>',
         JE: { currentSettings: { awardsTagsEnabled: true, tagLayoutSettingsVersion: 1, ...settings }, pluginConfig: { AwardsTagsEnabled: true, ...plugin },
             t: (key, params) => key + (params?.rank ? ':' + params.rank : ''),
             tagPipeline: { registerRenderer: (id, renderer) => renderers.set(id, renderer), getRenderer: id => renderers.get(id), clearProcessed() {}, scheduleScan() {} } } });
@@ -77,3 +77,25 @@ test('dashboard list-id patterns compile under browser Unicode-sets mode and acc
         for (const invalid of ['https://example.com', 'a/../b', 'owner/chart?key=value']) assert.equal(regex.test(invalid), false);
     }
 });
+
+for (const layout of ['corners', 'caption', 'summary']) {
+    test(`Awards ${layout} links keep rank/year titles and poster navigation outside the Tab order`, t => {
+        const h = setup(t, { tagLayout: layout, tagLayouts: { summary: { groups: [{ group: 'awards', slot: 'pill' }] } } });
+        h.render(facts);
+        const links = [...h.document.querySelectorAll('a.awards-link')];
+        assert.ok(links.length >= 2);
+        assert.match(links[0].title, /12/);
+        assert.match(links[1].title, /certifiedFresh/);
+        for (const link of links) {
+            assert.equal(link.getAttribute('href'), '#details');
+            assert.equal(link.tabIndex, -1);
+            assert.equal(link.querySelector('.awards-tag').title, link.title);
+        }
+        if (layout === 'summary') {
+            const pill = h.document.querySelector('a.je-tag-pill');
+            assert.equal(pill.getAttribute('href'), '#details');
+            assert.equal(pill.tabIndex, -1);
+            assert.match(pill.title, /12/);
+        }
+    });
+}

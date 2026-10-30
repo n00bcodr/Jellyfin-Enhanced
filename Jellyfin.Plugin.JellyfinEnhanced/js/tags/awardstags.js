@@ -6,6 +6,10 @@
     const IDS = Object.keys(LABELS);
     const CSS = `
         .awards-overlay-container { display:flex; flex-direction:column; gap:4px; pointer-events:none; max-width:100%; }
+        /* Only chip anchors intercept hover; empty poster space still reaches Jellyfin. */
+        .je-tag-host:has(.awards-overlay-container) { z-index:2; }
+        .awards-link { display:inline-flex; color:inherit; text-decoration:none; pointer-events:auto; }
+        .je-tag-pill[href] { pointer-events:auto; text-decoration:none; }
         .awards-tag { display:inline-flex; align-items:center; gap:4px; padding:4px 8px; background:rgba(15,15,15,.85); color:#fff; border-radius:4px; font-size:13px; font-weight:700; line-height:1; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.3); }
         .awards-tag-logo { display:inline-flex; width:14px; height:14px; flex:0 0 14px; }
         .awards-tag-logo svg { width:100%; height:100%; }

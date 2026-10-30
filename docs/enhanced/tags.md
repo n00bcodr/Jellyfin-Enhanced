@@ -659,7 +659,7 @@ For series cards on screen, and parent series of season/episode cards, the brows
 
 ## Awards Tags
 
-Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar winner**, **Emmy winner** and **Letterboxd Top 250** chips to movie and series posters. Each has a source logo. Hover for its list rank or most recent known ceremony year. A nomination never produces a winner chip, and a high tomato score never implies Certified Fresh.
+Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar winner**, **Emmy winner** and **Letterboxd Top 250** chips to movie and series posters. Each has a source logo. Hover for its list rank or most recent known ceremony year. Clicking a chip opens the poster’s item; modifier and middle clicks open it in a new tab. Chips add no keyboard tab stops. A nomination never produces a winner chip, and a high tomato score never implies Certified Fresh.
 
 ![Awards chips on real library posters using deterministic fixture facts](../images/tags/awards-desktop.webp)
 *Fixture facts demonstrate all ribbons without an MDBList key; this is rendering evidence, not verified award history for these titles.*
