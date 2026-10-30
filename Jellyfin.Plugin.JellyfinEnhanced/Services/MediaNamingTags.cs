@@ -13,12 +13,15 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private const string Separator = @"[. _\-\[\]()]+";
     private const string OptionalSeparator = @"[. _\-\[\]()]*";
     private static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(100);
+    /// <summary>Bare "WEB" needs a following quality token: the quality rules' resolutions and codecs, plus 1080i and x264/h.265 spellings.</summary>
+    private static readonly string WebQualityTokens = string.Join("|", QualityTagRules.ResolutionTokens
+        .Concat(QualityTagRules.CodecTokens).Select(Regex.Escape).Append("1080i").Append(@"[hx]" + OptionalSeparator + "26[45]"));
     private static Regex Token(string pattern) => new(@"(?:^|[. _\-\[\](){}])(?:" + pattern + @")(?=$|[. _\-\[\](){}])", Options, Timeout);
     private static readonly (Regex Pattern, string Label)[] Sources =
     [
         (Token(@"(?:bd" + OptionalSeparator + @")?remux|bdremux"), "REMUX"),
         (Token(@"blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip"), "BluRay"),
-        (Token(@"web" + OptionalSeparator + @"(?:dl|rip)|web(?=" + Separator + @"(?:4320p|2160p|1440p|1080[pi]|720p|576p|480p|360p|404p|384p|520p|8k|4k|av1|avc|vp9|hevc|[hx]" + OptionalSeparator + @"26[45])(?:$|[. _\-\[\]()]))"), "WEB"),
+        (Token(@"web" + OptionalSeparator + @"(?:dl|rip)|web(?=" + Separator + "(?:" + WebQualityTokens + @")(?:$|[. _\-\[\]()]))"), "WEB"),
         (Token("hdtv"), "HDTV"),
         (Token(@"dvd" + OptionalSeparator + "scr"), "SCR"),
         (Token(@"dvd(?:" + OptionalSeparator + @"rip)?"), "DVD"),
