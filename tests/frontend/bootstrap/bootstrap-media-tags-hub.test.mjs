@@ -547,6 +547,36 @@ test('turning inherited shape defaults off persists an explicit opt-out through 
   assert.equal(reload.$('.je-mtp-sample[data-sample="episode"] .je-tag-host').dataset.jeLayout, 'corners');
 });
 
+for (const slot of ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br']) {
+  test(`shape editor and preview retain ${slot} through shape, rule and lock precedence`, async t => {
+    const shape = { layout: 'corners', slots: [{ group: 'quality', slot }] };
+    const h = setup(t, { stored: { tagShapeOverrides: { landscape: shape, list: shape } } });
+    await h.open();
+    const placed = sample => h.$(`.je-mtp-sample[data-sample="${sample}"] [data-je-slot="${slot}"] [data-je-group="quality"]`);
+    assert.ok(placed('episode'));
+    assert.ok(placed('list'));
+    for (const name of ['landscape', 'list']) {
+      const row = h.$(`[data-shape="${name}"] [data-shape-group="quality"]`);
+      const pills = [...row.querySelectorAll('[data-shape-action="slot"]')].map(pill => pill.dataset.value);
+      for (const anchor of ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br']) assert.ok(pills.includes(anchor));
+      h.click(row.querySelector(`[data-shape-action="slot"][data-value="${slot}"]`));
+      await h.settle();
+      assert.ok(h.saved().tagShapeOverrides[name].slots.some(s => s.group === 'quality' && s.slot === slot));
+    }
+    await h.JE.core.tagLook.saveRules([{ id: 'episode', when: [{ field: 'type', value: 'Episode' }], layout: 'bands',
+      shapes: { landscape: shape, list: shape } }]);
+    await h.settle(); await h.settle();
+    assert.ok(placed('episode'));
+    assert.match(h.$('.je-mtp-sample[data-sample="episode"] .je-mtp-meta').textContent, /source_rule/);
+    const id = h.$('.je-mtp-sample[data-sample="episode"] .je-mtp-card').dataset.id;
+    h.JE.currentSettings.tagLayoutLocks = { [id]: { layout: 'summary', lockedAt: 1, shapes: { landscape: shape } } };
+    h.ui.mediaTagsHub.refreshPreview();
+    await h.settle(); await h.settle();
+    assert.ok(placed('episode'));
+    assert.match(h.$('.je-mtp-sample[data-sample="episode"] .je-mtp-meta').textContent, /source_lock/);
+  });
+}
+
 // Exercise the actual panel host, delegated clicks, settings transport and
 // preview resolver at both ends of the 1..10, All sequence in each editor.
 for (const editor of ['landscape', 'list', 'default']) {

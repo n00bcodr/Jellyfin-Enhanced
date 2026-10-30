@@ -284,7 +284,7 @@
   "tv"
  ],
  "inputs": {
-  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "b1b24f1f1468571d447e2b00777b9323a9c4d2736516e07c12f3ce8e29c30b29",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "0558d2c62c20e512b4164efdfa5155c7092d65000e97d116d9d1066fecafd052",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsoutlined.woff2": "5741bbaa09c4b7d9654753144a38133072ca51cf0c931d13ab93bd391c3fc8be",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded.woff2": "05cc9b9f8de1f641e9f8e54106c8fa665a834c7fbfab573b4f5a81704e78170a",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "2086644d04573b36a859000735848831c88725f83608c4cda9fe273c116bc79e",

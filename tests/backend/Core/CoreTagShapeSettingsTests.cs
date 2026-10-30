@@ -221,6 +221,36 @@ public class CoreTagShapeSettingsTests
         Assert.Null(reset.TagShapeOverrides.List);
     }
 
+    [Theory]
+    [InlineData("tl")]
+    [InlineData("tc")]
+    [InlineData("tr")]
+    [InlineData("ml")]
+    [InlineData("c")]
+    [InlineData("mr")]
+    [InlineData("bl")]
+    [InlineData("bc")]
+    [InlineData("br")]
+    public void AllNineAnchorsSurviveShapeRuleAndLockNormalizationAndWireRoundTrip(string slot)
+    {
+        TagShapeOverrides Shapes() => new() { Landscape = new() { Layout = "corners", Slots = Slots(("quality", slot)) }, List = new() { Layout = "corners", Slots = Slots(("rating", slot)) } };
+        const string id = "abcdefabcdefabcdefabcdefabcdefab";
+        var user = new JellyfinEnhancedUserSettings
+        {
+            TagLayoutSettingsVersion = 1, TagShapeOverrides = Shapes(),
+            TagLookRules = [new() { Id = "episode", Layout = "bands", When = [new() { Field = "type", Value = "Episode" }], Shapes = Shapes() }],
+            TagLayoutLocks = new() { [id] = new() { Layout = "summary", LockedAt = 1, Shapes = Shapes() } },
+        };
+        TagShapeRules.Normalize(user);
+        TagLookValidation.Normalize(user);
+        var copy = JsonSerializer.Deserialize<JellyfinEnhancedUserSettings>(JsonSerializer.Serialize(user))!;
+        foreach (var shapes in new[] { copy.TagShapeOverrides!, copy.TagLookRules![0].Shapes!, copy.TagLayoutLocks![id]!.Shapes! })
+        {
+            Assert.Equal(slot, Assert.Single(shapes.Landscape!.Slots!).Slot);
+            Assert.Equal(slot, Assert.Single(shapes.List!.Slots!).Slot);
+        }
+    }
+
     [Fact]
     public void NativePosterTagsIgnoreShapeLooks()
     {

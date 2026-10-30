@@ -62,7 +62,7 @@ function setup(t, { html = poster() + thumb() + listRow(), settings = {}, plugin
   t.after(() => h.close());
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
-    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js']) h.load(file);
+    'tags/rating-sources.js', 'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js']) h.load(file);
   const JE = h.JE;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags(); JE.initializeStatusTags(); JE.initializeLanguageTags();
   const layout = JE.core.tagLayout;
@@ -290,6 +290,45 @@ test('rules and locks keep their shape looks through normalisation and saving', 
   // Locking stores the portrait look the item resolves to, without shapes.
   await look.lockItem(ID, { layout: 'caption', density: 'full', slots: { status: 'poster' } });
   assert.equal(saved.at(-1).tagLayoutLocks[ID].shapes, null);
+});
+
+for (const slot of ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br']) {
+  test(`${slot} survives shape overrides, rule shapes and lock shapes and reaches the card`, async t => {
+    const shape = { layout: 'corners', slots: [{ group: 'quality', slot }] };
+    const h = setup(t, { html: thumb(), settings: {
+      tagLayoutSettingsVersion: 1, tagShapeOverrides: { landscape: shape },
+    } });
+    h.render(ID2);
+    const check = source => {
+      assert.equal(h.layout.lookSource(h.host(ID2)).source, source);
+      assert.equal(h.layout.resolveLayout(h.host(ID2)).slots.quality, slot);
+      assert.ok(h.host(ID2).querySelector(`[data-je-slot="${slot}"] [data-je-group="quality"]`));
+    };
+    check('shape');
+    await h.apply({ tagLookRules: [{ id: 'episode', when: [{ field: 'type', value: 'Episode' }], layout: 'bands',
+      shapes: { landscape: shape } }] });
+    check('rule');
+    await h.apply({ tagLayoutLocks: { [ID2]: { layout: 'minimal', lockedAt: 1, shapes: { landscape: shape } } } });
+    check('lock');
+  });
+}
+
+test('shape looks reject inherited fields and prototype names throughout rules and locks', t => {
+  const h = setup(t);
+  const inherited = Object.create({ landscape: { layout: 'bands' } });
+  assert.equal(h.layout.readShapeOverrides(inherited).landscape, null);
+  const shape = Object.create({ layout: 'bands', slots: { quality: 'tc' }, caps: { quality: 1 } });
+  assert.deepEqual(plain(h.layout.readShapeOverrides({ landscape: shape }).landscape), { layout: null, density: null, slots: null, caps: null });
+  for (const layout of ['constructor', '__proto__', 'toString']) {
+    const raw = { landscape: { layout, slots: { quality: 'tc', constructor: 'c', __proto__: 'ml' } } };
+    const normalized = h.layout.readShapeOverrides(raw).landscape;
+    assert.equal(normalized.layout, null);
+    assert.deepEqual(plain(normalized.slots), { quality: 'tc' });
+    const [rule] = h.JE.core.tagLook.normalizeRules([{ id: 'r', when: [{ field: 'type', value: 'Episode' }], layout: 'corners', shapes: raw }]);
+    const lock = h.JE.core.tagLook.normalizeLocks({ [ID2]: { layout: 'corners', lockedAt: 1, shapes: raw } }).get(ID2);
+    assert.deepEqual(plain(rule.shapes), plain(lock.shapes));
+    assert.equal(rule.shapes.landscape.layout, null);
+  }
 });
 
 test('configPage.html offers the same recommended looks as the layout controller', t => {
