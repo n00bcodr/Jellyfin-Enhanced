@@ -68,8 +68,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan ImageTimeout = TimeSpan.FromSeconds(15);
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(30);
 
-        /// <summary>A TMDB logo file name ("abc123.png"): no directories, a raster extension.</summary>
-        private static readonly Regex FilePattern = new(@"^[A-Za-z0-9_\-]{1,80}\.(png|jpg|jpeg|webp)\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        /// <summary>
+        /// A TMDB logo file name ("pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg"): no directories, a raster
+        /// extension. TMDB's paths are case-sensitive, so the name is matched, allowed, fetched,
+        /// stored and keyed exactly as TMDB spelled it; another casing is a different (unknown) file.
+        /// </summary>
+        private static readonly Regex FilePattern = new(@"^[A-Za-z0-9_\-]{1,80}\.(png|jpg|jpeg|webp)\z", RegexOptions.CultureInvariant);
 
         /// <summary>What a lookup asks TMDB for.</summary>
         public enum LookupKind
@@ -103,9 +107,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly string? _storePath;
         private readonly string _imageDir;
         private readonly ConcurrentDictionary<string, Lookup> _lookups = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, byte> _knownFiles = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, long> _imageFailures = new(StringComparer.OrdinalIgnoreCase);
-        private readonly ConcurrentDictionary<string, Task<LogoImage?>> _imageFetches = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, byte> _knownFiles = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, long> _imageFailures = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, Task<LogoImage?>> _imageFetches = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _slots;
         private readonly int _perWindow;
         private readonly TimeSpan _window;
@@ -326,11 +330,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (IsLogoPath(logoPath)) _knownFiles.TryAdd(logoPath![1..], 0);
         }
 
-        /// <summary>True when the proxy may serve this size and file.</summary>
+        /// <summary>True when the proxy may serve this size and file (exactly as a lookup spelled it).</summary>
         public bool IsAllowed(string? size, string? file) =>
             size != null && Sizes.Contains(size, StringComparer.Ordinal) && file != null && FilePattern.IsMatch(file) && _knownFiles.ContainsKey(file);
 
-        private string ImagePath(string size, string file) => Path.Combine(_imageDir, size, file.ToLowerInvariant());
+        private string ImagePath(string size, string file) => Path.Combine(_imageDir, size, file);
 
         /// <summary>Whether the image is in the disk cache (no read, no network).</summary>
         public bool IsCached(string size, string file) => IsAllowed(size, file) && File.Exists(ImagePath(size, file));
@@ -358,14 +362,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// The logo image for the proxy: from the disk cache, else fetched once
-        /// from TMDB's image server and cached. Null when not allowed, or when the
-        /// fetch failed (retried after ten minutes).
+        /// from TMDB's image server and cached. Null when not allowed (checked
+        /// first, so an unknown spelling never reaches a cache or TMDB), or when
+        /// the fetch failed (retried after ten minutes).
         /// </summary>
         public Task<LogoImage?> GetImageAsync(string size, string file, CancellationToken cancellationToken)
         {
             if (!IsAllowed(size, file)) return Task.FromResult<LogoImage?>(null);
             if (TryReadCached(size, file) is { } cached) return Task.FromResult<LogoImage?>(cached);
-            var key = size + "/" + file.ToLowerInvariant();
+            var key = size + "/" + file;
             if (_imageFailures.TryGetValue(key, out var failedAt)
                 && _time.GetUtcNow().ToUnixTimeMilliseconds() - failedAt < ImageRetryAfter.TotalMilliseconds)
                 return Task.FromResult<LogoImage?>(null);
@@ -382,7 +387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task WarmImagesAsync(IEnumerable<string?> logoPaths, CancellationToken cancellationToken)
         {
             var failures = 0;
-            foreach (var path in logoPaths.Where(IsLogoPath).Distinct(StringComparer.OrdinalIgnoreCase))
+            foreach (var path in logoPaths.Where(IsLogoPath).Distinct(StringComparer.Ordinal))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 Remember(path);

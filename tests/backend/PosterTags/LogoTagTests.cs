@@ -245,6 +245,50 @@ public class LogoTagTests
     }
 
     [Fact]
+    public async Task ACaseVariantIsUnknownAndNeverReachesTheCachesOrTmdb()
+    {
+        var requested = new List<string>();
+        var (service, _, _, dir) = Service(request =>
+        {
+            if (request.RequestUri!.Host != "image.tmdb.org")
+                return IntegrationTransport.Response("""{"production_companies":[{"name":"Lower","logo_path":"/abc.png"},{"name":"Mixed","logo_path":"/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg"}]}""");
+            requested.Add(request.RequestUri.AbsolutePath);
+            // TMDB's image paths are case-sensitive: only the exact spelling exists.
+            return request.RequestUri.AbsolutePath is "/t/p/w92/abc.png" or "/t/p/w92/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg" ? Image(Png) : IntegrationTransport.Response("", 404, "text/html");
+        });
+        try
+        {
+            await service.WarmAsync("key", [("movie", "603", TagLogoService.LookupKind.Details)], "US", CancellationToken.None);
+            using var fixture = new CoreFixture();
+            // Cold cache: the variants are refused before any cache or upstream request.
+            foreach (var variant in new[] { "ABC.PNG", "Abc.png", "abc.PNG", "PBPMK2JMCONNQWX5JGPXNGFOWTP.JPG", "pbpmk2jmconnqwx5jgpxngfowtp.jpg" })
+            {
+                Assert.False(service.IsAllowed("w92", variant));
+                Assert.Null(await service.GetImageAsync("w92", variant, CancellationToken.None));
+                Assert.Null(service.TryReadCached("w92", variant));
+                Assert.IsType<NotFoundResult>(await ApiAssetTests.Controller(fixture).GetLogoImage("w92", variant, service, CancellationToken.None));
+            }
+
+            Assert.Empty(requested);
+
+            // The canonical names were not marked as failed by those requests.
+            Assert.IsType<FileContentResult>(await ApiAssetTests.Controller(fixture).GetLogoImage("w92", "abc.png", service, CancellationToken.None));
+            Assert.NotNull(await service.GetImageAsync("w92", "pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg", CancellationToken.None));
+            Assert.Equal(new[] { "/t/p/w92/abc.png", "/t/p/w92/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg" }, requested);
+            Assert.True(File.Exists(Path.Combine(dir, "logos", "w92", "pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg")), "stored under TMDB's spelling");
+
+            // Cached now: the variants still are not served from the disk cache.
+            Assert.Null(await service.GetImageAsync("w92", "ABC.PNG", CancellationToken.None));
+            Assert.False(service.IsCached("w92", "PBPMK2JMCONNQWX5JGPXNGFOWTP.JPG"));
+            Assert.Equal(2, requested.Count);
+        }
+        finally
+        {
+            Cleanup(service, dir);
+        }
+    }
+
+    [Fact]
     public async Task EntriesTakeProvidersStudiosOrNetworksPerModeWithTheAdministratorsMaximum()
     {
         var (service, _, _, dir) = Service(request => request.RequestUri!.AbsolutePath switch

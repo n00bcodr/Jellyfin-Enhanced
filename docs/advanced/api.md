@@ -888,7 +888,7 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 | GET | `tmdb/validate` | Administrator | Supplied query `apiKey` → `{"ok":true}`. |
 | GET | `tmdb/{**apiPath}` | Authenticated | TMDB `/3/` resource path and query → upstream TMDB JSON/status. |
 | GET | `watch-providers` | Authenticated | Query `items`, optional `region` → regional flat-rate provider map. |
-| GET | `logo/{size}/{file}` | Anonymous | `size` `w45` or `w92`, `file` a logo file name the server has seen in a Logos lookup → the image from the server's cache; `404` otherwise. |
+| GET | `logo/{size}/{file}` | Anonymous | `size` `w45` or `w92`, `file` a logo file name the server has seen in a Logos lookup, spelled exactly as TMDB spells it (case-sensitive) → the image from the server's cache; `404` otherwise. |
 
 Local lookups return `404` if absent and `500` on lookup errors. Boxset checks type; single studio/genre/person actions do not explicitly enforce their named type. They are local metadata lookups, rather than Seerr proxies.
 
@@ -943,7 +943,7 @@ Missing key/setup returns `503`; cancellation `499`. Successful responses use pr
 
 ### Logo images
 
-The Logos tag group's images come from `GET /JellyfinEnhanced/logo/{size}/{file}` (for example `logo/w92/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg`). The route is anonymous like the CDN assets, because an `<img>` cannot send a Jellyfin token, but it is not an open TMDB proxy: only the sizes `w45` and `w92` and PNG, JPEG or WebP file names that came back from the server's own provider or company/network lookups are served. The server fetches a missing image from TMDB's image server once (at most 256 KiB, `image/*` only, SVG refused), keeps it under Jellyfin's cache directory in `jellyfin-enhanced/logos`, and answers with `Cache-Control: public, max-age=604800`, a strong `ETag` and `304` revalidation. A failed fetch returns `404` and is retried after ten minutes. Native Poster Tags draw the same cached files and never fetch during a poster request.
+The Logos tag group's images come from `GET /JellyfinEnhanced/logo/{size}/{file}` (for example `logo/w92/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg`). The route is anonymous like the CDN assets, because an `<img>` cannot send a Jellyfin token, but it is not an open TMDB proxy: only the sizes `w45` and `w92` and PNG, JPEG or WebP file names that came back from the server's own provider or company/network lookups are served. TMDB's image paths are case-sensitive, so a file name must match the lookup's spelling exactly: any other casing is an unknown file and returns `404` before the server's image cache, its failure cache or TMDB is consulted. The server fetches a missing image from TMDB's image server once (at most 256 KiB, `image/*` only, SVG refused), keeps it under Jellyfin's cache directory in `jellyfin-enhanced/logos`, and answers with `Cache-Control: public, max-age=604800`, a strong `ETag` and `304` revalidation. A failed fetch returns `404` and is retried after ten minutes. Native Poster Tags draw the same cached files and never fetch during a poster request.
 
 !!! note "Privacy"
     Browsers never contact TMDB for logos: the lookups and image downloads run on the server with the server's TMDB key, and clients only see the names and image paths in the tag cache. Without a key or internet access the group shows names.

@@ -22,7 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         private static readonly Assembly ResourceAssembly = typeof(PosterTagAssets).Assembly;
 
         private readonly ConcurrentDictionary<string, Lazy<SKImage?>> _flags = new(StringComparer.Ordinal);
-        private readonly ConcurrentDictionary<string, SKImage> _logos = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, SKImage> _logos = new(StringComparer.Ordinal);
 
         /// <summary>Decoded logos kept at most; past it further logos draw as name chips.</summary>
         internal const int MaxCachedLogos = 512;

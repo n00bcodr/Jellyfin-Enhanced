@@ -19,7 +19,7 @@
     /** Names longer than this show as an initialism (TagCacheService.LogoTextMaxLength). */
     const TEXT_MAX_LENGTH = 12;
     const KINDS = new Set(['provider', 'network', 'studio']);
-    const LOGO_PATH = /^\/[A-Za-z0-9_-]{1,80}\.(?:png|jpe?g|webp)$/i;
+    const LOGO_PATH = /^\/[A-Za-z0-9_-]{1,80}\.(?:png|jpe?g|webp)$/;
     /** @type {Set<string>} image URLs that failed to load this session (shown as names) */
     const failedUrls = new Set();
     let errorListener = false;
