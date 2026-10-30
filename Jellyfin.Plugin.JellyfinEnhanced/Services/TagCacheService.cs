@@ -273,8 +273,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // fallback, and the served payload shrinks by roughly a fifth.
         // v8 includes Series members in a BoxSet's language union (it was movies only), so
         // collection entries built before it are stale.
+        // v9 stores each video stream's Width (cropped scope encodes were tagged by height alone)
+        // and the SourceId of the version every stream belongs to (per-version quality badges).
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 8;
+        private const int CurrentCacheSchemaVersion = 9;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
