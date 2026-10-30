@@ -1411,6 +1411,8 @@
     "TagCacheExcludeLibraries": false,
     "TagCacheExcludedLibraryIds": "",
     "TagCacheServerMode": true,
+    "TagLabelDensity": "full",
+    "TagLayout": "corners",
     "TagStyleApplyScope": "all",
     "TagStyleOverrides": "",
     "TagStylePreset": "default",

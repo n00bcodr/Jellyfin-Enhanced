@@ -109,8 +109,11 @@ Groups in the same place appear in priority order: status, quality, rating, age 
 
 | Setting | Default | What it does |
 |---|---|---|
-| Personal: **Tag Layout** | **Corners** | Chooses one of the layouts above |
-| Personal: **Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
+| Personal: **Tag Layout** (admin default `TagLayout`) | **Corners** | Chooses one of the layouts above |
+| Personal: **Label Density** (admin default `TagLabelDensity`) | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
+| Admin default `TagLayouts` (per-user slots, no editor yet) | None: the default arrangements above; Corners follows the corner choices | Each layout's starting slot per group (`{Groups: [{Group, Slot}]}` per layout); a group left out keeps its default slot |
+| Admin default `TagGroupOrder` (per-user order, no editor yet) | None: arrival order on Corners, status → quality → rating → age rating → language → genre elsewhere | Starting priority order; groups it leaves out follow in the default order |
+| Admin default `TagGroupCaps` (per-user limits, no editor yet) | None: genre 3, language 3, age rating 1, status 1, quality and rating unlimited | Starting chips per group, 0–10, `0` = unlimited; a group left out keeps its default limit |
 
 ??? info "Upgrades, defaults, and limits"
     - Settings saved before layouts existed keep the **Corners** layout, your corner choices, the original stacking order and limits, until you change the layout or density, or pick a corner. Administrators' new layout defaults never change an existing user's view.
