@@ -174,11 +174,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(copy))).ToLowerInvariant();
             });
 
+        /// <summary>
+        /// Which of the entry's logo images the proxy has cached ("" without logos): a poster drawn
+        /// with a name chip gets a new key once its logo image arrives.
+        /// </summary>
+        private static string LogoImageKey(TagCacheEntry entry)
+        {
+            if (entry.Logos is not { Length: > 0 } logos) return string.Empty;
+            var key = new StringBuilder("|l:");
+            foreach (var logo in logos)
+            {
+                key.Append(logo?.Logo is { } path && Rendering.PosterTagAssets.HasLogo(path) ? '1' : '0');
+            }
+
+            return key.ToString();
+        }
+
         private static string DataKey(TagCacheEntry entry, PosterTagReviewSummary reviews)
         {
             var input = ContentHash(entry) + "|r:"
                 + (reviews.Count?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "-") + ":"
-                + (reviews.Average?.ToString("R", System.Globalization.CultureInfo.InvariantCulture) ?? "-");
+                + (reviews.Average?.ToString("R", System.Globalization.CultureInfo.InvariantCulture) ?? "-")
+                + LogoImageKey(entry);
             return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input))).ToLowerInvariant();
         }
 

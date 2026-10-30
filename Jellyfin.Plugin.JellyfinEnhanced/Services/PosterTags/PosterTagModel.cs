@@ -27,6 +27,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         Rating,
         AgeRating,
         Language,
+        Logos,
     }
 
     /// <summary>Rating chip source.</summary>
@@ -87,6 +88,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
     /// <summary>An age rating badge. <paramref name="ColorKey"/> is the normalised key used by the web's rating colours.</summary>
     public sealed record AgeRatingTag(string Text, string ColorKey) : PosterTag;
+
+    /// <summary>
+    /// A Logos chip: a streaming provider, network or studio. <paramref name="Logo"/> is the TMDB image
+    /// path the logo proxy serves, or null for a name chip (which the renderer also draws when the
+    /// image is not cached).
+    /// </summary>
+    public sealed record LogoTag(string Kind, string Name, string? Logo) : PosterTag
+    {
+        /// <summary>The Tag Styles label of the chip with its image: "provider" or "company".</summary>
+        public string ImageStyle => Kind == "provider" ? "provider" : "company";
+    }
 
     /// <summary>The tags of one group and where they go.</summary>
     public sealed record PosterTagGroupLayout(PosterTagGroup Group, PosterTagCorner Corner, IReadOnlyList<PosterTag> Tags);

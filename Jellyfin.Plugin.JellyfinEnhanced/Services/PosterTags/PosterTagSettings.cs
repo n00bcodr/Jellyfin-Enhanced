@@ -55,7 +55,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>True when at least one of the five card tag groups is on and not set to "off" in the corners layout.</summary>
         public bool AnyGroupEnabled => Shows(PosterTagGroup.Quality) || Shows(PosterTagGroup.Genre) || Shows(PosterTagGroup.Language)
-            || Shows(PosterTagGroup.Rating) || Shows(PosterTagGroup.AgeRating);
+            || Shows(PosterTagGroup.Rating) || Shows(PosterTagGroup.AgeRating) || Shows(PosterTagGroup.Logos);
 
         /// <summary>
         /// Stable lowercase hex hash (16 characters) over every rendering-relevant effective value,
@@ -81,6 +81,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Effective <c>ageRatingTagsEnabled</c>.</summary>
         public bool AgeRatingTagsEnabled { get; private init; }
+
+        /// <summary>Effective <c>logoTagsEnabled</c>.</summary>
+        public bool LogoTagsEnabled { get; private init; }
 
         /// <summary>
         /// Groups the user set to "off" in their corners layout profile: the web's corners layout
@@ -121,6 +124,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Most age rating chips shown (0 = unlimited; there is only ever one).</summary>
         public int AgeRatingCap { get; private init; } = 1;
 
+        /// <summary>Most logos shown (0 = every logo the entry carries).</summary>
+        public int LogoCap { get; private init; }
+
         /// <summary>
         /// Quality position string as the web resolves it: the user's corners profile slot when it
         /// names a corner, else the position setting (user, else admin, else "top-left").
@@ -138,6 +144,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Age rating position string (default "bottom-right").</summary>
         public string AgeRatingTagsPosition { get; private init; } = "bottom-right";
+
+        /// <summary>Logos position string (default "bottom-left").</summary>
+        public string LogoTagsPosition { get; private init; } = "bottom-left";
 
         /// <summary>Effective <c>showResolutionTag</c>.</summary>
         public bool ShowResolutionTag { get; private init; } = true;
@@ -264,7 +273,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             || (Shows(PosterTagGroup.Genre) && IsTopRight(GenreTagsPosition))
             || (Shows(PosterTagGroup.Rating) && IsTopRight(RatingTagsPosition))
             || (Shows(PosterTagGroup.AgeRating) && IsTopRight(AgeRatingTagsPosition))
-            || (Shows(PosterTagGroup.Language) && IsTopRight(LanguageTagsPosition));
+            || (Shows(PosterTagGroup.Language) && IsTopRight(LanguageTagsPosition))
+            || (Shows(PosterTagGroup.Logos) && IsTopRight(LogoTagsPosition));
 
         /// <summary>Whether the user-review chip can appear: reviews, posters chip and a shown rating group.</summary>
         public bool UserReviewChipEnabled => ShowUserReviews && ShowUserRatingOnPosters && Shows(PosterTagGroup.Rating);
@@ -372,11 +382,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsEnabled = user.LanguageTagsEnabled,
                 RatingTagsEnabled = user.RatingTagsEnabled,
                 AgeRatingTagsEnabled = user.AgeRatingTagsEnabled,
+                LogoTagsEnabled = user.LogoTagsEnabled,
                 QualityTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Quality) ?? Position(user.QualityTagsPosition, config.QualityTagsPosition, "top-left"),
                 GenreTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Genre) ?? Position(user.GenreTagsPosition, config.GenreTagsPosition, "top-right"),
                 LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
                 RatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Rating) ?? Position(user.RatingTagsPosition, config.RatingTagsPosition, "bottom-right"),
                 AgeRatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.AgeRating) ?? Position(user.AgeRatingTagsPosition, config.AgeRatingTagsPosition, "bottom-right"),
+                LogoTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Logos) ?? Position(user.LogoTagsPosition, config.LogoTagsPosition, "bottom-left"),
                 OffGroups = layout.Off,
                 GroupOrder = layout.Order,
                 QualityCap = layout.Cap("quality"),
@@ -388,6 +400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageCountBadge = LanguageTagDisplay.NormalizeCountBadge(user.LanguageTagsCountBadge),
                 RatingCap = layout.Cap("rating"),
                 AgeRatingCap = layout.Cap("ageRating"),
+                LogoCap = layout.Cap("logos"),
                 ShowResolutionTag = user.ShowResolutionTag,
                 ShowSourceTag = user.ShowSourceTag,
                 ShowEditionTag = user.ShowEditionTag ?? config.ShowEditionTag,
@@ -462,6 +475,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreTagsEnabled,
             PosterTagGroup.Rating => RatingTagsEnabled,
             PosterTagGroup.AgeRating => AgeRatingTagsEnabled,
+            PosterTagGroup.Logos => LogoTagsEnabled,
             _ => LanguageTagsEnabled,
         };
 
@@ -474,6 +488,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreCap,
             PosterTagGroup.Rating => RatingCap,
             PosterTagGroup.AgeRating => AgeRatingCap,
+            PosterTagGroup.Logos => LogoCap,
             _ => LanguageCap,
         };
 
@@ -486,6 +501,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreTagsPosition,
             PosterTagGroup.Rating => RatingTagsPosition,
             PosterTagGroup.AgeRating => AgeRatingTagsPosition,
+            PosterTagGroup.Logos => LogoTagsPosition,
             _ => LanguageTagsPosition,
         };
 
@@ -541,6 +557,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => "genre",
             PosterTagGroup.Rating => "rating",
             PosterTagGroup.AgeRating => "ageRating",
+            PosterTagGroup.Logos => "logos",
             _ => "language",
         };
 
@@ -623,6 +640,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 "genre" => caps?.Genre,
                 "language" => caps?.Language,
                 "rating" => caps?.Rating,
+                "logos" => caps?.Logos,
                 _ => caps?.AgeRating,
             };
         }
@@ -684,6 +702,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(config.RatingTagsMinScore),
                 RatingTagsColorByScore = config.RatingTagsColorByScore,
                 AgeRatingTagsPosition = config.AgeRatingTagsPosition,
+                LogoTagsEnabled = config.LogoTagsEnabled,
+                LogoTagsPosition = config.LogoTagsPosition,
             };
             TagLayoutRules.ApplyDefaults(defaults, config);
             LanguageTagDisplay.ApplyDefaults(defaults, config);
@@ -703,7 +723,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ["language.enabled"] = Bool(LanguageTagsEnabled),
                 ["rating.enabled"] = Bool(RatingTagsEnabled),
                 ["ageRating.enabled"] = Bool(AgeRatingTagsEnabled),
-                ["order"] = GroupOrder is null ? string.Empty : string.Join(",", GroupOrder),
+                // Logos stay out of the order until shown, so existing posters keep their keys.
+                ["order"] = GroupOrder is null ? string.Empty : string.Join(",", GroupOrder.Where(g => g != PosterTagGroup.Logos || Shows(g))),
             };
 
             // A group set to "off" draws nothing, so (like a disabled group) its other values stay out.
@@ -777,6 +798,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 values["ageRating.position"] = AgeRatingTagsPosition;
                 values["ageRating.cap"] = Int(AgeRatingCap);
+            }
+
+            if (Shows(PosterTagGroup.Logos))
+            {
+                values["logos.enabled"] = "1";
+                values["logos.position"] = LogoTagsPosition;
+                values["logos.cap"] = Int(LogoCap);
             }
 
             if (!Styles.IsEmpty)

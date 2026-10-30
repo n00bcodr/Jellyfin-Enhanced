@@ -6,7 +6,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 {
     /// <summary>
     /// The web tags' CSS, evaluated for one logical card width. Every length is in CSS px of a card
-    /// <see cref="CardWidth"/> px wide (the container-query rules in tag-pipeline.js and ageratingtags.js);
+    /// <see cref="CardWidth"/> px wide (the container-query rules in tag-pipeline.js, ageratingtags.js and logotags.js);
     /// the renderer scales them to the image afterwards.
     /// </summary>
     internal readonly struct PosterTagCss
@@ -59,6 +59,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             ChipPaddingH = Clamp(4f, 4.5f * cqw, 8f);
             RatingInnerGap = Clamp(2f, 2.2f * cqw, 4f);
             RatingIconSize = Clamp(9f, 7f * cqw, 14f);
+
+            LogoHeight = Clamp(14f, 11f * cqw, 22f);
+            LogoFontSize = Clamp(9f, 6.4f * cqw, 12f);
         }
 
         public float CardWidth { get; }
@@ -99,6 +102,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         /// <summary>Star glyph size and tomato box size.</summary>
         public float RatingIconSize { get; }
+
+        /// <summary>Border-box height of a Logos chip (logotags.js <c>height: clamp(14px, 11cqw, 22px)</c>).</summary>
+        public float LogoHeight { get; }
+
+        /// <summary>Font size of a Logos name chip.</summary>
+        public float LogoFontSize { get; }
+
+        /// <summary>Gap between Logos chips (<c>gap: 4px</c>).</summary>
+        public const float LogoGap = 4f;
+
+        /// <summary>Widest logo image (<c>max-width: 72px</c>).</summary>
+        public const float LogoMaxImageWidth = 72f;
+
+        /// <summary>Vertical / horizontal padding of a Logos chip; provider logos use 2px all round.</summary>
+        public const float LogoPaddingV = 3f;
+
+        public const float LogoPaddingH = 6f;
+
+        public const float LogoProviderPadding = 2f;
 
         private static float Clamp(float min, float value, float max) => Math.Max(min, Math.Min(max, value));
 

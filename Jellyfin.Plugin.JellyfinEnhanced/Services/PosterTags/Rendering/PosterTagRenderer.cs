@@ -504,6 +504,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     case PosterTagTileKind.Flag:
                         PaintFlag(canvas, item, local, border, space);
                         break;
+                    case PosterTagTileKind.Logo:
+                        PaintLogo(canvas, plan, item, local, border, space);
+                        break;
                 }
 
                 canvas.Flush();
@@ -687,6 +690,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = border, PathEffect = dash };
                     canvas.DrawRoundRect(shape, paint);
                 }
+                canvas.Restore();
+            }
+
+            /// <summary>
+            /// A Logos chip: its pill (Tag Styles colours over the built-in provider / company / name
+            /// colours) with the logo contained in its box, or the shortened name in the name chip.
+            /// </summary>
+            private void PaintLogo(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
+            {
+                var tag = (LogoTag)item.Tag;
+                var bar = item.Style.IndexOf('|');
+                var label = bar >= 0 ? item.Style[..bar] : item.Style;
+                var over = bar >= 0 ? TagColors.Decode(item.Style[(bar + 1)..]) : default;
+                var builtin = TagStylePalettes.Builtin(TagStyleKeys.Logos, label);
+                var background = over.Background ?? CssColor.Parse(builtin.Background, SKColors.Transparent);
+                var borderColor = over.Border ?? CssColor.Parse(builtin.Border, SKColors.Transparent);
+                var text = over.Text ?? CssColor.Parse(builtin.Text, SKColors.White);
+
+                using var rrect = new SKRoundRect(local, 4f);
+                PaintBox(canvas, rrect, background, borderColor, border, ChipShadow);
+
+                if (label == "text")
+                {
+                    float fontSize = plan.Css.LogoFontSize;
+                    float lineHeight = PosterTagCss.Lu(fontSize);
+                    float contentTop = 1f + PosterTagCss.LogoPaddingV;
+                    float contentHeight = item.Height - 2f - (2 * PosterTagCss.LogoPaddingV);
+                    float top = contentTop + PosterTagCss.Lu((contentHeight - lineHeight) / 2f);
+                    DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.LogoPaddingH, top + Assets.TextMetrics.BaselineOffset(fontSize, lineHeight), text, TextShadowColor, space);
+                    return;
+                }
+
+                if (tag.Logo is null || Assets.GetLogo(tag.Logo) is not { } image) return;
+                bool provider = label == "provider";
+                float padV = provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingV;
+                float padH = provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingH;
+                var box = SKRect.Create(1f + padH, 1f + padV, item.IconWidth, item.IconHeight);
+                // object-fit: contain inside the image box, centred.
+                float fit = Math.Min(box.Width / image.Width, box.Height / image.Height);
+                var target = SKRect.Create(box.MidX - (image.Width * fit / 2f), box.MidY - (image.Height * fit / 2f), image.Width * fit, image.Height * fit);
+                canvas.Save();
+                using (var clip = new SKRoundRect(box, 3f))
+                {
+                    canvas.ClipRoundRect(clip, SKClipOperation.Intersect, true);
+                }
+
+                int deviceWidth = Math.Max(1, (int)MathF.Round(target.Width * space.Scale));
+                int deviceHeight = Math.Max(1, (int)MathF.Round(target.Height * space.Scale));
+                using (var scaled = PosterTagImageScaler.Scale(image, deviceWidth, deviceHeight))
+                using (var paint = new SKPaint { IsAntialias = true })
+                {
+                    canvas.DrawImage(scaled ?? image, target, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), paint);
+                }
+
                 canvas.Restore();
             }
 

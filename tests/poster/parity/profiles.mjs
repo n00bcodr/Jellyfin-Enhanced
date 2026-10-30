@@ -145,6 +145,13 @@ const synthetic = {
     rs01: movie({ Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 } }),
     rs02: movie({ Ratings: { imdb: 0, tmdb: null, rtAudience: 49, letterboxd: 2.5 } }),
     rs03: { Type: 'Season', SeriesTmdbId: '2000', SeasonNumber: 2, Ratings: { imdb: 8.1, rtCritic: 92 } },
+    // Logos: an image logo, two logos, a long name (initialism), one word cut short,
+    // an unknown kind, a malformed logo path and an empty name.
+    lg01: movie({ Logos: [{ kind: 'provider', name: 'Streamflix', logo: '/synthLogo01.png' }] }),
+    lg02: { Type: 'Series', TmdbId: '2000', Logos: [{ kind: 'network', name: 'Northwind Broadcasting Company' }, { kind: 'network', name: 'Harbor', logo: '/synthLogo02.png' }] },
+    lg03: movie({ Logos: [{ kind: 'studio', name: 'Supercalifragilistic' }, { kind: 'studio', name: 'A24' }, { kind: 'studio', name: 'Third' }] }),
+    lg04: movie({ Logos: [{ kind: 'channel', name: 'Nope' }, { kind: 'studio', name: '  ', logo: '/x.png' }, { kind: 'provider', name: 'Bad Path', logo: '../etc/passwd' }] }),
+    lg05: { Type: 'Episode', SeriesTmdbId: '2000', Logos: [{ kind: 'network', name: 'Home Box Office' }] },
     // Age ratings
     a01: movie({ OfficialRating: 'DE-12' }),
     a02: movie({ OfficialRating: '  FSK   16 ' }),
@@ -237,6 +244,12 @@ synth('rating-sources-all', { RatingTagsEnabled: true, RatingTagsSources: ['trak
 synth('rating-sources-minimum-cap', { RatingTagsEnabled: true, RatingTagsSources: ['metacritic', 'letterboxd', 'imdb', 'tmdb', 'rtCritic'], RatingTagsMinScore: 8, RatingTagsColorByScore: true, TagGroupCaps: { Rating: 2 }, TagLayoutSettingsVersion: 1 });
 synth('rating-sources-empty', { RatingTagsEnabled: true, RatingTagsSources: [] });
 synth('rating-sources-unknown', { RatingTagsEnabled: true, RatingTagsSources: ['invalid', 'imdb', 'imdb', 'trakt'] });
+synth('logos-defaults', { LogoTagsEnabled: true });
+synth('logos-with-groups', { ...allOn, LogoTagsEnabled: true, LogoTagsPosition: 'top-right' });
+synth('logos-capped-ordered', { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Logos: 1 },
+    TagGroupOrder: ['logos', 'quality'], TagLayouts: { Corners: { Groups: [{ Group: 'logos', Slot: 'tl' }] } } });
+synth('logos-hidden', { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: { Groups: [{ Group: 'logos', Slot: 'off' }] } } });
+synth('logos-admin-position', { LogoTagsEnabled: true }, { LogoTagsPosition: 'bottom-center' });
 
 for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed']) {
     synth('aggregate-' + policy, { QualityTagsEnabled: true, SeriesQualityAggregation: policy });

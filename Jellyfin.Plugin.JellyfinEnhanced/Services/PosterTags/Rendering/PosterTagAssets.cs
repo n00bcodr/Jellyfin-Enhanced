@@ -22,6 +22,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         private static readonly Assembly ResourceAssembly = typeof(PosterTagAssets).Assembly;
 
         private readonly ConcurrentDictionary<string, Lazy<SKImage?>> _flags = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, SKImage> _logos = new(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Decoded logos kept at most; past it further logos draw as name chips.</summary>
+        internal const int MaxCachedLogos = 512;
+
+        /// <summary>
+        /// Where logo image bytes come from: the logo proxy's disk cache (never the network). Tests
+        /// point it at synthetic images; null bytes draw the name chip instead.
+        /// </summary>
+        internal static Func<string, byte[]?> LogoSource { get; set; } = DefaultLogoSource;
+
+        /// <summary>Whether a logo image is available, without reading it (native poster cache keys).</summary>
+        internal static bool HasLogo(string logoPath) => LogoSource == DefaultLogoSource
+            ? TagLogoService.Instance?.IsCached(TagLogoService.DefaultSize, logoPath.TrimStart('/')) == true
+            : LogoSource(logoPath) is { Length: > 0 };
+
+        /// <summary>The proxy's cached w92 image of a TMDB logo path.</summary>
+        internal static byte[]? DefaultLogoSource(string logoPath) =>
+            TagLogoService.Instance?.TryReadCached(TagLogoService.DefaultSize, logoPath.TrimStart('/'))?.Bytes;
         private readonly HashSet<string> _flagCodes;
         private readonly Dictionary<string, PosterTagIcon> _icons;
         private readonly Dictionary<string, PosterTagVectorIcon> _vectorIcons;
@@ -127,6 +146,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return _flags.GetOrAdd(code, c => new Lazy<SKImage?>(() => DecodeFlag(c), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         }
 
+        /// <summary>
+        /// The decoded logo image of a TMDB logo path, or null when it is not cached (yet) or does not
+        /// decode. A missing image is asked for again next time, so a logo cached later is drawn. The
+        /// image is owned by this instance; callers must not dispose it.
+        /// </summary>
+        public SKImage? GetLogo(string logoPath)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_logos.TryGetValue(logoPath, out var cached)) return cached;
+            if (_logos.Count >= MaxCachedLogos) return null;
+            byte[]? bytes;
+            try
+            {
+                bytes = LogoSource(logoPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+
+            if (bytes is null || bytes.Length == 0) return null;
+            var image = SKImage.FromEncodedData(bytes);
+            if (image is null || image.Width <= 0 || image.Height <= 0)
+            {
+                image?.Dispose();
+                return null;
+            }
+
+            if (_logos.TryAdd(logoPath, image)) return image;
+            image.Dispose();
+            return _logos.TryGetValue(logoPath, out var winner) ? winner : null;
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -135,6 +187,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
 
             _disposed = true;
+            foreach (var logo in _logos.Values)
+            {
+                logo.Dispose();
+            }
+
+            _logos.Clear();
+
             foreach (var lazy in _flags.Values)
             {
                 if (lazy.IsValueCreated)

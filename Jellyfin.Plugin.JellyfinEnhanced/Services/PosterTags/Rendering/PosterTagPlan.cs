@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 {
@@ -186,6 +187,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
                     AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd, styles),
                     LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css, styles),
+                    LogoTag l when group.Group == PosterTagGroup.Logos => MeasureLogo(l, css, styles),
                     _ => null,
                 };
                 if (item is not null)
@@ -205,6 +207,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 PosterTagGroup.Genre => PosterTagCss.Lu(css.GenreGap),
                 PosterTagGroup.Rating => PosterTagCss.Lu(css.RatingGap),
                 PosterTagGroup.Language => PosterTagCss.Lu(css.LanguageGap),
+                PosterTagGroup.Logos => PosterTagCss.LogoGap,
                 _ => 0f, // the age-rating container has no gap
             };
 
@@ -220,7 +223,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             float maxHeight = PosterTagCss.Lu(0.9f * cardHeight);
             float maxWidth = PosterTagCss.Lu(css.CardWidth - (2 * PosterTagCss.CornerInset));
             bool hasMaxHeight = group.Group is PosterTagGroup.Quality or PosterTagGroup.Genre or PosterTagGroup.Language;
-            bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating;
+            bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating or PosterTagGroup.Logos;
             float width = hasMaxWidth ? Math.Min(contentWidth, maxWidth) : contentWidth;
             float height = hasMaxHeight ? Math.Min(contentHeight, maxHeight) : contentHeight;
             bool clips = group.Group is PosterTagGroup.Quality or PosterTagGroup.Language;
@@ -484,6 +487,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var ring = styles.Resolve(TagStyleKeys.Language, "flag");
             var style = tag.Partial ? PartialFlagStyle : ring.Border is null ? string.Empty : RingFlagStyle + ring.Encode();
             return new PlannedItem(PosterTagTileKind.Flag, tag, code, style, width, height);
+        }
+
+        /// <summary>
+        /// A Logos chip (logotags.js): a fixed-height pill holding the cached logo image at its aspect ratio
+        /// (at most 72px wide, provider logos with 2px padding, network and studio logos with 3px 6px), or,
+        /// without a cached image, the name chip with the shortened name.
+        /// </summary>
+        private PlannedItem MeasureLogo(LogoTag tag, PosterTagCss css, TagStyleSet styles)
+        {
+            float height = PosterTagCss.Lu(css.LogoHeight);
+            var image = tag.Logo is null ? null : _assets.GetLogo(tag.Logo);
+            if (image is not null)
+            {
+                bool provider = tag.ImageStyle == "provider";
+                float padV = provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingV;
+                float padH = provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingH;
+                float imageHeight = Math.Max(0f, height - 2f - (2 * padV));
+                float imageWidth = PosterTagCss.Lu(Math.Min(imageHeight * image.Width / image.Height, PosterTagCss.LogoMaxImageWidth));
+                var colors = styles.Resolve(TagStyleKeys.Logos, tag.ImageStyle);
+                return new PlannedItem(PosterTagTileKind.Logo, tag, tag.Logo!, tag.ImageStyle + "|" + colors.Encode(), imageWidth + (2 * padH) + 2f, height)
+                {
+                    IconWidth = imageWidth,
+                    IconHeight = imageHeight,
+                };
+            }
+
+            var text = LogoRules.ShortName(tag.Name);
+            float fontSize = css.LogoFontSize;
+            var layout = _text.Layout(text, fontSize, smallCaps: false, letterSpacing: 0.02f * fontSize);
+            float width = PosterTagCss.LuCeil(layout.Width) + (2 * PosterTagCss.LogoPaddingH) + 2f;
+            var textColors = styles.Resolve(TagStyleKeys.Logos, "text");
+            return new PlannedItem(PosterTagTileKind.Logo, tag, text, "text|" + textColors.Encode(), width, height) { TextLayout = layout };
         }
 
         /// <summary>An icon glyph's inline box width: its advance, rounded to whole px like any hinted advance.</summary>
