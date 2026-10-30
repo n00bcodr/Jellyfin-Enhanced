@@ -521,3 +521,27 @@ for (const available of [true, false]) for (const explicitSource of [false, true
   if (available) assert.equal(h.writes.at(-1).tagLayoutLocks[MOVIE].layout, 'caption');
   else { assert.equal(h.writes.length, 0); assert.equal(h.toasts.at(-1), 'tag_look_error_toast'); }
 });
+
+test('rule actions only stick when the entire form fits in the visible scroller', async t => {
+  const h = setup(t);
+  const scroller = h.document.createElement('div');
+  scroller.className = 'je-panel-main';
+  h.mount().before(scroller);
+  scroller.append(h.mount());
+  scroller.getBoundingClientRect = () => ({ top: 100, bottom: 700 });
+  await h.open();
+  let rect = { top: 400, bottom: 900, height: 500 };
+  h.form().getBoundingClientRect = () => rect;
+  const sync = async () => {
+    scroller.dispatchEvent(new h.window.Event('scroll'));
+    await new Promise(resolve => h.window.requestAnimationFrame(resolve));
+  };
+  await sync();
+  assert.equal(h.form().classList.contains('je-form-visible'), false, 'no bar over offscreen fields');
+  rect = { top: 150, bottom: 650, height: 500 };
+  await sync();
+  assert.equal(h.form().classList.contains('je-form-visible'), true);
+  rect = { top: 50, bottom: 550, height: 500 };
+  await sync();
+  assert.equal(h.form().classList.contains('je-form-visible'), false, 'partly above scroller returns actions to flow');
+});

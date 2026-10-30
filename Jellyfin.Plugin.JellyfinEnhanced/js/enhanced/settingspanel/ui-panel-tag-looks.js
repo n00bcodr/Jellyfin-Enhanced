@@ -96,7 +96,8 @@
         .je-tag-looks-outcome-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; flex: 1 1 120px; min-width: 0; }
         .je-tag-looks-error { color: #ff8a80; font-size: 12px; }
         .je-tag-looks-error:empty { display: none; }
-        .je-tag-looks-buttons { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 -12px -12px; padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 8px 8px; background: rgb(22, 30, 34); }
+        .je-tag-looks-buttons { position: static; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 -12px -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 8px 8px; background: rgb(22, 30, 34); }
+        .je-tag-looks-form.je-form-visible .je-tag-looks-buttons { position: sticky; }
         .je-tag-looks-buttons .je-tag-looks-save { background: #0b7fb0; border-color: #0b7fb0; min-height: 36px; padding: 0 14px; font-size: 13px; }
         .je-tag-looks-buttons-hint { font-size: 12px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -907,12 +908,33 @@
             });
             view.side.replaceChildren(form);
             syncFormCapacity = syncCapacity;
+            formObserver?.disconnect();
+            formObserver?.observe(form);
+            scheduleActions();
             if (focus) focusOn(form.querySelector('[data-je-cond-field]'));
         };
 
         const view = buildView(mount, state, touch, renderLists);
+        const scroller = mount.closest('.je-panel-main');
+        let frame = 0;
+        /** Keep actions in flow until the whole form fits inside its scroller. */
+        const syncActions = () => {
+            frame = 0;
+            const form = view.side.querySelector('form');
+            if (!form || !scroller) return;
+            const rect = form.getBoundingClientRect();
+            const viewport = scroller.getBoundingClientRect();
+            form.classList.toggle('je-form-visible', rect.height > 0 && rect.top >= Math.max(0, viewport.top)
+                && rect.bottom <= Math.min(window.innerHeight, viewport.bottom));
+        };
+        /** Batch layout reads after scrolling, resizing or rebuilding the form. */
+        const scheduleActions = () => { if (!frame) frame = requestAnimationFrame(syncActions); };
+        const formObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(scheduleActions) : null;
+
         renderLists();
         openForm(false);
+        scroller?.addEventListener('scroll', scheduleActions, { passive: true });
+        window.addEventListener('resize', scheduleActions);
         Promise.all([loadLibraries(state), loadGenres(state)]).then(() => {
             if (!mount.isConnected) return;
             renderLists();
@@ -935,6 +957,10 @@
         document.addEventListener('je:tag-layout-changed', refreshDefault);
         const stopWatching = () => {
             document.removeEventListener('je:tag-layout-changed', refreshDefault);
+            scroller?.removeEventListener('scroll', scheduleActions);
+            window.removeEventListener('resize', scheduleActions);
+            formObserver?.disconnect();
+            if (frame) cancelAnimationFrame(frame);
             if (unwatchLayout === stopWatching) unwatchLayout = null;
             active = null;
         };
