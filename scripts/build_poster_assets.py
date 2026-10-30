@@ -20,6 +20,7 @@ Outputs (relative to the output directory):
                               in font units (y down from hhea.ascent) plus metrics.
   vector-icons.json           jellyfin-web's Rotten Tomatoes fresh/rotten SVGs as
                               path data + fills.
+  rating-source-icons.json    Bundled source logos from js/tags/rating-sources.js.
   flags/<code>.webp           flag-icons 4x3 for every code js/core/media-language.js
                               can emit (+ its inline "zxx" no-dialogue artwork),
                               rasterised by headless Chromium at 160x120, lossless WebP.
@@ -116,6 +117,7 @@ IN_REPO = {
     "genretags": PLUGIN / "js/tags/genretags.js",
     "media-language": PLUGIN / "js/core/media-language.js",
     "qualitytags": PLUGIN / "js/tags/qualitytags.js",
+    "rating-sources": PLUGIN / "js/tags/rating-sources.js",
     "ratings-css": REPO / "css/ratings.css",
     "symbols-outlined": PLUGIN / "js/fonts/materialsymbolsoutlined.woff2",
     "symbols-rounded": PLUGIN / "js/fonts/materialsymbolsrounded.woff2",
@@ -285,6 +287,7 @@ def derived_json() -> dict:
     return {
         "age-rating-colours.json": to_json(age_rating_colours()),
         "quality-colours.json": to_json(quality_colours()),
+        "rating-source-icons.json": to_json(rating_source_icons()),
     }
 
 
@@ -412,6 +415,16 @@ def svg_to_paths(svg: bytes) -> dict:
     return {"viewBox": vb, "paths": paths}
 
 
+def rating_source_icons() -> dict:
+    """Convert the web's bundled source logos to the native renderer's path format."""
+    source = IN_REPO["rating-sources"].read_text(encoding="utf-8")
+    match = re.search(r"const LOGOS = (\{[^\n]+\});", source)
+    if not match:
+        raise ValueError("rating-sources.js: bundled LOGOS object not found")
+    logos = json.loads(match.group(1))
+    return {"rating-" + name: svg_to_paths(svg.encode("utf-8")) for name, svg in logos.items()}
+
+
 def build_vector_icons(out: Path, cache: Path) -> None:
     data = {"rt-fresh": svg_to_paths(fetch("rt-fresh", cache)),
             "rt-rotten": svg_to_paths(fetch("rt-rotten", cache))}
@@ -496,6 +509,7 @@ for the native poster tag renderer (`Services/PosterTags/Rendering`).
 | `flags/*.webp` | flag-icons 4x3 SVGs, {PINS['flag-icons']['version']}, rasterised at {FLAG_WIDTH}x{FLAG_HEIGHT} by headless Chromium. Copyright (c) 2013 Panayiotis Lipiridis. | MIT, full text below |
 | `flags/zxx.webp` | JE's own "no dialogue" artwork (`specialFlags.zxx` in `js/core/media-language.js`). | GPL-3.0 (this project) |
 | `vector-icons.json` | `fresh.svg` and `rotten.svg` from jellyfin-web v12.1 (`src/assets/img/`, commit `{JELLYFIN_WEB_COMMIT}`), converted to path data unchanged. jellyfin-web ships them for its critic rating indicator (`CriticRatingMediaInfo`); JE's web rating tags load the same files from jellyfin-web. | GPL-2.0-or-later (jellyfin-web). Rotten Tomatoes and the tomato and splat marks are trademarks of Fandango; they are used only to identify the source of a critic rating, as in jellyfin-web. |
+| `rating-source-icons.json` | Derived from the bundled SVG source-identification logos in JE’s `js/tags/rating-sources.js`; shared with the web chips. Source marks identify their respective rating services. | GPL-3.0 (this project); service marks belong to their respective owners |
 | `age-rating-colours.json` | Derived from JE's `css/ratings.css` (the rules `js/tags/ageratingtags.js` applies to the poster badge). | GPL-3.0 (this project) |
 | `quality-colours.json` | Derived from JE's `js/tags/qualitytags.js`. | GPL-3.0 (this project) |
 {texts}""")

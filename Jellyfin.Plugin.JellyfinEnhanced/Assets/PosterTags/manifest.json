@@ -284,12 +284,13 @@
   "tv"
  ],
  "inputs": {
-  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "c5b774773a42ef0da0c6dd3b55aee5aa3acb37434d6c0d1188ba0448745962b6",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "b1b24f1f1468571d447e2b00777b9323a9c4d2736516e07c12f3ce8e29c30b29",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsoutlined.woff2": "5741bbaa09c4b7d9654753144a38133072ca51cf0c931d13ab93bd391c3fc8be",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded.woff2": "05cc9b9f8de1f641e9f8e54106c8fa665a834c7fbfab573b4f5a81704e78170a",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "9624d29a2e4ef5eb02582385566f18d8f5fdbdba134d5b2ea54af08e970bf2a3",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "2086644d04573b36a859000735848831c88725f83608c4cda9fe273c116bc79e",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "00f4a25fc0f7e64c138273da3406670f6851a8a78798e91a6812e60ac14ca125",
-  "css/ratings.css": "56b280ac8d014d035a64ac1e7180138bc7de00e60235dbf9b3e254711ce2d0a5"
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/rating-sources.js": "ff7874f3c8bb2941c799390ae05a6b1439bdaaa22df0ce5bc90696f0016e727d",
+  "css/ratings.css": "b87ae170cda8c05175fd03f49d7a090e3d704e06fcc47425bbc02e86b726fdf2"
  },
  "options": {
   "flagSize": [
@@ -308,8 +309,8 @@
  },
  "outputs": {
   "THIRD_PARTY_NOTICES.md": {
-   "bytes": 19280,
-   "sha256": "cd1ee2442b7350ab708e7a1cfb3cdd821f5347c138a65616e1e7f4a308151d9c"
+   "bytes": 19566,
+   "sha256": "6935751c9185761930ce478d1ff7c394ac13458283776c881c5af19e4913af32"
   },
   "age-rating-colours.json": {
    "bytes": 4563,
@@ -1339,6 +1340,10 @@
    "bytes": 3897,
    "sha256": "6c917d791ec4a8f198d2828c47eec396a7bda9fbe38b378503ec7f6e780ff3bb"
   },
+  "rating-source-icons.json": {
+   "bytes": 1450,
+   "sha256": "b6727981a3d05f949b7ffbf899f2dde344a5c62a989a3f6023e3fd50c81bd109"
+  },
   "vector-icons.json": {
    "bytes": 1587,
    "sha256": "fdddc1a62068c0a6551fd26525ceb3a45786b8a49dbae50d07a5feaa7877a0df"
@@ -1378,12 +1383,12 @@
  },
  "tools": {
   "brotli": "1.2.0",
-  "fonttools": "4.63.0",
+  "fonttools": "4.64.0",
   "libwebp": "1.6.0",
-  "node": "v26.2.0",
-  "pillow": "12.2.0",
+  "node": "v26.8.1",
+  "pillow": "12.3.0",
   "playwright": "1.58.2",
-  "python": "3.14.5"
+  "python": "3.14.7"
  },
  "zxxSvgSha256": "b39ab2eb619909034de25222af135aff03c637a0d4de22756e88de2b13514e85"
 }

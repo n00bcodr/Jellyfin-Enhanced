@@ -11,6 +11,7 @@ for the native poster tag renderer (`Services/PosterTags/Rendering`).
 | `flags/*.webp` | flag-icons 4x3 SVGs, flag-icons 7.2.1 (the version CdnAssetService proxies for the web tags), rasterised at 160x120 by headless Chromium. Copyright (c) 2013 Panayiotis Lipiridis. | MIT, full text below |
 | `flags/zxx.webp` | JE's own "no dialogue" artwork (`specialFlags.zxx` in `js/core/media-language.js`). | GPL-3.0 (this project) |
 | `vector-icons.json` | `fresh.svg` and `rotten.svg` from jellyfin-web v12.1 (`src/assets/img/`, commit `fae41f33eb7cd636a9ef68984adb82bb247a6e1b`), converted to path data unchanged. jellyfin-web ships them for its critic rating indicator (`CriticRatingMediaInfo`); JE's web rating tags load the same files from jellyfin-web. | GPL-2.0-or-later (jellyfin-web). Rotten Tomatoes and the tomato and splat marks are trademarks of Fandango; they are used only to identify the source of a critic rating, as in jellyfin-web. |
+| `rating-source-icons.json` | Derived from the bundled SVG source-identification logos in JE’s `js/tags/rating-sources.js`; shared with the web chips. Source marks identify their respective rating services. | GPL-3.0 (this project); service marks belong to their respective owners |
 | `age-rating-colours.json` | Derived from JE's `css/ratings.css` (the rules `js/tags/ageratingtags.js` applies to the poster badge). | GPL-3.0 (this project) |
 | `quality-colours.json` | Derived from JE's `js/tags/qualitytags.js`. | GPL-3.0 (this project) |
 
