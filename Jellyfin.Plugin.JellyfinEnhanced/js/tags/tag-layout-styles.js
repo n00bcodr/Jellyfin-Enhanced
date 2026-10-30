@@ -89,7 +89,9 @@
             ${host('corners')}[data-je-slot="ml"] > [data-je-group] { align-items: flex-start; }
             ${host('corners')}[data-je-slot="mr"] > [data-je-group] { align-items: flex-end; }
             ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) > [data-je-group] { display: contents; }
-            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="ml"], [data-je-slot="mr"], [data-je-slot="c"]) > [data-je-group] > * { max-width: 100%; box-sizing: border-box; flex-shrink: 0; }
+            /* Keep chips at their intrinsic width for measureFit's batched reads.
+               Fitting hides oversized chips whole instead of clipping their text. */
+            ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="ml"], [data-je-slot="mr"], [data-je-slot="c"]) > [data-je-group] > * { max-width: none; box-sizing: border-box; flex-shrink: 0; }
 
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
                with a group set to top-right moves that stack below it. */

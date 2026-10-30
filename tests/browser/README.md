@@ -9,6 +9,17 @@ npm run test:browser
 npm run test:visual
 ```
 
+To run the centre-anchor geometry regressions on an existing lab origin without
+starting the fixture server:
+
+```sh
+JE_BROWSER_LAB_URL=http://127.0.0.1:18537 npx playwright test --config tests/browser/playwright.config.cjs tag-centres.spec.cjs
+```
+
+These cases check the selected lab's health, then run production renderers and
+styles in an isolated page on that origin. They use real browser geometry;
+authenticated Jellyfin cards still need the separate lab verification.
+
 The suite runs desktop Chromium, mobile Chromium (Pixel 7 viewport/touch emulation, not Android), and desktop Firefox. It starts and stops its own loopback fixture server on port 4179 (set `JE_BROWSER_PORT` to use another). External requests are blocked except explicitly intercepted locale fixtures. Unexpected console errors and page errors fail tests; retries are disabled. Traces and screenshots are retained for failures under `artifacts/browser`, alongside HTML and JUnit reports. `JE_CHROMIUM_PATH` is an optional local diagnostic override; use Playwright's pinned browser for baseline checks.
 
 Covered behavior:

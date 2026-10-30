@@ -150,7 +150,7 @@ The limit applies after each group's own filtering (quality categories, language
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
-The four default corners keep their original appearance. Top and bottom centre wrap chips into centred rows (up to two); left and right centre stack chips vertically. Centre rows reserve the width occupied by corner groups; side columns reserve the height of their neighbouring corner stacks. When eligible chips exceed the available space, a **+N** chip names the hidden tags on hover or focus. Group limits apply before fitting.
+The four default corners keep their original appearance. Top and bottom centre wrap chips into centred rows (up to two); left and right centre stack chips vertically. Centre rows reserve the width occupied by corner groups; side columns reserve the height of their neighbouring corner stacks. Chips that are too wide or tall are hidden whole and counted in a **+N** chip, which names the hidden tags on hover or focus. Group limits apply before fitting.
 
 Top-right groups move below Jellyfin's watched or unplayed-count indicator. Top centre reserves space for side indicators and moves below any top-centre Jellyfin indicator; bottom centre clears a card's progress bar when present. People Tags have their own cast-card layout and no position.
 

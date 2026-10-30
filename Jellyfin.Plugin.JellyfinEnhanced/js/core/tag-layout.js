@@ -1566,6 +1566,8 @@
             const style = getComputedStyle(slotEl);
             const available = slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
             const gap = parseFloat(style.columnGap) || 0;
+            // Centre chips are unconstrained by CSS, so these batched reads
+            // measure their intrinsic widths, including padding and borders.
             const rects = chips.map((chip) => chip.getBoundingClientRect());
             const widths = rects.map((r) => r.width);
             const moreRect = more.getBoundingClientRect();
@@ -1581,7 +1583,8 @@
                 const rowGap = parseFloat(style.rowGap) || 0;
                 let shown = null;
                 if (vertical) {
-                    shown = chipsThatFit(heights, limit, rowGap, 1, moreRect.height);
+                    // A column needs both height and width for a whole chip.
+                    shown = chipsThatFit(heights.map((height, i) => widths[i] <= available + 0.01 ? height : Infinity), limit, rowGap, 1, moreRect.height);
                 } else {
                     for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
                         const rows = [], moreRow = { row: 0 };
