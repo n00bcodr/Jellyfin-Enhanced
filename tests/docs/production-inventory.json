@@ -8243,6 +8243,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheSourceRatings.cs"
+    },
+    {
       "literal": "tmdb-cache.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TmdbResponseCache.cs"
     },
@@ -8524,7 +8528,7 @@
     "files": 380,
     "routes": 182,
     "configuration_properties": 605,
-    "storage_references": 73,
+    "storage_references": 74,
     "scheduled_tasks": 13,
     "locales": 33
   }
