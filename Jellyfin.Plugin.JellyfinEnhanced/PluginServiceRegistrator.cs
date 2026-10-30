@@ -82,6 +82,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<TmdbResponseCache>();
             // Server-wide trending list for the Status Tags poster badges (30-minute cache).
             serviceCollection.AddSingleton<StatusTagsTrendingService>();
+            // TMDB schedule facts for the Status Tags series badges (rate-limited lookups).
+            serviceCollection.AddSingleton<StatusTagsSeriesService>();
             // Size / watch-progress of an item subtree in a handful of queries
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();

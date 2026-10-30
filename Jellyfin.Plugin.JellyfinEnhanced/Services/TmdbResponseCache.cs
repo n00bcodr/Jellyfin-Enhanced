@@ -278,6 +278,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return shared.WaitAsync(cancellationToken);
         }
 
+        /// <summary>
+        /// The cached answer for <paramref name="apiPath"/> + <paramref name="query"/>
+        /// when it is still fresh, without fetching or joining anything: for a
+        /// caller that rate-limits only the lookups that would go upstream.
+        /// </summary>
+        public bool TryGetFresh(string apiPath, string query, string apiKey, out TmdbResponse response)
+        {
+            lock (_lock)
+            {
+                return TryGetFreshLocked(GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query), out response);
+            }
+        }
+
         private static string UpstreamUrl(string apiPath, string query) => $"https://api.themoviedb.org/3/{apiPath}{query}";
 
         private static string AppendApiKey(string upstreamUrl, string apiKey)
