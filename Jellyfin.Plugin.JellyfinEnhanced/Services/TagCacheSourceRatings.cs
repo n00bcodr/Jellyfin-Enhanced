@@ -65,7 +65,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Id: item.ProviderIds?.TryGetValue("Tmdb", out var id) == true ? id : null))
                 .Where(title => title.Id != null && title.Id.Length > 0 && title.Id.All(char.IsAsciiDigit))
                 .Select(title => (title.MediaType, Id: title.Id!)).Distinct().ToArray();
-            _mdblistService.WarmTagRatingsAsync(titles, cancellationToken).GetAwaiter().GetResult();
+            _mdblistService.WarmTagRatingsAsync(titles, cancellationToken, JellyfinEnhanced.Instance!.Configuration.MdblistFetchReserve).GetAwaiter().GetResult();
         }
 
         /// <summary>Reuse MDBList's bounded batches, seven-day TTL, pacing and quota reserve before a build.</summary>

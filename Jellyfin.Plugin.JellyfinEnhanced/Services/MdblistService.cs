@@ -422,7 +422,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly SemaphoreSlim _tagRatingsGate = new(1, 1);
 
         /// <summary>Bounded, serialized request-time enrichment, sharing the existing seven-day cache and quota floor.</summary>
-        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken)
+        public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin)
         {
             if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
             await _tagRatingsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -433,6 +433,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     foreach (var chunk in group.Chunk(150))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
+                        if (status != null && status.RateLimitRemaining <= Math.Max(SafetyMargin, reserve)) return;
                         var ids = chunk.Select(t => t.Id).ToArray();
                         var results = await GetMediaBatchAsync(group.Key, ids, cancellationToken).ConfigureAwait(false);
                         if (results == null)
