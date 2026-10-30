@@ -343,13 +343,13 @@
 
     /**
      * Who is signed in where: the server id and user id of the dashboard's
-     * ApiClient (what JE.session tracks).
+     * ApiClient, read as JE.session reads them.
      * @returns {string}
      */
     function identity() {
         try {
             if (typeof ApiClient === 'undefined' || !ApiClient) return '|';
-            const server = typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+            const server = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || ApiClient._serverInfo?.Id;
             const user = typeof ApiClient.getCurrentUserId === 'function' ? ApiClient.getCurrentUserId() : null;
             return `${server || ''}|${user || ''}`;
         } catch {
@@ -389,6 +389,33 @@
         const now = identity();
         if (store.owner !== null && store.owner !== now) resetSession();
         store.owner = now;
+    }
+
+    /**
+     * The session a request starts in, to compare with when it answers.
+     * @returns {{generation: number, owner: string|null}}
+     */
+    function sessionMark() {
+        checkSession();
+        return { generation: store.generation, owner: store.owner };
+    }
+
+    /**
+     * Whether work started under `mark` still belongs to the signed-in
+     * session. The ApiClient identity is reconciled first, so a server switch
+     * or sign-in JE.session has not reported yet resets the session here and
+     * the old answer is dropped.
+     * @param {{generation: number, owner: string|null}} mark - From sessionMark.
+     * @returns {boolean}
+     */
+    function sameSession(mark) {
+        checkSession();
+        return mark.generation === store.generation && mark.owner === store.owner;
+    }
+
+    /** @returns {boolean} Whether an administrator is signed in now (a user id on the ApiClient). */
+    function signedIn() {
+        return !identity().endsWith('|');
     }
 
     /**
@@ -456,7 +483,7 @@
             return Promise.resolve(!store.conflicts.size);
         }
         const host = store.host;
-        const generation = store.generation;
+        const mark = { generation: store.generation, owner: store.owner };
         // The values are snapshotted here and stay in the store until the
         // server took them: a reload meanwhile keeps them, and an edit made
         // meanwhile is the next save's.
@@ -468,8 +495,8 @@
         const saving = (async () => {
             try {
                 const result = await host.patch(changes, expected);
-                // Signed out (or someone else signed in) meanwhile: not this session's any more.
-                if (generation !== store.generation) return false;
+                // Signed out (or someone else signed in, or another server) meanwhile: not this session's any more.
+                if (!sameSession(mark)) return false;
                 const stored = result && result.values && typeof result.values === 'object' ? result.values : changes;
                 for (const [key, value] of sent) {
                     const saved = key in stored ? stored[key] : changes[key];
@@ -486,7 +513,7 @@
                 return true;
             } catch (err) {
                 const conflicts = await conflictsOf(err);
-                if (generation !== store.generation) return false;
+                if (!sameSession(mark)) return false;
                 if (conflicts && Object.keys(conflicts).length) {
                     for (const [key, theirs] of Object.entries(conflicts)) store.conflicts.set(key, theirs);
                     refused = true;
@@ -496,12 +523,12 @@
                 }
                 return false;
             } finally {
-                if (generation === store.generation) store.saving = null;
+                if (mark.generation === store.generation) store.saving = null;
             }
         })();
         store.saving = saving;
         return saving.then((ok) => {
-            if (generation !== store.generation) return false;
+            if (!sameSession(mark)) return false;
             // Refused fields wait for a choice; the others in that request still save.
             if (refused) return flushStore();
             if (!ok) setStoreState('error');
@@ -944,14 +971,16 @@
          */
         async function loadPreviewStyles() {
             const seq = ++stylesSeq;
+            const mark = sessionMark();
             let styles;
             try {
                 styles = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/tag-styles'), dataType: 'json' });
             } catch (err) {
-                if (!disposed) console.warn('🪼 Jellyfin Enhanced: could not load the Tag Styles for the preview', err);
+                if (!disposed && sameSession(mark)) console.warn('🪼 Jellyfin Enhanced: could not load the Tag Styles for the preview', err);
                 return;
             }
-            if (disposed || seq !== stylesSeq) return;
+            // Another session's styles (a server switch resets the session and disposes this view first).
+            if (!sameSession(mark) || disposed || seq !== stylesSeq) return;
             const css = typeof JE.tagStyles?.buildCss === 'function' ? JE.tagStyles.buildCss(styles || {}, '#jeTaPreviewBody') : '';
             if (css) JE.core.ui.injectCss(PREVIEW_STYLE_ID, css);
             else JE.core.ui.removeCss(PREVIEW_STYLE_ID);
@@ -1185,54 +1214,71 @@
      * @returns {Promise<Object|null>} The page context.
      */
     function activate(page) {
-        queue = queue.then(async () => {
-            const root = /** @type {HTMLElement} */ (page.querySelector('.je-tag-admin'));
-            detectTheme(root);
-            // Another administrator (or server) since the last view: start from nothing.
-            checkSession();
-            const generation = store.generation;
-            if (active && active.page === page && root.contains(active.ctx.root.firstElementChild)) {
-                let fresh = null;
-                try { fresh = await ApiClient.getPluginConfiguration(PLUGIN_ID); } catch (err) { console.warn('🪼 Jellyfin Enhanced: could not reload the configuration', err); }
-                // Signed out while it loaded: resetSession already emptied the view.
-                if (generation !== store.generation || !active) return null;
-                if (fresh) active.ctx.reload(fresh);
-                const target = requestedTarget();
-                if (target.tab) active.ctx.openTab(target.tab, { group: target.group });
-                return active.ctx;
-            }
-            if (active) {
-                const previous = active;
-                active = null;
-                await previous.ctx.flush();
-                previous.ctx.dispose();
-                previous.root.replaceChildren();
-                delete previous.root.dataset.tab;
-            }
-            Dashboard.showLoadingMsg?.();
-            let config;
-            try {
-                config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
-            } catch (err) {
-                if (generation !== store.generation) return null;
-                console.error('🪼 Jellyfin Enhanced: could not load the Media Tags settings', err);
-                showLoadError(page, root);
-                return null;
-            } finally {
-                Dashboard.hideLoadingMsg?.();
-            }
-            // The previous administrator's settings, answered after they signed out: not shown to anyone.
-            if (generation !== store.generation) return null;
-            const ctx = createPage(root, config);
-            active = { page, root, ctx };
-            return ctx;
-        }).catch((err) => {
+        queue = queue.then(() => show(page)).catch((err) => {
             console.error('🪼 Jellyfin Enhanced: the Media Tags page failed to load', err);
             const root = page.querySelector('.je-tag-admin');
             if (root) showLoadError(page, /** @type {HTMLElement} */ (root));
             return null;
         });
         return queue;
+    }
+
+    /**
+     * One activation (activate runs them one after another). Every answer is
+     * checked against the session it was asked in (sessionMark/sameSession,
+     * reconciling the ApiClient identity after each await): another
+     * session's settings are never shown. When someone is signed in now
+     * (another server, another administrator), the page starts again for
+     * them; signed out, it stays empty.
+     * @param {HTMLElement} page
+     * @returns {Promise<Object|null>} The page context.
+     */
+    async function show(page) {
+        const root = /** @type {HTMLElement} */ (page.querySelector('.je-tag-admin'));
+        detectTheme(root);
+        // Another administrator (or server) since the last view: start from nothing.
+        const mark = sessionMark();
+        const again = () => (signedIn() ? show(page) : null);
+        if (active && active.page === page && root.contains(active.ctx.root.firstElementChild)) {
+            let fresh = null;
+            try { fresh = await ApiClient.getPluginConfiguration(PLUGIN_ID); } catch (err) { if (sameSession(mark)) console.warn('🪼 Jellyfin Enhanced: could not reload the configuration', err); }
+            // Signed out or another session while it loaded: the reset emptied the view.
+            if (!sameSession(mark)) return again();
+            if (!active) return null;
+            if (fresh) active.ctx.reload(fresh);
+            const target = requestedTarget();
+            if (target.tab) active.ctx.openTab(target.tab, { group: target.group });
+            return active.ctx;
+        }
+        if (active) {
+            const previous = active;
+            active = null;
+            await previous.ctx.flush();
+            previous.ctx.dispose();
+            previous.root.replaceChildren();
+            delete previous.root.dataset.tab;
+            if (!sameSession(mark)) return again();
+        }
+        Dashboard.showLoadingMsg?.();
+        let config;
+        let failure = null;
+        try {
+            config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
+        } catch (err) {
+            failure = err;
+        } finally {
+            Dashboard.hideLoadingMsg?.();
+        }
+        // The previous session's settings (or failure), answered after it ended: not shown to anyone.
+        if (!sameSession(mark)) return again();
+        if (failure) {
+            console.error('🪼 Jellyfin Enhanced: could not load the Media Tags settings', failure);
+            showLoadError(page, root);
+            return null;
+        }
+        const ctx = createPage(root, config);
+        active = { page, root, ctx };
+        return ctx;
     }
 
     /**
@@ -1283,8 +1329,12 @@
         return activate(page);
     }
 
-    // Signing out, another administrator or another server: the edits and the view go with the old session.
-    JE.session?.onUserChange?.('admin-tags', resetSession);
+    // Signing out, another administrator or another server: the edits and the view go with the old session,
+    // unless the page noticed first (checkSession) and already belongs to the new one. JE.session reports a
+    // sign-in or sign-out before the ApiClient has the new credentials, so the change names who comes next.
+    JE.session?.onUserChange?.('admin-tags', (change) => {
+        if (!change || store.owner !== `${change.serverId || ''}|${change.userId || ''}`) resetSession();
+    });
 
     JE.adminTags = {
         TABS,

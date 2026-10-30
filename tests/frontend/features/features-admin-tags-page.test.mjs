@@ -513,6 +513,89 @@ test('another server (or a missed sign-out) is noticed before saving or showing 
   assert.equal(server.TagsHideOnHover, false);
 });
 
+for (const session of [false, true]) {
+  test(`a server switch while the settings load is noticed when they answer: the old server's are dropped and the page is built from the new one (${session ? 'core/session.js' : 'no session module'})`, async t => {
+    // Three servers, each with its own value; the ApiClient switches server with no sign-out and no hook (a replaced client).
+    const servers = {
+      'server-a': structuredClone({ ...BASE, TagsHideOnHover: true }),
+      'server-b': structuredClone({ ...BASE, TagsHideOnHover: false }),
+      'server-c': structuredClone({ ...BASE, TagsHideOnHover: false }),
+    };
+    const { who, apiClient } = signedIn();
+    const loads = [];
+    let held = null;
+    const h = boot(t, {
+      server: servers['server-a'], session,
+      apiClient: {
+        ...apiClient,
+        getPluginConfiguration: async () => {
+          const from = who.server;
+          loads.push(from);
+          if (held) { const gate = held; held = null; await gate.promise; }
+          return structuredClone(servers[from]);
+        },
+      },
+    });
+    h.document.body.innerHTML = TWO_PAGES;
+    const page = h.document.querySelector('.page');
+    // First load: asked of A, answered after the switch to B.
+    let gate = held = deferred();
+    const opening = h.A.activate(page);
+    await h.settle();
+    who.server = 'server-b';
+    gate.resolve();
+    const b = await opening;
+    h.cleanup.push(() => b?.dispose());
+    assert.deepEqual(loads, ['server-a', 'server-b'], 'A\'s answer is dropped and B is asked');
+    assert.ok(b, 'the page is built for B');
+    assert.equal(b.config.TagsHideOnHover, false);
+    assert.equal(page.querySelector('#tagsHideOnHover').checked, false, 'nothing of A\'s settings shows');
+    if (session) {
+      // JE.session's reconcile catches up with the switch later: the page already belongs to B and stays.
+      h.JE.session.checkNow('reconcile');
+      assert.equal(b.disposed, false);
+      assert.ok(page.querySelector('#tagsHideOnHover'));
+    }
+    // A retained view shown again: its reload is asked of B and answered after the switch to C.
+    servers['server-b'].TagsHideOnHover = true;
+    gate = held = deferred();
+    const reloading = h.A.activate(page);
+    await h.settle();
+    who.server = 'server-c';
+    gate.resolve();
+    const c = await reloading;
+    h.cleanup.push(() => c?.dispose());
+    assert.deepEqual(loads, ['server-a', 'server-b', 'server-b', 'server-c']);
+    assert.equal(b.disposed, true, 'B\'s view is torn down, not reloaded with B\'s answer');
+    assert.ok(c && c !== b, 'a new view is built for C');
+    assert.equal(c.config.TagsHideOnHover, false);
+    assert.equal(page.querySelector('#tagsHideOnHover').checked, false);
+    assert.equal(h.patches.length, 0);
+  });
+}
+
+test('the preview\'s Tag Styles from the previous server are not drawn after a server switch', async t => {
+  const server = structuredClone({ ...BASE, TagStylesEnabled: true });
+  const { who, apiClient } = signedIn();
+  const styles = deferred();
+  const h = boot(t, {
+    server, apiClient,
+    routes: { '/JellyfinEnhanced/tag-styles': async () => { await styles.promise; return { quality: { '4K': { color: 'rgba(40, 50, 60, 1)' } } }; } },
+  });
+  h.load('tags/tag-styles.js');
+  h.load('enhanced/settingspanel/ui-panel-tag-preview.js');
+  h.document.body.innerHTML = TWO_PAGES;
+  const page = h.document.querySelector('.page');
+  const a = await h.A.activate(page);
+  h.cleanup.push(() => a.dispose());
+  // A's styles answer after the client switched to another server.
+  who.server = 'server-b';
+  styles.resolve();
+  await h.settle(); await h.settle();
+  assert.equal(h.document.getElementById('je-tag-admin-preview-styles'), null);
+  assert.equal(a.disposed, true, 'the view of the previous server is torn down');
+});
+
 test('a torn-down page saves nothing: a reused root has one set of listeners, and Back/Forward saves a change once', async t => {
   const server = structuredClone(BASE);
   const h = boot(t, { server, url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout' });
