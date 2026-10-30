@@ -82,7 +82,9 @@
                 top: 50%; transform: translateY(-50%);
                 max-height: max(0px, calc(100% - 2 * var(--je-anchor-reserve, 6px)));
                 max-width: calc(50% - 6px);
-                flex-direction: column; overflow: hidden;
+                /* Fitting hides excess chips explicitly; hover names must be
+                   able to extend from the icon toward the card's centre. */
+                flex-direction: column; overflow: visible;
             }
             ${host('corners')}[data-je-slot="ml"] { left: 6px; align-items: flex-start; }
             ${host('corners')}[data-je-slot="mr"] { right: 6px; align-items: flex-end; }

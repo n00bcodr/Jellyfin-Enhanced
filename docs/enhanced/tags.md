@@ -154,6 +154,8 @@ The four default corners keep their original appearance. Top and bottom centre w
 
 Top-right groups move below Jellyfin's watched or unplayed-count indicator. Top centre reserves space for side indicators and moves below any top-centre Jellyfin indicator; bottom centre clears a card's progress bar when present. People Tags have their own cast-card layout and no position.
 
+At the left and right centre anchors, genre names appear toward the inside of the card on hover.
+
 With **Hide Tags on Hover** off, genre names expand beside their icons on hover. Turn it on to fade poster tags instead.
 
 <figure class="je-video">
