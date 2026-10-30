@@ -546,3 +546,57 @@ test('rendering another series into a host resets its previous intersection', as
   await h.flush();
   assert.deepEqual(h.seriesCalls, [['other']]);
 });
+
+for (const operation of ['user switch', 'pagehide', 'cleanup', 'disabled reinitialise']) {
+  test(`midnight and retry timers stop on ${operation} and restart on initialisation`, async t => {
+    const h = setup(t, { captureTimers: true, series: { [SERIES]: { retry: true } } });
+    h.show(show(), h.hosts[0], SERIES);
+    await h.flush();
+    assert.equal(h.timers.size, 2, 'midnight plus one schedule retry');
+    if (operation === 'user switch') h.userChange.get('status-tags')();
+    else if (operation === 'pagehide') h.window.dispatchEvent(new h.window.Event('pagehide'));
+    else if (operation === 'cleanup') h.renderer.cleanup();
+    else { h.JE.currentSettings.statusTagsEnabled = false; h.JE.reinitializeStatusTags(); }
+    assert.equal(h.timers.size, 0, 'all date/schedule timers cleared');
+    h.window.dispatchEvent(new h.window.Event('focus'));
+    h.document.dispatchEvent(new h.window.Event('visibilitychange'));
+    assert.equal(h.timers.size, 0, 'return events do not restart an inactive renderer');
+    h.JE.currentSettings.statusTagsEnabled = true;
+    h.JE.initializeStatusTags();
+    assert.equal(h.timers.size, 1, 'exactly one midnight timer after reinitialisation');
+    h.show(show(), h.hosts[0], SERIES);
+    await h.flush();
+    assert.equal(h.timers.size, 2, 'retry timer rearmed for the active card');
+  });
+}
+
+for (const operation of ['user switch', 'pagehide', 'cleanup']) {
+  test(`queued schedule flush is cancelled on ${operation}`, async t => {
+    const h = setup(t, { autoIntersect: false });
+    const cleared = [];
+    const clear = h.window.clearTimeout.bind(h.window);
+    h.window.clearTimeout = id => { cleared.push(id); clear(id); };
+    h.show(show(), h.hosts[0], SERIES);
+    h.intersect(h.hosts[0]);
+    if (operation === 'user switch') h.userChange.get('status-tags')();
+    else if (operation === 'pagehide') h.window.dispatchEvent(new h.window.Event('pagehide'));
+    else h.renderer.cleanup();
+    assert.equal(cleared.length, 2, 'pending batch and midnight timer explicitly cancelled');
+    await h.flush();
+    assert.deepEqual(h.seriesCalls, []);
+  });
+}
+
+test('pagehide drops late schedule answers and pageshow resumes with a fresh lifecycle', async t => {
+  let answer;
+  const h = setup(t, { captureTimers: true, series: () => new Promise(resolve => { answer = resolve; }) });
+  h.show(show(), h.hosts[0], SERIES);
+  await h.flush();
+  h.window.dispatchEvent(new h.window.Event('pagehide'));
+  answer({ [SERIES]: { retry: true } });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(h.timers.size, 0, 'late answer cannot restart timers');
+  h.window.dispatchEvent(new h.window.Event('pageshow'));
+  assert.equal(h.timers.size, 1, 'bfcache return rearms midnight');
+});

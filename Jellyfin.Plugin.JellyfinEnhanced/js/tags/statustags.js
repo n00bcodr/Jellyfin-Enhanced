@@ -125,6 +125,8 @@
     /** @type {number|null} Local day used by the last live pass. */
     let renderedDay = null;
     let calendarEventsRegistered = false;
+    /** @type {boolean} False between teardown/user reset/pagehide and the next activation. */
+    let statusActive = false;
     /** @type {IntersectionObserver|null} One observer for all schedule-reading cards. */
     let seriesObserver = null;
     /** @type {WeakSet<HTMLElement>} Cards currently intersecting the viewport. */
@@ -770,6 +772,7 @@
      */
     function renderData(ctx, el, data, itemId) {
         // Cheap when fresh; refreshes a list that expired during a long session.
+        activateStatus(ctx);
         ensureTrending(ctx);
         const readsSeries = wantsSeriesFacts(data);
         const badge = pickBadge(data);
@@ -949,7 +952,7 @@
      * @returns {void}
      */
     function applyLivePass(ctx) {
-        if (!JE.currentSettings?.statusTagsEnabled) return;
+        if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         renderedDay = localDay(Date.now());
         const hosts = [];
         document.querySelectorAll(LIVE_SELECTOR).forEach((el) => {
@@ -1020,6 +1023,7 @@
      * @returns {void}
      */
     function requestSeries(ctx, seriesId) {
+        if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         const known = seriesInfo.get(seriesId);
         if (known && (known.loading || Date.now() < known.expires)) return;
         if (seriesQueue.has(seriesId) || typeof ApiClient === 'undefined') return;
@@ -1116,6 +1120,7 @@
     function armSeriesRetry(ctx) {
         if (seriesRetryTimer) clearTimeout(seriesRetryTimer);
         seriesRetryTimer = null;
+        if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         const due = [...seriesInfo].filter(([id, value]) => value.retry && !value.loading && hasVisibleSeries(id))
             .map(([, value]) => value.expires);
         if (!due.length) return;
@@ -1134,6 +1139,8 @@
      */
     function armMidnight(ctx) {
         if (midnightTimer) clearTimeout(midnightTimer);
+        midnightTimer = null;
+        if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         const now = Date.now();
         const next = new Date(now);
         next.setHours(24, 0, 0, 0);
@@ -1146,8 +1153,38 @@
 
     /** @param {Object} ctx @returns {void} Refresh a tab returning from background/sleep. */
     function refreshCalendar(ctx) {
+        if (!statusActive || !JE.currentSettings?.statusTagsEnabled) return;
         applyLivePass(ctx);
         for (const [id] of seriesInfo) if (hasVisibleSeries(id)) requestSeries(ctx, id);
+        armMidnight(ctx);
+        armSeriesRetry(ctx);
+    }
+
+    /**
+     * Cancel page-owned timers and invalidate pending answers before releasing cards.
+     * @returns {void}
+     */
+    function stopStatus() {
+        statusActive = false;
+        seriesEpoch++;
+        for (const timer of [midnightTimer, seriesTimer, seriesRetryTimer]) {
+            if (timer !== null) clearTimeout(timer);
+        }
+        midnightTimer = seriesTimer = seriesRetryTimer = null;
+        seriesQueue.clear();
+        for (const value of seriesInfo.values()) value.loading = false;
+        releaseSeriesObservers();
+        document.querySelectorAll(LIVE_SELECTOR).forEach(el => {
+            liveCards.delete(el);
+            delete el.dataset[LIVE_ATTR];
+        });
+        renderedDay = null;
+    }
+
+    /** @param {Object} ctx @returns {void} Arm a new active rendering lifetime once. */
+    function activateStatus(ctx) {
+        if (statusActive || !JE.currentSettings?.statusTagsEnabled) return;
+        statusActive = true;
         armMidnight(ctx);
     }
 
@@ -1263,7 +1300,7 @@
                 renderData(ctx, el, fromServerEntry(entry, itemId), itemId);
             },
             cleanup() {
-                releaseSeriesObservers();
+                stopStatus();
             },
             onServerCacheRefresh(ctx, updatedIds, info) {
                 onCacheReplaced(ctx, updatedIds, info);
@@ -1283,7 +1320,7 @@
      */
     JE.initializeStatusTags = function() {
         console.log(`${logPrefix} Starting...`);
-        releaseSeriesObservers();
+        stopStatus();
 
         if (!userChangeRegistered) {
             userChangeRegistered = true;
@@ -1295,22 +1332,22 @@
                 trackRev++;
                 staleBelowRev = trackRev;
                 replacedAt.clear();
-                releaseSeriesObservers();
-                seriesEpoch++;
+                stopStatus();
                 seriesInfo.clear();
-                seriesQueue.clear();
             });
         }
         statusCtx = JE.core.tagRenderer.register('status', spec);
         statusCtx.injectCss();
+        activateStatus(statusCtx);
         ensureTrending(statusCtx);
-        armMidnight(statusCtx);
         if (!calendarEventsRegistered) {
             calendarEventsRegistered = true;
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) refreshCalendar(statusCtx);
             });
             window.addEventListener('focus', () => refreshCalendar(statusCtx));
+            window.addEventListener('pagehide', stopStatus);
+            window.addEventListener('pageshow', () => JE.reinitializeStatusTags());
         }
 
         console.log(`${logPrefix} Initialized successfully.`);
@@ -1324,7 +1361,10 @@
      */
     JE.reinitializeStatusTags = function() {
         JE.core.tagRenderer.reinitialize('status', spec);
-        if (statusCtx && JE.currentSettings?.statusTagsEnabled) ensureTrending(statusCtx);
+        if (statusCtx && JE.currentSettings?.statusTagsEnabled) {
+            activateStatus(statusCtx);
+            ensureTrending(statusCtx);
+        }
     };
 
 })(window.JellyfinEnhanced);
