@@ -14,6 +14,20 @@ const finale = { Id: EPISODE, Type: 'Episode', SeriesId: SERIES, SeriesTmdbId: '
 const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, episode: 8 } };
 const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
 
+/**
+ * Pump queued idle slices until observable work completes. A timer callback can
+ * enqueue another timer after an idle queue becomes empty, especially under
+ * concurrent suite load; fixed sleeps and an empty idle queue are not completion.
+ */
+async function until(h, predicate) {
+  const deadline = performance.now() + 30000;
+  while (!predicate()) {
+    assert.ok(performance.now() < deadline, 'status-tag work did not complete within 30 seconds');
+    while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+    await delay(10);
+  }
+}
+
 /** Real pipeline + renderer, with only the HTTP boundaries replaced by caller-filtered fixtures. */
 async function setup(t, { cache = false, cards = [aggregate, finale], parent = aggregate, parents = [], facts = schedule, parentResponse = null } = {}) {
   const changes = new Map(), calls = [], idle = [];
@@ -56,18 +70,32 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
     }
   });
   t.after(() => h.close());
+  // Track every short debounce/render timer, including one scheduled by another
+  // timer after the idle queue empties. Long-lived midnight/retry timers stay out.
+  const shortTimers = new Set();
+  const setTimer = h.window.setTimeout.bind(h.window), clearTimer = h.window.clearTimeout.bind(h.window);
+  h.window.setTimeout = (callback, ms, ...args) => {
+    const id = setTimer(() => { shortTimers.delete(id); callback(...args); }, ms);
+    if ((ms || 0) <= 1000) shortTimers.add(id);
+    return id;
+  };
+  h.window.clearTimeout = id => { shortTimers.delete(id); clearTimer(id); };
+  let inFlight = 0;
+  const ajax = h.window.ApiClient.ajax;
+  h.window.ApiClient.ajax = async options => {
+    // Tests with a deliberately unresolved parent response must reach their
+    // assertions while that request is still outstanding.
+    if (parentResponse && options.url.includes('/tag-data/') && JSON.parse(options.data).length === 1 && JSON.parse(options.data)[0] === SERIES) return ajax(options);
+    inFlight++;
+    try { return await ajax(options); } finally { inFlight--; }
+  };
+  h.idle = idle;
   h.window.Date.now = () => NOW;
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'tags/tag-pipeline.js', 'tags/statustags.js']) h.load(file);
   h.JE.initializeStatusTags();
   h.JE.tagPipeline.initialize();
   await delay(0);
-  while (idle.length) idle.shift()({ timeRemaining: () => 50 });
-  await delay(240);
-  // Large pages yield between render slices and enqueue the next idle scan.
-  while (idle.length) {
-    while (idle.length) idle.shift()({ timeRemaining: () => 50 });
-    await delay(60);
-  }
+  await until(h, () => !shortTimers.size && !inFlight && !idle.length);
   return Object.assign(h, { calls, changes, idle, items, key(id) { return h.document.querySelector(`[data-id="${id}"] .status-tag`)?.dataset.jeStatus ?? null; },
     switchUser() { epoch++; for (const fn of changes.values()) fn({ userId: 'user-b' }); } });
 }
@@ -143,7 +171,7 @@ for (const count of [30, 230]) {
     const episodes = parents.map((parent, i) => ({ ...finale, Id: (i + 1001).toString(16).padStart(32, '0'), SeriesId: parent.Id }));
     // Two cards for one episode also exercise parent-id deduplication.
     const h = await setup(t, { parent: null, parents, cards: [...episodes, episodes[0]] });
-    assert.ok(episodes.every(item => h.key(item.Id) === 'series_finale'));
+    await until(h, () => episodes.every(item => h.key(item.Id) === 'series_finale'));
     if (count === 30) assert.equal(h.calls.filter(c => c.url.includes('/tag-data/')).length, 2, 'initial episodes and parent facts each use one batch');
     const initialRequests = h.calls.length;
     const ajax = h.window.ApiClient.ajax;
@@ -170,11 +198,7 @@ for (const count of [30, 230]) {
       }
       return nodes;
     };
-    await delay(500);
-    while (h.idle.length) {
-      while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
-      await delay(60);
-    }
+    await until(h, () => passes === Math.ceil(count / 200));
     const refreshed = h.calls.slice(initialRequests).filter(c => c.url.includes('/tag-data/'));
     assert.equal(refreshed.length, Math.ceil(count / 200), 'expired parents share the existing 200-id lookup batches');
     assert.ok(refreshed.every(c => JSON.parse(c.data).length <= 200), 'no request exceeds the pipeline limit');
@@ -273,4 +297,15 @@ test('a cached projection retains its original fetch timestamp when restoring pa
   h.window.Date.now = () => NOW + 11 * 60 * 1000;
   pipeline.rememberItemFacts(aggregate, SERIES, NOW);
   assert.equal(pipeline.peekItemFacts(SERIES), null, 'restoring the snapshot never extends the fetch TTL');
+});
+
+
+test('a parent response completing after the old fixed wait still updates an episode card', async t => {
+  const response = deferred();
+  const h = await setup(t, { cards: [finale], parentResponse: response });
+  assert.notEqual(h.key(EPISODE), 'series_finale', 'the unresolved parent cannot establish the finale');
+  const timer = setTimeout(() => response.resolve({ Items: [aggregate] }), 650);
+  t.after(() => clearTimeout(timer));
+  await until(h, () => h.key(EPISODE) === 'series_finale');
+  assert.equal(h.calls.filter(c => c.url.includes('/tag-data/') && JSON.parse(c.data).includes(SERIES)).length, 1);
 });
