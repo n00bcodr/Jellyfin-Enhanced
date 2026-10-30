@@ -133,14 +133,15 @@
     /**
      * Reorders deduplicated flags so that ones matching the admin's priority
      * list come first (in priority order), with the rest following in their
-     * original detection order. Only the first `maxToShow` end up visible, so
-     * this is what actually decides which 3 flags a card shows. A flag can
+     * original detection order. Only the first few (the layout's language
+     * cap, 3 by default) end up visible, so this is what actually decides
+     * which flags a card shows. A flag can
      * match the priority list by language code (en, pt-BR), its base code
      * (pt), or its display name (English, Portuguese) — whichever the admin
      * typed.
      * When LanguageTagsPriorityStrict is on, non-matching flags are dropped
      * entirely instead of just being pushed to the back — a card can then
-     * show fewer than 3 flags, or none, if it has no matching audio track.
+     * show fewer flags than the cap, or none, if it has no matching audio track.
      * @param {Array<{code: string, allLanguages: Array<string>}>} flags
      * @returns {Array}
      */
@@ -187,18 +188,11 @@
         // Avoid forced reflow from getComputedStyle (and a style write per card when already set)
         if (container.style.position !== 'relative') container.style.position = 'relative';
 
+        // Placement (and the indicator offset) comes from the layout stylesheet.
         const wrap = document.createElement('div');
         wrap.className = containerClass;
-        const pos = JE.core.tagRenderer.resolvePosition('languageTagsPosition', 'LanguageTagsPosition', 'bottom-left');
-        wrap.style.position = 'absolute';
-        wrap.style.top = pos.topVal; wrap.style.right = pos.rightVal; wrap.style.bottom = pos.bottomVal; wrap.style.left = pos.leftVal;
-        // If positioned top-right and the card has indicators, add a top margin to avoid overlap
-        if (pos.needsTopRightOffset && container.querySelector('.cardIndicators')) {
-            wrap.style.marginTop = 'clamp(20px, 3vw, 30px)';
-        }
 
         const normalized = normalizeLanguages(languages);
-        const maxToShow = 3;
         const seenCountries = new Set();
         const uniqueFlags = [];
 
@@ -227,11 +221,22 @@
         });
 
         // Full-series languages before partial ones (stable sort keeps detection
-        // order within each group), so the 3 visible flags favour what every
-        // episode has. The admin priority list still wins over this.
+        // order within each group), so the visible flags favour what every
+        // episode has. The admin priority list still wins over this. Every
+        // flag is committed; the layout's language cap (3 by default) decides
+        // how many show.
         uniqueFlags.sort((a, b) => (a.partial ? 1 : 0) - (b.partial ? 1 : 0));
 
-        orderByPriority(uniqueFlags).slice(0, maxToShow).forEach(flagInfo => {
+        const ordered = orderByPriority(uniqueFlags);
+        // A code the lookup tables answer with a non-string (an Object.prototype
+        // key such as "constructor") cannot be drawn. Among the flags the cap
+        // shows it drops the whole group, as it always has (Native Poster Tags
+        // mirror that); past the cap it is simply left out.
+        const cap = JE.core.tagLayout ? JE.core.tagLayout.resolveLayout(container).caps.language : 3;
+        const visible = cap > 0 ? ordered.slice(0, cap) : ordered;
+        if (visible.some(flagInfo => typeof flagInfo.countryCode !== 'string')) return;
+
+        ordered.filter(flagInfo => typeof flagInfo.countryCode === 'string').forEach(flagInfo => {
             const img = document.createElement('img');
             img.src = JE.core.mediaLanguage.flagSrc(flagInfo.countryCode);
             img.className = flagInfo.partial ? `${flagClass} ${partialFlagClass}` : flagClass;

@@ -302,6 +302,36 @@
     }
 
     /**
+     * Put the chip on a card's rating group through the layout controller:
+     * the chip joins the group's master copy (creating a review-only group
+     * when the card has no TMDB/RT rating) and the group is committed again,
+     * so its slot, cap, density and summary copies follow — late chips
+     * included. A "no rating" with dashes off removes the chip, and the group
+     * with it when that was its only chip.
+     * @param {any} layout - JE.core.tagLayout.
+     * @param {HTMLElement} target - The card's render target.
+     * @param {number|null} rating
+     */
+    function applyChipToGroup(layout, target, rating) {
+        const existing = layout.getGroup(target, 'rating');
+        if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) {
+            const stale = existing?.querySelector('.je-userreview-tag');
+            if (!stale) return;
+            stale.remove();
+            if (existing.childElementCount === 0) layout.removeGroup(target, 'rating');
+            else layout.commitGroup(target, 'rating', existing);
+            return;
+        }
+        let master = existing;
+        if (!master) {
+            master = document.createElement('div');
+            master.className = 'rating-overlay-container';
+        }
+        appendUserRatingChip(master, rating);
+        layout.commitGroup(target, 'rating', master);
+    }
+
+    /**
      * Put the chip for a resolved rating on a card, creating the rating
      * overlay container when the card has no TMDB/RT rating of its own.
      * @param {HTMLElement} containerOrEl - .rating-overlay-container or the render target.
@@ -315,6 +345,11 @@
      */
     function applyChip(containerOrEl, rating, restack) {
         if (!containerOrEl.isConnected) return; // card gone while the rating was looked up
+        const layout = JE.core?.tagLayout;
+        if (layout && !containerOrEl.classList.contains('rating-overlay-container')) {
+            applyChipToGroup(layout, containerOrEl, rating);
+            return;
+        }
         if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) {
             // No chip for "no rating"; drop one an earlier value left behind,
             // and the rating container with it when that was its only chip.

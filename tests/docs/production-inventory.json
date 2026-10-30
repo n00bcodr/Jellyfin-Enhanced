@@ -39,6 +39,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs",
       "category": "Configuration"
     },
@@ -743,6 +747,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-layout.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-renderer-base.js",
       "category": "js"
     },
@@ -1436,6 +1444,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-cache-store.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-layout-styles.js",
       "category": "js"
     },
     {
@@ -4284,6 +4296,46 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagLayout",
+      "type": "string",
+      "initializer": "\"corners\"",
+      "constructor_assignment": "\"corners\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagLayouts",
+      "type": "TagLayoutProfiles?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagGroupOrder",
+      "type": "List<string>?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagGroupCaps",
+      "type": "TagGroupCaps?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagLabelDensity",
+      "type": "string",
+      "initializer": "\"full\"",
+      "constructor_assignment": "\"full\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowRatingInPlayer",
       "type": "bool",
       "initializer": "true",
@@ -6107,6 +6159,118 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
+      "class": "TagLayoutGroupSlot",
+      "name": "Group",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagLayoutGroupSlot",
+      "name": "Slot",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagLayoutProfile",
+      "name": "Groups",
+      "type": "List<TagLayoutGroupSlot>",
+      "initializer": "new List<TagLayoutGroupSlot>()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagLayoutProfiles",
+      "name": "Corners",
+      "type": "TagLayoutProfile?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagLayoutProfiles",
+      "name": "Bands",
+      "type": "TagLayoutProfile?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagLayoutProfiles",
+      "name": "Caption",
+      "type": "TagLayoutProfile?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagLayoutProfiles",
+      "name": "Summary",
+      "type": "TagLayoutProfile?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagLayoutProfiles",
+      "name": "Minimal",
+      "type": "TagLayoutProfile?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupCaps",
+      "name": "Quality",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupCaps",
+      "name": "Genre",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupCaps",
+      "name": "Language",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupCaps",
+      "name": "Rating",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupCaps",
+      "name": "AgeRating",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupCaps",
+      "name": "Status",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
       "class": "JellyfinEnhancedUserSettings",
       "name": "AutoPauseEnabled",
       "type": "bool",
@@ -6631,6 +6795,54 @@
       "name": "StatusTagsTrending",
       "type": "bool",
       "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagLayout",
+      "type": "string",
+      "initializer": "\"corners\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagLayoutSettingsVersion",
+      "type": "int",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagLayouts",
+      "type": "TagLayoutProfiles?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagGroupOrder",
+      "type": "List<string>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagGroupCaps",
+      "type": "TagGroupCaps?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagLabelDensity",
+      "type": "string",
+      "initializer": "\"full\"",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -7943,9 +8155,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 361,
+    "files": 364,
     "routes": 181,
-    "configuration_properties": 545,
+    "configuration_properties": 570,
     "storage_references": 70,
     "scheduled_tasks": 13,
     "locales": 33

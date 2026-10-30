@@ -883,26 +883,20 @@
                 }`;
             }).join("\n");
 
-            const pos = JE.core.tagRenderer.resolvePosition('qualityTagsPosition', 'QualityTagsPosition', 'top-left');
-
+            // Placement (corner, band, caption...) comes from the layout
+            // stylesheet (tags/tag-layout-styles.js); this only styles the group.
             return `
                 .${containerClass} {
-                    position: absolute;
-                    top: ${pos.topVal};
-                    right: ${pos.rightVal};
-                    bottom: ${pos.bottomVal};
-                    left: ${pos.leftVal};
                     display: flex;
                     flex-direction: column;
                     gap: 4px;
-                    align-items: ${pos.isLeft ? 'flex-start' : 'flex-end'};
+                    align-items: flex-start;
                     z-index: 100;
                     max-width: calc(100% - 12px);
                     max-height: 90%;
                     overflow: hidden;
                     pointer-events: none;
                 }
-                ${pos.needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${overlayClass} {
                     font-weight: bold;
                     border-radius: 5px;

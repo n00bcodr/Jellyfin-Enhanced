@@ -189,23 +189,17 @@
             saveOnUnload: false,
         },
         buildCss() {
-            const pos = JE.core.tagRenderer.resolvePosition('ageRatingTagsPosition', 'AgeRatingTagsPosition', 'bottom-right');
+            // Placement comes from the layout stylesheet (tags/tag-layout-styles.js).
             return `
                 .${containerClass} {
-                    position: absolute;
-                    top: ${pos.topVal};
-                    right: ${pos.rightVal};
-                    bottom: ${pos.bottomVal};
-                    left: ${pos.leftVal};
                     display: flex;
                     flex-direction: column;
-                    align-items: ${pos.isLeft ? 'flex-start' : 'flex-end'};
+                    align-items: flex-end;
                     z-index: 10;
                     pointer-events: none;
                     max-width: calc(100% - 12px);
                 }
 
-                ${pos.needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${tagClass} {
                     display: inline-flex;
                     align-items: center;
@@ -246,7 +240,6 @@
                 }
 
                 @media (max-width: 480px) {
-                    .${containerClass} { top: ${pos.isTop ? '4px' : 'auto'}; bottom: ${pos.isTop ? 'auto' : '4px'}; left: ${pos.isLeft ? '4px' : 'auto'}; right: ${pos.isLeft ? 'auto' : '4px'}; }
                     .${tagClass} { padding: 2px 4px; font-size: clamp(10px, 2vw, 11px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
                 }
             `;

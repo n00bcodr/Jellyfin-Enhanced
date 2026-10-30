@@ -999,6 +999,9 @@
     function renderCard(card, serverEntry, hosts) {
         const { el, itemId, itemType } = card;
         const renderTarget = resolveRenderTarget(el);
+        // Caption layout: reserve the strip below the image now, before the
+        // tag data (possibly a batch fetch away) arrives.
+        JE.core.tagLayout?.prepareCard(renderTarget);
 
         // Server cache first (all tag data pre-computed in one object)
         if (serverEntry) {
@@ -1463,32 +1466,6 @@
         }
     }
 
-    // ── Indicator Offset ────────────────────────────────────────────────
-
-    /**
-     * Build CSS rules that offset top-right tag containers below Jellyfin's
-     * card indicators (unwatched count, played badge). Only tags configured
-     * for the top-right corner get the offset. Other positions are untouched.
-     * @returns {string} CSS rules string
-     */
-    function buildIndicatorOffsetCSS() {
-        const posMap = {
-            'genre-overlay-container': JE.currentSettings?.genreTagsPosition || JE.pluginConfig?.GenreTagsPosition || 'top-right',
-            'quality-overlay-container': JE.currentSettings?.qualityTagsPosition || JE.pluginConfig?.QualityTagsPosition || 'top-left',
-            'language-overlay-container': JE.currentSettings?.languageTagsPosition || JE.pluginConfig?.LanguageTagsPosition || 'bottom-left',
-            'rating-overlay-container': JE.currentSettings?.ratingTagsPosition || JE.pluginConfig?.RatingTagsPosition || 'bottom-right',
-            'age-rating-overlay-container': JE.currentSettings?.ageRatingTagsPosition || JE.pluginConfig?.AgeRatingTagsPosition || 'bottom-right',
-            'status-overlay-container': JE.currentSettings?.statusTagsPosition || JE.pluginConfig?.StatusTagsPosition || 'top-right',
-        };
-        const topRightContainers = Object.entries(posMap)
-            .filter(([, pos]) => pos === 'top-right')
-            .map(([cls]) => `.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host > .${cls}`)
-            .join(',\n                ');
-
-        if (!topRightContainers) return '';
-        return `${topRightContainers} { margin-top: clamp(20px, 3vw, 30px); }`;
-    }
-
     // ── Lifecycle ──────────────────────────────────────────────────────
 
     /**
@@ -1576,10 +1553,8 @@
                     pointer-events: none;
                     z-index: auto !important;
                 }
-                /* Offset top-right positioned tag containers when card has visible indicators
-                   (unwatched count badge, played checkmark). Indicators are always top-right in Jellyfin.
-                   Only affects containers configured for the top-right position. */
-                ${buildIndicatorOffsetCSS()}
+                /* The top-right indicator offset (unwatched count, played check) is a
+                   stable slot rule in tags/tag-layout-styles.js. */
             `);
 
             // Card-width sizing; mobile layout and browsers without container queries keep the per-tag rules.
@@ -1615,8 +1590,10 @@
             // "Hide Tags on Hover" setting: fully hides the tag layer on hover.
             // Without this, Jellyfin's overlay already covers tags (they're behind it).
             // This setting makes them completely invisible for users who want zero clutter.
+            // Summary and minimal reveal their full chips on hover instead, so
+            // there it hides every slot but that reveal (tag-layout-styles.js).
             JE.helpers.addCSS('je-tag-hover-fade', `
-                body.je-tags-hide-on-hover .card:hover .je-tag-host {
+                body.je-tags-hide-on-hover .card:hover .je-tag-host:not([data-je-layout="summary"]):not([data-je-layout="minimal"]) {
                     opacity: 0 !important;
                     transition: opacity 0.15s ease;
                 }
@@ -1735,6 +1712,9 @@
                         delete el.dataset.jeAgeRatingTagged;
                         delete el.dataset.jeStatusTagged;
                     });
+                    // Pills, dots, hover copies and caption outlets carry no
+                    // group wrapper class: the layout controller drops them.
+                    JE.core.tagLayout?.clearAll();
                 } catch (domErr) {
                     console.warn(`${logPrefix} overlay cleanup during invalidate failed:`, domErr);
                 }
@@ -1776,6 +1756,8 @@
         JE.tagPipeline.clearProcessed();
     });
     document.addEventListener('je:user-data-loaded', () => {
+        // The incoming user's layout, density and hide-on-hover choice.
+        JE.reinitializeTagLayout?.();
         // The incoming user's tag types registered during the switch and
         // already started loading their cache: don't drop it and load again.
         const startedThisSwitch = loadStartedForEpoch !== null && loadStartedForEpoch === JE.session?.getEpoch?.();

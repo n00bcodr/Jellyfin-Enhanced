@@ -17,7 +17,12 @@
 // - JE.reinitializeXTags function names (defined by each tag module,
 //   delegating to reinitialize() here)
 //
-// Public surface: JE.core.tagRenderer { register, reinitialize, resolvePosition }.
+// Placement: the six poster groups are handed to the shared layout
+// controller (js/core/tag-layout.js), which owns where and how they appear;
+// a renderer it does not know keeps the original direct-append behaviour.
+//
+// Public surface: JE.core.tagRenderer { register, reinitialize, resolvePosition,
+// isIgnoredContext, applyCornerStacking, scheduleCornerStacking }.
 (function(JE) {
     'use strict';
 
@@ -87,6 +92,47 @@
 
     /** @type {Map<string, any>} name → tag instance */
     const tags = new Map();
+
+    /** @type {string|null} STANDARD_IGNORE_SELECTORS (+ search page) joined, per DisableTagsOnSearchPage */
+    let standardIgnoreSelector = null;
+    let standardIgnoreSearch = null;
+
+    /**
+     * Whether a card sits in a context that never shows poster tags (the
+     * standard exclusions every renderer but genre uses, plus the search page
+     * when DisableTagsOnSearchPage is set). The layout controller asks before
+     * reserving caption space for a card no renderer will tag.
+     * @param {HTMLElement} el - A render target or anything inside the card.
+     * @returns {boolean}
+     */
+    function isIgnoredContext(el) {
+        if (!el) return true;
+        const search = JE.pluginConfig?.DisableTagsOnSearchPage === true;
+        if (standardIgnoreSelector === null || standardIgnoreSearch !== search) {
+            standardIgnoreSearch = search;
+            standardIgnoreSelector = STANDARD_IGNORE_SELECTORS
+                .concat(search ? ['#searchPage .cardImageContainer'] : [])
+                .join(', ');
+        }
+        const target = el.closest('.cardImageContainer')
+            || el.closest('.cardScalable')?.querySelector('.cardImageContainer')
+            || el;
+        try {
+            return target.closest(standardIgnoreSelector) !== null;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * The layout controller when it manages this renderer's group, else null.
+     * @param {string} name - Pipeline renderer name.
+     * @returns {any}
+     */
+    function layoutFor(name) {
+        const layout = JE.core.tagLayout;
+        return layout && layout.normalizeGroup(name) ? layout : null;
+    }
 
     /**
      * Resolve a tag position setting (user → admin default → hardcoded) into
@@ -324,6 +370,10 @@
             // Attribute first: the common case (this renderer hasn't tagged the
             // card yet) then costs a dataset read, not a subtree query.
             if (/** @type {HTMLElement} */ (card).dataset?.[TAGGED_ATTR] !== '1') return false;
+            // Layout-managed groups: the controller holds what the card shows
+            // (a pill or dots carry no wrapper class to look for).
+            const layout = layoutFor(name);
+            if (layout) return layout.hasGroup(el, name);
             // The overlay is normally a direct child of the render target.
             for (const child of el.children) {
                 if (child.classList.contains(containerClass)) return true;
@@ -527,12 +577,14 @@
              * @param {HTMLElement} el
              */
             removeExistingOverlay(el) {
+                layoutFor(name)?.removeGroup(el, name);
                 const existing = el.querySelector(`.${containerClass}`);
                 if (existing) existing.remove();
             },
             /**
-             * Append the overlay if it has content and mark the card tagged.
-             * Does NOT run corner-stacking itself: up to 4 renderers can each
+             * Hand the overlay to the layout controller (or, for a renderer it
+             * does not manage, append it) if it has content, and mark the card
+             * tagged. Unmanaged overlays are NOT corner-stacked here: up to 4 renderers can each
              * commit an overlay onto the same host, and re-measuring
              * (getBoundingClientRect) after every single one forces a layout
              * per renderer per card. The pipeline calls
@@ -543,6 +595,12 @@
              * @returns {boolean} true if the overlay was attached
              */
             commitOverlay(el, overlay) {
+                const layout = layoutFor(name);
+                if (layout) {
+                    if (!layout.commitGroup(el, name, overlay)) return false;
+                    markTagged(el);
+                    return true;
+                }
                 if (spec.position) {
                     const p = resolvePosition(spec.position.userKey, spec.position.pluginKey, spec.position.fallback);
                     overlay.dataset.jeCorner = p.pos;
@@ -630,6 +688,13 @@
         function reinitialize() {
             console.log(`${logPrefix} Re-initializing...`);
 
+            // Settings (positions, layout) may have changed: re-read them, and
+            // drop this group's masters and every representation built from them.
+            const layout = layoutFor(name);
+            if (layout) {
+                layout.invalidateSettings();
+                layout.removeGroupEverywhere(name);
+            }
             document.querySelectorAll(`.${containerClass}`).forEach((el) => el.remove());
             document.querySelectorAll(`[data-${toKebab(TAGGED_ATTR)}]`).forEach((el) => {
                 delete /** @type {HTMLElement} */ (el).dataset[TAGGED_ATTR];
@@ -695,6 +760,7 @@
         register,
         reinitialize,
         resolvePosition,
+        isIgnoredContext,
         applyCornerStacking,
         scheduleCornerStacking,
     };

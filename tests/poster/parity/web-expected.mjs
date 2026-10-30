@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Computes, for every parity profile and tag-cache entry, the tag containers the
 // web would render, by running the REAL JE modules (js/core/media-language.js,
-// js/core/tag-renderer-base.js, js/enhanced/config.js, js/tags/*.js,
+// js/core/tag-renderer-base.js, js/core/tag-layout.js, js/enhanced/config.js, js/tags/*.js,
 // js/extras/colored-ratings.js) in a VM with a minimal DOM and JE stubs.
 //
 // Per profile it boots the modules the way plugin.js does (JE.loadSettings,
@@ -9,9 +9,10 @@
 // exactly like the pipeline's server-cache path (tag-pipeline.js processChunk:
 // every enabled renderer's renderFromServerCache into one tag host, in
 // registration order), waits for the async user-review chips, and reads the
-// resulting containers. The top-right indicator offset comes from the real
-// CSS rules tag-pipeline.js builds, applied when jellyfin-web would show a
-// played / unplayed-count indicator.
+// resulting groups from the layout controller in arrival order (their corner
+// slot and the displayed, capped chips). The top-right indicator offset comes
+// from the real slot rules tags/tag-layout-styles.js builds, applied when
+// jellyfin-web would show a played / unplayed-count indicator.
 //
 // Output: data/out/web-<profile>.json
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -29,8 +30,10 @@ const readData = (...p) => JSON.parse(readFileSync(join(dataDir, ...p), 'utf8'))
 const SCRIPTS = [
     'core/media-language.js',
     'core/tag-renderer-base.js',
+    'core/tag-layout.js',
     'enhanced/config.js',
     'tags/tag-pipeline.js',
+    'tags/tag-layout-styles.js',
     'tags/genretags.js',
     'tags/languagetags.js',
     'tags/qualitytags.js',
@@ -88,10 +91,25 @@ class Element {
         this.classList = new ClassList(this);
     }
     get textContent() { return this._text + this.children.map((c) => c.textContent).join(''); }
+    get firstElementChild() { return this.children[0] || null; }
+    get lastElementChild() { return this.children[this.children.length - 1] || null; }
+    get childElementCount() { return this.children.length; }
+    cloneNode(deep) {
+        // Own properties (title, src, alt, dataset, attributes ...) are copied;
+        // the layout controller presents copies of each committed group.
+        const copy = new Element(this.tagName);
+        for (const [key, value] of Object.entries(this)) {
+            if (key === 'children' || key === 'parentElement' || key === 'classList') continue;
+            copy[key] = Array.isArray(value) ? value.slice() : (value && typeof value === 'object' ? { ...value } : value);
+        }
+        if (deep) for (const child of this.children) copy.appendChild(child.cloneNode(true));
+        return copy;
+    }
+    replaceChildren(...nodes) { this.children = []; for (const n of nodes) this.appendChild(n); }
     set textContent(v) { this._text = String(v); this.children = []; }
     get parentNode() { return this.parentElement; }
     appendChild(child) { if (child.parentElement) child.remove(); child.parentElement = this; this.children.push(child); return child; }
-    insertBefore(child, ref) { child.parentElement = this; const i = this.children.indexOf(ref); if (i < 0) this.children.push(child); else this.children.splice(i, 0, child); return child; }
+    insertBefore(child, ref) { if (child.parentElement) child.remove(); child.parentElement = this; const i = ref ? this.children.indexOf(ref) : -1; if (i < 0) this.children.push(child); else this.children.splice(i, 0, child); return child; }
     removeChild(child) { const i = this.children.indexOf(child); if (i >= 0) this.children.splice(i, 1); child.parentElement = null; return child; }
     remove() { if (this.parentElement) this.parentElement.removeChild(this); }
     setAttribute(n, v) { this.attributes[n] = String(v); }
@@ -280,8 +298,9 @@ async function runProfile(profile) {
     JE.tagPipeline.initialize();
     await sleep(20); // quality waits for the Jellyfin audio preference before registering
 
-    // Containers whose position earns the indicator offset, from the real pipeline CSS.
-    const offsetClasses = new Set([...(css['je-tag-pipeline-perf'] || '').matchAll(/> \.je-tag-host > \.([a-z-]+-overlay-container)/g)].map((m) => m[1]));
+    // Corner slots that earn the indicator offset (on a host the controller
+    // marks data-je-indicator-gap), from the real layout CSS.
+    const offsetSlots = new Set([...JE.core.tagLayout.buildStyles().matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-indicator-gap\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\]/g)].map((m) => m[1]));
 
     const hosts = [];
     for (const [id, entry] of Object.entries(entries)) {
@@ -300,12 +319,11 @@ async function runProfile(profile) {
     const items = {};
     for (const [id, host] of hosts) {
         const indicator = showsIndicator(userData[id]);
-        items[id] = host.children
-            .filter((c) => CONTAINERS[c.className.split(' ')[0]])
-            .map((c) => {
-                const cls = c.className.split(' ')[0];
-                const group = CONTAINERS[cls];
-                return { g: group, c: cornerOf(c.dataset.jeCorner || ''), o: indicator && offsetClasses.has(cls), t: readTags(group, c) };
+        items[id] = JE.core.tagLayout.describe(host)
+            .filter((d) => d.element && CONTAINERS[d.element.className.split(' ')[0]])
+            .map((d) => {
+                const group = CONTAINERS[d.element.className.split(' ')[0]];
+                return { g: group, c: cornerOf(d.element.dataset.jeCorner || ''), o: indicator && host.dataset.jeIndicatorGap === '1' && offsetSlots.has(d.slot), t: readTags(group, d.element) };
             })
             .filter((g) => g.t.length > 0);
     }

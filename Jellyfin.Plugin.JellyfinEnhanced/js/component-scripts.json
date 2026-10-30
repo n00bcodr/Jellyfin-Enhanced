@@ -20,6 +20,9 @@
     "core/media-language.js",
     "core/api-client.js",
     "core/tag-renderer-base.js",
+    "// tag-layout.js places the poster tag groups; it reads",
+    "// JE.core.tagRenderer.isIgnoredContext at call time only.",
+    "core/tag-layout.js",
 
     "// enhanced",
     "enhanced/config.js",
@@ -28,6 +31,8 @@
     "enhanced/native-tabs.js",
     "tags/tag-cache-store.js",
     "tags/tag-pipeline.js",
+    "// Layout stylesheet: attaches to JE.core.tagLayout, before the renderers.",
+    "tags/tag-layout-styles.js",
     "enhanced/icons.js",
     "// Spoiler Guard modules. Dependency order is maintained by hand —",
     "// nothing validates this array, and a module placed before one",

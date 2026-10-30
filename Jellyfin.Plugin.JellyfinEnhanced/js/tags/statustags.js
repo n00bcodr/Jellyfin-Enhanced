@@ -438,7 +438,8 @@
      * After a fetch brought a different trending list: re-badge every
      * Movie/Series card on the page whose badge changes with it (a new or
      * changed rank, or a title that dropped off and falls back to its date
-     * badge or none), then re-stack their corners in one pass.
+     * badge or none). Each badge goes through the layout controller, which
+     * re-presents its card; overlays it does not manage are re-stacked in one pass.
      * @param {Object} ctx - Factory context.
      * @returns {void}
      */
@@ -462,7 +463,7 @@
             else ctx.removeExistingOverlay(el);
             hosts.push(el);
         });
-        if (hosts.length > 0) JE.core.tagRenderer.applyCornerStacking(hosts);
+        if (hosts.length > 0 && !JE.core.tagLayout) JE.core.tagRenderer.applyCornerStacking(hosts);
     }
 
     /**
@@ -521,23 +522,17 @@
             saveOnUnload: false,
         },
         buildCss() {
-            const pos = JE.core.tagRenderer.resolvePosition('statusTagsPosition', 'StatusTagsPosition', 'top-right');
+            // Placement comes from the layout stylesheet (tags/tag-layout-styles.js).
             return `
                 .${containerClass} {
-                    position: absolute;
-                    top: ${pos.topVal};
-                    right: ${pos.rightVal};
-                    bottom: ${pos.bottomVal};
-                    left: ${pos.leftVal};
                     display: flex;
                     flex-direction: column;
-                    align-items: ${pos.isLeft ? 'flex-start' : 'flex-end'};
+                    align-items: flex-end;
                     z-index: 10;
                     pointer-events: none;
                     max-width: calc(100% - 12px);
                 }
 
-                ${pos.needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${tagClass} {
                     display: inline-flex;
                     align-items: center;
@@ -583,7 +578,6 @@
                 }
 
                 @media (max-width: 480px) {
-                    .${containerClass} { top: ${pos.isTop ? '4px' : 'auto'}; bottom: ${pos.isTop ? 'auto' : '4px'}; left: ${pos.isLeft ? '4px' : 'auto'}; right: ${pos.isLeft ? 'auto' : '4px'}; }
                     .${tagClass} { padding: 2px 6px; font-size: clamp(10px, 2vw, 11px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
                 }
             `;

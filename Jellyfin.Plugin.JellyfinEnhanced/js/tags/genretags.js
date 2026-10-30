@@ -84,6 +84,17 @@
     };
 
     /**
+     * Whether the genre cap shows no more than the three genres older
+     * versions kept in the local cache (so such an entry is still complete
+     * enough). Without the layout controller the old limit of three applies.
+     * @returns {boolean}
+     */
+    function genreCapFitsTruncated() {
+        const cap = JE.core.tagLayout?.resolveLayout(null).caps.genre;
+        return cap === undefined || (cap > 0 && cap <= 3);
+    }
+
+    /**
      * Create and insert genre icon tags into a card container.
      * @param {Object} ctx - Factory context (tagged/overlay helpers).
      * @param {HTMLElement} container - The card scalable or image container element.
@@ -156,24 +167,19 @@
             return defaultMatcher(el);
         },
         buildCss() {
-            const pos = JE.core.tagRenderer.resolvePosition('genreTagsPosition', 'GenreTagsPosition', 'top-right');
+            // Placement, and which side the hover names float to, come from
+            // the layout stylesheet (tags/tag-layout-styles.js).
             return `
                 .${containerClass} {
-                    position: absolute;
-                    top: ${pos.topVal};
-                    right: ${pos.rightVal};
-                    bottom: ${pos.bottomVal};
-                    left: ${pos.leftVal};
                     display: flex;
                     flex-direction: column;
                     gap: 3px;
-                    align-items: ${pos.isLeft ? 'flex-start' : 'flex-end'};
+                    align-items: flex-end;
                     z-index: 101;
                     pointer-events: none;
                     max-height: 90%;
                     overflow: visible;
                 }
-                ${pos.needsTopRightOffset ? `.cardImageContainer .cardIndicators ~ .${containerClass} { margin-top: clamp(20px, 3vw, 30px); }` : ''}
                 .${tagClass} {
                     display: flex;
                     align-items: center;
@@ -197,10 +203,10 @@
                 .${tagClass} .genre-text {
                     /* Absolutely positioned label = no layout reflow when shown/hidden.
                        Appears beside the icon on hover via opacity (GPU-composited).
-                       Direction depends on tag position: icons on right → label floats left,
-                       icons on left → label floats right (so it stays inside the card). */
+                       Direction depends on the slot (layout stylesheet): icons on the
+                       right → label floats left, on the left → floats right. */
                     position: absolute;
-                    ${pos.isLeft ? 'left: calc(100% + 4px)' : 'right: calc(100% + 4px)'};
+                    right: calc(100% + 4px);
                     top: 50%;
                     transform: translateY(-50%);
                     white-space: nowrap;
@@ -270,15 +276,15 @@
 
                 if (!genres || genres.length === 0) return;
 
-                var sliced = genres.slice(0, 3);
-
-                // Update localStorage genre cache
+                // Every genre is cached and committed; the layout's genre cap
+                // (3 by default) decides how many show. `full` marks an entry
+                // that holds them all (older entries were cut to three).
                 var itemId = item.Id;
                 if (itemId) {
-                    ctx.setPersistent(itemId, { genres: sliced, timestamp: Date.now() });
+                    ctx.setPersistent(itemId, { genres: genres.slice(), full: true, timestamp: Date.now() });
                 }
 
-                insertGenreTags(ctx, el, sliced);
+                insertGenreTags(ctx, el, genres);
             },
             renderFromCache(ctx, el, itemId) {
                 if (ctx.isTagged(el)) return true;
@@ -286,8 +292,11 @@
                 var cached = hot || ctx.getPersistent(itemId);
                 if (cached) {
                     var genres = Array.isArray(cached) ? cached : cached.genres;
+                    // An entry cut to three by an older version can't fill a
+                    // larger (or unlimited) cap: treat it as a miss so it refills.
+                    if (genres && genres.length >= 3 && !cached.full && !genreCapFitsTruncated()) return false;
                     if (genres && genres.length > 0) {
-                        insertGenreTags(ctx, el, genres.slice(0, 3));
+                        insertGenreTags(ctx, el, genres);
                         return true;
                     }
                 }
@@ -298,7 +307,7 @@
                 if (ctx.shouldIgnore(el)) return;
                 var genres = entry.Genres;
                 if (genres && genres.length > 0) {
-                    insertGenreTags(ctx, el, genres.slice(0, 3));
+                    insertGenreTags(ctx, el, genres);
                 }
             },
         },
