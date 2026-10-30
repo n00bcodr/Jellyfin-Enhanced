@@ -101,6 +101,21 @@ public class CoreTagShapeSettingsTests
     }
 
     [Fact]
+    public void ShapeSlotMapsBindAndNormalizeAlongsideTheExistingArrayWireForm()
+    {
+        const string posted = """
+            {"TagShapeOverrides":{"Landscape":{"Layout":"bands","Slots":{"status":"top","quality":"bottom","ageRating":"top","unknown":"top","rating":"tl"}},"Portrait":{"Layout":"minimal"}}}
+            """;
+        var bound = JsonSerializer.Deserialize<JellyfinEnhancedUserSettings>(posted, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        TagShapeRules.Normalize(bound);
+        var slots = bound.TagShapeOverrides!.Landscape!.Slots!;
+        Assert.Equal(new[] { ("status", "top"), ("quality", "bottom"), ("ageRating", "top") }, slots.Select(s => (s.Group, s.Slot)));
+        using var saved = JsonDocument.Parse(JsonSerializer.Serialize(bound));
+        Assert.Equal(JsonValueKind.Array, saved.RootElement.GetProperty("TagShapeOverrides").GetProperty("Landscape").GetProperty("Slots").ValueKind);
+        Assert.Null(bound.TagShapeOverrides.List);
+    }
+
+    [Fact]
     public void AdminDefaultsRoundTripTheXmlAndSeedNewUsers()
     {
         var config = new PluginConfiguration { TagShapeOverrides = new TagShapeOverrides { Landscape = Landscape(), List = new TagShapeLook { Layout = "nope" } } };

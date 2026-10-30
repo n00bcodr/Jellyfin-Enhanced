@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 {
@@ -18,10 +20,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string? Density { get; set; }
 
         /// <summary>Slot overrides over the profile of the resolved layout; null keeps the profile.</summary>
+        [JsonConverter(typeof(TagShapeSlotsConverter))]
         public List<TagLayoutGroupSlot>? Slots { get; set; }
 
         /// <summary>Chip limits over the default caps; a null cap keeps the default one.</summary>
         public TagGroupCaps? Caps { get; set; }
+    }
+
+    /// <summary>
+    /// Accept shape slot maps as well as the established layout slot array.
+    /// Writes arrays so group ids remain values through client key conversion;
+    /// the XML configuration continues to use the ordinary typed list.
+    /// </summary>
+    public sealed class TagShapeSlotsConverter : JsonConverter<List<TagLayoutGroupSlot>>
+    {
+        /// <inheritdoc />
+        public override List<TagLayoutGroupSlot>? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            using var document = JsonDocument.ParseValue(ref reader);
+            var root = document.RootElement;
+            var result = new List<TagLayoutGroupSlot>();
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in root.EnumerateObject())
+                {
+                    if (property.Value.ValueKind == JsonValueKind.String)
+                    {
+                        result.Add(new TagLayoutGroupSlot { Group = property.Name, Slot = property.Value.GetString()! });
+                    }
+                }
+            }
+            else if (root.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var entry in root.EnumerateArray())
+                {
+                    if (entry.ValueKind != JsonValueKind.Object) continue;
+                    string? group = null, slot = null;
+                    foreach (var property in entry.EnumerateObject())
+                    {
+                        if (property.Value.ValueKind != JsonValueKind.String) continue;
+                        if (property.Name.Equals("group", StringComparison.OrdinalIgnoreCase)) group = property.Value.GetString();
+                        if (property.Name.Equals("slot", StringComparison.OrdinalIgnoreCase)) slot = property.Value.GetString();
+                    }
+
+                    if (group != null && slot != null) result.Add(new TagLayoutGroupSlot { Group = group, Slot = slot });
+                }
+            }
+
+            return result.Count == 0 ? null : result;
+        }
+
+        /// <inheritdoc />
+        public override void Write(Utf8JsonWriter writer, List<TagLayoutGroupSlot> value, JsonSerializerOptions options)
+        {
+            writer.WriteStartArray();
+            foreach (var entry in value) JsonSerializer.Serialize(writer, entry, options);
+            writer.WriteEndArray();
+        }
     }
 
     /// <summary>
