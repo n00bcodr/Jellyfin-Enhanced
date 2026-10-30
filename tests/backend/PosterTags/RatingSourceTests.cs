@@ -303,6 +303,64 @@ public class RatingSourceTests
         Assert.Equal(8.1, TagSourceRatings.FromMdblist(service.GetCachedEntry("movie", "123"))!.Imdb);
     }
 
+    [Fact]
+    public async Task AvailabilityRefreshWaitsForRebuildAndPreservesNewerMetadata()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("Cache-only"));
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        service.MergeMediaBatchIntoCache("movie", ["123"], new Dictionary<string, MdblistCacheEntry> { ["123"] = new() { Found = true, Ratings = [new() { Source = "imdb", Score = 81 }] } });
+        var movie = new Movie { Id = Guid.NewGuid(), CommunityRating = 7, ProviderIds = new() { ["Tmdb"] = "123" } };
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var rebuilding = false;
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => {
+            if (rebuilding) { entered.Set(); Assert.True(release.Wait(TimeSpan.FromSeconds(5))); }
+            return q.IncludeItemTypes.Contains(Jellyfin.Data.Enums.BaseItemKind.Movie) ? new[] { movie.Id } : Array.Empty<Guid>();
+        });
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie });
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        cache.BuildFullCache(null, default);
+        Assert.True(cache.TryGetEntry(movie.Id, out var original));
+        Assert.NotNull(original.Ratings);
+
+        // Availability changes are a complete in-place write pass: one store epoch and one closing epoch.
+        f.Plugin.Configuration.MdblistApiKey = "";
+        var epoch = typeof(TagCacheService).GetField("_mutationEpoch", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var before = (long)epoch.GetValue(cache)!;
+        cache.RefreshRatingSourceAvailability();
+        Assert.Equal(before + 2, (long)epoch.GetValue(cache)!);
+        Assert.NotNull(original.Ratings);
+        Assert.True(cache.TryGetEntry(movie.Id, out var stripped));
+        Assert.Null(stripped.Ratings);
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        cache.RefreshRatingSourceAvailability();
+
+        movie.CommunityRating = 9;
+        rebuilding = true;
+        var build = Task.Run(() => cache.BuildFullCache(null, default));
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        f.Plugin.Configuration.MdblistApiKey = "";
+        var refreshStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refresh = Task.Run(() => { refreshStarted.SetResult(); cache.RefreshRatingSourceAvailability(); });
+        bool finishedDuringBuild;
+        try
+        {
+            await refreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            finishedDuringBuild = await Task.WhenAny(refresh, Task.Delay(150)) == refresh;
+        }
+        finally { release.Set(); }
+        await Task.WhenAll(build, refresh).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False(finishedDuringBuild);
+        Assert.True(cache.TryGetEntry(movie.Id, out var latest));
+        Assert.Equal(9, latest.CommunityRating);
+        Assert.Null(latest.Ratings);
+        Assert.Equal(7, original.CommunityRating);
+    }
+
     private sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
     {
         public override List<MediaBrowser.Model.Dto.MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => [];

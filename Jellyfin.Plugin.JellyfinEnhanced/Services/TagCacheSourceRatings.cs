@@ -27,7 +27,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>Publish a key-availability transition using existing MDBList data, without network I/O.</summary>
-        internal void RefreshRatingSourceAvailability() => RefreshSourceRatings();
+        internal void RefreshRatingSourceAvailability()
+        {
+            _rebuildLock.Wait();
+            try { RefreshSourceRatings(); }
+            finally { _rebuildLock.Release(); }
+        }
 
         /// <summary>Cache-only projection for batch DTOs, cache builds and native posters. Children use the series.</summary>
         public TagSourceRatings? GetSourceRatings(BaseItem item)
@@ -77,9 +82,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 Math.Max(MdblistService.SafetyMargin, config.MdblistFetchReserve), null, cancellationToken).GetAwaiter().GetResult();
         }
 
-        /// <summary>Publish changed source facts even when the library metadata itself has not changed.</summary>
+        /// <summary>Publish changed source facts under the caller's rebuild lock, including the reader mutation scope.</summary>
         private void RefreshSourceRatings()
         {
+            using var writes = BeginInPlaceWrites();
             var changed = false;
             foreach (var pair in _cache)
             {
