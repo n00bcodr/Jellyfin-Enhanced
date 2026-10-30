@@ -416,3 +416,20 @@ test('closing drops the window listeners: a resize after close changes nothing a
   h.preset('large').click();
   assert.deepEqual(h.size(), [1260, 810]);
 });
+
+
+for (const event of ['pointerup', 'pointercancel', 'lostpointercapture']) test(`second pointer cannot replace or end a drag through ${event}`, async t => {
+  const h = setup(t);
+  await h.open();
+  const grip = h.grip();
+  h.pointer(grip, 'pointerdown', 10, 10);
+  h.pointer(grip, 'pointerdown', 100, 100, { pointerId: 2 });
+  h.pointer(grip, 'pointermove', 200, 200, { pointerId: 2 });
+  h.pointer(grip, event, 200, 200, { pointerId: 2 });
+  assert.equal(h.panel().classList.contains('je-panel-resizing'), true);
+  h.pointer(grip, 'pointermove', 20, 20);
+  assert.deepEqual(h.size(), [1062, 742], 'first pointer retains its original origin');
+  h.pointer(grip, event, 20, 20);
+  assert.equal(h.panel().classList.contains('je-panel-resizing'), false);
+  assert.equal(JSON.parse(h.stored()).width, 1062);
+});

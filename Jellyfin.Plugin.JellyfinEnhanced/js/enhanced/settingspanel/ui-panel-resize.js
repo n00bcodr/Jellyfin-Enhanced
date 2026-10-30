@@ -275,7 +275,7 @@
 
         handles.forEach((handle) => {
             handle.addEventListener('pointerdown', (e) => {
-                if (e.button !== 0 || !desktop.matches) return;
+                if (drag || e.button !== 0 || !desktop.matches) return;
                 e.preventDefault();
                 e.stopPropagation();
                 const rect = help.getBoundingClientRect();
@@ -301,9 +301,11 @@
                 drag.moved = true;
                 setBox(clampSize(width, height));
             });
-            handle.addEventListener('pointerup', endDrag);
-            handle.addEventListener('pointercancel', endDrag);
-            handle.addEventListener('lostpointercapture', endDrag);
+            /** Only the pointer that owns the drag may finish it. */
+            const endOwnedDrag = (e) => { if (drag && e.pointerId === drag.pointerId) endDrag(); };
+            handle.addEventListener('pointerup', endOwnedDrag);
+            handle.addEventListener('pointercancel', endOwnedDrag);
+            handle.addEventListener('lostpointercapture', endOwnedDrag);
         });
 
         // Arrow keys on the grip: Left/Right change the width, Up/Down the
