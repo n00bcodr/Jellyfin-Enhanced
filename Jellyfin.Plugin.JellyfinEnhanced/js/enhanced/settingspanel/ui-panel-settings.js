@@ -41,6 +41,19 @@
     };
 
     /**
+     * Remove one tag group from every card after its toggle is switched off:
+     * through the layout controller (which also drops its pill facts, dots
+     * and hover copies), plus any wrapper it does not manage.
+     * @param {string} group - Layout group id (e.g. 'ageRating').
+     * @param {string} containerClass - The group's wrapper class.
+     */
+    const removeTagGroup = (group, containerClass) => {
+        JE.core?.tagLayout?.removeGroupEverywhere(group);
+        document.querySelectorAll(`.${containerClass}`).forEach(el => el.remove());
+        restackTagCorners();
+    };
+
+    /**
      * Wires the feature toggles, quality-tag category controls and subtitle
      * styling/position controls of the Settings tab.
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
@@ -63,8 +76,7 @@
                         }
                     } else {
                         // Remove all tags if disabling
-                        document.querySelectorAll('.quality-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('quality', 'quality-overlay-container');
                     }
                     requiresRefresh = false; // No longer needs refresh
                 } else if (id === 'genreTagsToggle') {
@@ -73,8 +85,7 @@
                             JE.initializeGenreTags();
                         }
                     } else {
-                        document.querySelectorAll('.genre-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('genre', 'genre-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'languageTagsToggle') {
@@ -83,8 +94,7 @@
                             JE.initializeLanguageTags();
                         }
                     } else {
-                        document.querySelectorAll('.language-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('language', 'language-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'ratingTagsToggle') {
@@ -93,8 +103,7 @@
                             JE.initializeRatingTags();
                         }
                     } else {
-                        document.querySelectorAll('.rating-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('rating', 'rating-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'ageRatingTagsToggle') {
@@ -103,8 +112,7 @@
                             JE.initializeAgeRatingTags();
                         }
                     } else {
-                        document.querySelectorAll('.age-rating-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('ageRating', 'age-rating-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'statusTagsToggle') {
@@ -113,8 +121,7 @@
                             JE.initializeStatusTags();
                         }
                     } else {
-                        document.querySelectorAll('.status-overlay-container').forEach(el => el.remove());
-                        restackTagCorners();
+                        removeTagGroup('status', 'status-overlay-container');
                     }
                     requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
@@ -361,6 +368,21 @@
         addSettingToggleListener('statusTagsToggle', 'statusTagsEnabled', 'feature_status_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
+        // --- Tag layout and label density ---
+        // Either choice promotes a document saved before layouts existed to the
+        // normalized version (its corners, positions and limits carry over),
+        // then every card is re-presented from the facts it already holds.
+        const saveTagLayoutSetting = (key, value) => {
+            JE.currentSettings[key] = value;
+            JE.currentSettings.tagLayoutSettingsVersion = 1;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            if (typeof JE.reinitializeTagLayout === 'function') JE.reinitializeTagLayout();
+            JE.toast(JE.t('toast_tag_layout_updated'));
+            resetAutoCloseTimer();
+        };
+        document.getElementById('tagLayoutSelect')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLayout', e.target.value));
+        document.getElementById('tagLabelDensitySelect')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLabelDensity', e.target.value));
+
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
         const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
         if (hideOnHoverCheckbox) {
@@ -704,6 +726,32 @@
         document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
 
         // --- Position Selectors ---
+        /**
+         * Mirror a corner pick into the corners layout profile (the position
+         * setting stays the source Native Poster Tags read), promoting the
+         * document to the normalized layout settings.
+         * @param {string} settingKey - e.g. 'ageRatingTagsPosition'.
+         * @param {string} position - top-left | top-right | bottom-left | bottom-right.
+         */
+        const writeCornersSlot = (settingKey, position) => {
+            const layout = JE.core?.tagLayout;
+            if (!layout) return;
+            const group = Object.keys(layout.POSITION_SETTINGS).find((g) => layout.POSITION_SETTINGS[g].userKey === settingKey);
+            const slot = layout.POSITION_TO_SLOT[position];
+            if (!group || !slot) return;
+            const profiles = JE.currentSettings.tagLayouts && typeof JE.currentSettings.tagLayouts === 'object'
+                ? { ...JE.currentSettings.tagLayouts } : {};
+            const corners = profiles.corners || profiles.Corners || {};
+            const groups = (Array.isArray(corners.groups) ? corners.groups : Array.isArray(corners.Groups) ? corners.Groups : [])
+                .filter((entry) => layout.normalizeGroup(entry?.group ?? entry?.Group) !== group);
+            groups.push({ group, slot });
+            delete profiles.Corners;
+            profiles.corners = { groups };
+            JE.currentSettings.tagLayouts = profiles;
+            JE.currentSettings.tagLayoutSettingsVersion = 1;
+            layout.invalidateSettings();
+        };
+
         const positionSelectors = help.querySelectorAll('.position-selector');
         positionSelectors.forEach(selector => {
             const settingKey = selector.dataset.setting;
@@ -731,6 +779,7 @@
 
                 const newPos = cell.dataset.pos;
                 JE.currentSettings[settingKey] = newPos;
+                writeCornersSlot(settingKey, newPos);
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 updateHighlight();
 

@@ -362,6 +362,32 @@
                                     <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags_desc'))}</div></div>
                                 </label>
                             </div>` : ''}
+                            ${(() => {
+                                // Effective values (a document from before layouts shows corners / full).
+                                const tagLayout = JE.core?.tagLayout?.normalizeSettings() || { layout: 'corners', density: 'full' };
+                                const selectStyle = `width:100%; margin-top:auto; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;`;
+                                const layouts = ['corners', 'bands', 'caption', 'summary', 'minimal'];
+                                return `
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <div style="display:flex; flex-wrap:wrap; gap:12px;">
+                                    <div style="flex: 2 1 220px; min-width:0; display:flex; flex-direction:column;">
+                                        <label for="tagLayoutSelect" style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_tag_layout'))}</label>
+                                        <div id="tagLayoutSelectDesc" style="font-size:12px; color:rgba(255,255,255,0.6); margin:2px 0 8px;">${escapeHtml(JE.t('panel_settings_ui_tag_layout_desc'))}</div>
+                                        <select id="tagLayoutSelect" aria-describedby="tagLayoutSelectDesc" style="${selectStyle}">
+                                            ${layouts.map((id) => `<option value="${id}" ${tagLayout.layout === id ? 'selected' : ''}>${escapeHtml(JE.t(`panel_settings_ui_tag_layout_${id}`))}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div style="flex: 1 1 140px; min-width:0; display:flex; flex-direction:column;">
+                                        <label for="tagLabelDensitySelect" style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_tag_density'))}</label>
+                                        <div id="tagLabelDensityDesc" style="font-size:12px; color:rgba(255,255,255,0.6); margin:2px 0 8px;">${escapeHtml(JE.t('panel_settings_ui_tag_density_desc'))}</div>
+                                        <select id="tagLabelDensitySelect" aria-describedby="tagLabelDensityDesc" style="${selectStyle}">
+                                            <option value="full" ${tagLayout.density !== 'compact' ? 'selected' : ''}>${escapeHtml(JE.t('panel_settings_ui_tag_density_full'))}</option>
+                                            <option value="compact" ${tagLayout.density === 'compact' ? 'selected' : ''}>${escapeHtml(JE.t('panel_settings_ui_tag_density_compact'))}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>`;
+                            })()}
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
                                     <div style="display: flex; align-items: center; gap: 12px;">
