@@ -3,7 +3,8 @@
  * settings refresh, dragging, auto-close, tab switching; delegates the
  * HTML template and section wiring to the ui-panel-*.js modules.
  * The host owns the one dialog contract every section relies on: dialog
- * semantics, initial focus, Tab kept inside, focus given back on close, and
+ * semantics, initial focus, Tab kept inside, the page behind inert while it
+ * is open, focus given back on close, and
  * the settings search (sections add their controls through ctx.registerSearch).
  * Split from ui.js (code motion; bodies verbatim).
  */
@@ -136,6 +137,49 @@
             while (panelMediaCleanups.length) panelMediaCleanups.pop()();
         };
 
+        // --- The page behind is inert while the dialog is open ---------
+        // Tab containment alone lets a click or a script move focus to the
+        // page behind. Every other child of <body> present at open time gets
+        // `inert` (no focus, clicks or screen-reader reach); a focusin guard
+        // and a mousedown guard cover browsers without inert support and a
+        // click on inert content blurring to <body>. Nodes added later (the
+        // release notes card the panel opens, toasts) stay usable.
+        /** @type {HTMLElement[]} body children this panel made inert */
+        const inertBackground = [];
+        /** @type {HTMLElement|null} the last control focused inside the dialog */
+        let lastFocusInside = null;
+        /** @param {EventTarget|null} target @returns {boolean} */
+        const isBackground = (target) => target instanceof Node && !help.contains(target)
+            && inertBackground.some((node) => node.contains(target));
+        const trackFocusInside = (e) => {
+            if (e.target instanceof HTMLElement && e.target !== help) lastFocusInside = e.target;
+        };
+        const guardFocus = (e) => {
+            if (!isBackground(e.target)) return;
+            const back = lastFocusInside && lastFocusInside.isConnected && help.contains(lastFocusInside) ? lastFocusInside : help;
+            back.focus({ preventScroll: true });
+        };
+        const guardPointer = (e) => {
+            // Keep focus where it is: a press on the inert page would blur to <body>.
+            if (isBackground(e.target)) e.preventDefault();
+        };
+        const holdBackground = () => {
+            for (const node of Array.from(document.body.children)) {
+                if (node === help || !(node instanceof HTMLElement) || node.hasAttribute('inert')) continue;
+                node.setAttribute('inert', '');
+                inertBackground.push(node);
+            }
+            help.addEventListener('focusin', trackFocusInside);
+            document.addEventListener('focusin', guardFocus, true);
+            document.addEventListener('mousedown', guardPointer, true);
+        };
+        const releaseBackground = () => {
+            while (inertBackground.length) inertBackground.pop().removeAttribute('inert');
+            help.removeEventListener('focusin', trackFocusInside);
+            document.removeEventListener('focusin', guardFocus, true);
+            document.removeEventListener('mousedown', guardPointer, true);
+        };
+
         /**
          * Close this panel: every close path (Escape/?, the close button,
          * auto-close, the toggle) goes through here.
@@ -145,6 +189,8 @@
             if (closeOpenPanel === closePanel) closeOpenPanel = null;
             help.remove();
             runPanelCleanups();
+            // Before giving focus back: an inert opener can't take it.
+            releaseBackground();
             if (opener && opener.isConnected) opener.focus({ preventScroll: true });
             document.removeEventListener('keydown', closeHelp);
             document.removeEventListener('mousemove', handleMouseMove);
@@ -252,6 +298,7 @@
 
         document.body.appendChild(help);
         closeOpenPanel = closePanel;
+        holdBackground();
         // The dialog itself takes focus first (no ring: it is not a control).
         help.focus({ preventScroll: true });
 

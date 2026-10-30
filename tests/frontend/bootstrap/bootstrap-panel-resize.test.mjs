@@ -347,6 +347,62 @@ test('focus containment holds with the new controls: Tab wraps from the grip to 
   assert.equal(h.document.activeElement, opener);
 });
 
+test('the page behind is inert while the dialog is open: outside focus comes back, the grip stays in the trap, close releases it', async t => {
+  const h = setup(t);
+  const opener = h.$('#opener');
+  opener.focus();
+  await h.open();
+  const panel = h.panel();
+  assert.equal(opener.hasAttribute('inert'), true, 'the page behind is inert');
+  assert.equal(panel.hasAttribute('inert'), false);
+  assert.equal(panel.closest('[inert]'), null, 'the dialog itself is not');
+  assert.equal(h.grip().closest('[inert]'), null, 'the grip is inside the dialog');
+  assert.equal(h.preset('large').closest('[inert]'), null, 'so are the size presets');
+
+  // A script (or a browser without inert) focusing the page behind: focus comes back to where it was.
+  const grip = h.grip();
+  grip.focus();
+  opener.focus();
+  assert.equal(h.document.activeElement, grip, 'focus returns to the last control inside');
+  const press = new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  opener.dispatchEvent(press);
+  assert.equal(press.defaultPrevented, true, 'a press on the page behind does not blur the dialog');
+  const inside = new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  h.preset('large').dispatchEvent(inside);
+  assert.equal(inside.defaultPrevented, false, 'presses inside the dialog are untouched');
+  // Tab containment still runs through the grip.
+  h.key(grip, 'Tab');
+  assert.equal(h.document.activeElement, h.preset('default'));
+
+  // Something the panel opens later (release notes card, toasts) is not held.
+  const card = h.document.createElement('button');
+  h.document.body.appendChild(card);
+  card.focus();
+  assert.equal(h.document.activeElement, card);
+
+  h.close();
+  assert.equal(opener.hasAttribute('inert'), false, 'close releases the page');
+  assert.equal(h.document.activeElement, opener, 'focus goes back to the opener');
+  card.focus();
+  opener.focus();
+  assert.equal(h.document.activeElement, opener, 'the page is focusable again');
+  const after = new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
+  opener.dispatchEvent(after);
+  assert.equal(after.defaultPrevented, false, 'and its presses are no longer guarded');
+});
+
+test('an element that was already inert before the panel opened stays inert after it closes', async t => {
+  const h = setup(t);
+  const already = h.document.createElement('div');
+  already.setAttribute('inert', '');
+  h.document.body.appendChild(already);
+  await h.open();
+  await h.JE.showEnhancedPanel(); // the toggle closes it
+  assert.equal(h.panel(), null);
+  assert.equal(already.hasAttribute('inert'), true);
+  assert.equal(h.$('#opener').hasAttribute('inert'), false);
+});
+
 test('closing drops the window listeners: a resize after close changes nothing and a new panel wires its own', async t => {
   const h = setup(t);
   await h.open();
