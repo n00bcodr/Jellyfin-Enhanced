@@ -454,9 +454,16 @@
         caps[group] = Math.max(0, Math.min(MAX_CAP, cap));
         JE.currentSettings.tagGroupCaps = caps;
         saveLayout();
-        // Genre entries cached by older versions hold three genres; re-render
-        // so a larger cap refills them (the renderer treats them as misses).
-        if (group === 'genre' && JE.currentSettings.genreTagsEnabled && typeof JE.reinitializeGenreTags === 'function') {
+        if (group === 'genre') refillGenres();
+    }
+
+    /**
+     * Genre entries cached by older versions hold three genres; re-render so a
+     * larger cap refills them (the renderer treats them as misses). Called after
+     * any change that can raise the genre cap.
+     */
+    function refillGenres() {
+        if (JE.currentSettings.genreTagsEnabled && typeof JE.reinitializeGenreTags === 'function') {
             JE.reinitializeGenreTags();
         }
     }
@@ -501,6 +508,7 @@
             JE.currentSettings[pos.userKey] = p[pos.pluginKey] || pos.fallback;
         }
         saveLayout();
+        refillGenres();
     }
 
     // ── Live preview ───────────────────────────────────────────────────

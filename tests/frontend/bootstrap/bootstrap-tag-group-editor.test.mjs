@@ -186,6 +186,22 @@ test('reset restores the administrator\'s layout defaults and keeps the enable t
   assert.equal(h.toasts.at(-1), 'toast_tag_layout_reset');
 });
 
+test('reset refills genre caches truncated by an older cap when genres are enabled', async t => {
+  const plugin = { TagGroupCaps: { Genre: 5 } };
+  const h = setup(t, { plugin, stored: { tagLayoutSettingsVersion: 1, genreTagsEnabled: true, tagGroupCaps: { genre: 1 } } });
+  h.calls.length = 0;
+  await h.click(h.$('#jeTgeReset'));
+  assert.ok(h.calls.includes('reinitializeGenreTags'), 'reset re-renders genre tags so a larger cap refills three-genre cache entries');
+});
+
+test('reset leaves genre tags alone when the group is off', async t => {
+  const plugin = { TagGroupCaps: { Genre: 5 } };
+  const h = setup(t, { plugin, stored: { tagLayoutSettingsVersion: 1, genreTagsEnabled: false, tagGroupCaps: { genre: 1 } } });
+  h.calls.length = 0;
+  await h.click(h.$('#jeTgeReset'));
+  assert.ok(!h.calls.includes('reinitializeGenreTags'));
+});
+
 test('the preview re-renders through the layout controller on every editor change', async t => {
   const h = setup(t, { stored: { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true, ratingTagsEnabled: true, statusTagsEnabled: true, genreTagsEnabled: false } });
   const host = h.preview();
