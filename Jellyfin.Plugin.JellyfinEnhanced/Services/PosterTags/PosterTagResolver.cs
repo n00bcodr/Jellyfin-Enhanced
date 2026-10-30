@@ -69,20 +69,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var groups = new List<PosterTagGroupLayout>(5);
             PosterTagGroupLayout? reviewOnly = null;
 
-            PosterTagGroupLayout? quality = settings.QualityTagsEnabled ? ResolveQuality(entry, settings) : null;
+            PosterTagGroupLayout? quality = settings.Shows(PosterTagGroup.Quality) ? ResolveQuality(entry, settings) : null;
             if (quality is not null && !settings.UsesJellyfinAudioPreference) groups.Add(quality);
 
-            if (settings.GenreTagsEnabled && GenreIcons.Resolve(entry.Genres) is { } genres)
+            if (settings.Shows(PosterTagGroup.Genre) && GenreIcons.Resolve(entry.Genres, settings.GenreCap) is { } genres)
             {
                 groups.Add(Group(PosterTagGroup.Genre, settings, genres));
             }
 
-            if (settings.RatingTagsEnabled)
+            if (settings.Shows(PosterTagGroup.Rating))
             {
                 var cardType = string.IsNullOrEmpty(context.ItemType) ? entry.Type : context.ItemType;
                 if (!RatingRules.IsExcludedByScope(cardType, settings))
                 {
-                    var rating = RatingRules.ResolveScores(entry);
+                    var rating = RatingRules.ResolveScores(entry, settings);
                     var review = context.UserReviewCount is null
                         ? null
                         : RatingRules.ResolveUserReview(entry, settings, context.UserReviewCount == 0 ? null : context.UserReviewAverage);
@@ -100,13 +100,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 }
             }
 
-            if (settings.AgeRatingTagsEnabled && AgeRatingRules.Resolve(entry.OfficialRating) is { } age)
+            if (settings.Shows(PosterTagGroup.AgeRating) && AgeRatingRules.Resolve(entry.OfficialRating) is { } age)
             {
                 groups.Add(Group(PosterTagGroup.AgeRating, settings, new List<PosterTag>(1) { age }));
             }
 
-            if (settings.LanguageTagsEnabled
-                && LanguageFlagRules.Resolve(entry.AudioLanguages, entry.PartialAudioLanguages, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict, settings.LanguageMergeRegions) is { } flags)
+            if (settings.Shows(PosterTagGroup.Language)
+                && LanguageFlagRules.Resolve(entry.AudioLanguages, entry.PartialAudioLanguages, settings.LanguagePriorityTerms, settings.LanguagePriorityStrict, settings.LanguageMergeRegions, settings.LanguageCap) is { } flags)
             {
                 var tags = new List<PosterTag>(flags.Count);
                 foreach (var flag in flags)
@@ -120,6 +120,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (quality is not null && settings.UsesJellyfinAudioPreference) groups.Add(quality);
             if (reviewOnly is not null) groups.Add(reviewOnly);
             if (groups.Count == 0) return null;
+
+            // An explicit priority order replaces arrival order: groups sharing a corner stack in it
+            // (core/tag-layout.js rankOf). List.Sort is unstable, but every group appears once.
+            if (settings.GroupOrder is { } order)
+            {
+                groups.Sort((a, b) => IndexOf(order, a.Group).CompareTo(IndexOf(order, b.Group)));
+            }
 
             return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles);
         }
@@ -162,11 +169,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return Group(PosterTagGroup.Quality, settings, list);
         }
 
+        /// <summary>
+        /// The group with the user's cap applied to its final chips (core/tag-layout.js
+        /// applyDensityAndCap: the first N chips stay, 0 keeps all). Genre and language apply
+        /// their caps while resolving, where the cap also decides which chips are checked.
+        /// </summary>
         private static PosterTagGroupLayout Group<T>(PosterTagGroup group, PosterTagSettings settings, List<T> tags)
             where T : PosterTag
         {
-            IReadOnlyList<PosterTag> list = tags is List<PosterTag> same ? same : tags.ConvertAll(t => (PosterTag)t);
+            List<PosterTag> list = tags is List<PosterTag> same ? same : tags.ConvertAll(t => (PosterTag)t);
+            var cap = settings.CapOf(group);
+            if (cap > 0 && list.Count > cap) list.RemoveRange(cap, list.Count - cap);
             return new PosterTagGroupLayout(group, PosterTagSettings.CornerOf(settings.PositionOf(group)), list);
+        }
+
+        private static int IndexOf(IReadOnlyList<PosterTagGroup> order, PosterTagGroup group)
+        {
+            for (var i = 0; i < order.Count; i++)
+            {
+                if (order[i] == group) return i;
+            }
+
+            return order.Count;
         }
     }
 }

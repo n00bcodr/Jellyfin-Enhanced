@@ -19,21 +19,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         public const string Dash = "\u2014";
 
         /// <summary>
-        /// The critic and community chips (critic first). Empty when the entry carries neither
-        /// rating; the web then creates no rating container of its own.
+        /// The critic and community chips (critic first), each only when the user includes it
+        /// (<c>ratingTagsShowCritic</c> / <c>ratingTagsShowCommunity</c>). Empty when none is left;
+        /// the web then creates no rating container of its own.
         /// </summary>
-        public static List<PosterTag> ResolveScores(TagCacheEntry entry)
+        public static List<PosterTag> ResolveScores(TagCacheEntry entry, PosterTagSettings settings)
         {
             var tags = new List<PosterTag>(2);
             // normalizeCriticPercent: Number.isFinite fails for NaN and the infinities, no chip.
-            if (entry.CriticRating is { } criticRaw && float.IsFinite(criticRaw))
+            if (settings.RatingTagsShowCritic && entry.CriticRating is { } criticRaw && float.IsFinite(criticRaw))
             {
                 var critic = Math.Max(0, Math.Min(100, JsText.MathRound(JsText.FloatAsJsNumber(criticRaw))));
                 var percent = (int)critic;
                 tags.Add(new RatingTag(PosterRatingSource.Critic, percent.ToString(CultureInfo.InvariantCulture) + "%", percent >= FreshThreshold));
             }
 
-            if (entry.CommunityRating is { } communityRaw)
+            if (settings.RatingTagsShowCommunity && entry.CommunityRating is { } communityRaw)
             {
                 // parseFloat(v).toFixed(1); "0.0" (no data) shows a dash.
                 var text = JsText.ToFixed(JsText.FloatAsJsNumber(communityRaw), 1);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -38,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "3";
+        public const string ResolverVersion = "4";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -52,8 +53,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The user's effective <c>useNativePosterTags</c> (on unless the user switched it off).</summary>
         public bool UseNativePosterTags { get; private init; }
 
-        /// <summary>True when at least one of the five card tag groups is on.</summary>
-        public bool AnyGroupEnabled => QualityTagsEnabled || GenreTagsEnabled || LanguageTagsEnabled || RatingTagsEnabled || AgeRatingTagsEnabled;
+        /// <summary>True when at least one of the five card tag groups is on and not set to "off" in the corners layout.</summary>
+        public bool AnyGroupEnabled => Shows(PosterTagGroup.Quality) || Shows(PosterTagGroup.Genre) || Shows(PosterTagGroup.Language)
+            || Shows(PosterTagGroup.Rating) || Shows(PosterTagGroup.AgeRating);
 
         /// <summary>
         /// Stable lowercase hex hash (16 characters) over every rendering-relevant effective value,
@@ -80,7 +82,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Effective <c>ageRatingTagsEnabled</c>.</summary>
         public bool AgeRatingTagsEnabled { get; private init; }
 
-        /// <summary>Quality position string as the web resolves it (user, else admin, else "top-left").</summary>
+        /// <summary>
+        /// Groups the user set to "off" in their corners layout profile: the web's corners layout
+        /// does not draw them, so native posters (always corner-based) leave them out too.
+        /// </summary>
+        public IReadOnlySet<PosterTagGroup> OffGroups { get; private init; } = new HashSet<PosterTagGroup>();
+
+        /// <summary>
+        /// The user's group priority order (stacking order within a shared corner), or null for the
+        /// web's arrival order. Only an explicit order counts (the user's, else the administrator's
+        /// default) in a document saved with the layout settings; a document from before layouts
+        /// keeps arrival order, as on the web.
+        /// </summary>
+        public IReadOnlyList<PosterTagGroup>? GroupOrder { get; private init; }
+
+        /// <summary>Most quality chips shown (0 = unlimited).</summary>
+        public int QualityCap { get; private init; }
+
+        /// <summary>Most genre chips shown (0 = unlimited; default 3).</summary>
+        public int GenreCap { get; private init; } = 3;
+
+        /// <summary>Most language flags shown (0 = unlimited; default 3).</summary>
+        public int LanguageCap { get; private init; } = 3;
+
+        /// <summary>Most rating chips shown, user-review chip included (0 = unlimited).</summary>
+        public int RatingCap { get; private init; }
+
+        /// <summary>Most age rating chips shown (0 = unlimited; there is only ever one).</summary>
+        public int AgeRatingCap { get; private init; } = 1;
+
+        /// <summary>
+        /// Quality position string as the web resolves it: the user's corners profile slot when it
+        /// names a corner, else the position setting (user, else admin, else "top-left").
+        /// </summary>
         public string QualityTagsPosition { get; private init; } = "top-left";
 
         /// <summary>Genre position string (default "top-right").</summary>
@@ -167,6 +201,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Effective <c>ratingTagsOnNextUp</c>. Not applied: an image request does not know the home row.</summary>
         public bool RatingTagsOnNextUp { get; private init; } = true;
 
+        /// <summary>Effective <c>ratingTagsShowCommunity</c>: the community (star) score chip.</summary>
+        public bool RatingTagsShowCommunity { get; private init; } = true;
+
+        /// <summary>Effective <c>ratingTagsShowCritic</c>: the critic (tomato) score chip.</summary>
+        public bool RatingTagsShowCritic { get; private init; } = true;
+
         /// <summary>Admin <c>LanguageTagsPriority</c> as the web's lowercase term list.</summary>
         public IReadOnlyList<string> LanguagePriorityTerms { get; private init; } = Array.Empty<string>();
 
@@ -191,14 +231,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// changes the drawing, so callers can leave it out of cache keys.
         /// </summary>
         public bool HasTopRightGroup =>
-            (QualityTagsEnabled && IsTopRight(QualityTagsPosition))
-            || (GenreTagsEnabled && IsTopRight(GenreTagsPosition))
-            || (RatingTagsEnabled && IsTopRight(RatingTagsPosition))
-            || (AgeRatingTagsEnabled && IsTopRight(AgeRatingTagsPosition))
-            || (LanguageTagsEnabled && IsTopRight(LanguageTagsPosition));
+            (Shows(PosterTagGroup.Quality) && IsTopRight(QualityTagsPosition))
+            || (Shows(PosterTagGroup.Genre) && IsTopRight(GenreTagsPosition))
+            || (Shows(PosterTagGroup.Rating) && IsTopRight(RatingTagsPosition))
+            || (Shows(PosterTagGroup.AgeRating) && IsTopRight(AgeRatingTagsPosition))
+            || (Shows(PosterTagGroup.Language) && IsTopRight(LanguageTagsPosition));
 
-        /// <summary>Whether the user-review chip can appear: reviews, posters chip and rating tags all on.</summary>
-        public bool UserReviewChipEnabled => ShowUserReviews && ShowUserRatingOnPosters && RatingTagsEnabled;
+        /// <summary>Whether the user-review chip can appear: reviews, posters chip and a shown rating group.</summary>
+        public bool UserReviewChipEnabled => ShowUserReviews && ShowUserRatingOnPosters && Shows(PosterTagGroup.Rating);
 
         /// <summary>
         /// Builds the effective settings from the text of the user's settings.json, read exactly as
@@ -292,6 +332,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var preferredChoice = user.QualityTagsPreferredAudioLanguage ?? string.Empty;
             var (preferred, usesJellyfin) = ResolvePreferredAudioLanguage(preferredChoice, config, jellyfinAudioLanguagePreference);
             var useNative = user.UseNativePosterTags != false;
+            var layout = ResolveLayout(user, config);
 
             var settings = new PosterTagSettings
             {
@@ -302,11 +343,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsEnabled = user.LanguageTagsEnabled,
                 RatingTagsEnabled = user.RatingTagsEnabled,
                 AgeRatingTagsEnabled = user.AgeRatingTagsEnabled,
-                QualityTagsPosition = Position(user.QualityTagsPosition, config.QualityTagsPosition, "top-left"),
-                GenreTagsPosition = Position(user.GenreTagsPosition, config.GenreTagsPosition, "top-right"),
-                LanguageTagsPosition = Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
-                RatingTagsPosition = Position(user.RatingTagsPosition, config.RatingTagsPosition, "bottom-right"),
-                AgeRatingTagsPosition = Position(user.AgeRatingTagsPosition, config.AgeRatingTagsPosition, "bottom-right"),
+                QualityTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Quality) ?? Position(user.QualityTagsPosition, config.QualityTagsPosition, "top-left"),
+                GenreTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Genre) ?? Position(user.GenreTagsPosition, config.GenreTagsPosition, "top-right"),
+                LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
+                RatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Rating) ?? Position(user.RatingTagsPosition, config.RatingTagsPosition, "bottom-right"),
+                AgeRatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.AgeRating) ?? Position(user.AgeRatingTagsPosition, config.AgeRatingTagsPosition, "bottom-right"),
+                OffGroups = layout.Off,
+                GroupOrder = layout.Order,
+                QualityCap = layout.Cap("quality"),
+                GenreCap = layout.Cap("genre"),
+                LanguageCap = layout.Cap("language"),
+                RatingCap = layout.Cap("rating"),
+                AgeRatingCap = layout.Cap("ageRating"),
                 ShowResolutionTag = user.ShowResolutionTag,
                 ShowSourceTag = user.ShowSourceTag,
                 ShowDynamicRangeTag = user.ShowDynamicRangeTag,
@@ -328,6 +376,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsOnEpisodes = user.RatingTagsOnEpisodes,
                 RatingTagsOnContinueWatching = user.RatingTagsOnContinueWatching,
                 RatingTagsOnNextUp = user.RatingTagsOnNextUp,
+                RatingTagsShowCommunity = user.RatingTagsShowCommunity,
+                RatingTagsShowCritic = user.RatingTagsShowCritic,
                 LanguagePriorityTerms = LanguageFlagRules.ParsePriorityTerms(config.LanguageTagsPriority),
                 LanguagePriorityStrict = config.LanguageTagsPriorityStrict,
                 LanguageMergeRegions = config.LanguageTagsMergeRegions,
@@ -351,6 +401,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ? (isLeft ? PosterTagCorner.TopLeft : PosterTagCorner.TopRight)
                 : (isLeft ? PosterTagCorner.BottomLeft : PosterTagCorner.BottomRight);
         }
+
+        /// <summary>Whether a group is drawn: switched on and not set to "off" in the corners layout.</summary>
+        /// <param name="group">The tag group.</param>
+        /// <returns>True when the group is drawn.</returns>
+        public bool Shows(PosterTagGroup group) => !OffGroups.Contains(group) && group switch
+        {
+            PosterTagGroup.Quality => QualityTagsEnabled,
+            PosterTagGroup.Genre => GenreTagsEnabled,
+            PosterTagGroup.Rating => RatingTagsEnabled,
+            PosterTagGroup.AgeRating => AgeRatingTagsEnabled,
+            _ => LanguageTagsEnabled,
+        };
+
+        /// <summary>The most chips a group shows (0 = unlimited).</summary>
+        /// <param name="group">The tag group.</param>
+        /// <returns>The cap.</returns>
+        public int CapOf(PosterTagGroup group) => group switch
+        {
+            PosterTagGroup.Quality => QualityCap,
+            PosterTagGroup.Genre => GenreCap,
+            PosterTagGroup.Rating => RatingCap,
+            PosterTagGroup.AgeRating => AgeRatingCap,
+            _ => LanguageCap,
+        };
 
         /// <summary>The effective position string of a group.</summary>
         /// <param name="group">The tag group.</param>
@@ -407,6 +481,92 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return (fixedLanguage.Length > 0 ? fixedLanguage : null, fromUser);
         }
 
+        /// <summary>The layout group id (TagLayoutRules) of a native group.</summary>
+        private static string LayoutGroupId(PosterTagGroup group) => group switch
+        {
+            PosterTagGroup.Quality => "quality",
+            PosterTagGroup.Genre => "genre",
+            PosterTagGroup.Rating => "rating",
+            PosterTagGroup.AgeRating => "ageRating",
+            _ => "language",
+        };
+
+        /// <summary>
+        /// core/tag-layout.js normalizeSettings, reduced to what native posters use (they always draw
+        /// the corners layout, with full labels, whatever the web layout is): the user's own corners
+        /// profile (a corner slot overrides the position setting, "off" hides the group; the
+        /// administrator's corners profile never applies, the position settings stand for it), the
+        /// explicit priority order and the caps. A document from before layouts (version 0) keeps
+        /// arrival order and the built-in caps.
+        /// </summary>
+        private static NativeLayout ResolveLayout(JellyfinEnhancedUserSettings user, PluginConfiguration config)
+        {
+            var legacy = user.TagLayoutSettingsVersion < 1;
+            var corners = new Dictionary<PosterTagGroup, string>();
+            var off = new HashSet<PosterTagGroup>();
+            var profile = TagLayoutRules.NormalizeProfile("corners", user.TagLayouts?.Corners);
+            foreach (var group in Enum.GetValues<PosterTagGroup>())
+            {
+                var slot = profile?.Groups.Find(g => g.Group == LayoutGroupId(group))?.Slot;
+                if (slot == "off") off.Add(group);
+                else if (slot is not null && CornerSlotPositions.TryGetValue(slot, out var position)) corners[group] = position;
+            }
+
+            List<PosterTagGroup>? order = null;
+            var explicitOrder = legacy ? null : TagLayoutRules.NormalizeOrder(user.TagGroupOrder) ?? TagLayoutRules.NormalizeOrder(config.TagGroupOrder);
+            if (explicitOrder is not null)
+            {
+                // Complete the order as the web does (missing groups follow in the default order),
+                // then keep the five native groups.
+                var complete = explicitOrder.Concat(TagLayoutRules.DefaultGroupOrder.Where(g => !explicitOrder.Contains(g, StringComparer.Ordinal)));
+                order = complete
+                    .Select(id => Enum.GetValues<PosterTagGroup>().Cast<PosterTagGroup?>().FirstOrDefault(g => LayoutGroupId(g!.Value) == id))
+                    .Where(g => g.HasValue)
+                    .Select(g => g!.Value)
+                    .ToList();
+            }
+
+            var userCaps = legacy ? null : TagLayoutRules.NormalizeCaps(user.TagGroupCaps);
+            var adminCaps = legacy ? null : TagLayoutRules.NormalizeCaps(config.TagGroupCaps);
+            return new NativeLayout(corners, off, order, userCaps, adminCaps);
+        }
+
+        /// <summary>The position strings the corners layout's slots stand for (core/tag-layout.js SLOT_TO_POSITION).</summary>
+        private static readonly IReadOnlyDictionary<string, string> CornerSlotPositions = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["tl"] = "top-left",
+            ["tr"] = "top-right",
+            ["bl"] = "bottom-left",
+            ["br"] = "bottom-right",
+        };
+
+        /// <summary>The native-relevant part of a user's layout settings.</summary>
+        private sealed record NativeLayout(
+            IReadOnlyDictionary<PosterTagGroup, string> Corners,
+            IReadOnlySet<PosterTagGroup> Off,
+            IReadOnlyList<PosterTagGroup>? Order,
+            TagGroupCaps? UserCaps,
+            TagGroupCaps? AdminCaps)
+        {
+            /// <summary>A group's cap: user, else administrator, else the built-in limit.</summary>
+            public int Cap(string group) => Pick(UserCaps, group) ?? Pick(AdminCaps, group) ?? group switch
+            {
+                "genre" => 3,
+                "language" => 3,
+                "ageRating" => 1,
+                _ => 0,
+            };
+
+            private static int? Pick(TagGroupCaps? caps, string group) => group switch
+            {
+                "quality" => caps?.Quality,
+                "genre" => caps?.Genre,
+                "language" => caps?.Language,
+                "rating" => caps?.Rating,
+                _ => caps?.AgeRating,
+            };
+        }
+
         private static bool IsTopRight(string position) => string.Equals(position, "top-right", StringComparison.Ordinal);
 
         /// <summary>resolvePosition: user value, else admin value, else the hard-coded default (empty strings fall through).</summary>
@@ -454,8 +614,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsOnEpisodes = config.RatingTagsOnEpisodes,
                 RatingTagsOnContinueWatching = config.RatingTagsOnContinueWatching,
                 RatingTagsOnNextUp = config.RatingTagsOnNextUp,
+                RatingTagsShowCommunity = config.RatingTagsShowCommunity,
+                RatingTagsShowCritic = config.RatingTagsShowCritic,
                 AgeRatingTagsPosition = config.AgeRatingTagsPosition,
             };
+            TagLayoutRules.ApplyDefaults(defaults, config);
 
             // SaveUserConfiguration writes nulls; GetUserConfiguration skips them on the way back,
             // so a null admin string comes back as the JellyfinEnhancedUserSettings initializer value.
@@ -472,11 +635,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ["language.enabled"] = Bool(LanguageTagsEnabled),
                 ["rating.enabled"] = Bool(RatingTagsEnabled),
                 ["ageRating.enabled"] = Bool(AgeRatingTagsEnabled),
+                ["order"] = GroupOrder is null ? string.Empty : string.Join(",", GroupOrder),
             };
 
-            if (QualityTagsEnabled)
+            // A group set to "off" draws nothing, so (like a disabled group) its other values stay out.
+            foreach (var group in OffGroups)
+            {
+                values[LayoutGroupId(group) + ".off"] = "1";
+            }
+
+            if (Shows(PosterTagGroup.Quality))
             {
                 values["quality.position"] = QualityTagsPosition;
+                values["quality.cap"] = Int(QualityCap);
                 values["quality.show.resolution"] = Bool(ShowResolutionTag);
                 values["quality.show.source"] = Bool(ShowSourceTag);
                 values["quality.show.dynamicRange"] = Bool(ShowDynamicRangeTag);
@@ -493,22 +664,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["quality.registeredLate"] = Bool(UsesJellyfinAudioPreference);
             }
 
-            if (GenreTagsEnabled)
+            if (Shows(PosterTagGroup.Genre))
             {
                 values["genre.position"] = GenreTagsPosition;
+                values["genre.cap"] = Int(GenreCap);
             }
 
-            if (LanguageTagsEnabled)
+            if (Shows(PosterTagGroup.Language))
             {
                 values["language.position"] = LanguageTagsPosition;
+                values["language.cap"] = Int(LanguageCap);
                 values["language.priority"] = string.Join(",", LanguagePriorityTerms);
                 values["language.priorityStrict"] = Bool(LanguagePriorityStrict);
                 values["language.mergeRegions"] = Bool(LanguageMergeRegions);
             }
 
-            if (RatingTagsEnabled)
+            if (Shows(PosterTagGroup.Rating))
             {
                 values["rating.position"] = RatingTagsPosition;
+                values["rating.cap"] = Int(RatingCap);
+                values["rating.showCommunity"] = Bool(RatingTagsShowCommunity);
+                values["rating.showCritic"] = Bool(RatingTagsShowCritic);
                 values["rating.onMovies"] = Bool(RatingTagsOnMovies);
                 values["rating.onSeries"] = Bool(RatingTagsOnSeries);
                 values["rating.onSeasons"] = Bool(RatingTagsOnSeasons);
@@ -517,9 +693,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["rating.userReviewDash"] = Bool(UserReviewChipEnabled && ShowUserRatingDash);
             }
 
-            if (AgeRatingTagsEnabled)
+            if (Shows(PosterTagGroup.AgeRating))
             {
                 values["ageRating.position"] = AgeRatingTagsPosition;
+                values["ageRating.cap"] = Int(AgeRatingCap);
             }
 
             if (!Styles.IsEmpty)
