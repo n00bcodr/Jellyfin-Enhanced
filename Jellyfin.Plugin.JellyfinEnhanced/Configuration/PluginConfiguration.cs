@@ -153,6 +153,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             StatusTagsTrending = true;
             StatusTagsJustAddedDays = 7;
             StatusTagsNewReleaseDays = 30;
+            TagLayout = "corners";
+            TagLayouts = null;
+            TagGroupOrder = null;
+            TagGroupCaps = null;
+            TagLabelDensity = "full";
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -760,6 +765,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int StatusTagsJustAddedDays { get; set; } = 7;
         /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>
         public int StatusTagsNewReleaseDays { get; set; } = 30;
+        /// <summary>Starting poster tag layout for new users (corners, bands, caption, summary, minimal).</summary>
+        [AnalyticsInclude]
+        public string TagLayout { get; set; } = "corners";
+        /// <summary>Starting slot profiles per layout; null uses the built-in profiles (corners follows the position settings).</summary>
+        public TagLayoutProfiles? TagLayouts { get; set; }
+        /// <summary>Starting group priority order; null uses arrival order on corners and the built-in order elsewhere.</summary>
+        public List<string>? TagGroupOrder { get; set; }
+        /// <summary>Starting per-group chip limits; null uses the built-in limits.</summary>
+        public TagGroupCaps? TagGroupCaps { get; set; }
+        /// <summary>Starting label density (full or compact).</summary>
+        [AnalyticsInclude]
+        public string TagLabelDensity { get; set; } = "full";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

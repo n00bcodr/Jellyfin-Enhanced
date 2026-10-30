@@ -76,6 +76,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool StatusTagsJustAdded { get; set; } = true;
         public bool StatusTagsNewRelease { get; set; } = true;
         public bool StatusTagsTrending { get; set; } = true;
+        // Poster tag layout (see TagLayoutRules). Version 0 marks a document
+        // written before layouts existed: it keeps the corners layout, its
+        // position settings above, arrival ordering and the original limits
+        // until the user saves a layout setting, which writes version 1.
+        public string TagLayout { get; set; } = "corners";
+        public int TagLayoutSettingsVersion { get; set; }
+        public TagLayoutProfiles? TagLayouts { get; set; }
+        public List<string>? TagGroupOrder { get; set; }
+        public TagGroupCaps? TagGroupCaps { get; set; }
+        public string TagLabelDensity { get; set; } = "full";
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

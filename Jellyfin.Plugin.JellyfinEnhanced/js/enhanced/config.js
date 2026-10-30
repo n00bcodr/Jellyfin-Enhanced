@@ -130,6 +130,8 @@
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right', ageRatingTagsPosition: 'bottom-right', statusTagsPosition: 'top-right',
             ratingTagsOnMovies: true, ratingTagsOnSeries: true, ratingTagsOnSeasons: true, ratingTagsOnEpisodes: true, ratingTagsOnContinueWatching: true, ratingTagsOnNextUp: true,
             statusTagsJustAdded: true, statusTagsNewRelease: true, statusTagsTrending: true,
+            // Poster tag layout scalars (0 = a document from before layouts; see core/tag-layout.js).
+            tagLayout: 'corners', tagLabelDensity: 'full', tagLayoutSettingsVersion: 0,
             qualityTagsPreferredAudioLanguage: '',
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
@@ -200,6 +202,18 @@
                 }
             }
         }
+
+        // Structured layout settings: the loop above treats object values as
+        // corrupt, so these are carried over explicitly. A missing or malformed
+        // value is null, meaning "inherit" — core/tag-layout.js resolves it
+        // (user → admin default → built-in) without writing the derived
+        // value back, so a legacy document stays legacy until the user saves
+        // a layout setting.
+        for (const key of ['tagLayouts', 'tagGroupCaps']) {
+            const value = userSettings[key];
+            mergedSettings[key] = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+        }
+        mergedSettings.tagGroupOrder = Array.isArray(userSettings.tagGroupOrder) ? userSettings.tagGroupOrder : null;
 
         mergedSettings.displayLanguage = Object.prototype.hasOwnProperty.call(userSettings, 'displayLanguage')
             && userSettings.displayLanguage !== null && userSettings.displayLanguage !== undefined

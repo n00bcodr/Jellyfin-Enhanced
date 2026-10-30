@@ -3760,6 +3760,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsTrending,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
+                // Poster tag layout starting defaults (normalized; null = built-in)
+                TagLayout = TagLayoutRules.NormalizeLayout(config.TagLayout),
+                TagLayouts = TagLayoutRules.NormalizeProfiles(config.TagLayouts),
+                TagGroupOrder = TagLayoutRules.NormalizeOrder(config.TagGroupOrder),
+                TagGroupCaps = TagLayoutRules.NormalizeCaps(config.TagGroupCaps),
+                TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
                 config.ShowRatingInPlayer,
 
                 config.TagsCacheTtlDays,
@@ -5244,6 +5250,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CalendarDefaultViewMode = "agenda",
                         LastOpenedTab = "shortcuts"
                     };
+                    TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
                     _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
@@ -5308,8 +5315,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            if (userConfiguration == null)
+            {
+                return BadRequest(new { success = false, message = "Missing settings document." });
+            }
+
             try
             {
+                // Unknown layouts, groups and slots are normalized away and caps
+                // clamped, so a stale client cannot store an unusable layout.
+                TagLayoutRules.Normalize(userConfiguration);
+
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
                 var changes = new System.Collections.Generic.List<string>();
@@ -8236,6 +8252,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 CalendarDefaultViewMode = "agenda",
                 LastOpenedTab = "shortcuts"
             };
+            TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
 
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();
