@@ -1128,6 +1128,7 @@
     "admin_tags_conflict": "Changed elsewhere: {fields}",
     "admin_tags_keep_mine": "Keep mine",
     "admin_tags_take_theirs": "Take theirs",
+    "admin_tags_load_failed": "The Media Tags settings could not be loaded from the server.",
     "admin_tags_leave_title": "Media Tags changes not saved",
     "admin_tags_leave_confirm": "These Media Tags changes could not be saved: {fields}. Go back to the Media Tags page to retry? They stay waiting there either way.",
     "admin_tags_undo": "Undo",

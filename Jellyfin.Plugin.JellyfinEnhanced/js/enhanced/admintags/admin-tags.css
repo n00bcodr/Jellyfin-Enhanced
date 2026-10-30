@@ -284,6 +284,7 @@
 .je-ta-snack { position: fixed; left: 50%; bottom: 24px; z-index: 1000; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px); padding: 10px 12px 10px 16px; border-radius: 8px; background: #2b2f36; color: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); font-size: 14px; }
 .je-ta-snack .je-ta-button { min-height: 32px; color: #7fd3ff; border-color: transparent; background: transparent; }
 .je-ta-wait { padding: 40px 0; color: var(--je-ta-muted); }
+.je-ta-load-error p { margin: 0 0 12px; color: var(--je-ta-text); }
 .je-ta-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ── The Tag Styles editor (moved from the main configuration page) ── */

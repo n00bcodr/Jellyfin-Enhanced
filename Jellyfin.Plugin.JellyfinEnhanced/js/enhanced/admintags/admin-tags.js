@@ -1065,6 +1065,10 @@
             let config;
             try {
                 config = await ApiClient.getPluginConfiguration(PLUGIN_ID);
+            } catch (err) {
+                console.error('🪼 Jellyfin Enhanced: could not load the Media Tags settings', err);
+                showLoadError(page, root);
+                return null;
             } finally {
                 Dashboard.hideLoadingMsg?.();
             }
@@ -1073,9 +1077,27 @@
             return ctx;
         }).catch((err) => {
             console.error('🪼 Jellyfin Enhanced: the Media Tags page failed to load', err);
+            const root = page.querySelector('.je-tag-admin');
+            if (root) showLoadError(page, /** @type {HTMLElement} */ (root));
             return null;
         });
         return queue;
+    }
+
+    /**
+     * The settings could not be loaded: say so in the page, with Retry
+     * (which activates the page again), instead of the loading line.
+     * @param {HTMLElement} page
+     * @param {HTMLElement} root
+     */
+    function showLoadError(page, root) {
+        root.innerHTML = `<div class="je-ta-wait je-ta-load-error" role="alert"><p>${tx('admin_tags_load_failed')}</p>`
+            + `<button type="button" class="je-ta-button" data-je-reload><span class="material-icons" aria-hidden="true">refresh</span>${tx('admin_tags_retry')}</button></div>`;
+        const retry = /** @type {HTMLButtonElement} */ (root.querySelector('[data-je-reload]'));
+        retry.addEventListener('click', () => {
+            retry.disabled = true;
+            activate(page);
+        }, { once: true });
     }
 
     /**

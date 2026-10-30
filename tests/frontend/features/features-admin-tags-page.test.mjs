@@ -400,6 +400,27 @@ test('the page shown again while a save is on its way keeps the value being save
   assert.equal(ctx.pending(), false);
 });
 
+test('the settings failing to load show an error with Retry, not an endless loading line', async t => {
+  const server = structuredClone(BASE);
+  let fail = true;
+  const h = boot(t, { server, apiClient: { getPluginConfiguration: async () => { if (fail) throw new Error('offline'); return structuredClone(server); } } });
+  h.expectConsoleError(/could not load the Media Tags settings/);
+  h.document.body.innerHTML = '<div class="page" id="JellyfinEnhancedMediaTagsPage"><div class="je-tag-admin"><p class="je-ta-wait" role="status">Loading Media Tags settings…</p></div></div>';
+  const page = h.document.querySelector('.page');
+  const root = page.querySelector('.je-tag-admin');
+  assert.equal(await h.A.activate(page), null);
+  assert.equal(root.querySelector('[role="status"]'), null, 'the loading line is gone');
+  assert.match(root.querySelector('[role="alert"]').textContent, /admin_tags_load_failed/);
+  fail = false;
+  root.querySelector('[data-je-reload]').click();
+  for (let i = 0; i < 50 && !root.querySelector('.je-ta-tabs'); i++) await h.settle();
+  assert.ok(root.querySelector('.je-ta-tabs'), 'Retry builds the page');
+  assert.equal(root.querySelector('[role="alert"]'), null);
+  const ctx = await h.A.activate(page);
+  h.cleanup.push(() => ctx.dispose());
+  assert.equal(ctx.root, root);
+});
+
 test('tabs follow the WAI pattern and deep links open a tab and a group', async t => {
   const h = setup(t, { url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups&group=rating' });
   assert.equal(h.root.dataset.tab, 'groups');
