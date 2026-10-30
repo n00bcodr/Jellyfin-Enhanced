@@ -3867,6 +3867,21 @@
                 // sessionStorage unavailable (private mode / quota / security) — skip restore.
             }
 
+            // Deep link from the settings panel's Media Tags hub
+            // (#/configurationpage?name=…&jeSection=<id>): open the tab that
+            // holds the section and scroll to it. Only these ids are accepted.
+            const JE_SECTION_LINKS = ['tagLayoutAdminDetails', 'statusTagsAdminDetails', 'tagStylesEnabled', 'tagCacheServerMode', 'nativePosterTagsEnabled'];
+            function jeOpenRequestedSection() {
+                let id = null;
+                try { id = new URLSearchParams(window.location.hash.split('?')[1] || '').get('jeSection'); } catch (e) { return; }
+                if (!id || !JE_SECTION_LINKS.includes(id)) return;
+                const target = document.getElementById(id);
+                const tab = target && target.closest('.jellyfin-tab-content');
+                if (tab) jeJumpToTab(tab.id, '#' + id);
+            }
+            jeOpenRequestedSection();
+            page.addEventListener('pageshow', jeOpenRequestedSection);
+
             // === Setting-description visibility toggle ===
             // Some admins want the full explanatory text under every setting;
             // others (who know the plugin) want a compact page. Persist the
