@@ -58,9 +58,13 @@ Keep each field on **one line** starting `{ id: '…', key: '…', type: '…'` 
 | `place: 'section'` | The section draws the control itself with `A.fieldHtml(f, config)`; the page still binds it. |
 | `break: true` | Start a new box before this field. |
 
+A section whose own editors write fields that are not declared as above (the layout editor's profiles, order and caps; the Tag Styles document and preset; excluded library ids; the clear-cache signal) names them on one line: `writes: ['TagLayouts', 'TagGroupOrder', 'TagGroupCaps'],`.
+
+These declarations are the page's whole field list. `JE.adminTags.pageFields()` collects them and the page refuses to save anything else; `Helpers/MediaTagsPageFields.cs` reads the same declarations from the embedded modules, and `POST /JellyfinEnhanced/admin/configuration` answers `400` for any other field, so API keys and the rest of the configuration stay with the main page. `tests/fixtures/admin-tags-page-fields.json` is the expected list; a frontend and a backend test compare both sides with it, so a new field means a declaration and a line there.
+
 ## Porting a control from the main configuration page
 
-1. Declare the field in the section that owns it, with the old id.
+1. Declare the field in the section that owns it, with the old id, and add its key to `tests/fixtures/admin-tags-page-fields.json`.
 2. Delete its markup, load/save lines, `PARENT_DEPS` entry and any helper from `configPage.html`. `buildConfigFromForm` starts from the saved configuration, so a field the main page no longer touches keeps its value.
 3. Run `python3 scripts/generate_config_flag_groups.py` and `python3 tests/inventory/generate.py`; commit the regenerated files.
 4. Add the field's behaviour to `tests/frontend/features/features-admin-tags-page.test.mjs` (the first test exercises every declared field automatically).

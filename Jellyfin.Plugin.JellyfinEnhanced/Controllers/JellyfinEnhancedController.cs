@@ -8578,12 +8578,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// Saves a few plugin configuration fields on top of the configuration the server holds now (the Media Tags
         /// page saves field by field). It reads and writes inside the same critical section as every other save, so
         /// it never puts back an older value of a field it was not asked to change, even one another save (the main
-        /// configuration page's) wrote while this request was waiting.
+        /// configuration page's) wrote while this request was waiting. Only the Media Tags page's own fields
+        /// (<see cref="MediaTagsPageFields"/>) are accepted; every other field stays with the main page's full save.
         /// A field listed in <c>Expected</c> with the value the caller read before editing it is refused with 409 and
         /// the server's value when that value has changed since; nothing is written then. Admin only.
         /// </summary>
         /// <param name="request">The changed fields and, per field, the value read before the edit.</param>
-        /// <returns>200 with the stored values, 400 for an unknown field or bad value, 409 with the conflicts.</returns>
+        /// <returns>200 with the stored values, 400 for a field the page does not own or a bad value, 409 with the conflicts.</returns>
         [HttpPost("admin/configuration")]
         [Authorize]
         [Produces("application/json")]
@@ -8594,7 +8595,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (plugin == null) return StatusCode(503);
             if (request?.Changes == null || request.Changes.Count == 0) return BadRequest(new { error = "No changes." });
 
-            var result = PluginConfigurationPatch.Apply(plugin, request.Changes, request.Expected);
+            var result = PluginConfigurationPatch.Apply(plugin, request.Changes, request.Expected, MediaTagsPageFields.Allowed);
             if (result.Error != null) return BadRequest(new { error = result.Error });
             if (result.Conflicts.Count > 0) return Conflict(new { conflicts = result.Conflicts });
             return Ok(new { values = result.Values });

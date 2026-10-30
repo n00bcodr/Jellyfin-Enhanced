@@ -21,6 +21,7 @@
         order: 10,
         title: 'admin_tags_server_cache',
         hint: 'admin_tags_server_cache_desc',
+        writes: ['ClearLocalStorageTimestamp', 'TagCacheExcludedLibraryIds'],
         fields: [
             { id: 'tagCacheServerMode', key: 'TagCacheServerMode', type: 'switch', label: 'admin_tags_server_cache_on', desc: 'admin_tags_server_cache_on_desc', read: (v) => v !== false, onChange: (on) => (on ? {} : { EnableTagsLocalStorageFallback: true }) },
             { id: 'tagCacheExcludeLibraries', key: 'TagCacheExcludeLibraries', type: 'switch', label: 'admin_tags_server_exclude', desc: 'admin_tags_server_exclude_desc', when: (c) => c.TagCacheServerMode !== false },

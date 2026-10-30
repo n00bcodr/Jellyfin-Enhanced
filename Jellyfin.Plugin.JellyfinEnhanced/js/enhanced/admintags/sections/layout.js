@@ -211,6 +211,7 @@
         order: 20,
         title: 'admin_tags_layout_groups',
         hint: 'admin_tags_layout_groups_desc',
+        writes: ['TagLayouts', 'TagGroupOrder', 'TagGroupCaps'],
         fields: [
             { id: 'qualityTagsPosition', key: 'QualityTagsPosition', type: 'custom', label: 'admin_tags_position_quality' },
             { id: 'genreTagsPosition', key: 'GenreTagsPosition', type: 'custom', label: 'admin_tags_position_genre' },

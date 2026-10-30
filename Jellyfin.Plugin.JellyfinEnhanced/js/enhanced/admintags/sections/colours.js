@@ -21,6 +21,7 @@
         order: 10,
         title: 'admin_tags_colours_title',
         hint: 'admin_tags_colours_desc',
+        writes: ['TagStyleOverrides', 'TagStylePreset'],
         fields: [
             { id: 'tagStylesEnabled', key: 'TagStylesEnabled', type: 'switch', label: 'admin_tags_colours_enabled', desc: 'admin_tags_colours_enabled_desc' },
             { id: 'tagStyleTarget', key: 'TagStyleTarget', type: 'pills', label: 'admin_tags_colours_target', desc: 'admin_tags_colours_target_desc', options: [['web', 'admin_tags_style_target_web'], ['native', 'admin_tags_style_target_native'], ['both', 'admin_tags_style_target_both']], read: (v) => (['web', 'native', 'both'].includes(v) ? v : 'both'), when: (c) => c.TagStylesEnabled === true },

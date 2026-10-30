@@ -13,6 +13,7 @@
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="../fixtures/source-edition-names.json" LogicalName="SourceEditionNames.json" />
+    <EmbeddedResource Include="../fixtures/admin-tags-page-fields.json" LogicalName="AdminTagsPageFields.json" />
     <ProjectReference Include="../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />

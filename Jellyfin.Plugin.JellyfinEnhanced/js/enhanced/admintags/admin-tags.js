@@ -19,6 +19,12 @@
  * fields to write, when(config) (disabled unless true), visible(config)
  * (hidden unless true), place: 'section' (the section draws it with
  * A.fieldHtml; the page still binds it) and break (start a new box).
+ * A section whose own editors write fields that are not declared above
+ * names them in `writes: ['Field', …]` (one line).
+ *
+ * These declarations are the only fields the page writes: pageFields()
+ * collects them, and the server's patch (Helpers/MediaTagsPageFields.cs)
+ * accepts the same list, read from the same declarations, and nothing else.
  *
  * Every change writes the field into the page's working copy and saves it
  * on its own after a short pause, through POST JellyfinEnhanced/admin/configuration:
@@ -110,6 +116,23 @@
         sections.push(def);
         const tabIndex = (s) => TABS.findIndex((t) => t.id === s.tab);
         sections.sort((a, b) => (tabIndex(a) - tabIndex(b)) || ((a.order || 0) - (b.order || 0)));
+    }
+
+    /**
+     * The PluginConfiguration fields the page writes: every declared field's
+     * key (and an ordered field's orderKey) and each section's `writes`.
+     * @returns {Set<string>}
+     */
+    function pageFields() {
+        const out = new Set();
+        for (const s of sections) {
+            for (const f of s.fields || []) {
+                out.add(f.key);
+                if (f.orderKey) out.add(f.orderKey);
+            }
+            for (const key of s.writes || []) out.add(key);
+        }
+        return out;
     }
 
     /**
@@ -606,6 +629,8 @@
         };
         store.views.add(onStore);
 
+        /** The fields this page may write (the server accepts no others). */
+        const owned = pageFields();
         /**
          * Write configuration fields, save them and redraw what depends on them.
          * @param {Object<string, *>} values - Field → value.
@@ -616,6 +641,11 @@
             if (disposed) return;
             let edited = false;
             for (const [key, value] of Object.entries(values)) {
+                if (!owned.has(key)) {
+                    // The server refuses it anyway: a section writing an undeclared field is a bug.
+                    console.error(`🪼 Jellyfin Enhanced: the Media Tags page does not declare ${key}; not saved`);
+                    continue;
+                }
                 // Editors hand back whole documents (the layout writes its order, caps and
                 // profiles together): a field that did not change is not an edit, so it
                 // neither saves nor can conflict with another administrator's change.
@@ -1177,6 +1207,7 @@
         PLUGIN_ID,
         sections,
         registerSection,
+        pageFields,
         seedUser,
         pageUrl,
         mainPageUrl,

@@ -179,6 +179,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPageFields.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PluginConfigurationPatch.cs",
       "category": "Helpers"
     },
@@ -8853,7 +8857,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 404,
+    "files": 405,
     "routes": 184,
     "configuration_properties": 631,
     "storage_references": 75,

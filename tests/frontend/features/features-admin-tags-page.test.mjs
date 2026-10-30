@@ -228,6 +228,22 @@ test('every old-form control writes exactly its own field (oracle from the old f
   assert.deepEqual(OLD_FORM.unmapped, ['ratingTagsSources', 'tagLayout', 'tagShapeLandscapeDefault', 'tagShapeListDefault', 'tagLookRulesJson', 'clearTagsCacheBtn', 'tagStyleResetAll', 'rebuildTagCacheBtn']);
 });
 
+/** The fields the page owns, which the server's patch also allows (tests/fixtures/admin-tags-page-fields.json). */
+const PAGE_FIELDS = JSON.parse(readFileSync(new URL('../../fixtures/admin-tags-page-fields.json', import.meta.url), 'utf8')).fields;
+
+test('the page writes only the fields its sections declare, the list the server allows', async t => {
+  const h = setup(t);
+  assert.deepEqual(plain([...h.A.pageFields()].sort()), PAGE_FIELDS);
+  // Every old-form field is one of them.
+  for (const key of Object.values(OLD_FORM.fields)) assert.ok(PAGE_FIELDS.includes(key), key);
+  // A section writing a field it did not declare: refused here, before the server would refuse it.
+  h.expectConsoleError(/does not declare TMDB_API_KEY/);
+  h.ctx.setMany({ TMDB_API_KEY: 'other', TagsHideOnHover: true });
+  await h.save();
+  assert.deepEqual(h.patches.map((p) => p.Changes), [{ TagsHideOnHover: true }]);
+  assert.equal(h.server.TMDB_API_KEY, 'key');
+});
+
 test('a save sends only the changed fields, each with the value read before the edit', async t => {
   const h = setup(t);
   // Another admin (or the main configuration page) changed two fields meanwhile.
@@ -938,6 +954,8 @@ test('each section module is a self-contained file the page loads, and every dec
     const text = readFileSync(resolve(dir, file), 'utf8');
     for (const line of text.split('\n')) {
       if (/^\s*\{ id: '/.test(line)) assert.match(line, /^\s*\{ id: '\w+', key: '\w+', type: '\w+'.*label: '\w+'/, `${file}: ${line.trim().slice(0, 60)}`);
+      // Helpers/MediaTagsPageFields.cs reads a section's own writes from one line too.
+      if (/^\s*writes:/.test(line)) assert.match(line, /^\s*writes: \['\w+'(, '\w+')*\],$/, `${file}: ${line.trim()}`);
     }
   }
 });

@@ -162,6 +162,68 @@ public class ApiMediaTagsPageTests
         Assert.False(f.Plugin.Configuration.TagsHideOnHover);
     }
 
+    /// <summary>The page's fields (tests/fixtures/admin-tags-page-fields.json, which the page's own list must equal too).</summary>
+    private static List<string> PageFields()
+    {
+        using var stream = typeof(ApiMediaTagsPageTests).Assembly.GetManifestResourceStream("AdminTagsPageFields.json")!;
+        using var json = System.Text.Json.JsonDocument.Parse(stream);
+        return json.RootElement.GetProperty("fields").EnumerateArray().Select(e => e.GetString()!).ToList();
+    }
+
+    [Fact]
+    public void ThePatchAcceptsExactlyTheFieldsTheSectionModulesDeclare()
+    {
+        Assert.Equal(PageFields().OrderBy(x => x, StringComparer.Ordinal), MediaTagsPageFields.Allowed.OrderBy(x => x, StringComparer.Ordinal));
+        // The declarations are read lexically: key, an ordered field's orderKey, and a section's writes.
+        const string module = """
+            A.registerSection({
+                id: 'x',
+                tab: 'groups',
+                writes: ['TagLayouts', 'TagGroupCaps'],
+                fields: [
+                    { id: 'showResolutionTag', key: 'ShowResolutionTag', type: 'ordered', orderKey: 'ResolutionTagOrder', label: 'y' },
+                ],
+            });
+            """;
+        Assert.Equal(new[] { "ResolutionTagOrder", "ShowResolutionTag", "TagGroupCaps", "TagLayouts" }, MediaTagsPageFields.Parse(new[] { module }).OrderBy(x => x, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void EveryPageFieldIsAcceptedWithItsStoredValue()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        var stored = System.Text.Json.Nodes.JsonNode.Parse(StjSerializer.Serialize(f.Plugin.Configuration, Jellyfin.Extensions.Json.JsonDefaults.Options))!.AsObject();
+        foreach (var field in PageFields())
+        {
+            var request = new JellyfinEnhancedController.ConfigurationPatchRequest { Changes = new() { [field] = StjSerializer.SerializeToElement(stored[field]) } };
+            var result = controller.PatchConfiguration(request);
+            Assert.True(result is OkObjectResult, $"{field}: {StjSerializer.Serialize((result as ObjectResult)?.Value)}");
+        }
+    }
+
+    [Fact]
+    public void FieldsThePageDoesNotOwnAreRefusedAndNothingIsWritten()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        f.Plugin.Configuration.TMDB_API_KEY = "server-key";
+        foreach (var (field, value) in new (string, object)[] { ("DevMode", true), ("TMDB_API_KEY", "posted-key"), ("MdblistApiKey", "posted-key"), ("AnalyticsInstallSecret", "posted"), ("AnalyticsEnabled", true) })
+        {
+            var refused = Assert.IsType<BadRequestObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest
+            {
+                // With a page field in the same request: refused as a whole.
+                Changes = new() { ["TagsHideOnHover"] = StjSerializer.SerializeToElement(true), [field] = StjSerializer.SerializeToElement(value) },
+            }));
+            Assert.Contains($"'{field}' is not a Media Tags setting", JsonConvert.SerializeObject(refused.Value), StringComparison.Ordinal);
+        }
+
+        Assert.False(f.Plugin.Configuration.TagsHideOnHover);
+        Assert.False(f.Plugin.Configuration.DevMode);
+        Assert.Equal("server-key", f.Plugin.Configuration.TMDB_API_KEY);
+        Assert.False(f.Plugin.Configuration.AnalyticsEnabled);
+    }
+
     /// <summary>A full save as the main configuration page posts it: the whole configuration it read, with its edits.</summary>
     private static Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration MainPageSave(ApiPluginFixture f, Action<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration> edit)
     {

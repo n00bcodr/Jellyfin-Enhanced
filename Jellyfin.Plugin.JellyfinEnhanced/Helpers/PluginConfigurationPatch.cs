@@ -40,11 +40,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <param name="plugin">The plugin.</param>
         /// <param name="changes">Field (PluginConfiguration property name) → new value.</param>
         /// <param name="expected">Field → the value the caller read before editing it (optional per field).</param>
+        /// <param name="allowed">The fields the caller may write (<see cref="MediaTagsPageFields.Allowed"/>); any other refuses the request.</param>
         /// <returns>The result.</returns>
-        public static Result Apply(JellyfinEnhanced plugin, IReadOnlyDictionary<string, JsonElement> changes, IReadOnlyDictionary<string, JsonElement>? expected)
+        public static Result Apply(JellyfinEnhanced plugin, IReadOnlyDictionary<string, JsonElement> changes, IReadOnlyDictionary<string, JsonElement>? expected, IReadOnlySet<string> allowed)
         {
             var options = JsonDefaults.Options;
             var properties = new Dictionary<string, PropertyInfo>(StringComparer.Ordinal);
+            // Every name is checked before anything is read or written.
+            foreach (var key in changes.Keys)
+            {
+                if (!allowed.Contains(key)) return new Result { Error = $"'{key}' is not a Media Tags setting; this endpoint saves only those." };
+            }
+
             foreach (var key in changes.Keys)
             {
                 var property = typeof(PluginConfiguration).GetProperty(key, BindingFlags.Public | BindingFlags.Instance);
