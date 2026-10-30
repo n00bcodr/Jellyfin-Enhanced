@@ -1,6 +1,7 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { createHarness, plain } from '../helpers/harness.mjs';
+import { createHarness, plain, jsRoot } from '../helpers/harness.mjs';
 
 /** Render through the real factory/controller using both cache and fallback DTOs. */
 function setup(t, settings = {}, plugin = {}) {
@@ -62,4 +63,17 @@ test('a disabled Awards group adds no legacy DOM or caption reservation even whe
     assert.equal(h.host.outerHTML, before);
     assert.equal(h.document.querySelector('.je-tag-caption'), null);
     assert.equal(h.document.querySelector('.awards-tag'), null);
+});
+
+
+test('dashboard list-id patterns compile under browser Unicode-sets mode and accept only provider route segments', () => {
+    const html = readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8');
+    const patterns = [...html.matchAll(/id="awardsTags(?:Imdb|Letterboxd)List"[^>]*pattern="([^"]+)"/g)];
+    assert.equal(patterns.length, 2);
+    for (const [, pattern] of patterns) {
+        const regex = new RegExp(`^(?:${pattern})$`, 'v');
+        assert.ok(regex.test('123'));
+        assert.ok(regex.test('owner-name/chart-250'));
+        for (const invalid of ['https://example.com', 'a/../b', 'owner/chart?key=value']) assert.equal(regex.test(invalid), false);
+    }
 });
