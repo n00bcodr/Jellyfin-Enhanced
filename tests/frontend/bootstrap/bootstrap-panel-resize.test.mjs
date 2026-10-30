@@ -35,7 +35,7 @@ function setup(t, { width = 1400, height = 900, stored = null, storage } = {}) {
       pluginConfig: { HelpPanelAutocloseDelay: 60000 },
       userConfig: { settings: {}, shortcuts: { Shortcuts: [] } },
       currentSettings: {},
-      t: key => key,
+      t: (key, params) => key === 'panel_size_status' ? `Panel size ${params.width} × ${params.height}` : key === 'panel_size_maximum' ? 'Maximum size reached' : key,
       keyListener() {}, initializeShortcuts() {}, state: { activeShortcuts: { x: 1 } },
       themer: { getThemeVariables: () => ({ panelBg: '#000', secondaryBg: '#111', primaryAccent: '#0af', altAccent: '#222', blur: '0px', textColor: '#fff', logo: '' }) },
     },
@@ -501,4 +501,36 @@ test('scrollbar pointer input cannot start a resize at Fill', async t => {
   assert.equal(down.defaultPrevented, false);
   assert.equal(h.panel().classList.contains('je-panel-resizing'), false);
   assert.equal(h.$('[data-je-resize="x"]'), null);
+});
+
+
+test('grip announces keyboard size and maximum through its polite localized status', async t => {
+  const h = setup(t);
+  await h.open();
+  const status = h.$('#jePanelSizeStatus');
+  assert.equal(h.grip().getAttribute('aria-describedby'), status.id);
+  assert.equal(status.getAttribute('aria-live'), 'polite');
+  assert.equal(status.getAttribute('aria-atomic'), 'true');
+  h.key(h.grip(), 'ArrowRight');
+  assert.equal(status.textContent, 'Panel size 1058 × 722');
+  h.preset('fill').click();
+  h.key(h.grip(), 'ArrowRight');
+  assert.equal(status.textContent, 'Panel size 1352 × 852. Maximum size reached');
+});
+
+test('pointer announcements coalesce for 250ms and discard pending updates on close', async t => {
+  const h = setup(t);
+  await h.open();
+  const status = h.$('#jePanelSizeStatus');
+  const initial = status.textContent;
+  h.pointer(h.grip(), 'pointerdown', 10, 10);
+  h.pointer(h.grip(), 'pointermove', 20, 20);
+  h.pointer(h.grip(), 'pointermove', 30, 30);
+  assert.equal(status.textContent, initial);
+  await new Promise(resolve => setTimeout(resolve, 280));
+  assert.equal(status.textContent, 'Panel size 1082 × 762');
+  h.pointer(h.grip(), 'pointermove', 40, 40);
+  h.close();
+  await new Promise(resolve => setTimeout(resolve, 280));
+  assert.equal(status.textContent, 'Panel size 1082 × 762', 'no announcement after teardown');
 });

@@ -72,6 +72,8 @@
     "panel_size_fill": "Fill",
     "panel_size_reset": "Reset size",
     "panel_size_grip": "Resize panel",
+    "panel_size_status": "Panel size {width} × {height}",
+    "panel_size_maximum": "Maximum size reached",
     "panel_size_grip_hint": "Drag to resize, or use the arrow keys",
     "panel_search_results": "Matching settings",
     "panel_about_title": "About",

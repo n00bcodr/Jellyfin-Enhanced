@@ -134,13 +134,14 @@
      */
     internal.buildPanelResizeHandlesHtml = function() {
         return '<div class="je-panel-edge je-panel-edge--y" data-je-resize="y" aria-hidden="true" hidden></div>'
-            + `<button type="button" class="je-panel-grip" data-je-resize="both" aria-label="${escapeHtml(JE.t('panel_size_grip'))}" title="${escapeHtml(JE.t('panel_size_grip_hint'))}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight" hidden>`
+            + `<button type="button" class="je-panel-grip" data-je-resize="both" aria-label="${escapeHtml(JE.t('panel_size_grip'))}" title="${escapeHtml(JE.t('panel_size_grip_hint'))}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight" aria-describedby="jePanelSizeStatus" hidden>`
             + '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M15 5 5 15M15 9.5 9.5 15M15 13.5 13.5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>'
-            + '</button>';
+            + '</button><span id="jePanelSizeStatus" class="je-panel-size-status" role="status" aria-live="polite" aria-atomic="true"></span>';
     };
 
     /** The panel-scoped stylesheet for the controls and the grip. */
     const RESIZE_CSS = `
+        #jellyfin-enhanced-panel .je-panel-size-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
         #jellyfin-enhanced-panel .je-panel-size { display: inline-flex; align-self: center; margin: 0 40px 0 auto; padding: 2px; gap: 2px; border-radius: 8px; background: rgba(255,255,255,0.08); }
         #jellyfin-enhanced-panel .je-panel-size[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-panel-size-btn { min-height: 26px; padding: 3px 10px; border: 0; border-radius: 6px; background: transparent; color: rgba(255,255,255,0.75); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -189,6 +190,25 @@
         document.addEventListener('je:user-changed', identityChanged);
         /** @type {{handle: HTMLElement, pointerId: number, axis: string, x: number, y: number, width: number, height: number, centred: boolean, left: number, moved: boolean}|null} */
         let drag = null;
+
+        const status = help.querySelector('#jePanelSizeStatus');
+        let announcementTimer = null;
+        let pendingAnnouncement = '';
+        /** Announce the latest size, coalescing pointer updates to one per 250ms. */
+        const announce = (box, maximum = false, coalesce = false) => {
+            pendingAnnouncement = JE.t('panel_size_status', { width: String(Math.round(box.width)), height: String(Math.round(box.height)) })
+                + (maximum ? `. ${JE.t('panel_size_maximum')}` : '');
+            const publish = () => {
+                announcementTimer = null;
+                if (status) status.textContent = pendingAnnouncement;
+            };
+            if (coalesce) {
+                if (!announcementTimer) announcementTimer = setTimeout(publish, 250);
+            } else {
+                if (announcementTimer) clearTimeout(announcementTimer);
+                publish();
+            }
+        };
 
         /** @returns {boolean} The panel was moved by its header (no longer centred). */
         const isMoved = () => help.style.transform === 'none';
@@ -246,6 +266,7 @@
                 setBox(resolveSize(size));
             }
             syncControls();
+            announce(help.getBoundingClientRect());
         };
 
         /**
@@ -313,7 +334,9 @@
                 // A moved panel is anchored top-left: its right edge stops at the gutter.
                 if (!drag.centred) width = Math.min(width, window.innerWidth - GUTTER - drag.left);
                 drag.moved = true;
-                setBox(clampSize(width, height));
+                const box = clampSize(width, height);
+                setBox(box);
+                announce(box, width > box.width || height > box.height, true);
             });
             /** Only the pointer that owns the drag may finish it. */
             const endOwnedDrag = (e) => { if (drag && e.pointerId === drag.pointerId) endDrag(); };
@@ -334,6 +357,7 @@
             const rect = help.getBoundingClientRect();
             const box = clampSize(rect.width + steps[0] * step, rect.height + steps[1] * step);
             choose({ preset: 'custom', width: box.width, height: box.height });
+            announce(box, (steps[0] > 0 && box.width <= rect.width) || (steps[1] > 0 && box.height <= rect.height));
         });
 
         // Selecting text while the pointer is captured would highlight the page.
@@ -344,6 +368,7 @@
         desktop.addEventListener('change', handleWindowResize);
         ctx.onClose(() => {
             closed = true;
+            if (announcementTimer) clearTimeout(announcementTimer);
             document.removeEventListener('je:user-changed', identityChanged);
             document.removeEventListener('selectstart', blockSelection);
             window.removeEventListener('resize', handleWindowResize);
