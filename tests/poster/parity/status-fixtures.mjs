@@ -81,4 +81,10 @@ for (const [locale, short] of Object.entries({bg:'4.10', cs:'4. 10.', es:'4 oct'
         now: Date.UTC(2026,8,20), locale, schedule: schedule(ep('2026-08-01'), ep('2026-10-04'))
     });
 }
+for (const locale of ['en-GB','en-AU','en-IN','en-CA','en-NZ','en-IE','en-ZA','es-MX','es-419','fr-CA','pt-BR','pt-PT','zh-TW','zh-HK', 'en-GB-u-ca-gregory', 'de-DE-u-co-phonebk']) {
+    const short = new Intl.DateTimeFormat(locale, {month:'short', day:'numeric', timeZone:'UTC'}).format(new Date('2026-10-04T00:00:00Z'));
+    add(`regional-short-date-${locale}`, show(), 'returns_date', `Returns ${short}`, {
+        now: Date.UTC(2026,8,20), locale, schedule: schedule(ep('2026-08-01'), ep('2026-10-04'))
+    });
+}
 export default rows;

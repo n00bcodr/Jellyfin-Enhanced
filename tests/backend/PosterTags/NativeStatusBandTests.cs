@@ -23,6 +23,28 @@ public class NativeStatusBandTests
         => Assert.Equal(expected, StatusRules.FormatShortDate(new DateOnly(2026, 10, 4), System.Globalization.CultureInfo.GetCultureInfo(locale)));
 
     [Fact]
+    public void Every_generated_browser_region_matches_native_on_calendar_boundaries()
+    {
+        using var stream = typeof(NativeStatusBandTests).Assembly.GetManifestResourceStream("NativeStatusDates.json")!;
+        var fixtures = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string[]>>(stream)!;
+        var dates = new[] { new DateOnly(2026, 1, 4), new DateOnly(2026, 3, 20), new DateOnly(2026, 3, 21), new DateOnly(2026, 10, 4) };
+        foreach (var (locale, expected) in fixtures)
+        {
+            // Test all browser enumeration entries, including regions .NET does
+            // not register for persistence. Unknown shipped `pr` uses English.
+            var culture = System.Globalization.CultureInfo.GetCultureInfo(locale.StartsWith("pr", StringComparison.Ordinal) ? "en" : locale);
+            for (var i = 0; i < dates.Length; i++)
+                Assert.True(expected[i] == StatusRules.FormatShortDate(dates[i], culture), $"{locale} {dates[i]}: {expected[i]}");
+        }
+    }
+
+    [Theory]
+    [InlineData("en-IN-posix", "4 Oct")]
+    [InlineData("zh-Hant-HK-posix", "10月4日")]
+    public void Ungenerated_variants_keep_the_closest_regional_ancestor(string locale, string expected)
+        => Assert.Equal(expected, StatusRules.FormatShortDate(new DateOnly(2026, 10, 4), System.Globalization.CultureInfo.GetCultureInfo(locale)));
+
+    [Fact]
     public void Status_urls_retire_each_five_minutes_even_when_settings_snapshot_is_cached()
     {
         var on = Settings("{statusTagsEnabled:true}");

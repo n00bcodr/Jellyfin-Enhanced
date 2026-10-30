@@ -19,13 +19,14 @@ public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Sch
 public static class StatusRules
 {
     private sealed record ShortMonth(string Template, string Month);
-    private sealed record ShortDate(string Calendar, string Digits, ShortMonth[] Months);
+    private sealed record ShortDate(string Calendar, int DayDigits, string Digits, ShortMonth[] Months);
+    private sealed record ShortDateTable(Dictionary<string, ShortDate> Formats, Dictionary<string, string> Locales);
     private sealed record Vocabulary(StatusThresholds Thresholds, Dictionary<string, BadgeDefinition> Badges);
     private sealed record BadgeDefinition(string Kind, string Style, string Label, string? Compact);
     public sealed record StatusThresholds(long DayMs, int AirsWithinDays, int WeekdayWithinDays, int ReturnGapDays,
         int ReturnsWithinDays, int JustAddedDays, int NewReleaseDays, int MinWindowDays, int MaxWindowDays);
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
-    private static readonly Dictionary<string, ShortDate> ShortDates = Read<Dictionary<string, ShortDate>>("tags.status-short-dates")!;
+    private static readonly ShortDateTable ShortDates = Read<ShortDateTable>("tags.status-short-dates")!;
     private static readonly Vocabulary Table = Read<Vocabulary>("tags.status-vocabulary")!;
     private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, string>> Locales = new(StringComparer.OrdinalIgnoreCase);
     public static StatusThresholds Thresholds => Table.Thresholds;
@@ -165,8 +166,14 @@ public static class StatusRules
     /// <summary>Browser-generated month/day order, literals, calendar and digits for shipped locales.</summary>
     internal static string FormatShortDate(DateOnly day, CultureInfo culture)
     {
-        if (!ShortDates.TryGetValue(culture.Name, out var format)
-            && !ShortDates.TryGetValue(culture.TwoLetterISOLanguageName, out format)) format = ShortDates["en"];
+        // Walk CultureInfo parents: a variant retains its regional ancestor,
+        // and a scripted culture retains that script before language fallback.
+        string? key = null;
+        for (var ancestor = culture; !string.IsNullOrEmpty(ancestor.Name); ancestor = ancestor.Parent)
+        {
+            if (ShortDates.Locales.TryGetValue(ancestor.Name, out key)) break;
+        }
+        var format = ShortDates.Formats[key ?? ShortDates.Locales["en"]];
         Calendar calendar = format.Calendar switch
         {
             "persian" => new PersianCalendar(),
@@ -176,7 +183,7 @@ public static class StatusRules
         };
         var date = day.ToDateTime(TimeOnly.MinValue);
         var month = format.Months[calendar.GetMonth(date) - 1];
-        var number = calendar.GetDayOfMonth(date).ToString(CultureInfo.InvariantCulture);
+        var number = calendar.GetDayOfMonth(date).ToString("D" + format.DayDigits, CultureInfo.InvariantCulture);
         var digits = new string(number.Select(d => format.Digits[d - '0']).ToArray());
         return month.Template.Replace("{month}", month.Month, StringComparison.Ordinal).Replace("{day}", digits, StringComparison.Ordinal);
     }

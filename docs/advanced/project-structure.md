@@ -728,6 +728,6 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 
 `Services/NativeStatusRefreshService.cs` owns scheduled and stale-read-triggered background refreshes for native status snapshots; image composition reads these snapshots without upstream requests.
 
-`scripts/generate_status_dates.mjs` generates `js/tags/status-short-dates.json` from browser Intl data for native Status month/day labels; `generate_status_vocabulary.py --check` checks both tables.
+`scripts/generate_status_dates.mjs` generates `js/tags/status-short-dates.json` from browser Intl data for native Status month/day labels, with deduplicated formats and locale-to-format mappings for every shipped language and named territory. It also generates `tests/fixtures/native-status-dates.json` for four-date regional regressions; `generate_status_vocabulary.py --check` checks both tables.
 
 `Configuration/NativePosterDateContext.cs` validates and bounds saved native locale/timezone context on assignment and document load.
