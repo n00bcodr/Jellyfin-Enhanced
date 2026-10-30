@@ -350,3 +350,15 @@ test('rating source order, minimum and colour persist through the real hub and p
   assert.deepEqual(h.saved().ratingTagsSources, ['tmdb', 'imdb', 'rtCritic', 'letterboxd']);
   assert.ok(h.preview().querySelector('[data-je-rating-source="letterboxd"] svg'));
 });
+
+test('quality row exposes all aggregation policies, inherits the admin default, and persists changes', async t => {
+  const h = setup(t, { plugin: { SeriesQualityAggregation: 'latest' } });
+  let refreshed = 0; h.JE.reinitializeQualityTags = () => refreshed++;
+  const select = h.$('#seriesQualityAggregationSelect');
+  assert.equal(select.value, 'latest');
+  assert.deepEqual([...select.options].map(option => option.value), ['representative', 'latest', 'best', 'shared', 'mixed']);
+  assert.equal(select.labels[0].textContent, 'series_quality_aggregation_label');
+  await h.change(select, 'mixed');
+  assert.equal(h.saved().seriesQualityAggregation, 'mixed');
+  assert.equal(refreshed, 1);
+});

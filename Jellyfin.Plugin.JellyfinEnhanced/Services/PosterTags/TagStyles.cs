@@ -669,6 +669,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             using var doc = Read("quality-colours.json");
             return doc.RootElement.GetProperty("labels").EnumerateObject()
                 .Select(l => (l.Name, l.Value.GetProperty("background").GetString() ?? string.Empty, l.Value.GetProperty("color").GetString() ?? "#ffffff"))
+                .Append(("Mixed", "#546e7a", "#ffffff"))
                 .ToList();
         }
 

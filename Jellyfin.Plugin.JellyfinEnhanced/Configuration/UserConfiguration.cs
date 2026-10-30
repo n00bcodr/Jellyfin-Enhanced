@@ -71,6 +71,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // "auto" = the user's Jellyfin audio language, "none" = no preference,
         // otherwise an ISO 639 code.
         public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
+        // Series/season quality aggregation. Null inherits the administrator's default.
+        public string? SeriesQualityAggregation { get; set; }
+
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
         public string RatingTagsPosition { get; set; } = "bottom-right";

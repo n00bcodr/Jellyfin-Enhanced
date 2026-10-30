@@ -235,6 +235,38 @@ public class PerfRound2TagCacheResponseTests
     }
 
     [Fact]
+    public async Task QualitySummariesAreUserScopedOnCacheAndBatchAndNeverExposeContributors()
+    {
+        var seriesId = Guid.NewGuid();
+        var lowId = Guid.NewGuid();
+        using var endpoint = new Endpoint(e => new()
+        {
+            [seriesId.ToString("N")] = new()
+            {
+                Type = "Series", StreamData = new() { Streams = [new() { Type = "Video", Height = 2160 }] },
+                QualityEpisodeIds = [e.Episode.ToString("N"), lowId.ToString("N")],
+                QualitySummary = SeriesQualityAggregation.Build([
+                    new(e.Episode.ToString("N"), 100, new() { Streams = [new() { Type = "Video", Height = 2160 }] }),
+                    new(lowId.ToString("N"), 200, new() { Streams = [new() { Type = "Video", Height = 1080 }] })]), LastUpdated = 120,
+            },
+            [lowId.ToString("N")] = new() { Type = "Episode", SeasonNumber = 1, PremiereDate = 200, StreamData = new() { Streams = [new() { Type = "Video", Height = 1080 }] }, LastUpdated = 120 },
+        });
+        endpoint.AliceAccess = [seriesId, lowId];
+        var response = await endpoint.Read(endpoint.Alice);
+        Assert.DoesNotContain("QualityEpisodeIds", response.Body);
+        using var cacheJson = JsonDocument.Parse(response.Body);
+        var container = cacheJson.RootElement.GetProperty("items").GetProperty(seriesId.ToString("N"));
+        Assert.Equal("1080p", container.GetProperty("QualitySummary").GetProperty("Categories").GetProperty("resolution").GetProperty("Best").GetString());
+        var series = new Series { Id = seriesId };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(seriesId, endpoint.Alice)).Returns(series);
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([]);
+        var batch = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(endpoint.Alice.Id, [seriesId.ToString()]));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(batch.Value));
+        Assert.Equal("1080p", json.RootElement.GetProperty("Items")[0].GetProperty("QualitySummary").GetProperty("Categories").GetProperty("resolution").GetProperty("Best").GetString());
+        Assert.DoesNotContain("QualityEpisodeIds", JsonSerializer.Serialize(batch.Value));
+    }
+
+    [Fact]
     public async Task EmptyRouteUserStillAppliesTheCallersOwnSpoilerGuard()
     {
         // An empty route id resolves to the caller; their Spoiler Guard state must

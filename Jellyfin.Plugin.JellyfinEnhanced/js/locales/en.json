@@ -1077,5 +1077,13 @@
     "rating_sources_color": "Colour by score",
     "rating_sources_up": "Move {source} up",
     "rating_sources_down": "Move {source} down",
-    "rating_sources_help": "Source scores use MDBList when an API key is configured. Minimum score compares every source on a scale of ten."
+    "rating_sources_help": "Source scores use MDBList when an API key is configured. Minimum score compares every source on a scale of ten.",
+    "series_quality_aggregation_label": "Series and seasons show:",
+    "series_quality_aggregation_representative": "Representative episode",
+    "series_quality_aggregation_latest": "Latest episode",
+    "series_quality_aggregation_best": "Best quality",
+    "series_quality_aggregation_shared": "Only what every episode has",
+    "series_quality_aggregation_mixed": "Best, marked when mixed",
+    "series_quality_mixed": "Mixed",
+    "series_quality_mixed_compact": "±"
 }

@@ -177,6 +177,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The user's own <c>qualityTagsPreferredAudioLanguage</c> choice ("" server default, "auto", "none", or a code).</summary>
         public string QualityTagsPreferredAudioLanguage { get; private init; } = string.Empty;
 
+        /// <summary>Effective series/season quality aggregation policy.</summary>
+        public string SeriesQualityAggregation { get; private init; } = "representative";
+
         /// <summary>
         /// The language whose audio tracks decide the sound tag, or null for "best track overall":
         /// the user's choice ("auto" = their Jellyfin audio language, "none" = no preference), else the
@@ -387,6 +390,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 VideoCodecTagOrder = user.VideoCodecTagOrder ?? config.VideoCodecTagOrder,
                 AudioInfoTagOrder = user.AudioInfoTagOrder ?? config.AudioInfoTagOrder,
                 QualityTagsPreferredAudioLanguage = preferredChoice,
+                SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(user.SeriesQualityAggregation ?? config.SeriesQualityAggregation),
                 PreferredAudioLanguage = preferred,
                 UsesJellyfinAudioPreference = usesJellyfin,
                 RatingTagsOnMovies = user.RatingTagsOnMovies,
@@ -637,6 +641,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 AgeRatingTagsEnabled = config.AgeRatingTagsEnabled,
                 PeopleTagsEnabled = config.PeopleTagsEnabled,
                 QualityTagsPosition = config.QualityTagsPosition,
+                SeriesQualityAggregation = config.SeriesQualityAggregation,
                 GenreTagsPosition = config.GenreTagsPosition,
                 LanguageTagsPosition = config.LanguageTagsPosition,
                 RatingTagsPosition = config.RatingTagsPosition,
@@ -698,6 +703,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["quality.order.specialFormat"] = Int(SpecialFormatTagOrder);
                 values["quality.order.videoCodec"] = Int(VideoCodecTagOrder);
                 values["quality.order.audioInfo"] = Int(AudioInfoTagOrder);
+                values["quality.seriesAggregation"] = SeriesQualityAggregation;
                 values["quality.audioLanguage"] = PreferredAudioLanguage ?? string.Empty;
                 values["quality.registeredLate"] = Bool(UsesJellyfinAudioPreference);
             }

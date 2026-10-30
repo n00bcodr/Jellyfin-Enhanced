@@ -292,6 +292,18 @@
         // (server default / my Jellyfin audio language / none) are in the
         // template; the language list comes from Jellyfin's cultures endpoint,
         // like the display-language dropdown.
+        // Series and seasons share a quality policy; the summary supports switching without refetching.
+        const aggregationSelect = document.getElementById('seriesQualityAggregationSelect');
+        if (aggregationSelect) {
+            aggregationSelect.value = JE.currentSettings.seriesQualityAggregation || 'representative';
+            aggregationSelect.addEventListener('change', () => {
+                JE.currentSettings.seriesQualityAggregation = aggregationSelect.value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.reinitializeQualityTags?.();
+                resetAutoCloseTimer();
+            });
+        }
+
         const audioLangSelect = document.getElementById('qualityTagsAudioLanguageSelect');
         if (audioLangSelect) {
             // The fixed choices exist already; a language is selected once the list loads.

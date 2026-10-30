@@ -116,6 +116,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public string[]? StatusEpisodeIds { get; set; }
 
+        // Series/season quality aggregation (schema v14). Contributors stay server-side.
+        public TagQualitySummary? QualitySummary { get; set; }
+        public string[]? QualityEpisodeIds { get; set; }
+
         public long LastUpdated { get; set; }
         // Series ID in N format (lowercase). Set for Episodes and Seasons, null
         // otherwise. Lets the Spoiler Guard filter strip cache entries for
@@ -183,6 +187,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && a.SeasonPremiere == b.SeasonPremiere
                 && a.SeasonAddedSpan == b.SeasonAddedSpan
                 && SequencesEqual(a.StatusEpisodeIds, b.StatusEpisodeIds)
+                && TagQualitySummary.ContentEquals(a.QualitySummary, b.QualitySummary)
+                && SequencesEqual(a.QualityEpisodeIds, b.QualityEpisodeIds)
                 && a.SeriesId == b.SeriesId
                 && a.LibraryId == b.LibraryId;
         }
@@ -253,6 +259,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             SeasonPremiere = SeasonPremiere,
             SeasonAddedSpan = SeasonAddedSpan,
             StatusEpisodeIds = StatusEpisodeIds,
+            QualitySummary = QualitySummary,
+            QualityEpisodeIds = QualityEpisodeIds,
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,
             LibraryId = LibraryId,

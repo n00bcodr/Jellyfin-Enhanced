@@ -339,6 +339,7 @@ void ResolveAll()
             ["ratingTagsOnSeasons"] = settings.RatingTagsOnSeasons,
             ["ratingTagsOnEpisodes"] = settings.RatingTagsOnEpisodes,
             ["qualityTagsPreferredAudioLanguage"] = settings.QualityTagsPreferredAudioLanguage,
+            ["seriesQualityAggregation"] = settings.SeriesQualityAggregation,
             ["useNativePosterTags"] = settings.UseNativePosterTags,
             ["nativeEnabled"] = settings.NativeEnabled,
             ["groupOrder"] = string.Join(",", groupOrder),

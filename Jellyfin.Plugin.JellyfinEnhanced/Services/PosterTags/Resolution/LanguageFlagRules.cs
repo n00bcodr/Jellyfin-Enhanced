@@ -357,7 +357,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         }
 
         /// <summary>media-language.js canonicalBase (undefined base stays undefined).</summary>
-        private static string? CanonicalBase(string? baseCode)
+        internal static string? CanonicalBase(string? baseCode)
         {
             if (baseCode is null) return null;
             return Iso6392To6391.TryGetValue(baseCode, out var mapped) ? mapped : LanguageNames.CanonicalLanguage(baseCode);

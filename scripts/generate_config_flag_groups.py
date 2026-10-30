@@ -173,7 +173,8 @@ class ConfigPageParser(HTMLParser):
             self._label_stack.append({
                 "for_id": attr_dict.get("for"),
                 "found_input_id": None,
-                "text_parts": [],
+                # Aggregation's label itself carries its runtime locale key.
+                "text_parts": [ENGLISH_LABELS.get(attr_dict["data-je-aggregation-label"], attr_dict["data-je-aggregation-label"])] if attr_dict.get("data-je-aggregation-label") else [],
                 "icon_skip_depth": 0,
             })
         elif self._label_stack:

@@ -28,8 +28,9 @@ public class PrivacySpoilerStripTests
         Assert.Equal(!watched, stripped);
         Assert.Equal(watched ? SpoilerTagDataStub.None : SpoilerTagDataStub.Episode, stripper.GetTagDataStub(policy, user, episode));
         if (watched) Assert.Same(source, result);
-        else { Assert.NotSame(source, result); Assert.Empty(result.Genres!); Assert.Null(result.AudioLanguages); Assert.Null(result.StreamData); Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Null(result.Ratings); }
+        else { Assert.NotSame(source, result); Assert.Empty(result.Genres!); Assert.Null(result.AudioLanguages); Assert.Null(result.StreamData); Assert.Null(result.CommunityRating); Assert.Null(result.CriticRating); Assert.Null(result.Ratings); Assert.Null(result.QualitySummary); Assert.Null(result.QualityEpisodeIds); }
         Assert.Equal(new[] { "Mystery" }, source.Genres); Assert.Equal(8f, source.CommunityRating); Assert.Equal("The killer", source.StreamData!.ItemName);
+        Assert.NotNull(source.QualitySummary); Assert.NotNull(source.QualityEpisodeIds);
         var unguarded = new UserSpoilerBlur(); unguarded.Series[Guid.NewGuid().ToString("N")] = new();
         var otherPolicy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = true }, unguarded)!;
         Assert.Same(source, stripper.StripEntry(otherPolicy, user, episode, source, out var otherStripped));
@@ -94,6 +95,7 @@ public class PrivacySpoilerStripTests
     }
 
     private static TagCacheEntry Entry(Guid seriesId) => new() { Type = "Episode", SeriesId = seriesId.ToString("N"), Genres = ["Mystery"],
+        QualitySummary = new TagQualitySummary { EpisodeCount = 2 }, QualityEpisodeIds = ["contributor"],
         CommunityRating = 8, CriticRating = 90, Ratings = new() { Imdb = 8.1 }, AudioLanguages = ["en"], StreamData = new TagStreamData { ItemName = "The killer", ItemPath = "secret.mkv",
         Streams = [new TagMediaStream { Codec = "hevc", Height = 2160, DisplayTitle = "Final reveal" }], Sources = [new TagMediaSource { Name = "The killer", Path = "secret.mkv" }] } };
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
@@ -243,6 +244,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
 
             return result;
+        }
+
+        private sealed record AudioLabel(string? Value);
+        private static readonly ConditionalWeakTable<TagMediaStream, AudioLabel> AggregationAudio = new();
+
+        /// <summary>Rank actual audio tracks for aggregation, retaining language fallback and each track's own channels.</summary>
+        internal static string? DetectAggregationAudio(TagStreamData? data, string? preferred)
+        {
+            var streams = SelectAudioStreamsForLanguage(data?.Streams?.FindAll(stream => stream?.Type == "Audio") ?? new List<TagMediaStream>(), preferred);
+            string? best = null;
+            foreach (var stream in streams)
+            {
+                var label = AggregationAudio.GetValue(stream, static item =>
+                {
+                    var track = new List<TagMediaStream>(1) { item };
+                    var codec = DetectAudioCodec(track);
+                    var channels = DetectChannels(track);
+                    return new AudioLabel(codec == null ? (channels is "7.1" or "5.1" ? channels : null)
+                        : channels != null && !codec.Contains(channels, StringComparison.Ordinal) ? codec + " " + channels : codec);
+                }).Value;
+                if (label != null && (best == null || AggregationRank(label, AudioInfo) < AggregationRank(best, AudioInfo))) best = label;
+            }
+            return best;
+        }
+
+        /// <summary>Category priority shared by the container accumulator and native resolver; richer channels break audio ties.</summary>
+        internal static int AggregationRank(string label, string category)
+        {
+            var order = category switch
+            {
+                Resolution => ResolutionOrder, DynamicRange => DynamicRangeOrder,
+                VideoCodec => CodecOrder, _ => AudioOrder,
+            };
+            var index = Array.IndexOf(order, NormalizeLabel(label));
+            var channels = label.Contains("7.1", StringComparison.Ordinal) ? 0 : label.Contains("5.1", StringComparison.Ordinal) ? 1 : 2;
+            return (index < 0 ? 999 : index) * 10 + (category == AudioInfo ? channels : 0);
         }
 
         /// <summary>Composite audio labels ("ATMOS 7.1") normalize to their base ("ATMOS").</summary>
