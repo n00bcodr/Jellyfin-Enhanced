@@ -69,6 +69,11 @@
     const reviewRatingsListeners = new Set(); // called with the changed keys (Set, or null = all) when averages change
     const PERSIST_SLICE = 250;       // entries per idle-slice write (each put clones its entry on this thread)
     const PERSIST_START_DELAY_MS = 1500; // let the page's first tag scans have the idle time before persisting
+    // Shape of the stored entries (the server's tag cache schema they were
+    // written under). A stored copy of another shape is dropped on restore and
+    // downloaded in full, so new entry fields never wait for a server rebuild
+    // that happens to change the cache version. 12: Status Tags schedule facts.
+    const STORED_ENTRY_SCHEMA = 12;
     const MEMORY_SOFT_CAP = 20000;
     const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
@@ -405,6 +410,7 @@
         const store = JE.tagCacheStore;
         const entries = Object.entries(resp.items);
         const meta = {
+            schema: STORED_ENTRY_SCHEMA,
             version: resp.version,
             timestamp: resp.timestamp,
             filterRevision: typeof resp.filterRevision === 'string' ? resp.filterRevision : '',
@@ -488,6 +494,12 @@
             const clearStamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
             if (clearStamp > (meta.clearStamp || 0)) {
                 console.log(`${logPrefix} Server triggered cache clear; dropping the stored copy`);
+                await store.clearScope(scope);
+                return false;
+            }
+            // Written under an older entry shape (missing fields a renderer reads).
+            if (meta.schema !== STORED_ENTRY_SCHEMA) {
+                console.log(`${logPrefix} Stored copy has entry schema ${meta.schema ?? 'none'}, expected ${STORED_ENTRY_SCHEMA}; dropping it`);
                 await store.clearScope(scope);
                 return false;
             }
