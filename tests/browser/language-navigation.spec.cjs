@@ -41,8 +41,14 @@ async function prepare(page, style, slot) {
   }
   return page.evaluate(async ({ style, slot, isLab }) => {
     const JE = window.JellyfinEnhanced;
+    // This navigation fixture owns its two language facts. Saved lab priorities
+    // can remove Japanese, and unrelated groups can fill Caption's two rows.
+    // Keep those policies out of the fixture without saving any preferences.
+    JE.pluginConfig = { ...JE.pluginConfig, LanguageTagsPriority: '', LanguageTagsPriorityStrict: false, LanguageTagsMergeRegions: false };
     JE.currentSettings = { ...JE.currentSettings, languageTagsEnabled: true, languageTagsShowAudio: style !== 'subtitles', languageTagsShowSubtitles: style === 'subtitles',
       languageTagsStyle: style === 'codes' ? 'codes' : 'flags', languageTagsCountBadge: style === 'badge' ? 'only' : 'off', tagsHideOnHover: false,
+      qualityTagsEnabled: false, genreTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false,
+      tagGroupOrder: ['language'], tagGroupCaps: { language: 0 }, tagLookRules: [], tagLayoutLocks: {}, tagShapeOverrides: { landscape: null, list: null },
       tagLayout: slot === 'pill' ? 'summary' : slot === 'caption' ? 'caption' : 'corners', tagLayoutSettingsVersion: 1,
       tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } };
     if (isLab) {
