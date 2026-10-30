@@ -18,7 +18,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     [
         (Token(@"(?:bd" + OptionalSeparator + @")?remux|bdremux"), "REMUX"),
         (Token(@"blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip"), "BluRay"),
-        (Token(@"web" + OptionalSeparator + @"(?:dl|rip)|web(?=" + Separator + @"(?:4320p|2160p|1080[pi]|720p|576p|480p|8k|4k|av1|hevc|[hx]" + OptionalSeparator + @"26[45])(?:$|[. _\-\[\]()]))"), "WEB"),
+        (Token(@"web" + OptionalSeparator + @"(?:dl|rip)|web(?=" + Separator + @"(?:4320p|2160p|1440p|1080[pi]|720p|576p|480p|360p|404p|384p|520p|8k|4k|av1|avc|vp9|hevc|[hx]" + OptionalSeparator + @"26[45])(?:$|[. _\-\[\]()]))"), "WEB"),
         (Token("hdtv"), "HDTV"),
         (Token(@"dvd" + OptionalSeparator + "scr"), "SCR"),
         (Token(@"dvd(?:" + OptionalSeparator + @"rip)?"), "DVD"),

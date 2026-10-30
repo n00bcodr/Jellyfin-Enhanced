@@ -348,5 +348,320 @@
     "path": "Movie.{edition-constructor}.mkv",
     "source": null,
     "edition": "constructor"
+  },
+  {
+    "path": "Movie.2020.WEB.8k.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.8kish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.8k.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4320p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4320pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.4320p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4k.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.4kish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.4k.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.2160p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.2160pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.2160p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1440p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1440pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.1440p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080i.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.1080iish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.1080i.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.720p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.720pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.720p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.576p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.576pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.576p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.480p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.480pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.480p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.360p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.360pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.360p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.404p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.404pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.404p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.384p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.384pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.384p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.520p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.520pish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.520p.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.HEVCish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.HEVC.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H265.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H265ish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.H265.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H264.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.H264ish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.H264.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AVC.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AVCish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.AVC.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AV1.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.AV1ish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.AV1.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VP9.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.VP9ish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.VP9.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x264.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x264ish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.x264.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x265.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.WEB.x265ish.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Webb.x265.mkv",
+    "source": null,
+    "edition": null
   }
 ]
