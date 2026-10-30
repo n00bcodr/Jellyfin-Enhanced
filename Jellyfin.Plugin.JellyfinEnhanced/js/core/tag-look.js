@@ -6,8 +6,8 @@
 // had when it was locked). A look is { layout, density, colourPreset, slots }.
 //
 // This module only reads, normalises, matches and saves rules and locks. The
-// decision which look a card gets (lock → first matching enabled rule → the
-// user's default layout) is made in one place, resolveLayout() in
+// decision which look a card gets (lock → first matching enabled rule → shape
+// override → the user's default layout) is made in one place, resolveLayout() in
 // core/tag-layout.js, which calls the helpers below.
 //
 // Settings (camelCase on JE.currentSettings, PascalCase on the server):
