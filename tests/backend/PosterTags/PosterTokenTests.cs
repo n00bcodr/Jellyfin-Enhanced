@@ -8,6 +8,17 @@ public class PosterTokenTests : IDisposable
     private readonly Guid item = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private PosterTagVariantToken Tokens() => PosterTagVariantToken.CreateForPath(Path.Combine(directory, "secret"), _ => { });
 
+    [Fact]
+    public void ImagesFromBeforeMixedHadANativeColourCannotReuseTheCurrentPixelToken()
+    {
+        var service = Tokens();
+        var old = service.Mint(user, item, "mixed-settings", "1.1", PosterTagVariantFlags.None, "abcdef");
+        var current = service.Mint(user, item, "mixed-settings", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.NotEqual(old, current);
+        Assert.False(service.Verify(old, user, item, "mixed-settings", PosterTagComposer.PixelVersion, out _));
+        Assert.True(service.Verify(current, user, item, "mixed-settings", PosterTagComposer.PixelVersion, out _));
+    }
+
     [Theory]
     [InlineData(PosterTagVariantFlags.None)]
     [InlineData(PosterTagVariantFlags.TopRightOffset)]
