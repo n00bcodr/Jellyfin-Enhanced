@@ -1029,3 +1029,38 @@ test('corner slots restate the containers\' card-relative size limits, so narrow
     '90% of the card, against a slot 12px shorter');
   assert.match(css, /@media \(max-width: 480px\) \{\s*[^{]+> :is\(\.quality-overlay-container, \.genre-overlay-container\) \{ max-height: calc\(85% \+ 10\.2px\); \}/);
 });
+
+
+test('all centre anchors accept legacy values, survive promotion and retain their CSS and corner hooks', t => {
+  const positions = { tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
+  for (const [slot, position] of Object.entries(positions)) {
+    const h = setup(t, { settings: { qualityTagsPosition: position } });
+    const host = h.render();
+    assert.equal(h.layout.normalizeSettings().slots.quality, slot);
+    assert.equal(groupEl(host, 'quality', slot).dataset.jeCorner, position);
+    h.layout.promoteLegacySettings(h.JE.currentSettings);
+    h.layout.invalidateSettings();
+    assert.equal(h.layout.normalizeSettings().slots.quality, slot);
+    assert.equal(h.layout.POSITION_TO_SLOT[position], slot);
+    assert.equal(h.layout.SLOT_TO_POSITION[slot], position);
+    assert.ok(h.layout.buildStyles().includes(`[data-je-slot="${slot}"]`));
+  }
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups: [{group: 'quality', slot: 'unknown'}] } } } });
+  assert.equal(h.layout.normalizeSettings().slots.quality, 'tl');
+});
+
+test('top and bottom centre overflow counts eligible chips after the group cap and refits on short cards', t => {
+  for (const slot of ['tc', 'bc']) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups: [
+      ...['genre', 'rating', 'ageRating', 'language', 'status'].map(group => ({group, slot: 'off'})), {group: 'quality', slot},
+    ] } }, tagGroupCaps: {quality: 3} } });
+    h.render();
+    fitCard(h, {width: 40, height: 180});
+    const el = h.host().querySelector(`[data-je-slot="${slot}"]`);
+    assert.equal(el.querySelectorAll('[data-je-group] > *').length, 3);
+    assert.equal(el.lastElementChild.textContent, '+2');
+    assert.equal(el.querySelectorAll('[data-je-group] > [data-je-overflow]').length, 2);
+    fitCard(h, {width: 140, height: 180});
+    assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).lastElementChild.hasAttribute('data-je-overflow'), true);
+  }
+});

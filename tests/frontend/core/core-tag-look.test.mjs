@@ -299,3 +299,18 @@ test('a user switch forgets every card\'s item data, also on hosts without a con
   await h.settle();
   assert.equal(h.hostOf(OTHER).dataset.jeLayout, undefined);
 });
+
+
+test('centre slots travel unchanged through rules, locks and a saved lock snapshot', async t => {
+  const slots = [{group: 'quality', slot: 'tc'}, {group: 'rating', slot: 'bc'}, {group: 'ageRating', slot: 'mr'}, {group: 'genre', slot: 'c'}, {group: 'language', slot: 'ml'}];
+  const h = setup(t, {settings: {tagLookRules: [rule([{field: 'type', value: 'Movie'}], 'corners', 'full', {slots})]}});
+  h.render();
+  const conf = h.layout.resolveLayout(h.hostOf(MOVIE));
+  for (const {group, slot} of slots) assert.equal(conf.slots[group], slot);
+  await h.look.lockItem(MOVIE, {layout: 'corners', density: 'full', slots: conf.slots});
+  const saved = h.writes.at(-1).tagLayoutLocks[MOVIE];
+  for (const {group, slot} of slots) assert.ok(saved.slots.some(s => s.group === group && s.slot === slot));
+  h.JE.currentSettings.tagLookRules = [];
+  await h.settle();
+  for (const {group, slot} of slots) assert.equal(h.layout.resolveLayout(h.hostOf(MOVIE)).slots[group], slot);
+});

@@ -37,7 +37,7 @@
 
     /** Valid slots per layout; "off" hides a group in any layout. */
     const LAYOUT_SLOTS = {
-        corners: ['tl', 'tr', 'bl', 'br', 'off'],
+        corners: ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br', 'off'],
         bands: ['top', 'bottom', 'off'],
         caption: ['poster', 'caption', 'off'],
         summary: ['pill', 'hover', 'off'],
@@ -66,7 +66,7 @@
         ageRating: { userKey: 'ageRatingTagsPosition', pluginKey: 'AgeRatingTagsPosition', fallback: 'bottom-right' },
         status: { userKey: 'statusTagsPosition', pluginKey: 'StatusTagsPosition', fallback: 'top-right' },
     };
-    const POSITION_TO_SLOT = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br' };
+    const POSITION_TO_SLOT = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br', 'top-center': 'tc', 'bottom-center': 'bc', 'center-left': 'ml', 'center-right': 'mr', 'center': 'c' };
 
     /** The setting that turns each group's renderer on. */
     const ENABLED_SETTING = {
@@ -77,7 +77,7 @@
         ageRating: 'ageRatingTagsEnabled',
         status: 'statusTagsEnabled',
     };
-    const SLOT_TO_POSITION = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' };
+    const SLOT_TO_POSITION = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
 
     /** Group wrapper class per group (frozen DOM: Tag Styles and custom CSS target these). */
     const CONTAINER_CLASS = {
@@ -107,6 +107,7 @@
     const FIT_LAYOUTS = new Set(['bands', 'caption', 'summary', 'minimal']);
     /** Rows a wrapping slot (caption strip, bottom band, hover reveal) shows before its "+N" overflow chip. */
     const FIT_MAX_ROWS = 2;
+    const CENTRE_SLOTS = new Set(['tc', 'bc', 'ml', 'mr', 'c']);
     /** Cards narrower than this show bands with compact labels. */
     const NARROW_CARD_PX = 160;
 
@@ -226,6 +227,7 @@
     function positionSlot(settings, plugin, group) {
         const p = POSITION_SETTINGS[group];
         const pos = String(settings?.[p.userKey] || plugin?.[p.pluginKey] || p.fallback);
+        if (POSITION_TO_SLOT[pos]) return POSITION_TO_SLOT[pos];
         const isTop = pos.includes('top');
         const isLeft = pos.includes('left');
         return isTop ? (isLeft ? 'tl' : 'tr') : (isLeft ? 'bl' : 'br');
@@ -1250,7 +1252,8 @@
         if (ctrl.outlet && ctrl.outlet.isConnected) slots.push(ctrl.outlet);
         const wrapping = ctrl.layout === 'bands' ? 'bottom' : 'hover';
         for (const child of ctrl.host.children) {
-            if (child.classList.contains('je-tag-slot') && /** @type {HTMLElement} */ (child).dataset.jeSlot === wrapping) {
+            if (child.classList.contains('je-tag-slot') && (/** @type {HTMLElement} */ (child).dataset.jeSlot === wrapping
+                || (ctrl.layout === 'corners' && CENTRE_SLOTS.has(/** @type {HTMLElement} */ (child).dataset.jeSlot || '')))) {
                 slots.push(/** @type {HTMLElement} */ (child));
             }
         }
@@ -1377,7 +1380,7 @@
      * @param {CardController} ctrl
      */
     function scheduleFit(ctrl) {
-        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || indicatorGapsToMeasure(ctrl))) return;
+        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || indicatorGapsToMeasure(ctrl))) return;
         pendingFit.add(ctrl);
         if (fitScheduled) return;
         fitScheduled = true;
@@ -1406,11 +1409,60 @@
                 if (ctrl.layout === 'bands') presentAll(ctrl);
             });
             for (const ctrl of shown) prepareFit(ctrl);
+            // Read every occupied corner before writing centre-anchor budgets.
+            const anchors = shown.map(measureAnchors);
+            shown.forEach((ctrl, i) => applyAnchors(anchors[i]));
             // Reads, then writes.
             const plans = shown.map(measureFit);
             shown.forEach((ctrl, i) => applyFit(ctrl, plans[i]));
         } finally {
             fitting = false;
+        }
+    }
+
+    /** @param {CardController} ctrl @returns {HTMLElement[]} Only the five new anchors. */
+    function centreSlots(ctrl) {
+        return ctrl.layout === 'corners' ? Array.from(ctrl.host.children).filter((el) => CENTRE_SLOTS.has(/** @type {HTMLElement} */ (el).dataset.jeSlot || '')) : [];
+    }
+
+    /**
+     * Measure corner contents and Jellyfin overlays, never the full-inset slot
+     * boxes. Reads for the whole batch precede applyAnchors' writes.
+     * @param {CardController} ctrl
+     * @returns {Array<{el: HTMLElement, reserve: number, top: number, bottom: number}>}
+     */
+    function measureAnchors(ctrl) {
+        const centres = centreSlots(ctrl);
+        if (!centres.length) return [];
+        const host = ctrl.host.getBoundingClientRect();
+        const boxes = {};
+        for (const el of ctrl.host.children) {
+            const slot = /** @type {HTMLElement} */ (el).dataset.jeSlot;
+            if (!['tl', 'tr', 'bl', 'br'].includes(slot || '')) continue;
+            boxes[slot] = Array.from(el.children).filter((g) => /** @type {HTMLElement} */ (g).dataset.jeGroup).map((g) => g.getBoundingClientRect());
+        }
+        const width = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.endsWith('l') ? b.right - host.left + 4 : host.right - b.left + 4)));
+        const height = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.startsWith('t') ? b.bottom - host.top + 4 : host.bottom - b.top + 4)));
+        const scalable = ctrl.host.parentElement;
+        const progress = scalable?.querySelector('.itemProgressBar, .cardProgressBar, .cardProgress');
+        const bottom = progress ? Math.max(6, host.bottom - progress.getBoundingClientRect().top + 4) : 6;
+        let top = 6;
+        for (const overlay of scalable?.querySelectorAll('.cardIndicators > *') || []) {
+            const b = overlay.getBoundingClientRect();
+            if (b.left < host.left + host.width / 2 && b.right > host.left + host.width / 2) top = Math.max(top, b.bottom - host.top + 4);
+        }
+        return centres.map((el) => {
+            const slot = el.dataset.jeSlot;
+            return { el, top, bottom, reserve: slot === 'tc' ? width(['tl', 'tr']) : slot === 'bc' ? width(['bl', 'br']) : slot === 'ml' ? height(['tl', 'bl']) : slot === 'mr' ? height(['tr', 'br']) : 6 };
+        });
+    }
+
+    /** @param {ReturnType<typeof measureAnchors>} anchors Write the measured budgets. */
+    function applyAnchors(anchors) {
+        for (const { el, reserve, top, bottom } of anchors) {
+            el.style.setProperty('--je-anchor-reserve', `${reserve}px`);
+            el.style.setProperty('--je-anchor-top', `${top}px`);
+            el.style.setProperty('--je-anchor-bottom', `${bottom}px`);
         }
     }
 
@@ -1512,7 +1564,26 @@
             const widths = rects.map((r) => r.width);
             const moreRect = more.getBoundingClientRect();
             if (!(available > 0)) {
-                plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => true), more: true });
+                plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => ctrl.layout !== 'corners'), more: ctrl.layout !== 'corners' });
+                continue;
+            }
+            if (ctrl.layout === 'corners') {
+                const vertical = ['ml', 'mr'].includes(slotEl.dataset.jeSlot || '');
+                const reserve = parseFloat(slotEl.style.getPropertyValue('--je-anchor-reserve')) || 6;
+                const limit = Math.max(0, vertical ? ctrl.host.clientHeight - 2 * reserve : ctrl.host.clientHeight / 3);
+                const heights = rects.map((r) => r.height);
+                const rowGap = parseFloat(style.rowGap) || 0;
+                let shown = null;
+                if (vertical) {
+                    shown = chipsThatFit(heights, limit, rowGap, 1, moreRect.height);
+                } else {
+                    for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
+                        const rows = [], moreRow = { row: 0 };
+                        const fit = chipsThatFit(widths, available, gap, n, moreRect.width, rows, moreRow);
+                        if (rowsHeight(fit, rows, heights, moreRect.height, rowGap, moreRow.row) <= limit) shown = fit;
+                    }
+                }
+                plan.rows.push({ slot: slotEl, chips, shown: shown || chips.map(() => false), more: !!shown && limit >= moreRect.height && available >= moreRect.width });
                 continue;
             }
             const room = rowRoom(ctrl, style);
