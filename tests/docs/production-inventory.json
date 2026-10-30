@@ -39,6 +39,10 @@
       "category": "Assets"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/CustomTagRuleSet.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/LanguageTagDisplaySettings.cs",
       "category": "Configuration"
     },
@@ -652,6 +656,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsTrendingService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheCustomTags.cs",
       "category": "Services"
     },
     {
@@ -1496,6 +1504,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/ageratingtags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/customtags.js",
       "category": "js"
     },
     {
@@ -3241,6 +3253,38 @@
   ],
   "configuration_properties": [
     {
+      "class": "CustomTagRule",
+      "name": "Match",
+      "type": "string",
+      "initializer": "CustomTagRuleSet.MatchTag",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/CustomTagRuleSet.cs"
+    },
+    {
+      "class": "CustomTagRule",
+      "name": "Value",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/CustomTagRuleSet.cs"
+    },
+    {
+      "class": "CustomTagRule",
+      "name": "Label",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/CustomTagRuleSet.cs"
+    },
+    {
+      "class": "CustomTagRule",
+      "name": "Icon",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/CustomTagRuleSet.cs"
+    },
+    {
       "class": "Shortcut",
       "name": "Name",
       "type": "string",
@@ -4582,6 +4626,30 @@
       "type": "TagShapeOverrides?",
       "initializer": null,
       "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CustomTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CustomTagsPosition",
+      "type": "string",
+      "initializer": "\"top-left\"",
+      "constructor_assignment": "\"top-left\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "CustomTagRules",
+      "type": "List<CustomTagRule>",
+      "initializer": "new List<CustomTagRule>()",
+      "constructor_assignment": "new List<CustomTagRule>()",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -6521,6 +6589,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
     },
     {
+      "class": "TagGroupCaps",
+      "name": "Custom",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
       "class": "TagLookCondition",
       "name": "Field",
       "type": "string",
@@ -7106,6 +7182,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "CustomTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "PeopleTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -7301,6 +7385,14 @@
       "name": "StatusTagsPosition",
       "type": "string",
       "initializer": "\"top-right\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "CustomTagsPosition",
+      "type": "string",
+      "initializer": "\"top-left\"",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -8761,9 +8853,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 386,
+    "files": 389,
     "routes": 182,
-    "configuration_properties": 631,
+    "configuration_properties": 641,
     "storage_references": 75,
     "scheduled_tasks": 13,
     "locales": 33
