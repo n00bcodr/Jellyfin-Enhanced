@@ -1764,7 +1764,9 @@
      * @param {CardController} ctrl
      */
     function forget(ctrl) {
-        endAwait(ctrl.host);
+        // A reused host may already be waiting for the replacement item.
+        // Retiring its old controller must cancel only the old item's hold.
+        if (contextOf(awaitingData, ctrl.host)?.cardId === ctrl.itemId) endAwait(ctrl.host);
         teardown(ctrl);
         controllers.delete(ctrl.host);
     }

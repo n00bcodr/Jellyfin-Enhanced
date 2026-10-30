@@ -264,6 +264,22 @@ test('an old batch cannot render into a reused card or release its new facts hol
   assert.equal(host.dataset.jeLayout, 'bands');
 });
 
+test('retiring a reused controller cancels its old hold before committing replacement groups', t => {
+  const rules = [{ id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS_LIB }], layout: 'bands', density: 'full' }];
+  const h = setupReal(t, { html: episodeCard(EPISODE, 'Movie'), settings: { tagLookRules: rules } });
+  h.scan();
+  const host = h.hostOf(EPISODE);
+  h.document.querySelector('.card').setAttribute('data-id', OTHER);
+  const chip = h.document.createElement('div'); chip.innerHTML = '<span>4K</span>';
+  h.layout.commitGroup(host, 'quality', chip);
+  assert.ok(h.shown(OTHER), 'an old item hold cannot hide the replacement');
+  const token = h.layout.awaitCardContext(host, OTHER, 'Movie');
+  h.layout.refreshPresentation(host);
+  assert.equal(h.shown(OTHER), false, 'a replacement hold still hides its own groups');
+  h.layout.releaseCardContext(host, token);
+  assert.ok(h.shown(OTHER));
+});
+
 test('clearing a waiting card ends its hold, so a replacement group shows at once', t => {
   const rules = [{ id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS_LIB }], layout: 'bands', density: 'full' }];
   const h = setupReal(t, { html: episodeCard(EPISODE, 'Movie'), settings: { tagLookRules: rules } });
