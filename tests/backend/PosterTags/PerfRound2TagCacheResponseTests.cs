@@ -330,13 +330,13 @@ public class PerfRound2TagCacheResponseTests
     }
 
     /// <summary>GET status-tags/series through the endpoint fixture, with a TMDB transport that records its calls.</summary>
-    private static async Task<(IActionResult Result, List<string> Upstream)> SeriesLookup(Endpoint endpoint, User? caller, string? ids)
+    private static async Task<(IActionResult Result, List<string> Upstream)> SeriesLookup(Endpoint endpoint, User? caller, string? ids, int status = 200)
     {
         var upstream = new List<string>();
         using var transport = new IntegrationTransport((request, _) =>
         {
             lock (upstream) upstream.Add(request.RequestUri!.AbsolutePath);
-            return Task.FromResult(IntegrationTransport.Response("""{"status":"Ended","last_episode_to_air":{"air_date":"2026-10-28","season_number":2,"episode_number":10,"episode_type":"finale"}}"""));
+            return Task.FromResult(IntegrationTransport.Response("""{"status":"Ended","last_episode_to_air":{"air_date":"2026-10-28","season_number":2,"episode_number":10,"episode_type":"finale"}}""", status));
         });
         using var tmdbCache = new TmdbResponseCache(transport, TimeProvider.System);
         var service = new StatusTagsSeriesService(tmdbCache, endpoint.Fixture.Core.Logger);
@@ -344,6 +344,22 @@ public class PerfRound2TagCacheResponseTests
         else endpoint.Controller.ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() };
         var result = await endpoint.Controller.GetStatusTagsSeries(ids, service);
         return (result, upstream);
+    }
+
+    [Fact]
+    public async Task SeriesLookupMarks429ForRetryWithoutHttpCaching()
+    {
+        using var endpoint = new Endpoint();
+        endpoint.Fixture.Plugin.Configuration.StatusTagsEnabled = true;
+        endpoint.Fixture.Plugin.Configuration.TMDB_API_KEY = "key";
+        var series = new Series { Id = Guid.NewGuid(), ProviderIds = new Dictionary<string, string> { ["Tmdb"] = "100" } };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id, endpoint.Alice)).Returns(series);
+        var (result, upstream) = await SeriesLookup(endpoint, endpoint.Alice, series.Id.ToString(), 429);
+        var payload = Assert.IsType<Dictionary<string, object>>(Assert.IsType<OkObjectResult>(result).Value);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        Assert.True(json.RootElement.GetProperty(series.Id.ToString("N")).GetProperty("retry").GetBoolean());
+        Assert.Equal("private, no-store", endpoint.Controller.Response.Headers.CacheControl);
+        Assert.Single(upstream);
     }
 
     [Fact]

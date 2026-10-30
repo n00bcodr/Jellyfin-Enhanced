@@ -109,13 +109,15 @@
     /**
      * TMDB schedule facts per series item id (normalised, see normId), with
      * when they expire and whether a request for them is running.
-     * @type {Map<string, {facts: SeriesFacts|null, expires: number, loading?: boolean}>}
+     * @type {Map<string, {facts: SeriesFacts|null, expires: number, loading?: boolean, retry?: boolean}>}
      */
     const seriesInfo = new Map();
     /** @type {Set<string>} series ids waiting for the next batched request */
     const seriesQueue = new Set();
     /** @type {ReturnType<typeof setTimeout>|null} */
     let seriesTimer = null;
+    /** @type {ReturnType<typeof setTimeout>|null} One timer for failed visible lookups. */
+    let seriesRetryTimer = null;
     /** @type {number} bumped on a user switch: answers for the previous user are dropped */
     let seriesEpoch = 0;
     /** @type {IntersectionObserver|null} One observer for all schedule-reading cards. */
@@ -1003,12 +1005,32 @@
             const now = Date.now();
             for (const id of batch) {
                 const previous = seriesInfo.get(id)?.facts ?? null;
-                const facts = ok ? readSeriesFacts(byId.get(id)) : previous;
-                seriesInfo.set(id, { facts, expires: now + (ok ? SERIES_TTL_MS : SERIES_RETRY_MS) });
+                const failed = !ok || byId.get(id)?.retry === true;
+                const facts = failed ? previous : readSeriesFacts(byId.get(id));
+                seriesInfo.set(id, { facts, expires: now + (failed ? SERIES_RETRY_MS : SERIES_TTL_MS), retry: failed });
                 if (JSON.stringify(previous) !== JSON.stringify(facts)) changed = true;
             }
         }
         if (changed) applyLivePass(ctx);
+        armSeriesRetry(ctx);
+    }
+
+    /**
+     * Retry failed lookups still represented by visible cards, using one shared timer.
+     * @param {Object} ctx @returns {void}
+     */
+    function armSeriesRetry(ctx) {
+        if (seriesRetryTimer) clearTimeout(seriesRetryTimer);
+        seriesRetryTimer = null;
+        const due = [...seriesInfo].filter(([id, value]) => value.retry && !value.loading && hasVisibleSeries(id))
+            .map(([, value]) => value.expires);
+        if (!due.length) return;
+        seriesRetryTimer = setTimeout(() => {
+            seriesRetryTimer = null;
+            for (const [id, value] of seriesInfo) {
+                if (value.retry && Date.now() >= value.expires && hasVisibleSeries(id)) requestSeries(ctx, id);
+            }
+        }, Math.max(0, Math.min(...due) - Date.now()));
     }
 
     /** @type {Object} Factory spec — everything status-specific lives here. */

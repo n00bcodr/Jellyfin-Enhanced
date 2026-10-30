@@ -66,7 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Schedule facts per caller key, for the TMDB series ids given
         /// (<c>key → tmdbId</c>). Keys whose series TMDB does not know, or whose
-        /// lookup fails, are left out. No API key: empty.
+        /// lookup returns authoritative no-data, are left out. Transient failures carry Retry. No API key: empty.
         /// </summary>
         public async Task<Dictionary<string, SeriesSchedule>> GetAsync(string? apiKey, IReadOnlyDictionary<string, string> tmdbIdsByKey, CancellationToken cancellationToken)
         {
@@ -87,6 +87,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Read the series, enriching a missing episode type from its season.</summary>
         private async Task<SeriesSchedule?> LookupAsync(string apiKey, string tmdbId, CancellationToken cancellationToken)
+        {
+            try { return await LookupCoreAsync(apiKey, tmdbId, cancellationToken).ConfigureAwait(false); }
+            catch (ScheduleLookupException) { return new SeriesSchedule(null, null, null, Retry: true); }
+        }
+
+        private sealed class ScheduleLookupException : Exception { }
+
+        private async Task<SeriesSchedule?> LookupCoreAsync(string apiKey, string tmdbId, CancellationToken cancellationToken)
         {
             var body = await FetchBodyAsync(apiKey, "tv/" + tmdbId, cancellationToken).ConfigureAwait(false);
             var schedule = body == null ? null : Parse(body);
@@ -116,26 +124,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task<string?> FetchBodyAsync(string apiKey, string apiPath, CancellationToken cancellationToken)
         {
             if (_tmdbResponseCache.TryGetFresh(apiPath, string.Empty, apiKey, out var cached))
-                return cached.IsSuccess ? cached.Content : null;
+                return ReadResponse(cached);
             await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (_tmdbResponseCache.TryGetFresh(apiPath, string.Empty, apiKey, out cached))
-                    return cached.IsSuccess ? cached.Content : null;
+                    return ReadResponse(cached);
                 await WaitForRateWindowAsync(cancellationToken).ConfigureAwait(false);
                 // TmdbResponseCache owns a 30-second upstream timeout. Caller
                 // cancellation must not free this slot while its shared HTTP
                 // request is still running, or subsequent callers can exceed four.
                 var response = await _tmdbResponseCache.GetAsync(apiPath, string.Empty, apiKey, CancellationToken.None).ConfigureAwait(false);
-                return response.IsSuccess ? response.Content : null;
+                return ReadResponse(response);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.Debug($"[StatusTags] TMDB series lookup {apiPath} failed: {ex.Message}");
-                return null;
+                throw new ScheduleLookupException();
             }
             finally { _slots.Release(); }
+        }
+
+        /// <summary>Only a 404 authoritatively means no data; other upstream failures are retryable.</summary>
+        private static string? ReadResponse(TmdbResponseCache.TmdbResponse response)
+        {
+            if (response.IsSuccess) return response.Content;
+            if (response.StatusCode == 404) return null;
+            throw new ScheduleLookupException();
         }
 
         /// <summary>Wait while the window already holds its share of upstream lookups.</summary>
@@ -202,7 +218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// Series", "Ended", "Canceled", "In Production", "Planned", "Pilot"), its
     /// newest aired episode and its next scheduled one.
     /// </summary>
-    public sealed record SeriesSchedule(string? Status, SeriesEpisodeRef? LastAired, SeriesEpisodeRef? NextAired);
+    public sealed record SeriesSchedule(string? Status, SeriesEpisodeRef? LastAired, SeriesEpisodeRef? NextAired, bool Retry = false);
 
     /// <summary>
     /// One TMDB episode reference: air date as TMDB's calendar date

@@ -19,6 +19,23 @@ public class IntegrationStatusTagsSeriesTests
 
     private static string TmdbId(HttpRequestMessage request) => request.RequestUri!.AbsolutePath.Split('/').Last();
 
+    [Theory]
+    [InlineData(429)]
+    [InlineData(503)]
+    [InlineData(0)]
+    public async Task TransientUpstreamFailuresCarryARetryMarker(int status)
+    {
+        using var env = new IntegrationEnvironment();
+        using var transport = new IntegrationTransport((_, _) => status == 0
+            ? Task.FromException<HttpResponseMessage>(new HttpRequestException("offline"))
+            : Task.FromResult(IntegrationTransport.Response("{}", status)));
+        using var cache = new TmdbResponseCache(transport, TimeProvider.System);
+        var service = new StatusTagsSeriesService(cache, env.Logger);
+        var result = await service.GetAsync("key", new Dictionary<string, string> { ["item"] = "100" }, CancellationToken.None);
+        Assert.True(result.ContainsKey("item"), "Transient failures must differ from authoritative missing data");
+        Assert.True((bool?)result["item"].GetType().GetProperty("Retry")?.GetValue(result["item"]));
+    }
+
     [Fact]
     public void ParsesStatusLastAndNextAiredWithTheEpisodeType()
     {

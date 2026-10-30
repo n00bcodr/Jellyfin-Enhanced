@@ -2465,6 +2465,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             var config = JellyfinEnhanced.Instance?.Configuration;
             var payload = new Dictionary<string, object>(StringComparer.Ordinal);
+            var retry = false;
             if (config != null && config.StatusTagsEnabled && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY))
             {
                 var tmdbIds = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -2490,6 +2491,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     var schedules = await seriesService.GetAsync(config.TMDB_API_KEY, tmdbIds, HttpContext.RequestAborted).ConfigureAwait(false);
                     foreach (var (key, schedule) in schedules)
                     {
+                        if (schedule.Retry)
+                        {
+                            retry = true;
+                            payload[key] = new { retry = true };
+                            continue;
+                        }
                         payload[key] = new
                         {
                             status = schedule.Status,
@@ -2504,7 +2511,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            Response.Headers["Cache-Control"] = "private, max-age=600";
+            Response.Headers["Cache-Control"] = retry ? "private, no-store" : "private, max-age=600";
             return Ok(payload);
         }
 

@@ -8,3 +8,5 @@
 | P4a-4 | How should missing episode_type be resolved? | Read the latest aired episode's TMDB season through the same six-hour cache and rate limiter; if still absent, require the local last-episode flag plus no next episode in that season. | Remove season enrichment or tighten the fallback. |
 | P4a-5 | What happens when an aggregate includes hidden episodes? | Conservatively omit all related aggregate facts using StatusEpisodeIds and the existing access/filterRevision path; fallback computes through the caller. | Recompute per user at serve time. |
 | P4a-6 | How should new dashboard text be translated when injected JE is absent? | Load the embedded English dictionary and use a local JE.t adapter; injected JE.t is preferred when available. Badge labels use the shared JE.t only. | Adopt the dashboard's future translation framework. |
+
+| F4a-1 | Which transient-failure response shape? | Use a per-ID `{retry:true}` marker, preserving the existing ID-keyed response and omitting only authoritative no-data. Retry responses are not HTTP cached. | Replace with a top-level retry list if a later endpoint version needs it. |

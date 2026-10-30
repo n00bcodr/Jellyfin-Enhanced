@@ -397,3 +397,30 @@ test('one schedule observer gates offscreen, detached and recycled cards, includ
   assert.deepEqual(h.seriesCalls.at(-1), [ids[1]], 'scrolling into view dispatches the deferred lookup');
 });
 
+
+test('a per-id upstream retry marker preserves prior facts and schedules a five-minute retry', async t => {
+  let now = NOW;
+  const timers = new Map();
+  const h = setup(t, { series: (ids, call) => Object.fromEntries(ids.map(id => [id, call === 1
+    ? facts({ nextAired: { date: '2026-10-31', season: 1, episode: 2 } }) : { retry: true }])) });
+  const originalSetTimeout = h.window.setTimeout.bind(h.window);
+  h.window.setTimeout = (fn, ms) => {
+    if (ms >= 5 * 60 * 1000 && ms <= 60 * 60 * 1000) { const id = Symbol(); timers.set(id, { fn, ms }); return id; }
+    return originalSetTimeout(fn, ms);
+  };
+  h.window.clearTimeout = id => timers.delete(id);
+  h.window.Date.now = () => now;
+  h.show(show(), h.hosts[0], SERIES);
+  await h.flush();
+  assert.equal(h.badge(), 'Airs Tomorrow');
+  now += 61 * 60 * 1000;
+  h.show(show(), h.hosts[0], SERIES);
+  await h.flush();
+  assert.equal(h.badge(), 'Airs Tomorrow', 'a retry marker must keep the previous schedule');
+  const retry = [...timers.values()].find(timer => timer.ms === 5 * 60 * 1000);
+  assert.ok(retry, 'one timer is armed for the five-minute retry');
+  now += 5 * 60 * 1000;
+  retry.fn();
+  await h.flush();
+  assert.equal(h.seriesCalls.length, 3, 'retry runs without another card render');
+});
