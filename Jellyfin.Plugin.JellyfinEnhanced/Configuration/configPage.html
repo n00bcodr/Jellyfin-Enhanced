@@ -4217,6 +4217,8 @@
                 });
                 // shortcutOverrides is JS state, not bound to persistent <input> elements.
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
+                // So are the tag layout defaults' order, limits and per-layout positions.
+                if (typeof tagLayoutAdmin !== 'undefined') parts.push('tagLayouts=' + tagLayoutAdmin.snapshot());
                 return parts.join('');
             }
 
@@ -5917,7 +5919,10 @@
                 });
             });
 
-            return { load: load, collect: collect, render: render };
+            /** The editor's JS state, for the unsaved-changes indicator. */
+            function snapshot() { var c = {}; collect(c); return JSON.stringify(c); }
+
+            return { load: load, collect: collect, render: render, snapshot: snapshot };
         })();
 
         // MDBList rating sources: key (matches the API's source string), display
