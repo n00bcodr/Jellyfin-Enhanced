@@ -1115,7 +1115,7 @@ curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
 
 ### Tag cache and batch shape
 
-Use the cache for full snapshots or updates since a cursor. Use `tag-data` to fetch a batch of items directly, including when cached delivery is disabled.
+Use the cache for full snapshots or updates since a cursor. Use `tag-data` to fetch a batch of items directly, including when cached delivery is disabled. Web cards look up their valid `data-id`/`data-itemid` before the artwork URL, so an episode borrowing its season's poster requests the episode's data. Without a valid card id, the artwork id remains a fallback.
 
 Cache disabled returns `404` for GET and `400` for rebuild. A busy rebuild returns `409`. Cached response:
 
