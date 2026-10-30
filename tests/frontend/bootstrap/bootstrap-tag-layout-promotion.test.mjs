@@ -8,6 +8,8 @@ import { createHarness, plain } from '../helpers/harness.mjs';
 // administrator's new defaults are (they only seed new users / apply to all).
 
 const ID = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const LIBRARY = '22222222222222222222222222222222';
+const ADMIN_RULE = { id: 'movies', enabled: true, when: [{ field: 'library', value: LIBRARY }], layout: 'caption', density: 'compact' };
 const card = `<div class="card overflowPortraitCard" data-id="${ID}" data-type="Movie"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer coveredImage cardContent"></div><div class="je-tag-host"></div><div class="cardOverlayContainer"></div></div><div class="cardText cardText-first">Title</div></div></div>`;
 
 // Panel controls outside the tag group editor that the settings wiring binds by id.
@@ -20,6 +22,7 @@ const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'a
 const ADMIN = {
   TagCacheServerMode: true, TagLayout: 'bands', TagLabelDensity: 'compact',
   TagGroupOrder: ['genre', 'rating'], TagGroupCaps: { Quality: 1, Language: 1 },
+  TagLookRules: [ADMIN_RULE],
 };
 
 /**
@@ -35,7 +38,7 @@ const LEGACY = {
 
 /** A tag-cache entry with more chips than every admin cap allows. */
 const entry = () => ({
-  Type: 'Movie', TmdbId: '42',
+  Type: 'Movie', LibraryId: LIBRARY, TmdbId: '42',
   Genres: ['Drama', 'Crime', 'Thriller', 'Comedy', 'War'],
   CommunityRating: 8.12, CriticRating: 91, OfficialRating: 'PG-13',
   AudioLanguages: ['en', 'fr', 'de', 'ja'],
@@ -56,7 +59,7 @@ const entry = () => ({
  * real config loader; writes are captured.
  * @param {import('node:test').TestContext} t
  */
-function setup(t) {
+function setup(t, settings = {}) {
   const renderers = new Map();
   const writes = [];
   const html = card + otherToggles.map(id => `<input type="checkbox" id="${id}">`).join('')
@@ -64,7 +67,7 @@ function setup(t) {
   const h = createHarness({
     html,
     JE: {
-      pluginConfig: ADMIN, userConfig: { settings: { ...LEGACY }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
+      pluginConfig: ADMIN, userConfig: { settings: { ...LEGACY, ...settings }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
       t: key => key, toast() {}, pauseScreenInstance: {},
       cdn: { flagSvg: code => `http://jellyfin.test/flags/${code}.svg` },
       session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
@@ -80,7 +83,7 @@ function setup(t) {
   });
   t.after(() => h.close());
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
-  for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js',
+  for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
     'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js',
     'enhanced/config.js']) h.load(file);
   const JE = h.JE;
@@ -100,6 +103,7 @@ function setup(t) {
   const host = h.document.querySelector('.je-tag-host');
   /** Render the entry through every enabled renderer, as the pipeline's server-cache path does. */
   const render = () => {
+    JE.core.tagLayout.setCardContext(host, entry(), ID);
     for (const [, r] of renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(host, entry(), ID);
   };
   render();
@@ -178,11 +182,31 @@ test('one slot pill on a legacy document changes only that group, on the web and
 
   const saved = h.saved();
   assert.equal(saved.tagLayoutSettingsVersion, 1);
+  assert.deepEqual(saved.tagLookRules, [], 'promotion must not activate the admin rules');
   assert.equal(saved.tagLayout, 'corners', 'not the admin layout');
   assert.equal(saved.tagLabelDensity, 'full', 'not the admin density');
   assert.equal(saved.tagGroupOrder, null, 'arrival order, not the admin order');
   assert.deepEqual(saved.tagGroupCaps, { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 }, 'the legacy limits, explicitly');
   assert.equal(saved.ageRatingTagsPosition, 'top-left');
+});
+
+for (const personal of [undefined, [], [{ ...ADMIN_RULE, id: 'personal', layout: 'minimal' }]]) {
+  test(`Reset copies layout defaults without importing admin rules (personal=${personal?.length ?? 'missing'})`, async t => {
+    const h = setup(t, personal === undefined ? {} : { tagLookRules: personal });
+    await h.click(h.document.getElementById('jeTgeReset'));
+    const saved = h.saved();
+    assert.deepEqual(saved.tagLookRules, personal || []);
+    assert.equal(saved.tagLayout, 'bands');
+    assert.equal(saved.tagLabelDensity, 'compact');
+    assert.equal(h.host.dataset.jeLayout, personal?.length ? 'minimal' : 'bands');
+  });
+}
+
+test('promotion keeps existing personal rules untouched', async t => {
+  const personal = [{ ...ADMIN_RULE, id: 'personal', layout: 'minimal' }];
+  const h = setup(t, { tagLookRules: personal });
+  await h.click(h.row('ageRating').querySelector('[data-slot="tl"]'));
+  assert.deepEqual(h.saved().tagLookRules, personal);
 });
 
 test('one cap step on a legacy document changes only that group', async t => {

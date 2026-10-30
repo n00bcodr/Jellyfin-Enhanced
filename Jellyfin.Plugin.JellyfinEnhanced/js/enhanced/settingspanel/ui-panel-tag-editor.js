@@ -491,9 +491,11 @@
     /**
      * Restore the administrator's layout defaults (layout, density, slot
      * profiles, the corner positions, order and caps), as "apply defaults to
-     * all users" would. Enable toggles and include choices are kept.
+     * all users" would. Enable toggles, include choices and personal rules
+     * are kept; rules are not layout defaults.
      */
     function resetToDefaults() {
+        promote();
         const L = layoutApi();
         const p = JE.pluginConfig || {};
         const copy = (value) => (value && typeof value === 'object' ? JSON.parse(JSON.stringify(value)) : null);

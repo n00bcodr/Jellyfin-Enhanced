@@ -324,7 +324,8 @@
      * Make a legacy document (no tagLayoutSettingsVersion) a normalized one
      * without changing what it shows, before the first layout write: corners,
      * full labels, the built-in limits as explicit caps (so the administrator's
-     * caps do not take over) and no order (arrival order). The position
+     * caps do not take over), no order (arrival order), and explicit personal
+     * rules (so the administrator's rules do not take over). The position
      * settings and any corners profile already read the same either way.
      * Every caller that writes version 1 must call this first.
      * @param {Object} [settings] - Defaults to JE.currentSettings; changed in place.
@@ -337,6 +338,7 @@
         s.tagLabelDensity = 'full';
         s.tagGroupCaps = { ...DEFAULT_CAPS };
         s.tagGroupOrder = null;
+        if (!Array.isArray(s.tagLookRules)) s.tagLookRules = [];
         s.tagLayoutSettingsVersion = 1;
         if (s === JE.currentSettings) invalidateSettings();
         return true;
