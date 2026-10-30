@@ -482,6 +482,10 @@
         // Edits a failed save left behind (another view's) show here too.
         for (const [key, value] of store.values) config[key] = value;
         let disposed = false;
+        // Jellyfin keeps the root when it keeps the view: every listener on it
+        // goes with this page's lifetime, so a rebuilt page never doubles them.
+        const lifetime = new AbortController();
+        const { signal } = lifetime;
         let preview = null;
         let snackTimer = null;
         /** @type {Object<string, boolean>} open state of each group row */
@@ -560,7 +564,7 @@
             if (target.closest('[data-je-retry]')) flush();
             else if (target.closest('[data-je-keep]')) resolveConflicts(true);
             else if (target.closest('[data-je-theirs]')) resolveConflicts(false);
-        });
+        }, { signal });
         /** @returns {Promise<boolean>} Whether everything pending is saved. */
         const flush = () => flushStore();
         const schedule = scheduleStore;
@@ -594,6 +598,8 @@
          * @param {{redraw?: boolean}} [opts] - redraw: false leaves the controls alone.
          */
         function setMany(values, opts = {}) {
+            // A late callback of a page that is gone must not save anything.
+            if (disposed) return;
             for (const [key, value] of Object.entries(values)) {
                 // What the server should still hold when this edit is saved.
                 if (!store.values.has(key) && !store.base.has(key)) store.base.set(key, copy(config[key]));
@@ -653,7 +659,7 @@
                 const row = /** @type {HTMLElement|null} */ (holder.closest('.je-ta-grow'));
                 if (row) row.dataset.enabled = String(value);
             }
-        });
+        }, { signal });
 
         // Ordered lists: a move swaps two rows and writes every order key by position.
         root.addEventListener('click', (e) => {
@@ -678,7 +684,7 @@
             const again = /** @type {HTMLButtonElement|null} */ (li.querySelector(`[data-move="${dir}"]`));
             (again && !again.disabled ? again : li.querySelector('[data-move]:not([disabled])') || li.querySelector('input'))?.focus();
             announce(JE.t('admin_tags_moved', { name: li.querySelector('.je-ta-order-name')?.textContent || '', n: Array.from(list.children).indexOf(li) + 1 }));
-        });
+        }, { signal });
 
         // ── Tabs ──
         const current = () => root.dataset.tab || 'overview';
@@ -712,7 +718,7 @@
         tablist.addEventListener('click', (e) => {
             const tab = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[role="tab"]'));
             if (tab) openTab(tab.dataset.tab || 'overview');
-        });
+        }, { signal });
         // Roving focus with automatic activation (WAI tabs pattern).
         tablist.addEventListener('keydown', (e) => {
             const index = tabs.indexOf(/** @type {HTMLElement} */ (document.activeElement));
@@ -725,7 +731,7 @@
             if (next < 0) return;
             e.preventDefault();
             openTab(tabs[next].dataset.tab || 'overview', { focusTab: true });
-        });
+        }, { signal });
         // Any element with data-je-goto="tab[:group]" opens it.
         root.addEventListener('click', (e) => {
             const goto = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-je-goto]'));
@@ -733,7 +739,7 @@
             e.preventDefault();
             const [tab, group] = String(goto.dataset.jeGoto).split(':');
             openTab(tab, { group: group || null, focus: true });
-        });
+        }, { signal });
 
         // ── Group rows ──
         /**
@@ -773,7 +779,7 @@
             const button = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.je-ta-expand'));
             const row = /** @type {HTMLElement|null} */ (button?.closest('.je-ta-grow') || null);
             if (row) setGroupOpen(row.dataset.group || '', button?.getAttribute('aria-expanded') !== 'true');
-        });
+        }, { signal });
 
         /** @param {Object} s @returns {HTMLElement} The section's custom-content element. */
         function bodyOf(s) {
@@ -801,7 +807,7 @@
             const open = previewToggle.getAttribute('aria-expanded') !== 'true';
             previewToggle.setAttribute('aria-expanded', String(open));
             previewBox.classList.toggle('je-ta-preview-open', open);
-        });
+        }, { signal });
         const mount = /** @type {HTMLElement} */ (root.querySelector('.je-ta-preview-mount'));
         const createPreview = JE.internals?.enhancedUi?.createTagPreview;
         if (typeof createPreview === 'function') {
@@ -888,6 +894,7 @@
         function dispose() {
             if (disposed) return;
             disposed = true;
+            lifetime.abort();
             store.views.delete(onStore);
             clearTimeout(snackTimer);
             preview?.dispose();
@@ -916,6 +923,10 @@
             currentTab: current,
             /** @returns {boolean} Whether some change is not saved yet. */
             pending: hasPending,
+            /** @returns {boolean} Whether the page was torn down (late asynchronous answers are dropped). */
+            get disposed() { return disposed; },
+            /** Aborted when the page is torn down: pass it to listeners on elements that outlive the page. */
+            signal,
             get preview() { return preview; },
             layout: JE.core?.tagLayout || null,
             fieldValue,

@@ -311,6 +311,63 @@ test('a failed save survives navigating to another Media Tags view: still pendin
   assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
 });
 
+test('a torn-down page saves nothing: a reused root has one set of listeners, and Back/Forward saves a change once', async t => {
+  const server = structuredClone(BASE);
+  const h = boot(t, { server, url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout' });
+  h.document.body.innerHTML = TWO_PAGES;
+  const [first, second] = h.document.querySelectorAll('.page');
+  // A view torn down while its controls are still in the document: an event saves nothing.
+  const root = first.querySelector('.je-tag-admin');
+  const gone = h.A.createPage(root, structuredClone(server));
+  const control = root.querySelector('#tagsHideOnHover');
+  gone.dispose();
+  h.change(control, true);
+  assert.equal(gone.pending(), false);
+  assert.equal(await gone.flush(), true);
+  assert.equal(h.patches.length, 0);
+  root.replaceChildren();
+  // Back/Forward over two retained views: the first root is rebuilt, its old listeners are gone.
+  const a = await h.A.activate(first);
+  h.window.location.hash = '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups';
+  const b = await h.A.activate(second);
+  h.window.location.hash = '#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout';
+  const again = await h.A.activate(first);
+  h.cleanup.push(() => { a.dispose(); b.dispose(); again.dispose(); });
+  assert.equal(a.disposed, true);
+  h.change(first.querySelector('#disableTagsOnSearchPage'), true);
+  await again.flush();
+  assert.equal(h.patches.length, 1, 'one change, one save');
+  assert.deepEqual(h.patches[0].Changes, { DisableTagsOnSearchPage: true });
+});
+
+test('a cache summary that answers after the page was torn down starts no polling', async t => {
+  const answer = deferred();
+  let summaries = 0;
+  const server = structuredClone(BASE);
+  const h = boot(t, {
+    server,
+    apiClient: {
+      ajax: async (request) => {
+        const path = new URL(request.url).pathname;
+        if (path.endsWith('/tag-cache/summary')) { summaries++; return answer.promise; }
+        if (path.endsWith('/tag-styles/catalog')) return catalog;
+        return null;
+      },
+    },
+  });
+  const delays = [];
+  const realSetTimeout = h.window.setTimeout;
+  h.window.setTimeout = (fn, ms, ...rest) => { delays.push(ms); return realSetTimeout(fn, ms, ...rest); };
+  const ctx = h.A.createPage(h.document.getElementById('jeTaRoot'), structuredClone(server));
+  assert.equal(h.document.getElementById('jeTaRoot').dataset.tab, 'overview', 'Overview asks for the summary when shown');
+  assert.equal(summaries, 1);
+  ctx.dispose();
+  answer.resolve({ enabled: true, entries: 5, lastModified: 0, rebuilding: true });
+  await h.settle(); await h.settle();
+  assert.ok(!delays.includes(3000), 'no poll was scheduled');
+  assert.equal(summaries, 1);
+});
+
 test('tabs follow the WAI pattern and deep links open a tab and a group', async t => {
   const h = setup(t, { url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups&group=rating' });
   assert.equal(h.root.dataset.tab, 'groups');

@@ -26,6 +26,9 @@
     let summary = null;
     let summaryError = false;
     let pollTimer = null;
+    // Each request's number: only the newest answer counts, and a page torn
+    // down (dispose bumps it) ignores answers still on their way.
+    let summarySeq = 0;
 
     /**
      * Read the server tag cache state (GET tag-cache/summary).
@@ -33,15 +36,21 @@
      * @returns {Promise<void>}
      */
     A.cacheSummary = async function(ctx) {
-        try {
-            summary = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/tag-cache/summary'), dataType: 'json' });
-            summaryError = false;
-        } catch (err) {
-            console.warn('🪼 Jellyfin Enhanced: could not read the tag cache summary', err);
-            summaryError = true;
-        }
-        ctx.refresh({ controls: false });
+        const seq = ++summarySeq;
         clearTimeout(pollTimer);
+        pollTimer = null;
+        let next = summary;
+        let failed = false;
+        try {
+            next = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/tag-cache/summary'), dataType: 'json' });
+        } catch (err) {
+            failed = true;
+            if (seq === summarySeq && !ctx.disposed) console.warn('🪼 Jellyfin Enhanced: could not read the tag cache summary', err);
+        }
+        if (seq !== summarySeq || ctx.disposed) return;
+        summary = next;
+        summaryError = failed;
+        ctx.refresh({ controls: false });
         // Follow a rebuild until it finishes.
         if (summary?.rebuilding) pollTimer = setTimeout(() => A.cacheSummary(ctx), 3000);
     };
@@ -160,7 +169,9 @@
             ].map(([k, v]) => `<dt>${ctx.esc(k)}</dt><dd>${ctx.esc(v)}</dd>`).join(''));
         },
         dispose() {
+            summarySeq++;
             clearTimeout(pollTimer);
+            pollTimer = null;
         },
     });
 })(window.JellyfinEnhanced);
