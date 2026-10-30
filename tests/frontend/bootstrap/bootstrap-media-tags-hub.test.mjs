@@ -23,7 +23,7 @@ const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'a
  * @param {import('node:test').TestContext} t
  * @param {{stored?: object, plugin?: object, admin?: boolean, observer?: boolean}} [options]
  */
-function setup(t, { stored = {}, plugin = {}, admin = false, observer = false } = {}) {
+function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, phone = false } = {}) {
   const writes = [], requests = [], observers = [];
   class FakeIntersectionObserver {
     constructor(callback) { this.callback = callback; this.targets = []; this.disconnected = false; observers.push(this); }
@@ -31,7 +31,7 @@ function setup(t, { stored = {}, plugin = {}, admin = false, observer = false } 
     disconnect() { this.disconnected = true; this.targets = []; }
     fire() { this.callback(this.targets.map(target => ({ target, isIntersecting: true }))); }
   }
-  const media = { matches: false, addEventListener() {}, removeEventListener() {} };
+  const media = { matches: phone, addEventListener() {}, removeEventListener() {} };
   const h = createHarness({
     html: otherToggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button><button id="opener">open</button>',
     JE: {
@@ -68,7 +68,7 @@ function setup(t, { stored = {}, plugin = {}, admin = false, observer = false } 
   const ui = h.JE.internals.enhancedUi;
   // The host's frame (header, nav with search, main) around the real hub pane.
   ui.buildPanelHtml = ctx => `<div class="panel-header"><div id="jePanelTitle">JE</div><button id="closeSettingsPanel">x</button></div>`
-    + '<div class="je-panel-body"><nav class="je-panel-nav"><input id="jePanelSearch" type="search"><ul id="jePanelSearchResults" hidden></ul><div class="je-panel-nav-items"></div></nav>'
+    + '<div class="je-panel-dock"><select id="jePanelSection"></select></div><div class="je-panel-body"><nav class="je-panel-nav"><input id="jePanelSearch" type="search"><ul id="jePanelSearchResults" hidden></ul><div class="je-panel-nav-items"></div></nav>'
     + `<div class="je-panel-main"><button id="jePanelBack"></button><section class="je-pane" data-pane="ui"><h3 class="je-pane-title">UI</h3></section>${ui.buildMediaTagsHubHtml(ctx)}</div></div>`;
   for (const name of ['wireShortcutEditor', 'wireHiddenContentListeners', 'wireLanguageControls']) ui[name] = () => {};
   h.load('enhanced/settingspanel/ui-panel.js');
@@ -472,4 +472,24 @@ test('the panel host owns one dialog: semantics, focus in, Tab kept inside, focu
   h.key(search, 'Escape');
   assert.equal(h.$('#jellyfin-enhanced-panel'), null);
   assert.equal(h.document.activeElement, opener);
+});
+
+
+test('phone search and section select stay outside the inert section list while Media Tags is open', async t => {
+  const h = setup(t, { phone: true });
+  await h.open();
+  const section = h.$('#jePanelSection');
+  await h.change(section, 'media-tags');
+  assert.equal(h.$('.je-panel-body').classList.contains('je-pane-open'), true);
+  assert.equal(h.$('.je-panel-nav').inert, true);
+  const input = h.$('#jePanelSearch');
+  assert.equal(input.parentElement, h.$('.je-panel-dock'));
+  assert.equal(input.closest('[inert]'), null);
+  input.focus();
+  assert.equal(h.document.activeElement, input);
+  const hits = await h.search('tag_looks_add_rule');
+  assert.ok(hits.length);
+  h.click(hits[0].button);
+  assert.equal(h.selected(), 'rules');
+  assert.equal(section.value, 'media-tags');
 });

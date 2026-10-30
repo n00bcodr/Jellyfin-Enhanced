@@ -351,8 +351,16 @@
             const navColumn = help.querySelector('.je-panel-nav');
             const mainColumn = help.querySelector('.je-panel-main');
             const phoneMedia = window.matchMedia('(max-width: 760px)');
+            const dock = help.querySelector('.je-panel-dock');
+            const sectionSelect = help.querySelector('#jePanelSection');
+            const searchInput = help.querySelector('#jePanelSearch');
+            const searchResults = help.querySelector('#jePanelSearchResults');
             const syncLayerFocus = (moveFocus) => {
                 if (!navColumn || !mainColumn) return;
+                if (dock && navColumn && searchInput && searchResults) {
+                    if (phoneMedia.matches) dock.append(searchInput, searchResults);
+                    else navColumn.prepend(searchInput, searchResults);
+                }
                 if (phoneMedia.matches) {
                     const detailOpen = body.classList.contains('je-pane-open');
                     navColumn.inert = detailOpen;
@@ -374,6 +382,7 @@
             const activate = (pane, persist) => {
                 panes.forEach(p => p.classList.toggle('active', p === pane));
                 items.forEach(b => b.classList.toggle('active', b.dataset.tab === pane.dataset.pane));
+                if (sectionSelect) sectionSelect.value = pane.dataset.pane;
                 body.classList.add('je-pane-open');
                 syncLayerFocus(persist);
                 if (persist) {
@@ -402,8 +411,15 @@
                 button.addEventListener('click', () => activate(pane, true));
                 navHost.appendChild(button);
                 items.push(button);
+                if (sectionSelect) {
+                    const option = document.createElement('option');
+                    option.value = pane.dataset.pane;
+                    option.textContent = label;
+                    sectionSelect.appendChild(option);
+                }
             });
 
+            sectionSelect?.addEventListener('change', () => ctx.openPane(sectionSelect.value));
             ctx.openPane = (slug) => {
                 const pane = panes.find(p => p.dataset.pane === slug);
                 if (pane) activate(pane, true);

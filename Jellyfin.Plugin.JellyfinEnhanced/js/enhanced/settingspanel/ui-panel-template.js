@@ -105,7 +105,13 @@
                 #jellyfin-enhanced-panel .je-pane.active { display: block; }
                 #jellyfin-enhanced-panel .je-pane-title { display: flex; align-items: center; gap: 8px; margin: 14px 0 12px 0; font-size: 17px; font-weight: 700; color: #fff; font-family: inherit; }
                 #jellyfin-enhanced-panel .je-pane-back { display: none; align-items: center; justify-content: center; margin: 12px 0 0 0; padding: 8px; border: none; border-radius: 50%; background: rgba(255,255,255,0.08); color: #fff; font-family: inherit; cursor: pointer; align-self: flex-start; }
+                #jellyfin-enhanced-panel .je-panel-dock { display: none; }
                 @media (max-width: 760px) {
+                    #jellyfin-enhanced-panel .je-panel-dock { position: relative; display: flex; flex: 0 0 auto; gap: 8px; padding: 8px 12px; background: ${panelBgColor}; z-index: 3; }
+                    #jellyfin-enhanced-panel .je-panel-dock select { width: 40%; min-width: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; background: rgb(24,24,24); color: #fff; font: inherit; font-size: 13px; }
+                    #jellyfin-enhanced-panel .je-panel-dock .je-panel-search { flex: 1; min-width: 0; width: 0; }
+                    #jellyfin-enhanced-panel .je-panel-dock .je-panel-search-results { position: absolute; top: 100%; left: 12px; right: 12px; max-height: 45dvh; background: rgb(24,24,24); }
+
                     #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
                     #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: hidden; }
                     #jellyfin-enhanced-panel .je-panel-nav { position: absolute; inset: 0; border-right: none; z-index: 1; }
@@ -125,6 +131,7 @@
                 ${internal.buildPanelSizeControlsHtml ? internal.buildPanelSizeControlsHtml() : ''}
                 <button id="closeSettingsPanel" type="button" aria-label="${escapeHtml(tWithFallback('panel_close', 'Close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
+            <div class="je-panel-dock"><select id="jePanelSection" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}"></select></div>
             <div class="je-panel-body">
                 <nav class="je-panel-nav" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}">
                     <input id="jePanelSearch" class="je-panel-search" type="search" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" aria-label="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" aria-controls="jePanelSearchResults" />
