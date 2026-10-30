@@ -15,7 +15,7 @@ const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'a
  * @param {import('node:test').TestContext} t
  * @param {{stored?: object, plugin?: object}} [options]
  */
-function setup(t, { stored = {}, plugin = {} } = {}) {
+function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
   const writes = [], toasts = [], calls = [];
   const html = otherToggles.map(id => `<input type="checkbox" id="${id}">`).join('')
     + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button><div id="jellyfin-enhanced-panel"></div>';
@@ -41,6 +41,12 @@ function setup(t, { stored = {}, plugin = {} } = {}) {
   const ctx = { createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {}, help: h.document.getElementById('jellyfin-enhanced-panel'),
     primaryAccentColor: '#fff', toggleAccentColor: '#0af', detailsBackground: '#222', presetBoxBackground: '#111' };
   ctx.help.innerHTML = ui.buildTagGroupEditorHtml(ctx);
+  if (looks) {
+    h.load('core/tag-look.js');
+    h.load('enhanced/settingspanel/ui-panel-tag-looks.js');
+    ctx.help.insertAdjacentHTML('beforeend', '<div id="jeTagLooksMount"></div>');
+    ui.wireTagLooks(ctx);
+  }
   ui.wireSettingsListeners(ctx);
   ui.wireMiscSettingsControls(ctx);
   ui.wireTagGroupEditor(ctx);
@@ -184,6 +190,32 @@ test('reset restores the administrator\'s layout defaults and keeps the enable t
   assert.deepEqual(h.order().slice(0, 3), ['genre', 'quality', 'status']);
   assert.equal(h.row('genre').querySelector('.je-tge-cap').textContent, '5');
   assert.equal(h.toasts.at(-1), 'toast_tag_layout_reset');
+});
+
+test('Reset refreshes Otherwise to the admin layout and density with one save and preserves an open rule form', async t => {
+  const h = setup(t, { looks: true, plugin: { TagLayout: 'bands', TagLabelDensity: 'compact' },
+    stored: { tagLayoutSettingsVersion: 1, tagLayout: 'minimal', tagLabelDensity: 'full' } });
+  await h.settle();
+  const summary = () => h.$('[data-je-row="otherwise"] .je-tag-looks-outcome').textContent;
+  assert.match(summary(), /tag_looks_layout_minimal.*tag_density_full/);
+  await h.click(h.$('.je-tag-looks-add'));
+  const form = h.$('.je-tag-looks-form');
+  const input = form.querySelector('select');
+  input.focus();
+  await h.click(h.$('#jeTgeReset'));
+  assert.match(summary(), /tag_looks_layout_bands.*tag_density_compact/);
+  assert.equal(h.writes.length, 1, 'the refresh must not save again');
+  assert.equal(h.$('.je-tag-looks-form'), form, 'the open editor is not rebuilt');
+  assert.equal(h.document.activeElement, input, 'the refresh preserves focus');
+});
+
+test('programmatic layout and density changes refresh Otherwise without a save', async t => {
+  const h = setup(t, { looks: true, stored: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', tagLabelDensity: 'full' } });
+  await h.settle();
+  Object.assign(h.JE.currentSettings, { tagLayout: 'caption', tagLabelDensity: 'compact' });
+  await h.JE.reinitializeTagLayout();
+  assert.match(h.$('[data-je-row="otherwise"]').textContent, /tag_looks_layout_caption.*tag_density_compact/);
+  assert.equal(h.writes.length, 0);
 });
 
 test('reset refills genre caches truncated by an older cap when genres are enabled', async t => {

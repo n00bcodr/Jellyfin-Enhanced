@@ -1835,7 +1835,8 @@
      * Apply changed layout settings (or another user's) to every card on the
      * page, once per burst of calls: re-presents each card from the facts it
      * holds, clears cards whose item changed, removes orphaned outlets and
-     * reserves caption space on cards that have none yet.
+     * reserves caption space on cards that have none yet. Emits
+     * je:tag-layout-changed once per burst so settings summaries can refresh.
      * @returns {Promise<void>} Settles once the re-present ran.
      */
     function reinitialize() {
@@ -1855,6 +1856,7 @@
                 if (ctrl.outlet) owned.add(ctrl.outlet);
             }
             document.querySelectorAll('.je-tag-caption').forEach((el) => { if (!owned.has(el)) el.remove(); });
+            document.dispatchEvent(new CustomEvent('je:tag-layout-changed'));
         });
         return reinitPending;
     }

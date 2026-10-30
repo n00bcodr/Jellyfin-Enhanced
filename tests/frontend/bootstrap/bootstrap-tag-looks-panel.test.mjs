@@ -65,6 +65,26 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
 
 const kidsRule = { id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS }, { field: 'type', value: 'Episode' }], layout: 'caption', density: 'compact', colourPreset: null, slots: null };
 
+test('closing or rewiring the rules panel removes its layout subscription', async t => {
+  const h = setup(t);
+  const cleanups = [];
+  const wire = () => h.JE.internals.enhancedUi.wireTagLooks({ onClose: fn => cleanups.push(fn) });
+  wire();
+  await h.settle(); await h.settle();
+  wire();
+  await h.settle(); await h.settle();
+  cleanups[0](); // Closing the previous panel cannot unsubscribe its replacement.
+  Object.assign(h.JE.currentSettings, { tagLayout: 'bands', tagLabelDensity: 'compact' });
+  await h.JE.reinitializeTagLayout();
+  const outcome = h.mount().querySelector('[data-je-row="otherwise"] .je-tag-looks-outcome');
+  assert.match(outcome.textContent, /tag_looks_layout_bands/);
+  const before = outcome.textContent;
+  cleanups[1]();
+  h.JE.currentSettings.tagLayout = 'caption';
+  await h.JE.reinitializeTagLayout();
+  assert.equal(outcome.textContent, before, 'closed panels receive no further layout updates');
+});
+
 test('the list shows locked items first, the rules in order with their outcome, then the default', async t => {
   const h = setup(t, { settings: { tagLookRules: [kidsRule, { ...kidsRule, id: 'off', enabled: false, when: [{ field: 'genre', value: 'Drama' }], layout: 'bands', density: 'full' }],
     tagLayoutLocks: { [MOVIE]: { layout: 'minimal', density: 'full', lockedAt: 1 } } } });

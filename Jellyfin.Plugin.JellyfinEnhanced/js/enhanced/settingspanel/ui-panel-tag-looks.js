@@ -17,6 +17,8 @@
     const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
     const TITLE_BATCH = 50;
     const CONFIRM_MS = 4000;
+    /** @type {(() => void)|null} Cleanup for the open panel's layout listener. */
+    let unwatchLayout = null;
 
     const PANEL_CSS = `
         .je-tag-looks { margin: 0; }
@@ -597,9 +599,10 @@
      * Wire the section into the open settings panel (the template renders
      * an empty #jeTagLooksMount). Libraries and genres load in the
      * background; the list renders first and again once they arrive.
-     * @param {{resetAutoCloseTimer?: () => void}} ctx Shared panel context.
+     * @param {{resetAutoCloseTimer?: () => void, onClose?: (fn: () => void) => void}} ctx Shared panel context.
      */
     internal.wireTagLooks = function (ctx) {
+        unwatchLayout?.();
         const mount = document.getElementById('jeTagLooksMount');
         if (!mount || !JE.core?.tagLook || !JE.core?.tagLayout) return;
         JE.core.ui?.injectCss?.('je-tag-looks-panel', PANEL_CSS);
@@ -613,12 +616,20 @@
             // their input); the next render picks the lists up.
             if (state.editing === null) render(mount, state, touch);
         });
-        // The default layout row follows the Layout and Density selects.
-        for (const id of ['tagLayoutSelect', 'tagLabelDensitySelect']) {
-            document.getElementById(id)?.addEventListener('change', () => {
-                if (state.editing === null && mount.isConnected) queueMicrotask(() => render(mount, state, touch));
-            });
-        }
+        // Reinitialization also covers Reset and programmatic changes. Update
+        // only this outcome so an open rule form keeps its input and focus.
+        const refreshDefault = () => {
+            if (!mount.isConnected) return;
+            const outcome = mount.querySelector('[data-je-row="otherwise"] .je-tag-looks-outcome');
+            if (outcome) outcome.textContent = `→ ${outcomeText(JE.core.tagLayout.normalizeSettings())}`;
+        };
+        document.addEventListener('je:tag-layout-changed', refreshDefault);
+        const stopWatching = () => {
+            document.removeEventListener('je:tag-layout-changed', refreshDefault);
+            if (unwatchLayout === stopWatching) unwatchLayout = null;
+        };
+        unwatchLayout = stopWatching;
+        ctx?.onClose?.(stopWatching);
     };
 
     // Exposed for tests.
