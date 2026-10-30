@@ -423,6 +423,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var sanitizeTitleStreams = policy.SanitizeTitleStreams;
 
             var stripped = entry.Clone();
+            if (stripGenresEnabled || sanitizeTitleStreams)
+            {
+                stripped.Source = null;
+                stripped.Edition = null;
+            }
             if (stripGenresEnabled)
             {
                 stripped.Genres = System.Array.Empty<string>();

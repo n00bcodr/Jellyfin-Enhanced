@@ -279,6 +279,15 @@
             });
         }
 
+        // Low-quality sources are a gate within Source, separate from category ordering.
+        const lowSourceToggle = document.getElementById('showLowQualitySourceTagToggle');
+        if (lowSourceToggle) lowSourceToggle.addEventListener('change', () => {
+            JE.currentSettings.showLowQualitySourceTag = lowSourceToggle.checked;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            if (JE.currentSettings.qualityTagsEnabled) JE.reinitializeQualityTags?.();
+            resetAutoCloseTimer();
+        });
+
         // Preferred audio language for the sound tag (#433). The fixed choices
         // (server default / my Jellyfin audio language / none) are in the
         // template; the language list comes from Jellyfin's cultures endpoint,

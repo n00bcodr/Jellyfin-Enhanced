@@ -45,6 +45,8 @@ const SCRIPTS = [
 ];
 const sources = Object.fromEntries(SCRIPTS.map((s) => [s, readFileSync(join(jsRoot, s), 'utf8')]));
 
+const english = JSON.parse(readFileSync(join(jsRoot, 'locales/en.json'), 'utf8'));
+
 // Quality category arrays, read from qualitytags.js itself (only to label categories).
 const qualitySource = sources['tags/qualitytags.js'];
 const qualityArrays = {};
@@ -171,7 +173,7 @@ function createSandbox(profile, pluginConfig, webSettings, reviews) {
     const JE = {
         pluginConfig: pluginConfig,
         userConfig: { settings: toCamelCase(webSettings) },
-        t: (k) => k,
+        t: (k) => english[k] || k,
         cdn: {
             url: (a, b) => `cdn/${a}/${b}`,
             font: (f) => `cdn/font/${f}`,
@@ -245,7 +247,7 @@ function readTags(group, container) {
     for (const child of container.children) {
         switch (group) {
             case 'Quality':
-                tags.push(`${child.textContent}|${qualityCategory(child.dataset.quality, child.textContent)}`);
+                tags.push(`${child.textContent}|${child.dataset.jeEdition ? 'edition' : qualityCategory(child.dataset.quality, child.textContent)}`);
                 break;
             case 'Genre': {
                 const icon = child.querySelector('.je-msym-outlined');
@@ -371,6 +373,9 @@ async function runProfile(profile) {
         ageRatingTagsPosition: pos('ageRatingTagsPosition', 'AgeRatingTagsPosition', 'bottom-right'),
         showResolutionTag: typeof s.showResolutionTag === 'boolean' ? s.showResolutionTag : true,
         showSourceTag: typeof s.showSourceTag === 'boolean' ? s.showSourceTag : true,
+        showEditionTag: typeof s.showEditionTag === 'boolean' ? s.showEditionTag : (pluginConfig.ShowEditionTag ?? true),
+        showLowQualitySourceTag: typeof s.showLowQualitySourceTag === 'boolean' ? s.showLowQualitySourceTag : (pluginConfig.ShowLowQualitySourceTag ?? false),
+        editionTagOrder: readInt('editionTagOrder', pluginConfig.EditionTagOrder ?? 7),
         showDynamicRangeTag: typeof s.showDynamicRangeTag === 'boolean' ? s.showDynamicRangeTag : true,
         showSpecialFormatTag: typeof s.showSpecialFormatTag === 'boolean' ? s.showSpecialFormatTag : true,
         showVideoCodecTag: typeof s.showVideoCodecTag === 'boolean' ? s.showVideoCodecTag : true,

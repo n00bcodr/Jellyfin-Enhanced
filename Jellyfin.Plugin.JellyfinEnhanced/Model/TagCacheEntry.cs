@@ -34,6 +34,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public string[]? PartialAudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
+
+        // Source and edition naming facts (schema v14).
+        /// <summary>Canonical release source, derived server-side from the selected version's file/folder name.</summary>
+        public string? Source { get; set; }
+        /// <summary>Edition label from the selected version's file/folder name; contains no path.</summary>
+        public string? Edition { get; set; }
+
         /// <summary>
         /// When the item was added to the library (Jellyfin's DateCreated), in Unix
         /// milliseconds UTC. Drives the Status Tags "Just Added" badge. Null when
@@ -156,6 +163,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
                 && TagStreamData.ContentEquals(a.StreamData, b.StreamData)
+                && a.Source == b.Source
+                && a.Edition == b.Edition
                 && a.DateCreated == b.DateCreated
                 && a.PremiereDate == b.PremiereDate
                 && a.LatestEpisodeAdded == b.LatestEpisodeAdded
@@ -223,6 +232,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,
             StreamData = StreamData,
+            Source = Source,
+            Edition = Edition,
             DateCreated = DateCreated,
             PremiereDate = PremiereDate,
             LatestEpisodeAdded = LatestEpisodeAdded,

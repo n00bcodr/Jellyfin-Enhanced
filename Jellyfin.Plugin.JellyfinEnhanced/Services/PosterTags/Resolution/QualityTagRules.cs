@@ -21,8 +21,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// <summary>Model category keys, in default stack order.</summary>
         public const string Resolution = "resolution";
 
-        /// <summary>Physical media stub source (BluRay, DVD...).</summary>
+        /// <summary>Release source or physical media stub source (REMUX, BluRay, DVD...).</summary>
         public const string Source = "source";
+
+        /// <summary>Release edition from server-side naming detection.</summary>
+        public const string Edition = "edition";
+        internal const string EditionPrefix = "edition:";
 
         /// <summary>Dolby Vision / HDR.</summary>
         public const string DynamicRange = "dynamicRange";
@@ -59,7 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly Regex BareChannelRegex = new(@"^[0-9]+\.[0-9]+\z", Options);
 
         private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD" };
-        private static readonly string[] SourceOrder = { "BluRay", "HD DVD", "DVD", "VHS", "HDTV", "Physical" };
+        private static readonly string[] SourceOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "Physical", "CAM", "TS", "TC", "SCR" };
         private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA" };
@@ -85,6 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             new(SpecialFormat, SpecialFormatOrder, 4),
             new(VideoCodec, CodecOrder, 5),
             new(AudioInfo, AudioOrder, 6),
+            new(Edition, Array.Empty<string>(), 7),
         };
 
         /// <summary>
@@ -93,10 +98,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// </summary>
         /// <param name="data">Entry stream data (Series/Season: the representative episode).</param>
         /// <param name="preferredAudioLanguage">Effective preferred audio language, or null.</param>
-        public static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage)
+        /// <param name="releaseSource">Canonical server-derived source, or null for legacy entries.</param>
+        /// <param name="edition">Server-derived edition label, or null.</param>
+        public static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource = null, string? edition = null)
         {
             var qualities = new List<string>(6);
-            if (data?.Streams is null) return qualities;
+            if (data?.Streams is null)
+            {
+                AddNamingTags(qualities, releaseSource, edition);
+                return qualities;
+            }
 
             var streams = data.Streams;
             var sources = data.Sources;
@@ -167,7 +178,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
 
             var stub = DetectStub(data, sources);
-            if (stub is not null) Add(qualities, stub);
+            if (releaseSource is not null) Add(qualities, releaseSource);
+            else if (stub is not null) Add(qualities, stub);
+            if (edition is not null) Add(qualities, EditionPrefix + edition);
             return qualities;
         }
 
@@ -184,6 +197,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             List<string>? other = null;
             foreach (var label in qualities)
             {
+                if (!settings.ShowLowQualitySourceTag && label is "CAM" or "TS" or "TC" or "SCR") continue;
+                if (label == EditionPrefix + "IMAX" && qualities.Contains("IMAX") && settings.ShowSpecialFormatTag) continue;
                 var index = CategoryIndex(label);
                 if (index < 0)
                 {
@@ -219,7 +234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             foreach (var i in order)
             {
-                foreach (var label in buckets[i]!) result.Add(new QualityTag(label, Categories[i].Key));
+                foreach (var label in buckets[i]!) result.Add(new QualityTag(label.StartsWith(EditionPrefix, StringComparison.Ordinal) ? label[EditionPrefix.Length..] : label, Categories[i].Key));
             }
 
             if (other is not null)
@@ -250,8 +265,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return index < 0 ? Other : Categories[index].Key;
         }
 
+        /// <summary>Naming facts remain usable for unprobed media without stream data.</summary>
+        private static void AddNamingTags(List<string> qualities, string? source, string? edition)
+        {
+            if (source is not null) Add(qualities, source);
+            if (edition is not null) Add(qualities, EditionPrefix + edition);
+        }
+
         private static int CategoryIndex(string label)
         {
+            if (label.StartsWith(EditionPrefix, StringComparison.Ordinal)) return Categories.Length - 1;
             var normalized = NormalizeLabel(label);
             for (var i = 0; i < Categories.Length; i++)
             {
@@ -259,7 +282,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
 
             // Bare channel layouts ("2.0") fall into audio.
-            return BareChannelRegex.IsMatch(label) ? Categories.Length - 1 : -1;
+            return BareChannelRegex.IsMatch(label) ? Array.FindIndex(Categories, c => c.Key == AudioInfo) : -1;
         }
 
         private static List<TagMediaStream> SelectAudioStreamsForLanguage(List<TagMediaStream> audioStreams, string? preferred)
@@ -290,7 +313,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
         }
 
-        private static string? DetectResolution(TagMediaStream video)
+        internal static string? DetectResolution(TagMediaStream video)
         {
             var displayTitle = JsText.AsciiLower(video.DisplayTitle);
             var height = video.Height ?? 0;
@@ -432,7 +455,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
 
             var context = JsText.ToLower(JoinNonEmpty(signals));
-            if (!context.Contains(".disc", StringComparison.Ordinal)) return null;
+            if (!Regex.IsMatch(context, @"\.disc(?:$|\s*\|)", Options)) return null;
             if (ContainsAny(context, "bluray", "blu-ray", "bdrip", "bd-rip", "bdremux")) return "BluRay";
             if (ContainsAny(context, "hddvd", "hd-dvd", "hd dvd")) return "HD DVD";
             if (context.Contains("dvd", StringComparison.Ordinal)) return "DVD";

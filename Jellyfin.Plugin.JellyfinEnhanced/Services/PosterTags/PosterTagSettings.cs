@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "4";
+        public const string ResolverVersion = "5";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -134,6 +134,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Effective <c>showSourceTag</c>.</summary>
         public bool ShowSourceTag { get; private init; } = true;
+
+        // Source and edition effective settings.
+        /// <summary>Whether edition chips are shown.</summary>
+        public bool ShowEditionTag { get; private init; } = true;
+        /// <summary>Stack order of edition chips.</summary>
+        public int EditionTagOrder { get; private init; } = 7;
+        /// <summary>Whether CAM, TS, TC and SCR sources are eligible.</summary>
+        public bool ShowLowQualitySourceTag { get; private init; }
+
 
         /// <summary>Effective <c>showDynamicRangeTag</c>.</summary>
         public bool ShowDynamicRangeTag { get; private init; } = true;
@@ -357,6 +366,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 AgeRatingCap = layout.Cap("ageRating"),
                 ShowResolutionTag = user.ShowResolutionTag,
                 ShowSourceTag = user.ShowSourceTag,
+                ShowEditionTag = user.ShowEditionTag ?? config.ShowEditionTag,
+                EditionTagOrder = user.EditionTagOrder ?? config.EditionTagOrder,
+                ShowLowQualitySourceTag = user.ShowLowQualitySourceTag ?? config.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = user.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = user.ShowSpecialFormatTag,
                 ShowVideoCodecTag = user.ShowVideoCodecTag,
@@ -445,6 +457,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             QualityTagRules.Resolution => ShowResolutionTag,
             QualityTagRules.Source => ShowSourceTag,
+            QualityTagRules.Edition => ShowEditionTag,
             QualityTagRules.DynamicRange => ShowDynamicRangeTag,
             QualityTagRules.SpecialFormat => ShowSpecialFormatTag,
             QualityTagRules.VideoCodec => ShowVideoCodecTag,
@@ -457,6 +470,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             QualityTagRules.Resolution => ResolutionTagOrder,
             QualityTagRules.Source => SourceTagOrder,
+            QualityTagRules.Edition => EditionTagOrder,
             QualityTagRules.DynamicRange => DynamicRangeTagOrder,
             QualityTagRules.SpecialFormat => SpecialFormatTagOrder,
             QualityTagRules.VideoCodec => VideoCodecTagOrder,
@@ -593,6 +607,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 QualityTagsEnabled = config.QualityTagsEnabled,
                 ShowResolutionTag = config.ShowResolutionTag,
                 ShowSourceTag = config.ShowSourceTag,
+                ShowEditionTag = config.ShowEditionTag,
+                EditionTagOrder = config.EditionTagOrder,
+                ShowLowQualitySourceTag = config.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = config.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = config.ShowSpecialFormatTag,
                 ShowVideoCodecTag = config.ShowVideoCodecTag,
@@ -654,6 +671,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["quality.cap"] = Int(QualityCap);
                 values["quality.show.resolution"] = Bool(ShowResolutionTag);
                 values["quality.show.source"] = Bool(ShowSourceTag);
+                values["quality.show.edition"] = Bool(ShowEditionTag);
+                values["quality.order.edition"] = Int(EditionTagOrder);
+                values["quality.show.lowQualitySource"] = Bool(ShowLowQualitySourceTag);
                 values["quality.show.dynamicRange"] = Bool(ShowDynamicRangeTag);
                 values["quality.show.specialFormat"] = Bool(ShowSpecialFormatTag);
                 values["quality.show.videoCodec"] = Bool(ShowVideoCodecTag);

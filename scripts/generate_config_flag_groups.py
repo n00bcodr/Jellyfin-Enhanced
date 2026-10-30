@@ -184,7 +184,7 @@ class ConfigPageParser(HTMLParser):
                 top["icon_skip_depth"] += 1
             # Status controls get their dashboard copy from the locale at runtime.
             # Preserve the same English labels in analytics/What's New registries.
-            locale_key = attr_dict.get("data-je-status-label")
+            locale_key = attr_dict.get("data-je-status-label") or attr_dict.get("data-je-source-label")
             if locale_key and top["icon_skip_depth"] == 0:
                 top["text_parts"].append(ENGLISH_LABELS.get(locale_key, locale_key))
 

@@ -291,3 +291,15 @@ test('a cached projection retains its original fetch timestamp when restoring pa
   pipeline.rememberItemFacts(aggregate, SERIES, NOW);
   assert.equal(pipeline.peekItemFacts(SERIES), null, 'restoring the snapshot never extends the fetch TTL');
 });
+
+
+test('a parent response completing after the old fixed wait still updates an episode card', async t => {
+  const response = deferred();
+  const h = await setup(t, { cards: [finale], parentResponse: response });
+  assert.notEqual(h.key(EPISODE), 'series_finale', 'the unresolved parent cannot establish the finale');
+  await h.flush(650);
+  response.resolve({ Items: [aggregate] });
+  await h.flush(100);
+  assert.equal(h.key(EPISODE), 'series_finale');
+  assert.equal(h.calls.filter(c => c.url.includes('/tag-data/') && JSON.parse(c.data).includes(SERIES)).length, 1);
+});

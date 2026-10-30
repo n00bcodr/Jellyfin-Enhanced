@@ -160,7 +160,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private static PosterTagGroupLayout? ResolveQuality(TagCacheEntry entry, PosterTagSettings settings)
         {
-            var labels = QualityTagRules.Detect(entry.StreamData, settings.PreferredAudioLanguage);
+            var labels = QualityTagRules.Detect(entry.StreamData, settings.PreferredAudioLanguage, entry.Source, entry.Edition);
             if (labels.Count == 0) return null;
             var tags = QualityTagRules.Arrange(labels, settings);
             if (tags.Count == 0) return null;

@@ -62,7 +62,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 
 | Feature | What you see | Where it appears |
 |---|---|---|
-| [Quality Tags](#quality-tags) | Resolution, source, HDR, special format, video codec, sound | Supported library cards; series/season quality describes a representative episode |
+| [Quality Tags](#quality-tags) | Resolution, source, HDR, special format, video codec, sound, edition | Supported library cards; series/season quality describes a representative episode |
 | [Genre Tags](#genre-tags) | Genre icons (three by default), with names on hover | Supported library cards with genre metadata |
 | [Language Tags](#language-tags) | Distinct flags (three by default) or a no-dialogue symbol | Supported library cards; cached series/season flags cover their episodes, collection flags cover linked movies |
 | [Rating Tags](#rating-tags) | Community star score and critic percentage | Supported library cards, subject to item-type and row scopes |
@@ -237,11 +237,13 @@ Administrators configure the same defaults under **Categories and sound language
 |---|---|---|
 | Admin: **Enable Quality Tags** / personal: **Quality** switch | Off | Enables the quality group |
 | Admin: **Show resolution (4K, 1080p, ...)** / personal: **Resolution (4K, 1080p, ...)** | On; first | Shows resolution from the first video stream |
-| Admin: **Show source (BluRay, DVD, HDTV, VHS, ...)** / personal: **Source (BluRay, DVD, HDTV, ...)** | On; second | Shows the source of a physical-media stub |
+| **Source (REMUX, BluRay, WEB, HDTV, DVD, …)** | On; second | Shows the source inferred server-side from release naming, or the source of a physical-media stub |
 | Admin: **Show HDR (HDR10+, Dolby Vision)** / personal: **HDR (HDR10+, Dolby Vision)** | On; third | Shows detected dynamic-range labels |
 | Admin: **Show special format (IMAX, 3D)** / personal: **Special format (IMAX, 3D)** | On; fourth | Shows detected IMAX/3D labels |
 | Admin: **Show video format (HEVC, H264, AV1, ...)** / personal: **Video format (HEVC, H264, AV1, ...)** | On; fifth | Shows video codec labels |
 | Admin: **Show sound (Atmos, DTS, 5.1, 7.1, ...)** / personal: **Sound (Atmos, DTS, 5.1, 7.1, ...)** | On; sixth | Shows recognized audio format/channel information |
+| **Edition (Director’s Cut, Extended, …)** | On; seventh, after sound | Shows the edition from file/folder naming; its order is configurable |
+| **Include low-quality sources (CAM, TS, TC, SCR)** | Off | Allows those source labels when the Source category is on |
 | Admin: **Preferred Audio Language for Sound Tags** | **No preference (best track overall)** | Chooses a fixed language whose audio tracks determine the sound tag |
 | Admin: **Use Each User's Jellyfin Audio Language** | Off | Uses each user's Jellyfin preferred audio language; users without one retain the fixed admin language |
 | Personal: **Preferred audio language for the sound tag** | **Server default** | Inherits server policy, uses **My Jellyfin audio language**, selects **No preference (best track overall)**, or chooses a specific language |
@@ -251,11 +253,20 @@ Administrators configure the same defaults under **Categories and sound language
     | Category | Examples the detector can produce |
     |---|---|
     | Resolution | `8K`, `4K`, `1440p`, `1080p`, `720p`, `576p`, `480p`, `LOW-RES` |
-    | Source | `BluRay`, `HD DVD`, `DVD`, `VHS`, `HDTV`, `Physical` |
+    | Source | `REMUX`, `BluRay`, `WEB`, `HDTV`, `DVD`; physical stubs also support `HD DVD`, `VHS`, `Physical`; optional `CAM`, `TS`, `TC`, `SCR` |
     | Dynamic range | `Dolby Vision`, `HDR10+`, `HDR10`, `HDR` |
     | Special format | `IMAX`, `3D` |
     | Video codec | `AV1`, `HEVC`, `H265`, `VP9`, `H264`, `VP8`, `XVID`, `DIVX`, `WMV`, `MPEG2`, `MPEG4`, `MJPEG`, `THEORA` |
+    | Edition | `Director's Cut`, `Extended`, `Unrated`, `Theatrical`, `IMAX`, `Remastered`, `Criterion`, `Uncut`, `Final Cut`, `Special Edition`, or a custom `{edition-…}` label |
     | Sound | `ATMOS`, `DTS-X`, `TRUEHD`, `DTS`, `Dolby Digital+`, `7.1`, `5.1`; codec labels can include channels, such as `ATMOS 7.1` |
+
+![File and folder naming source and edition tags in the jetest movie grid](../images/tags/source-edition-desktop.webp)
+
+??? info "Compact phone labels and the Quality controls"
+
+    ![Compact source and edition labels on a 420px phone grid](../images/tags/source-edition-mobile.webp)
+
+    ![Edition category in the Quality group's Include controls](../images/tags/source-edition-settings.webp)
 
 ### Detection limits
 
@@ -267,9 +278,17 @@ Series and season quality describes one representative episode, not every episod
 
     Dimension fallback recognizes 8K at height ≥3000 or width ≥7000, and 4K at height ≥1550 or width ≥3500. A 3840×1600 ultrawide file can therefore show `4K`. PAL-sized video can show `576p`. Sorting and styling support `SD`, but the current web resolution detector does not produce it.
 
-    **Source and special format:** Source badges require a `.disc` media stub and select one source. An ordinary download's release name alone does not identify it as BluRay.
+    **Source:** A `.disc` physical-media stub wins first. Otherwise JE checks the selected version's file name, then its immediate parent folder. Matching ignores case and uses separators such as dots, spaces, underscores, hyphens and brackets; `Blue Ruin` does not match BluRay. `BDRip`/`BRRip` become **BluRay**, `WEB-DL`/`WEBDL`/`WEBRip` become **WEB**, and `DVDRip` becomes **DVD**. Bare `WEB` requires a following resolution or codec token, such as `WEB.1080p` or `WEB.x265`; `Web of Lies (2016)` produces no source. A `.ts` file extension does not itself mean a telesync release.
 
-    IMAX detection uses title/name/path signals and excludes `NON-IMAX`. 3D requires a path containing `3d` and a recognized format signal such as `hsbs`, `fsbs`, `htab`, `ftab`, or `mvc`.
+    Multi-version source selection uses the quality resolution buckets, highest first. Equal-resolution versions prefer REMUX, BluRay, WEB, HDTV, DVD, SCR, TC, TS, then CAM, with stable server order for equal ranks. Edition follows that same selected version. Series and seasons retain their representative episode policy. This does not select the version used for playback.
+
+    **Edition:** Explicit `{edition-…}` markers in the file name, then the parent folder, take precedence over known edition words in those names. For example, `Movie (2020) {edition-Director's Cut}/Movie.1080p.WEB-DL.mkv` shows **WEB** and **Director's Cut**. Custom explicit edition labels are plain text, limited to 64 characters, and cannot include path separators. Directory paths stay on the server; clients receive labels and the existing basename-only legacy signals.
+
+    Full density keeps full edition labels. Compact density uses **BD**, **DC**, **Ext**, **Unr**, **Rem**, **CC**, and **Special** for BluRay, Director's Cut, Extended, Unrated, Remastered, Criterion, and Special Edition. If both the special-format and edition categories would show IMAX, the special-format chip wins; disabling that category leaves the edition chip eligible. Native Poster Tags apply the same detection, category toggles/order and low-quality gate, with their existing full-label corner presentation.
+
+    Source colours are deep blue for REMUX, blue for BluRay, teal for WEB, grey-blue for HDTV, grey for DVD and red for low-quality sources. Editions use purple. The known source and edition labels are available in **Tag Styles**; custom editions inherit the quality group's style.
+
+    **Special format:** IMAX detection uses title/name/path signals and excludes `NON-IMAX`. 3D requires a path containing `3d` and a recognized format signal such as `hsbs`, `fsbs`, `htab`, `ftab`, or `mvc`.
 
     **Sound:** JE takes the first recognized candidate display title, then checks technical metadata if no title matched. It detects channels separately. It does not rank every track by richness, despite the **No preference (best track overall)** option wording. Standalone channel fallback produces `5.1` or `7.1`; `2.0` can be appended to a recognized codec.
 

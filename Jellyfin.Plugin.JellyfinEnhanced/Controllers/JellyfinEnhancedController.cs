@@ -3830,6 +3830,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.QualityTagsEnabled,
                 config.ShowResolutionTag,
                 config.ShowSourceTag,
+                // Source and edition defaults.
+                config.ShowEditionTag,
+                config.EditionTagOrder,
+                config.ShowLowQualitySourceTag,
                 config.ShowDynamicRangeTag,
                 config.ShowSpecialFormatTag,
                 config.ShowVideoCodecTag,
@@ -5333,6 +5337,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                         ShowResolutionTag = defaultConfig.ShowResolutionTag,
                         ShowSourceTag = defaultConfig.ShowSourceTag,
+                        // Source and edition defaults.
+                        ShowEditionTag = defaultConfig.ShowEditionTag,
+                        EditionTagOrder = defaultConfig.EditionTagOrder,
+                        ShowLowQualitySourceTag = defaultConfig.ShowLowQualitySourceTag,
                         ShowDynamicRangeTag = defaultConfig.ShowDynamicRangeTag,
                         ShowSpecialFormatTag = defaultConfig.ShowSpecialFormatTag,
                         ShowVideoCodecTag = defaultConfig.ShowVideoCodecTag,
@@ -8348,6 +8356,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                 ShowResolutionTag = defaultConfig.ShowResolutionTag,
                 ShowSourceTag = defaultConfig.ShowSourceTag,
+                // Source and edition defaults.
+                ShowEditionTag = defaultConfig.ShowEditionTag,
+                EditionTagOrder = defaultConfig.EditionTagOrder,
+                ShowLowQualitySourceTag = defaultConfig.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = defaultConfig.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = defaultConfig.ShowSpecialFormatTag,
                 ShowVideoCodecTag = defaultConfig.ShowVideoCodecTag,
@@ -9234,10 +9246,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Series and Season are containers with no media files — skip the expensive call
                 List<object>? trimmedStreams = null;
                 List<object>? trimmedSources = null;
+                var namingTags = new Services.MediaNamingTags();
                 if (!isContainer)
                 {
                     var mediaSources =
                         SelectTagDataMediaSources(item.GetMediaSources(false));
+                    namingTags = Services.MediaNamingTags.Detect(item.Path, mediaSources, item.Name);
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
                         .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache))
@@ -9267,8 +9281,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     trimmedSources = mediaSources
                         .Select(s => (object)new
                         {
-                            Path = string.IsNullOrEmpty(s.Path) ? null : System.IO.Path.GetFileName(s.Path),
-                            Name = s.Name,
+                            Path = Services.MediaNamingTags.FileName(s.Path),
+                            Name = Services.MediaNamingTags.FileName(s.Name),
                         })
                         .ToList();
                 }
@@ -9311,7 +9325,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,
-                    Path = string.IsNullOrEmpty(item.Path) ? null : System.IO.Path.GetFileName(item.Path),
+                    Path = Services.MediaNamingTags.FileName(item.Path),
+                    Source = namingTags.Source,
+                    Edition = namingTags.Edition,
                     MediaStreams = trimmedStreams,
                     MediaSources = trimmedSources,
                     FirstEpisode = firstEpisodeData,

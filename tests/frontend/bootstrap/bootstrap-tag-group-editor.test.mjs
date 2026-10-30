@@ -173,7 +173,7 @@ test('rating include pills save the switches and re-render rating tags; the prev
 
   // Quality and the others have nothing (or their own controls) to include.
   assert.ok(h.row('genre').textContent.includes('panel_settings_ui_tag_editor_nothing_to_include'));
-  assert.equal(h.row('quality').querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row').length, 6);
+  assert.equal(h.row('quality').querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row').length, 7);
 });
 
 test('reset restores the administrator\'s layout defaults and keeps the enable toggles and includes', async t => {
@@ -311,4 +311,25 @@ test('status badge families live on the Status badges tab with defaults and pers
   const inherited = setup(t, { plugin: { StatusTagsSeriesStatus: true, StatusTagsSchedule: false } });
   assert.equal(inherited.$('#statusTagsSeriesStatusToggle').checked, true);
   assert.equal(inherited.$('#statusTagsScheduleToggle').checked, false);
+});
+
+
+test('source and edition settings inherit defaults, save, reorder and reset through the Quality editor', async t => {
+  const h = setup(t, { plugin: { ShowEditionTag: false, EditionTagOrder: 1, ShowLowQualitySourceTag: true }, stored: { qualityTagsEnabled: true } });
+  h.JE.reinitializeQualityTags = () => h.calls.push('reinitializeQualityTags');
+  assert.equal(h.$('#showEditionTagToggle').checked, false);
+  assert.equal(h.$('#showLowQualitySourceTagToggle').checked, true);
+  assert.equal(h.$('#qualityTagsSubToggles .je-quality-cat-row').dataset.catKey, 'showResolutionTag');
+  await h.change(h.$('#showEditionTagToggle'), true);
+  assert.equal(h.saved().showEditionTag, true);
+  await h.change(h.$('#showLowQualitySourceTagToggle'), false);
+  assert.equal(h.saved().showLowQualitySourceTag, false);
+  assert.ok(h.calls.includes('reinitializeQualityTags'));
+  const edition = h.$('[data-cat-key="showEditionTag"]');
+  await h.click(edition.querySelector('.je-cat-up'));
+  assert.equal(h.saved().editionTagOrder, 1);
+  await h.click(h.$('#jeTgeReset'));
+  assert.equal(h.saved().showEditionTag, true, 'layout reset preserves category choices');
+  assert.equal(h.saved().showLowQualitySourceTag, false);
+  assert.equal(h.saved().editionTagOrder, 1);
 });

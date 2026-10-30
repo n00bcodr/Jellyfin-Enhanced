@@ -71,6 +71,18 @@ const synthetic = {
     q38: movie({ StreamData: sd([video()], [{ Path: 'movie.mkv', Name: 'Movie' }, null], 'Movie', 'movie.mkv') }),
     q39: movie({ StreamData: sd([video()], [{ Name: 'Movie' }, { Path: 'x.3d.mvc.mkv' }, null], 'Movie', 'movie.mkv') }),
     q40: movie({ StreamData: sd([video(), null]) }),
+    // Server-derived source and edition facts, including unprobed media and IMAX dedupe.
+    ns01: movie({ Source: 'REMUX', Edition: "Director's Cut" }),
+    ns02: movie({ Source: 'BluRay', Edition: 'Extended' }),
+    ns03: movie({ Source: 'WEB', Edition: 'Unrated' }),
+    ns04: movie({ Source: 'HDTV', Edition: 'Remastered' }),
+    ns05: movie({ Source: 'DVD', Edition: 'Criterion' }),
+    ns06: movie({ Source: 'CAM', Edition: 'Theatrical' }),
+    ns07: movie({ Source: 'TS', Edition: 'Final Cut' }),
+    ns08: movie({ Source: 'TC', Edition: 'Special Edition' }),
+    ns09: movie({ Source: 'SCR', Edition: 'Uncut' }),
+    ns10: movie({ Source: 'WEB', Edition: 'IMAX', StreamData: sd([], [], 'Film.IMAX') }),
+    ns11: movie({ Source: 'REMUX', Edition: 'Fan Edit', StreamData: null }),
     // Genres
     g01: movie({ Genres: ['Science Fiction', 'Action', 'Adventure', 'Comedy'] }),
     g02: movie({ Genres: ['SCIENCE-FICTION', 'Comédie', 'Ciencia Ficción', 'Боевик'] }),
@@ -192,6 +204,11 @@ const synth = (name, settingsRaw, pluginOverrides = {}, jellyfinAudioPreference 
     profiles.push({ name, user: admin.id, synthetic: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference, reviews: 'synthetic' });
 
 synth('all-on-defaults', { ...allOn });
+synth('naming-low-source-opt-in', { QualityTagsEnabled: true, ShowLowQualitySourceTag: true, EditionTagOrder: 0 });
+synth('naming-categories-off', { QualityTagsEnabled: true, ShowLowQualitySourceTag: true, ShowSourceTag: false, ShowEditionTag: false });
+synth('naming-imax-edition-only', { QualityTagsEnabled: true, ShowSpecialFormatTag: false });
+synth('naming-admin-defaults', { QualityTagsEnabled: true }, { ShowEditionTag: false, ShowLowQualitySourceTag: true, EditionTagOrder: 1 });
+synth('naming-user-overrides', { QualityTagsEnabled: true, ShowEditionTag: true, ShowLowQualitySourceTag: false, EditionTagOrder: 7 }, { ShowEditionTag: false, ShowLowQualitySourceTag: true, EditionTagOrder: 1 });
 synth('positions-mirror', {
     ...allOn, QualityTagsPosition: 'bottom-right', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'top-left',
     AgeRatingTagsPosition: 'top-left', LanguageTagsPosition: 'top-right', VideoCodecTagOrder: 0,
