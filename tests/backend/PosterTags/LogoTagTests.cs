@@ -366,6 +366,62 @@ public class LogoTagTests
         }
     }
 
+    [Fact]
+    public async Task ALookupReadDailyOutlivesFailedRefreshesAndRestartsAndOneNobodyReadsIsPruned()
+    {
+        const string other = """{"production_companies":[{"name":"Old","logo_path":"/old.png"}]}""";
+        var dir = Path.Combine(Path.GetTempPath(), "je-logos-" + Guid.NewGuid().ToString("N"));
+        var clock = new Clock();
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(
+            request.RequestUri!.Host == "image.tmdb.org" ? Image(Png)
+            : IntegrationTransport.Response(request.RequestUri.AbsolutePath.EndsWith("/604", StringComparison.Ordinal) ? other : MovieDetails)));
+        TagLogoService Start() => new(transport, new TmdbResponseCache(transport, clock), clock, Path.Combine(dir, "tag-logos.json"), Path.Combine(dir, "logos"), null, 4, 1000, TimeSpan.FromSeconds(10));
+        bool Has(TagLogoService s, string id) => s.TryGet("movie", id, TagLogoService.LookupKind.Details, "US", out _);
+        var service = Start();
+        try
+        {
+            await service.WarmAsync("key", [("movie", "603", TagLogoService.LookupKind.Details), ("movie", "604", TagLogoService.LookupKind.Details)], "US", CancellationToken.None);
+            Assert.NotNull(await service.GetImageAsync("w92", "wb.png", CancellationToken.None));
+            Assert.NotNull(await service.GetImageAsync("w92", "old.png", CancellationToken.None));
+            var calls = transport.Calls;
+
+            // The key is removed: no refresh succeeds, but 603's cards and poster are read every day.
+            for (var day = 1; day <= 32; day++)
+            {
+                clock.Advance(TimeSpan.FromDays(1));
+                Assert.True(Has(service, "603"));
+                Assert.NotNull(service.TryReadCached("w92", "wb.png"));
+                await service.WarmAsync(null, [("movie", "603", TagLogoService.LookupKind.Details)], "US", CancellationToken.None);
+                service.Maintain();
+                if (day % 16 == 0)
+                {
+                    service.Dispose();
+                    service = Start();
+                }
+            }
+
+            Assert.Equal(calls, transport.Calls);
+            Assert.True(Has(service, "603"), "a lookup read every day keeps its last data");
+            Assert.True(service.IsAllowed("w92", "wb.png"));
+            Assert.NotNull(service.TryReadCached("w92", "wb.png"));
+            Assert.False(Has(service, "604"), "a lookup nobody read for the grace is dropped");
+            Assert.False(service.IsAllowed("w92", "old.png"));
+            Assert.False(File.Exists(Path.Combine(dir, "logos", "w92", "old.png")));
+
+            // Nobody reads 603 any more: after the grace it goes the same way, across a restart too.
+            clock.Advance(TagLogoService.StaleLookupGrace + TimeSpan.FromHours(1));
+            service.Dispose();
+            service = Start();
+            Assert.False(service.IsAllowed("w92", "wb.png"));
+            Assert.False(Has(service, "603"));
+            Assert.Empty(Directory.GetFiles(Path.Combine(dir, "logos", "w92")));
+        }
+        finally
+        {
+            Cleanup(service, dir);
+        }
+    }
+
     // Named Movie: GetBaseItemKind reads the class name.
     private sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
     {

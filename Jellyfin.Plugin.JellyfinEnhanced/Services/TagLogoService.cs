@@ -34,10 +34,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// lookup are served, so the route is not an open TMDB image proxy.
     /// Native Poster Tags read the same files (<see cref="TryReadCached"/>).
     /// The files share one size budget (<see cref="ImageBudgetBytes"/>): the
-    /// least recently read go first. A lookup not refreshed for
-    /// <see cref="LookupTtl"/> plus <see cref="StaleLookupGrace"/> is dropped
-    /// with the images only it named, and a start removes files no lookup
-    /// names and abandoned downloads.
+    /// least recently read go first. A lookup neither refreshed for
+    /// <see cref="LookupTtl"/> plus <see cref="StaleLookupGrace"/> nor read
+    /// for <see cref="StaleLookupGrace"/> is dropped with the images only it
+    /// named (one still read keeps its last data while refreshes fail), and a
+    /// start removes files no lookup names and abandoned downloads.
     /// </para>
     /// </summary>
     public sealed class TagLogoService : IDisposable
@@ -70,8 +71,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const long ImageBudgetBytes = 64L * 1024 * 1024;
 
         /// <summary>
-        /// A lookup not refreshed for <see cref="LookupTtl"/> plus this long (a title gone from the
-        /// library, an old region) is dropped, and the images only it named with it.
+        /// A lookup not refreshed for <see cref="LookupTtl"/> plus this long and not read for this
+        /// long (a title gone from the library, an old region) is dropped, and the images only it
+        /// named with it. Reads (<see cref="TryGet"/>) keep a lookup whose refreshes fail.
         /// </summary>
         public static readonly TimeSpan StaleLookupGrace = TimeSpan.FromDays(30);
 
@@ -82,7 +84,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private static readonly TimeSpan ImageTimeout = TimeSpan.FromSeconds(15);
         private static readonly TimeSpan SaveDebounce = TimeSpan.FromSeconds(30);
 
-        /// <summary>A read moves an image's file time forward at most this often (its LRU order after a restart).</summary>
+        /// <summary>
+        /// A read moves an image's file time (its LRU order after a restart) or a lookup's
+        /// <see cref="Lookup.Used"/> forward at most this often.
+        /// </summary>
         private static readonly TimeSpan AccessStampInterval = TimeSpan.FromHours(1);
 
         /// <summary>
@@ -105,8 +110,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>One provider, company or network: its name and TMDB logo path (null when TMDB has none).</summary>
         public sealed record LogoRef(string Name, string? Logo);
 
-        /// <summary>A stored lookup: when it ran (Unix ms), what it found, and whether it failed.</summary>
-        public sealed record Lookup(long Fetched, LogoRef[] Items, bool Failed);
+        /// <summary>
+        /// A stored lookup: when it ran (Unix ms), what it found, whether it failed, and when an
+        /// entry build last read it (Unix ms, coarse: see <see cref="TryGet"/>), which pruning
+        /// weighs apart from the refresh age.
+        /// </summary>
+        public sealed record Lookup(long Fetched, LogoRef[] Items, bool Failed, long Used = 0);
 
         /// <summary>A cached logo image and its strong validator.</summary>
         public sealed record LogoImage(byte[] Bytes, string ContentType, string ETag);
@@ -166,6 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Queue<DateTimeOffset> _upstreamStarts = new();
         private readonly object _saveLock = new();
         private Timer? _saveTimer;
+        private bool _saveArmed;
         private volatile bool _disposed;
 
         /// <summary>The running instance (DI singleton), for the tag cache and native posters.</summary>
@@ -204,9 +214,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>True for a TMDB id the lookups accept (digits only).</summary>
         public static bool IsValidId(string? tmdbId) => !string.IsNullOrEmpty(tmdbId) && tmdbId.Length <= 9 && tmdbId.All(char.IsAsciiDigit);
 
-        /// <summary>A stored lookup, fresh or not (the tag cache prefers stale data to none). No network I/O.</summary>
-        public bool TryGet(string mediaType, string tmdbId, LookupKind kind, string region, out Lookup lookup) =>
-            _lookups.TryGetValue(KeyOf(mediaType, tmdbId, kind, region), out lookup!);
+        /// <summary>
+        /// A stored lookup, fresh or not (the tag cache prefers stale data to none). No network I/O.
+        /// Every entry projection reads through here (builds, the daily reconcile's logo refresh,
+        /// batch lookups, native on-demand builds), so it notes the use, at most once an hour.
+        /// </summary>
+        public bool TryGet(string mediaType, string tmdbId, LookupKind kind, string region, out Lookup lookup)
+        {
+            var key = KeyOf(mediaType, tmdbId, kind, region);
+            if (!_lookups.TryGetValue(key, out lookup!)) return false;
+            var now = Now;
+            if (now - lookup.Used >= AccessStampInterval.TotalMilliseconds && _lookups.TryUpdate(key, lookup with { Used = now }, lookup))
+                ScheduleSave(postpone: false);
+            return true;
+        }
 
         /// <summary>True when the lookup is missing, expired, or failed long enough ago to retry.</summary>
         public bool IsDue(string mediaType, string tmdbId, LookupKind kind, string region)
@@ -248,6 +269,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     previous = _lookups.TryGetValue(key, out var old) ? old : null;
                     stored = result.Failed && previous != null ? previous with { Fetched = result.Fetched, Failed = true } : result;
+                    // A warm asks for titles the library has: a use as well.
+                    stored = stored with { Used = Math.Max(previous?.Used ?? 0, result.Fetched) };
                     _lookups[key] = stored;
                     foreach (var item in stored.Items) Remember(item.Logo);
                 }
@@ -642,21 +665,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Drop lookups not refreshed for <see cref="LookupTtl"/> plus
-        /// <see cref="StaleLookupGrace"/> and rebuild the allowlist from the
+        /// Drop lookups both not refreshed for <see cref="LookupTtl"/> plus
+        /// <see cref="StaleLookupGrace"/> and not read for
+        /// <see cref="StaleLookupGrace"/>, and rebuild the allowlist from the
         /// rest, so a logo no lookup names any more (an old region, a changed
-        /// logo, a title gone from the library) is no longer served. True when
-        /// a lookup was dropped.
+        /// logo, a title gone from the library) is no longer served. A lookup
+        /// still read keeps its last data however long refreshes fail (no key,
+        /// TMDB down). True when a lookup was dropped.
         /// </summary>
         private bool PruneLookups()
         {
-            var cutoff = Now - (long)(LookupTtl + StaleLookupGrace).TotalMilliseconds;
+            var now = Now;
+            var staleCutoff = now - (long)(LookupTtl + StaleLookupGrace).TotalMilliseconds;
+            var unusedCutoff = now - (long)StaleLookupGrace.TotalMilliseconds;
             var pruned = false;
             lock (_lookupLock)
             {
                 foreach (var pair in _lookups)
                 {
-                    if (pair.Value.Fetched < cutoff && _lookups.TryRemove(pair)) pruned = true;
+                    if (pair.Value.Fetched < staleCutoff && pair.Value.Used < unusedCutoff && _lookups.TryRemove(pair)) pruned = true;
                 }
 
                 var named = new HashSet<string>(StringComparer.Ordinal);
@@ -707,12 +734,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var data = JsonSerializer.Deserialize<DiskFormat>(File.ReadAllText(_storePath));
                 if (data?.V != DiskSchemaVersion || data.Lookups == null) return;
+                var now = Now;
                 foreach (var (key, lookup) in data.Lookups)
                 {
                     if (lookup?.Items == null) continue;
                     var items = lookup.Items.Where(i => i != null && !string.IsNullOrWhiteSpace(i.Name))
                         .Select(i => i with { Name = Trim(i.Name), Logo = IsLogoPath(i.Logo) ? i.Logo : null }).ToArray();
-                    _lookups[key] = lookup with { Items = items };
+                    // A store written before uses were recorded: its grace starts now.
+                    _lookups[key] = lookup with { Items = items, Used = lookup.Used > 0 ? lookup.Used : now };
                     foreach (var item in items) Remember(item.Logo);
                 }
             }
@@ -722,16 +751,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private void ScheduleSave()
+        /// <summary>
+        /// Save after <see cref="SaveDebounce"/>. Uses (<paramref name="postpone"/>
+        /// false) only arm the timer when none is pending, so steady reads never
+        /// push a save back indefinitely.
+        /// </summary>
+        private void ScheduleSave(bool postpone = true)
         {
             if (_storePath == null || _disposed) return;
+            if (!postpone && Volatile.Read(ref _saveArmed)) return;
             lock (_saveLock)
             {
+                if (_disposed || (!postpone && _saveArmed)) return;
                 _saveTimer ??= new Timer(_ =>
                 {
+                    Volatile.Write(ref _saveArmed, false);
                     Maintain();
                     SaveToDisk();
                 }, null, Timeout.Infinite, Timeout.Infinite);
+                Volatile.Write(ref _saveArmed, true);
                 _saveTimer.Change(SaveDebounce, Timeout.InfiniteTimeSpan);
             }
         }
