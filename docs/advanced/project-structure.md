@@ -721,3 +721,9 @@ The inventory at `tests/docs/production-inventory.json` records lexical producti
 | `more-info-needed.yml`, `stale.yml` | Issue maintenance. |
 
 `.github/ISSUE_TEMPLATE/bug.md` and `.github/ISSUE_TEMPLATE/feature_request.md` provide report templates; `.github/SECURITY_GUIDELINES.md`, `.github/codeql/codeql-config.yml`, `.github/dependabot.yml` and `.github/funding.yml` hold repository policy/configuration. Follow [CONTRIBUTING.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/CONTRIBUTING.md) for which checks apply to a contribution and [SECURITY.md](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/SECURITY.md) for reporting vulnerabilities.
+
+### Tag size and gap ownership
+
+`Configuration/TagLayoutSettings.cs` validates `TagScale` and `TagGap` for user settings and admin defaults; `TagShapeSettings.cs` reuses those validators for optional per-shape values. `js/core/tag-layout.js` resolves inheritance and writes `--je-tag-scale` / `--je-tag-gap` to hosts and caption outlets. The existing tag styles retain their responsive clamps and multiply their metrics by those properties. `preserveLegacySizing` derives the original declarations for version-0 hosts inside the same responsive rules, preserving exact legacy rasterization. The Media Tags hub controls save through `ui-panel-settings.js`; the preview uses the same card resolver.
+
+Native settings and cache digests are resolved in `Services/PosterTags/PosterTagSettings.cs`. `Rendering/PosterTagCss.cs` scales logical metrics, `PosterTagPlan.cs` places the resulting chips, and `PosterTagTileCache.cs` keys tiles by size and gap as well as image scale. `tests/backend/Core/CoreTagScaleSettingsTests.cs` covers validation, round trips, inherited defaults, native metrics and cache pixels; the existing frontend layout/hub suites and poster parity profiles cover web behavior and effective native settings. No new production module or tag-cache entry field is added.

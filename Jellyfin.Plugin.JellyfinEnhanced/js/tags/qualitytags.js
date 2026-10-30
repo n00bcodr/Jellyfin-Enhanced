@@ -1005,7 +1005,7 @@
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;
-                    gap: 4px;
+                    gap: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     align-items: flex-start;
                     z-index: 100;
                     max-width: calc(100% - 12px);
@@ -1016,8 +1016,8 @@
                 .${overlayClass} {
                     font-weight: bold;
                     border-radius: 5px;
-                    padding: 2px 10px;
-                    font-size: clamp(0.65rem, 2vw, 0.85rem);
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
+                    font-size: calc(clamp(0.65rem, 2vw, 0.85rem) * var(--je-tag-scale, 1));
                     user-select: none;
                     pointer-events: none;
                     font-variant-caps: small-caps;
@@ -1031,42 +1031,42 @@
                     line-height: 1.2;
                 }
                 .layout-mobile .${overlayClass} {
-                    padding: 0px 6px;
-                    font-size: 0.65rem;
+                    padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
+                    font-size: calc(0.65rem * var(--je-tag-scale, 1));
                     border-radius: 3px;
                 }
                 .layout-mobile .${containerClass} {
-                    gap: 2px;
+                    gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 }
                 @media (min-width: 1440px) {
                     .${overlayClass} {
-                        padding: 3px 12px;
-                        font-size: 0.9rem;
+                        padding: calc(3px * var(--je-tag-scale, 1)) calc(12px * var(--je-tag-scale, 1));
+                        font-size: calc(0.9rem * var(--je-tag-scale, 1));
                         border-radius: 6px;
                     }
                     .${containerClass} {
-                        gap: 6px;
+                        gap: calc(6px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     }
                 }
                 @media (max-width: 768px) {
                     .${overlayClass} {
-                        padding: 0px 6px;
-                        font-size: 0.65rem;
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
+                        font-size: calc(0.65rem * var(--je-tag-scale, 1));
                         border-radius: 3px;
                     }
                     .${containerClass} {
-                        gap: 1px;
+                        gap: calc(1px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     }
                 }
                 @media (max-width: 480px) {
                     .${overlayClass} {
-                        padding: 0px 5px;
-                        font-size: 0.6rem;
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
+                        font-size: calc(0.6rem * var(--je-tag-scale, 1));
                         border-radius: 2px;
                         box-shadow: 0 1px 3px rgba(0,0,0,0.4);
                     }
                     .${containerClass} {
-                        gap: 1px;
+                        gap: calc(1px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                         max-height: 85%;
                     }
                 }

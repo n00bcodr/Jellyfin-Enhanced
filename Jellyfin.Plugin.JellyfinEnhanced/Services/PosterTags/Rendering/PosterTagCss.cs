@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using SkiaSharp;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 {
@@ -35,33 +36,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Synthesised small caps: lowercase letters drawn as capitals at this fraction of the font size (rounded).</summary>
         public const float SmallCapsScale = 0.7f;
 
-        public PosterTagCss(float cardWidth)
+        public PosterTagCss(float cardWidth, string tagScale = "default", string tagGap = "default")
         {
             CardWidth = cardWidth;
+            Scale = TagLayoutRules.ScaleFactor(tagScale);
+            Gap = TagLayoutRules.GapFactor(tagGap);
+            StackGap = CornerStackGap * Scale * Gap;
+            IndicatorOffset = TopRightIndicatorOffset * Scale;
             float cqw = cardWidth / 100f;
 
-            QualityFontSize = Clamp(9f, 6.6f * cqw, 13.6f);
-            QualityPaddingV = Clamp(0f, 0.6f * cqw, 2f);
-            QualityPaddingH = Clamp(4f, 4.2f * cqw, 10f);
-            QualityRadius = Clamp(2f, 2.4f * cqw, 5f);
-            QualityGap = Clamp(1f, 1.8f * cqw, 4f);
+            QualityFontSize = Clamp(9f, 6.6f * cqw, 13.6f) * Scale;
+            QualityPaddingV = Clamp(0f, 0.6f * cqw, 2f) * Scale;
+            QualityPaddingH = Clamp(4f, 4.2f * cqw, 10f) * Scale;
+            QualityRadius = Clamp(2f, 2.4f * cqw, 5f) * Scale;
+            QualityGap = Clamp(1f, 1.8f * cqw, 4f) * Scale * Gap;
 
-            GenreSize = Clamp(18f, 15f * cqw, 30f);
-            GenreGlyphSize = Clamp(11f, 9.5f * cqw, 20f);
-            GenreGap = Clamp(2f, 1.8f * cqw, 4f);
+            GenreSize = Clamp(18f, 15f * cqw, 30f) * Scale;
+            GenreGlyphSize = Clamp(11f, 9.5f * cqw, 20f) * Scale;
+            GenreGap = Clamp(2f, 1.8f * cqw, 4f) * Scale * Gap;
 
-            FlagWidth = Clamp(16f, 15f * cqw, 32f);
-            LanguageGap = Clamp(1f, 1.8f * cqw, 3f);
+            FlagWidth = Clamp(16f, 15f * cqw, 32f) * Scale;
+            LanguageGap = Clamp(1f, 1.8f * cqw, 3f) * Scale * Gap;
 
-            RatingGap = Clamp(2f, 1.8f * cqw, 3f);
-            ChipFontSize = Clamp(9f, 6.8f * cqw, 13f);
-            ChipPaddingV = Clamp(2f, 2f * cqw, 4f);
-            ChipPaddingH = Clamp(4f, 4.5f * cqw, 8f);
-            RatingInnerGap = Clamp(2f, 2.2f * cqw, 4f);
-            RatingIconSize = Clamp(9f, 7f * cqw, 14f);
+            RatingGap = Clamp(2f, 1.8f * cqw, 3f) * Scale * Gap;
+            ChipFontSize = Clamp(9f, 6.8f * cqw, 13f) * Scale;
+            ChipPaddingV = Clamp(2f, 2f * cqw, 4f) * Scale;
+            ChipPaddingH = Clamp(4f, 4.5f * cqw, 8f) * Scale;
+            RatingInnerGap = Clamp(2f, 2.2f * cqw, 4f) * Scale;
+            RatingIconSize = Clamp(9f, 7f * cqw, 14f) * Scale;
         }
 
         public float CardWidth { get; }
+        public float Scale { get; }
+        public float Gap { get; }
+        public float StackGap { get; }
+        public float IndicatorOffset { get; }
 
         public float QualityFontSize { get; }
 

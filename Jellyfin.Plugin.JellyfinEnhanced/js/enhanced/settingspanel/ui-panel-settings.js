@@ -417,6 +417,8 @@
         // The Media Tags hub's layout tiles and density pills (radio groups).
         document.getElementById('jeTagLayoutChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLayout', e.target.value));
         document.getElementById('jeTagDensityChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLabelDensity', e.target.value));
+        document.getElementById('jeTagScaleChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagScale', e.target.value));
+        document.getElementById('jeTagGapChoice')?.addEventListener('change', (e) => saveTagLayoutSetting('tagGap', e.target.value));
 
         // --- Tag Styles: user presets ---
         // The empty choice stores null (follow the admin's preset); the web

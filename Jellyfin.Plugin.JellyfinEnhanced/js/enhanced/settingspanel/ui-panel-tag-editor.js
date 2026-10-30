@@ -503,6 +503,8 @@
         const adminLayout = String(p.TagLayout || '').toLowerCase();
         JE.currentSettings.tagLayout = LAYOUTS.includes(adminLayout) ? adminLayout : 'corners';
         JE.currentSettings.tagLabelDensity = String(p.TagLabelDensity || '').toLowerCase() === 'compact' ? 'compact' : 'full';
+        JE.currentSettings.tagScale = L.readScale(p.TagScale) || 'default';
+        JE.currentSettings.tagGap = L.readGap(p.TagGap) || 'default';
         JE.currentSettings.tagLayouts = copy(p.TagLayouts);
         JE.currentSettings.tagGroupOrder = Array.isArray(p.TagGroupOrder) ? p.TagGroupOrder.slice() : null;
         JE.currentSettings.tagGroupCaps = copy(p.TagGroupCaps);

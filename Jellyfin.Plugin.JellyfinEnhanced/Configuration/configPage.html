@@ -514,6 +514,23 @@
                                         </select>
                                     </div>
                                     <div class="fieldDescription je-field-desc-sm">Tag groups, highest priority first: groups higher in the list win when space is short and stack nearest the edge. Position and limit apply to the layout selected above; switch the layout to set another one's positions.</div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagScale">Default Tag size</label>
+                                        <select is="emby-select" id="tagScale" name="tagScale" class="emby-select">
+                                            <option value="smaller">Smaller (85%)</option>
+                                            <option value="default">Default (100%)</option>
+                                            <option value="larger">Larger (115%)</option>
+                                            <option value="largest">Largest (130%)</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagGap">Default Gap</label>
+                                        <select is="emby-select" id="tagGap" name="tagGap" class="emby-select">
+                                            <option value="tight">Tight</option>
+                                            <option value="default">Default</option>
+                                            <option value="roomy">Roomy</option>
+                                        </select>
+                                    </div>
                                     <ol id="tagGroupAdminRows" class="je-tla-rows"></ol>
                                 </div>
                             </details>
@@ -5959,6 +5976,10 @@
                 if (select) select.value = LAYOUT_SLOTS[savedLayout] ? savedLayout : 'corners';
                 var density = document.getElementById('tagLabelDensity');
                 if (density) density.value = String(config.TagLabelDensity || '').toLowerCase() === 'compact' ? 'compact' : 'full';
+                ['Scale', 'Gap'].forEach(function (key) {
+                    var control = document.getElementById('tag' + key);
+                    if (control) control.value = config['Tag' + key] || 'default';
+                });
                 state.order = null;
                 if (Array.isArray(config.TagGroupOrder)) {
                     var seen = [];
@@ -5990,6 +6011,8 @@
             function collect(config) {
                 config.TagLayout = layout();
                 config.TagLabelDensity = (document.getElementById('tagLabelDensity') || {}).value === 'compact' ? 'compact' : 'full';
+                config.TagScale = (document.getElementById('tagScale') || {}).value || 'default';
+                config.TagGap = (document.getElementById('tagGap') || {}).value || 'default';
                 config.TagGroupOrder = state.order ? state.order.slice() : null;
                 var caps = {};
                 var anyCap = false;
@@ -6152,6 +6175,7 @@
             /** Whether a stored look is exactly the recommended one. */
             function isRecommended(shape, look) {
                 var want = JE_TAG_SHAPE_RECOMMENDED[shape];
+                if (pick(look, 'tagScale') || pick(look, 'tagGap')) return false;
                 if (String(pick(look, 'layout') || '').toLowerCase() !== want.layout) return false;
                 if (String(pick(look, 'density') || '').toLowerCase() !== want.density) return false;
                 var slots = pick(look, 'slots');
@@ -9870,7 +9894,7 @@
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
             // Layout and density matter once any poster tag group is on by default.
-            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity'], noHint: true },
+            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagScale', 'tagGap'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },

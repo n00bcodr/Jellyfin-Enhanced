@@ -228,6 +228,16 @@ const synth = (name, settingsRaw, pluginOverrides = {}, jellyfinAudioPreference 
     profiles.push({ name, user: admin.id, synthetic: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference, reviews: 'synthetic' });
 
 synth('all-on-defaults', { ...allOn });
+for (const TagScale of ['smaller', 'larger', 'largest']) {
+    synth(`tag-scale-${TagScale}`, { ...allOn, TagLayoutSettingsVersion: 1, TagScale });
+}
+for (const TagGap of ['tight', 'roomy']) {
+    synth(`tag-gap-${TagGap}`, { ...allOn, TagLayoutSettingsVersion: 1, TagGap });
+}
+synth('tag-size-invalid-personal', { ...allOn, TagLayoutSettingsVersion: 1, TagScale: 'huge', TagGap: 'wide' }, { TagScale: 'larger', TagGap: 'roomy' });
+synth('tag-size-admin-inherit', { ...allOn, TagLayoutSettingsVersion: 1 }, { TagScale: 'larger', TagGap: 'roomy' });
+synth('tag-size-legacy', { ...allOn, TagScale: 'largest', TagGap: 'roomy' }, { TagScale: 'larger', TagGap: 'tight' });
+
 synth('naming-low-source-opt-in', { QualityTagsEnabled: true, ShowLowQualitySourceTag: true, EditionTagOrder: 0 });
 synth('naming-categories-off', { QualityTagsEnabled: true, ShowLowQualitySourceTag: true, ShowSourceTag: false, ShowEditionTag: false });
 synth('naming-imax-edition-only', { QualityTagsEnabled: true, ShowSpecialFormatTag: false });

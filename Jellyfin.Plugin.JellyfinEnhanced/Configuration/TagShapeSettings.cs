@@ -19,6 +19,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Label density for cards of this shape; null keeps the default density.</summary>
         public string? Density { get; set; }
 
+        /// <summary>Tag size for this shape; null inherits the default look.</summary>
+        public string? TagScale { get; set; }
+
+        /// <summary>Tag spacing for this shape; null inherits the default look.</summary>
+        public string? TagGap { get; set; }
+
         /// <summary>Slot overrides over the profile of the resolved layout; null keeps the profile.</summary>
         [JsonConverter(typeof(TagShapeSlotsConverter))]
         public List<TagLayoutGroupSlot>? Slots { get; set; }
@@ -127,6 +133,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 Layout = layout,
                 Density = Densities.Contains(densityRaw) ? densityRaw : null,
+                TagScale = TagLayoutRules.ReadScale(look.TagScale),
+                TagGap = TagLayoutRules.ReadGap(look.TagGap),
                 Slots = NormalizeSlots(layout, look.Slots),
                 Caps = TagLayoutRules.NormalizeCaps(look.Caps),
             };

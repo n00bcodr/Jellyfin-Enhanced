@@ -80,6 +80,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ["minimal"] = new[] { "top", "dots", "corner", "hover", "off" },
         };
 
+        /// <summary>Canonical tag size; null for an absent or unknown value.</summary>
+        public static string? ReadScale(string? value) => ReadChoice(value, "smaller", "default", "larger", "largest");
+
+        /// <summary>Canonical tag spacing; null for an absent or unknown value.</summary>
+        public static string? ReadGap(string? value) => ReadChoice(value, "tight", "default", "roomy");
+
+        /// <summary>Canonical size, with the unchanged appearance as fallback.</summary>
+        public static string NormalizeScale(string? value) => ReadScale(value) ?? "default";
+
+        /// <summary>Canonical spacing, with the unchanged appearance as fallback.</summary>
+        public static string NormalizeGap(string? value) => ReadGap(value) ?? "default";
+
+        /// <summary>Size multiplier shared with the web tag host.</summary>
+        public static float ScaleFactor(string? value) => NormalizeScale(value) switch
+        {
+            "smaller" => 0.85f, "larger" => 1.15f, "largest" => 1.30f, _ => 1f,
+        };
+
+        /// <summary>Spacing multiplier shared with the web tag host.</summary>
+        public static float GapFactor(string? value) => NormalizeGap(value) switch
+        {
+            "tight" => 0.75f, "roomy" => 1.5f, _ => 1f,
+        };
+
+        private static string? ReadChoice(string? value, params string[] choices)
+        {
+            var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+            return choices.Contains(normalized) ? normalized : null;
+        }
+
         private static readonly string[] Densities = { "full", "compact" };
 
         /// <summary>
@@ -187,6 +217,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArgumentNullException.ThrowIfNull(settings);
             settings.TagLayout = NormalizeLayout(settings.TagLayout);
             settings.TagLabelDensity = NormalizeDensity(settings.TagLabelDensity);
+            settings.TagScale = settings.TagScale == null ? null : NormalizeScale(settings.TagScale);
+            settings.TagGap = settings.TagGap == null ? null : NormalizeGap(settings.TagGap);
             settings.TagLayoutSettingsVersion = Math.Clamp(settings.TagLayoutSettingsVersion, 0, CurrentVersion);
             settings.TagLayouts = NormalizeProfiles(settings.TagLayouts);
             settings.TagGroupOrder = NormalizeOrder(settings.TagGroupOrder);
@@ -204,6 +236,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ArgumentNullException.ThrowIfNull(config);
             settings.TagLayout = NormalizeLayout(config.TagLayout);
             settings.TagLabelDensity = NormalizeDensity(config.TagLabelDensity);
+            settings.TagScale = NormalizeScale(config.TagScale);
+            settings.TagGap = NormalizeGap(config.TagGap);
             settings.TagLayouts = NormalizeProfiles(config.TagLayouts);
             settings.TagGroupOrder = NormalizeOrder(config.TagGroupOrder);
             settings.TagGroupCaps = NormalizeCaps(config.TagGroupCaps);

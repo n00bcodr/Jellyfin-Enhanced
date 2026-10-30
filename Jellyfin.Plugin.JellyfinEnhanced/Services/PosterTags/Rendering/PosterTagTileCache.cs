@@ -215,7 +215,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         int PhaseX,
         int PhaseY,
         SKRectI Crop,
-        string Category);
+        string Category,
+        float TagScale = 1f,
+        float TagGap = 1f);
 
     internal enum PosterTagTileKind
     {

@@ -623,3 +623,45 @@ for (const editor of ['landscape', 'list', 'default']) {
     });
   }
 }
+
+test('Tag size and Gap controls save, redraw all live samples and restore on reopen', async t => {
+  const h = setup(t);
+  await h.open();
+  assert.equal(h.$('#jeTagScaleChoice').getAttribute('role'), 'radiogroup');
+  assert.equal(h.$('#jeTagGapChoice').getAttribute('role'), 'radiogroup');
+  for (const [value, expected] of [['smaller', '0.85'], ['larger', '1.15'], ['largest', '1.3'], ['default', '1']]) {
+    await h.change(h.$(`input[name="jeTagScale"][value="${value}"]`), value);
+    assert.equal(h.saved().tagScale, value);
+    for (const host of h.document.querySelectorAll('.je-mtp .je-tag-host')) {
+      assert.equal(host.style.getPropertyValue('--je-tag-scale'), expected);
+    }
+  }
+  for (const [value, expected] of [['tight', '0.75'], ['roomy', '1.5'], ['default', '1']]) {
+    await h.change(h.$(`input[name="jeTagGap"][value="${value}"]`), value);
+    assert.equal(h.saved().tagGap, value);
+    for (const host of h.document.querySelectorAll('.je-mtp .je-tag-host')) {
+      assert.equal(host.style.getPropertyValue('--je-tag-gap'), expected);
+    }
+  }
+  h.click(h.$('#closeSettingsPanel'));
+  await h.open();
+  assert.equal(h.$('input[name="jeTagScale"]:checked').value, 'default');
+  assert.equal(h.$('input[name="jeTagGap"]:checked').value, 'default');
+});
+
+test('shape size and gap selectors preserve inheritance and update the preview', async t => {
+  const h = setup(t, { stored: { tagScale: 'largest', tagGap: 'roomy' } });
+  await h.open();
+  await h.change(h.$('[data-shape="landscape"] [data-shape-action="enabled"]'), true);
+  await h.change(h.$('[data-shape="landscape"] [data-shape-action="tagScale"]'), 'smaller');
+  await h.change(h.$('[data-shape="landscape"] [data-shape-action="tagGap"]'), 'tight');
+  assert.equal(h.saved().tagShapeOverrides.landscape.tagScale, 'smaller');
+  assert.equal(h.saved().tagShapeOverrides.landscape.tagGap, 'tight');
+  const host = h.$('.je-mtp-sample[data-sample="episode"] .je-tag-host');
+  assert.equal(host.style.getPropertyValue('--je-tag-scale'), '0.85');
+  assert.equal(host.style.getPropertyValue('--je-tag-gap'), '0.75');
+  await h.change(h.$('[data-shape="landscape"] [data-shape-action="tagScale"]'), '');
+  await h.change(h.$('[data-shape="landscape"] [data-shape-action="tagGap"]'), '');
+  assert.equal(host.style.getPropertyValue('--je-tag-scale'), '1.3');
+  assert.equal(host.style.getPropertyValue('--je-tag-gap'), '1.5');
+});

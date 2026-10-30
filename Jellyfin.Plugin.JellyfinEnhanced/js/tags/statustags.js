@@ -1306,14 +1306,14 @@
                     display: inline-flex;
                     align-items: center;
                     gap: 0.25em;
-                    padding: 4px 10px;
+                    padding: calc(4px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
                     background-color: rgba(15, 15, 15, 0.72);
                     -webkit-backdrop-filter: blur(6px);
                     backdrop-filter: blur(6px);
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.18);
                     border-radius: 6px;
-                    font-size: 13px;
+                    font-size: calc(13px * var(--je-tag-scale, 1));
                     font-weight: 600;
                     line-height: 1.15;
                     letter-spacing: 0.01em;
@@ -1330,24 +1330,24 @@
                 /* Card-width sizing, matching the rating tag rules in tag-pipeline.js */
                 @supports (container-type: inline-size) {
                     html:not(.layout-mobile) .je-tag-host .${tagClass} {
-                        font-size: clamp(9px, 6.8cqw, 13px);
-                        padding: clamp(2px, 2cqw, 4px) clamp(5px, 5cqw, 10px);
+                        font-size: calc(clamp(9px, 6.8cqw, 13px) * var(--je-tag-scale, 1));
+                        padding: calc(clamp(2px, 2cqw, 4px) * var(--je-tag-scale, 1)) calc(clamp(5px, 5cqw, 10px) * var(--je-tag-scale, 1));
                         border-radius: clamp(4px, 3cqw, 6px);
                     }
                 }
 
                 .layout-mobile .${tagClass} {
-                    padding: 2px 7px;
-                    font-size: 11px;
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(7px * var(--je-tag-scale, 1));
+                    font-size: calc(11px * var(--je-tag-scale, 1));
                     border-radius: 5px;
                 }
 
                 @media (max-width: 768px) {
-                    .${tagClass} { padding: 3px 8px; font-size: 12px; }
+                    .${tagClass} { padding: calc(3px * var(--je-tag-scale, 1)) calc(8px * var(--je-tag-scale, 1)); font-size: calc(12px * var(--je-tag-scale, 1)); }
                 }
 
                 @media (max-width: 480px) {
-                    .${tagClass} { padding: 2px 6px; font-size: clamp(10px, 2vw, 11px); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+                    .${tagClass} { padding: calc(2px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1)); font-size: calc(clamp(10px, 2vw, 11px) * var(--je-tag-scale, 1)); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
                 }
             `;
         },

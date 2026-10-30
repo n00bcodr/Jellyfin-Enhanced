@@ -98,6 +98,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// </summary>
     public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape, TagStyleSet? Styles = null)
     {
+        /// <summary>Validated size setting applied to the renderer's logical CSS metrics.</summary>
+        public string TagScale { get; init; } = "default";
+
+        /// <summary>Validated chip spacing applied to stacks and centre rows.</summary>
+        public string TagGap { get; init; } = "default";
+
         /// <summary>True when nothing would be drawn.</summary>
         public bool IsEmpty
         {

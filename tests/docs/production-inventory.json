@@ -4570,6 +4570,22 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagScale",
+      "type": "string",
+      "initializer": "\"default\"",
+      "constructor_assignment": "\"default\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagGap",
+      "type": "string",
+      "initializer": "\"default\"",
+      "constructor_assignment": "\"default\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLookRules",
       "type": "List<TagLookRule>?",
       "initializer": null,
@@ -6666,6 +6682,22 @@
     },
     {
       "class": "TagShapeLook",
+      "name": "TagScale",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
+    },
+    {
+      "class": "TagShapeLook",
+      "name": "TagGap",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
+    },
+    {
+      "class": "TagShapeLook",
       "name": "Slots",
       "type": "List<TagLayoutGroupSlot>?",
       "initializer": null,
@@ -7397,6 +7429,22 @@
       "name": "TagLabelDensity",
       "type": "string",
       "initializer": "\"full\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagScale",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagGap",
+      "type": "string?",
+      "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -8763,7 +8811,7 @@
     "build_targets": 2,
     "files": 386,
     "routes": 182,
-    "configuration_properties": 631,
+    "configuration_properties": 637,
     "storage_references": 75,
     "scheduled_tasks": 13,
     "locales": 33

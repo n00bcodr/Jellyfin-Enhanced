@@ -467,11 +467,11 @@
             return;
         }
 
-        JE.core.ui.injectCss('je-userreview-tags-css', `
+        const css = `
             .je-userreview-tag { color: #e91e8c !important; }
             .je-userreview-icon {
                 font-family: 'JE Material Symbols Rounded';
-                font-size: 14px !important;
+                font-size: calc(14px * var(--je-tag-scale, 1)) !important;
                 font-weight: normal;
                 font-style: normal;
                 line-height: 1;
@@ -487,7 +487,8 @@
                 color: #e91e8c !important;
                 vertical-align: middle;
             }
-        `);
+        `;
+        JE.core.ui.injectCss('je-userreview-tags-css', JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
 
         if (!_listening && typeof JE.tagPipeline?.onReviewRatingsChanged === 'function') {
             _listening = true;

@@ -11,7 +11,8 @@
     const SLOT = '.je-tag-host > .je-tag-slot';
     const host = (layout) => `.je-tag-host[data-je-layout="${layout}"] > .je-tag-slot`;
     const INDICATORS = '.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host';
-    const INDICATOR_OFFSET = 'clamp(20px, 3vw, 30px)';
+    const LEGACY_INDICATOR_OFFSET = 'clamp(20px, 3vw, 30px)';
+    const INDICATOR_OFFSET = 'calc(clamp(20px, 3vw, 30px) * var(--je-tag-scale, 1))';
     const CORNER = `${SLOT}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"])`;
     /** Groups whose containers had 4px phone edge offsets before layouts existed. */
     const LEGACY_MOBILE_GROUPS = ':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])';
@@ -22,11 +23,11 @@
      * @returns {string} CSS text.
      */
     function buildStyles() {
-        return `
+        const css = `
             ${SLOT} {
                 position: absolute;
                 display: flex;
-                gap: 4px;
+                gap: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 box-sizing: border-box;
                 pointer-events: none;
                 transition: opacity 0.15s ease;
@@ -72,7 +73,7 @@
                 overflow: hidden;
                 flex-direction: row; flex-wrap: wrap;
                 justify-content: center; align-items: center; align-content: center;
-                gap: 4px;
+                gap: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
             }
             ${host('corners')}[data-je-slot="tc"] { top: var(--je-anchor-top, 6px); }
             ${host('corners')}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 6px); }
@@ -114,7 +115,7 @@
             }
             ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap],
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap] {
-                margin-top: max(0px, ${INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
+                margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - var(--je-indicator-before, 0px));
             }
             /* ... and on phones the rating, age rating and status containers sit
                4px from the card edges instead of 6px. */
@@ -127,7 +128,7 @@
                 ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: -2px; }
                 ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap],
                 .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap] {
-                    margin-top: max(0px, ${INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
+                    margin-top: max(0px, ${LEGACY_INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
                 }
             }
 
@@ -156,7 +157,7 @@
                 flex-wrap: wrap;
                 justify-content: flex-end;
                 align-items: flex-start;
-                gap: 3px;
+                gap: calc(3px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 flex-shrink: 0;
                 min-width: 0;
                 max-width: 100%;
@@ -184,7 +185,7 @@
                 flex-direction: row;
                 flex-wrap: wrap;
                 align-items: flex-end;
-                gap: 3px;
+                gap: calc(3px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 background: linear-gradient(to top, rgba(0, 0, 0, 0.68), rgba(0, 0, 0, 0));
             }
 
@@ -224,13 +225,13 @@
                 flex-wrap: wrap;
                 align-items: center;
                 align-content: flex-start;
-                gap: 3px;
+                gap: calc(3px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 box-sizing: content-box;
                 /* Fixed two-row budget, reserved before the chips arrive, so every
                    card in a row keeps the same height: the fitting pass hides chips
                    that would wrap to a third row, lowest priority first, behind a
                    "+N" chip. */
-                height: 43px;
+                height: calc((40px + 3px * var(--je-tag-gap, 1)) * var(--je-tag-scale, 1));
                 margin: 5px 0 1px;
                 padding: 0 2px;
                 overflow: hidden;
@@ -241,18 +242,18 @@
             .je-tag-caption .rating-tag,
             .je-tag-caption .age-rating-tag,
             .je-tag-caption .status-tag {
-                font-size: clamp(9px, 6.4cqw, 11.5px);
+                font-size: calc(clamp(9px, 6.4cqw, 11.5px) * var(--je-tag-scale, 1));
                 line-height: 1.15;
-                padding: 2px 5px;
+                padding: calc(2px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
                 border-radius: 3px;
                 box-shadow: none;
-                gap: 3px;
+                gap: calc(3px * var(--je-tag-scale, 1));
             }
-            .je-tag-caption .rating-star-icon { font-size: clamp(9px, 6.8cqw, 12px) !important; }
-            .je-tag-caption .rating-tomato-icon { width: clamp(9px, 6.8cqw, 12px); height: clamp(9px, 6.8cqw, 12px); }
-            .je-tag-caption .language-flag { width: 20px; box-shadow: none; }
-            .je-tag-caption .genre-tag { width: 20px; height: 20px; min-width: 20px; box-shadow: none; }
-            .je-tag-caption .genre-tag .je-msym-outlined { font-size: 13px; }
+            .je-tag-caption .rating-star-icon { font-size: calc(clamp(9px, 6.8cqw, 12px) * var(--je-tag-scale, 1)) !important; }
+            .je-tag-caption .rating-tomato-icon { width: calc(clamp(9px, 6.8cqw, 12px) * var(--je-tag-scale, 1)); height: calc(clamp(9px, 6.8cqw, 12px) * var(--je-tag-scale, 1)); }
+            .je-tag-caption .language-flag { width: calc(20px * var(--je-tag-scale, 1)); box-shadow: none; }
+            .je-tag-caption .genre-tag { width: calc(20px * var(--je-tag-scale, 1)); height: calc(20px * var(--je-tag-scale, 1)); min-width: calc(20px * var(--je-tag-scale, 1)); box-shadow: none; }
+            .je-tag-caption .genre-tag .je-msym-outlined { font-size: calc(13px * var(--je-tag-scale, 1)); }
 
             /* "+N": the chips a wrapping slot had no room for. It never takes a
                pointer or focus; the card link's description and the tooltip
@@ -262,19 +263,19 @@
                 align-items: center;
                 flex-shrink: 0;
                 box-sizing: border-box;
-                padding: 2px 5px;
+                padding: calc(2px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
                 border-radius: 3px;
                 border: 1px solid rgba(255, 255, 255, 0.22);
                 background: rgba(0, 0, 0, 0.72);
                 color: #fff;
-                font-size: 11px;
+                font-size: calc(11px * var(--je-tag-scale, 1));
                 font-weight: 700;
                 line-height: 1.15;
                 white-space: nowrap;
                 pointer-events: none;
             }
             .je-tag-caption .je-tag-more {
-                font-size: clamp(9px, 6.4cqw, 11.5px);
+                font-size: calc(clamp(9px, 6.4cqw, 11.5px) * var(--je-tag-scale, 1));
                 background: rgba(255, 255, 255, 0.12);
             }
             /* The names behind a card's "+N" chips, at the top of the image while
@@ -292,7 +293,7 @@
                 background: rgba(12, 12, 12, 0.88);
                 border: 1px solid rgba(255, 255, 255, 0.14);
                 color: #fff;
-                font-size: 11px;
+                font-size: calc(11px * var(--je-tag-scale, 1));
                 font-weight: 600;
                 line-height: 1.25;
                 text-align: center;
@@ -319,13 +320,13 @@
                 min-width: 0;
                 max-width: calc(100% - 16px);
                 box-sizing: border-box;
-                padding: 3px 10px;
+                padding: calc(3px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
                 border-radius: 999px;
                 background: rgba(12, 12, 12, 0.8);
                 border: 1px solid rgba(255, 255, 255, 0.14);
                 box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
                 color: #fff;
-                font-size: 12px;
+                font-size: calc(12px * var(--je-tag-scale, 1));
                 font-weight: 600;
                 line-height: 1.2;
                 white-space: nowrap;
@@ -333,7 +334,7 @@
                 text-overflow: ellipsis;
             }
             @supports (container-type: inline-size) {
-                html:not(.layout-mobile) .je-tag-pill { font-size: clamp(9px, 6.6cqw, 12.5px); padding: clamp(2px, 1.6cqw, 3px) clamp(6px, 5cqw, 10px); }
+                html:not(.layout-mobile) .je-tag-pill { font-size: calc(clamp(9px, 6.6cqw, 12.5px) * var(--je-tag-scale, 1)); padding: calc(clamp(2px, 1.6cqw, 3px) * var(--je-tag-scale, 1)) calc(clamp(6px, 5cqw, 10px) * var(--je-tag-scale, 1)); }
             }
             .je-tag-pill-fact { display: inline; }
             .je-tag-pill-glyph { color: #ffc107; margin-right: 0.2em; }
@@ -354,7 +355,7 @@
                 flex-wrap: wrap;
                 align-items: flex-end;
                 align-content: flex-end;
-                gap: 3px;
+                gap: calc(3px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 background: linear-gradient(to top, rgba(0, 0, 0, 0.86), rgba(0, 0, 0, 0.55) 62%, rgba(0, 0, 0, 0));
                 opacity: 0;
             }
@@ -367,18 +368,18 @@
             .je-tag-reveal .je-tag-host > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
             html .je-tag-host > .je-tag-slot[data-je-slot="hover"] .genre-tag {
                 width: auto; min-width: 0; height: auto;
-                padding: 2px 7px 2px 4px;
-                gap: 3px;
+                padding: calc(2px * var(--je-tag-scale, 1)) calc(7px * var(--je-tag-scale, 1)) calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1));
+                gap: calc(3px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 border-radius: 999px;
             }
-            html .je-tag-host > .je-tag-slot[data-je-slot="hover"] .genre-tag .je-msym-outlined { font-size: 1.05em; }
+            html .je-tag-host > .je-tag-slot[data-je-slot="hover"] .genre-tag .je-msym-outlined { font-size: calc(1.05em * var(--je-tag-scale, 1)); }
             .je-tag-slot[data-je-slot="hover"] .genre-tag .genre-text {
                 position: static;
                 opacity: 1;
                 transform: none;
                 padding: 0;
                 background: none;
-                font-size: 11px;
+                font-size: calc(11px * var(--je-tag-scale, 1));
             }
 
             /* minimal: status top, quality dots, rating corner */
@@ -392,13 +393,13 @@
             .je-tag-dots {
                 display: flex;
                 align-items: center;
-                gap: 4px;
-                padding: 4px 6px;
+                gap: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
+                padding: calc(4px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
                 border-radius: 999px;
                 background: rgba(0, 0, 0, 0.55);
             }
             .je-tag-dot {
-                width: 8px; height: 8px;
+                width: calc(8px * var(--je-tag-scale, 1)); height: calc(8px * var(--je-tag-scale, 1));
                 border-radius: 50%;
                 box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
                 background: #546e7a;
@@ -412,13 +413,13 @@
                 flex-direction: column-reverse;
                 align-items: flex-end;
             }
-            ${SLOT}[data-je-slot="corner"] > [data-je-group] { align-items: flex-end; gap: 2px; }
+            ${SLOT}[data-je-slot="corner"] > [data-je-group] { align-items: flex-end; gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }
             html .je-tag-host > .je-tag-slot[data-je-slot="corner"] :is(.rating-tag, .quality-overlay-label, .age-rating-tag, .status-tag) {
-                font-size: 11px;
-                padding: 2px 5px;
-                gap: 3px;
+                font-size: calc(11px * var(--je-tag-scale, 1));
+                padding: calc(2px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
+                gap: calc(3px * var(--je-tag-scale, 1));
             }
-            html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: 11px !important; }
+            html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: calc(11px * var(--je-tag-scale, 1)) !important; }
 
             /* Hide Tags on Hover: everything but the summary / minimal reveal. */
             body.je-tags-hide-on-hover .card:hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
@@ -430,6 +431,7 @@
                 ${SLOT}, .je-tag-host > .je-tag-more-tip { transition: none; }
             }
         `;
+        return JE.core.tagLayout?.preserveLegacySizing?.(css) || css;
     }
 
     if (JE.core?.tagLayout) JE.core.tagLayout.buildStyles = buildStyles;

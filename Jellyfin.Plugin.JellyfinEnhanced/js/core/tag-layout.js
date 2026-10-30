@@ -88,6 +88,49 @@
     /** Built-in chip limits (0 = unlimited): the limits each group had before caps existed. */
     const DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 };
     const MAX_CAP = 10;
+    const TAG_SCALES = { smaller: 0.85, default: 1, larger: 1.15, largest: 1.3 };
+    const TAG_GAPS = { tight: 0.75, default: 1, roomy: 1.5 };
+
+    /** @param {*} value @returns {string|null} Canonical size, or null to inherit. */
+    function readScale(value) {
+        const key = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        return Object.hasOwn(TAG_SCALES, key) ? key : null;
+    }
+
+    /** @param {*} value @returns {string|null} Canonical gap, or null to inherit. */
+    function readGap(value) {
+        const key = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        return Object.hasOwn(TAG_GAPS, key) ? key : null;
+    }
+
+    /** Apply the card's size and gap to an image host or its caption outlet.
+     * @param {HTMLElement} element @param {TagLayoutSettings} conf
+     */
+    function applySize(element, conf) {
+        element.style.setProperty('--je-tag-scale', String(TAG_SCALES[conf.tagScale]));
+        element.style.setProperty('--je-tag-gap', String(TAG_GAPS[conf.tagGap]));
+    }
+
+    /**
+     * Keep legacy posters on their original CSS expressions. Even multiplying
+     * a clamp by 1 can change Chromium's fractional shadow rasterization.
+     * Derive the overrides from the same sizing rules, inside their original
+     * media/supports context, so responsive legacy geometry cannot drift.
+     * @param {string} css - Stylesheet with the scale/gap multipliers.
+     * @returns {string} Stylesheet plus legacy-only sizing declarations.
+     */
+    function preserveLegacySizing(css) {
+        return css.replace(/([^{}]+)\{([^{}]*)\}/g, (rule, selector, body) => {
+            if (!body.includes('--je-tag-scale')) return rule;
+            const declarations = body.split(';').filter((declaration) => declaration.includes('--je-tag-scale')).join(';') + ';';
+            const original = declarations.replace(/calc\((clamp\([^)]*\)|[\d.]+(?:px|rem|em|cqw|vw)) \* var\(--je-tag-scale, 1\)(?: \* var\(--je-tag-gap, 1\))?\)/g, '$1');
+            if (original === declarations) return rule;
+            const scoped = selector.includes('.je-tag-host')
+                ? selector.trim().replace(/\.je-tag-host/g, '.je-tag-host[data-je-legacy]')
+                : `.je-tag-host[data-je-legacy] :is(${selector.trim()})`;
+            return `${rule}\n${scoped} {${original}}`;
+        });
+    }
 
     /** The legacy per-group position settings the corners profile migrates from. */
     const POSITION_SETTINGS = {
@@ -250,6 +293,8 @@
      * @typedef {Object} TagShapeLook
      * @property {string|null} layout - null keeps the default layout.
      * @property {string|null} density - null keeps the default density.
+     * @property {string} [tagScale] - Missing keeps the default size.
+     * @property {string} [tagGap] - Missing keeps the default gap.
      * @property {Object<string, string>|null} slots - group → slot over the profile of the
      *   layout the card resolves to (checked against it there).
      * @property {Object<string, number>|null} caps - group → cap over the default caps.
@@ -291,6 +336,8 @@
         return {
             layout,
             density: densityRaw === 'compact' || densityRaw === 'full' ? densityRaw : null,
+            ...(readScale(pick(raw, 'tagScale')) ? { tagScale: readScale(pick(raw, 'tagScale')) } : {}),
+            ...(readGap(pick(raw, 'tagGap')) ? { tagGap: readGap(pick(raw, 'tagGap')) } : {}),
             slots: Object.keys(slots).length ? slots : null,
             caps: Object.keys(caps).length ? caps : null,
         };
@@ -324,6 +371,8 @@
             out[shape] = look ? {
                 layout: look.layout || null,
                 density: look.density || null,
+                ...(look.tagScale ? { tagScale: look.tagScale } : {}),
+                ...(look.tagGap ? { tagGap: look.tagGap } : {}),
                 slots: look.slots ? Object.entries(look.slots).map(([group, slot]) => ({ group, slot })) : null,
                 caps: look.caps ? { ...look.caps } : null,
             } : null;
@@ -355,6 +404,8 @@
      * @property {string} layout - Active layout id.
      * @property {boolean} legacy - True for a document saved before layouts existed.
      * @property {string} density - 'full' or 'compact'.
+     * @property {string} tagScale - smaller, default, larger or largest.
+     * @property {string} tagGap - tight, default or roomy.
      * @property {string[]|null} order - Complete group priority order, or null for arrival order.
      * @property {Object<string, number>} caps - Chips per group, 0 = unlimited.
      * @property {Object<string, Object<string, string>>} profiles - layout → group → slot.
@@ -442,7 +493,9 @@
         const ownShapes = s.tagShapeOverrides;
         const shapes = readShapeOverrides(ownShapes && typeof ownShapes === 'object' ? ownShapes : (legacy ? null : pick(p, 'tagShapeOverrides')));
 
-        const conf = { layout, legacy, density, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, shapes, lookKey: '' };
+        const tagScale = legacy ? 'default' : readScale(s.tagScale) || (s.tagScale != null ? 'default' : readScale(pick(p, 'tagScale'))) || 'default';
+        const tagGap = legacy ? 'default' : readGap(s.tagGap) || (s.tagGap != null ? 'default' : readGap(pick(p, 'tagGap'))) || 'default';
+        const conf = { layout, legacy, density, tagScale, tagGap, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, shapes, lookKey: '' };
         conf.lookKey = lookKeyOf(conf);
         return conf;
     }
@@ -463,6 +516,8 @@
         if (!s || Number(s.tagLayoutSettingsVersion) >= 1) return false;
         s.tagLayout = 'corners';
         s.tagLabelDensity = 'full';
+        s.tagScale = 'default';
+        s.tagGap = 'default';
         s.tagGroupCaps = { ...DEFAULT_CAPS };
         s.tagGroupOrder = null;
         if (!Array.isArray(s.tagLookRules)) s.tagLookRules = [];
@@ -484,7 +539,7 @@
      * @returns {string}
      */
     function lookKeyOf(conf) {
-        return [conf.layout, conf.density, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(','),
+        return [conf.layout, conf.density, conf.tagScale, conf.tagGap, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(','),
             DEFAULT_ORDER.map((g) => conf.caps[g]).join(',')].join('|');
     }
 
@@ -554,16 +609,17 @@
      * density where it sets them, its slots over the look's (only the
      * shape's own when it switches to another layout, whose profile fills
      * the rest) and its caps over the look's.
-     * @param {{layout: string|null, density: string|null, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
+     * @param {{layout: string|null, density: string|null, tagScale?: string, tagGap?: string, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
      * @param {TagShapeLook|null|undefined} shapeLook
-     * @returns {{layout: string|null, density: string|null, slots: Object<string, string>|null, caps: Object<string, number>|null}}
+     * @returns {{layout: string|null, density: string|null, tagScale?: string, tagGap?: string, slots: Object<string, string>|null, caps: Object<string, number>|null}}
      */
     function withShape(look, shapeLook) {
         if (!shapeLook) return { ...look, caps: look.caps || null };
         const switches = !!shapeLook.layout && shapeLook.layout !== look.layout;
         const slots = switches ? shapeLook.slots : (look.slots || shapeLook.slots ? { ...(look.slots || {}), ...(shapeLook.slots || {}) } : null);
         const caps = look.caps || shapeLook.caps ? { ...(look.caps || {}), ...(shapeLook.caps || {}) } : null;
-        return { layout: shapeLook.layout || look.layout, density: shapeLook.density || look.density, slots, caps };
+        return { layout: shapeLook.layout || look.layout, density: shapeLook.density || look.density,
+            tagScale: shapeLook.tagScale || look.tagScale, tagGap: shapeLook.tagGap || look.tagGap, slots, caps };
     }
 
     /**
@@ -574,7 +630,7 @@
      * layout, and its caps over the user's. Order stays the user's.
      * Memoised per look.
      * @param {TagLayoutSettings} base
-     * @param {{layout: string|null, density: string|null, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
+     * @param {{layout: string|null, density: string|null, tagScale?: string, tagGap?: string, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
      * @param {boolean} locked
      * @returns {TagLayoutSettings}
      */
@@ -586,6 +642,8 @@
             ...base,
             layout,
             density: look.density ? (look.density === 'compact' ? 'compact' : 'full') : base.density,
+            tagScale: readScale(look.tagScale) || base.tagScale,
+            tagGap: readGap(look.tagGap) || base.tagGap,
             caps: look.caps ? { ...base.caps, ...look.caps } : base.caps,
             // A chosen order applies everywhere; otherwise corners keeps
             // arrival order and the other layouts the built-in order.
@@ -1461,6 +1519,8 @@
         describeHidden(ctrl, []);
         ctrl.layout = null;
         ctrl.lookKey = '';
+        ctrl.host.style.removeProperty('--je-tag-scale');
+        ctrl.host.style.removeProperty('--je-tag-gap');
         delete ctrl.host.dataset.jeLayout;
         delete ctrl.host.dataset.jeLegacy;
         delete ctrl.host.dataset.jeLocked;
@@ -1482,6 +1542,7 @@
         ctrl.layout = conf.layout;
         ctrl.lookKey = conf.lookKey;
         ctrl.host.dataset.jeLayout = conf.layout;
+        applySize(ctrl.host, conf);
         if (shaped) {
             // A card its markup doesn't classify waits for the fitting pass
             // to measure its image, so its chips don't land in the portrait
@@ -1496,7 +1557,10 @@
         // Settings saved before layouts keep the original web geometry
         // (tags/tag-layout-styles.js keys its legacy rules off this).
         if (conf.legacy) ctrl.host.dataset.jeLegacy = '1';
-        if (conf.reserveCaption && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
+        if (conf.reserveCaption && !isIgnoredContext(ctrl.host)) {
+            const outlet = ensureOutlet(ctrl);
+            if (outlet) applySize(outlet, conf);
+        }
         if (conf.locked) ctrl.host.dataset.jeLocked = '1';
         // Waiting for item data: keep the groups, show none yet.
         if (isAwaiting(ctrl.host)) return;
@@ -1766,6 +1830,8 @@
     function measureAnchors(ctrl) {
         const centres = centreSlots(ctrl);
         if (!centres.length) return [];
+        const conf = resolveLayout(ctrl);
+        const gap = 4 * TAG_SCALES[conf.tagScale] * TAG_GAPS[conf.tagGap];
         const host = ctrl.host.getBoundingClientRect();
         const boxes = {};
         for (const el of ctrl.host.children) {
@@ -1774,20 +1840,20 @@
             boxes[slot] = Array.from(el.children).filter((g) => /** @type {HTMLElement} */ (g).dataset.jeGroup).map((g) => g.getBoundingClientRect());
         }
         /** @param {string[]} slots @returns {number} Symmetric horizontal reserve. */
-        const width = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.endsWith('l') ? b.right - host.left + 4 : host.right - b.left + 4)));
+        const width = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.endsWith('l') ? b.right - host.left + gap : host.right - b.left + gap)));
         /** @param {string[]} slots @returns {number} Symmetric vertical reserve. */
-        const height = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.startsWith('t') ? b.bottom - host.top + 4 : host.bottom - b.top + 4)));
+        const height = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.startsWith('t') ? b.bottom - host.top + gap : host.bottom - b.top + gap)));
         const scalable = ctrl.host.parentElement;
         const progress = scalable?.querySelector('.itemProgressBar, .cardProgressBar, .cardProgress');
-        const bottom = progress ? Math.max(6, host.bottom - progress.getBoundingClientRect().top + 4) : 6;
+        const bottom = progress ? Math.max(6, host.bottom - progress.getBoundingClientRect().top + gap) : 6;
         let top = 6;
         let topReserve = width(['tl', 'tr']);
         for (const overlay of scalable?.querySelectorAll('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
             const b = overlay.getBoundingClientRect();
             if (b.bottom <= host.top || b.top >= host.top + host.height / 3) continue;
             const middle = host.left + host.width / 2;
-            if (b.left < middle && b.right > middle) top = Math.max(top, b.bottom - host.top + 4);
-            else topReserve = Math.max(topReserve, b.right <= middle ? b.right - host.left + 4 : host.right - b.left + 4);
+            if (b.left < middle && b.right > middle) top = Math.max(top, b.bottom - host.top + gap);
+            else topReserve = Math.max(topReserve, b.right <= middle ? b.right - host.left + gap : host.right - b.left + gap);
         }
         return centres.map((el) => {
             const slot = el.dataset.jeSlot;
@@ -2361,6 +2427,11 @@
         DEFAULT_ORDER: DEFAULT_ORDER.slice(),
         DEFAULT_CAPS: { ...DEFAULT_CAPS },
         MAX_CAP,
+        preserveLegacySizing,
+        TAG_SCALES,
+        TAG_GAPS,
+        readScale,
+        readGap,
         DEFAULT_PROFILES,
         SHAPES: SHAPES.slice(),
         RECOMMENDED_SHAPES,

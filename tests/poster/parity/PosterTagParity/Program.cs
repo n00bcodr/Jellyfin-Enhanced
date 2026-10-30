@@ -309,6 +309,8 @@ void ResolveAll()
 
         var summary = new Dictionary<string, object?>
         {
+            ["tagScale"] = settings.TagScale,
+            ["tagGap"] = settings.TagGap,
             ["qualityTagsEnabled"] = settings.QualityTagsEnabled,
             ["genreTagsEnabled"] = settings.GenreTagsEnabled,
             ["languageTagsEnabled"] = settings.LanguageTagsEnabled,
