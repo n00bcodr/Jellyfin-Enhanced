@@ -8678,7 +8678,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             // By CLR name: the JSON name follows the host's naming policy.
                             if (property.AttributeProvider is System.Reflection.PropertyInfo clrProperty
                                 && (clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.LatestEpisodeId)
-                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.StatusEpisodeIds)))
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.StatusEpisodeIds)
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.NextEpisodePremiere)))
                             {
                                 property.ShouldSerialize = static (_, _) => false;
                             }

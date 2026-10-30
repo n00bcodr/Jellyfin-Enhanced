@@ -891,6 +891,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            // Air dates advance independently of Jellyfin's saved-item timestamps.
+            foreach (var id in DueStatusContainers()) containersToRebuild.Add(id);
             var idsToRebuild = itemsToRebuild.Concat(containersToRebuild).ToList();
             var episodeScans = new EpisodeScanMemo { Pending = idsToRebuild.ToHashSet() };
             // Everything from here mutates the published dictionary in place
@@ -2173,6 +2175,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         _logger.Info($"[TagCache] On-disk cache has no reconciliation marker; using cache file timestamp {new DateTime(reconciledTicks, DateTimeKind.Utc):O}");
                     }
                     Interlocked.Exchange(ref _lastReconciledUtcTicks, reconciledTicks);
+                    // Schema 12 snapshots predating the boundary field remain compatible.
+                    // Seed their boundaries from the already cached episode air dates.
+                    var episodesBySeries = loaded.Values.Where(e => e.Type == "Episode" && e.SeriesId != null)
+                        .ToLookup(e => e.SeriesId);
+                    foreach (var (key, container) in loaded)
+                    {
+                        if (container.Type != "Series" && container.Type != "Season") continue;
+                        if (container.NextEpisodePremiere != null) continue;
+                        container.NextEpisodePremiere = episodesBySeries[container.Type == "Series" ? key : container.SeriesId]
+                            .Where(e => (container.Type == "Series" ? e.SeasonNumber > 0 : e.SeasonNumber == container.SeasonNumber)
+                                && e.PremiereDate > (container.LatestEpisodeAired ?? 0))
+                            .Select(e => e.PremiereDate).Min();
+                    }
+                    RefreshDueStatusContainers();
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
@@ -2180,6 +2196,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Warning($"[TagCache] Failed to load cache from disk: {ex.Message}");
             }
+        }
+
+        /// <summary>Find only containers whose next relevant air date has passed.</summary>
+        private Guid[] DueStatusContainers() => _cache
+            .Where(pair => pair.Value.NextEpisodePremiere is { } boundary && boundary <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+            .Select(pair => Guid.Parse(pair.Key)).ToArray();
+
+        /// <summary>Refresh elapsed boundaries on snapshot load under the rebuild lock.</summary>
+        private void RefreshDueStatusContainers()
+        {
+            var due = DueStatusContainers();
+            if (due.Length == 0) return;
+            using var writes = BeginInPlaceWrites();
+            var memo = new EpisodeScanMemo { Pending = due.ToHashSet() };
+            var changed = false;
+            foreach (var id in due) changed |= RebuildEntry(id, memo);
+            if (!changed) return;
+            Interlocked.Increment(ref _version);
+            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            InvalidateUserAccess();
+            ScheduleDebouncedSave();
         }
 
         /// <summary>

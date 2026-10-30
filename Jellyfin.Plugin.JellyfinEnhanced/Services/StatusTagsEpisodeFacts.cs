@@ -35,12 +35,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool _missingAdded;
         private readonly SortedSet<string> _allIds = new(StringComparer.Ordinal);
         private readonly Dictionary<int, int> _lastEpisodeBySeason = new();
-        private readonly DateTime _now = DateTime.UtcNow;
+        private readonly DateTime _now;
+        private DateTime? _nextPremiere;
 
         /// <param name="isSeason">Whether the container is a Season (else a Series).</param>
         /// <param name="containerSeason">The Season's own number, used when an episode has none.</param>
-        public StatusTagsEpisodeFacts(bool isSeason, int? containerSeason)
+        public StatusTagsEpisodeFacts(bool isSeason, int? containerSeason, DateTime? now = null)
         {
+            _now = now ?? DateTime.UtcNow;
             _isSeason = isSeason;
             _containerSeason = isSeason ? containerSeason : null;
         }
@@ -74,8 +76,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _lastEpisodeBySeason[numberedSeason] = Math.Max(_lastEpisodeBySeason.GetValueOrDefault(numberedSeason), numberedEpisode);
             }
-            if (premiereDate is not { } aired || aired == default || aired > _now) return;
+            if (premiereDate is not { } aired || aired == default) return;
             if (!_isSeason && (season == null || season <= 0)) return;
+            if (aired > _now)
+            {
+                if (_nextPremiere == null || aired < _nextPremiere) _nextPremiere = aired;
+                return;
+            }
 
             if (_latestAired == null
                 || aired > _latestAired
@@ -98,6 +105,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var bySeason = (seasonA ?? -1).CompareTo(seasonB ?? -1);
             return bySeason != 0 ? bySeason : (episodeA ?? -1).CompareTo(episodeB ?? -1);
         }
+
+        /// <summary>Next relevant premiere boundary (Unix ms), for time-driven refresh.</summary>
+        public long? NextPremiere => TagCacheService.ToUnixMilliseconds(_nextPremiere);
 
         /// <summary>Newest air date (Unix ms), or null.</summary>
         public long? LatestAired => TagCacheService.ToUnixMilliseconds(_latestAired);
@@ -151,6 +161,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Write the facts into a Series/Season entry (null fields clear).</summary>
         public void ApplyTo(TagCacheEntry entry)
         {
+            entry.NextEpisodePremiere = NextPremiere;
             entry.LatestEpisodeAired = LatestAired;
             entry.LatestEpisodeIndex = LatestIndex;
             entry.SeasonPremiere = SeasonPremiere;

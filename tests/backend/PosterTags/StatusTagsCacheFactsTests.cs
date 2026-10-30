@@ -31,6 +31,59 @@ public class StatusTagsCacheFactsTests
 
     private static long Ms(DateTime value) => new DateTimeOffset(DateTime.SpecifyKind(value, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SnapshotLoadAgesFutureEpisodesWithoutMetadataChanges(bool legacySnapshot)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var series = new Series { Id = Guid.NewGuid() };
+        var season = new Season { Id = Guid.NewGuid(), SeriesId = series.Id, IndexNumber = 2 };
+        var episode = new Episode { Id = Guid.NewGuid(), SeriesId = series.Id, SeasonId = season.Id,
+            ParentIndexNumber = 2, IndexNumber = 1, PremiereDate = DateTime.UtcNow.AddHours(-1), DateCreated = DateTime.UtcNow.AddDays(-2) };
+        var all = new BaseItem[] { series, season, episode };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(x => x.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
+        library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { episode });
+        // Yesterday this episode was still scheduled for tomorrow. No item has been saved since.
+        var entries = all.ToDictionary(i => i.Id.ToString("N"), i => new TagCacheEntry { Type = i.GetBaseItemKind().ToString() });
+        foreach (var container in new BaseItem[] { series, season })
+        {
+            var facts = new StatusTagsEpisodeFacts(container is Season, 2);
+            typeof(StatusTagsEpisodeFacts).GetField("_now", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(facts, DateTime.UtcNow.AddDays(-1));
+            facts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, 2, 1);
+            facts.ApplyTo(entries[container.Id.ToString("N")]);
+            Assert.Null(facts.LatestAired);
+        }
+        // Older schema-12 snapshots have the episode dates but no boundary field.
+        var cachedEpisode = entries[episode.Id.ToString("N")];
+        cachedEpisode.PremiereDate = Ms(episode.PremiereDate!.Value);
+        cachedEpisode.SeriesId = series.Id.ToString("N");
+        cachedEpisode.SeasonNumber = 2;
+        var cachedSeason = entries[season.Id.ToString("N")];
+        cachedSeason.SeriesId = series.Id.ToString("N");
+        cachedSeason.SeasonNumber = 2;
+        var snapshot = JsonSerializer.SerializeToNode(new
+        {
+            SchemaVersion = 12, Version = 7, LastModified = 200, LastReconciledUtcTicks = DateTime.UtcNow.AddDays(-1).Ticks, Items = entries,
+        })!;
+        if (legacySnapshot)
+            foreach (var (_, entry) in snapshot["Items"]!.AsObject()) entry!.AsObject().Remove("NextEpisodePremiere");
+        Directory.CreateDirectory(f.Core.ConfigRoot);
+        File.WriteAllText(Path.Combine(f.Core.ConfigRoot, "tag-cache.json"), snapshot.ToJsonString());
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        cache.LoadFromDisk();
+        foreach (var container in new BaseItem[] { series, season })
+        {
+            Assert.True(cache.TryGetEntry(container.Id, out var entry));
+            Assert.Equal(Ms(episode.PremiereDate.Value), entry.LatestEpisodeAired);
+            Assert.Equal(1, entry.LatestEpisodeIndex!.Episode);
+            Assert.Equal(2, entry.SeasonPremiere!.Season);
+            Assert.Null(entry.GetType().GetProperty("NextEpisodePremiere")?.GetValue(entry));
+        }
+    }
+
     [Fact]
     public void SeriesSeasonAndEpisodeEntriesCarryTheFactsTheBadgesRead()
     {
@@ -138,7 +191,7 @@ public class StatusTagsCacheFactsTests
     {
         var entry = new TagCacheEntry
         {
-            Type = "Season", Status = "Continuing", LatestEpisodeAired = 10, LatestEpisodeIndex = new() { Season = 1, Episode = 2 },
+            Type = "Season", Status = "Continuing", NextEpisodePremiere = 20, LatestEpisodeAired = 10, LatestEpisodeIndex = new() { Season = 1, Episode = 2 },
             SeasonPremiere = new() { Season = 1, Aired = 5 }, SeasonAddedSpan = new() { First = 1, Last = 2, Count = 3 }, StatusEpisodeIds = ["a", "b"],
         };
         var roundTripped = JsonSerializer.Deserialize<TagCacheEntry>(JsonSerializer.Serialize(entry))!;
@@ -148,6 +201,7 @@ public class StatusTagsCacheFactsTests
         {
             e => e.EpisodeIndex = new() { Season = 1, Episode = 2, IsLast = true },
             e => e.Status = "Ended",
+            e => e.NextEpisodePremiere = 21,
             e => e.LatestEpisodeAired = 11,
             e => e.LatestEpisodeIndex = new() { Season = 1, Episode = 3 },
             e => e.SeasonPremiere = new() { Season = 2, Aired = 5 },

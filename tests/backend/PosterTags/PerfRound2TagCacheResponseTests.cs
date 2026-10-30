@@ -315,7 +315,7 @@ public class PerfRound2TagCacheResponseTests
         {
             [seasonKey.ToString("N")] = new()
             {
-                Type = "Season", DateCreated = 100, LastUpdated = 120, LatestEpisodeAired = 900,
+                Type = "Season", DateCreated = 100, LastUpdated = 120, LatestEpisodeAired = 900, NextEpisodePremiere = 1800,
                 LatestEpisodeIndex = new() { Season = 2, Episode = 5 }, StatusEpisodeIds = [e.Episode.ToString("N")],
             }
         });
@@ -326,6 +326,7 @@ public class PerfRound2TagCacheResponseTests
         Assert.Equal(900, entry.GetProperty("LatestEpisodeAired").GetInt64());
         Assert.Equal(5, entry.GetProperty("LatestEpisodeIndex").GetProperty("Episode").GetInt32());
         Assert.False(entry.TryGetProperty("StatusEpisodeIds", out _));
+        Assert.False(entry.TryGetProperty("NextEpisodePremiere", out _));
     }
 
     /// <summary>GET status-tags/series through the endpoint fixture, with a TMDB transport that records its calls.</summary>

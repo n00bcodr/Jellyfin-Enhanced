@@ -81,6 +81,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// Specials season).
         /// </summary>
         public long? LatestEpisodeAired { get; set; }
+        /// <summary>Server-only next premiere boundary; a due container is recomputed even without metadata changes.</summary>
+        public long? NextEpisodePremiere { get; set; }
         /// <summary>Series/Season only: season and episode number of the episode behind <see cref="LatestEpisodeAired"/>.</summary>
         public TagEpisodeIndex? LatestEpisodeIndex { get; set; }
         /// <summary>
@@ -153,6 +155,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && a.LatestEpisodeId == b.LatestEpisodeId
                 && a.EpisodeIndex == b.EpisodeIndex
                 && a.Status == b.Status
+                && a.NextEpisodePremiere == b.NextEpisodePremiere
                 && a.LatestEpisodeAired == b.LatestEpisodeAired
                 && a.LatestEpisodeIndex == b.LatestEpisodeIndex
                 && a.SeasonPremiere == b.SeasonPremiere
@@ -218,6 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             LatestEpisodeId = LatestEpisodeId,
             EpisodeIndex = EpisodeIndex,
             Status = Status,
+            NextEpisodePremiere = NextEpisodePremiere,
             LatestEpisodeAired = LatestEpisodeAired,
             LatestEpisodeIndex = LatestEpisodeIndex,
             SeasonPremiere = SeasonPremiere,
