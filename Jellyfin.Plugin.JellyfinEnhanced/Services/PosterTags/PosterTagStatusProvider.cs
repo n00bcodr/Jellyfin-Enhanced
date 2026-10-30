@@ -25,7 +25,7 @@ public sealed class PosterTagStatusProvider
     }
 
     /// <summary>Resolve only the live sources this user's enabled status families can consume.</summary>
-    public async Task<PosterStatusContext> GetAsync(HttpContext http, BaseItem item, JUser user, TagCacheEntry entry, PosterTagSettings settings, CancellationToken cancellationToken)
+    public async Task<PosterStatusContext> GetAsync(HttpContext http, BaseItem item, JUser user, TagCacheEntry entry, PosterTagSettings settings, CancellationToken cancellationToken, DateTimeOffset? statusInstant = null)
     {
         var config = JellyfinEnhanced.Instance!.Configuration;
         int? rank = null;
@@ -54,7 +54,7 @@ public sealed class PosterTagStatusProvider
         }
 
         // A stable five-minute instant keeps equal requests in the composite cache.
-        var now = DateTimeOffset.UtcNow;
+        var now = statusInstant ?? DateTimeOffset.UtcNow;
         return new PosterStatusContext(DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds() / 300 * 300), schedule, rank, parent);
     }
 }

@@ -101,16 +101,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             int quality,
             bool useCache,
             CancellationToken cancellationToken,
-            PosterTagDataSnapshot? snapshot = null)
+            PosterTagDataSnapshot? snapshot = null,
+            DateTimeOffset? statusInstant = null)
         {
             var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken, settings.Shows(PosterTagGroup.Status)).ConfigureAwait(false);
             if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
 
+            var instant = statusInstant ?? DateTimeOffset.UtcNow;
             var status = settings.Shows(PosterTagGroup.Status)
-                ? await _status.Value.GetAsync(httpContext, item, user, data.Entry, settings, cancellationToken).ConfigureAwait(false) : null;
+                ? await _status.Value.GetAsync(httpContext, item, user, data.Entry, settings, cancellationToken, instant).ConfigureAwait(false) : null;
             // Include remote facts and the filtered parent as well as the five-minute URL bucket.
             var dataKey = status == null ? data.DataKey : data.DataKey + "|status:" + System.Text.Json.JsonSerializer.Serialize(status);
-            var key = CompositeKey(image, settings.Digest, topRightOffset, dataKey, quality);
+            var key = CompositeKey(image, settings.DigestAt(instant), topRightOffset, dataKey, quality);
             var itemType = data.Entry.Type ?? item.GetBaseItemKind().ToString();
             Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality, status);
 
