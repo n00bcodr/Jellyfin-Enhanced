@@ -46,6 +46,18 @@ public class SourceEditionTagsTests
         Path = path, MediaStreams = [new() { Type = MediaStreamType.Video, Height = height, Codec = "h264" }],
     };
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \t")]
+    public void MissingSourcePathFallsBackToItemPath(string? sourcePath)
+    {
+        var source = Version("unused", 1080);
+        source.Path = sourcePath;
+        Assert.Equal(new("WEB", "Extended"), MediaNamingTags.Detect("Film.2020.WEB.1080p.{edition-Extended}.mkv", [source]));
+        Assert.Equal(new MediaNamingTags(), MediaNamingTags.Detect(null, [source]));
+    }
+
     [Fact]
     public void HighestResolutionThenSourceQualitySelectsOneVersionAndItsEdition()
     {

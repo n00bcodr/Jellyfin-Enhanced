@@ -50,7 +50,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     {
         var selected = sources.Select((source, index) => new
         {
-            Tags = FromPath(source.Path ?? itemPath),
+            Tags = FromPath(string.IsNullOrWhiteSpace(source.Path) ? itemPath : source.Path),
             Resolution = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video)
                 .Select(s => QualityTagRules.DetectResolution(new TagMediaStream { Height = s.Height, DisplayTitle = s.DisplayTitle }))
                 .Select(label => Rank(ResolutionOrder, label)).DefaultIfEmpty(int.MaxValue).Min() ?? int.MaxValue,
