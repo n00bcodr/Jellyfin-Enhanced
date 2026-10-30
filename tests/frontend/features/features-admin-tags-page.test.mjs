@@ -596,6 +596,43 @@ test('the preview\'s Tag Styles from the previous server are not drawn after a s
   assert.equal(a.disposed, true, 'the view of the previous server is torn down');
 });
 
+test('a leave prompt answered after the administrator changed takes no one back to the page', async t => {
+  const server = structuredClone(BASE);
+  const { apiClient } = signedIn();
+  const prompts = [];
+  const h = boot(t, {
+    server, session: true, apiClient,
+    patch: () => { throw new Error('offline'); },
+    // The dashboard's confirm dialog, answered when the test says.
+    globals: { Dashboard: { confirm: (text, title, answer) => { prompts.push(answer); } } },
+  });
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  h.document.body.innerHTML = TWO_PAGES;
+  const page = h.document.querySelector('.page');
+  const a = await h.A.activate(page);
+  h.cleanup.push(() => a.dispose());
+  h.change(page.querySelector('#tagsHideOnHover'), true);
+  // The same administrator answering "go back": the page opens again.
+  h.window.location.hash = '#/home';
+  let leaving = h.A.leaveWithPending();
+  await h.settle(); await h.settle();
+  assert.equal(prompts.length, 1);
+  prompts[0](true);
+  await leaving;
+  assert.match(h.window.location.hash, /name=JellyfinEnhancedMediaTags/);
+  // Asked again; while the prompt is open, A signs out and B signs in.
+  h.window.location.hash = '#/home';
+  leaving = h.A.leaveWithPending();
+  await h.settle(); await h.settle();
+  assert.equal(prompts.length, 2);
+  h.window.ApiClient.setAuthenticationInfo(null, null);
+  h.window.ApiClient.setAuthenticationInfo('token-b', 'admin-b');
+  prompts[1](true);
+  await leaving;
+  assert.equal(h.window.location.hash, '#/home', 'A\'s answer does not move B');
+  assert.deepEqual(plain(h.A.pendingState()), { state: 'saved', fields: [], failed: [] });
+});
+
 test('a torn-down page saves nothing: a reused root has one set of listeners, and Back/Forward saves a change once', async t => {
   const server = structuredClone(BASE);
   const h = boot(t, { server, url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=layout' });

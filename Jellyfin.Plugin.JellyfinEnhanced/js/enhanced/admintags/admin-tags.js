@@ -1155,14 +1155,15 @@
      * @returns {Promise<void>}
      */
     async function leaveWithPending() {
+        const mark = sessionMark();
         if (!hasPending()) return;
-        const generation = store.generation;
         const ok = await flushStore();
         // Signed out meanwhile: the edits went with that session, nothing to go back to.
-        if (ok || generation !== store.generation || onMediaTagsPage()) return;
+        if (ok || !sameSession(mark) || onMediaTagsPage()) return;
         const names = Array.from(new Set((store.failed.length ? store.failed : Array.from(store.values.keys())).map(fieldName))).join(', ');
         const back = await askConfirm(JE.t('admin_tags_leave_confirm', { fields: names }), JE.t('admin_tags_leave_title'));
-        if (back && !onMediaTagsPage()) window.location.href = pageUrl();
+        // The answer belongs to the session that was asked: after a sign-out or another sign-in it navigates no one.
+        if (back && sameSession(mark) && !onMediaTagsPage()) window.location.href = pageUrl();
     }
 
     /**
