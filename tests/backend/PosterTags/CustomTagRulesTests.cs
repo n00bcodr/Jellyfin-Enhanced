@@ -255,11 +255,40 @@ public class CustomTagRulesTests
             Assert.Equal("tag:signed", doc.RootElement.GetProperty("CustomTagsFingerprint").GetString());
         }
 
+        // A collection a rule names, removed right after a snapshot load (before anything read the
+        // collections), still clears its members' matches.
+        f.Plugin.Configuration.CustomTagRules = CustomTagRuleSet.Normalize(new[] { Rule("tag", "signed", "Signed copy"), Rule("collection", "Box", "Box") });
+        var boxed = new Movie { Id = Guid.NewGuid(), Name = "Boxed" };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = boxed.Id }] };
+        library.Items.AddRange(new BaseItem[] { boxed, box });
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Mock.Object;
+        try
+        {
+            using (var built = Create())
+            {
+                built.BuildFullCache(null, CancellationToken.None);
+                Assert.Equal(new[] { "collection:box" }, TagsOf(built, boxed));
+            }
+
+            using var loaded = Create();
+            loaded.LoadFromDisk();
+            library.Items.Remove(box);
+            loaded.EnqueueRemoval(box.Id);
+            Flush(loaded);
+            Assert.Null(TagsOf(loaded, boxed));
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+            library.Items.Remove(boxed);
+        }
+
         // Loaded under other rules, the snapshot is re-matched in the background.
         f.Plugin.Configuration.CustomTagRules = new List<CustomTagRule>();
         using var reloaded = Create();
         reloaded.LoadFromDisk();
-        Assert.Equal(1, reloaded.Count);
+        Assert.True(reloaded.TryGetEntry(signed.Id, out _));
         Assert.True(SpinWait.SpinUntil(() => TagsOf(reloaded, signed) == null, TimeSpan.FromSeconds(10)));
     }
 

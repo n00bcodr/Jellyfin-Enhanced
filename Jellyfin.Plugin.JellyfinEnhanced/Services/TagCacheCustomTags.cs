@@ -172,11 +172,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Re-read the collections and return the items whose collection names changed
-        /// (added to, removed from or renamed collections). Callers hold the rebuild lock.
+        /// (added to, removed from or renamed collections). Before the first read (a snapshot
+        /// just loaded) the earlier members are unknown: every cached entry with a collection
+        /// match counts as changed too. Callers hold the rebuild lock.
         /// </summary>
         private HashSet<Guid> RefreshCollectionMembership()
         {
             var matcher = CurrentCustomTagMatcher();
+            var unknown = _collections == null;
             var before = _collections ?? CollectionMembership.Empty;
             CollectionMembership after;
             lock (_collectionsLock)
@@ -191,6 +194,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var a = before.NamesByItem.TryGetValue(id, out var x) ? x : Array.Empty<string>();
                 var b = after.NamesByItem.TryGetValue(id, out var y) ? y : Array.Empty<string>();
                 if (!a.SequenceEqual(b, StringComparer.Ordinal)) changed.Add(id);
+            }
+
+            if (unknown)
+            {
+                foreach (var (key, entry) in _cache)
+                {
+                    if (entry.CustomTags?.Any(t => t.StartsWith(CustomTagRuleSet.MatchCollection + ":", StringComparison.Ordinal)) == true
+                        && Guid.TryParse(key, out var id)) changed.Add(id);
+                }
             }
 
             return changed;
@@ -224,8 +236,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var matcher = CurrentCustomTagMatcher();
             if (matcher.IsEmpty) return false;
             var roots = new HashSet<Guid>();
-            var known = (_collections ?? CollectionMembership.Empty).CollectionIds;
+            // Collections not read yet (a snapshot just loaded): any removal may have been one of them.
+            var current = _collections;
+            var known = (current ?? CollectionMembership.Empty).CollectionIds;
             var collectionChanged = matcher.HasCollectionRules && batch.Any(change => known.Contains(change.Id)
+                || (change.Removed && current == null)
                 || (_cache.TryGetValue(change.Id.ToString("N"), out var entry) && entry.Type == nameof(BaseItemKind.BoxSet)));
             if (collectionChanged) roots.UnionWith(RefreshCollectionMembership());
             foreach (var (key, before) in seriesBefore)
