@@ -38,6 +38,7 @@ const catalog = {
       'quality:HEVC': pal('rgba(33, 150, 243, 0.902)', 'rgba(255, 255, 255, 0.149)', 'rgba(255, 255, 255, 1)'),
       'rating:community': pal('rgba(0, 0, 0, 0.851)', 'rgba(0, 0, 0, 0)', 'rgba(255, 193, 7, 1)'),
       'ageRating:9': pal('rgba(230, 81, 0, 1)', 'rgba(255, 152, 0, 1)', 'rgba(255, 255, 255, 1)'),
+      'genre:genre': pal('rgba(10, 10, 10, 0.8)', 'rgba(255, 255, 255, 0.2)', 'rgba(224, 224, 224, 1)'),
       'language:flag': pal('rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(255, 255, 255, 1)')
     },
     glass: {
@@ -50,10 +51,25 @@ const catalog = {
   }
 };
 
+/**
+ * jsdom has no canvas: a 2D context whose fillStyle, like a browser's, takes hex and rgb() colours
+ * and keeps its previous value for anything else.
+ */
+function fakeCanvas(window) {
+  window.HTMLCanvasElement.prototype.getContext = () => {
+    let fill = '#000000';
+    return {
+      get fillStyle() { return fill; },
+      set fillStyle(v) { if (/^(#[0-9a-f]{6}|rgba?\([\d.,\s]+\))$/i.test(String(v).trim())) fill = String(v).trim().toLowerCase(); }
+    };
+  };
+}
+
 /** The editor over its real markup, with the catalog answered locally. */
 async function setup(t, json = '', preset = 'default') {
   const h = createHarness({ html: markup, apiClient: { ajax: async () => catalog }, globals: { jeCdnUrl: path => `http://jellyfin.test/cdn/${path}` } });
   t.after(() => h.close());
+  fakeCanvas(h.window);
   h.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
   const editor = h.window.__editor;
   editor.load(json, preset);
@@ -78,19 +94,50 @@ test('the contrast helpers composite over the dark poster and grade like WCAG', 
   assert.deepEqual(api.rgbaOf('rgb(1, 2, 3)'), { r: 1, g: 2, b: 3, a: 1 });
 });
 
-test('a version 1 document loads onto labels and saves as version 2', async t => {
-  const h = await setup(t, JSON.stringify({ quality: { '4K': { background: '#ff0000', color: '#0000ff' } }, age: { 9: { border: '#00ff00' } }, genre: { background: '#111111' } }), 'custom');
+test('a version 1 document migrates to the colours it drew and saves as version 2', async t => {
+  // As the old editor stored it: only differences from the built-ins (a preset's kept fields left out),
+  // with the preset name kept for its dropdown.
+  const v1 = {
+    quality: { '4K': { background: '#ff0000', color: '#0000ff' }, '8K-ULTRA': { background: '#ff0000' }, ['__proto__']: { background: '#ff0000' } },
+    age: { 9: { border: '#00ff00' } },
+    rating: { community: { background: 'rgba(0, 0, 0, 0.5)', border: '#ffffff' }, critic: { color: 'url(x)' }, userReview: { color: '#ffffff' } },
+    genre: { background: '#111111' }
+  };
+  const h = await setup(t, JSON.stringify(v1), 'glass');
   const saved = JSON.parse(h.editor.serialize());
   assert.deepEqual(saved, {
     v: 2, preset: 'default',
     labels: {
-      'quality:4K': { background: 'rgba(255, 0, 0, 1)', text: 'rgba(0, 0, 255, 1)' },
-      'ageRating:9': { border: 'rgba(0, 255, 0, 1)' },
-      'genre:genre': { background: 'rgba(17, 17, 17, 1)' }
+      // Stored fields, else the built-in colour (catalog default palette); unknown labels and
+      // values that are not colours are dropped, and rating chips never drew a border.
+      'quality:4K': { background: 'rgba(255, 0, 0, 1)', border: 'rgba(255, 255, 255, 0.149)', text: 'rgba(0, 0, 255, 1)' },
+      'ageRating:9': { background: 'rgba(230, 81, 0, 1)', border: 'rgba(0, 255, 0, 1)', text: 'rgba(255, 255, 255, 1)' },
+      'rating:community': { background: 'rgba(0, 0, 0, 0.5)', text: 'rgba(255, 193, 7, 1)' },
+      'genre:genre': { background: 'rgba(17, 17, 17, 1)', border: 'rgba(255, 255, 255, 0.2)', text: 'rgba(224, 224, 224, 1)' }
     }
   });
+  assert.equal(h.editor.settings().preset, 'default', 'the saved preset name recolours nothing');
+  assert.equal(h.$('.je-ts-preset[data-preset="default"]').getAttribute('aria-checked'), 'true');
   assert.ok(h.$('.je-ts-target[data-label="4K"]').classList.contains('changed'));
   assert.equal(h.$('.je-ts-target[data-label="4K"] .je-ts-chip').style.background, 'rgb(255, 0, 0)', 'drawn in its effective colours');
+  // HEVC was not stored: it keeps its built-in colours, not Glass's.
+  assert.equal(h.$('.je-ts-target[data-label="HEVC"] .je-ts-chip').style.background, 'rgba(33, 150, 243, 0.902)');
+});
+
+test('a version 1 document waits for the catalog and is handed back untouched until then', async t => {
+  const v1 = JSON.stringify({ quality: { '4K': { background: '#ff0000' } } });
+  let answer;
+  const h = createHarness({ html: markup, apiClient: { ajax: () => new Promise(resolve => { answer = resolve; }) }, globals: { jeCdnUrl: path => path } });
+  t.after(() => h.close());
+  fakeCanvas(h.window);
+  h.window.eval(`window.__editor = (function () {\n${editorSource}\nreturn tagStyles; })();`);
+  const editor = h.window.__editor;
+  editor.load(v1, 'glass');
+  assert.equal(editor.serialize(), v1, 'the server migrates it the same way');
+  assert.equal(editor.settings().preset, 'default');
+  answer(catalog);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(JSON.parse(editor.serialize()).labels['quality:4K'].border, 'rgba(255, 255, 255, 0.149)');
 });
 
 test('presets apply at once, tiles preview their palette and overrides survive a preset change', async t => {

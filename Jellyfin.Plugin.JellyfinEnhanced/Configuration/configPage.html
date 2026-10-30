@@ -6190,6 +6190,8 @@
             let current = 'quality';
             let target = ALL;
             let canvas = null;
+            // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
+            let legacy = null;
 
             // <tag-style-contrast> pure helpers (tests/frontend extracts and runs this block)
             /**
@@ -6267,6 +6269,24 @@
                 canvas.fillStyle = '#000000';
                 canvas.fillStyle = css;
                 return rgbaOf(canvas.fillStyle) || { r: 0, g: 0, b: 0, a: 1 };
+            }
+            /**
+             * Like parse, but null for anything that is not a colour (the canvas keeps its previous
+             * fill for an invalid one, so it is tried over two different fills).
+             * @param {string} css
+             * @returns {{r: number, g: number, b: number, a: number}|null}
+             */
+            function parseColour(css) {
+                const direct = rgbaOf(css);
+                if (direct) return direct;
+                canvas = canvas || document.createElement('canvas').getContext('2d');
+                if (!canvas || typeof css !== 'string' || !css.trim()) return null;
+                canvas.fillStyle = '#000000';
+                canvas.fillStyle = css;
+                const overBlack = canvas.fillStyle;
+                canvas.fillStyle = '#ffffff';
+                canvas.fillStyle = css;
+                return overBlack === canvas.fillStyle ? rgbaOf(overBlack) : null;
             }
             const toHex = (c) => '#' + [c.r, c.g, c.b].map((n) => Math.round(n).toString(16).padStart(2, '0')).join('');
             const toCss = (c) => 'rgba(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' + Math.round(c.b) + ', ' + (Math.round(c.a * 1000) / 1000) + ')';
@@ -6644,7 +6664,44 @@
             }
 
             /**
-             * Loads the stored document (version 1 or 2) and preset.
+             * Migrates a version 1 document as the server does (TagStyleSet.ReadV1). The old editor stored
+             * only differences from the built-in colours, with its presets baked in, and the web drew the
+             * stored field, else the built-in one (rating chips had no border). Each stored catalog label
+             * becomes exactly those colours and the preset becomes Default, so nothing is recoloured.
+             * @param {Object} doc - The parsed version 1 document.
+             * @returns {void}
+             */
+            function migrateV1(doc) {
+                state = { preset: 'default', groups: {}, labels: {} };
+                [['quality', 'quality'], ['age', 'ageRating'], ['rating', 'rating'], ['genre', 'genre']].forEach(([section, g]) => {
+                    const entries = section === 'genre' ? { genre: doc.genre } : doc[section];
+                    if (!entries || typeof entries !== 'object') return;
+                    Object.keys(entries).forEach((l) => {
+                        const o = entries[l];
+                        // Of the rating chips version 1 only styled community and critic.
+                        if (!labelsOf(g).some((x) => x.key === l) || (g === 'rating' && l === 'userReview') || !o || typeof o !== 'object') return;
+                        const stored = {};
+                        [['background', 'background'], ['border', 'border'], ['text', 'color']].forEach(([f, k]) => {
+                            const c = (g !== 'rating' || f !== 'border') && typeof o[k] === 'string' ? parseColour(o[k]) : null;
+                            if (c) stored[f] = toCss(c);
+                        });
+                        if (!Object.keys(stored).length) return;
+                        const builtin = palette('default', g, l);
+                        const out = {};
+                        fieldsOf(g).forEach(([f]) => {
+                            if (g === 'rating' && f === 'border') return;
+                            const v = stored[f] || builtin[f];
+                            if (v) out[f] = v;
+                        });
+                        state.labels[labelKey(g, l)] = out;
+                    });
+                });
+            }
+
+            /**
+             * Loads the stored document (version 1 or 2) and preset. A version 1 document is migrated
+             * once the catalog is in; until then serialize() hands it back untouched (the server
+             * migrates it the same way).
              * @param {string} json
              * @param {string} preset
              * @returns {void}
@@ -6653,23 +6710,21 @@
                 state = { preset: PRESET_TITLES[preset] ? preset : 'default', groups: {}, labels: {} };
                 current = 'quality';
                 target = ALL;
+                legacy = null;
                 try {
                     const p = json ? JSON.parse(json) : {};
                     if (p && p.v === 2) {
                         Object.keys(p.groups || {}).forEach((g) => { const c = readColours(p.groups[g], 'text'); if (c) state.groups[g] = c; });
                         Object.keys(p.labels || {}).forEach((k) => { const c = readColours(p.labels[k], 'text'); if (c) state.labels[k] = c; });
-                    } else if (p && typeof p === 'object') {
-                        // Version 1: per-section label maps.
-                        [['quality', 'quality'], ['age', 'ageRating'], ['rating', 'rating']].forEach(([section, g]) => {
-                            Object.keys(p[section] || {}).forEach((l) => { const c = readColours(p[section][l], 'color'); if (c) state.labels[labelKey(g, l)] = c; });
-                        });
-                        const genre = readColours(p.genre, 'color');
-                        if (genre) state.labels['genre:genre'] = genre;
+                    } else if (p && typeof p === 'object' && !Array.isArray(p) && Object.keys(p).length) {
+                        state.preset = 'default';
+                        if (cat) migrateV1(p); else legacy = { json, doc: p };
                     }
                 } catch (e) { /* unreadable value: start clean */ }
                 if (!cat) {
                     ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog'), dataType: 'json' }).then((c) => {
                         cat = c;
+                        if (legacy) { migrateV1(legacy.doc); legacy = null; }
                         render();
                     }).catch(() => {
                         document.querySelector('#tagStylePresets').textContent = 'Could not load the tag list.';
@@ -6680,6 +6735,7 @@
 
             /** @returns {string} The stored document, or '' when nothing is overridden. */
             function serialize() {
+                if (legacy) return legacy.json;
                 if (!Object.keys(state.groups).length && !Object.keys(state.labels).length) return '';
                 const out = { v: 2, preset: state.preset };
                 if (Object.keys(state.groups).length) out.groups = state.groups;
@@ -6702,6 +6758,7 @@
 
             document.querySelector('#tagStyleResetAll').addEventListener('click', () => {
                 state = { preset: 'default', groups: {}, labels: {} };
+                legacy = null;
                 target = ALL;
                 render();
             });

@@ -11,26 +11,104 @@ public class TagStyleTests
     // Version 1, as the old editor saved it: per-section maps, "color" for the text.
     private const string V1 = "{\"quality\":{\"4K\":{\"background\":\"#ff0000\",\"color\":\"rgba(0,0,255,0.5)\"},\"X\":{\"background\":\"url(x)\"}},\"age\":{\"13\":{\"border\":\"#00ff00\"}},\"rating\":{\"community\":{\"background\":\"#123456\"}}}";
 
+    // The same without the entries only a lenient read skips (an unknown label, a value that is not a colour).
+    private const string V1Valid = "{\"quality\":{\"4K\":{\"background\":\"#ff0000\",\"color\":\"rgba(0,0,255,0.5)\"}},\"age\":{\"13\":{\"border\":\"#00ff00\"}},\"rating\":{\"community\":{\"background\":\"#123456\"}}}";
+
     private const string V2 = "{\"v\":2,\"preset\":\"glass\",\"groups\":{\"quality\":{\"background\":\"#ff0000\"},\"status\":{\"text\":\"#00ff00\"}},\"labels\":{\"quality:4K\":{\"text\":\"#0000ff\"},\"language:flag\":{\"border\":\"#ffffff\"}}}";
 
     [Fact]
-    public void Version_1_documents_map_onto_labels_with_the_saved_preset()
+    public void Version_1_documents_migrate_to_the_colours_they_drew_under_the_default_preset()
     {
         var set = TagStyleSet.Parse(V1, "outline");
-        Assert.Equal("outline", set.Preset);
+        Assert.Equal("default", set.Preset); // the saved name only remembered the old dropdown
         Assert.Empty(set.Groups);
-        Assert.Equal("rgba(255, 0, 0, 1)", set.Labels["quality:4K"].Background);
-        Assert.Equal("rgba(0, 0, 255, 0.502)", set.Labels["quality:4K"].Text);
+        // Each stored label is materialised: stored fields, else the built-in colour it was drawn with.
+        Assert.Equal(new TagColors("rgba(255, 0, 0, 1)", "rgba(255, 255, 255, 0.149)", "rgba(0, 0, 255, 0.502)"), set.Labels["quality:4K"]);
         Assert.False(set.Labels.ContainsKey("quality:X"));
-        Assert.Equal("rgba(0, 255, 0, 1)", set.Labels["ageRating:13"].Border);
-        Assert.Equal("rgba(18, 52, 86, 1)", set.Labels["rating:community"].Background);
+        var board = TagStylePalettes.Builtin("ageRating", "13");
+        Assert.Equal(board with { Border = "rgba(0, 255, 0, 1)" }, set.Labels["ageRating:13"]);
+        // Rating chips never drew a border: none is materialised.
+        Assert.Equal(new TagColors("rgba(18, 52, 86, 1)", null, "rgba(255, 193, 7, 1)"), set.Labels["rating:community"]);
         Assert.NotEmpty(set.Hash);
 
-        // The old editor's "custom" and an empty value fall back to the default preset.
+        // Version 1 never styled the user review chip.
+        Assert.Empty(TagStyleSet.Parse("{\"rating\":{\"userReview\":{\"color\":\"#ffffff\"}}}").Labels);
+
         Assert.Equal("default", TagStyleSet.Parse(V1, "custom").Preset);
         Assert.True(TagStyleSet.Parse("not json").IsEmpty);
         Assert.True(TagStyleSet.Parse("").IsEmpty);
         Assert.False(TagStyleSet.Parse("", "glass").IsEmpty);
+    }
+
+    [Theory]
+    [InlineData("glass")]
+    [InlineData("outline")]
+    [InlineData("mono")]
+    [InlineData("light")]
+    [InlineData("custom")]
+    public void A_version_1_preset_document_draws_every_chip_exactly_as_before_the_migration(string savedPreset)
+    {
+        // As the old editor saved Glass applied to the Quality tab only, after a few edits on other tabs:
+        // only the differences from the built-ins (Glass kept every text colour, so none is stored).
+        var quality = new JsonObject();
+        foreach (var (label, background, _) in TagStyleCatalog.Quality)
+        {
+            Assert.True(CssColor.TryParse(background, out var bg));
+            bool dark = (0.299 * bg.Red) + (0.587 * bg.Green) + (0.114 * bg.Blue) < 40;
+            quality[label] = new JsonObject
+            {
+                ["background"] = $"rgba({bg.Red}, {bg.Green}, {bg.Blue}, {(dark ? "0.3" : "0.4")})",
+                ["border"] = "rgba(255, 255, 255, 0.4)",
+            };
+        }
+
+        var v1 = new JsonObject
+        {
+            ["quality"] = quality,
+            ["age"] = new JsonObject { ["9"] = new JsonObject { ["background"] = "#2e7d32" } },
+            ["rating"] = new JsonObject { ["community"] = new JsonObject { ["background"] = "rgba(0, 0, 0, 0.5)" }, ["critic"] = new JsonObject { ["color"] = "#ff0000" } },
+            ["genre"] = new JsonObject { ["border"] = "#ffffff" },
+        }.ToJsonString();
+
+        // The old web and native paths: the stored field, else the built-in colour; rating chips had no
+        // border, and status chips and flags were never styled.
+        TagColors Legacy(string group, string label)
+        {
+            var builtin = TagStylePalettes.Builtin(group, label);
+            var section = group switch { "quality" => "quality", "ageRating" => "age", "rating" => "rating", "genre" => "genre", _ => null };
+            var node = section is null ? null : JsonNode.Parse(v1)![section];
+            var stored = group == "genre" ? node : node?[label];
+            string? Field(string key) => stored?[key] is { } v ? TagStylePalettes.NormaliseColour((string)v!) : null;
+            return new TagColors(
+                Field("background") ?? builtin.Background,
+                group == "rating" ? builtin.Border : Field("border") ?? builtin.Border,
+                Field("color") ?? builtin.Text);
+        }
+
+        var parsed = TagStyleSet.Parse(v1, savedPreset);
+        Assert.True(TagStyleSet.TryValidate(v1, savedPreset, out var saved, out var error), error);
+        var reloaded = TagStyleSet.Parse(saved.Serialize(), saved.Preset);
+        foreach (var set in new[] { parsed, saved, reloaded })
+        {
+            Assert.Equal("default", set.Preset);
+            foreach (var group in TagStyleKeys.Groups)
+            {
+                // "*" stands for the quality and age chips outside the catalog.
+                var outside = group is "quality" or "ageRating" ? new[] { (TagStyleKeys.AnyLabel, "*") } : [];
+                foreach (var (label, _) in TagStyleCatalog.Labels(group).Concat(outside))
+                {
+                    var drawn = set.Resolve(group, label).Over(TagStylePalettes.Builtin(group, label));
+                    var expected = group == "language" ? Legacy(group, label) with { Background = drawn.Background, Text = drawn.Text } : Legacy(group, label);
+                    Assert.True(expected == drawn, $"{savedPreset} {group}:{label}: expected {expected}, drew {drawn}");
+                }
+            }
+        }
+
+        // The preset tab touched only quality chips: other groups keep their built-in colours.
+        Assert.True(parsed.Resolve("status", "trending").IsEmpty);
+        Assert.True(parsed.Resolve("language", "flag").IsEmpty);
+        Assert.True(parsed.Resolve("ageRating", "7").IsEmpty);
+        Assert.True(parsed.Resolve("rating", "userReview").IsEmpty);
     }
 
     [Fact]
@@ -178,8 +256,8 @@ public class TagStyleTests
         Assert.Contains("larger", error);
         Assert.False(TagStyleSet.TryValidate("", "neon", out _, out _));
 
-        Assert.True(TagStyleSet.TryValidate(V1, "glass", out var converted, out _));
-        Assert.Equal("glass", converted.Preset);
+        Assert.True(TagStyleSet.TryValidate(V1Valid, "glass", out var converted, out _));
+        Assert.Equal("default", converted.Preset);
         var stored = JsonNode.Parse(converted.Serialize())!;
         Assert.Equal(2, (int)stored["v"]!);
         Assert.Equal("rgba(0, 0, 255, 0.502)", (string)stored["labels"]!["quality:4K"]!["text"]!);

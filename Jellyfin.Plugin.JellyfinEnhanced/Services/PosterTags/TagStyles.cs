@@ -52,8 +52,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <c>{"v":2,"preset":"glass","groups":{"quality":{"background":"rgba(..)","border":"..","text":".."}},
     /// "labels":{"quality:4K":{..},"ageRating:7":{..},"rating:community":{..},"status:trending":{..}}}</c>.
     /// Version 1 (no <c>v</c>) is still read: <c>{"quality":{"4K":{"background":"..","color":".."}},"age":{"&lt;board id&gt;":{..}},
-    /// "rating":{"community":{..},"critic":{..}},"genre":{..}}</c>, mapped onto <see cref="Labels"/>. Anything that
-    /// is not a colour <see cref="CssColor"/> understands is dropped, so a value can never reach generated CSS unchecked.
+    /// "rating":{"community":{..},"critic":{..}},"genre":{..}}</c>, migrated onto <see cref="Labels"/> as the colours it
+    /// drew, under the default preset. Anything that is not a colour <see cref="CssColor"/> understands is dropped, so a
+    /// value can never reach generated CSS unchecked.
     /// </remarks>
     public sealed class TagStyleSet
     {
@@ -92,9 +93,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Stable hash of the preset and overrides, empty when the set is empty. Part of the poster cache key.</summary>
         public string Hash { get; }
 
-        /// <summary>Parses the stored document; never throws, anything unusable is skipped.</summary>
+        /// <summary>
+        /// Parses the stored document; never throws, anything unusable is skipped. A version 1 document is
+        /// migrated to the colours it drew (see <see cref="ReadV1"/>) under the default preset.
+        /// </summary>
         /// <param name="json">The stored JSON (version 1 or 2).</param>
-        /// <param name="preset">The stored <c>TagStylePreset</c>; it wins over the document's own <c>preset</c>.</param>
+        /// <param name="preset">The stored <c>TagStylePreset</c>; it wins over a version 2 document's own <c>preset</c>.</param>
         /// <returns>The set.</returns>
         public static TagStyleSet Parse(string? json, string? preset = null)
         {
@@ -105,7 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.ValueKind != JsonValueKind.Object) return Create(stored ?? TagStyleKeys.DefaultPreset, NoEntries, NoEntries);
                 var root = doc.RootElement;
-                return root.TryGetProperty("v", out _) ? ReadV2(root, stored, strict: false, out _)! : ReadV1(root, stored);
+                return root.TryGetProperty("v", out _) ? ReadV2(root, stored, strict: false, out _)! : ReadV1(root);
             }
             catch (JsonException)
             {
@@ -115,8 +119,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>
         /// Validates a document being saved. A version 2 document must only hold known keys, known groups and
-        /// labels, fields that apply to the group and parseable colours; a version 1 document is converted the
-        /// lenient way it has always been read. Nothing over <see cref="MaxDocumentLength"/> is accepted.
+        /// labels, fields that apply to the group and parseable colours; a version 1 document is migrated the
+        /// lenient way it is read (<see cref="Parse"/>). Nothing over <see cref="MaxDocumentLength"/> is accepted.
         /// </summary>
         /// <param name="json">The posted document.</param>
         /// <param name="preset">The posted <c>TagStylePreset</c>.</param>
@@ -158,7 +162,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
                 if (!root.TryGetProperty("v", out _))
                 {
-                    set = ReadV1(root, stored);
+                    set = ReadV1(root);
                     return true;
                 }
 
@@ -284,30 +288,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return o;
         }
 
-        /// <summary>Version 1: per-section label maps; the preset was already baked into the colours.</summary>
-        private static TagStyleSet ReadV1(JsonElement root, string? preset)
+        /// <summary>
+        /// Version 1: per-section label maps holding only what differs from the built-in colours. The old editor
+        /// baked its presets into those differences (leaving out every field a preset kept, such as Glass's text
+        /// colours) and saved the preset's name only to remember the dropdown, so the web and native posters drew
+        /// stored field else built-in colour, for catalog labels (of the rating chips only community and critic), with
+        /// no border on rating chips. Each stored
+        /// label is materialised to exactly those colours and the preset becomes the default one, so neither
+        /// the new palettes nor the saved preset name recolour anything (including groups the old preset
+        /// never touched when it was applied to one tab only).
+        /// </summary>
+        private static TagStyleSet ReadV1(JsonElement root)
         {
             var labels = new Dictionary<string, TagColors>(StringComparer.Ordinal);
-            void Section(string name, string group, Func<string, bool> known)
+            void Entry(string group, string label, JsonElement value)
             {
-                if (!root.TryGetProperty(name, out var section) || section.ValueKind != JsonValueKind.Object) return;
-                foreach (var entry in section.EnumerateObject())
+                if (labels.Count >= MaxEntries || label.Length is 0 or > MaxKeyLength || !IsV1Label(group, label)) return;
+                if (ReadColorsV1(value, group) is not { } stored) return;
+                var builtin = TagStylePalettes.Builtin(group, label);
+                labels[group + ":" + label] = new TagColors(
+                    stored.Background ?? builtin.Background,
+                    group == TagStyleKeys.Rating ? null : stored.Border ?? builtin.Border,
+                    stored.Text ?? builtin.Text);
+            }
+
+            foreach (var section in root.EnumerateObject())
+            {
+                var group = section.Name switch
                 {
-                    if (labels.Count >= MaxEntries) break;
-                    if (entry.Name.Length is 0 or > MaxKeyLength || !known(entry.Name)) continue;
-                    if (ReadColorsLenient(entry.Value, group, "color") is { } colors) labels[group + ":" + entry.Name] = colors;
+                    "quality" => TagStyleKeys.Quality,
+                    "age" => TagStyleKeys.AgeRating,
+                    "rating" => TagStyleKeys.Rating,
+                    "genre" => TagStyleKeys.Genre,
+                    _ => null,
+                };
+                if (group is null || section.Value.ValueKind != JsonValueKind.Object) continue;
+                if (group == TagStyleKeys.Genre)
+                {
+                    Entry(group, "genre", section.Value);
+                    continue;
                 }
+
+                foreach (var entry in section.Value.EnumerateObject()) Entry(group, entry.Name, entry.Value);
             }
 
-            Section("quality", TagStyleKeys.Quality, l => TagStyleCatalog.IsLabel(TagStyleKeys.Quality, l));
-            Section("age", TagStyleKeys.AgeRating, l => TagStyleCatalog.IsLabel(TagStyleKeys.AgeRating, l));
-            Section("rating", TagStyleKeys.Rating, l => l is "community" or "critic");
-            if (root.TryGetProperty("genre", out var g) && ReadColorsLenient(g, TagStyleKeys.Genre, "color") is { } genre)
-            {
-                labels[TagStyleKeys.Genre + ":genre"] = genre;
-            }
-
-            return Create(preset ?? TagStyleKeys.DefaultPreset, new Dictionary<string, TagColors>(StringComparer.Ordinal), labels);
+            return Create(TagStyleKeys.DefaultPreset, new Dictionary<string, TagColors>(StringComparer.Ordinal), labels);
         }
 
         /// <summary>Version 2; strict mode returns null with an error at the first problem, lenient mode skips it.</summary>
@@ -447,14 +472,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return colors.IsEmpty ? null : colors;
         }
 
-        private static TagColors? ReadColorsLenient(JsonElement e, string group, string textKey)
+        /// <summary>A label version 1 could style: a catalog label, and of the rating chips only community and critic.</summary>
+        private static bool IsV1Label(string group, string label) =>
+            TagStyleCatalog.IsLabel(group, label) && (group != TagStyleKeys.Rating || label is "community" or "critic");
+
+        /// <summary>A version 1 colour object: <c>background</c>, <c>border</c> (not on rating chips, which never drew one) and <c>color</c> for the text.</summary>
+        private static TagColors? ReadColorsV1(JsonElement e, string group)
         {
             if (e.ValueKind != JsonValueKind.Object) return null;
-            string? Field(string name, string field) =>
-                TagStyleKeys.FieldApplies(group, field) && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+            string? Field(string name) =>
+                (name != "border" || group != TagStyleKeys.Rating) && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
                     ? TagStylePalettes.NormaliseColour(v.GetString())
                     : null;
-            var colors = new TagColors(Field("background", "background"), Field("border", "border"), Field(textKey, "text"));
+            var colors = new TagColors(Field("background"), Field("border"), Field("color"));
             return colors.IsEmpty ? null : colors;
         }
 
