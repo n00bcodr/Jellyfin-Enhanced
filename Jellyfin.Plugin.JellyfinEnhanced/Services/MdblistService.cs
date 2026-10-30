@@ -441,8 +441,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     foreach (var chunk in group.Chunk(150))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        // Unknown quota stops background work, as the bulk runner does; titles stay NeedsFetch.
                         var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
-                        if (status != null && status.RateLimitRemaining <= Math.Max(SafetyMargin, reserve)) return;
+                        if (status == null || status.RateLimitRemaining <= Math.Max(SafetyMargin, reserve)) return;
                         var ids = chunk.Select(t => t.Id).ToArray();
                         var results = await GetMediaBatchAsync(group.Key, ids, cancellationToken).ConfigureAwait(false);
                         cancellationToken.ThrowIfCancellationRequested();

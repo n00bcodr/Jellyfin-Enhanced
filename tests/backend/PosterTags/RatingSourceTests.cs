@@ -163,6 +163,26 @@ public class RatingSourceTests
         }
     }
 
+    [Theory]
+    [InlineData(503)]
+    [InlineData(429)]
+    public async Task UnknownQuotaStatusSkipsBackgroundEnrichmentAndLeavesTitlesRetryable(int userStatus)
+    {
+        using var fixture = new ApiPluginFixture(); fixture.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        var requests = 0;
+        using var transport = new IntegrationTransport((request, _) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return Task.FromResult(IntegrationTransport.Response("{}", userStatus));
+            requests++;
+            return Task.FromResult(IntegrationTransport.Response("[{\"ids\":{\"tmdb\":1},\"ratings\":[{\"source\":\"imdb\",\"score\":81}]}]"));
+        });
+        using var service = new MdblistService(transport, fixture.Core.Paths.Object, fixture.Core.Logger);
+        await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default, 400);
+        await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default);
+        Assert.Equal(0, requests);
+        Assert.Null(service.GetCachedEntry("movie", "1"));
+        Assert.True(service.NeedsFetch("movie", "1"));
+    }
+
     [Fact]
     public void RemovingTheConfiguredKeyDropsCachedAndMemoizedSourceFactsWithoutMutatingTheSharedEntry()
     {
