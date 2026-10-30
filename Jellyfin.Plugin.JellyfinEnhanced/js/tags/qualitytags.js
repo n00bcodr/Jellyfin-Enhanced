@@ -78,7 +78,8 @@
         'DVD': { bg: 'rgba(153, 76, 0, 0.95)', text: '#ffffff' },
         'VHS': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
         'HDTV': { bg: 'rgba(192, 192, 192, 0.9)', text: '#000000' },
-        'Physical': { bg: 'rgba(102, 102, 102, 0.9)', text: '#ffffff' }
+        'Physical': { bg: 'rgba(102, 102, 102, 0.9)', text: '#ffffff' },
+        'Mixed': { bg: '#546e7a', text: '#ffffff' }
     };
 
     // Computed quality labels derived from server cache entries
@@ -260,8 +261,13 @@
     function createResponsiveLabel(label) {
         const normalizedLabel = normalizeQualityLabel(label);
         const badge = document.createElement('div');
-        badge.textContent = label;
         badge.className = overlayClass;
+        badge.textContent = label === 'Mixed' ? JE.t('series_quality_mixed') : label;
+        if (label === 'Mixed') {
+            badge.classList.add('mixed');
+            badge.dataset.jeCompact = JE.t('series_quality_mixed_compact');
+            badge.title = JE.t('series_quality_mixed');
+        }
 
         // Existing class names preserved for backward-compat with user CSS.
         // Source tags (BluRay/DVD/etc.) keep `.other-quality` from the
@@ -737,6 +743,62 @@
         return Array.from(qualities);
     }
 
+    /**
+     * Effective series/season policy, independently of layout and label density.
+     * @returns {string} A known policy; legacy and invalid settings remain representative.
+     */
+    function aggregationPolicy() {
+        const policy = JE.currentSettings?.seriesQualityAggregation ?? JE.pluginConfig?.SeriesQualityAggregation;
+        return ['latest', 'best', 'shared', 'mixed'].includes(policy) ? policy : 'representative';
+    }
+
+    /**
+     * Resolve compact server facts without fetching episodes. Source and special-format
+     * labels keep their representative semantics, except latest uses its own labels.
+     * @param {Object} entry - A server-cache entry, or batch item carrying QualitySummary.
+     * @param {string[]} representative - Legacy stream-derived labels.
+     * @returns {string[]} Labels before category toggles, ordering, density and caps.
+     */
+    function aggregateQualities(entry, representative) {
+        const policy = aggregationPolicy();
+        const summary = entry.QualitySummary;
+        if (!['Series', 'Season'].includes(entry.Type) || !summary || policy === 'representative') return representative;
+        const categoryKeys = { resolution: 'resolution', dynamicRange: 'dynamicRange', videoCodec: 'videoCodec', audioInfo: 'audio' };
+        const qualities = policy === 'latest' ? [...(summary.LatestExtras || [])]
+            : representative.filter(label => !['resolution', 'dynamicRange', 'videoCodec', 'audio'].includes(categorize(label)));
+        const preferred = resolvePreferredAudioLanguage();
+        const match = JE.core.mediaLanguage?.matchesLanguage;
+        const audioVariants = Object.entries(summary.AudioByLanguage || {});
+        const regionalFallbacks = Object.entries(summary.AudioRegionFallback || {});
+        const audio = preferred && typeof match === 'function'
+            ? (audioVariants.find(([language]) => match(language, preferred, { requireRegion: true }))
+                || regionalFallbacks.find(([language]) => match(language, preferred))
+                || audioVariants.find(([language]) => !language.includes('-') && match(language, preferred)))?.[1] : null;
+        let mixed = false;
+        for (const [key, category] of Object.entries(summary.Categories || {})) {
+            const facts = key === 'audioInfo' && audio ? audio : category;
+            const value = policy === 'latest' ? facts.Latest : policy === 'shared' && !facts.AllAgree ? null : facts.Best;
+            if (value) qualities.push(value);
+            const cat = CATEGORY_BY_KEY.get(categoryKeys[key]);
+            mixed ||= !facts.AllAgree && !!cat && readBool(cat.settingKey, true);
+        }
+        if (policy === 'mixed' && summary.EpisodeCount > 1 && mixed) qualities.push('Mixed');
+        return qualities;
+    }
+
+    /**
+     * Reapply a policy to retained batch facts. A policy change must not fetch
+     * episodes again while the language preference and cache lifetime still match.
+     * @param {Object|null} cached - A computed local/hot cache record.
+     * @returns {string[]|null} Resolved labels, including a known empty result, or a cache miss.
+     */
+    function qualitiesFromCache(cached) {
+        if (!cached || !matchesAudioPreference(cached)) return null;
+        if (cached.aggregationPolicy === aggregationPolicy() || (cached.type && !['Series', 'Season'].includes(cached.type))) return cached.qualities;
+        if (!cached.qualitySummary) return null;
+        return aggregateQualities({ Type: cached.type, QualitySummary: cached.qualitySummary }, cached.representativeQualities || []);
+    }
+
     // --- DOM MANIPULATION ---
     /**
      * Reads a boolean category toggle from per-user settings.
@@ -975,8 +1037,9 @@
                 const itemId = item.Id;
                 // Check hot cache first
                 const hot = ctx.hot?.get(itemId);
-                if (hot && (Date.now() - hot.timestamp) < ctx.cacheTtl && matchesAudioPreference(hot)) {
-                    insertOverlay(ctx, el, hot.qualities);
+                const hotQualities = hot && (Date.now() - hot.timestamp) < ctx.cacheTtl ? qualitiesFromCache(hot) : null;
+                if (hotQualities) {
+                    if (hotQualities.length) insertOverlay(ctx, el, hotQualities);
                     return;
                 }
 
@@ -989,11 +1052,15 @@
                     qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item);
                 }
 
-                if (qualities.length > 0) {
+                const representativeQualities = qualities;
+                qualities = aggregateQualities(item, qualities);
+                if (qualities.length > 0 || item.QualitySummary) {
                     const audioLang = audioPreferenceKey();
-                    ctx.setPersistent(itemId, { qualities, timestamp: Date.now(), audioLang });
-                    ctx.hot?.set(itemId, { qualities, timestamp: Date.now(), audioLang });
-                    insertOverlay(ctx, el, qualities);
+                    const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
+                        timestamp: Date.now(), audioLang, aggregationPolicy: aggregationPolicy() };
+                    ctx.setPersistent(itemId, record);
+                    ctx.hot?.set(itemId, record);
+                    if (qualities.length) insertOverlay(ctx, el, qualities);
                 }
             },
             renderFromCache(ctx, el, itemId) {
@@ -1004,8 +1071,9 @@
                 if (isAudioPreferencePending()) return true;
                 const hot = ctx.hot?.get(itemId);
                 const cached = hot || ctx.getPersistent(itemId);
-                if (cached && cached.qualities && cached.qualities.length > 0 && matchesAudioPreference(cached)) {
-                    insertOverlay(ctx, el, cached.qualities);
+                const qualities = qualitiesFromCache(cached);
+                if (qualities) {
+                    if (qualities.length) insertOverlay(ctx, el, qualities);
                     return true;
                 }
                 return false;
@@ -1016,15 +1084,15 @@
                 if (isAudioPreferencePending()) return;
                 // Check local computed cache first (avoids re-running quality detection)
                 const cached = serverQualityCache.get(itemId);
-                if (cached && matchesAudioPreference(cached)) {
+                if (cached && cached.entry === entry && matchesAudioPreference(cached) && cached.aggregationPolicy === aggregationPolicy()) {
                     if (cached.qualities.length > 0) insertOverlay(ctx, el, cached.qualities);
                     return;
                 }
                 const audioLang = audioPreferenceKey();
                 const sd = entry.StreamData;
-                if (!sd || !sd.Streams) { serverQualityCache.set(itemId, { audioLang, qualities: [] }); return; }
-                const qualities = getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath });
-                serverQualityCache.set(itemId, { audioLang, qualities });
+                const representative = sd?.Streams ? getEnhancedQuality(sd.Streams, sd.Sources, { Name: sd.ItemName, Path: sd.ItemPath }) : [];
+                const qualities = aggregateQualities(entry, representative);
+                serverQualityCache.set(itemId, { audioLang, qualities, entry, aggregationPolicy: aggregationPolicy() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

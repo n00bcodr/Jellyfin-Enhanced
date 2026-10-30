@@ -171,7 +171,7 @@ function createSandbox(profile, pluginConfig, webSettings, reviews) {
     const JE = {
         pluginConfig: pluginConfig,
         userConfig: { settings: toCamelCase(webSettings) },
-        t: (k) => k,
+        t: (k) => ({ series_quality_mixed: 'Mixed', series_quality_mixed_compact: '±' }[k] || k),
         cdn: {
             url: (a, b) => `cdn/${a}/${b}`,
             font: (f) => `cdn/font/${f}`,
@@ -381,6 +381,7 @@ async function runProfile(profile) {
         ratingTagsOnMovies: scope('ratingTagsOnMovies', 'RatingTagsOnMovies'), ratingTagsOnSeries: scope('ratingTagsOnSeries', 'RatingTagsOnSeries'),
         ratingTagsOnSeasons: scope('ratingTagsOnSeasons', 'RatingTagsOnSeasons'), ratingTagsOnEpisodes: scope('ratingTagsOnEpisodes', 'RatingTagsOnEpisodes'),
         qualityTagsPreferredAudioLanguage: String(s.qualityTagsPreferredAudioLanguage ?? ''),
+        seriesQualityAggregation: ['latest', 'best', 'shared', 'mixed'].includes(s.seriesQualityAggregation ?? pluginConfig.SeriesQualityAggregation) ? (s.seriesQualityAggregation ?? pluginConfig.SeriesQualityAggregation) : 'representative',
         // The panel checkbox and the server both read "anything but false" as on.
         useNativePosterTags: s.useNativePosterTags !== false,
         nativeEnabled: pluginConfig.NativePosterTagsEnabled === true && s.useNativePosterTags !== false,

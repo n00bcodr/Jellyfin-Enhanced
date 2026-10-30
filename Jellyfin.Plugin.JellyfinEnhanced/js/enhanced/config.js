@@ -134,6 +134,8 @@
             // Poster tag layout scalars (0 = a document from before layouts; see core/tag-layout.js).
             tagLayout: 'corners', tagLabelDensity: 'full', tagLayoutSettingsVersion: 0,
             qualityTagsPreferredAudioLanguage: '',
+            // Series/season quality aggregation policy.
+            seriesQualityAggregation: 'representative',
             showRatingInPlayer: true,
             reviewsExpandedByDefault: false,
             displayLanguage: '',

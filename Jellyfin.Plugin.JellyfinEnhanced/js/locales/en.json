@@ -1030,5 +1030,13 @@
     "catchup_top_watched": "Most watched",
     "catchup_top_dismissed": "Most dismissed",
     "catchup_top_watchlisted": "Most watchlisted",
-    "catchup_failed": "Failed: {error}"
+    "catchup_failed": "Failed: {error}",
+    "series_quality_aggregation_label": "Series and seasons show:",
+    "series_quality_aggregation_representative": "Representative episode",
+    "series_quality_aggregation_latest": "Latest episode",
+    "series_quality_aggregation_best": "Best quality",
+    "series_quality_aggregation_shared": "Only what every episode has",
+    "series_quality_aggregation_mixed": "Best, marked when mixed",
+    "series_quality_mixed": "Mixed",
+    "series_quality_mixed_compact": "±"
 }

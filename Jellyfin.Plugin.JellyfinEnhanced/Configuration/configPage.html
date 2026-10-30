@@ -284,6 +284,17 @@
                                             <button type="button" class="raised raised-mini je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button>
                                         </div>
                                     </div>
+                                    <!-- Series/season quality aggregation default -->
+                                    <div class="selectContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="seriesQualityAggregation" data-je-aggregation-label="series_quality_aggregation_label"></label>
+                                        <select is="emby-select" id="seriesQualityAggregation" name="seriesQualityAggregation" class="emby-select">
+                                            <option value="representative" data-je-aggregation-label="series_quality_aggregation_representative"></option>
+                                            <option value="latest" data-je-aggregation-label="series_quality_aggregation_latest"></option>
+                                            <option value="best" data-je-aggregation-label="series_quality_aggregation_best"></option>
+                                            <option value="shared" data-je-aggregation-label="series_quality_aggregation_shared"></option>
+                                            <option value="mixed" data-je-aggregation-label="series_quality_aggregation_mixed"></option>
+                                        </select>
+                                    </div>
                                     <div class="inputContainer">
                                         <label class="inputLabel inputLabelUnfocused" for="qualityTagsPreferredAudioLanguage">Preferred Audio Language for Sound Tags</label>
                                         <select is="emby-select" id="qualityTagsPreferredAudioLanguage" name="qualityTagsPreferredAudioLanguage" class="emby-select">
@@ -7196,8 +7207,8 @@
         async function loadStatusTagLabels() {
             const en = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/locales/en.json'), dataType: 'json' });
             const JE = window.JellyfinEnhanced?.t ? window.JellyfinEnhanced : { t: key => en[key] || key };
-            document.querySelectorAll('[data-je-status-label]').forEach(element => {
-                const key = element.dataset.jeStatusLabel;
+            document.querySelectorAll('[data-je-status-label], [data-je-aggregation-label]').forEach(element => {
+                const key = element.dataset.jeStatusLabel || element.dataset.jeAggregationLabel;
                 const translated = JE.t(key);
                 element.textContent = translated === key ? en[key] || key : translated;
             });
@@ -7347,6 +7358,8 @@
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
                 document.querySelector('#languageTagsMergeRegions').checked = config.LanguageTagsMergeRegions === true;
+                const aggregationSelect = document.querySelector('#seriesQualityAggregation');
+                aggregationSelect.value = config.SeriesQualityAggregation || 'representative';
                 const qualityAudioLangSelect = document.querySelector('#qualityTagsPreferredAudioLanguage');
                 // The culture list loads asynchronously; keep the value so it can be re-applied once the options exist.
                 qualityAudioLangSelect.dataset.savedValue = config.QualityTagsPreferredAudioLanguage || '';
@@ -7980,6 +7993,7 @@
             config.LanguageTagsPriority = document.querySelector('#languageTagsPriority').value.trim();
             config.LanguageTagsPriorityStrict = document.querySelector('#languageTagsPriorityStrict').checked;
             config.LanguageTagsMergeRegions = document.querySelector('#languageTagsMergeRegions').checked;
+            config.SeriesQualityAggregation = document.querySelector('#seriesQualityAggregation').value || 'representative';
             config.QualityTagsPreferredAudioLanguage = document.querySelector('#qualityTagsPreferredAudioLanguage').value || '';
             config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
@@ -9602,7 +9616,7 @@
             { parent: 'showUserReviews', label: 'Enable User Reviews', children: ['hideReviewsFromHiddenUsers', 'hideReviewsFromDisabledUsers', 'mirrorReviewRatingsToJellyfin', 'showUserRatingDash', 'showUserRatingOnPosters'] },
             { parent: 'randomButtonEnabled', label: 'Enable Random Button', children: ['randomUnwatchedOnly', 'randomIncludeMovies', 'randomIncludeShows', 'randomScopeCurrentContainer'] },
             { parent: 'showWatchProgress', label: 'Show watch progress', children: ['watchProgressDefaultMode', 'watchProgressTimeFormat'] },
-            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'tagGroupAdminRowQuality'], noHint: true },
+            { parent: 'qualityTagsEnabled', label: 'Enable Quality Tags', children: ['qualityTagsPosition', 'showResolutionTag', 'showSourceTag', 'showDynamicRangeTag', 'showSpecialFormatTag', 'showVideoCodecTag', 'showAudioInfoTag', 'qualityTagsPreferredAudioLanguage', 'qualityTagsAudioLanguageFromUser', 'seriesQualityAggregation', 'tagGroupAdminRowQuality'], noHint: true },
             { parent: 'genreTagsEnabled', label: 'Enable Genre Tags', children: ['genreTagsPosition', 'tagGroupAdminRowGenre'], noHint: true },
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'tagGroupAdminRowLanguage'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsShowCommunity', 'ratingTagsShowCritic', 'tagGroupAdminRowRating'], noHint: true },

@@ -312,3 +312,15 @@ test('status badge families live on the Status badges tab with defaults and pers
   assert.equal(inherited.$('#statusTagsSeriesStatusToggle').checked, true);
   assert.equal(inherited.$('#statusTagsScheduleToggle').checked, false);
 });
+
+test('quality row exposes all aggregation policies, inherits the admin default, and persists changes', async t => {
+  const h = setup(t, { plugin: { SeriesQualityAggregation: 'latest' } });
+  let refreshed = 0; h.JE.reinitializeQualityTags = () => refreshed++;
+  const select = h.$('#seriesQualityAggregationSelect');
+  assert.equal(select.value, 'latest');
+  assert.deepEqual([...select.options].map(option => option.value), ['representative', 'latest', 'best', 'shared', 'mixed']);
+  assert.equal(select.labels[0].textContent, 'series_quality_aggregation_label');
+  await h.change(select, 'mixed');
+  assert.equal(h.saved().seriesQualityAggregation, 'mixed');
+  assert.equal(refreshed, 1);
+});

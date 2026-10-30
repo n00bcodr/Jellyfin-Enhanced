@@ -826,7 +826,7 @@
             if (group === 'quality') {
                 for (const chip of node.querySelectorAll('.quality-overlay-label')) {
                     const text = chip.textContent || '';
-                    const short = compactQualityLabel(text);
+                    const short = chip.dataset.jeCompact || compactQualityLabel(text);
                     if (short !== text) chip.textContent = short;
                 }
             } else if (group === 'rating' && node.querySelector('.rating-tag-tmdb')) {
