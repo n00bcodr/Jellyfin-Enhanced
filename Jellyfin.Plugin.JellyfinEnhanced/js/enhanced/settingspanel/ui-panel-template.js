@@ -90,6 +90,12 @@
                 #jellyfin-enhanced-panel .je-panel-nav-items { display: flex; flex-direction: column; gap: 3px; }
                 #jellyfin-enhanced-panel .je-panel-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: #fff; font-family: inherit; font-size: 13px; outline: none; }
                 #jellyfin-enhanced-panel .je-panel-search:focus { border-color: ${primaryAccentColor}; }
+                #jellyfin-enhanced-panel:focus { outline: none; }
+                #jellyfin-enhanced-panel .je-panel-search-results { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; gap: 2px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.3); max-height: 50%; overflow-y: auto; flex-shrink: 0; }
+                #jellyfin-enhanced-panel .je-panel-search-results[hidden] { display: none; }
+                #jellyfin-enhanced-panel .je-panel-search-result { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 40px; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+                #jellyfin-enhanced-panel .je-panel-search-result:hover, #jellyfin-enhanced-panel .je-panel-search-result:focus-visible { background: rgba(255,255,255,0.1); outline: none; box-shadow: inset 0 0 0 2px ${primaryAccentColor}; }
+                #jellyfin-enhanced-panel .je-panel-search-result span { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.6); }
                 #jellyfin-enhanced-panel .tab-button { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: none; border-radius: 8px; background: transparent; color: rgba(255,255,255,0.65); font-family: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; transition: background-color 0.15s, color 0.15s; }
                 #jellyfin-enhanced-panel .tab-button:hover { background: rgba(255,255,255,0.06); color: #fff; }
                 #jellyfin-enhanced-panel .tab-button.active { background: rgba(255,255,255,0.08); color: #fff; }
@@ -114,13 +120,14 @@
                 .shake-error { animation: shake 0.5s ease-in-out; }
             </style>
             <div class="panel-header" style="position: relative; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; align-items: baseline; gap: 10px; cursor: grab;">
-                <div style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
+                <div id="jePanelTitle" style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(JE.t('panel_version', { version: JE.pluginVersion }))}</div>
-                <button id="closeSettingsPanel" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+                <button id="closeSettingsPanel" type="button" aria-label="${escapeHtml(tWithFallback('panel_close', 'Close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
             <div class="je-panel-body">
                 <nav class="je-panel-nav" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}">
-                    <input id="jePanelSearch" class="je-panel-search" type="text" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" />
+                    <input id="jePanelSearch" class="je-panel-search" type="search" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" aria-label="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" aria-controls="jePanelSearchResults" />
+                    <ul id="jePanelSearchResults" class="je-panel-search-results" aria-label="${escapeHtml(tWithFallback('panel_search_results', 'Matching settings'))}" hidden></ul>
                     <div class="je-panel-nav-items"></div>
                 </nav>
                 <div class="je-panel-main">
