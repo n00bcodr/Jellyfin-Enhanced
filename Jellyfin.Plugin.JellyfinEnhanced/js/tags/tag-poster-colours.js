@@ -688,9 +688,10 @@
     }
 
     /**
-     * Wait for a decode step off the main thread. Its outcome only queues
-     * work for a slice: the next step (`done`), another launch (`retry`
-     * returns true) or the sample's failure.
+     * Wait for a decode step off the main thread. Its outcome, whether it
+     * resolves or rejects, counts only while the sample is still current;
+     * it only queues work for a slice: the next step (`done`), another
+     * launch (`retry` returns true) or the sample's failure.
      * @param {Job} job
      * @param {Promise<*>} promise
      * @param {(value: *) => void} done
@@ -698,28 +699,39 @@
      */
     function settle(job, promise, done, retry) {
         promise.then((value) => {
-            if (sampling.get(job.key) !== job || job.gen !== generation) {
+            if (!owns(job)) {
                 value?.close?.();
                 return;
             }
             done(value);
             scheduleSlice();
         }, (err) => {
+            if (!owns(job)) return;
             if (!retry?.(err)) finish(job, failure(job, err));
             scheduleSlice();
         });
     }
 
     /**
+     * Whether a sample is still the current one for its artwork: not
+     * cancelled by Poster turned off (and on again), nor by a user switch
+     * (another generation).
+     * @param {Job} job
+     * @returns {boolean}
+     */
+    const owns = (job) => sampling.get(job.key) === job && job.gen === generation;
+
+    /**
      * A sample is done: remember its colour (or failure) and read its cards
-     * again. A result arriving after a user switch (another generation) is
-     * dropped: not remembered, not stored, and no card is touched.
+     * again. A result of a cancelled sample (Poster off and on again, or a
+     * user switch), success or failure, is dropped: not remembered, not
+     * stored, and no card is touched.
      * @param {Job} job
      * @param {number[]|null|string} d - The dominant colour, FAILED or STALE.
      */
     function finish(job, d) {
-        if (sampling.get(job.key) === job) sampling.delete(job.key);
-        if (job.gen !== generation) return;
+        if (!owns(job)) return;
+        sampling.delete(job.key);
         if (d !== STALE) {
             remember(job.key, d === FAILED ? FAILED : { d: /** @type {number[]|null} */ (d) });
             if (d === FAILED) counters.failed++;

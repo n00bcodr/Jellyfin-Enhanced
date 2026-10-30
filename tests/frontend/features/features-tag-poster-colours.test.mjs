@@ -541,6 +541,38 @@ test('a card recycled while its sample waits for a decode slot: nothing stored u
   assert.equal(h.P.stats().remembered, 5, 'four red artworks and the blue one');
 });
 
+test('a decode cancelled by Poster off and on that fails late never overwrites the newer colour', async t => {
+  const h = setup(t, { art: { [img(ID)]: solid([200, 30, 30]) } });
+  const decode = h.window.createImageBitmap;
+  const pending = [];
+  h.window.createImageBitmap = (...args) => new Promise((resolve, reject) => { pending.push({ resolve: () => resolve(decode(...args)), reject }); });
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(pending.length, 1);
+  // Off and on again (same user): the first decode is cancelled, a new one starts.
+  h.P.setActive(false);
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(pending.length, 2);
+  pending[1].resolve();
+  await h.settle();
+  const red = h.P.css(h.P.normalise([200, 30, 30]).background);
+  assert.equal(h.box().style.getPropertyValue('--je-tag-bg'), red);
+  // The cancelled decode now fails (a tainted canvas fails for good).
+  pending[0].reject(Object.assign(new Error('tainted'), { name: 'SecurityError' }));
+  await h.settle();
+  assert.equal(h.P.stats().failed, 0, 'the cancelled failure is dropped');
+  // Another card with the same artwork is presented: it takes the colour from memory.
+  const row = h.document.createElement('div');
+  row.innerHTML = card(ID2).replace(img(ID2), img(ID));
+  h.document.body.appendChild(row);
+  h.P.track(h.document.querySelector(`[data-id="${ID2}"] .je-tag-host`));
+  await h.settle();
+  assert.equal(h.box(ID2).style.getPropertyValue('--je-tag-bg'), red);
+  assert.equal(h.box().style.getPropertyValue('--je-tag-bg'), red);
+  assert.equal(pending.length, 2, 'no further decode');
+});
+
 test('without createImageBitmap, 200 cards are drawn one per idle period, never once its time runs low', async t => {
   const ids = Array.from({ length: 200 }, (_, i) => i.toString(16).padStart(32, '0'));
   const art = Object.fromEntries(ids.map((id, i) => [img(id), solid([200, 30 + (i % 50), 30])]));
