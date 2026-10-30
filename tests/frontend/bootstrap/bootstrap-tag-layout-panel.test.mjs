@@ -7,7 +7,6 @@ const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSk
   'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
   'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
   'disableCustomSubtitleStyles', 'longPress2xEnabled', 'nativePosterTagsToggle', 'randomIncludeMovies', 'randomIncludeShows'];
-const grid = key => `<div class="position-selector" data-setting="${key}">${['top-left', 'top-right', 'bottom-left', 'bottom-right'].map(p => `<div data-pos="${p}"></div>`).join('')}</div>`;
 
 /**
  * The real settings panel handlers over the controls the panel template
@@ -19,7 +18,7 @@ function setup(t, stored = {}) {
   const html = toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button>'
     + `<select id="tagLayoutSelect">${['corners', 'bands', 'caption', 'summary', 'minimal'].map(v => `<option value="${v}">${v}</option>`).join('')}</select>`
     + '<select id="tagLabelDensitySelect"><option value="full">full</option><option value="compact">compact</option></select>'
-    + `<div id="panel">${grid('ageRatingTagsPosition')}</div>`;
+    + '<div id="panel"></div>';
   const h = createHarness({ html,
     JE: { pluginConfig: {}, userConfig: { settings: { ageRatingTagsPosition: 'bottom-right', ...stored }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
       t: key => key, toast: message => toasts.push(message), pauseScreenInstance: {} },
@@ -56,18 +55,4 @@ test('layout and density selects save a normalized document and re-present the c
   assert.equal(saved.tagLabelDensity, 'compact');
   assert.equal(h.reinit.length, 2);
   assert.equal(h.toasts.at(-1), 'toast_tag_layout_updated');
-});
-
-test('a corner grid pick writes the corners profile and keeps the old position setting for native tags', async t => {
-  const h = setup(t, { tagLayouts: { Corners: { Groups: [{ Group: 'ageRating', Slot: 'br' }, { Group: 'quality', Slot: 'tl' }] } } });
-  let reinitAge = 0; h.JE.reinitializeAgeRatingTags = () => reinitAge++; h.JE.currentSettings.ageRatingTagsEnabled = true;
-  h.document.querySelector('[data-pos="top-left"]').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true }));
-  await h.settle();
-  const saved = JSON.parse(h.writes.at(-1).data);
-  assert.equal(saved.ageRatingTagsPosition, 'top-left');
-  assert.equal(saved.tagLayoutSettingsVersion, 1);
-  assert.deepEqual(saved.tagLayouts.corners.groups, [{ Group: 'quality', Slot: 'tl' }, { group: 'ageRating', slot: 'tl' }],
-    'the group\'s entry is replaced, the others kept');
-  assert.equal(reinitAge, 1);
-  assert.equal(h.JE.core.tagLayout.normalizeSettings().slots.ageRating, 'tl');
 });

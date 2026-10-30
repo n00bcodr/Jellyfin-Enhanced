@@ -366,6 +366,7 @@
         internal.wireHiddenContentListeners(ctx);
         JE.internals.spoilerGuard?.wireSettings?.(ctx);
         internal.wireMiscSettingsControls(ctx);
+        internal.wireTagGroupEditor(ctx);
         internal.wireLanguageControls(ctx);
     };
 })(window.JellyfinEnhanced);
