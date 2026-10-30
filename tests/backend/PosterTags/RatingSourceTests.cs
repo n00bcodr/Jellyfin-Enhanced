@@ -164,6 +164,152 @@ public class RatingSourceTests
     }
 
     [Fact]
+    public async Task OverlappingBulkAndIncrementalBatchesNeverCrossTheReserve()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.MdblistApiKey = "fixture-key";
+        config.MdblistRatingsEnabled = true;
+        config.MdblistRatingsFetchEnabled = true;
+        config.MdblistFetchReserve = 400;
+        var firstBatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":401}");
+            if (Interlocked.Increment(ref batches) == 1)
+            {
+                firstBatch.SetResult();
+                await release.Task.WaitAsync(token);
+            }
+            return IntegrationTransport.Response("[]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "1" } } });
+        var bulk = new Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks.MdblistRatingsFetchTask(library.Object, service, f.Core.Logger).ExecuteAsync(new Progress<double>(), default);
+        var incremental = service.WarmTagRatingsAsync(new[] { ("movie", "2") }, default, 400);
+        int overlapping;
+        try
+        {
+            await firstBatch.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Give the other caller time to pass a stale "401 > 400" check and send its own batch.
+            await Task.Delay(300);
+            overlapping = Volatile.Read(ref batches);
+        }
+        finally { release.TrySetResult(); }
+        await Task.WhenAll(bulk, incremental).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, overlapping);
+        Assert.Equal(1, batches);
+        Assert.Equal(400, service.RemainingQuota());
+        Assert.True(service.NeedsFetch("movie", "1") != service.NeedsFetch("movie", "2"));
+    }
+
+    [Fact]
+    public async Task LateAccountStatusFromTheBulkRunnerNeverRestoresSpentQuota()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.MdblistApiKey = "fixture-key";
+        config.MdblistRatingsEnabled = true;
+        config.MdblistRatingsFetchEnabled = true;
+        config.MdblistFetchReserve = 400;
+        var firstUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var users = 0;
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            if (request.RequestUri!.AbsolutePath == "/user")
+            {
+                // The runner's own /user (the first) answers 401 only after the warmer has spent one request.
+                if (Interlocked.Increment(ref users) == 1)
+                {
+                    firstUser.SetResult();
+                    await releaseUser.Task.WaitAsync(token);
+                }
+                return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":401}");
+            }
+            Interlocked.Increment(ref batches);
+            return IntegrationTransport.Response("[]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "1" } } });
+        var bulk = new Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks.MdblistRatingsFetchTask(library.Object, service, f.Core.Logger).ExecuteAsync(new Progress<double>(), default);
+        await firstUser.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            await service.WarmTagRatingsAsync(new[] { ("movie", "2") }, default, 400);
+            Assert.Equal(400, service.RemainingQuota());
+        }
+        finally { releaseUser.TrySetResult(); }
+        await bulk.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, batches);
+        Assert.Equal(400, service.RemainingQuota());
+        Assert.True(service.NeedsFetch("movie", "1"));
+    }
+
+    [Fact]
+    public async Task ForcedAccountStatusRefreshStartedBeforeABatchIsReconciledWithItsSpend()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        var forcedUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var users = 0;
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            if (request.RequestUri!.AbsolutePath == "/user")
+            {
+                if (Interlocked.Increment(ref users) == 2)
+                {
+                    forcedUser.SetResult();
+                    await releaseUser.Task.WaitAsync(token);
+                }
+                return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":401}");
+            }
+            Interlocked.Increment(ref batches);
+            return IntegrationTransport.Response("[]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        Assert.Equal(401, (await service.GetAccountStatusAsync(default))!.RateLimitRemaining);
+        // As the settings page's status check does: a forced refresh of the saved key, answered late.
+        var forced = service.GetAccountStatusAsync(default, forceRefresh: true);
+        await forcedUser.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default, 400);
+            Assert.Equal(400, service.RemainingQuota());
+        }
+        finally { releaseUser.TrySetResult(); }
+        Assert.Equal(400, (await forced.WaitAsync(TimeSpan.FromSeconds(5)))!.RateLimitRemaining);
+        Assert.Equal(400, service.RemainingQuota());
+        await service.WarmTagRatingsAsync(new[] { ("movie", "2") }, default, 400);
+        Assert.Equal(1, batches);
+        Assert.True(service.NeedsFetch("movie", "2"));
+    }
+
+    [Theory]
+    [InlineData(503)]
+    [InlineData(429)]
+    public async Task UnknownQuotaStatusSkipsBackgroundEnrichmentAndLeavesTitlesRetryable(int userStatus)
+    {
+        using var fixture = new ApiPluginFixture(); fixture.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        var requests = 0;
+        using var transport = new IntegrationTransport((request, _) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return Task.FromResult(IntegrationTransport.Response("{}", userStatus));
+            requests++;
+            return Task.FromResult(IntegrationTransport.Response("[{\"ids\":{\"tmdb\":1},\"ratings\":[{\"source\":\"imdb\",\"score\":81}]}]"));
+        });
+        using var service = new MdblistService(transport, fixture.Core.Paths.Object, fixture.Core.Logger);
+        await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default, 400);
+        await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default);
+        Assert.Equal(0, requests);
+        Assert.Null(service.GetCachedEntry("movie", "1"));
+        Assert.True(service.NeedsFetch("movie", "1"));
+    }
+
+    [Fact]
     public void RemovingTheConfiguredKeyDropsCachedAndMemoizedSourceFactsWithoutMutatingTheSharedEntry()
     {
         using var fixture = new ApiPluginFixture();
@@ -300,6 +446,44 @@ public class RatingSourceTests
         cancel = false;
         await service.WarmTagRatingsAsync(new[] { ("movie", "123") }, default);
         Assert.Equal(cancelPath == "/user" ? 1 : 2, batches);
+        Assert.Equal(8.1, TagSourceRatings.FromMdblist(service.GetCachedEntry("movie", "123"))!.Imdb);
+    }
+
+    [Theory]
+    [InlineData("single")]
+    [InlineData("warmer")]
+    public async Task CancelledSingleTitleFetchPublishesNothingAndRetriesImmediately(string retry)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        using var cancellation = new CancellationTokenSource();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancel = true;
+        var mediaRequests = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            var path = request.RequestUri!.AbsolutePath;
+            if (path == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":1000}");
+            mediaRequests++;
+            if (cancel)
+            {
+                started.SetResult();
+                await Task.Delay(Timeout.Infinite, token);
+            }
+            return IntegrationTransport.Response(request.Method == HttpMethod.Post
+                ? "[{\"ids\":{\"tmdb\":123},\"ratings\":[{\"source\":\"imdb\",\"score\":81}]}]"
+                : "{\"ids\":{\"tmdb\":123},\"ratings\":[{\"source\":\"imdb\",\"score\":81}]}");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var pending = service.GetRatingsAsync("movie", "123", cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+        Assert.Null(service.GetCachedEntry("movie", "123"));
+        Assert.True(service.NeedsFetch("movie", "123"));
+        cancel = false;
+        if (retry == "single") Assert.True((await service.GetRatingsAsync("movie", "123", default)).Found);
+        else await service.WarmTagRatingsAsync(new[] { ("movie", "123") }, default);
+        Assert.Equal(2, mediaRequests);
         Assert.Equal(8.1, TagSourceRatings.FromMdblist(service.GetCachedEntry("movie", "123"))!.Imdb);
     }
 

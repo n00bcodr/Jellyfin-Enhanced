@@ -9,6 +9,7 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
@@ -115,25 +116,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
                     cancellationToken.ThrowIfCancellationRequested();
                     chunkNumber++;
 
-                    var remaining = mdblistService.RemainingQuota() ?? 0;
-                    if (remaining <= reserve)
+                    var chunkIds = groupIds.Skip(i).Take(ChunkSize).ToList();
+
+                    // The reserve check and the request share one gate with the
+                    // incremental tag-rating warmers, so overlapping runs can't
+                    // both spend the last request above the reserve.
+                    var batch = await mdblistService.GetMediaBatchWithinReserveAsync(mediaType, chunkIds, reserve, cancellationToken).ConfigureAwait(false);
+                    if (batch.Status == MdblistReservedBatchStatus.ReserveReached)
                     {
-                        logger.Info($"MDBList Ratings Fetch: Only {remaining} requests remaining (stopping at {reserve}) after fetching {fetchedCount}/{totalCandidates} candidates. Remaining items will be picked up on the next run.");
+                        logger.Info($"MDBList Ratings Fetch: Only {batch.Remaining} requests remaining (stopping at {reserve}) after fetching {fetchedCount}/{totalCandidates} candidates. Remaining items will be picked up on the next run.");
+                        stopped = true;
+                        break;
+                    }
+                    if (batch.Status == MdblistReservedBatchStatus.QuotaUnknown)
+                    {
+                        logger.Warning($"MDBList Ratings Fetch: account status became unavailable after fetching {fetchedCount}/{totalCandidates} candidates; stopping. Remaining items will be picked up on the next run.");
                         stopped = true;
                         break;
                     }
 
-                    var chunkIds = groupIds.Skip(i).Take(ChunkSize).ToList();
-
-                    var results = await mdblistService.GetMediaBatchAsync(mediaType, chunkIds, cancellationToken).ConfigureAwait(false);
                     await Task.Delay(RequestPacing, cancellationToken).ConfigureAwait(false);
 
+                    var results = batch.Results;
                     if (results == null)
                     {
-                        // Network hiccup, bad key, or a race against the reserve
-                        // check above. Skip this chunk rather than aborting the
-                        // whole run; NeedsFetch will pick these ids up again
-                        // next run. See GetMediaBatchAsync's own warning for why.
+                        // Network hiccup or bad key. Skip this chunk rather than
+                        // aborting the whole run; NeedsFetch will pick these ids
+                        // up again next run.
                         logger.Warning($"MDBList Ratings Fetch: media batch {mediaType} [{chunkNumber}] failed for {chunkIds.Count} id(s), skipping this chunk.");
                         continue;
                     }

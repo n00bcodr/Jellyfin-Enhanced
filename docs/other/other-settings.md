@@ -230,7 +230,7 @@ To hide the entire row, turn off **Show Ratings Row on Item Details**. Clearing 
 | Setting | Default | What it does |
 |---|---|---|
 | **Fetch Ratings from MDBList** | Off | Allows the corresponding scheduled task to fetch missing/stale MDBList data without changing Jellyfin rating fields. |
-| **Fetch Task Reserve** | 400 | Stops Fetch when the remaining account quota is at or below this value. |
+| **Fetch Task Reserve** | 400 | Stops Fetch, and named-source rating tag enrichment, when the remaining account quota is at or below this value. |
 
 ??? note "Details"
 
