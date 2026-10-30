@@ -127,7 +127,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             public ContainerEpisodeIndex? ContainerIndex { get; set; }
 
-            public Dictionary<Guid, MediaBrowser.Controller.Entities.TV.Episode[]> StatusSiblings { get; } = new();
+            public Dictionary<Guid, StatusSiblingFacts> StatusSiblings { get; } = new();
+        }
+
+        /// <summary>One season scan, sorted contributor list and boundary reused by every sibling.</summary>
+        private sealed record StatusSiblingFacts(MediaBrowser.Controller.Entities.TV.Episode[] Episodes, string[] Sources, int Last);
+
+        /// <summary>Value comparer used only while restoring shared immutable contributor arrays from JSON.</summary>
+        private sealed class StatusSourceComparer : IEqualityComparer<string[]>
+        {
+            public bool Equals(string[]? a, string[]? b) => ReferenceEquals(a, b)
+                || (a != null && b != null && a.SequenceEqual(b, StringComparer.Ordinal));
+
+            public int GetHashCode(string[] values)
+            {
+                var hash = new HashCode();
+                foreach (var value in values) hash.Add(value, StringComparer.Ordinal);
+                return hash.ToHashCode();
+            }
         }
 
         /// <summary>
@@ -2155,6 +2172,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return;
                     }
 
+                    // JSON duplicates each sibling's array. Intern once while loading
+                    // that payload, so later refreshes compare one list per season.
+                    var contributorLists = new Dictionary<string[], string[]>(new StatusSourceComparer());
+                    foreach (var entry in data.Items.Values)
+                    {
+                        if (entry.StatusEpisodeIds is not { } sources) continue;
+                        if (contributorLists.TryGetValue(sources, out var shared)) entry.StatusEpisodeIds = shared;
+                        else contributorLists.Add(sources, sources);
+                    }
                     var loaded = new ConcurrentDictionary<string, TagCacheEntry>(data.Items);
                     var loadedMaxLastUpdated = MaxLastUpdated(loaded);
 
@@ -2670,13 +2696,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (episode.ParentIndexNumber is not { } season || episode.IndexNumber is not { } number) return null;
             if (episode.SeasonId == Guid.Empty) return new TagEpisodeIndex { Season = season, Episode = number };
             var siblings = StatusSiblings(episode.SeasonId, user, memo);
-            sources = siblings.Select(e => e.Id.ToString("N")).Order(StringComparer.Ordinal).ToArray();
+            sources = siblings.Sources;
             return new TagEpisodeIndex { Season = season, Episode = number,
-                IsLast = siblings.Length > 0 ? number == siblings.Max(e => e.IndexNumber ?? -1) : null };
+                IsLast = siblings.Episodes.Length > 0 ? number == siblings.Last : null };
         }
 
         /// <summary>One shared sibling query per affected season and update pass.</summary>
-        private MediaBrowser.Controller.Entities.TV.Episode[] StatusSiblings(Guid seasonId, JUser? user, EpisodeScanMemo? memo)
+        private StatusSiblingFacts StatusSiblings(Guid seasonId, JUser? user, EpisodeScanMemo? memo)
         {
             if (memo != null && memo.StatusSiblings.TryGetValue(seasonId, out var known)) return known;
             var siblings = _libraryManager.GetItemList(new InternalItemsQuery(user)
@@ -2685,26 +2711,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 IncludeItemTypes = new[] { BaseItemKind.Episode },
                 DtoOptions = new DtoOptions(false) { EnableImages = false, EnableUserData = false },
             }).OfType<MediaBrowser.Controller.Entities.TV.Episode>().ToArray();
-            if (memo != null) memo.StatusSiblings[seasonId] = siblings;
-            return siblings;
+            var sourceSet = siblings.Select(e => e.Id.ToString("N")).ToHashSet(StringComparer.Ordinal);
+            string[]? sources = null;
+            // Preserve the published canonical array for an unchanged set. This
+            // keeps independently rebuilt episodes sharing their siblings' list.
+            foreach (var episode in siblings)
+            {
+                if (!_cache.TryGetValue(episode.Id.ToString("N"), out var old) || old.StatusEpisodeIds == null) continue;
+                if (old.StatusEpisodeIds.Length == sourceSet.Count && sourceSet.SetEquals(old.StatusEpisodeIds)) sources = old.StatusEpisodeIds;
+                break;
+            }
+            // Unchanged sets need no sorting; changed sets are sorted once per pass.
+            sources ??= sourceSet.Order(StringComparer.Ordinal).ToArray();
+            var facts = new StatusSiblingFacts(siblings, sources, siblings.Select(e => e.IndexNumber ?? -1).DefaultIfEmpty(-1).Max());
+            if (memo != null) memo.StatusSiblings[seasonId] = facts;
+            return facts;
         }
 
         /// <summary>Refresh sibling indexes and access contributors without probing their streams.</summary>
         private bool RefreshStatusSiblings(Guid seasonId, EpisodeScanMemo memo)
         {
             var siblings = StatusSiblings(seasonId, null, memo);
-            var sources = siblings.Select(e => e.Id.ToString("N")).Order(StringComparer.Ordinal).ToArray();
-            var last = siblings.Select(e => e.IndexNumber ?? -1).DefaultIfEmpty(-1).Max();
+            var sources = siblings.Sources;
+            // Lists are shared at build/load time. Compare each distinct previous
+            // list once, rather than walking N contributors for each of N entries.
+            var sameContributors = new Dictionary<string[], bool>();
             var changed = false;
-            foreach (var episode in siblings)
+            foreach (var episode in siblings.Episodes)
             {
                 var key = episode.Id.ToString("N");
                 if (!_cache.TryGetValue(key, out var old)) continue;
+                var index = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number
+                    ? new TagEpisodeIndex { Season = season, Episode = number, IsLast = number == siblings.Last } : null;
+                var sameSources = false;
+                if (old.StatusEpisodeIds is { } previous)
+                {
+                    if (!sameContributors.TryGetValue(previous, out sameSources))
+                    {
+                        sameSources = ReferenceEquals(previous, sources) || previous.SequenceEqual(sources, StringComparer.Ordinal);
+                        sameContributors[previous] = sameSources;
+                    }
+                }
+                if (old.EpisodeIndex == index && sameSources) continue;
                 var entry = old.Clone();
-                entry.EpisodeIndex = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number
-                    ? new TagEpisodeIndex { Season = season, Episode = number, IsLast = number == last } : null;
+                entry.EpisodeIndex = index;
                 entry.StatusEpisodeIds = sources;
-                if (TagCacheEntry.ContentEquals(old, entry)) continue;
                 entry.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 RaiseMaxLastUpdated(entry.LastUpdated);
                 StoreEntry(key, entry);

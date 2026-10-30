@@ -83,6 +83,59 @@ public class StatusTagsCacheFactsTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void ThreeHundredSiblingsShareContributorsAcrossUnchangedRefreshes(bool reloadSnapshot)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var series = new Series { Id = Guid.NewGuid() };
+        var season = new Season { Id = Guid.NewGuid(), SeriesId = series.Id, ParentId = series.Id, IndexNumber = 1 };
+        var episodes = Enumerable.Range(1, 300).Select(n => new Episode { Id = Guid.NewGuid(),
+            SeriesId = series.Id, SeasonId = season.Id, ParentId = season.Id, ParentIndexNumber = 1,
+            IndexNumber = n, DateCreated = DateTime.UtcNow.AddDays(-1) }).ToArray();
+        var all = new BaseItem[] { series, season }.Concat(episodes).ToArray();
+        IEnumerable<BaseItem> Select(InternalItemsQuery q)
+        {
+            IEnumerable<BaseItem> selected = all;
+            if (q.ItemIds?.Length > 0) selected = selected.Where(i => q.ItemIds.Contains(i.Id));
+            else if (q.IncludeItemTypes?.Length > 0) selected = selected.Where(i => q.IncludeItemTypes.Contains(i.GetBaseItemKind()));
+            if (q.ParentId != Guid.Empty) selected = selected.OfType<Episode>().Where(e => q.ParentId == series.Id || q.ParentId == e.SeasonId);
+            return selected.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue);
+        }
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).Select(i => i.Id).ToArray());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).ToArray());
+        library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        cache.BuildFullCache(null, CancellationToken.None);
+        if (reloadSnapshot) cache.LoadFromDisk();
+        Assert.True(cache.TryGetEntry(episodes[0].Id, out var first));
+        var sources = first.StatusEpisodeIds;
+        var unchangedStamp = first.LastUpdated;
+        // Renumber the last episode without changing the contributor set. Both
+        // the episode rebuild and sibling refresh must reuse the canonical list.
+        episodes[^1].IndexNumber = 301;
+        cache.EnqueueUpdate(episodes[^1].Id);
+        cache.EnqueueUpdate(season.Id);
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        typeof(TagCacheService).GetMethod("FlushPending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(cache, null);
+        timer.Stop();
+        Assert.True(timer.Elapsed < TimeSpan.FromMilliseconds(500), $"300 sibling refresh took {timer.Elapsed.TotalMilliseconds:F0} ms");
+        foreach (var episode in episodes)
+        {
+            Assert.True(cache.TryGetEntry(episode.Id, out var entry));
+            Assert.Same(sources, entry.StatusEpisodeIds);
+        }
+        Assert.True(cache.TryGetEntry(episodes[0].Id, out var unchanged));
+        Assert.Equal(unchangedStamp, unchanged.LastUpdated);
+        Assert.True(cache.TryGetEntry(episodes[^1].Id, out var last));
+        Assert.Equal(301, last.EpisodeIndex!.Episode);
+        Assert.True(last.EpisodeIndex.IsLast);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void SnapshotLoadAgesFutureEpisodesWithoutMetadataChanges(bool legacySnapshot)
     {
         using var f = new ApiPluginFixture();

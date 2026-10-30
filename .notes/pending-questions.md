@@ -12,3 +12,5 @@
 | F4a-1 | Which transient-failure response shape? | Use a per-ID `{retry:true}` marker, preserving the existing ID-keyed response and omitting only authoritative no-data. Retry responses are not HTTP cached. | Replace with a top-level retry list if a later endpoint version needs it. |
 
 | F4a-2 | How to resolve a regular finale after a TMDB special? | Prefer TMDB when its latest is regular; otherwise use the confirmed caller-filtered series aggregate (memory or the stored copy) for both series and episodes, with its own air date. No additional upstream query. If the parent is unavailable or stripped, omit the finale. | Add season enrichment as an additional source later. |
+
+| F4a-3 | How to keep unchanged sibling refreshes linear after loading JSON? | Share immutable contributor arrays during full builds and restore that sharing once at snapshot load. Reuse an unchanged set without sorting; compare each distinct prior array once per refresh. | Remove interning and comparison memoisation without changing the disk schema. |
