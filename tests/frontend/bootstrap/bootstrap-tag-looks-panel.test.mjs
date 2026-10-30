@@ -528,8 +528,16 @@ test('rule actions only stick when the entire form fits in the visible scroller'
   scroller.className = 'je-panel-main';
   h.mount().before(scroller);
   scroller.append(h.mount());
-  scroller.getBoundingClientRect = () => ({ top: 100, bottom: 700 });
+  let bottom = 700, resizeForm;
+  const observed = new Set();
+  h.window.ResizeObserver = class {
+    constructor(callback) { resizeForm = callback; }
+    observe(node) { observed.add(node); }
+    disconnect() { observed.clear(); }
+  };
+  scroller.getBoundingClientRect = () => ({ top: 100, bottom });
   await h.open();
+  assert.ok(observed.has(scroller), 'panel resizing also rechecks visibility');
   let rect = { top: 400, bottom: 900, height: 500 };
   h.form().getBoundingClientRect = () => rect;
   const sync = async () => {
@@ -541,6 +549,11 @@ test('rule actions only stick when the entire form fits in the visible scroller'
   rect = { top: 150, bottom: 650, height: 500 };
   await sync();
   assert.equal(h.form().classList.contains('je-form-visible'), true);
+  bottom = 600;
+  resizeForm();
+  await new Promise(resolve => h.window.requestAnimationFrame(resolve));
+  assert.equal(h.form().classList.contains('je-form-visible'), false, 'shrinking the panel removes stickiness without a window resize');
+  bottom = 700;
   rect = { top: 50, bottom: 550, height: 500 };
   await sync();
   assert.equal(h.form().classList.contains('je-form-visible'), false, 'partly above scroller returns actions to flow');

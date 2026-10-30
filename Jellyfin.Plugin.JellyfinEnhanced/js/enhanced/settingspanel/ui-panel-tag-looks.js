@@ -910,6 +910,7 @@
             syncFormCapacity = syncCapacity;
             formObserver?.disconnect();
             formObserver?.observe(form);
+            if (scroller) formObserver?.observe(scroller);
             scheduleActions();
             if (focus) focusOn(form.querySelector('[data-je-cond-field]'));
         };
