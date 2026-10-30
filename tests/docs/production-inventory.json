@@ -43,6 +43,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/NativePosterDateContext.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
       "category": "Configuration"
     },
@@ -7738,6 +7742,38 @@
     },
     {
       "class": "UserSpoilerBlur",
+      "name": "Series",
+      "type": "Dictionary<string, SpoilerBlurSeriesEntry>",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "Movies",
+      "type": "Dictionary<string, SpoilerBlurMovieEntry>",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "Collections",
+      "type": "Dictionary<string, SpoilerBlurCollectionEntry>",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "PendingTmdb",
+      "type": "Dictionary<string, SpoilerBlurPendingEntry>",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
       "name": "Prefs",
       "type": "SpoilerBlurUserPrefs",
       "initializer": "new SpoilerBlurUserPrefs()",
@@ -8801,9 +8837,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 392,
+    "files": 393,
     "routes": 182,
-    "configuration_properties": 633,
+    "configuration_properties": 637,
     "storage_references": 75,
     "scheduled_tasks": 13,
     "locales": 33

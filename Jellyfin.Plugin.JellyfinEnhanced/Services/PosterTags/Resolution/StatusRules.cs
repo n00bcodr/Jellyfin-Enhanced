@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
@@ -37,14 +38,15 @@ public static class StatusRules
     /// <summary>A valid culture for relative date formatting; invalid, auto and absent values use English.</summary>
     public static CultureInfo Culture(string? name)
     {
-        try { return string.IsNullOrWhiteSpace(name) ? CultureInfo.GetCultureInfo("en") : CultureInfo.GetCultureInfo(name); }
+        try { return CultureInfo.GetCultureInfo(NativePosterDateContext.Locale(name) ?? "en"); }
         catch (CultureNotFoundException) { return CultureInfo.GetCultureInfo("en"); }
     }
 
     /// <summary>Accept IANA/Windows timezone ids; the server's timezone is the documented fallback.</summary>
     public static TimeZoneInfo TimeZone(string? name)
     {
-        if (string.IsNullOrWhiteSpace(name)) return TimeZoneInfo.Local;
+        name = NativePosterDateContext.TimeZone(name);
+        if (name == null) return TimeZoneInfo.Local;
         try { return TimeZoneInfo.FindSystemTimeZoneById(name); }
         catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException) { return TimeZoneInfo.Local; }
     }

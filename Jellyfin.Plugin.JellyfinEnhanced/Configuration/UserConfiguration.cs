@@ -136,8 +136,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string LastOpenedTab { get; set; } = string.Empty;
         public bool ReviewsExpandedByDefault { get; set; }
         /// <summary>Last web date context, captured only when saving personal preferences; null uses JE language/server timezone.</summary>
-        public string? NativePosterDateLocale { get; set; }
-        public string? NativePosterTimeZone { get; set; }
+        private string? _nativePosterDateLocale;
+        private string? _nativePosterTimeZone;
+        public string? NativePosterDateLocale { get => _nativePosterDateLocale; set => _nativePosterDateLocale = NativePosterDateContext.Locale(value); }
+        public string? NativePosterTimeZone { get => _nativePosterTimeZone; set => _nativePosterTimeZone = NativePosterDateContext.TimeZone(value); }
 
         public string DisplayLanguage { get; set; } = string.Empty;
         public string CalendarDisplayMode { get; set; } = "list";
