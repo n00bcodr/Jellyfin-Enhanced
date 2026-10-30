@@ -1215,10 +1215,12 @@
 
     /**
      * Whether an attribute record says a card now shows another item: its
-     * data-id / data-itemid changed, or its artwork moved from one item's
-     * image to another's. The artwork's first load (from no image) is not a
-     * change: the scan may have read the id from data-id before it, and the
-     * artwork can name the series of an episode card.
+     * data-id / data-itemid changed, or the artwork of a card image or list
+     * row image (a list row can be reused with only its artwork rewritten)
+     * moved from one item's image to another's. The artwork's first load
+     * (from no image) is not a change: the scan may have read the id from
+     * data-id before it, and the artwork can name the series of an episode
+     * card.
      * @param {MutationRecord} record
      * @returns {boolean}
      */
@@ -1226,7 +1228,7 @@
         const target = /** @type {HTMLElement} */ (record.target);
         if (target.nodeType !== 1 || !record.attributeName) return false;
         if (record.attributeName === 'style') {
-            if (!target.classList.contains('cardImageContainer')) return false;
+            if (!target.matches(CARD_IMAGE_SELECTOR)) return false;
             const before = imageItemId(record.oldValue);
             const after = imageItemId(target.getAttribute('style'));
             return !!before && !!after && before !== after;

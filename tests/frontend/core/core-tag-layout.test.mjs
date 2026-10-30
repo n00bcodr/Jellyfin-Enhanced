@@ -431,6 +431,26 @@ test('a lookup still in flight when its card is reused never lands on the new it
   assert.equal(h.document.querySelectorAll('.je-tag-caption').length, 1);
 });
 
+test('a large list row reused with only its artwork rewritten drops the old item\'s tags and renders the new one', async t => {
+  const art = id => `background-image: url(&quot;http://jellyfin.test/Items/${id}/Images/Primary&quot;)`;
+  const h = await setupPipeline(t, { html: listRow().replace('class="listItemImage listItemImage-large"', `class="listItemImage listItemImage-large" style="${art(ID)}"`) });
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls[0].ids, [ID]);
+  h.calls[0].resolve({ Items: [{ Id: ID, Type: 'Movie', Genres: ['Drama'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['Drama']);
+  assert.ok(h.document.querySelector('.listItemImage-large > .je-tag-host'), 'the tags live on the row image');
+  // The row keeps its data-id; only the artwork names another item.
+  h.document.querySelector('.listItemImage-large').style.backgroundImage = `url("http://jellyfin.test/Items/${OTHER}/Images/Primary")`;
+  await settle();
+  assert.deepEqual(h.genres(), [], 'the previous item\'s chips are gone as soon as the artwork changes');
+  h.scan(); h.fetch();
+  assert.deepEqual(h.calls[1].ids, [OTHER], 'the reused row is scanned again for its new item');
+  h.calls[1].resolve({ Items: [{ Id: OTHER, Type: 'Movie', Genres: ['War'] }] });
+  await settle();
+  assert.deepEqual(h.genres(), ['War']);
+});
+
 test('artwork loading for the first time is not a reuse', async t => {
   const h = await setupPipeline(t, { html: modernCard().replace(/ style="[^"]*"/, '') });
   h.scan(); h.fetch();
