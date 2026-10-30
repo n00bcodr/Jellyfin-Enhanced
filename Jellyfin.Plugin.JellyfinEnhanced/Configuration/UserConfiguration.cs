@@ -91,6 +91,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Tag Styles preset this user picked (TagStyleKeys.Presets); null follows the
         // admin's preset. Only honoured while TagStylesAllowUserPreset is on.
         public string? TagStylePreset { get; set; }
+        // Tag looks by rule and per-item lock (see TagLookValidation). Null
+        // rules inherit the administrator's default rules (normalized
+        // documents only); locks are this user's alone, keyed by item id.
+        public List<TagLookRule>? TagLookRules { get; set; }
+        public Dictionary<string, TagLayoutLock>? TagLayoutLocks { get; set; }
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

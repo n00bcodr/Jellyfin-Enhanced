@@ -244,6 +244,9 @@
      *   holding one moves its top-right stack below Jellyfin's played/count indicator.
      * @property {boolean} reserveCaption - Caption layout with at least one enabled group in
      *   the caption slot: cards reserve the strip before their data arrives.
+     * @property {boolean} orderChosen - The order was set by the user or administrator.
+     * @property {boolean} locked - The look comes from a per-item lock.
+     * @property {string} lookKey - Identifies the presentation (see lookKeyOf).
      */
 
     /**
@@ -293,8 +296,11 @@
         }
 
         let order = null;
+        let orderChosen = false;
         if (!legacy) {
-            const chosen = readOrder(s.tagGroupOrder) || (layout === 'corners' ? null : DEFAULT_ORDER);
+            const own = readOrder(s.tagGroupOrder);
+            orderChosen = !!own;
+            const chosen = own || (layout === 'corners' ? null : DEFAULT_ORDER);
             if (chosen) order = chosen.concat(DEFAULT_ORDER.filter((g) => !chosen.includes(g)));
         }
 
@@ -309,7 +315,9 @@
         const reserveCaption = layout === 'caption'
             && DEFAULT_ORDER.some((g) => profiles.caption[g] === 'caption' && !!s[ENABLED_SETTING[g]]);
 
-        return { layout, legacy, density, order, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption };
+        const conf = { layout, legacy, density, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, lookKey: '' };
+        conf.lookKey = lookKeyOf(conf);
+        return conf;
     }
 
     /**
@@ -332,6 +340,16 @@
         s.tagLayoutSettingsVersion = 1;
         if (s === JE.currentSettings) invalidateSettings();
         return true;
+    }
+
+    /**
+     * A string that differs whenever two settings would present a card
+     * differently (layout, density, slots, lock marker).
+     * @param {TagLayoutSettings} conf
+     * @returns {string}
+     */
+    function lookKeyOf(conf) {
+        return [conf.layout, conf.density, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(',')].join('|');
     }
 
     /** @type {TagLayoutSettings|null} memoised until the next invalidateSettings() */
@@ -364,6 +382,55 @@
     /** Forget the memoised settings (they changed, or the user switched). */
     function invalidateSettings() {
         cachedSettings = null;
+        cachedLooks = null;
+        lookSettingsCache.clear();
+    }
+
+    /** @type {{rules: Array<Object>, locks: Map<string, Object>}|null} memoised rules and locks */
+    let cachedLooks = null;
+    /** @type {Map<string, TagLayoutSettings>} derived settings per rule/lock look */
+    const lookSettingsCache = new Map();
+
+    /** @returns {{rules: Array<Object>, locks: Map<string, Object>}} The user's rules and locks (core/tag-look.js). */
+    function currentLooks() {
+        if (!cachedLooks) cachedLooks = JE.core.tagLook?.read() || { rules: [], locks: new Map() };
+        return cachedLooks;
+    }
+
+    /**
+     * The settings a rule's or lock's look gives a card: the user's settings
+     * with the look's layout and density, and its slot overrides (a lock
+     * carries the whole profile it was locked with) over the user's profile
+     * for that layout. Order and caps stay the user's. Memoised per look.
+     * @param {TagLayoutSettings} base
+     * @param {{layout: string, density: string, slots: Object<string, string>|null}} look
+     * @param {boolean} locked
+     * @returns {TagLayoutSettings}
+     */
+    function lookSettings(base, look, locked) {
+        const layout = normalizeLayout(look.layout);
+        const slots = { ...base.profiles[layout], ...(look.slots || {}) };
+        const conf = {
+            ...base,
+            layout,
+            density: look.density === 'compact' ? 'compact' : 'full',
+            // A chosen order applies everywhere; otherwise corners keeps
+            // arrival order and the other layouts the built-in order.
+            order: base.orderChosen ? base.order : (layout === 'corners' ? null : DEFAULT_ORDER),
+            profiles: { ...base.profiles, [layout]: slots },
+            slots,
+            indicatorGap: look.slots && layout === 'corners'
+                ? new Set(DEFAULT_ORDER.filter((g) => slots[g] === 'tr')) : base.indicatorGap,
+            reserveCaption: layout === 'caption'
+                && DEFAULT_ORDER.some((g) => slots[g] === 'caption' && !!JE.currentSettings?.[ENABLED_SETTING[g]]),
+            locked,
+            lookKey: '',
+        };
+        conf.lookKey = lookKeyOf(conf);
+        const memo = lookSettingsCache.get(conf.lookKey + '|' + (conf.order ? 'o' : ''));
+        if (memo) return memo;
+        lookSettingsCache.set(conf.lookKey + '|' + (conf.order ? 'o' : ''), conf);
+        return conf;
     }
 
     // ── Card context ───────────────────────────────────────────────────
@@ -381,10 +448,20 @@
      * @property {boolean} [narrow] - Last measured narrower than NARROW_CARD_PX (bands go compact).
      * @property {HTMLElement|null} [moreTip] - Names of the chips behind "+N" chips (moreTipOf).
      * @property {HTMLElement|null} [described] - The card link whose aria-describedby names moreTip.
+     * @property {string} lookKey - lookKey of the settings the card is presented with.
+     * @property {boolean} [pendingPresentation] - A detached card needs presentation on reconnection.
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
     const controllers = new WeakMap();
+    /** @type {WeakMap<HTMLElement, Object>} render target / host → what the card's item data says (setCardContext) */
+    let cardData = new WeakMap();
+    /** @type {WeakMap<HTMLElement, {cardId: string, timer: *, token: {cardId: string, generation: number}}>} render target / host → item data the card waits for (awaitCardContext) */
+    let awaitingData = new WeakMap();
+    let waitGeneration = 0;
+    // A card waiting for its item data shows its tags after this long even
+    // when the data never comes (a failed fetch the pipeline didn't report).
+    const AWAIT_CONTEXT_MS = 8000;
     let outletSeq = 0;
     let stylesInjected = false;
 
@@ -512,22 +589,195 @@
         }
         if (!ctrl && create) {
             injectStyles();
-            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null };
+            ctrl = { host, itemId, groups: new Map(), nodes: new Map(), outlet: null, pill: null, layout: null, seq: 0, moreTip: null, described: null, lookKey: '' };
             controllers.set(host, ctrl);
         }
         return ctrl;
     }
 
     /**
-     * The layout decision for one card. Today every card follows the user's
-     * layout; this is the single boundary later per-card rules and locks
-     * plug into.
-     * @param {CardController|HTMLElement} cardContext
+     * What is known about the item a card (or a plain description of an
+     * item) shows, for matching rules and locks: the card's type
+     * (data-type, which can differ from the fetched item's when an episode
+     * card shows series artwork) and the item data the pipeline passed to
+     * setCardContext() — ignored once the card shows another item.
+     * @param {CardController|HTMLElement|Object} cardContext
+     * @returns {Object} CardFacts (core/tag-look.js)
+     */
+    function cardFacts(cardContext) {
+        const look = JE.core.tagLook;
+        const el = cardContext?.host || (cardContext?.nodeType === 1 ? cardContext : null);
+        if (!el) return look.factsFrom(cardContext, { itemId: cardContext?.itemId, cardType: cardContext?.cardType || null });
+        const cardId = cardContext.host ? cardContext.itemId : identityOf(el);
+        const data = contextOf(cardData, el);
+        const usable = data && (!data.cardId || data.cardId === cardId);
+        const cardType = el.closest('[data-type]')?.getAttribute('data-type') || null;
+        return look.factsFrom(usable ? data.entry : null, { itemId: usable ? data.itemId : '', cardId, cardType });
+    }
+
+    /**
+     * A per-card record kept for a render target or its host: the pipeline
+     * may hand over the target before the host inside it exists.
+     * @template T
+     * @param {WeakMap<HTMLElement, T>} map
+     * @param {HTMLElement} el - Host or render target.
+     * @returns {T|undefined}
+     */
+    function contextOf(map, el) {
+        return map.get(el) || (el.parentElement ? map.get(el.parentElement) : undefined);
+    }
+
+    /**
+     * Whether some rule or lock could give this card another look once its
+     * item data (library, genres, rating, series) is known. Without rules
+     * and locks, or with type-only rules on a typed card, it cannot.
+     * @param {string|null} cardType - The card's data-type.
+     * @returns {boolean}
+     */
+    function needsCardData(cardType) {
+        const looks = currentLooks();
+        if (!looks.rules.length && !looks.locks.size) return false;
+        if (!cardType) return true;
+        if (looks.rules.some((rule) => rule.enabled && rule.when.some((cond) => cond.field !== 'type'))) return true;
+        // A season or episode inherits its series' lock: the series id comes with the data.
+        return looks.locks.size > 0 && (cardType === 'Season' || cardType === 'Episode');
+    }
+
+    /**
+     * Whether a card's tags wait for its item data (see awaitCardContext).
+     * @param {HTMLElement} host
+     * @returns {boolean}
+     */
+    function isAwaiting(host) {
+        const rec = contextOf(awaitingData, host);
+        return !!rec && rec.cardId === identityOf(host);
+    }
+
+    /**
+     * The look decision for one card, and the only place it is made:
+     * a lock on the item (or, for a season or episode, on its series) →
+     * the first enabled rule whose conditions all hold → the user's default
+     * layout and density. With no rules and no locks every card follows the
+     * user's settings, exactly as before rules existed.
+     * @param {CardController|HTMLElement|Object} cardContext - A card
+     *   controller, a card element, or a plain item description
+     *   ({ itemId, cardType, Type, Genres, OfficialRating, LibraryId, SeriesId }).
      * @returns {TagLayoutSettings}
      */
-    // eslint-disable-next-line no-unused-vars
     function resolveLayout(cardContext) {
-        return currentSettings();
+        const base = currentSettings();
+        const looks = currentLooks();
+        if (!looks.rules.length && !looks.locks.size) return base;
+        const facts = cardFacts(cardContext);
+        const lock = JE.core.tagLook.findLock(looks.locks, facts);
+        if (lock) return lookSettings(base, lock, true);
+        const rule = JE.core.tagLook.firstMatch(looks.rules, facts);
+        return rule ? lookSettings(base, rule, false) : base;
+    }
+
+    /**
+     * The identity of the item a card shows (its data-id), to capture when
+     * the card's item data is requested and hand back with setCardContext.
+     * Distinct from the artwork id the pipeline resolves, which can name the
+     * series an episode card borrows its image from.
+     * @param {HTMLElement} target - Render target.
+     * @returns {string}
+     */
+    function cardIdentity(target) {
+        return target ? identityOf(findHost(target) || target) : '';
+    }
+
+    /**
+     * Record what the item data says about a card (type, genres, rating,
+     * library, series) so rules can match it, and re-present the card if its
+     * look changes. The pipeline calls this before rendering a card from a
+     * server-cache entry, remembered item data or a fetched item. Data for a
+     * card that shows another item by now (a reused virtualised card) is
+     * dropped.
+     * @param {HTMLElement} target - Render target.
+     * @param {Object} entry - Tag-cache entry or /tag-data item.
+     * @param {string} itemId - The id the pipeline resolved for the card.
+     * @param {string} [cardId] - cardIdentity() when the data was requested;
+     *   omitted, the card's identity now.
+     * @returns {boolean} False when the data was dropped.
+     */
+    function setCardContext(target, entry, itemId, cardId) {
+        if (!target || !entry) return false;
+        const host = findHost(target) || target;
+        const current = identityOf(host);
+        if (cardId !== undefined && cardId !== null && cardId !== current) return false;
+        cardData.set(host, { entry, itemId, cardId: current });
+        const waited = endAwait(host);
+        const ctrl = controllers.get(host);
+        if (!ctrl || !ctrl.host.isConnected || !ctrl.groups.size) return true;
+        const looks = currentLooks();
+        if (waited || ((looks.rules.length || looks.locks.size) && resolveLayout(ctrl).lookKey !== ctrl.lookKey)) presentAll(ctrl);
+        return true;
+    }
+
+    /**
+     * Hold a card's tags back until its item data arrives (setCardContext)
+     * when a rule or lock could change its look, so its chips don't land in
+     * the default look first and then move. Caption space follows the
+     * default meanwhile. The pipeline calls this for a card it has no item
+     * data for yet and then fetches the data.
+     * @param {HTMLElement} target - Render target.
+     * @param {string} cardId - cardIdentity() of the card.
+     * @param {string|null} cardType - The card's data-type.
+     * @returns {{cardId: string, generation: number}|false} Token for this hold, or false when no data is needed.
+     */
+    function awaitCardContext(target, cardId, cardType) {
+        if (!target || !needsCardData(cardType)) return false;
+        const host = findHost(target) || target;
+        endAwait(host);
+        const token = { cardId, generation: ++waitGeneration };
+        const timer = setTimeout(() => releaseCardContext(target, token), AWAIT_CONTEXT_MS);
+        awaitingData.set(host, { cardId, timer, token });
+        return token;
+    }
+
+    /**
+     * Stop a card waiting.
+     * @param {HTMLElement} el - Host or render target the wait was recorded on.
+     * @returns {boolean} Whether it was waiting.
+     */
+    function endAwait(el) {
+        let waited = false;
+        for (const key of [el, el.parentElement]) {
+            const rec = key ? awaitingData.get(key) : undefined;
+            if (!rec) continue;
+            clearTimeout(rec.timer);
+            awaitingData.delete(key);
+            waited = true;
+        }
+        return waited;
+    }
+
+    /**
+     * Show a waiting card's tags in the look known without its item data
+     * (the fetch failed or returned nothing for it). No-op for other cards.
+     * @param {HTMLElement} target - Render target.
+     * @param {{cardId: string, generation: number}} token - The hold being released.
+     */
+    function releaseCardContext(target, token) {
+        if (!target) return;
+        const host = findHost(target) || target;
+        const rec = contextOf(awaitingData, host);
+        if (!rec || rec.token !== token || token.cardId !== identityOf(host)) return;
+        if (!endAwait(host)) return;
+        const ctrl = controllers.get(host);
+        if (!ctrl || !ctrl.groups.size) return;
+        if (ctrl.host.isConnected) presentAll(ctrl);
+        else ctrl.pendingPresentation = true;
+    }
+
+    /**
+     * Finish a detached card's safety release when a scan sees it reattached.
+     * @param {HTMLElement} target - Existing render target; never creates a host.
+     */
+    function resumePresentation(target) {
+        const ctrl = target ? controllerFor(target, false) : null;
+        if (ctrl?.pendingPresentation && ctrl.host.isConnected) presentAll(ctrl);
     }
 
     // ── Representations ────────────────────────────────────────────────
@@ -899,8 +1149,10 @@
         ctrl.outlet = null;
         describeHidden(ctrl, []);
         ctrl.layout = null;
+        ctrl.lookKey = '';
         delete ctrl.host.dataset.jeLayout;
         delete ctrl.host.dataset.jeLegacy;
+        delete ctrl.host.dataset.jeLocked;
         delete ctrl.host.dataset.jeIndicatorGap;
     }
 
@@ -909,14 +1161,19 @@
      * @param {CardController} ctrl
      */
     function presentAll(ctrl) {
+        ctrl.pendingPresentation = false;
         const conf = resolveLayout(ctrl);
         teardown(ctrl);
         ctrl.layout = conf.layout;
+        ctrl.lookKey = conf.lookKey;
         ctrl.host.dataset.jeLayout = conf.layout;
         // Settings saved before layouts keep the original web geometry
         // (tags/tag-layout-styles.js keys its legacy rules off this).
         if (conf.legacy) ctrl.host.dataset.jeLegacy = '1';
         if (conf.reserveCaption && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
+        if (conf.locked) ctrl.host.dataset.jeLocked = '1';
+        // Waiting for item data: keep the groups, show none yet.
+        if (isAwaiting(ctrl.host)) return;
         const groups = Array.from(ctrl.groups.keys()).sort((a, b) => rankOf(ctrl, conf, a) - rankOf(ctrl, conf, b));
         for (const group of groups) presentGroup(ctrl, conf, group);
         refreshPill(ctrl, conf);
@@ -1394,9 +1651,9 @@
         const conf = resolveLayout(ctrl);
         const previous = ctrl.groups.get(group);
         ctrl.groups.set(group, { master: overlay, seq: previous ? previous.seq : ++ctrl.seq });
-        if (ctrl.layout !== conf.layout) {
+        if (ctrl.layout !== conf.layout || ctrl.lookKey !== conf.lookKey) {
             presentAll(ctrl);
-        } else {
+        } else if (!isAwaiting(ctrl.host)) {
             presentGroup(ctrl, conf, group);
             if (conf.layout === 'summary') refreshPill(ctrl, conf);
             syncIndicatorGap(ctrl, conf);
@@ -1416,6 +1673,7 @@
         if (!group || !ctrl || !ctrl.groups.has(group)) return;
         ctrl.groups.delete(group);
         removeNodes(ctrl, group);
+        if (isAwaiting(ctrl.host)) return;
         const conf = resolveLayout(ctrl);
         if (conf.layout === 'summary') refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
@@ -1493,9 +1751,11 @@
         // checks it before adding its chip.
         if (target?.dataset) delete target.dataset.jeReviewKey;
         const host = findHost(target);
-        if (host) delete host.dataset.jeReviewKey;
+        if (!host) return;
+        delete host.dataset.jeReviewKey;
+        endAwait(host);
         const ctrl = host ? controllers.get(host) : null;
-        if (!host || !ctrl) return;
+        if (!ctrl) return;
         forget(ctrl);
     }
 
@@ -1504,6 +1764,7 @@
      * @param {CardController} ctrl
      */
     function forget(ctrl) {
+        endAwait(ctrl.host);
         teardown(ctrl);
         controllers.delete(ctrl.host);
     }
@@ -1514,8 +1775,8 @@
      * @param {string} groupId
      */
     function removeGroupEverywhere(groupId) {
-        const reserve = currentSettings().reserveCaption;
         for (const host of document.querySelectorAll('.je-tag-host')) {
+            const reserve = resolveLayout(controllers.get(host) || host).reserveCaption;
             removeGroup(/** @type {HTMLElement} */ (host), groupId);
             // The group was the last one switched on that could fill the
             // caption strip: give the reserved space back.
@@ -1544,7 +1805,7 @@
      * @param {HTMLElement} target - Render target.
      */
     function prepareCard(target) {
-        if (!currentSettings().reserveCaption || !target) return;
+        if (!target || !resolveLayout(findHost(target) || target).reserveCaption) return;
         const host = ensureHost(target);
         if (!host || isIgnoredContext(host)) return;
         const ctrl = controllerFor(host, true);
@@ -1576,9 +1837,9 @@
             reinitPending = null;
             invalidateSettings();
             const owned = new Set();
-            const reserve = currentSettings().reserveCaption;
             for (const host of document.querySelectorAll('.je-tag-host')) {
                 const el = /** @type {HTMLElement} */ (host);
+                const reserve = resolveLayout(controllers.get(el) || el).reserveCaption;
                 const ctrl = controllerFor(el, reserve && !isIgnoredContext(el));
                 if (!ctrl) continue;
                 presentAll(ctrl);
@@ -1591,11 +1852,16 @@
 
     // A user switch: forget the outgoing user's settings and every fact their
     // cards hold (they may be spoiler-stripped differently for the incoming
-    // user); the pipeline re-renders the cards, and je:user-data-loaded
-    // re-applies the incoming user's layout.
+    // user), including the item data kept for hosts without a controller and
+    // the waits for it; the pipeline re-renders the cards, and
+    // je:user-data-loaded re-applies the incoming user's layout.
     JE.session?.onUserChange?.('tag-layout', () => {
         invalidateSettings();
+        // Clear first so every hold's timer is cancelled through clearCard,
+        // then forget whatever a host without a controller still kept.
         clearAll();
+        cardData = new WeakMap();
+        awaitingData = new WeakMap();
     });
 
     const api = {
@@ -1615,6 +1881,11 @@
         promoteLegacySettings,
         invalidateSettings,
         resolveLayout,
+        setCardContext,
+        cardIdentity,
+        awaitCardContext,
+        releaseCardContext,
+        resumePresentation,
         ensureHost,
         commitGroup,
         removeGroup,

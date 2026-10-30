@@ -25,7 +25,7 @@
 // exactly as it did before this module existed: one full download per page
 // load, held in memory only.
 //
-// Public surface: JE.tagCacheStore { available, getMeta, getMany,
+// Public surface: JE.tagCacheStore { ENTRY_SCHEMA, available, getMeta, getMany,
 // beginFullWrite, putManyIfOwner, commitFullWrite, applyDelta, clearScope,
 // clearOtherScopes }.
 (function(JE) {
@@ -41,6 +41,10 @@
     // One record per entry, keyed `${scope}|${itemId}` so a scope is one key range.
     const ITEM_STORE = 'tagCacheItems';
     const KEY_SEP = '|';
+    // The server's tag-cache entry schema (TagCacheService
+    // CurrentCacheSchemaVersion) the stored entries were written with; a copy
+    // from another schema is never restored. v11 added LibraryId.
+    const ENTRY_SCHEMA = 11;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;
@@ -269,7 +273,7 @@
         let owned = false;
         request.onsuccess = () => {
             owned = !!request.result && request.result.pending === token;
-            if (owned) store.put({ ...meta, scope });
+            if (owned) store.put({ ...meta, scope, entrySchema: ENTRY_SCHEMA });
         };
         await committed(tx);
         return owned;
@@ -347,6 +351,7 @@
     }
 
     JE.tagCacheStore = {
+        ENTRY_SCHEMA,
         available,
         getMeta,
         getMany,

@@ -47,3 +47,29 @@ test('tag pipeline drains the cards queued while a cancelled batch was in flight
 test('tag pipeline skips hidden/admin/nonmedia cards without transport',t=>{
  const h=setup(t,`<div id="pluginsPage">${card}</div>${card.replace('class="card"','class="card je-hidden"')}${card.replace('data-type="Movie"','data-type="Person"')}`);h.scan();h.fetch();assert.equal(h.calls.length,0);assert.equal(h.rendered.length,0);
 });
+
+test('individual fallback drops facts immediately when the user changed during /Items', async t => {
+ const h=setup(t); const item=deferred();
+ h.window.ApiClient.getItem=()=>item.promise;
+ h.scan();h.fetch();h.response.reject(new Error('tag-data unavailable'));await settle();
+ h.changes.get('tag-pipeline')({userId:'b'});
+ item.resolve({Id:'aabb',Type:'Movie',Genres:['private']});await settle();
+ assert.equal(h.rendered.length,0);
+ let fetched=false;h.window.ApiClient.ajax=async()=>{fetched=true;return {Items:[]};};
+ await h.JE.tagPipeline.itemLookFacts('aabb');
+ assert.equal(fetched,true,'old facts were never remembered');
+});
+
+for (const inFlight of [false, true]) test(`navigation retries cards whose work was cancelled (in-flight=${inFlight})`, async t => {
+ const h=setup(t);let navigate;
+ h.JE.currentSettings.qualityTagsEnabled=true;
+ h.JE.helpers={onBodyMutation(){},onNavigate(fn){navigate=fn;}};
+ h.JE.tagPipeline.initialize();await settle();h.scan();
+ if(inFlight)h.fetch();
+ h.window.location.hash='#/details?id=series';navigate();h.scan();
+ if(inFlight){h.response.resolve({Items:[{Id:'aabb',Type:'Movie'}]});await settle();assert.equal(h.rendered.length,0,'old navigation cannot render');}
+ h.fetch();
+ assert.equal(h.calls.length,inFlight?2:1,'cancelled cards are fetched again');
+ h.response.resolve({Items:[{Id:'aabb',Type:'Movie'}]});await settle();
+ assert.equal(h.rendered.length,1);
+});

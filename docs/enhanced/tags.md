@@ -150,6 +150,52 @@ With **Hide Tags on Hover** off, genre names expand beside their icons on hover.
     - **Hide Tags on Hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
     - [Native Poster Tags](#native-poster-tags-experimental) always draw corners, whatever web layout you choose. They follow the Corners positions, hidden groups, order and limits, and keep full labels.
 
+### Rules and locked items
+
+Rules give some cards a different look (a layout and a label density) than your default: for example, a caption strip in the Movies library and compact bands on episodes. A lock keeps one item's look as it is, whatever you change later.
+
+**How to use:**
+
+1. In **UI Settings**, under **Where each look applies**, click **Add rule**.
+2. Pick one or more conditions (all of them must hold), a **Tag Layout** and a **Label Density**, then click **Save rule**.
+3. Use the arrows to order the rules, **On**/**Off** to pause one, **Edit** or **Delete** to change it.
+4. To lock an item, open its page and click the padlock (**Lock tag look**). Click it again, or use **Unlock** in **Locked items**, to release it.
+
+![Tag look rules and a locked item in the settings panel](../images/tags/tag-look-rules.webp)
+
+Each card gets its look from the first of these that applies:
+
+1. **A lock** on the item. A locked series also locks its seasons and episodes, unless one of them has its own lock.
+2. **The first enabled rule** whose conditions all hold, from the top of the list.
+3. **Your default** Tag Layout and Label Density (the **Otherwise** row).
+
+| Condition | Matches | Notes |
+|---|---|---|
+| **Library** | The library the item is in | Seasons and episodes use their series' library. An item in two libraries that share a folder uses the first one Jellyfin reports |
+| **Type** | Movie, Series, Season, Episode, Collection or Video | The card's own type: an episode card showing its series' poster still counts as an episode |
+| **Genre** | One of the item's genres | Not case-sensitive. Seasons and episodes use the genres the tag cache gives them |
+| **Age rating** | The item's age rating | Compared as the age rating tags show it (`DE-12` and `FSK-12` match), not case-sensitive. Seasons and episodes fall back to their series' rating |
+
+![A locked movie keeps its caption look in a library ruled to Minimal](../images/tags/tag-look-locked-grid.webp)
+
+| Setting | Default | What it does |
+|---|---|---|
+| Personal: **Where each look applies** | No rules | Ordered rules: when every condition holds, the card uses that rule's layout and density |
+| Personal: **Locked items** | None | Items that keep the look they had when locked; **Unlock all** asks for a second click |
+| Admin: **Default tag look rules** | Empty | Rules (as JSON) that new users and **Apply defaults to all users** start with |
+
+??? info "Limits and details"
+    - Up to 50 rules, each with up to 5 conditions, and up to 500 locked items; past 500 the oldest lock is released. The server drops an invalid rule or lock (an unknown layout, a malformed id) on its own and keeps the rest.
+    - A lock stores the layout, the density and where every group sits in that layout at that moment, so later changes to your arrangement do not move a locked item. Group order and per-group limits still follow your settings.
+    - A rule uses your arrangement for its layout. Group order and limits are yours for every look.
+    - Rules on library, genre and age rating, and a series lock on its seasons and episodes, read the item's data: its entry in the server tag cache, or the batch lookup when the cache is off or does not have the item yet. The browser remembers what the lookup said about each item (type, series, library, genres, age rating), so cards drawn from the per-tag fallback cache match every rule as well; an item it knows nothing about is looked up once.
+    - While a card's data is on its way and a rule or lock could change its look, its chips wait for the data instead of appearing in your default look and then moving. Type-only rules never make a card wait. Space for the caption strip follows your default in the meantime, so when a rule gives a card Caption (or takes it away) the strip appears (or goes) once the data arrives, the first time this browser sees that item. A card whose data does not come shows its tags in your default look once the lookup ends, or after 8 seconds at most.
+    - Locking from an item's page looks the item up first when its data is not loaded yet (the padlock shows an hourglass meanwhile), so the lock keeps the look its cards really have. If a rule or lock change cannot be saved, it is undone on screen and a message says so.
+    - Mixing Caption with other looks on one row is allowed; caption cards are taller than their neighbours.
+    - Settings saved before layouts existed never pick up the administrator's default rules; rules you add yourself apply.
+    - Changing a rule or a lock updates the cards on screen at once, without reloading their tags.
+    - Locked cards carry `data-je-locked="1"` on their tag host for [custom CSS](../advanced/css-customization.md). Nothing else marks them by default.
+
 ## Quality Tags
 
 Quality badges help you identify a file's picture and sound format before opening it. They read Jellyfin's media metadata and naming signals.
@@ -514,7 +560,7 @@ Neither setting requires poster Rating Tags or Age Rating Tags. Poster scope swi
 
 ## Server-Side Tag Cache
 
-The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy.
+The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy. Each entry also records the item's library (a season's or episode's is its series'), which [tag look rules](#rules-and-locked-items) match on.
 
 **How to use:**
 
@@ -565,6 +611,8 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
 ??? info "Browser storage and fallback details"
     The first web load downloads the server payload and saves an IndexedDB copy scoped to that server and user. Later loads restore that copy and request changes since the saved cursor. Tags wait for confirmation that the stored version and access/Spoiler Guard revision still match. A rebuild or changed filtering replaces the copy, including changes made from another device. Navigation also checks for updates, with requests spaced during rapid browsing.
 
+    A copy written before the entry format last changed (version 11 added the library) is not restored; the browser downloads the cache again.
+
     The stored copy is invalidated when server mode is switched off, by **Clear All Client Caches**, or when another account signs in in the same browser. Each copy contains that user's filtered, spoiler-safe data.
 
     Without usable IndexedDB, including some private modes or storage failures, the client downloads the payload again on each page load and uses memory only.
@@ -572,6 +620,8 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
     Saving with the server cache off forces **Persist Tag Fallback Cache in Browser Storage** on. The client enables localStorage fallback whenever server mode is off.
 
     Batch fallback fetches the items needed for the current page and keeps frequently used entries in memory. With server mode off, it also persists fallback entries in localStorage, using **Tags Cache Duration (days)**. This is separate from the full server-payload copy in IndexedDB. Browser storage failures leave tags able to fetch data again. Average-review lookups in fallback mode are batched separately.
+
+    For [rules and locked items](#rules-and-locked-items), the batch lookup's type, series, library, genres and age rating of each item are remembered beside those entries (`JE_tagLookFacts`, at most 3,000 items, newest kept). Like the per-tag entries, they belong to the signed-in user and are dropped when another account signs in or by **Clear All Client Caches**.
 
 ### Related routes
 

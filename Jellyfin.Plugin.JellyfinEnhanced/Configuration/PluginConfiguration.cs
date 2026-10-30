@@ -161,6 +161,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagGroupOrder = null;
             TagGroupCaps = null;
             TagLabelDensity = "full";
+            TagLookRules = null;
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -792,6 +793,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Starting label density (full or compact).</summary>
         [AnalyticsInclude]
         public string TagLabelDensity { get; set; } = "full";
+        /// <summary>Starting tag look rules for new users (first match wins); null = none.</summary>
+        public List<TagLookRule>? TagLookRules { get; set; }
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

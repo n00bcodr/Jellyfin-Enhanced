@@ -488,6 +488,8 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `TagGroupCaps` | Nullable object `{Quality,Genre,Language,Rating,AgeRating,Status}` of integers 0–10, `0` = unlimited | `null` |
 | `TagLabelDensity` | String: `full` or `compact` | `"full"` |
 | `TagStylePreset` | Nullable string: `default`, `glass`, `outline`, `dark`, `light` or `mono`; unknown values are stored as `null` | `null` (follow the admin's preset; only used while the admin allows user presets) |
+| `TagLookRules` | Nullable array of `{Id,Enabled,When:[{Field,Value}],Layout,Density,ColourPreset,Slots}`; `Field` is `library` (32-hex library id), `type`, `genre` or `ageRating`; at most 50 rules of 1–5 conditions; `Slots` nullable `[{Group,Slot}]`; `ColourPreset` reserved, `null`. `null` inherits the administrator's rules (version `1` documents only) | `null` (new users: the admin rules) |
+| `TagLayoutLocks` | Nullable object keyed by item id (32 lowercase hex) of `{Layout,Density,ColourPreset,Slots,LockedAt}`; at most 500, the oldest `LockedAt` dropped first | `null` |
 | `ShowRatingInPlayer` | Boolean | `true` |
 | `RemoveContinueWatchingEnabled` | Boolean | `false` |
 | `LastOpenedTab` | String | `""` |
@@ -1094,7 +1096,7 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 
 | Cache entry field | Type |
 |---|---|
-| `Type`, `TmdbId`, `SeriesTmdbId`, `OfficialRating`, `SeriesId` | Nullable strings |
+| `Type`, `TmdbId`, `SeriesTmdbId`, `OfficialRating`, `SeriesId`, `LibraryId` | Nullable strings |
 | `SeasonNumber`, `EpisodeNumber` | Nullable integers |
 | `Genres`, `AudioLanguages`, `PartialAudioLanguages` | Nullable string arrays |
 | `CommunityRating`, `CriticRating` | Nullable numbers |
@@ -1102,11 +1104,11 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `DateCreated`, `PremiereDate`, `LatestEpisodeAdded` | Nullable integer milliseconds |
 | `StreamData` | Nullable `{Streams,Sources,ItemName,ItemPath}` |
 
-`DateCreated` is when the item was added to the library. `PremiereDate` is set for movies and series only. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
+`LibraryId` is the library (collection folder) holding the item in N format; seasons and episodes carry their series'. Entries are cache schema 11; a server holding an older snapshot discards it and rebuilds. `DateCreated` is when the item was added to the library. `PremiereDate` is set for movies and series only. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
 
 `StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs.
 
-Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies and series) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
+Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `OfficialRating`, `LibraryId`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies and series) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
 
 Streams use the trimmed stream fields listed above, and sources contain basename-only `Path` and `Name`.
 
@@ -1323,6 +1325,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagStylePreset` | String |
     | `TagLayouts`, `TagGroupCaps` | Nullable object (shapes as in `settings.json`) |
     | `TagGroupOrder` | Nullable array of group ids |
+    | `TagLookRules` | Nullable array of rules (shape as in `settings.json`), normalized |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |
     | `ClearLocalStorageTimestamp`, `ClearTranslationCacheTimestamp` | Integer |
     | `Shortcuts` | Array of `{Name,Key,Label,Category}` |

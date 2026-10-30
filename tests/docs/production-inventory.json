@@ -43,6 +43,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs",
       "category": "Configuration"
     },
@@ -372,6 +376,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Identity/RequestIdentityService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ItemLibraryResolver.cs",
       "category": "Services"
     },
     {
@@ -755,6 +763,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-look.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-renderer-base.js",
       "category": "js"
     },
@@ -988,6 +1000,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-editor.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-looks.js",
       "category": "js"
     },
     {
@@ -1456,6 +1472,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-layout-styles.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-look-lock.js",
       "category": "js"
     },
     {
@@ -4368,6 +4388,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagLookRules",
+      "type": "List<TagLookRule>?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowRatingInPlayer",
       "type": "bool",
       "initializer": "true",
@@ -6303,6 +6331,118 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
     },
     {
+      "class": "TagLookCondition",
+      "name": "Field",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookCondition",
+      "name": "Value",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookRule",
+      "name": "Id",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookRule",
+      "name": "Enabled",
+      "type": "bool",
+      "initializer": "true",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookRule",
+      "name": "When",
+      "type": "List<TagLookCondition>",
+      "initializer": "new List<TagLookCondition>()",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookRule",
+      "name": "Layout",
+      "type": "string",
+      "initializer": "\"corners\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookRule",
+      "name": "Density",
+      "type": "string",
+      "initializer": "\"full\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookRule",
+      "name": "ColourPreset",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookRule",
+      "name": "Slots",
+      "type": "List<TagLayoutGroupSlot>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "Layout",
+      "type": "string",
+      "initializer": "\"corners\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "Density",
+      "type": "string",
+      "initializer": "\"full\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "ColourPreset",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "Slots",
+      "type": "List<TagLayoutGroupSlot>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "LockedAt",
+      "type": "long",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
       "class": "JellyfinEnhancedUserSettings",
       "name": "AutoPauseEnabled",
       "type": "bool",
@@ -6898,6 +7038,22 @@
       "class": "JellyfinEnhancedUserSettings",
       "name": "TagStylePreset",
       "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagLookRules",
+      "type": "List<TagLookRule>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagLayoutLocks",
+      "type": "Dictionary<string, TagLayoutLock>?",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
@@ -7969,6 +8125,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/arr/calendar/calendar-page-actions.js"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/core/tag-look.js"
+    },
+    {
       "literal": "elsewhere.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/elsewhere.js"
     },
@@ -8215,10 +8375,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 366,
+    "files": 371,
     "routes": 181,
-    "configuration_properties": 576,
-    "storage_references": 71,
+    "configuration_properties": 593,
+    "storage_references": 72,
     "scheduled_tasks": 13,
     "locales": 33
   }

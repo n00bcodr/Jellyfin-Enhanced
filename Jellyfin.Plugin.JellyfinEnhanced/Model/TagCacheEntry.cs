@@ -65,6 +65,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         // unwatched episodes whose parent series is in the user's spoiler list
         // without a per-episode library lookup on every request.
         public string? SeriesId { get; set; }
+        /// <summary>
+        /// The library (top-level collection folder) the item is in, N format
+        /// (lowercase); Seasons/Episodes take their Series'. Tag look rules on a
+        /// library match against it. Null (and left out of responses) when the
+        /// item is in no library.
+        /// </summary>
+        public string? LibraryId { get; set; }
 
         // Shallow copy required by per-user mutators (spoiler tag-strip): the
         // TagCacheService stores ONE shared instance per item across ALL users,
@@ -108,7 +115,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && a.PremiereDate == b.PremiereDate
                 && a.LatestEpisodeAdded == b.LatestEpisodeAdded
                 && a.LatestEpisodeId == b.LatestEpisodeId
-                && a.SeriesId == b.SeriesId;
+                && a.SeriesId == b.SeriesId
+                && a.LibraryId == b.LibraryId;
         }
 
         /// <summary>
@@ -168,6 +176,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             LatestEpisodeId = LatestEpisodeId,
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,
+            LibraryId = LibraryId,
         };
     }
 

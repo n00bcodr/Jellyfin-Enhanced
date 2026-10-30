@@ -70,6 +70,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── Configuration/
 │   ├── PluginConfiguration.cs
 │   ├── UserConfiguration.cs
+│   ├── TagLookSettings.cs
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
 │   ├── configPage.css
@@ -146,6 +147,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | `Configuration/PluginConfiguration.cs` | Server settings and administrator defaults. |
 | `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
+| `Configuration/TagLookSettings.cs` | Tag look rules and per-item locks: models and validation (`TagLookValidation`) for `settings.json` and the administrator's default rules. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
 | `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; serializes per-user saves to the server in order. It does not store user settings in localStorage. |
@@ -220,7 +222,8 @@ These indexes group client modules and relevant supporting server files by web f
 | `session.js` | Hooks `ApiClient.setAuthenticationInfo`, follows navigation notifications and reconciles every five seconds. Runs `JE.session.onUserChange` reset handlers and emits `je:user-changed`; supplies identity epochs for async work. |
 | `media-language.js` | Shared audio-language/region-to-flag resolution through `JE.core.mediaLanguage.resolveFlag`. |
 | `tag-renderer-base.js` | Overlay creation, deduplication, caching and reinitialization for the genre, language, quality, rating, age-rating and status tags; hands each group to `tag-layout.js`. People and user-review renderers are independent. |
-| `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card. |
+| `tag-layout.js` | Poster tag layouts (`JE.core.tagLayout`): resolves the user's layout, slots, group order, caps and label density (with the migration for settings saved before layouts), keeps one controller per card and presents each group's chips in slots, the caption outlet, the summary pill, quality dots and the hover scrim. `JE.reinitializeTagLayout()` re-presents every card. `resolveLayout()` picks each card's look: lock, then first matching rule, then the default. |
+| `tag-look.js` | Tag look rules and locks (`JE.core.tagLook`): normalization, condition matching, card facts from cache entries, saving rules, locking and unlocking. |
 | `ui-kit.js` | HTML escaping, toasts, deduplicated CSS injection and scroll-friendly direct/delegated tap listeners. |
 
 ### Enhanced UI: `js/enhanced/`
@@ -240,7 +243,7 @@ These indexes group client modules and relevant supporting server files by web f
 | `homeremoval/` | `features-remove-home.js` and `features-remove-multiselect.js`: Continue Watching / Next Up removal and multi-select. |
 | `itemdetails/` | `features-details-media-info.js`, `features-release-dates.js`, `features-details-page.js`: media information, file sizes, audio languages, release dates and detail-page orchestration. |
 | `player/` | `playback.js` supplies speed, seeking and track cycling; `auto-skip.js` consumes its player state for media-segment skipping; `subtitles.js` handles styles/presets; `pausescreen.js` supplies the pause overlay; `osd-rating.js` shows Jellyfin community/critic scores; `playback-rating-badge.js` supplies the playback-start age-rating/genre card. |
-| `settingspanel/` | Nine modules: `ui-entry-points.js`, `ui-release-notes.js`, `ui-panel-template.js`, `ui-panel-shortcut-editor.js`, `ui-panel-settings.js`, `ui-panel-tag-editor.js` (the Media Tags group editor and its live preview), `ui-panel-hidden-content.js`, `ui-panel-language.js`, `ui-panel.js`. The shell orchestrates section wiring after its producers. |
+| `settingspanel/` | Ten modules: `ui-entry-points.js`, `ui-release-notes.js`, `ui-panel-template.js`, `ui-panel-shortcut-editor.js`, `ui-panel-settings.js`, `ui-panel-tag-editor.js` (the Media Tags group editor and its live preview), `ui-panel-hidden-content.js`, `ui-panel-language.js`, `ui-panel-tag-looks.js` (tag look rules and locked items), `ui-panel.js`. The shell orchestrates section wiring after its producers. |
 | `spoilerguard/` | Twelve modules: `ids.js`, `state.js`, `image-refresh.js`, `snooze.js`, `dialog.js`, `identity.js`, `styles.js`, `settings-tab.js`, `seerr-toggle.js`, `detail-button.js`, `watched-refresh.js`, `index.js`. The final module publishes `JE.spoilerBlur`; server filters perform image/metadata protection. |
 
 ### Catch Up
@@ -317,7 +320,8 @@ Administrator settings under **\*arr** → **Shoko**:
 | `statustags.js` | Status Tags: one Just Added, New Movie/Series/Episode or trending-rank badge per card, from tag-cache dates and the shared trending list (`Services/StatusTagsTrendingService.cs`). |
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
 | `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating group through the layout controller. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
-| `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. |
+| `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. A snapshot from another entry schema is not restored. |
+| `tag-look-lock.js` | The **Lock tag look** button on item pages. |
 | `tag-pipeline.js` | Restores/downloads the bulk server cache, applies `?since=` deltas and scans cards in idle slices. |
 | `tag-layout-styles.js` | The one stylesheet for every tag layout, keyed off `.je-tag-host[data-je-layout]` and `.je-tag-slot[data-je-slot]`. |
 | `tag-styles.js` | Retrieves the resolved Tag Styles (with the user's own preset when allowed) and injects web CSS for every chip group; paired with server `Services/PosterTags/TagStyles.cs`. |
@@ -425,6 +429,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `MovieCollectionsBatch.cs`, `WatchProvidersBatch.cs` | Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed. |
 | `ItemStatsService.cs` | Aggregate item/subtree size and watch-progress data for detail chips. |
 | `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists tag data and incrementally maintains it from library events. |
+| `ItemLibraryResolver.cs` | The library an item is in (seasons and episodes: their series'), stored as `LibraryId` in tag-cache entries and `tag-data` items for tag look rules. |
 | `TagCachePendingChanges.cs`, `TagCacheResponseBody.cs` | Coalesces pending item changes; assembles bulk response bytes and hashes the viewer's final body for its ETag. |
 | `HiddenContentResponseFilter.cs` | Filters supported Jellyfin item lists and Home Screen Sections responses using the viewer's hidden-content scopes. |
 | `ReviewAuthorCache.cs` | Cached author lookups for review visibility, invalidated by user changes/deletion/lockout. |

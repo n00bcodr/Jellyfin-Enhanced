@@ -459,6 +459,21 @@
                                 <div class="fieldDescription">Display age and birthplace information for cast members on item detail pages.</div>
                             </div>
 
+                            <details id="tagLookRulesAdminDetails" class="je-details-section">
+                                <summary>Default tag look rules</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Rules give poster cards a different layout and density by library, type, genre or age rating; the first enabled rule that matches wins. New users (and "apply defaults to all users") start with these; users edit their own copy in their personal settings. Leave empty for none.</div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagLookRulesJson">Rules (JSON)</label>
+                                        <textarea class="emby-textarea emby-input je-textarea-large" id="tagLookRulesJson" name="tagLookRulesJson" spellcheck="false" aria-describedby="tagLookRulesJsonStatus" placeholder='[{ "enabled": true, "when": [{ "field": "type", "value": "Episode" }], "layout": "bands", "density": "compact" }]'></textarea>
+                                    </div>
+                                    <div class="fieldDescription" id="tagLookRulesJsonStatus" role="status"></div>
+                                    <div class="je-setting-description" data-desc-for="tagLookRulesJson">
+                                        <div class="fieldDescription">Each rule: <code>when</code> (1-5 conditions, all must hold; <code>field</code> is <code>library</code> with a library id, <code>type</code> with Movie, Series, Season, Episode, BoxSet or Video, <code>genre</code> or <code>ageRating</code>), <code>layout</code> (corners, bands, caption, summary, minimal) and <code>density</code> (full, compact). At most 50 rules; invalid ones are dropped.</div>
+                                    </div>
+                                </div>
+                            </details>
+
                             <div class="fieldDescription"><strong>General</strong> — shared by every tag type above.</div>
 
                             <div class="inputContainer">
@@ -7306,6 +7321,23 @@
                 document.querySelector('#statusTagsTrending').checked = config.StatusTagsTrending !== false;
                 document.querySelector('#statusTagsJustAddedDays').value = config.StatusTagsJustAddedDays || 7;
                 document.querySelector('#statusTagsNewReleaseDays').value = config.StatusTagsNewReleaseDays || 30;
+                // Default tag look rules, edited as JSON with live validation.
+                (function () {
+                    const box = document.querySelector('#tagLookRulesJson');
+                    if (!box) return;
+                    box.value = Array.isArray(config.TagLookRules) && config.TagLookRules.length ? JSON.stringify(config.TagLookRules, null, 2) : '';
+                    const status = document.querySelector('#tagLookRulesJsonStatus');
+                    const check = function () {
+                        const parsed = jeParseTagLookRules(box.value);
+                        status.textContent = parsed.error ? parsed.error : (parsed.rules.length ? parsed.rules.length + ' rule(s) will be saved.' : 'No default rules.');
+                        status.style.color = parsed.error ? '#ff8a80' : '';
+                    };
+                    if (!box.dataset.jeWired) {
+                        box.dataset.jeWired = '1';
+                        box.addEventListener('input', check);
+                    }
+                    check();
+                })();
                 const pChk = document.querySelector('#peopleTagsEnabled');
                 if (pChk) pChk.checked = peopleEnabled;
                 if (rPlayerChk) rPlayerChk.checked = showRatingInPlayer;
@@ -7915,6 +7947,12 @@
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.StatusTagsJustAddedDays = Math.min(365, Math.max(1, parseInt(document.querySelector('#statusTagsJustAddedDays').value, 10) || 7));
             config.StatusTagsNewReleaseDays = Math.min(365, Math.max(1, parseInt(document.querySelector('#statusTagsNewReleaseDays').value, 10) || 30));
+            // Default tag look rules: unparsable JSON keeps the stored rules (the
+            // status line under the box says why); the server normalizes the rest.
+            if (document.querySelector('#tagLookRulesJson')) {
+                const parsedLookRules = jeParseTagLookRules(document.querySelector('#tagLookRulesJson').value);
+                if (!parsedLookRules.error) config.TagLookRules = parsedLookRules.rules.length ? parsedLookRules.rules : null;
+            }
             config.PauseScreenEnabled = document.querySelector('#pauseScreenEnabled').checked;
             config.ShowPlaybackRatingBadge = document.querySelector('#showPlaybackRatingBadge').checked;
             config.ShowReviews = document.querySelector('#showReviews').checked;
@@ -9456,6 +9494,57 @@
                 var hintText = label.querySelector('.dep-hint-text');
                 if (hintText) hintText.remove();
             }
+        }
+
+        /**
+         * Parse the default tag look rules textarea: an empty box is no rules;
+         * otherwise a JSON array of rule objects, returned in the server's
+         * PascalCase shape. Field values are checked lightly here; the server
+         * drops anything invalid when it hands the rules out.
+         * @param {string} text
+         * @returns {{rules: Array<Object>, error: string|null}}
+         */
+        function jeParseTagLookRules(text) {
+            const trimmed = (text || '').trim();
+            if (!trimmed) return { rules: [], error: null };
+            let raw;
+            try { raw = JSON.parse(trimmed); } catch (e) { return { rules: [], error: 'Not valid JSON: ' + e.message }; }
+            if (!Array.isArray(raw)) return { rules: [], error: 'Expected a JSON array of rules.' };
+            if (raw.length > 50) return { rules: [], error: 'At most 50 rules.' };
+            const get = function (obj, key) { return obj && typeof obj === 'object' ? (obj[key] !== undefined ? obj[key] : obj[key.charAt(0).toUpperCase() + key.slice(1)]) : undefined; };
+            const layouts = ['corners', 'bands', 'caption', 'summary', 'minimal'];
+            const fields = ['library', 'type', 'genre', 'agerating'];
+            const rules = [];
+            for (let i = 0; i < raw.length; i++) {
+                const rule = raw[i];
+                const n = 'Rule ' + (i + 1) + ': ';
+                if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return { rules: [], error: n + 'not an object.' };
+                const layout = String(get(rule, 'layout') || '').toLowerCase();
+                if (layouts.indexOf(layout) < 0) return { rules: [], error: n + 'unknown layout "' + layout + '".' };
+                const density = String(get(rule, 'density') || 'full').toLowerCase();
+                if (density !== 'full' && density !== 'compact') return { rules: [], error: n + 'density must be full or compact.' };
+                const when = get(rule, 'when');
+                if (!Array.isArray(when) || when.length < 1 || when.length > 5) return { rules: [], error: n + '"when" needs 1 to 5 conditions.' };
+                const conditions = [];
+                for (let j = 0; j < when.length; j++) {
+                    const field = String(get(when[j], 'field') || '');
+                    const value = String(get(when[j], 'value') || '').trim();
+                    if (fields.indexOf(field.toLowerCase()) < 0 || !value) return { rules: [], error: n + 'condition ' + (j + 1) + ' needs a known field and a value.' };
+                    if (field.toLowerCase() === 'library' && !/^[0-9a-fA-F]{32}$/.test(value.replace(/-/g, ''))) return { rules: [], error: n + 'a library condition needs a library id.' };
+                    conditions.push({ Field: field, Value: value });
+                }
+                const slots = get(rule, 'slots');
+                rules.push({
+                    Id: String(get(rule, 'id') || ''),
+                    Enabled: get(rule, 'enabled') !== false,
+                    When: conditions,
+                    Layout: layout,
+                    Density: density,
+                    ColourPreset: null,
+                    Slots: Array.isArray(slots) ? slots.map(function (s) { return { Group: String(get(s, 'group') || ''), Slot: String(get(s, 'slot') || '') }; }) : null,
+                });
+            }
+            return { rules: rules, error: null };
         }
 
         var PARENT_DEPS = [

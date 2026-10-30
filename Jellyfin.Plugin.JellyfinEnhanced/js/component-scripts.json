@@ -23,6 +23,9 @@
     "// tag-layout.js places the poster tag groups; it reads",
     "// JE.core.tagRenderer.isIgnoredContext at call time only.",
     "core/tag-layout.js",
+    "// tag-look.js holds the tag look rules and locks; tag-layout.js",
+    "// calls it at run time only (resolveLayout).",
+    "core/tag-look.js",
 
     "// enhanced",
     "enhanced/config.js",
@@ -116,6 +119,7 @@
     "enhanced/settingspanel/ui-panel-tag-editor.js",
     "enhanced/settingspanel/ui-panel-hidden-content.js",
     "enhanced/settingspanel/ui-panel-language.js",
+    "enhanced/settingspanel/ui-panel-tag-looks.js",
     "enhanced/settingspanel/ui-panel.js",
     "enhanced/bookmarks/bookmarks.js",
     "// bookmarks-library modules — order matters: styles/page/render",
@@ -198,6 +202,8 @@
     "tags/statustags.js",
     "tags/tag-styles.js",
     "tags/userreviewtags.js",
+    "// Detail-page Lock tag look button (reads JE.core.tagLook at call time).",
+    "tags/tag-look-lock.js",
 
     "// arr",
     "arr/arr-links.js",

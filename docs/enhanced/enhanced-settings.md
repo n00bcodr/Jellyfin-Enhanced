@@ -261,7 +261,15 @@ Poster tags live in **UI Settings** too: the layout, a live preview, and one **T
 
 Each group row also keeps that group's other choices: the sound language for quality, **Choose where to show** for ratings, and **Choose which badges to show** for status.
 
-See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference.
+Below them, **Where each look applies** lists your tag look rules and locked items:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Locked items** | None | Shows the items you locked from their page, each with **Unlock**, plus **Unlock all**. Locks always win. |
+| **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. **Add rule** opens the editor; arrows reorder, **On**/**Off** pauses a rule. |
+| **Otherwise** | Your Tag Layout | Every other card uses the Tag Layout and Label Density above. |
+
+See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
 
 ??? info "How it works"
 

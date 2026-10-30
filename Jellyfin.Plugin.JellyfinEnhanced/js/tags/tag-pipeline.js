@@ -85,7 +85,8 @@
     let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
-    let requestQueue = [];               // { el, itemId, itemType, reuse }
+    let activeBatch = [];               // entries whose request is currently in flight
+    let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting, reuse }
     const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
 
     // ── Pipeline-level exclusions ─────────────────────────────────────
@@ -484,6 +485,9 @@
             // predate them).
             if (!meta || meta.pending || !(meta.count > 0) || !meta.timestamp
                 || typeof meta.filterRevision !== 'string' || typeof meta.servedAt !== 'number') return false;
+            // Entries stored before the entry fields last changed (server
+            // schema) lack fields the renderers and tag look rules read.
+            if (meta.entrySchema !== store.ENTRY_SCHEMA) return false;
             // The admin's "Clear All Client Caches" applies to this copy too.
             const clearStamp = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
             if (clearStamp > (meta.clearStamp || 0)) {
@@ -989,6 +993,139 @@
         msPerCard = msPerCard * 0.5 + (elapsedMs / cards) * 0.5;
     }
 
+    // ── Tag look facts ─────────────────────────────────────────────────
+    //
+    // What item data said about an item that tag look rules and locks match
+    // on (type, series, library, genres, official rating; see factsFrom in
+    // core/tag-look.js), remembered from every /tag-data answer. A card
+    // rendered later from the renderers' local caches alone (no fetch) is
+    // matched on these, so library/genre/age rules apply to it and a season
+    // or episode inherits its series' lock. Kept in memory, and in
+    // localStorage alongside the renderers' caches when those persist (same
+    // server:user owner rule and admin clear). A card with nothing
+    // remembered is fetched when a rule or lock needs its data.
+
+    const LOOK_FACTS_KEY = 'JE_tagLookFacts';
+    const LOOK_FACTS_MAX = 3000;
+    const LOOK_FACT_FIELDS = ['Type', 'SeriesId', 'LibraryId', 'Genres', 'OfficialRating'];
+    /** @type {Map<string, object>|null} itemId → { Type, SeriesId, LibraryId, Genres, OfficialRating, at }; null = not loaded */
+    let lookFacts = null;
+    let lookFactsSaveRegistered = false;
+
+    /** @returns {boolean} The renderers' local caches persist, so the facts do too. */
+    function lookFactsPersist() {
+        return JE.pluginConfig?.TagCacheServerMode === false || JE.pluginConfig?.EnableTagsLocalStorageFallback === true;
+    }
+
+    /** @returns {Map<string, object>} The remembered facts, loaded on first use. */
+    function lookFactsMap() {
+        if (lookFacts) return lookFacts;
+        lookFacts = new Map();
+        if (!lookFactsPersist()) return lookFacts;
+        try {
+            const ownerKey = `${LOOK_FACTS_KEY}:identity-owner`;
+            const userId = JE.session?.getUserId?.()
+                || (typeof ApiClient !== 'undefined' ? ApiClient.getCurrentUserId?.() : null) || '';
+            const owner = `${JE.session?.getServerId?.() || ''}:${userId}`;
+            if (localStorage.getItem(ownerKey) !== owner) {
+                localStorage.removeItem(LOOK_FACTS_KEY);
+                localStorage.setItem(ownerKey, owner);
+                return lookFacts;
+            }
+            const stored = JSON.parse(localStorage.getItem(LOOK_FACTS_KEY) || '{}');
+            const clearedAt = JE.pluginConfig?.ClearLocalStorageTimestamp || 0;
+            if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+                for (const [id, facts] of Object.entries(stored)) {
+                    if (facts && typeof facts === 'object' && Number(facts.at) > clearedAt) lookFacts.set(id, facts);
+                }
+                // Admin clears must erase the stored payload now, even when
+                // every renderer hits its cache and no later save is scheduled.
+                if (lookFacts.size !== Object.keys(stored).length) saveLookFacts();
+            }
+        } catch (err) {
+            console.warn(`${logPrefix} Ignoring unreadable tag look facts`, err);
+        }
+        return lookFacts;
+    }
+
+    /** Write the remembered facts (registered with JE._cacheManager). */
+    function saveLookFacts() {
+        if (!lookFacts || !lookFactsPersist()) return;
+        try {
+            localStorage.setItem(LOOK_FACTS_KEY, JSON.stringify(Object.fromEntries(lookFacts)));
+        } catch (err) {
+            console.warn(`${logPrefix} Failed to save tag look facts`, err);
+        }
+    }
+
+    /**
+     * Remember what an item's data says for tag looks (newest last; past
+     * LOOK_FACTS_MAX the oldest go).
+     * @param {string} itemId - Normalised item id.
+     * @param {object} item - /tag-data or /Items item.
+     * @param {'tag-data'|'item'} [source] - Whether library membership was resolved.
+     */
+    function rememberLookFacts(itemId, item, source = 'tag-data') {
+        if (!itemId || !item) return;
+        /** @type {Object<string, *>} */
+        const facts = { at: Date.now(), source };
+        for (const field of LOOK_FACT_FIELDS) {
+            if (item[field] !== undefined && item[field] !== null) facts[field] = item[field];
+        }
+        const map = lookFactsMap();
+        map.delete(itemId);
+        map.set(itemId, facts);
+        while (map.size > LOOK_FACTS_MAX) map.delete(map.keys().next().value);
+        if (!lookFactsPersist() || !JE._cacheManager) return;
+        if (!lookFactsSaveRegistered) {
+            JE._cacheManager.register(saveLookFacts);
+            lookFactsSaveRegistered = true;
+        }
+        JE._cacheManager.markDirty();
+    }
+
+    /**
+     * Whether remembered data came from the enriched endpoint. Older facts
+     * without provenance are complete only when they include a library id.
+     * @param {object|undefined} facts
+     * @returns {boolean}
+     */
+    function enrichedLookFacts(facts) {
+        return !!facts && (facts.source === 'tag-data' || (facts.source == null && /^[a-f0-9]{32}$/i.test(facts.LibraryId || '')));
+    }
+
+    /** @returns {boolean} An enabled rule needs enriched library membership. */
+    function needsLibraryFacts() {
+        return !!JE.core.tagLook?.read().rules.some((rule) => rule.enabled && rule.when.some((cond) => cond.field === 'library'));
+    }
+
+    /**
+     * An item's data for tag look rules and locks, the way its cards are
+     * matched: its server tag-cache entry, else the remembered facts, else
+     * fetched from /tag-data (and remembered).
+     * @param {string} itemId - Normalised item id.
+     * @returns {Promise<object|null>} Null when the server has no such item.
+     */
+    async function itemLookFacts(itemId) {
+        const serverEntry = serverCache?.get(itemId);
+        if (serverEntry) return serverEntry;
+        const known = lookFactsMap().get(itemId);
+        if (enrichedLookFacts(known)) return known;
+        const userId = ApiClient.getCurrentUserId();
+        const epoch = JE.session?.getEpoch?.();
+        const response = await ApiClient.ajax({
+            type: 'POST',
+            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
+            data: JSON.stringify([itemId]),
+            contentType: 'application/json',
+            dataType: 'json'
+        });
+        if (userId !== ApiClient.getCurrentUserId() || epoch !== JE.session?.getEpoch?.()) return null;
+        const item = (response?.Items || []).find((i) => String(i?.Id ?? '').replace(/-/g, '').toLowerCase() === itemId) || null;
+        if (item) rememberLookFacts(itemId, item);
+        return item;
+    }
+
     /**
      * Render one classified card from its server entry, or from the local
      * caches with a batch-fetch fallback. The host is collected for one
@@ -1000,6 +1137,17 @@
     function renderCard(card, serverEntry, hosts) {
         const { el, itemId, itemType } = card;
         const renderTarget = resolveRenderTarget(el);
+        const layout = JE.core.tagLayout;
+        // Tag look rules match on the item data (library, genres, age
+        // rating, series): the server entry, else what an earlier fetch
+        // said. Without either, a card a rule or lock could restyle waits
+        // for the batch fetch below before showing its tags.
+        const cardId = layout?.cardIdentity?.(renderTarget) ?? '';
+        const remembered = lookFactsMap().get(itemId);
+        const known = serverEntry || (!needsLibraryFacts() || enrichedLookFacts(remembered) ? remembered : null);
+        let awaiting = false;
+        if (known) layout?.setCardContext?.(renderTarget, known, itemId, cardId);
+        else awaiting = layout?.awaitCardContext?.(renderTarget, cardId, itemType);
         // Caption layout: reserve the strip below the image now, before the
         // tag data (possibly a batch fetch away) arrives.
         JE.core.tagLayout?.prepareCard(renderTarget);
@@ -1028,8 +1176,8 @@
         }
         hosts.push(renderTarget);
 
-        if (!allCacheHits) {
-            requestQueue.push({ el, renderTarget, itemId, itemType, reuse: card.reuse });
+        if (!allCacheHits || awaiting) {
+            requestQueue.push({ el, renderTarget, itemId, itemType, cardId, awaiting, reuse: card.reuse });
         }
     }
 
@@ -1055,6 +1203,7 @@
         const unprocessed = [];
         for (const el of elements) {
             if (!processedCards.has(el)) unprocessed.push(el);
+            else JE.core.tagLayout?.resumePresentation?.(el.closest('.cardScalable') || el);
         }
         if (unprocessed.length === 0) return;
 
@@ -1335,9 +1484,17 @@
                     // fetching and rendering tag data nobody will ever see.
                     .filter((entry) => entry.el.isConnected);
                 if (batch.length === 0) continue;
+                activeBatch = batch;
                 await processBatch(batch, myGeneration);
+                activeBatch = [];
+                // Cards still waiting for item data the batch didn't bring
+                // (failed, or no such item) show their tags without it.
+                for (const entry of batch) {
+                    if (entry.awaiting) JE.core.tagLayout?.releaseCardContext?.(entry.renderTarget, entry.awaiting);
+                }
             }
         } finally {
+            activeBatch = [];
             isProcessing = false;
             // Cancelled by a generation bump (a reinitialize or navigation
             // while a batch was in flight): the scan that followed queued its
@@ -1348,13 +1505,17 @@
 
     /**
      * Fetch item data for a batch of cards and fan out to all enabled renderers.
-     * @param {Array<{el: HTMLElement, renderTarget: HTMLElement, itemId: string, itemType: string, reuse: number}>} batch - Queued card entries.
+     * @param {Array<{el: HTMLElement, renderTarget: HTMLElement, itemId: string, itemType: string, cardId: string, reuse: number}>} batch - Queued card entries.
      * @param {number} generation - Batch generation counter to detect stale navigations.
      * @returns {Promise<void>}
      */
     async function processBatch(batch, generation) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
+        const epoch = JE.session?.getEpoch?.();
+        /** @returns {boolean} This batch still belongs to the active navigation and session. */
+        const isCurrent = () => generation === batchGeneration
+            && userId === ApiClient.getCurrentUserId() && epoch === JE.session?.getEpoch?.();
 
         // Use arrays per ID to handle duplicate items (same movie in multiple rows)
         const elMap = new Map();
@@ -1384,7 +1545,7 @@
             const items = response?.Items || [];
 
             // Abort if navigation happened while we were waiting for the API response
-            if (generation !== batchGeneration) return;
+            if (!isCurrent()) return;
 
             // Build parent series lookup for rating fallback
             const parentSeriesNeeded = new Set();
@@ -1410,6 +1571,7 @@
                 if (!parentSeriesMap.has(normalizedId)) {
                     try {
                         const parent = await getParentSeries(userId, seriesId);
+                        if (!isCurrent()) return;
                         if (parent) parentSeriesMap.set(normalizedId, parent);
                     } catch {}
                 }
@@ -1433,11 +1595,12 @@
                 // Re-check per render: first-episode/parent-series awaits can
                 // span a navigation OR a user switch (clearProcessed bumps the
                 // generation) — stale data must not be rendered or persisted.
-                if (generation !== batchGeneration) return;
+                if (!isCurrent()) return;
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
                 const batchEntries = elMap.get(itemId);
                 if (!batchEntries || batchEntries.length === 0) return;
                 if (!MEDIA_TYPES.has(item.Type)) return;
+                rememberLookFacts(itemId, item);
 
                 let parentSeries = null;
                 let ratingParentSeries = null;
@@ -1464,6 +1627,8 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
+                    // Dropped by the layout when the card shows another item by now.
+                    if (JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, entry.cardId) === false) continue;
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try {
@@ -1508,7 +1673,7 @@
                         renderedSinceYield = 0;
                         stackPendingHosts();
                         await idleYield();
-                        if (generation !== batchGeneration) return; // navigation or user switch while yielded
+                        if (!isCurrent()) return; // navigation or user switch while yielded
                     }
                 }
             }
@@ -1519,20 +1684,23 @@
                 await Promise.all(pendingFirstEps);
             }
         } catch (err) {
+            if (!isCurrent()) return;
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
             for (const queued of batch) {
-                const { el, renderTarget: queuedRenderTarget, itemId } = queued;
-                if (generation !== batchGeneration) break; // navigation or user switch
+                const { el, renderTarget: queuedRenderTarget, itemId, cardId } = queued;
+                if (!isCurrent()) break; // navigation or user switch
                 try {
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })
                         : await ApiClient.getItem(userId, itemId);
+                    if (!isCurrent()) return;
                     if (!item || !MEDIA_TYPES.has(item.Type)) continue;
+                    rememberLookFacts(itemId, item, 'item');
 
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
-                    if (generation !== batchGeneration) break; // switched during the awaits above
+                    if (!isCurrent()) break; // switched during the awaits above
                     if (!stillShows(queued)) continue; // the card now shows another item
                     let renderTarget = queuedRenderTarget;
                     if (!renderTarget.isConnected) {
@@ -1540,6 +1708,9 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
+                    const layout = JE.core.tagLayout;
+                    if (layout?.cardIdentity && layout.cardIdentity(renderTarget) !== cardId) continue;
+                    if (!needsLibraryFacts() && layout?.setCardContext?.(renderTarget, item, itemId, cardId) === false) continue;
 
                     for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
@@ -1614,6 +1785,10 @@
                 // Invalidate any in-flight batch processing (don't reset isProcessing
                 // directly — let stale batches finish naturally and discard results)
                 batchGeneration++;
+                scanGeneration++;
+                // Cancelled work is not processed: surviving/re-attached cards
+                // must be eligible for the scan scheduled below.
+                for (const entry of [...requestQueue, ...activeBatch]) processedCards.delete(entry.el);
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
                 requestQueue = [];
@@ -1718,6 +1893,20 @@
         getParentSeries,
         /** @param {string} name - Renderer name (e.g. 'quality'). */
         getRenderer(name) { return renderers.get(name); },
+        /**
+         * The server tag-cache entry already in memory for an item, without
+         * fetching (the tag look lock reads an item's library and genres).
+         * @param {string} itemId - Normalised item id.
+         * @returns {object|null}
+         */
+        peekServerEntry(itemId) { return serverCache?.get(itemId) || null; },
+        /** The item data an item's cards are matched on by tag look rules (server entry, remembered, else fetched). */
+        itemLookFacts,
+        /**
+         * Every server tag-cache entry in memory (empty without one).
+         * @returns {Iterable<object>}
+         */
+        serverEntries() { return serverCache ? serverCache.values() : []; },
         /**
          * Review rating averages that came with the server cache, once the
          * load or refresh in flight has settled: Map<"mediaType:tmdbKey",
@@ -1844,6 +2033,9 @@
     // outgoing user's is deleted when the incoming user's opens.
     JE.session?.onUserChange('tag-pipeline', () => {
         dropServerCache();
+        // The outgoing user's remembered tag look facts; the incoming user's
+        // stored copy loads (owner checked) on first use.
+        lookFacts = null;
         reviewRatings = null;
         reviewRatingsRequestedAt = 0;
         skipStoreThisSession = false;
