@@ -120,6 +120,50 @@ Groups in the same place appear in priority order: status, quality, rating, age 
     - **Hide Tags on Hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
     - [Native Poster Tags](#native-poster-tags-experimental) always draw corners, whatever web layout you choose.
 
+### Rules and locked items
+
+Rules give some cards a different look (a layout and a label density) than your default: for example, a caption strip in the Movies library and compact bands on episodes. A lock keeps one item's look as it is, whatever you change later.
+
+**How to use:**
+
+1. In **UI Settings**, under **Where each look applies**, click **Add rule**.
+2. Pick one or more conditions (all of them must hold), a **Tag Layout** and a **Label Density**, then click **Save rule**.
+3. Use the arrows to order the rules, **On**/**Off** to pause one, **Edit** or **Delete** to change it.
+4. To lock an item, open its page and click the padlock (**Lock tag look**). Click it again, or use **Unlock** in **Locked items**, to release it.
+
+![Tag look rules and a locked item in the settings panel](../images/tags/tag-look-rules.webp)
+
+Each card gets its look from the first of these that applies:
+
+1. **A lock** on the item. A locked series also locks its seasons and episodes, unless one of them has its own lock.
+2. **The first enabled rule** whose conditions all hold, from the top of the list.
+3. **Your default** Tag Layout and Label Density (the **Otherwise** row).
+
+| Condition | Matches | Notes |
+|---|---|---|
+| **Library** | The library the item is in | Seasons and episodes use their series' library. An item in two libraries that share a folder uses the first one Jellyfin reports |
+| **Type** | Movie, Series, Season, Episode, Collection or Video | The card's own type: an episode card showing its series' poster still counts as an episode |
+| **Genre** | One of the item's genres | Not case-sensitive. Seasons and episodes use the genres the tag cache gives them |
+| **Age rating** | The item's age rating | Compared as the age rating tags show it (`DE-12` and `FSK-12` match), not case-sensitive. Seasons and episodes fall back to their series' rating |
+
+![A locked movie keeps its caption look in a library ruled to Minimal](../images/tags/tag-look-locked-grid.webp)
+
+| Setting | Default | What it does |
+|---|---|---|
+| Personal: **Where each look applies** | No rules | Ordered rules: when every condition holds, the card uses that rule's layout and density |
+| Personal: **Locked items** | None | Items that keep the look they had when locked; **Unlock all** asks for a second click |
+| Admin: **Default tag look rules** | Empty | Rules (as JSON) that new users and **Apply defaults to all users** start with |
+
+??? info "Limits and details"
+    - Up to 50 rules, each with up to 5 conditions, and up to 500 locked items; past 500 the oldest lock is released. The server drops an invalid rule or lock (an unknown layout, a malformed id) on its own and keeps the rest.
+    - A lock stores the layout, the density and where every group sits in that layout at that moment, so later changes to your arrangement do not move a locked item. Group order and per-group limits still follow your settings.
+    - A rule uses your arrangement for its layout. Group order and limits are yours for every look.
+    - Rules on library, genre and age rating read the item's entry in the server tag cache (or the batch lookup when the cache is off). Cards rendered only from the browser's per-tag fallback cache match on type and locks.
+    - Mixing Caption with other looks on one row is allowed; caption cards are taller than their neighbours.
+    - Settings saved before layouts existed never pick up the administrator's default rules; rules you add yourself apply.
+    - Changing a rule or a lock updates the cards on screen at once, without reloading their tags.
+    - Locked cards carry `data-je-locked="1"` on their tag host for [custom CSS](../advanced/css-customization.md). Nothing else marks them by default.
+
 ## Quality Tags
 
 Quality badges help you identify a file's picture and sound format before opening it. They read Jellyfin's media metadata and naming signals.
@@ -482,7 +526,7 @@ Neither setting requires poster Rating Tags or Age Rating Tags. Poster scope swi
 
 ## Server-Side Tag Cache
 
-The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy.
+The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy. Each entry also records the item's library (a season's or episode's is its series'), which [tag look rules](#rules-and-locked-items) match on.
 
 **How to use:**
 
@@ -532,6 +576,8 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
 
 ??? info "Browser storage and fallback details"
     The first web load downloads the server payload and saves an IndexedDB copy scoped to that server and user. Later loads restore that copy and request changes since the saved cursor. Tags wait for confirmation that the stored version and access/Spoiler Guard revision still match. A rebuild or changed filtering replaces the copy, including changes made from another device. Navigation also checks for updates, with requests spaced during rapid browsing.
+
+    A copy written before the entry format last changed (version 11 added the library) is not restored; the browser downloads the cache again.
 
     The stored copy is invalidated when server mode is switched off, by **Clear All Client Caches**, or when another account signs in in the same browser. Each copy contains that user's filtered, spoiler-safe data.
 

@@ -251,7 +251,15 @@ Tag toggles, corners, category ordering, rating scopes, hover behavior, and the 
 | **Tag Layout** | **Corners** | Chooses where poster tags appear: corners, top and bottom bands, a caption below the poster, a summary pill, or a minimal set. |
 | **Label Density** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
 
-See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference.
+Below them, **Where each look applies** lists your tag look rules and locked items:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| **Locked items** | None | Shows the items you locked from their page, each with **Unlock**, plus **Unlock all**. Locks always win. |
+| **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. **Add rule** opens the editor; arrows reorder, **On**/**Off** pauses a rule. |
+| **Otherwise** | Your Tag Layout | Every other card uses the Tag Layout and Label Density above. |
+
+See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
 
 ??? info "How it works"
 

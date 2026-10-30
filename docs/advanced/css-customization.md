@@ -244,6 +244,8 @@ Group containers keep their classes and chip markup in every layout and carry `d
 
 In the Corners layout, containers carry `data-je-corner` with one of those four corner values. Containers sharing a corner stack in their slot with a 4px gap (top corners downward, bottom corners upward) instead of inline transforms. When a group is set to top right and the card shows Jellyfin's played or unplayed-count indicator, the host gets `data-je-indicator-gap` and the `tr` slot moves below it. Position slots rather than containers when you move tags: a container's own `top`, `left` or `transform` no longer places it.
 
+A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards.
+
 Poster tags generally ignore pointer input. Container-query sizing adapts badges to card width, with separate mobile rules. Fixed sizes can crowd small posters.
 
 Processing markers such as `data-je-quality-tagged`, `data-je-genre-tagged`, `data-je-language-tagged`, `data-je-rating-tagged`, and `data-je-age-rating-tagged` record processing. They do not guarantee a visible badge.
