@@ -45,6 +45,8 @@ PluginConfiguration LoadConfig(JsonObject? overrides)
             var t when t == typeof(bool) => value.GetValue<bool>(),
             var t when t == typeof(int) => value.GetValue<int>(),
             var t when t == typeof(string) => value.GetValue<string>(),
+            // Structured layout defaults (TagGroupOrder, TagGroupCaps, TagLayouts).
+            var t when t.IsClass => value.Deserialize(t, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }),
             _ => throw new InvalidOperationException($"Unsupported config type for {key}"),
         };
         property.SetValue(config, converted);
@@ -102,6 +104,7 @@ void Prepare()
         {
             // GET settings.json with no file: write the controller's defaults, read them back.
             var defaults = ControllerDefaults(config);
+            TagLayoutRules.ApplyDefaults(defaults, config);
             var saved = Newtonsoft.Json.JsonConvert.SerializeObject(JToken.FromObject(defaults), Newtonsoft.Json.Formatting.Indented);
             userConfig = Newtonsoft.Json.JsonConvert.DeserializeObject<JellyfinEnhancedUserSettings>(saved, lenient) ?? new JellyfinEnhancedUserSettings();
         }
@@ -188,6 +191,8 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     RatingTagsOnEpisodes = defaultConfig.RatingTagsOnEpisodes,
     RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
     RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
+    RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
+    RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
     AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
     ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
     RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
@@ -328,6 +333,11 @@ void ResolveAll()
             ["useNativePosterTags"] = settings.UseNativePosterTags,
             ["nativeEnabled"] = settings.NativeEnabled,
             ["groupOrder"] = string.Join(",", groupOrder),
+            ["ratingTagsShowCommunity"] = settings.RatingTagsShowCommunity,
+            ["ratingTagsShowCritic"] = settings.RatingTagsShowCritic,
+            ["layoutOrder"] = settings.GroupOrder is null ? null : string.Join(",", settings.GroupOrder.Select(LayoutId)),
+            ["layoutOff"] = string.Join(",", Enum.GetValues<PosterTagGroup>().Where(settings.OffGroups.Contains).Select(LayoutId)),
+            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
         };
 
         var document = new { settings = summary, items, digest = settings.Digest, preferredAudioLanguage = settings.PreferredAudioLanguage };
@@ -337,6 +347,16 @@ void ResolveAll()
 
     File.WriteAllLines(Path.Combine(outDir, "cs-timings.txt"), timings);
 }
+
+// Layout group id (core/tag-layout.js) of a native group.
+static string LayoutId(PosterTagGroup group) => group switch
+{
+    PosterTagGroup.Quality => "quality",
+    PosterTagGroup.Genre => "genre",
+    PosterTagGroup.Rating => "rating",
+    PosterTagGroup.AgeRating => "ageRating",
+    _ => "language",
+};
 
 static string Describe(PosterTag tag) => tag switch
 {

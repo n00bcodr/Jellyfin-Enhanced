@@ -105,7 +105,7 @@ test('a legacy document keeps corners, its positions, arrival order and the orig
     'positions map user → admin → built-in (genre inherits the admin bottom-left)');
 });
 
-test('a normalized document inherits admin profiles, order and caps and overrides them per value', t => {
+test('a normalized document inherits admin profiles and caps, overrides them per value, and keeps its own order', t => {
   const h = setup(t, {
     settings: {
       tagLayoutSettingsVersion: 1, tagLayout: 'BANDS', tagLabelDensity: 'compact',
@@ -122,9 +122,14 @@ test('a normalized document inherits admin profiles, order and caps and override
     'own valid slots win, the admin profile fills in, then the built-in profile (invalid "middle" ignored)');
   assert.deepEqual(plain(s.order), ['genre', 'status', 'quality', 'rating', 'ageRating', 'language'], 'own order wins and is completed in default order');
   assert.deepEqual(plain(s.caps), { quality: 0, genre: 2, language: 10, rating: 0, ageRating: 1, status: 0 }, 'clamped 0..10; admin caps fill gaps');
+  // The admin order only reaches users by being copied in (seeding, apply to all, Reset).
   h.JE.currentSettings.tagGroupOrder = null;
   h.layout.invalidateSettings();
-  assert.deepEqual(plain(h.layout.normalizeSettings().order.slice(0, 2)), ['quality', 'status'], 'admin order when the user has none');
+  assert.deepEqual(plain(h.layout.normalizeSettings().order), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre'],
+    'without an own order bands uses the default order, not the admin order');
+  h.JE.currentSettings.tagLayout = 'corners';
+  h.layout.invalidateSettings();
+  assert.equal(h.layout.normalizeSettings().order, null, 'without an own order corners keeps arrival order');
 });
 
 test('config.js keeps structured layout values as stored and drops malformed ones', t => {

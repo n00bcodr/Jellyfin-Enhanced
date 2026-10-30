@@ -248,6 +248,34 @@ synth('language-priority-strict-casing', { LanguageTagsEnabled: true }, {
     LanguageTagsPriorityStrict: true,
 });
 
+// Tag layouts (native posters always draw corners): the corners profile's corner slots and
+// "off", the user's own priority order (stacking within a shared corner; the admin's order is
+// never inherited, only copied in by seeding) and the per-group caps (admin caps fill gaps);
+// a document from before layouts (version 0) ignores order and caps.
+const allBottomLeft = { QualityTagsPosition: 'bottom-left', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'bottom-left', AgeRatingTagsPosition: 'bottom-left', LanguageTagsPosition: 'bottom-left' };
+synth('layout-order-caps', {
+    ...allOn, ...allBottomLeft, TagLayoutSettingsVersion: 1, TagLayout: 'corners',
+    TagGroupOrder: ['language', 'rating', 'genre', 'quality', 'ageRating', 'status'],
+    TagGroupCaps: { Quality: 2, Genre: 1, Language: 5, Rating: 1 },
+});
+synth('layout-corners-profile-off', {
+    ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands',
+    TagLayouts: { Corners: { Groups: [{ Group: 'genre', Slot: 'off' }, { Group: 'quality', Slot: 'br' }, { Group: 'rating', Slot: 'tr' }, { Group: 'agerating', Slot: 'bl' }] } },
+});
+synth('layout-admin-caps-not-order', { ...allOn, ...allBottomLeft, TagLayoutSettingsVersion: 1, TagLayout: 'corners' }, {
+    TagGroupOrder: ['ageRating', 'genre', 'quality'], TagGroupCaps: { Genre: 0, Language: 0, Quality: 3 },
+});
+synth('layout-legacy-ignores-order', {
+    ...allOn, ...allBottomLeft, TagGroupOrder: ['language', 'genre'], TagGroupCaps: { Genre: 1, Language: 1 },
+}, { TagGroupOrder: ['ageRating', 'genre'], TagGroupCaps: { Genre: 5 } });
+synth('layout-all-off', {
+    ...allOn, TagLayoutSettingsVersion: 1,
+    TagLayouts: { Corners: { Groups: ['quality', 'genre', 'rating', 'ageRating', 'language'].map((g) => ({ Group: g, Slot: 'off' })) } },
+});
+synth('rating-include-community-off', { RatingTagsEnabled: true, AgeRatingTagsEnabled: true, RatingTagsShowCommunity: false });
+synth('rating-include-critic-off-admin', { RatingTagsEnabled: true }, { RatingTagsShowCritic: false });
+synth('rating-include-none', { RatingTagsEnabled: true, RatingTagsShowCommunity: false, RatingTagsShowCritic: false, TagLayoutSettingsVersion: 1, TagGroupCaps: { Rating: 1 } });
+
 // Raw settings.json text (the provider hands PosterTagSettings.FromSettingsJson the file as read):
 // the server reads it with Newtonsoft (JSON5-ish syntax, case-insensitive keys, last duplicate wins)
 // and falls back to the UserSettings defaults when it is empty, null, not an object or unreadable.

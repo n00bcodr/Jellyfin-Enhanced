@@ -71,6 +71,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsOnEpisodes { get; set; } = true;
         public bool RatingTagsOnContinueWatching { get; set; } = true;
         public bool RatingTagsOnNextUp { get; set; } = true;
+        public bool RatingTagsShowCommunity { get; set; } = true;
+        public bool RatingTagsShowCritic { get; set; } = true;
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public string StatusTagsPosition { get; set; } = "top-right";
         public bool StatusTagsJustAdded { get; set; } = true;

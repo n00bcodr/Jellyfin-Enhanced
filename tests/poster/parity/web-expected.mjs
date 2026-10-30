@@ -283,6 +283,11 @@ async function runProfile(profile) {
 
     // plugin.js Stage 4 + Stage 6 (tag-related initializers, same order and conditions).
     JE.currentSettings = JE.loadSettings();
+    // Native posters draw the corners layout whatever the web layout is (with
+    // the corners profile, order and caps), so the oracle is the web's
+    // corners view of the same settings.
+    JE.currentSettings.tagLayout = 'corners';
+    JE.core.tagLayout.invalidateSettings();
     const order = new Map();
     const realRegister = JE.tagPipeline.registerRenderer;
     JE.tagPipeline.registerRenderer = function (name, config) {
@@ -323,10 +328,15 @@ async function runProfile(profile) {
     }
     await sleep(120); // user-review batches (30 ms window) settle and append their chips
 
+    // Groups in stacking order: arrival order, or the explicit priority order
+    // when the layout has one (a stable sort keeps arrival order otherwise).
+    const layoutConf = JE.core.tagLayout.resolveLayout(null);
+    const rank = (d) => (layoutConf.order ? layoutConf.order.indexOf(d.group) : 0);
     const items = {};
     for (const [id, host] of hosts) {
         const indicator = showsIndicator(userData[id]);
         items[id] = JE.core.tagLayout.describe(host)
+            .sort((a, b) => rank(a) - rank(b))
             .filter((d) => d.element && CONTAINERS[d.element.className.split(' ')[0]])
             .map((d) => {
                 const group = CONTAINERS[d.element.className.split(' ')[0]];
@@ -337,7 +347,18 @@ async function runProfile(profile) {
             .filter((g) => g.t.length > 0);
     }
 
-    const pos = (u, p, f) => JE.core.tagRenderer.resolvePosition(u, p, f).pos;
+    // The corners profile's slot (a corner, or "off") wins over the position setting.
+    const SLOT_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right' };
+    const groupOf = { qualityTagsPosition: 'quality', genreTagsPosition: 'genre', languageTagsPosition: 'language', ratingTagsPosition: 'rating', ageRatingTagsPosition: 'ageRating' };
+    const ownCorner = (u) => {
+        const groups = s.tagLayouts?.corners?.groups ?? s.tagLayouts?.Corners?.Groups;
+        // Array items keep their PascalCase keys (toCamelCase does not recurse into arrays).
+        const entry = Array.isArray(groups) ? groups.find((g) => JE.core.tagLayout.normalizeGroup(g?.group ?? g?.Group) === groupOf[u]) : null;
+        const slot = entry ? String(entry.slot ?? entry.Slot ?? '').toLowerCase() : null;
+        return SLOT_POS[slot] || null;
+    };
+    const pos = (u, p, f) => ownCorner(u) || JE.core.tagRenderer.resolvePosition(u, p, f).pos;
+    const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language'].filter((g) => layoutConf.profiles.corners[g] === 'off');
     const readInt = (k, d) => (Number.isFinite(s[k]) ? s[k] : d);
     const scope = (u, p) => (typeof s[u] === 'boolean' ? s[u] : (typeof pluginConfig[p] === 'boolean' ? pluginConfig[p] : true));
     const settings = {
@@ -364,6 +385,11 @@ async function runProfile(profile) {
         useNativePosterTags: s.useNativePosterTags !== false,
         nativeEnabled: pluginConfig.NativePosterTagsEnabled === true && s.useNativePosterTags !== false,
         groupOrder: [...order.keys()].join(','),
+        ratingTagsShowCommunity: scope('ratingTagsShowCommunity', 'RatingTagsShowCommunity'),
+        ratingTagsShowCritic: scope('ratingTagsShowCritic', 'RatingTagsShowCritic'),
+        layoutOrder: layoutConf.order ? layoutConf.order.filter((g) => g !== 'status').join(',') : null,
+        layoutOff: offGroups.join(','),
+        layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),
     };
 
     writeFileSync(join(outDir, `web-${profile.name}.json`), JSON.stringify({ settings, items }));

@@ -1889,6 +1889,98 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
     opacity: 0.35;
     cursor: not-allowed;
 }
+/* Tag layout defaults (Media Tags): group rows with move buttons, a limit
+   stepper and the position pills for the selected default layout. Each row
+   is a fieldset so the group's Enable switch disables it as a whole. */
+.je-tla-rows {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.je-tla-row > fieldset {
+    margin: 0;
+    padding: 6px 8px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    min-width: 0;
+}
+.je-tla-row > fieldset:disabled {
+    opacity: 0.5;
+}
+.je-tla-legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+.je-tla-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.je-tla-name {
+    flex: 1;
+    font-weight: 500;
+    min-width: 6em;
+}
+.je-tla-cap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.je-tla-cap output {
+    min-width: 2.2em;
+    text-align: center;
+    font-weight: 600;
+}
+.je-tla-move,
+.je-tla-step {
+    min-width: 32px;
+    padding: 4px 6px;
+    margin: 0;
+    line-height: 1;
+}
+.je-tla-move .material-icons,
+.je-tla-step .material-icons {
+    font-size: 18px !important;
+    vertical-align: middle;
+}
+.je-tla-move[disabled],
+.je-tla-step[disabled] {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+.je-tla-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+.je-tla-pill {
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    padding: 4px 12px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+}
+.je-tla-pill[aria-pressed="true"] {
+    background: var(--primary-accent-color, #00a4dc);
+    border-color: var(--primary-accent-color, #00a4dc);
+    color: #fff;
+}
+.je-tla-rows button:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
 /* Inline reorder-icon hints that live in the descriptive sentence above the
    list — show them at text size, not button size. */
 .je-cat-arrow-icon {

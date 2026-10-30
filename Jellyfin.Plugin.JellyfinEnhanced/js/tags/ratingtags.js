@@ -39,6 +39,9 @@
         nextup: { userKey: 'ratingTagsOnNextUp', pluginKey: 'RatingTagsOnNextUp' },
     };
     const HOME_ROW_SCOPE_LIST = Object.values(HOME_ROW_SCOPES);
+    // Which scores the group includes (the group editor's Include pills).
+    const COMMUNITY_SCOPE = { userKey: 'ratingTagsShowCommunity', pluginKey: 'RatingTagsShowCommunity' };
+    const CRITIC_SCOPE = { userKey: 'ratingTagsShowCritic', pluginKey: 'RatingTagsShowCritic' };
 
     /**
      * Resolve one scope switch: user override, then admin default, then on.
@@ -198,7 +201,15 @@
      * @returns {void}
      */
     function applyRatingTag(ctx, el, rating) {
-        if (!rating || (!rating.tmdb && rating.critic === null)) return;
+        if (!rating) return;
+        // A score the user left out of the group is dropped here, before
+        // anything is built, so a card left with neither behaves exactly like
+        // one without ratings (the user-review chip still gets its own group).
+        rating = {
+            tmdb: isScopeEnabled(COMMUNITY_SCOPE) ? rating.tmdb : null,
+            critic: isScopeEnabled(CRITIC_SCOPE) ? rating.critic : null,
+        };
+        if (!rating.tmdb && rating.critic === null) return;
 
         ctx.removeExistingOverlay(el);
 

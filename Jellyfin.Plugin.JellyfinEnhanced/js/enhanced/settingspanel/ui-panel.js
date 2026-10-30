@@ -10,6 +10,9 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
+    /** @type {Function|null} closes the open panel through its full teardown */
+    let closeOpenPanel = null;
+
     /**
      * Toggles the main settings and help panel for the plugin.
      */
@@ -48,7 +51,8 @@
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
-            existing.remove();
+            if (closeOpenPanel) closeOpenPanel();
+            else existing.remove();
             return;
         }
         // Get theme-appropriate styles
@@ -115,26 +119,35 @@
         let offset = { x: 0, y: 0 };
         let autoCloseTimer = null;
         let isMouseInside = false;
-        // Listeners bound outside the panel element (matchMedia and friends) that
-        // removing the panel would otherwise leak; drained on every close path.
+        // Listeners bound outside the panel element (matchMedia and friends) and
+        // section teardowns (ctx.onClose) that removing the panel would otherwise
+        // leak; drained on every close path.
         const panelMediaCleanups = [];
         const runPanelCleanups = () => {
             while (panelMediaCleanups.length) panelMediaCleanups.pop()();
         };
 
+        /**
+         * Close this panel: every close path (Escape/?, the close button,
+         * auto-close, the toggle) goes through here.
+         */
+        const closePanel = () => {
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            if (closeOpenPanel === closePanel) closeOpenPanel = null;
+            help.remove();
+            runPanelCleanups();
+            document.removeEventListener('keydown', closeHelp);
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            if (!JE.pluginConfig.DisableAllShortcuts) {
+                document.addEventListener('keydown', JE.keyListener, true);
+            }
+        };
+
         const resetAutoCloseTimer = () => {
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             autoCloseTimer = setTimeout(() => {
-                if (!isMouseInside && document.getElementById(panelId)) {
-                    help.remove();
-                    runPanelCleanups();
-                    document.removeEventListener('keydown', closeHelp);
-                    document.removeEventListener('mousemove', handleMouseMove);
-                    document.removeEventListener('mouseup', handleMouseUp);
-                    if (!JE.pluginConfig.DisableAllShortcuts) {
-                        document.addEventListener('keydown', JE.keyListener, true);
-                    }
-                }
+                if (!isMouseInside && document.getElementById(panelId)) closePanel();
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
         };
 
@@ -188,6 +201,8 @@
             help,
             pluginShortcuts,
             resetAutoCloseTimer,
+            /** Register a teardown that runs when the panel closes (any path). */
+            onClose: (fn) => { panelMediaCleanups.push(fn); },
             panelBgColor,
             headerFooterBg,
             detailsBackground,
@@ -205,6 +220,7 @@
         help.innerHTML = internal.buildPanelHtml(ctx);
 
         document.body.appendChild(help);
+        closeOpenPanel = closePanel;
 
         internal.wireShortcutEditor(ctx);
         resetAutoCloseTimer();
@@ -337,15 +353,7 @@
                 && (ev.key === 'Escape' || (ev.key === '?' && !isEditableKeyboardTarget(ev.target)));
             if (keyboardClose || (ev.type === 'click' && ev.target.id === 'closeSettingsPanel')) {
                 ev.stopPropagation();
-                if (autoCloseTimer) clearTimeout(autoCloseTimer);
-                help.remove();
-                runPanelCleanups();
-                document.removeEventListener('keydown', closeHelp);
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-                if (!JE.pluginConfig.DisableAllShortcuts) {
-                    document.addEventListener('keydown', JE.keyListener, true);
-                }
+                closePanel();
             }
         };
 
@@ -366,6 +374,7 @@
         internal.wireHiddenContentListeners(ctx);
         JE.internals.spoilerGuard?.wireSettings?.(ctx);
         internal.wireMiscSettingsControls(ctx);
+        internal.wireTagGroupEditor(ctx);
         internal.wireLanguageControls(ctx);
     };
 })(window.JellyfinEnhanced);

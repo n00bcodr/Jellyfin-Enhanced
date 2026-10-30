@@ -1,0 +1,257 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHarness } from '../helpers/harness.mjs';
+
+// Panel controls outside the tag group editor that the settings wiring binds by id.
+const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
+  'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
+  'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'pauseScreenToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
+  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+
+/**
+ * The real tag group editor markup (from ui-panel-tag-editor.js) inside the
+ * panel, wired by the real settings panel modules over the real layout
+ * controller and settings transport (writes are captured).
+ * @param {import('node:test').TestContext} t
+ * @param {{stored?: object, plugin?: object}} [options]
+ */
+function setup(t, { stored = {}, plugin = {} } = {}) {
+  const writes = [], toasts = [], calls = [];
+  const html = otherToggles.map(id => `<input type="checkbox" id="${id}">`).join('')
+    + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button><div id="jellyfin-enhanced-panel"></div>';
+  const h = createHarness({ html,
+    JE: { pluginConfig: plugin, userConfig: { settings: { ...stored }, shortcuts: { Shortcuts: [] } }, currentSettings: {},
+      t: (key, params) => (params ? `${key}${JSON.stringify(params)}` : key), toast: message => toasts.push(message), pauseScreenInstance: {} },
+    apiClient: {
+      getUrl: path => path,
+      ajax: async request => { if (request.type === 'GET') return []; writes.push(request); },
+    } });
+  t.after(() => h.close());
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'enhanced/config.js']) h.load(file);
+  h.JE.currentSettings = h.JE.loadSettings();
+  h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
+  h.JE.toast = message => toasts.push(message);
+  for (const name of ['reinitializeTagLayout', 'reinitializeRatingTags', 'reinitializeGenreTags']) {
+    const real = h.JE[name];
+    h.JE[name] = (...args) => { calls.push(name); return real?.(...args); };
+  }
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  h.load('enhanced/settingspanel/ui-panel-tag-editor.js');
+  const ui = h.JE.internals.enhancedUi;
+  const ctx = { createToast: (key, enabled) => `${key}:${enabled}`, resetAutoCloseTimer() {}, help: h.document.getElementById('jellyfin-enhanced-panel'),
+    primaryAccentColor: '#fff', toggleAccentColor: '#0af', detailsBackground: '#222', presetBoxBackground: '#111' };
+  ctx.help.innerHTML = ui.buildTagGroupEditorHtml(ctx);
+  ui.wireSettingsListeners(ctx);
+  ui.wireMiscSettingsControls(ctx);
+  ui.wireTagGroupEditor(ctx);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const $ = selector => h.document.querySelector(selector);
+  const row = group => $(`.je-tge-row[data-group="${group}"]`);
+  return { ...h, writes, toasts, calls, settle, $, row,
+    saved: () => JSON.parse(writes.at(-1).data),
+    order: () => Array.from(h.document.querySelectorAll('.je-tge-row')).map(r => r.dataset.group),
+    async click(el) { el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true })); await settle(); },
+    async change(el, value) {
+      if (typeof value === 'boolean') el.checked = value; else el.value = value;
+      el.dispatchEvent(new h.window.Event('change', { bubbles: true })); await settle();
+    },
+    preview: () => $('.je-tge-card .je-tag-host'),
+  };
+}
+
+test('rows follow the default order for a document without one; moving writes the order and keeps focus', async t => {
+  const h = setup(t);
+  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre']);
+  assert.equal(h.row('status').querySelector('[data-dir="up"]').disabled, true);
+  assert.equal(h.row('genre').querySelector('[data-dir="down"]').disabled, true);
+  assert.equal(h.row('genre').querySelector('[data-dir="up"]').getAttribute('aria-label'), 'panel_settings_ui_tag_editor_move_up{"group":"panel_settings_ui_tag_group_genre"}');
+
+  const up = h.row('genre').querySelector('[data-dir="up"]');
+  up.focus();
+  await h.click(up);
+  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'genre', 'language']);
+  let saved = h.saved();
+  assert.deepEqual(saved.tagGroupOrder, ['status', 'quality', 'rating', 'ageRating', 'genre', 'language']);
+  assert.equal(saved.tagLayoutSettingsVersion, 1);
+  assert.equal(h.document.activeElement, up, 'focus stays on the moved row\'s button');
+  assert.equal(h.row('language').querySelector('[data-dir="down"]').disabled, true);
+
+  // Moving the top row down: its up button becomes enabled, the next row's disabled.
+  await h.click(h.row('status').querySelector('[data-dir="down"]'));
+  saved = h.saved();
+  assert.deepEqual(saved.tagGroupOrder.slice(0, 2), ['quality', 'status']);
+  assert.equal(h.row('quality').querySelector('[data-dir="up"]').disabled, true);
+  assert.ok(h.calls.includes('reinitializeTagLayout'));
+});
+
+test('a position pill writes the selected layout\'s profile; corners also keeps the old position setting', async t => {
+  const h = setup(t, { stored: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', ageRatingTagsPosition: 'bottom-right' } });
+  const pills = () => Array.from(h.row('ageRating').querySelectorAll('.je-tge-pill')).map(p => p.dataset.slot);
+  assert.deepEqual(pills(), ['tl', 'tr', 'bl', 'br', 'off']);
+  assert.equal(h.row('ageRating').querySelector('[aria-pressed="true"]').dataset.slot, 'br');
+
+  await h.click(h.row('ageRating').querySelector('[data-slot="tl"]'));
+  let saved = h.saved();
+  assert.equal(saved.ageRatingTagsPosition, 'top-left', 'Native Poster Tags keep reading the position setting');
+  assert.deepEqual(saved.tagLayouts.corners.groups, [{ group: 'ageRating', slot: 'tl' }]);
+  assert.equal(h.row('ageRating').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_corners_tl');
+
+  // Off in corners hides the group but leaves the position setting alone.
+  await h.click(h.row('ageRating').querySelector('[data-slot="off"]'));
+  saved = h.saved();
+  assert.equal(saved.ageRatingTagsPosition, 'top-left');
+  assert.deepEqual(saved.tagLayouts.corners.groups, [{ group: 'ageRating', slot: 'off' }]);
+  assert.equal(h.row('ageRating').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_off');
+
+  // Another layout: its pills, its own profile, the corners pick untouched.
+  await h.change(h.$('#tagLayoutSelect'), 'minimal');
+  assert.deepEqual(pills(), ['top', 'corner', 'hover', 'off'], 'dots are offered to quality only');
+  assert.deepEqual(Array.from(h.row('quality').querySelectorAll('.je-tge-pill')).map(p => p.dataset.slot), ['top', 'dots', 'corner', 'hover', 'off']);
+  assert.equal(h.row('quality').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_minimal_dots · panel_settings_ui_tag_editor_summary_all');
+  await h.click(h.row('ageRating').querySelector('[data-slot="corner"]'));
+  saved = h.saved();
+  assert.deepEqual(saved.tagLayouts.minimal.groups, [{ group: 'ageRating', slot: 'corner' }]);
+  assert.deepEqual(saved.tagLayouts.corners.groups, [{ group: 'ageRating', slot: 'off' }]);
+  assert.equal(saved.ageRatingTagsPosition, 'top-left');
+  assert.equal(h.JE.core.tagLayout.normalizeSettings().slots.ageRating, 'corner');
+});
+
+test('the cap stepper clamps to 1..10, offers All only for quality and rating, and fixes age rating and status at one', async t => {
+  const h = setup(t, { stored: { tagLayoutSettingsVersion: 1 } });
+  const cap = group => h.row(group).querySelector('.je-tge-cap').textContent;
+  const step = (group, dir) => h.row(group).querySelector(`.je-tge-step[data-step="${dir}"]`);
+
+  assert.equal(cap('genre'), '3');
+  await h.click(step('genre', 1));
+  assert.equal(h.saved().tagGroupCaps.genre, 4);
+  for (let i = 0; i < 10; i++) if (!step('genre', 1).disabled) await h.click(step('genre', 1));
+  assert.equal(cap('genre'), '10');
+  assert.equal(step('genre', 1).disabled, true, 'genre stops at 10');
+  for (let i = 0; i < 12; i++) if (!step('genre', -1).disabled) await h.click(step('genre', -1));
+  assert.equal(cap('genre'), '1');
+  assert.equal(step('genre', -1).disabled, true, 'never below 1');
+  assert.equal(h.saved().tagGroupCaps.genre, 1);
+
+  assert.equal(cap('quality'), 'panel_settings_ui_tag_editor_cap_all');
+  assert.equal(step('quality', 1).disabled, true);
+  await h.click(step('quality', -1));
+  assert.equal(h.saved().tagGroupCaps.quality, 10);
+  await h.click(step('quality', 1));
+  assert.equal(h.saved().tagGroupCaps.quality, 0, 'above 10 is All');
+  assert.equal(h.row('quality').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_corners_tl · panel_settings_ui_tag_editor_summary_all');
+
+  for (const group of ['ageRating', 'status']) {
+    assert.equal(cap(group), '1');
+    assert.equal(step(group, 1).disabled && step(group, -1).disabled, true);
+  }
+  assert.equal(h.JE.internals.enhancedUi.tagGroupEditor.nextCap('status', 1, 1), null);
+  assert.ok(h.calls.includes('reinitializeTagLayout'));
+});
+
+test('rating include pills save the switches and re-render rating tags; the preview follows', async t => {
+  const h = setup(t, { stored: { ratingTagsEnabled: true, tagLayoutSettingsVersion: 1 } });
+  const chips = () => Array.from(h.preview().querySelectorAll('.rating-tag')).map(c => c.className);
+  assert.deepEqual(chips(), ['rating-tag rating-tag-critic', 'rating-tag rating-tag-tmdb']);
+
+  await h.change(h.row('rating').querySelector('[data-include-key="ratingTagsShowCommunity"]'), false);
+  assert.equal(h.saved().ratingTagsShowCommunity, false);
+  assert.ok(h.calls.includes('reinitializeRatingTags'));
+  assert.deepEqual(chips(), ['rating-tag rating-tag-critic']);
+
+  // Quality and the others have nothing (or their own controls) to include.
+  assert.ok(h.row('genre').textContent.includes('panel_settings_ui_tag_editor_nothing_to_include'));
+  assert.equal(h.row('quality').querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row').length, 6);
+});
+
+test('reset restores the administrator\'s layout defaults and keeps the enable toggles and includes', async t => {
+  const plugin = { TagLayout: 'bands', TagLabelDensity: 'compact', TagGroupOrder: ['genre', 'quality'], TagGroupCaps: { Genre: 5 },
+    TagLayouts: { Bands: { Groups: [{ Group: 'genre', Slot: 'top' }] } }, QualityTagsPosition: 'bottom-right' };
+  const h = setup(t, { plugin, stored: { tagLayoutSettingsVersion: 1, tagLayout: 'minimal', qualityTagsEnabled: true, qualityTagsPosition: 'top-right',
+    tagGroupOrder: ['status'], tagGroupCaps: { genre: 1 }, ratingTagsShowCritic: false } });
+  await h.click(h.$('#jeTgeReset'));
+  const saved = h.saved();
+  assert.equal(saved.tagLayout, 'bands');
+  assert.equal(saved.tagLabelDensity, 'compact');
+  assert.deepEqual(saved.tagGroupOrder, ['genre', 'quality']);
+  assert.deepEqual(saved.tagGroupCaps, { Genre: 5 });
+  assert.deepEqual(saved.tagLayouts, { Bands: { Groups: [{ Group: 'genre', Slot: 'top' }] } });
+  assert.equal(saved.qualityTagsPosition, 'bottom-right');
+  assert.equal(saved.genreTagsPosition, 'top-right', 'an unset admin position falls back to the built-in one');
+  assert.equal(saved.qualityTagsEnabled, true);
+  assert.equal(saved.ratingTagsShowCritic, false);
+  assert.equal(h.$('#tagLayoutSelect').value, 'bands');
+  assert.equal(h.$('#tagLabelDensitySelect').value, 'compact');
+  assert.deepEqual(h.order().slice(0, 3), ['genre', 'quality', 'status']);
+  assert.equal(h.row('genre').querySelector('.je-tge-cap').textContent, '5');
+  assert.equal(h.toasts.at(-1), 'toast_tag_layout_reset');
+});
+
+test('reset refills genre caches truncated by an older cap when genres are enabled', async t => {
+  const plugin = { TagGroupCaps: { Genre: 5 } };
+  const h = setup(t, { plugin, stored: { tagLayoutSettingsVersion: 1, genreTagsEnabled: true, tagGroupCaps: { genre: 1 } } });
+  h.calls.length = 0;
+  await h.click(h.$('#jeTgeReset'));
+  assert.ok(h.calls.includes('reinitializeGenreTags'), 'reset re-renders genre tags so a larger cap refills three-genre cache entries');
+});
+
+test('reset leaves genre tags alone when the group is off', async t => {
+  const plugin = { TagGroupCaps: { Genre: 5 } };
+  const h = setup(t, { plugin, stored: { tagLayoutSettingsVersion: 1, genreTagsEnabled: false, tagGroupCaps: { genre: 1 } } });
+  h.calls.length = 0;
+  await h.click(h.$('#jeTgeReset'));
+  assert.ok(!h.calls.includes('reinitializeGenreTags'));
+});
+
+test('the preview re-renders through the layout controller on every editor change', async t => {
+  const h = setup(t, { stored: { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true, ratingTagsEnabled: true, statusTagsEnabled: true, genreTagsEnabled: false } });
+  const host = h.preview();
+  assert.ok(host, 'the preview card is built when the editor shows');
+  assert.equal(h.$('.je-tge-card').closest('.card'), null, 'not a .card: the pipeline and hover rules leave it alone');
+  assert.equal(h.document.querySelector('.je-tge-card .cardImageContainer'), null);
+  assert.equal(host.dataset.jeLayout, 'corners');
+  assert.deepEqual(Array.from(host.querySelectorAll('.quality-overlay-label')).map(c => c.textContent), ['4K', 'Dolby Vision', 'HEVC', 'ATMOS 7.1']);
+  assert.equal(host.querySelector('.genre-overlay-container'), null, 'disabled groups are not sampled');
+
+  await h.change(h.$('#tagLayoutSelect'), 'summary');
+  assert.equal(host.dataset.jeLayout, 'summary');
+  assert.ok(host.querySelector('.je-tag-pill'), 'summary draws its pill');
+
+  await h.click(h.row('quality').querySelector('[data-slot="hover"]'));
+  assert.equal(host.querySelector('.je-tag-pill [data-je-group="quality"]'), null, 'quality left the pill');
+  assert.ok(host.querySelector('.je-tag-slot[data-je-slot="hover"] .quality-overlay-container'));
+
+  await h.click(h.$('.je-tge-view [data-view="hover"]'));
+  assert.ok(h.$('.je-tge-card').classList.contains('je-tag-reveal'));
+  assert.equal(h.$('.je-tge-view [data-view="hover"]').getAttribute('aria-pressed'), 'true');
+  await h.click(h.$('.je-tge-view [data-view="rest"]'));
+  assert.equal(h.$('.je-tge-card').classList.contains('je-tag-reveal'), false);
+
+  // A quality category toggle (ui-panel-settings.js) and the enable toggle reach the preview too.
+  await h.change(h.$('#showVideoCodecTagToggle'), false);
+  // The hover reveal always uses compact labels, whatever the density setting.
+  assert.deepEqual(Array.from(host.querySelectorAll('.je-tag-slot[data-je-slot="hover"] .quality-overlay-label')).map(c => c.textContent), ['4K', 'DV', 'ATMOS']);
+  await h.change(h.$('#qualityTagsToggle'), false);
+  assert.equal(host.querySelector('.quality-overlay-container'), null);
+  await h.change(h.$('#genreTagsToggle'), true);
+  assert.ok(host.querySelector('.genre-overlay-container'));
+  assert.ok(h.JE.core.tagLayout.buildStyles().includes('.je-tag-reveal .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }'));
+});
+
+test('expanding a row is a real button with aria-expanded; every editor control is a focusable button or input', async t => {
+  const h = setup(t);
+  const expand = h.row('quality').querySelector('.je-tge-expand');
+  const body = h.row('quality').querySelector('.je-tge-body');
+  assert.equal(expand.tagName, 'BUTTON');
+  assert.equal(body.hidden, true);
+  await h.click(expand);
+  assert.equal(expand.getAttribute('aria-expanded'), 'true');
+  assert.equal(body.hidden, false);
+  assert.equal(expand.getAttribute('aria-controls'), body.id);
+  await h.click(expand);
+  assert.equal(body.hidden, true);
+  for (const el of h.document.querySelectorAll('.je-tge-pill, .je-tge-step, .je-tge-move, .je-tge-view button, #jeTgeReset')) {
+    assert.equal(el.tagName, 'BUTTON');
+    assert.equal(el.getAttribute('type'), 'button');
+  }
+  assert.equal(h.document.querySelectorAll('.je-tge-move[aria-label], .je-tge-step[aria-label]').length, 24);
+});

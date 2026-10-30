@@ -90,18 +90,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
         /// <summary>
-        /// The genre chips the web renders for <paramref name="genres"/>, or null when it renders
-        /// none (no genres, or a null genre among the first three, which throws in the web).
+        /// The genre chips the web shows for <paramref name="genres"/>, or null when it renders
+        /// none (no genres, or a null genre anywhere in the list: the web builds a chip for every
+        /// genre before the cap applies, and a null one throws).
         /// </summary>
-        public static List<GenreTag>? Resolve(string?[]? genres)
+        /// <param name="genres">The entry's genres.</param>
+        /// <param name="cap">Most chips shown (0 = all); the layout's genre cap, <see cref="MaxGenres"/> by default.</param>
+        public static List<GenreTag>? Resolve(string?[]? genres, int cap = MaxGenres)
         {
             if (genres is null || genres.Length == 0) return null;
-            var count = Math.Min(MaxGenres, genres.Length);
+            if (Array.IndexOf(genres, null) >= 0) return null;
+            var count = cap > 0 ? Math.Min(cap, genres.Length) : genres.Length;
             var tags = new List<GenreTag>(count);
             for (var i = 0; i < count; i++)
             {
-                var genre = genres[i];
-                if (genre is null) return null;
+                var genre = genres[i]!;
                 tags.Add(new GenreTag(genre, IconFor(genre)));
             }
 

@@ -226,10 +226,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         /// <summary>
         /// The server-cache path of languagetags.js: AudioLanguages (+ PartialAudioLanguages) to at
-        /// most three flags in display order. Null when the web renders no language container
-        /// (nothing resolved, or the web would throw while building it).
+        /// most <paramref name="cap"/> flags (the layout's language cap, three by default; 0 = all)
+        /// in display order. Null when the web renders no language container (nothing resolved, or
+        /// the web would throw while building it).
         /// </summary>
-        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict, bool mergeRegions = false)
+        internal static List<FlagInfo>? Resolve(string?[]? codes, string?[]? partialCodes, IReadOnlyList<string> priorityTerms, bool strict, bool mergeRegions = false, int cap = MaxFlags)
         {
             if (codes is null || codes.Length == 0) return null;
 
@@ -269,7 +270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             // Full-series flags first (stable), then the admin priority list, then the limit.
             var ordered = flags.Where(f => !f.Partial).Concat(flags.Where(f => f.Partial)).ToList();
             ordered = OrderByPriority(ordered, priorityTerms, strict);
-            if (ordered.Count > MaxFlags) ordered.RemoveRange(MaxFlags, ordered.Count - MaxFlags);
+            if (cap > 0 && ordered.Count > cap) ordered.RemoveRange(cap, ordered.Count - cap);
 
             // A visible broken token throws (countryCode.toLowerCase is not a function): no container.
             if (ordered.Exists(f => f.IsBroken)) return null;

@@ -1,6 +1,7 @@
 /**
  * @file Settings-tab wiring: feature toggles, quality-tag categories, subtitle
- * styling/position controls, tag position selectors and subtitle presets.
+ * styling/position controls and subtitle presets (the poster tag group
+ * editor is ui-panel-tag-editor.js).
  * Split from ui.js (code motion; bodies verbatim).
  */
 (function(JE) {
@@ -380,9 +381,11 @@
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // --- Tag layout and label density ---
         // Either choice promotes a document saved before layouts existed to the
-        // normalized version (its corners, positions and limits carry over),
-        // then every card is re-presented from the facts it already holds.
+        // normalized version (its corners, positions, arrival order, full labels
+        // and limits carry over, so only the chosen value changes), then every
+        // card is re-presented from the facts it already holds.
         const saveTagLayoutSetting = (key, value) => {
+            JE.core?.tagLayout?.promoteLegacySettings(JE.currentSettings);
             JE.currentSettings[key] = value;
             JE.currentSettings.tagLayoutSettingsVersion = 1;
             JE.saveUserSettings('settings.json', JE.currentSettings);
@@ -690,7 +693,7 @@
      * @param {object} ctx Shared panel context assembled in ui-panel.js.
      */
     internal.wireMiscSettingsControls = function(ctx) {
-        const { help, primaryAccentColor, resetAutoCloseTimer } = ctx;
+        const { primaryAccentColor, resetAutoCloseTimer } = ctx;
 
         document.getElementById('randomIncludeMovies').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeShows').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeMovies = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Movies', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
         document.getElementById('randomIncludeShows').addEventListener('change', (e) => { if (!e.target.checked && !document.getElementById('randomIncludeMovies').checked) { e.target.checked = true; JE.toast(JE.t('toast_at_least_one_item_type')); return; } JE.currentSettings.randomIncludeShows = e.target.checked; JE.saveUserSettings('settings.json', JE.currentSettings); JE.toast(JE.t('toast_random_selection_status', { item_type: 'Shows', status: e.target.checked ? JE.t('selection_included') : JE.t('selection_excluded') })); resetAutoCloseTimer(); });
@@ -734,96 +737,6 @@
         }
 
         document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
-
-        // --- Position Selectors ---
-        /**
-         * Mirror a corner pick into the corners layout profile (the position
-         * setting stays the source Native Poster Tags read), promoting the
-         * document to the normalized layout settings.
-         * @param {string} settingKey - e.g. 'ageRatingTagsPosition'.
-         * @param {string} position - top-left | top-right | bottom-left | bottom-right.
-         */
-        const writeCornersSlot = (settingKey, position) => {
-            const layout = JE.core?.tagLayout;
-            if (!layout) return;
-            const group = Object.keys(layout.POSITION_SETTINGS).find((g) => layout.POSITION_SETTINGS[g].userKey === settingKey);
-            const slot = layout.POSITION_TO_SLOT[position];
-            if (!group || !slot) return;
-            const profiles = JE.currentSettings.tagLayouts && typeof JE.currentSettings.tagLayouts === 'object'
-                ? { ...JE.currentSettings.tagLayouts } : {};
-            const corners = profiles.corners || profiles.Corners || {};
-            const groups = (Array.isArray(corners.groups) ? corners.groups : Array.isArray(corners.Groups) ? corners.Groups : [])
-                .filter((entry) => layout.normalizeGroup(entry?.group ?? entry?.Group) !== group);
-            groups.push({ group, slot });
-            delete profiles.Corners;
-            profiles.corners = { groups };
-            JE.currentSettings.tagLayouts = profiles;
-            JE.currentSettings.tagLayoutSettingsVersion = 1;
-            layout.invalidateSettings();
-        };
-
-        const positionSelectors = help.querySelectorAll('.position-selector');
-        positionSelectors.forEach(selector => {
-            const settingKey = selector.dataset.setting;
-            const cells = selector.querySelectorAll('[data-pos]');
-
-            // Highlight current position
-            const updateHighlight = () => {
-                const currentPos = JE.currentSettings[settingKey] || 'top-left';
-                cells.forEach(cell => {
-                    if (cell.dataset.pos === currentPos) {
-                        cell.style.background = primaryAccentColor;
-                    } else {
-                        cell.style.background = 'rgba(255,255,255,0.1)';
-                    }
-                });
-            };
-            updateHighlight();
-
-            // Click handler
-            selector.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const cell = e.target.closest('[data-pos]');
-                if (!cell) return;
-
-                const newPos = cell.dataset.pos;
-                JE.currentSettings[settingKey] = newPos;
-                writeCornersSlot(settingKey, newPos);
-                JE.saveUserSettings('settings.json', JE.currentSettings);
-                updateHighlight();
-
-                // Reinitialize tags dynamically based on which position changed
-                if (settingKey === 'qualityTagsPosition' && JE.currentSettings.qualityTagsEnabled) {
-                    if (typeof JE.reinitializeQualityTags === 'function') {
-                        JE.reinitializeQualityTags();
-                    }
-                } else if (settingKey === 'genreTagsPosition' && JE.currentSettings.genreTagsEnabled) {
-                    if (typeof JE.reinitializeGenreTags === 'function') {
-                        JE.reinitializeGenreTags();
-                    }
-                } else if (settingKey === 'languageTagsPosition' && JE.currentSettings.languageTagsEnabled) {
-                    if (typeof JE.reinitializeLanguageTags === 'function') {
-                        JE.reinitializeLanguageTags();
-                    }
-                } else if (settingKey === 'ratingTagsPosition' && JE.currentSettings.ratingTagsEnabled) {
-                    if (typeof JE.reinitializeRatingTags === 'function') {
-                        JE.reinitializeRatingTags();
-                    }
-                } else if (settingKey === 'ageRatingTagsPosition' && JE.currentSettings.ageRatingTagsEnabled) {
-                    if (typeof JE.reinitializeAgeRatingTags === 'function') {
-                        JE.reinitializeAgeRatingTags();
-                    }
-                } else if (settingKey === 'statusTagsPosition' && JE.currentSettings.statusTagsEnabled) {
-                    if (typeof JE.reinitializeStatusTags === 'function') {
-                        JE.reinitializeStatusTags();
-                    }
-                }
-
-                JE.toast(`Position updated!`);
-                resetAutoCloseTimer();
-            });
-        });
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);
