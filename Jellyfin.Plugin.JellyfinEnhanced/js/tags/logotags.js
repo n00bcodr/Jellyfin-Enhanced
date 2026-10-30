@@ -7,7 +7,9 @@
 // their series'. Images come from the server's logo proxy
 // (/JellyfinEnhanced/logo/w92/<file>), never from TMDB directly. A logo
 // without an image, or one that fails to load, shows its name instead
-// (an initialism when the name is long).
+// (an initialism when the name is long). Spoiler Guard's Hide tags strips
+// the group server side; the browser's fallback copies carry the guard
+// policy they were stripped under and are not used under another one.
 // A spec over the core tag-renderer factory (js/core/tag-renderer-base.js).
 (function(JE) {
     'use strict';
@@ -133,6 +135,24 @@
     }
 
     /**
+     * The Spoiler Guard Hide tags policy the server strips this user's logos
+     * under ('off' when it strips nothing), or null while it is not known.
+     * Fallback-cache entries are stamped with it: one stamped under another
+     * policy (a guard added or removed, Hide tags switched, a copy from
+     * before stamping) is a miss, so the batch lookup asks the server again.
+     * @returns {string|null}
+     */
+    function guardStamp() {
+        if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return 'off';
+        try {
+            const revision = JE.spoilerBlur?.tagStripRevision?.();
+            return typeof revision === 'string' ? revision : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Build the group wrapper and hand it to the layout controller.
      * @param {Object} ctx - Factory context.
      * @param {HTMLElement} el - The card's tag host.
@@ -239,7 +259,7 @@
                 if (ctx.isTagged(el)) return;
                 if (el.closest('.je-hidden')) return;
                 const logos = readLogos(item?.Logos);
-                const entry = { l: logos };
+                const entry = { l: logos, g: guardStamp() };
                 ctx.setPersistent(item.Id, entry);
                 ctx.hot?.set(item.Id, entry);
                 applyLogoTags(ctx, el, logos);
@@ -250,6 +270,15 @@
                 if (el.closest('.je-hidden')) return true;
                 const cached = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
                 if (!cached || typeof cached !== 'object' || !Array.isArray(cached.l)) return false;
+                // Stripped under another Spoiler Guard policy, or the policy is not
+                // known yet: ask the server, which strips for the current one.
+                const stamp = guardStamp();
+                if (stamp === null) return false;
+                if (cached.g !== stamp) {
+                    ctx.deletePersistent(itemId);
+                    ctx.hot?.delete(itemId);
+                    return false;
+                }
                 // A cached "no logos" is still a hit: nothing to fetch.
                 applyLogoTags(ctx, el, readLogos(cached.l));
                 return true;

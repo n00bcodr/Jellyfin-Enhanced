@@ -121,3 +121,120 @@ test('Tag Styles colour each kind of logo pill', t => {
   assert.match(css, /\[data-je-logo-style="text"\] \{ color: rgba\(9, 9, 9, 1\) !important;/);
   assert.doesNotMatch(css, /data-je-logo-style="provider"/);
 });
+
+/**
+ * Batch mode (server tag cache off) with the real Spoiler Guard state, tag
+ * pipeline, renderer base and Logos renderer: the server strips Logos from a
+ * guarded movie's batch item, as SpoilerTagDataStripper does.
+ */
+async function guardedBatch(t, { stored, guarded = false } = {}) {
+  const idle = [], timers = new Map(), guard = { movies: new Set(guarded ? ['aabb'] : []) };
+  let seq = 0, batches = 0;
+  const h = createHarness({
+    html: '<div class="card" data-id="AA-BB" data-type="Movie"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>',
+    globals: { requestIdleCallback: fn => idle.push(fn), setTimeout: (fn, ms) => { timers.set(++seq, { fn, ms }); return seq; }, clearTimeout: id => timers.delete(id) },
+    apiClient: { ajax: async ({ url }) => {
+      if (!url.includes('/tag-data/')) return {};
+      batches++;
+      return { Items: [{ Id: 'aabb', Type: 'Movie', Logos: guard.movies.has('aabb') ? null : [netflix] }] };
+    } },
+    JE: {
+      pluginConfig: { TagCacheServerMode: false, SpoilerBlurEnabled: true, SpoilerStripTags: true },
+      currentSettings: { logoTagsEnabled: true }, t: key => key,
+      helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
+      session: { getUserId: () => 'user-a', getServerId: () => 'server-a', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      core: { api: { plugin: async (path, options) => {
+        if (path === '/spoiler-blur/series') return { Movies: Object.fromEntries([...guard.movies].map(id => [id, {}])), Prefs: {} };
+        const movie = path.match(/^\/spoiler-blur\/movies\/(\w+)$/)?.[1];
+        if (movie && options?.method === 'POST') guard.movies.add(movie);
+        if (movie && options?.method === 'DELETE') guard.movies.delete(movie);
+        return {};
+      } } },
+    },
+  });
+  t.after(() => h.close());
+  if (stored) {
+    h.window.localStorage.setItem('JellyfinEnhanced-logoTagsCache', JSON.stringify({ aabb: stored }));
+    h.window.localStorage.setItem('JellyfinEnhanced-logoTagsCache:identity-owner', 'server-a:user-a');
+  }
+  h.load('enhanced/spoilerguard/ids.js');
+  h.load('enhanced/spoilerguard/state.js');
+  Object.assign(h.JE.internals.spoilerGuard, { setIdentityCookie() {}, injectStyles() {}, installWatchedRefresh() {} });
+  h.load('enhanced/spoilerguard/index.js');
+  await h.JE.spoilerBlur.whenLoaded();
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/tag-pipeline.js', 'tags/logotags.js']) h.load(file);
+  h.JE.tagPipeline.initialize();
+  h.JE.initializeLogoTags();
+  const flush = async () => {
+    for (let n = 0; n < 5; n++) {
+      while (idle.length) idle.shift()({ timeRemaining: () => 50 });
+      for (const [id, timer] of [...timers]) if (timer.ms === 150) { timers.delete(id); timer.fn(); }
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  };
+  /** What the detail page's Spoiler Guard button does after the server accepted the change. */
+  const toggle = async enable => {
+    await (enable ? h.JE.spoilerBlur.enableForMovie('aabb', 'Antz') : h.JE.spoilerBlur.disableForMovie('aabb'));
+    await h.JE.tagPipeline.invalidateServerCache();
+    await flush();
+  };
+  return { h, flush, toggle, batches: () => batches, chips: () => h.document.querySelectorAll('.je-logo-chip').length,
+    remembered: () => h.JE._hotCache.logos.get('aabb') };
+}
+
+test('guarding a movie hides its cached logo at once, and unguarding brings it back from the next lookup', async t => {
+  const g = await guardedBatch(t);
+  await g.flush();
+  assert.equal(g.batches(), 1);
+  assert.equal(g.chips(), 1, 'the logo shows and is remembered');
+
+  await g.toggle(true);
+  assert.equal(g.chips(), 0, 'the remembered logo is not drawn under the new guard');
+  assert.equal(g.batches(), 2, 'the server is asked again and strips it');
+
+  await g.toggle(false);
+  assert.equal(g.chips(), 1, 'the logo returns once the guard is gone');
+  assert.equal(g.batches(), 3);
+
+  // Same policy: the remembered answer is used again without a lookup.
+  await g.h.JE.tagPipeline.invalidateServerCache();
+  await g.flush();
+  assert.equal(g.chips(), 1);
+  assert.equal(g.batches(), 3);
+});
+
+for (const [label, stored] of [['from before stamping', { l: [netflix] }], ['stamped before the guard', { l: [netflix], g: 'off' }]]) {
+  test(`a persisted logo ${label} is not drawn for a movie guarded since`, async t => {
+    const g = await guardedBatch(t, { stored, guarded: true });
+    await g.flush();
+    assert.equal(g.chips(), 0);
+    assert.equal(g.batches(), 1, 'the copy is a miss: the server decides');
+    assert.deepEqual(plain(g.remembered().l), [], 'the stripped answer replaces it');
+    assert.match(g.remembered().g, /^g1\./);
+  });
+}
+
+test('the fallback cache uses entries stamped under the current guard policy only, and asks again while it is unknown', t => {
+  let revision = 'off';
+  const h = setup(t, {}, { SpoilerBlurEnabled: true });
+  h.JE.spoilerBlur = { tagStripRevision: () => revision };
+  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, {});
+  const again = () => {
+    h.JE.core.tagLayout.clearCard(h.host);
+    delete h.host.dataset.jeLogoTagged;
+    return h.renderer().renderFromCache(h.host, 'item');
+  };
+  assert.equal(again(), true);
+  revision = null;
+  assert.equal(again(), false, 'state not loaded: a miss');
+  revision = 'off';
+  assert.equal(again(), true, 'an unknown policy keeps the entry');
+  revision = 'g1.abc';
+  assert.equal(again(), false, 'another policy: a miss');
+  revision = 'off';
+  assert.equal(again(), false, 'and the entry is gone');
+  h.JE.pluginConfig.SpoilerBlurEnabled = false;
+  h.JE.spoilerBlur = undefined;
+  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, {});
+  assert.equal(again(), true, 'Spoiler Guard off needs no state');
+});
