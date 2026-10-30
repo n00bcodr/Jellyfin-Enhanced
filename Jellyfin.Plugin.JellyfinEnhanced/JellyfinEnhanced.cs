@@ -317,6 +317,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             }
 
             // Removing an MDBList key must also retire previously cached source scores.
+            // This waits on TagCacheService's rebuild lock, so a key change saved during
+            // a full rebuild blocks the save until it finishes (T1R-6: queue it if slow).
             if (sourceRatingsWereConfigured != Services.TagCacheService.SourceRatingsConfigured)
                 Services.TagCacheService.Instance?.RefreshRatingSourceAvailability();
 

@@ -488,7 +488,7 @@ JE uses your MDBList account status to track limits, remaining quota, and reset 
 
     Server status is cached for about three minutes, and JE adjusts its cached remaining count after requests. **Check** can test an unsaved key without replacing the saved key's quota cache.
 
-    Both individual and batch requests stop at a five-request safety margin when status is known. Fetch additionally observes **Fetch Task Reserve** and stops conservatively if account status cannot be read. Individual lookups may proceed when status is unavailable. These checks do not reserve capacity against other applications using the same MDBList account. Consult [MDBList's API documentation](https://docs.mdblist.com/docs/api) for account-plan and short-window limits rather than assuming a fixed allowance.
+    Both individual and batch requests stop at a five-request safety margin when status is known. Fetch and named-source rating tag enrichment additionally observe **Fetch Task Reserve** through one shared check, so overlapping runs cannot spend past it, and both stop conservatively if account status cannot be read. Individual lookups may proceed when status is unavailable. These checks do not reserve capacity against other applications using the same MDBList account. Consult [MDBList's API documentation](https://docs.mdblist.com/docs/api) for account-plan and short-window limits rather than assuming a fixed allowance.
 
 If no badges appear, check the master/display switches, key status, TMDB metadata, and available source data. If Jellyfin's own fields stay unchanged, check the Sync switch, cached data, chosen sources, and overwrite setting. Failed batches are logged and can be retried on a later Fetch run.
 
