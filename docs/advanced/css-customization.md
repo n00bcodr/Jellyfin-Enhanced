@@ -1119,3 +1119,23 @@ The table shows factory plugin/client defaults. New user settings are seeded fro
 The animation override stops both random-button hover and loading animation. Keep loading and disabled actions identifiable.
 
 In the Seerr form, the radio input must remain immediately before its option span. Checked/focus styles use that sibling relationship and consume `--primary-accent-color` with a fallback.
+
+### Tag size and gap hooks
+
+The layout controller sets two unitless custom properties on each `.je-tag-host` and its external `.je-tag-caption` outlet:
+
+| Hook | Values from settings | Used for |
+|---|---|---|
+| `--je-tag-scale` | `0.85`, `1`, `1.15`, `1.3` | Multiplies responsive font-size clamps, chip padding, icons, flags, summary pills, overflow chips and indicator clearance |
+| `--je-tag-gap` | `0.75`, `1`, `1.5` | Multiplies the existing gaps between chips and groups; spacing also follows tag scale |
+
+Both fall back to `1` in the stylesheet. Version-0 posters retain their original sizing expressions for exact legacy pixels; a layout-setting edit promotes the document and enables the multipliers. The same values reach live preview samples, including shape overrides. Caption height reserves a size/gap-adjusted two-row budget. These hooks do not change edge inset. For a web-only custom override, include both the host and caption because the caption is a sibling, not a descendant:
+
+```css
+.je-tag-host, .je-tag-caption {
+    --je-tag-scale: 1.15 !important;
+    --je-tag-gap: 0.75 !important;
+}
+```
+
+Saved size and gap choices also affect native posters; custom web CSS does not affect composited images. Prefer the built-in controls when the same appearance is needed in both.

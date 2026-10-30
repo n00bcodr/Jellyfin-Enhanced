@@ -118,6 +118,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string>? TagGroupOrder { get; set; }
         public TagGroupCaps? TagGroupCaps { get; set; }
         public string TagLabelDensity { get; set; } = "full";
+
+        /// <summary>Poster tag size: smaller, default, larger or largest; null inherits the administrator default.</summary>
+        public string? TagScale { get; set; }
+
+        /// <summary>Poster tag spacing: tight, default or roomy; null inherits the administrator default.</summary>
+        public string? TagGap { get; set; }
         // Tag Styles preset this user picked (TagStyleKeys.Presets); null follows the
         // admin's preset. Only honoured while TagStylesAllowUserPreset is on.
         public string? TagStylePreset { get; set; }

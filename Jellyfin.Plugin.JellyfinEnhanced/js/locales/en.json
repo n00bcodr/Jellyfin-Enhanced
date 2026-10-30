@@ -1115,5 +1115,17 @@
     "tag_shapes_more": "More {group} tags",
     "tag_shapes_limitations": "Square cards use the poster look. List rows keep caption tags on the image. Native Poster Tags use the poster settings and ignore shape overrides.",
     "tag_shapes_preview_list": "Episode list row",
-    "tag_shapes_preview_source": "{shape} look"
+    "tag_shapes_preview_source": "{shape} look",
+    "tag_scale_label": "Tag size",
+    "tag_scale_smaller": "Smaller (85%)",
+    "tag_scale_default": "Default (100%)",
+    "tag_scale_larger": "Larger (115%)",
+    "tag_scale_largest": "Largest (130%)",
+    "tag_scale_desc": "Scale tag text, icons and padding on web and native posters.",
+    "tag_gap_label": "Gap",
+    "tag_gap_tight": "Tight",
+    "tag_gap_default": "Default",
+    "tag_gap_roomy": "Roomy",
+    "tag_gap_desc": "Adjust spacing between tags in stacks, rows, bands and captions.",
+    "tag_size_inherit": "Same as default look"
 }

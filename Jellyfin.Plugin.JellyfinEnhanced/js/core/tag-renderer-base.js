@@ -511,7 +511,8 @@
         /** Inject (or replace) this tag's stylesheet under its frozen style id. */
         function injectCss() {
             if (!spec.styleId || typeof spec.buildCss !== 'function') return;
-            JE.core.ui.injectCss(spec.styleId, spec.buildCss(ctx));
+            const css = spec.buildCss(ctx);
+            JE.core.ui.injectCss(spec.styleId, JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
         }
 
         // ── Context handed to spec callbacks ───────────────────────────

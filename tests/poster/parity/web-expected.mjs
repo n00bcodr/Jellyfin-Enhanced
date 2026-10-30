@@ -88,7 +88,7 @@ class Element {
         this.children = [];
         this.parentElement = null;
         this.dataset = {};
-        this.style = { setProperty(name, value) { this[name] = value; } };
+        this.style = { setProperty(name, value) { this[name] = value; }, removeProperty(name) { const old = this[name] || ""; delete this[name]; return old; } };
         this.attributes = {};
         this._text = '';
         this.classList = new ClassList(this);
@@ -371,6 +371,7 @@ async function runProfile(profile) {
     const readInt = (k, d) => (Number.isFinite(s[k]) ? s[k] : d);
     const scope = (u, p) => (typeof s[u] === 'boolean' ? s[u] : (typeof pluginConfig[p] === 'boolean' ? pluginConfig[p] : true));
     const settings = {
+        tagScale: layoutConf.tagScale, tagGap: layoutConf.tagGap,
         qualityTagsEnabled: !!s.qualityTagsEnabled, genreTagsEnabled: !!s.genreTagsEnabled, languageTagsEnabled: !!s.languageTagsEnabled,
         ratingTagsEnabled: !!s.ratingTagsEnabled, ageRatingTagsEnabled: !!s.ageRatingTagsEnabled,
         qualityTagsPosition: pos('qualityTagsPosition', 'QualityTagsPosition', 'top-left'),

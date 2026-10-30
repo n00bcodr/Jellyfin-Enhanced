@@ -312,14 +312,14 @@
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;
-                    gap: 3px;
+                    gap: calc(3px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     z-index: 101;
                     pointer-events: none;
                     max-height: 90%;
                     overflow: hidden;
                 }
                 .${flagClass} {
-                    width: clamp(24px, 6vw, 32px);
+                    width: calc(clamp(24px, 6vw, 32px) * var(--je-tag-scale, 1));
                     height: auto;
                     border-radius: 2px;
                     box-shadow: 0 1px 3px rgba(0,0,0,0.4);
@@ -334,11 +334,11 @@
                 .language-link { display: inline-flex; color: inherit; text-decoration: none; }
                 .je-tag-pill[href] { pointer-events: auto; text-decoration: none; }
                 .language-chip {
-                    display: inline-flex; align-items: center; gap: 3px;
+                    display: inline-flex; align-items: center; gap: calc(3px * var(--je-tag-scale, 1));
                     align-self: flex-start; flex-shrink: 0; width: max-content;
-                    padding: 2px 4px; border: 1px solid rgba(255,255,255,0.8);
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1)); border: 1px solid rgba(255,255,255,0.8);
                     border-radius: 3px; background: rgba(0,0,0,0.75); color: #fff;
-                    font: 700 clamp(9px, 6cqw, 12px)/1 sans-serif;
+                    font: 700 calc(clamp(9px, 6cqw, 12px) * var(--je-tag-scale, 1))/1 sans-serif;
                     box-shadow: 0 1px 3px rgba(0,0,0,0.4);
                 }
                 .language-cc { font-size: 0.7em; }
@@ -355,21 +355,21 @@
                     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
                 }
                 .layout-mobile .${flagClass} {
-                    width: clamp(20px, 5vw, 26px);
+                    width: calc(clamp(20px, 5vw, 26px) * var(--je-tag-scale, 1));
                 }
-                .layout-mobile .${containerClass} { gap: 2px; }
+                .layout-mobile .${containerClass} { gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }
                 @media (max-width: 768px) {
                     .${flagClass} {
-                        width: clamp(20px, 5vw, 26px);
-                        gap: 2px;
+                        width: calc(clamp(20px, 5vw, 26px) * var(--je-tag-scale, 1));
+                        gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     }
                 }
                 @media (max-width: 480px) {
                     .${flagClass} {
-                        width: clamp(16px, 4vw, 20px);
+                        width: calc(clamp(16px, 4vw, 20px) * var(--je-tag-scale, 1));
                     }
                     .${containerClass} {
-                        gap: 2px;
+                        gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     }
                 }
             `;

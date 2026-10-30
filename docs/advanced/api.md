@@ -518,9 +518,11 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `TagGroupOrder` | Nullable array of group ids (`status`, `quality`, `rating`, `ageRating`, `language`, `genre`) | `null` |
 | `TagGroupCaps` | Nullable object `{Quality,Genre,Language,Rating,AgeRating,Status}` of integers 0–10, `0` = unlimited | `null` |
 | `TagLabelDensity` | String: `full` or `compact` | `"full"` |
+| `TagScale` | Nullable string: `smaller`, `default`, `larger`, `largest` (85%, 100%, 115%, 130%) | `null` (admin: `"default"`) |
+| `TagGap` | Nullable string: `tight`, `default`, `roomy` (75%, 100%, 150% spacing) | `null` (admin: `"default"`) |
 | `TagStylePreset` | Nullable string: `default`, `glass`, `outline`, `dark`, `light` or `mono`; unknown values are stored as `null` | `null` (follow the admin's preset; only used while the admin allows user presets) |
 | `TagLookRules` | Nullable array of `{Id,Enabled,When:[{Field,Value}],Layout,Density,ColourPreset,Slots,Shapes}`; `Field` is `library` (32-hex library id), `type`, `genre` or `ageRating`; at most 50 rules of 1–5 conditions; `Slots` nullable `[{Group,Slot}]`; `ColourPreset` reserved, `null`. `null` inherits the administrator's rules (version `1` documents only) | `null` (new users: the admin rules) |
-| `TagShapeOverrides` | Nullable `{Landscape,List}`, each null or `{Layout,Density,Slots:[{Group,Slot}],Caps:{Quality,Genre,Language,Rating,AgeRating,Status}}`. Optional fields inherit the default look. Unknown layouts/densities become null, invalid groups/slots are dropped, caps clamp to 0–10. Null inherits admin defaults only for version `1`; `{Landscape:null,List:null}` explicitly turns both off | `null` |
+| `TagShapeOverrides` | Nullable `{Landscape,List}`, each null or `{Layout,Density,TagScale,TagGap,Slots:[{Group,Slot}],Caps:{Quality,Genre,Language,Rating,AgeRating,Status}}`. Optional fields inherit the default look. Unknown layouts/densities become null, invalid groups/slots are dropped, caps clamp to 0–10. Null inherits admin defaults only for version `1`; `{Landscape:null,List:null}` explicitly turns both off | `null` |
 | `TagLayoutLocks` | Nullable object keyed by item id (32 lowercase hex) of `{Layout,Density,ColourPreset,Slots,Shapes,LockedAt}`; at most 500, the oldest `LockedAt` dropped first | `null` |
 | `ShowRatingInPlayer` | Boolean | `true` |
 | `RemoveContinueWatchingEnabled` | Boolean | `false` |
@@ -531,6 +533,8 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `CalendarDefaultViewMode` | String | `"agenda"` |
 
 `Shapes` on rules and locks uses the same `{Landscape,List}` map as `TagShapeOverrides`; it layers over that rule's or lock's look, independently of the user's shape overrides. Resolution is lock → first matching rule → shape override → default. POST also accepts a shape slot map such as `{"quality":"bottom","status":"top"}`; stored responses use arrays, matching `TagLayouts` and preserving group ids across key-case conversion. `Layout`/`Density` null inherits, and null caps inherit per group. A shape that changes layout uses the profile of the new layout. Portrait and square cards always use the default shape; Native Poster Tags ignore these objects.
+
+`TagScale` and `TagGap` are presentation-only settings, normalized case-insensitively on save. An unknown global value becomes `default`; null inherits the administrator's validated choice, then `default`. Version-0 documents always render at default size/gap. Promotion writes explicit `default` values so changing another layout setting does not adopt new administrator sizing. New-user seeding and reset-all copy the administrator's values. A shape's optional `TagScale`/`TagGap` uses the same choices, with unknown values normalized to null (inherit). Shape fields also round-trip inside rule/lock `Shapes`. Native posters use global size/gap in their rendering metrics and settings digest, with shape overrides still web-only. These fields do not change `TagCacheEntry` or its schema.
 
 ### Shortcuts and Elsewhere documents
 
@@ -1385,7 +1389,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
     | `MdblistRatingsSources`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
     | `AgeRatingTagsPosition`, `JellyseerrBaseUrl`, `JellyseerrUrlMappings`, `ArrTagsPrefix`, `ArrTagsLinksFilter`, `ArrTagsLinksHideFilter`, `AudioLanguageTagPrefix`, `IconStyle` | String |
-    | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagStylePreset` | String |
+    | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagScale`, `TagGap`, `TagStylePreset` | String |
     | `TagLayouts`, `TagGroupCaps`, `TagShapeOverrides` | Nullable object (shapes as in `settings.json`) |
     | `TagGroupOrder` | Nullable array of group ids |
     | `TagLookRules` | Nullable array of rules (shape as in `settings.json`), normalized |

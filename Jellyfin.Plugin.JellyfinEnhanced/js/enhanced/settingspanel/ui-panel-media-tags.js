@@ -159,6 +159,14 @@
                 <label>${tx('panel_settings_ui_tag_density')}<select data-shape-action="density" aria-label="${tx('tag_shapes_density_for', { shape: shapeName })}">
                     ${['full', 'compact'].map(id => `<option value="${id}" ${conf.density === id ? 'selected' : ''}>${tx(`panel_settings_ui_tag_density_${id}`)}</option>`).join('')}
                 </select></label>
+                ${['scale', 'gap'].map(kind => {
+                    const key = kind === 'scale' ? 'tagScale' : 'tagGap';
+                    const choices = kind === 'scale' ? L.TAG_SCALES : L.TAG_GAPS;
+                    return `<label>${tx(`tag_${kind}_label`)}<select data-shape-action="${key}" aria-label="${escapeHtml(shapeName)}: ${tx(`tag_${kind}_label`)}">
+                        <option value="" ${!own[key] ? 'selected' : ''}>${tx('tag_size_inherit')}</option>
+                        ${Object.keys(choices).map(id => `<option value="${id}" ${own[key] === id ? 'selected' : ''}>${tx(`tag_${kind}_${id}`)}</option>`).join('')}
+                    </select></label>`;
+                }).join('')}
                 <button type="button" class="je-mth-button" data-shape-action="recommended">${tx('tag_shapes_recommended')}</button>
             </div>
             <div class="je-mth-shape-groups">${L.DEFAULT_ORDER.map(group => {
@@ -186,6 +194,21 @@
     /** @returns {string} The independently editable looks for landscape cards and list rows. */
     function shapesHtml() {
         return JE.core?.tagLayout ? JE.core.tagLayout.SHAPES.map(shapeRowHtml).join('') : '';
+    }
+
+    /** Size or gap segmented control, using the layout controller's validated choices.
+     * @param {string} kind @param {Object} conf @returns {string}
+     */
+    function sizeControlHtml(kind, conf) {
+        const name = kind === 'scale' ? 'Scale' : 'Gap';
+        const choices = kind === 'scale' ? JE.core.tagLayout.TAG_SCALES : JE.core.tagLayout.TAG_GAPS;
+        return `<div class="je-mth-density">
+            <span class="je-mth-label" id="jeMth${name}Label">${tx(`tag_${kind}_label`)}</span>
+            <div class="je-mth-pills" id="jeTag${name}Choice" role="radiogroup" aria-labelledby="jeMth${name}Label">
+                ${Object.keys(choices).map(value => `<label class="je-mth-pill"><input type="radio" name="jeTag${name}" value="${value}" ${conf[`tag${name}`] === value ? 'checked' : ''}><span data-je-label>${tx(`tag_${kind}_${value}`)}</span></label>`).join('')}
+            </div>
+            <span class="je-mth-hint">${tx(`tag_${kind}_desc`)}</span>
+        </div>`;
     }
 
     /** @returns {string} The Layout tab: tiles, density and the quick switches. */
@@ -216,6 +239,8 @@
                     <div class="je-mth-pills" id="jeTagDensityChoice" role="radiogroup" aria-labelledby="jeMthDensityLabel" aria-describedby="jeMthDensityDesc">${density}</div>
                     <span class="je-mth-hint" id="jeMthDensityDesc">${tx('panel_settings_ui_tag_density_desc')}</span>
                 </div>
+                ${sizeControlHtml('scale', conf)}
+                ${sizeControlHtml('gap', conf)}
             </section>
             <div class="je-mth-shapes">${shapesHtml()}</div>
             <p class="je-mth-hint">${tx('tag_shapes_limitations')}</p>
@@ -698,6 +723,9 @@
             const conf = layoutConf();
             hub.querySelectorAll('input[name="jeTagLayout"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.layout; });
             hub.querySelectorAll('input[name="jeTagDensity"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.density; });
+            for (const name of ['Scale', 'Gap']) {
+                hub.querySelectorAll(`input[name="jeTag${name}"]`).forEach(r => { r.checked = r.value === conf[`tag${name}`]; });
+            }
             if (layoutDesc) layoutDesc.textContent = JE.t(`panel_settings_ui_tag_layout_${conf.layout}`);
             const off = hub.querySelector('#jeMthBadgesOff');
             if (off) /** @type {HTMLElement} */ (off).hidden = !!JE.currentSettings?.statusTagsEnabled;
@@ -729,7 +757,7 @@
             const row = control?.closest('[data-shape]');
             if (!control || control.disabled || !row || !shapeMount?.contains(row)) return;
             const action = control.dataset.shapeAction;
-            if ((event.type === 'change') !== ['enabled', 'layout', 'density'].includes(action)) return;
+            if ((event.type === 'change') !== ['enabled', 'layout', 'density', 'tagScale', 'tagGap'].includes(action)) return;
             const L = JE.core.tagLayout;
             const shape = row.dataset.shape;
             L.invalidateSettings();
@@ -743,6 +771,10 @@
                 const group = control.closest('[data-shape-group]')?.dataset.shapeGroup;
                 if (action === 'layout') { look.layout = control.value; look.slots = null; }
                 if (action === 'density') look.density = control.value;
+                if (action === 'tagScale' || action === 'tagGap') {
+                    if (control.value) look[action] = control.value;
+                    else delete look[action];
+                }
                 if (action === 'slot') look.slots = { ...(look.slots || {}), [group]: control.dataset.value };
                 if (action === 'cap') {
                     const cap = L.resolveLayout({ shape }).caps[group];

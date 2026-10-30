@@ -64,6 +64,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public string Digest { get; private init; } = string.Empty;
 
+        /// <summary>Effective size for native poster chips (legacy users keep default).</summary>
+        public string TagScale { get; private init; } = "default";
+
+        /// <summary>Effective spacing for native poster chips (legacy users keep default).</summary>
+        public string TagGap { get; private init; } = "default";
+
         /// <summary>The Tag Styles for native posters, with the user's own preset when allowed (empty unless the target includes native clients).</summary>
         public TagStyleSet Styles { get; private init; } = TagStyleSet.Empty;
 
@@ -377,6 +383,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
                 RatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Rating) ?? Position(user.RatingTagsPosition, config.RatingTagsPosition, "bottom-right"),
                 AgeRatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.AgeRating) ?? Position(user.AgeRatingTagsPosition, config.AgeRatingTagsPosition, "bottom-right"),
+                TagScale = user.TagLayoutSettingsVersion < 1 ? "default" : TagLayoutRules.NormalizeScale(user.TagScale ?? config.TagScale),
+                TagGap = user.TagLayoutSettingsVersion < 1 ? "default" : TagLayoutRules.NormalizeGap(user.TagGap ?? config.TagGap),
                 OffGroups = layout.Off,
                 GroupOrder = layout.Order,
                 QualityCap = layout.Cap("quality"),
@@ -705,6 +713,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ["ageRating.enabled"] = Bool(AgeRatingTagsEnabled),
                 ["order"] = GroupOrder is null ? string.Empty : string.Join(",", GroupOrder),
             };
+
+            if (AnyGroupEnabled)
+            {
+                values["tag.scale"] = TagScale;
+                values["tag.gap"] = TagGap;
+            }
 
             // A group set to "off" draws nothing, so (like a disabled group) its other values stay out.
             foreach (var group in OffGroups)

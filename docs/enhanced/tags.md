@@ -36,7 +36,7 @@ Every personal poster tag setting lives in one section of the panel, **Media Tag
 
 | Tab | What you set there |
 |---|---|
-| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), per-shape looks for **Episode thumbnails** and **List rows**, and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags** and **Show Audio Languages**. |
+| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), **Tag size**, **Gap**, per-shape looks for **Episode thumbnails** and **List rows**, and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags** and **Show Audio Languages**. |
 | **Groups** | The [tag groups](#tag-groups-order-position-limits) in priority order: move buttons, the on/off switch, and per group its position, **Show up to** and **Include** choices, plus **Reset to defaults**. The Status row's **Badges** button opens the next tab. |
 | **Status badges** | Which [status badges](#status-tags) the Status group may show: **Just Added**, **New releases**, **Trending**, **Schedule**, **Milestones** and **Series status**, each with a sample badge. The two time windows the administrator chose are shown beside Just Added and New releases. **Status position and limit in Groups** goes back to the Status row. |
 | **Rules & locks** | Your [rules and locked items](#rules-and-locked-items) on the left, the **Add a rule** form on the right. |
@@ -125,6 +125,23 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 === "Minimal"
 
     ![Movie posters with quality dots and a corner score; the hovered poster shows every tag](../images/tags/tag-layout-minimal.webp)
+
+#### Tag size and spacing
+
+On **Media Tags** → **Layout**, below **Label Density**, choose **Tag size** and **Gap**. The live preview and the cards already on screen update immediately; the choices save to your account.
+
+| Setting | Choices | Default |
+|---|---|---|
+| **Tag size** / admin **Default Tag size** | **Smaller (85%)**, **Default (100%)**, **Larger (115%)**, **Largest (130%)** | **Default (100%)** |
+| **Gap** / admin **Default Gap** | **Tight** (75% of the usual spacing), **Default** (100%), **Roomy** (150%) | **Default** |
+
+Size multiplies the existing card-width sizing, including text, icons, flags, chip padding, summary pills, hover reveals and **+N** chips. Gap adjusts the spacing between chips and groups in stacks, rows, bands and captions. Larger tags can leave room for fewer chips; the existing limits and overflow fitting still apply. Caption space grows with the chosen size and gap before tag data arrives. Poster edge spacing stays the same.
+
+Administrators set the starting choices in **Display** → **Media Tags** → **Tag layout defaults**. New users and **Apply defaults to all users** take those choices. Existing version-0 settings keep their original size and gap, including when saving an unrelated preference. The first layout edit preserves both defaults unless you change one. **Reset to defaults** restores both admin choices.
+
+An enabled shape override has its own **Tag size** and **Gap** selectors. **Same as default look** inherits that setting independently; choosing **Default** explicitly keeps 100% even if the default look is larger or roomier. Stored rule/lock shape looks accept the same fields. Native posters follow the account's size and gap, while retaining their existing Corners presentation and ignoring shape overrides.
+
+![Tag size and Gap controls with the live preview](../images/tags/tag-size-gap-hub.webp)
 
 #### Episode thumbnails and list rows
 

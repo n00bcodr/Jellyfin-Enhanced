@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     public sealed class PosterTagRenderer : IDisposable
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
-        public const string Version = "4";
+        public const string Version = "5";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;
@@ -436,7 +436,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     return;
                 }
 
-                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, (item.Tag as QualityTag)?.Category ?? string.Empty);
+                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, (item.Tag as QualityTag)?.Category ?? string.Empty, plan.Css.Scale, plan.Css.Gap);
                 var state = (Engine: this, Plan: plan, Item: item, Box: box, Margin: margin, PhaseX: phaseX / 16f, PhaseY: phaseY / 16f, Crop: crop);
                 using var lease = Tiles.Rent(key, state, static st => st.Engine.RenderTile(st.Plan, st.Item, st.Box, st.Margin, st.PhaseX, st.PhaseY, st.Crop));
                 if (lease.Image is not { } tile)
@@ -601,7 +601,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 if (tag.Compact)
                 {
                     using var dot = new SKPaint { Color = CssColor.Parse(SourceColor(tag.SourceId), SKColors.White), IsAntialias = true };
-                    canvas.DrawCircle(x + 1, iconTop + 1, 1, dot);
+                    canvas.DrawCircle(x + css.Scale, iconTop + css.Scale, css.Scale, dot);
                 }
                 else if (tag.IsSource)
                 {
@@ -621,7 +621,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     case PosterRatingSource.UserReview:
                         if (Assets.GetIcon(UserReviewIconKey) is { } heart)
                         {
-                            float size = PosterTagCss.UserReviewIconSize;
+                            float size = PosterTagCss.UserReviewIconSize * css.Scale;
                             DrawIcon(canvas, heart, x, iconTop + heart.Metrics.BaselineOffset(size, item.IconHeight), size, textColor, space);
                         }
 
@@ -675,10 +675,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 using var shape = new SKRoundRect(local, 3f);
                 PaintBox(canvas, shape, colors.Background ?? new SKColor(0, 0, 0, 191), colors.Border ?? SKColors.White, border, ChipShadow);
                 var fontSize = plan.Css.ChipFontSize;
-                DrawText(canvas, item.TextLayout!, 5f, 3f + Assets.TextMetrics.BaselineOffset(fontSize, local.Height - 6f), colors.Text ?? SKColors.White, null, space);
+                DrawText(canvas, item.TextLayout!, 5f * plan.Css.Scale, (3f * plan.Css.Scale) + Assets.TextMetrics.BaselineOffset(fontSize, local.Height - (6f * plan.Css.Scale)), colors.Text ?? SKColors.White, null, space);
                 if (item.IconWidth > 0 && Assets.GetFlag(parts[0]) is { } image)
                 {
-                    var target = SKRect.Create(local.Width - item.IconWidth - 5f, 3f, item.IconWidth, item.IconHeight);
+                    var target = SKRect.Create(local.Width - item.IconWidth - (5f * plan.Css.Scale), 3f * plan.Css.Scale, item.IconWidth, item.IconHeight);
                     canvas.DrawImage(image, target, new SKSamplingOptions(SKFilterMode.Linear));
                 }
                 if (tag.Partial)

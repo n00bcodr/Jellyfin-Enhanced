@@ -64,7 +64,7 @@ test('compact source chips retain values and a source dot, and batch DTOs render
   h.batch({ Id: 'item', Type: 'Movie', Ratings: ratings });
   assert.equal(h.chips().length, 2);
   for (const el of h.chips()) assert.equal(el.dataset.jeRatingCompact, '1');
-  assert.match(h.document.getElementById('jellyfin-enhanced-rating-tags-css').textContent, /width: 2px; height: 2px/);
+  assert.match(h.document.getElementById('jellyfin-enhanced-rating-tags-css').textContent, /width: calc\(2px \* var\(--je-tag-scale, 1\)\); height: calc\(2px \* var\(--je-tag-scale, 1\)\)/);
 });
 
 test('Spoiler Guard suppresses sources on series and local fallback cache without restoring shared ratings', t => {

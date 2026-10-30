@@ -137,6 +137,7 @@
             languageTagsShowAudio: true, languageTagsShowSubtitles: false, languageTagsStyle: 'flags', languageTagsCountBadge: 'off',
             // Poster tag layout scalars (0 = a document from before layouts; see core/tag-layout.js).
             tagLayout: 'corners', tagLabelDensity: 'full', tagLayoutSettingsVersion: 0,
+            tagScale: 'default', tagGap: 'default',
             qualityTagsPreferredAudioLanguage: '',
             // Series/season quality aggregation policy.
             seriesQualityAggregation: 'representative',
@@ -237,6 +238,8 @@
             && !Array.isArray(userSettings.tagLayoutLocks) ? userSettings.tagLayoutLocks : null;
         // Per-shape tag looks (null = inherit the admin's, normalized documents
         // only); core/tag-layout.js normalises the value when it reads it.
+        mergedSettings.tagScale = userSettings.tagScale ?? null;
+        mergedSettings.tagGap = userSettings.tagGap ?? null;
         mergedSettings.tagShapeOverrides = userSettings.tagShapeOverrides && typeof userSettings.tagShapeOverrides === 'object'
             && !Array.isArray(userSettings.tagShapeOverrides) ? userSettings.tagShapeOverrides : null;
 

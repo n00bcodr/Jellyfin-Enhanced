@@ -172,7 +172,7 @@
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;
-                    gap: 3px;
+                    gap: calc(3px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     align-items: flex-end;
                     z-index: 101;
                     pointer-events: none;
@@ -183,8 +183,8 @@
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    height: clamp(22px, 4.5vw, 30px);
-                    width: clamp(22px, 4.5vw, 30px);
+                    height: calc(clamp(22px, 4.5vw, 30px) * var(--je-tag-scale, 1));
+                    width: calc(clamp(22px, 4.5vw, 30px) * var(--je-tag-scale, 1));
                     border-radius: 50%;
                     box-shadow: 0 1px 4px rgba(0,0,0,0.4);
                     overflow: visible;
@@ -196,7 +196,7 @@
                     position: relative;
                 }
                 .${tagClass} .je-msym-outlined {
-                    font-size: clamp(1em, 2.8vw, 1.4em);
+                    font-size: calc(clamp(1em, 2.8vw, 1.4em) * var(--je-tag-scale, 1));
                     line-height: 1;
                 }
                 .${tagClass} .genre-text {
@@ -209,12 +209,12 @@
                     top: 50%;
                     transform: translateY(-50%);
                     white-space: nowrap;
-                    font-size: clamp(9px, 1.7vw, 11px);
+                    font-size: calc(clamp(9px, 1.7vw, 11px) * var(--je-tag-scale, 1));
                     font-weight: 500;
                     text-transform: capitalize;
                     background: rgba(10, 10, 10, 0.85);
                     color: #E0E0E0;
-                    padding: 2px 6px;
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
                     border-radius: 4px;
                     opacity: 0;
                     pointer-events: none;
@@ -223,30 +223,30 @@
                 .card:hover .${tagClass} .genre-text {
                     opacity: 1;
                 }
-                .layout-mobile .${containerClass} { gap: 2px; }
+                .layout-mobile .${containerClass} { gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }
                 .layout-mobile .${tagClass} {
-                    height: clamp(20px, 4vw, 26px);
-                    min-width: clamp(20px, 4vw, 26px);
+                    height: calc(clamp(20px, 4vw, 26px) * var(--je-tag-scale, 1));
+                    min-width: calc(clamp(20px, 4vw, 26px) * var(--je-tag-scale, 1));
                 }
                 .layout-mobile .${tagClass} .je-msym-outlined {
-                    font-size: clamp(0.95em, 2.4vw, 1.25em);
+                    font-size: calc(clamp(0.95em, 2.4vw, 1.25em) * var(--je-tag-scale, 1));
                 }
                 @media (max-width: 768px) {
-                    .${containerClass} { gap: 2px; }
+                    .${containerClass} { gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }
                     .${tagClass} {
-                        height: clamp(21px, 4vw, 26px);
-                        min-width: clamp(21px, 4vw, 26px);
+                        height: calc(clamp(21px, 4vw, 26px) * var(--je-tag-scale, 1));
+                        min-width: calc(clamp(21px, 4vw, 26px) * var(--je-tag-scale, 1));
                     }
                 }
                 @media (max-width: 480px) {
-                    .${containerClass} { gap: 2px; max-height: 85%; }
+                    .${containerClass} { gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); max-height: 85%; }
                     .${tagClass} {
-                        height: clamp(20px, 3.6vw, 24px);
-                        min-width: clamp(20px, 3.6vw, 24px);
+                        height: calc(clamp(20px, 3.6vw, 24px) * var(--je-tag-scale, 1));
+                        min-width: calc(clamp(20px, 3.6vw, 24px) * var(--je-tag-scale, 1));
                         box-shadow: 0 1px 3px rgba(0,0,0,0.4);
                     }
                     .${tagClass} .je-msym-outlined {
-                        font-size: clamp(0.85em, 2.2vw, 1.1em);
+                        font-size: calc(clamp(0.85em, 2.2vw, 1.1em) * var(--je-tag-scale, 1));
                     }
                 }
             `;
@@ -320,7 +320,7 @@
                 font-family: 'JE Material Symbols Outlined';
                 font-weight: normal;
                 font-style: normal;
-                font-size: 24px;
+                font-size: calc(24px * var(--je-tag-scale, 1));
                 line-height: 1;
                 letter-spacing: normal;
                 text-transform: none;

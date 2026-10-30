@@ -1137,6 +1137,14 @@ test('centre budgets reserve occupied corners, top-centre overlays and progress 
     assert.equal(slot('ml').style.getPropertyValue('--je-anchor-reserve'),'90px');
     assert.equal(slot('tc').style.getPropertyValue('--je-anchor-top'),'28px');
     assert.equal(slot('bc').style.getPropertyValue('--je-anchor-bottom'),'14px');
+    Object.assign(h.JE.currentSettings, { tagScale: 'largest', tagGap: 'roomy' });
+    h.layout.invalidateSettings();
+    h.layout.refreshPresentation(h.host());
+    h.layout.flushFit();
+    assert.ok(Math.abs(parseFloat(slot('tc').style.getPropertyValue('--je-anchor-reserve')) - 97.8) < .001);
+    assert.ok(Math.abs(parseFloat(slot('tc').style.getPropertyValue('--je-anchor-top')) - 31.8) < .001);
+    assert.ok(Math.abs(parseFloat(slot('bc').style.getPropertyValue('--je-anchor-bottom')) - 17.8) < .001);
+
   } finally {
     proto.getBoundingClientRect = rect;
     Object.defineProperty(h.window.Element.prototype,'clientWidth',width);
@@ -1158,4 +1166,78 @@ test('side-centre columns fit whole chips and an overflow count inside short car
     fitCard(h,{width:113,height:16});
     assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).hasAttribute('data-je-overflow'),true);
   }
+});
+
+// Tag size and gap: defaults, inheritance, promotion and every presentation.
+test('size and gap inherit admin values only after promotion and sanitize untrusted input', async t => {
+  const h = setup(t, { plugin: { TagScale: 'largest', TagGap: 'roomy' } });
+  assert.equal(h.layout.normalizeSettings().tagScale, 'default');
+  assert.equal(h.layout.normalizeSettings().tagGap, 'default');
+  h.layout.promoteLegacySettings(h.JE.currentSettings);
+  assert.equal(h.JE.currentSettings.tagScale, 'default');
+  assert.equal(h.JE.currentSettings.tagGap, 'default');
+  await h.apply({ tagScale: null, tagGap: null });
+  assert.equal(h.layout.normalizeSettings().tagScale, 'largest');
+  assert.equal(h.layout.normalizeSettings().tagGap, 'roomy');
+  await h.apply({ tagScale: ' SMALLER ', tagGap: ' TIGHT ' });
+  assert.equal(h.layout.normalizeSettings().tagScale, 'smaller');
+  assert.equal(h.layout.normalizeSettings().tagGap, 'tight');
+  await h.apply({ tagScale: 'huge', tagGap: 'wide' });
+  assert.equal(h.layout.normalizeSettings().tagScale, 'default', 'invalid personal values normalize to default rather than admin choices');
+  assert.equal(h.layout.normalizeSettings().tagGap, 'default');
+  for (const value of ['constructor', '__proto__', {}, 130, 'huge']) {
+    assert.equal(h.layout.readScale(value), null);
+    assert.equal(h.layout.readGap(value), null);
+  }
+});
+
+for (const tagLayout of ['corners', 'bands', 'caption', 'summary', 'minimal']) {
+  test(`size/gap variables reach ${tagLayout}, caption outlets and reset on user switch`, async t => {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout } });
+    h.render();
+    for (const [tagScale, factor] of Object.entries(h.layout.TAG_SCALES)) {
+      for (const [tagGap, gap] of Object.entries(h.layout.TAG_GAPS)) {
+        await h.apply({ tagScale, tagGap });
+        const host = h.host();
+        assert.equal(host.style.getPropertyValue('--je-tag-scale'), String(factor));
+        assert.equal(host.style.getPropertyValue('--je-tag-gap'), String(gap));
+        if (tagLayout === 'caption') {
+          const caption = h.document.querySelector('.je-tag-caption');
+          assert.equal(caption.style.getPropertyValue('--je-tag-scale'), String(factor));
+          assert.equal(caption.style.getPropertyValue('--je-tag-gap'), String(gap));
+        }
+      }
+    }
+    h.layout.clearAll();
+    assert.equal(h.host().style.getPropertyValue('--je-tag-scale'), '');
+    assert.equal(h.host().style.getPropertyValue('--je-tag-gap'), '');
+    assert.equal(h.document.querySelector('.je-tag-caption'), null);
+  });
+}
+
+test('shape-specific size and gap survive wire conversion and apply independently', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagScale: 'larger', tagGap: 'tight',
+    tagShapeOverrides: { landscape: { tagScale: 'smaller', tagGap: 'roomy' }, list: { tagScale: 'largest' } } } });
+  const portrait = h.layout.resolveLayout({ shape: 'portrait' });
+  const landscape = h.layout.resolveLayout({ shape: 'landscape' });
+  const list = h.layout.resolveLayout({ shape: 'list' });
+  assert.deepEqual([portrait.tagScale, portrait.tagGap], ['larger', 'tight']);
+  assert.deepEqual([landscape.tagScale, landscape.tagGap], ['smaller', 'roomy']);
+  assert.deepEqual([list.tagScale, list.tagGap], ['largest', 'tight']);
+  const wire = h.layout.shapesToWire(h.layout.normalizeSettings().shapes);
+  assert.equal(wire.landscape.tagScale, 'smaller');
+  assert.equal(wire.landscape.tagGap, 'roomy');
+  assert.equal(wire.list.tagScale, 'largest');
+});
+
+test('legacy sizing retains original responsive expressions while normalized cards keep multiplier hooks', t => {
+  const h = setup(t);
+  const css = h.layout.preserveLegacySizing('@supports (container-type: inline-size) { html:not(.layout-mobile) .je-tag-host .genre-tag { width: calc(clamp(18px, 15cqw, 30px) * var(--je-tag-scale, 1)); gap: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); background: red; } }');
+  assert.match(css, /\.je-tag-host\[data-je-legacy\] \.genre-tag \{ width: clamp\(18px, 15cqw, 30px\); gap: 4px;/);
+  assert.match(css, /width: calc\(clamp\(18px, 15cqw, 30px\) \* var\(--je-tag-scale, 1\)\)/);
+  assert.equal((css.match(/background: red/g) || []).length, 1, 'only sizing declarations gain legacy specificity; colors and other custom CSS stay untouched');
+  const mobile = h.layout.preserveLegacySizing('@media (max-width: 480px) { .layout-mobile .rating-tag { font-size: calc(11px * var(--je-tag-scale, 1)); } }');
+  assert.match(mobile, /\.je-tag-host\[data-je-legacy\] :is\(\.layout-mobile \.rating-tag\) \{ font-size: 11px;/);
+  h.render();
+  assert.equal(h.host().dataset.jeLegacy, '1');
 });

@@ -154,7 +154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         public PosterTagPlan Plan(int imageWidth, int imageHeight, PosterTagLayout layout)
         {
-            var css = new PosterTagCss(layout.Landscape ? PosterTagCss.LandscapeCardWidth : PosterTagCss.PortraitCardWidth);
+            var css = new PosterTagCss(layout.Landscape ? PosterTagCss.LandscapeCardWidth : PosterTagCss.PortraitCardWidth, layout.TagScale, layout.TagGap);
             float scale = imageWidth / css.CardWidth;
             float cardHeight = imageHeight / scale;
             var groups = new List<PlannedGroup>();
@@ -234,7 +234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             foreach (var g in groups.Where(g => !IsCentre(g.Corner)))
             {
                 g.X = g.IsLeft ? PosterTagCss.CornerInset : css.CardWidth - PosterTagCss.CornerInset - g.Width;
-                float top = PosterTagCss.CornerInset + (topRightOffset && g.Corner == PosterTagCorner.TopRight ? PosterTagCss.TopRightIndicatorOffset : 0f);
+                float top = PosterTagCss.CornerInset + (topRightOffset && g.Corner == PosterTagCorner.TopRight ? css.IndicatorOffset : 0f);
                 g.Y = g.IsTop ? top : cardHeight - PosterTagCss.CornerInset - g.Height;
                 g.NaturalY = g.Y;
 
@@ -243,8 +243,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 if (boundary.TryGetValue(g.Corner, out var edge))
                 {
                     float delta = g.IsTop
-                        ? edge + PosterTagCss.CornerStackGap - g.Y
-                        : (g.Y + g.Height) - (edge - PosterTagCss.CornerStackGap);
+                        ? edge + css.StackGap - g.Y
+                        : (g.Y + g.Height) - (edge - css.StackGap);
                     if (delta > 0)
                     {
                         g.Y += g.IsTop ? delta : -delta;
@@ -274,6 +274,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// </summary>
         private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight)
         {
+            float gap = css.StackGap;
             float inset = PosterTagCss.CornerInset;
             foreach (var anchor in groups.Where(g => IsCentre(g.Corner)).GroupBy(g => g.Corner))
             {
@@ -284,8 +285,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     ? g.IsLeft == !right
                     : corner == PosterTagCorner.TopCenter ? g.IsTop : corner == PosterTagCorner.BottomCenter && !g.IsTop)).ToList();
                 float reserve = neighbours.Select(g => vertical
-                    ? g.IsTop ? g.Y + g.Height + 4 : cardHeight - g.Y + 4
-                    : g.IsLeft ? g.X + g.Width + 4 : css.CardWidth - g.X + 4).DefaultIfEmpty(inset).Max();
+                    ? g.IsTop ? g.Y + g.Height + gap : cardHeight - g.Y + gap
+                    : g.IsLeft ? g.X + g.Width + gap : css.CardWidth - g.X + gap).DefaultIfEmpty(inset).Max();
                 float width = Math.Max(0, vertical ? (css.CardWidth / 2) - inset : css.CardWidth - (2 * reserve));
                 float maxHeight = Math.Max(0, vertical ? cardHeight - (2 * reserve) : cardHeight / 3);
                 var items = anchor.SelectMany(g => g.Items).ToList();
@@ -297,28 +298,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     {
                         if (item.Width > width || height + item.Height > maxHeight) { item.Hidden = true; continue; }
                         item.Y = height;
-                        height += item.Height + 4;
+                        height += item.Height + gap;
                     }
                     else
                     {
                         if (item.Width > width) { item.Hidden = true; continue; }
-                        bool wrap = rows.Count == 0 || used + 4 + item.Width > width;
+                        bool wrap = rows.Count == 0 || used + gap + item.Width > width;
                         if (wrap)
                         {
-                            if (rows.Count == 2 || height + (rows.Count > 0 ? rowHeight + 4 : 0) + item.Height > maxHeight) { item.Hidden = true; continue; }
-                            if (rows.Count > 0) height += rowHeight + 4;
+                            if (rows.Count == 2 || height + (rows.Count > 0 ? rowHeight + gap : 0) + item.Height > maxHeight) { item.Hidden = true; continue; }
+                            if (rows.Count > 0) height += rowHeight + gap;
                             rows.Add(new List<PlannedItem>());
                             used = rowHeight = 0;
                         }
                         if (height + Math.Max(rowHeight, item.Height) > maxHeight) { item.Hidden = true; continue; }
-                        item.X = used + (used > 0 ? 4 : 0);
+                        item.X = used + (used > 0 ? gap : 0);
                         item.Y = height;
                         used = item.X + item.Width;
                         rowHeight = Math.Max(rowHeight, item.Height);
                         rows[^1].Add(item);
                     }
                 }
-                if (vertical) height = Math.Max(0, height - 4);
+                if (vertical) height = Math.Max(0, height - gap);
                 else
                 {
                     height += rowHeight;
@@ -390,8 +391,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     iconWidth = iconHeight = PosterTagCss.Lu(css.RatingIconSize);
                     break;
                 case PosterRatingSource.UserReview:
-                    iconWidth = GlyphBoxWidth(PosterTagRenderer.UserReviewIconKey, PosterTagCss.UserReviewIconSize);
-                    iconHeight = PosterTagCss.Lu(PosterTagCss.UserReviewIconSize);
+                    iconWidth = GlyphBoxWidth(PosterTagRenderer.UserReviewIconKey, PosterTagCss.UserReviewIconSize * css.Scale);
+                    iconHeight = PosterTagCss.Lu(PosterTagCss.UserReviewIconSize * css.Scale);
                     break;
                 default:
                     iconWidth = GlyphBoxWidth(PosterTagRenderer.StarIconKey, css.RatingIconSize);
@@ -399,8 +400,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     break;
             }
 
-            if (tag.IsSource) iconWidth = iconHeight = 14; // Bundled source logos match the web's fixed 14px box.
-            if (tag.Compact) iconWidth = iconHeight = 2;
+            if (tag.IsSource) iconWidth = iconHeight = 14 * css.Scale; // Bundled source logos match the web's fixed 14px box.
+            if (tag.Compact) iconWidth = iconHeight = 2 * css.Scale;
             float textHeight = PosterTagCss.Lu(css.ChipFontSize);
             float width = (2 * PosterTagCss.Lu(css.ChipPaddingH)) + iconWidth + PosterTagCss.Lu(css.RatingInnerGap) + PosterTagCss.LuCeil(layout.Width);
             float height = Math.Max(iconHeight, textHeight) + (2 * PosterTagCss.Lu(css.ChipPaddingV));
@@ -464,8 +465,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 if (flagWidth > 0 && (flagCode is null || !_assets.HasFlag(flagCode))) return null;
                 var label = tag.CountBadge is not null ? "countBadge" : tag.Subtitle ? "subtitles" : "flag";
                 var colors = styles.Resolve(TagStyleKeys.Language, label);
-                float chipWidth = PosterTagCss.LuCeil(layout.Width) + flagWidth + 10f;
-                float chipHeight = Math.Max(PosterTagCss.Lu(css.ChipFontSize), flagWidth * 0.75f) + 6f;
+                float chipWidth = PosterTagCss.LuCeil(layout.Width) + flagWidth + (10f * css.Scale);
+                float chipHeight = Math.Max(PosterTagCss.Lu(css.ChipFontSize), flagWidth * 0.75f) + (6f * css.Scale);
                 // The key carries flag identity, partial treatment, and label-specific style.
                 return new PlannedItem(PosterTagTileKind.LanguageChip, tag, text, (flagCode ?? string.Empty) + "|" + tag.Partial + "|" + colors.Encode(), chipWidth, chipHeight)
                 { TextLayout = layout, IconWidth = flagWidth, IconHeight = flagWidth * 0.75f };
