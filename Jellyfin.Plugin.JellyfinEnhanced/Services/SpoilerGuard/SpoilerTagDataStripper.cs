@@ -4,6 +4,7 @@ using System.Linq;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -242,7 +243,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var revisionKeys = guardedKinds.Keys.ToList();
             revisionKeys.Sort(StringComparer.Ordinal);
-            var fingerprint = $"g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
+            var fingerprint = $"naming2|g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
 
             foreach (var kvp in items.ToList())
             {
@@ -438,6 +439,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 stripped.StreamData = null;
                 stripped.QualitySummary = null;
                 stripped.QualityEpisodeIds = null;
+            }
+            // Latest policy reads its naming facts from the summary rather than StreamData.
+            // Replace the shared summary before filtering; keep technical categories unchanged.
+            if (sanitizeTitleStreams && stripped.QualitySummary is { } summary && !stripGenresEnabled)
+            {
+                stripped.QualitySummary = new TagQualitySummary
+                {
+                    NextPremiere = summary.NextPremiere,
+                    EpisodeCount = summary.EpisodeCount,
+                    Categories = summary.Categories,
+                    AudioByLanguage = summary.AudioByLanguage,
+                    AudioRegionFallback = summary.AudioRegionFallback,
+                    LatestExtras = summary.LatestExtras.Where(label => QualityTagRules.CategoryOf(label)
+                        is not (QualityTagRules.Source or QualityTagRules.Edition)).ToArray(),
+                };
             }
             if (stripRatingsEnabled)
             {

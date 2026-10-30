@@ -37,8 +37,10 @@ public class PrivacySpoilerStripTests
         Assert.False(otherStripped);
     }
 
-    [Fact]
-    public void TitleOnlyPolicyDeepClonesAndSanitizesStreamTitlesPathsWithoutDroppingQuality()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TitleOnlyPolicyDeepClonesAndSanitizesStreamTitlesPathsWithoutDroppingQuality(bool hasStreams)
     {
         var user = new User("test", "default", "default") { Id = Guid.NewGuid() };
         var series = new Series { Id = Guid.NewGuid() };
@@ -47,10 +49,29 @@ public class PrivacySpoilerStripTests
             SpoilerStripRatings = false, SpoilerReplaceTitle = true, SpoilerStripOverview = false }, state)!;
         var stripper = new SpoilerTagDataStripper(Mock.Of<ILibraryManager>(), Mock.Of<IUserDataManager>(), null!);
         var source = Entry(series.Id); source.Type = "Series"; source.Source = "WEB"; source.Edition = "Custom episode reveal";
+        source.QualitySummary = new TagQualitySummary
+        {
+            EpisodeCount = 2, NextPremiere = 999,
+            Categories = new() { ["resolution"] = new() { Best = "4K", Latest = "4K", Values = ["4K"], AllAgree = true } },
+            LatestExtras = ["WEB", "edition:Custom episode reveal", "IMAX", "3D"],
+        };
+        if (!hasStreams) source.StreamData = null;
         var result = stripper.StripEntry(policy, user, series, source, out var stripped);
-        Assert.True(stripped); Assert.NotSame(source.StreamData, result.StreamData);
+        Assert.True(stripped);
+        Assert.NotSame(source.QualitySummary, result.QualitySummary);
+        Assert.Equal(new[] { "IMAX", "3D" }, result.QualitySummary!.LatestExtras);
+        Assert.Equal(new[] { "WEB", "edition:Custom episode reveal", "IMAX", "3D" }, source.QualitySummary.LatestExtras);
+        Assert.Same(source.QualitySummary.Categories, result.QualitySummary.Categories);
+        Assert.Equal(source.QualitySummary.NextPremiere, result.QualitySummary.NextPremiere);
+        Assert.Equal(source.QualitySummary.EpisodeCount, result.QualitySummary.EpisodeCount);
+        Assert.Equal(source.SubtitleLanguages, result.SubtitleLanguages);
+        var labels = Jellyfin.Plugin.JellyfinEnhanced.Services.SeriesQualityAggregation.Resolve(result, "latest", null);
+        Assert.Contains("4K", labels); Assert.Contains("IMAX", labels);
+        Assert.DoesNotContain("WEB", labels); Assert.DoesNotContain("edition:Custom episode reveal", labels);
         Assert.Null(result.Source); Assert.Null(result.Edition);
         Assert.Equal("WEB", source.Source); Assert.Equal("Custom episode reveal", source.Edition);
+        if (!hasStreams) { Assert.Null(result.StreamData); return; }
+        Assert.NotSame(source.StreamData, result.StreamData);
         Assert.Null(result.StreamData!.ItemName); Assert.Null(result.StreamData.ItemPath);
         var stream = Assert.Single(result.StreamData.Streams!); Assert.Null(stream.DisplayTitle); Assert.Equal("hevc", stream.Codec); Assert.Equal(2160, stream.Height);
         var sourceInfo = Assert.Single(result.StreamData.Sources!); Assert.Null(sourceInfo.Name); Assert.Null(sourceInfo.Path);
