@@ -393,7 +393,8 @@
 
     /**
      * Tell every live view about a change of state or a completed save.
-     * @param {{type: 'state'|'saved', values?: Object}} event
+     * @param {{type: 'state'|'saved', values?: Object, theirs?: boolean}} event - theirs: another
+     *   administrator's values were taken (they may have changed more than these fields).
      */
     function notify(event) {
         for (const view of Array.from(store.views)) view(event);
@@ -526,7 +527,7 @@
                 store.base.delete(key);
             }
         }
-        if (!mine) notify({ type: 'saved', values: theirs });
+        if (!mine) notify({ type: 'saved', values: theirs, theirs: true });
         return flushStore();
     }
 
@@ -672,7 +673,9 @@
         /**
          * The store changed state, or a save went through: redraw the
          * indicator; after a save, take the stored values into this view.
-         * @param {{type: string, values?: Object}} event
+         * The preview's styles are fetched again after a Tag Styles save, or
+         * when another administrator's values were taken.
+         * @param {{type: string, values?: Object, theirs?: boolean}} event
          */
         const onStore = (event) => {
             if (disposed) return;
@@ -689,7 +692,7 @@
                 for (const s of sections) s.load?.(ctx, bodyOf(s));
                 refresh();
             }
-            if (event.type === 'saved' && event.values && Object.keys(event.values).some((key) => key.startsWith('TagStyle'))) loadPreviewStyles();
+            if (event.type === 'saved' && (event.theirs || (event.values && Object.keys(event.values).some((key) => key.startsWith('TagStyle'))))) loadPreviewStyles();
             drawSaveState();
         };
         store.views.add(onStore);
@@ -1045,14 +1048,18 @@
 
         /**
          * Replace the working copy with a fresh configuration (page shown again).
-         * Fields with unsaved edits keep the edited values.
+         * Fields with unsaved edits keep the edited values. The preview's
+         * styles are fetched again too: Tag Styles may have been saved
+         * elsewhere (the main page, another administrator, the API).
          * @param {Object} fresh
          */
         function reload(fresh) {
+            if (disposed) return;
             const keep = protectedFields();
             for (const key of Object.keys(fresh)) if (!keep.has(key)) config[key] = fresh[key];
             for (const s of sections) s.load?.(ctx, bodyOf(s));
             refresh();
+            loadPreviewStyles();
         }
 
         const ctx = {

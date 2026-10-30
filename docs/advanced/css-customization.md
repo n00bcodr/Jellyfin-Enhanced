@@ -266,7 +266,7 @@ Critic styles also match user-review chips because those share `.rating-tag-crit
 
     `GET /JellyfinEnhanced/tag-styles/catalog` additionally requires an administrator. See the [API reference](api.md).
 
-    The page-wide Tag Styles rules skip tags inside an element with the `data-je-tag-styles-scope` attribute. The Media Tags settings page marks its preview (`#jeTaPreviewBody`) this way and styles it with the server's Tag Styles in the `je-tag-admin-preview-styles` stylesheet.
+    The page-wide Tag Styles rules skip tags inside an element with the `data-je-tag-styles-scope` attribute. The Media Tags settings page marks its preview (`#jeTaPreviewBody`) this way and styles it with the server's Tag Styles in the `je-tag-admin-preview-styles` stylesheet, fetched again after a Tag Styles save, whenever the page is shown again, and after **Take theirs**.
 
 CSS selectors cannot individually restyle pixels drawn into a poster image. Use Tag Styles targeting poster images for supported color changes; native output requires Native Poster Tags.
 

@@ -962,6 +962,45 @@ test('the preview draws the saved server Tag Styles, scoped to it, whatever this
   assert.equal(fetches, 3);
 });
 
+test('a returning view, and Take theirs, draw the preview with Tag Styles saved elsewhere', async t => {
+  const server = structuredClone({ ...BASE, TagStylesEnabled: true, TagStylePreset: 'default' });
+  let fetches = 0;
+  const h = boot(t, {
+    server,
+    routes: { '/JellyfinEnhanced/tag-styles': () => { fetches++; return server.TagStylesEnabled ? { quality: { '4K': { color: server.TagStylePreset === 'glass' ? 'rgba(10, 20, 30, 1)' : 'rgba(40, 50, 60, 1)' } } } : {}; } },
+  });
+  h.load('tags/tag-styles.js');
+  h.load('enhanced/settingspanel/ui-panel-tag-preview.js');
+  h.document.body.innerHTML = TWO_PAGES;
+  const page = h.document.querySelector('.page');
+  const ctx = await h.A.activate(page);
+  h.cleanup.push(() => ctx.dispose());
+  await h.settle(); await h.settle();
+  const chip = () => page.querySelector('#jeTaPreviewBody [data-sample="movie"] .quality-overlay-label[data-quality="4K"]');
+  const colour = () => h.window.getComputedStyle(chip()).color;
+  assert.equal(fetches, 1);
+  assert.equal(colour(), 'rgb(40, 50, 60)');
+  // Glass saved elsewhere (another administrator, the API) while the page was away; Jellyfin shows the same view again.
+  server.TagStylePreset = 'glass';
+  assert.equal(await h.A.activate(page), ctx);
+  await h.settle(); await h.settle();
+  assert.equal(ctx.config.TagStylePreset, 'glass', 'the editor has the new preset');
+  assert.equal(fetches, 2);
+  assert.equal(colour(), 'rgb(10, 20, 30)', 'and so does the preview');
+  // Another administrator changes the same field and the preset back: Take theirs redraws with their styles.
+  h.change(page.querySelector('#statusTagsJustAddedDays'), '8');
+  server.StatusTagsJustAddedDays = 9;
+  server.TagStylePreset = 'default';
+  await ctx.flush();
+  assert.equal(page.querySelector('#jeTaSaved').dataset.state, 'conflict');
+  page.querySelector('[data-je-theirs]').click();
+  await ctx.flush();
+  await h.settle(); await h.settle();
+  assert.equal(fetches, 3);
+  assert.equal(colour(), 'rgb(40, 50, 60)');
+  assert.equal(server.StatusTagsJustAddedDays, 9);
+});
+
 /** WCAG 2 contrast for the page's colour tokens (admin-tags.css), dark and light. */
 function themeTokens(css, light) {
   const block = (selector) => {
