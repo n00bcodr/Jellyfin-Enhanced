@@ -12,7 +12,7 @@ You can choose tags for your own account. If you administer the server, you can 
 **How to use — personal preferences:**
 
 1. Open the **Jellyfin Enhanced** panel from the user profile menu on Jellyfin 12 or the sidebar on 10.11. You can also press ++question++.
-2. Select **UI Settings** and choose your tags. Changes save automatically to your Jellyfin account on the server.
+2. Select **Media Tags** and choose your tags on its tabs (see [The Media Tags section](#the-media-tags-section)). Changes save automatically to your Jellyfin account on the server.
 3. Refresh another open client to load changes you made elsewhere.
 
 **How to use — admin defaults:**
@@ -27,6 +27,31 @@ Tables below show factory defaults. Rows marked “Admin / personal” give both
 
 !!! note "Hover hiding starts off"
     **Hide Tags on Hover** follows the admin value for new users, and overwriting personal settings applies it too.
+
+### The Media Tags section
+
+Every personal poster tag setting lives in one section of the panel, **Media Tags**, between **UI Settings** and **Hidden Content**. Its tabs each do one job, and a live preview beside them shows the result as you change things.
+
+![The Media Tags section on its Layout tab: layout tiles, label density and quick switches, with the live preview on the right](../images/tags/media-tags-hub.webp)
+
+| Tab | What you set there |
+|---|---|
+| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags** and **Show Audio Languages**. |
+| **Groups** | The [tag groups](#tag-groups-order-position-limits) in priority order: move buttons, the on/off switch, and per group its position, **Show up to** and **Include** choices, plus **Reset to defaults**. The Status row's **Badges** button opens the next tab. |
+| **Status badges** | Which [status badges](#status-tags) the Status group may show: **Just Added**, **New releases**, **Trending**, **Schedule**, **Milestones** and **Series status**, each with a sample badge. The two time windows the administrator chose are shown beside Just Added and New releases. **Status position and limit in Groups** goes back to the Status row. |
+| **Rules & locks** | Your [rules and locked items](#rules-and-locked-items) on the left, the **Add a rule** form on the right. |
+| **Colours** | Your [Tag Colours](#tag-styles-and-css) preset, one tile per preset with three sample chips in its real colours. Only shown while the administrator lets users pick a preset. |
+| **Server** | Administrators only: shortcuts to **Server defaults for new users**, the **Tag colours editor**, the **Tag cache** and **Native poster tags** on the plugin configuration page. Other users never get this tab. |
+
+**The live preview** draws three sample cards with the same layout code and tag styles as your library: a movie poster, a series poster and an episode still. Each says where its look comes from (**Default**, **🔒 Locked** or **Rule N**), decided the same way as for real cards: the series stands in for your most recently locked item and the episode for the first enabled rule, so a lock or rule change shows at once. **Resting** / **Hover** switches to what Summary and Minimal reveal on hover. While you edit a group, its chips are outlined and the others dimmed. Overflowing chips show as `+N`, as on real cards.
+
+On a phone the section fills the screen: the tabs use short names (**Badges**, **Rules**), and the preview folds into a one-line strip under them. The strip names the sample that your current edit affects (the episode on **Rules & locks**, the series for schedule badges) and lists its chips, the edited group's first; tap **Preview** to unfold the full preview.
+
+![Media Tags on a phone: the Layout tab with the preview strip, the unfolded preview, and Rules & locks](../images/tags/media-tags-hub-phone.webp)
+
+![Switching tabs and changing settings: the preview follows every change](../images/tags/media-tags-tabs.gif)
+
+The panel's **Search settings…** box finds every Media Tags control by its label (for example *Trending*, *Show up to* or *Move Language up*); pick a match to open its tab, and its group if needed, with the control focused. Everything in the section works from the keyboard: arrow keys move between tabs and between tiles, and focus stays on the control you used after a move, a delete or an unlock. **UI Settings** keeps a short **Media Tags moved to its own section** note with an **Open** button.
 
 !!! warning "Replacing everyone's preferences"
     **Overview** → **Quick Actions** → **Overwrite everyone's personal settings** replaces saved personal preferences with the current admin values. It also replaces other Enhanced display/playback preferences, so each user would need to reapply their customizations. Read [Settings Overview](../getting-started/settings-overview.md) before using it.
@@ -64,8 +89,8 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
 **How to use — personal preferences:**
 
-1. In **UI Settings**, choose a **Tag Layout** and a **Label Density**. The preview beside them shows a sample poster in your layout as you change it.
-2. Under **Tag Groups**, open a group to choose where it goes in that layout and how many tags it shows. Use the arrow buttons to change the priority order.
+1. In **Media Tags**, on the **Layout** tab, pick a layout tile and a **Label Density**. The live preview shows your layout as you change it.
+2. On the **Groups** tab, open a group to choose where it goes in that layout and how many tags it shows. Use the arrow buttons to change the priority order.
 
 **How to use — admin defaults:** under **Display** → **Media Tags**, open **Tag layout defaults**, set the starting layout, density, order, positions and limits, and click **Save Settings**.
 
@@ -99,7 +124,7 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
 #### Tag groups: order, position, limits
 
-Each group has a row under **Tag Groups**, highest priority first. Groups higher in the list win when space is short: they stack nearest the edge of a shared corner, come first in a band or the caption, and take the summary pill's three places first. The row shows where the group goes in the selected layout and how many tags it shows (for example **Bottom row · up to 3**); the switch on the right turns the group on or off.
+Each group has a row on the **Groups** tab, highest priority first. Groups higher in the list win when space is short: they stack nearest the edge of a shared corner, come first in a band or the caption, and take the summary pill's three places first. The row shows where the group goes in the selected layout and how many tags it shows (for example **Bottom row · up to 3**); the switch on the right turns the group on or off.
 
 Open a row to change it:
 
@@ -109,9 +134,7 @@ Open a row to change it:
 
 The limit applies after each group's own filtering (quality categories, language grouping and priority, rating scopes). **Reset to defaults** restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.
 
-![The Tag Groups editor with the rating row open: position pills, the Show up to stepper and the community and critic score switches](../images/tags/tag-group-editor.webp)
-
-![Changing the tag layout updates the sample poster beside it](../images/tags/tag-layout-editor.gif)
+![The Groups tab with the rating row open: position pills, the Show up to stepper and the community and critic score switches; the preview outlines the rating chips](../images/tags/tag-group-editor.webp)
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -156,12 +179,12 @@ Rules give some cards a different look (a layout and a label density) than your 
 
 **How to use:**
 
-1. In **UI Settings**, under **Where each look applies**, click **Add rule**.
-2. Pick one or more conditions (all of them must hold), a **Tag Layout** and a **Label Density**, then click **Save rule**.
-3. Use the arrows to order the rules, **On**/**Off** to pause one, **Edit** or **Delete** to change it.
-4. To lock an item, open its page and click the padlock (**Lock tag look**). Click it again, or use **Unlock** in **Locked items**, to release it.
+1. In **Media Tags**, open **Rules & locks**. The **Add a rule** form is always open beside the list (below it on a phone).
+2. Pick one or more conditions (all of them must hold, up to five; every condition needs a value) and the look, which starts at **Caption** and **Compact**. Click **Add rule**: the rule goes to the end of the list.
+3. Use the arrows to order the rules, **On**/**Off** to pause one, **Edit** to load it into the form (**Save rule** keeps its place and its On/Off state) or **Delete** to remove it.
+4. To lock an item, open its page and click the padlock (**Lock tag look**). Click it again, or use **Unlock** in **Locked items**, to release it. **Unlock all** asks for a second click. On a phone, **Show** unfolds the locked items and **Unlock all**.
 
-![Tag look rules and a locked item in the settings panel](../images/tags/tag-look-rules.webp)
+![Rules & locks: a rule, the Otherwise row and two locked series on the left, the Add a rule form on the right; the preview shows the locked series and the rule's episode](../images/tags/tag-look-rules.webp)
 
 Each card gets its look from the first of these that applies:
 
@@ -180,7 +203,7 @@ Each card gets its look from the first of these that applies:
 
 | Setting | Default | What it does |
 |---|---|---|
-| Personal: **Where each look applies** | No rules | Ordered rules: when every condition holds, the card uses that rule's layout and density |
+| Personal: **Rules & locks** | No rules | Ordered rules: when every condition holds, the card uses that rule's layout and density |
 | Personal: **Locked items** | None | Items that keep the look they had when locked; **Unlock all** asks for a second click |
 | Admin: **Default tag look rules** | Empty | Rules (as JSON) that new users and **Apply defaults to all users** start with |
 
@@ -202,7 +225,7 @@ Quality badges help you identify a file's picture and sound format before openin
 
 **How to use:**
 
-1. Turn on the **Quality** group under **Tag Groups** in **UI Settings**.
+1. Turn on the **Quality** group on the **Groups** tab of **Media Tags**.
 2. Open the row and select categories under **Include**.
 3. Use **Move up** / **Move down** to change their stacking order.
 
@@ -260,7 +283,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
 **How to use:**
 
-1. Turn on the **Genre** group under **Tag Groups** in **UI Settings** and choose its position.
+1. Turn on the **Genre** group on the **Groups** tab of **Media Tags** and choose its position.
 2. Leave **Hide Tags on Hover** off to see expanded names.
 
 | Setting | Default | What it does |
@@ -282,7 +305,7 @@ Language Tags show available audio as flags, helping you find a dub while browsi
 
 **How to use:**
 
-1. Turn on the **Language** group under **Tag Groups** in **UI Settings**.
+1. Turn on the **Language** group on the **Groups** tab of **Media Tags**.
 2. For readable language names, enable **Show Audio Languages** and use the [detail-page audio-language row](#audio-language-links).
 
 Administrators can favor particular languages under **Priority languages**.
@@ -328,7 +351,7 @@ The detail-page audio-language row shows language names and flags. You can also 
 
 **How to use:**
 
-1. Keep **Show Audio Languages** on in **UI Settings** to display the row.
+1. Keep **Show Audio Languages** on (**Media Tags** → **Layout**, under the quick switches) to display the row.
 2. As an administrator, open **Display** → **Audio Language Tags** and turn on **Enable Audio Language Tags Sync** and **Link audio languages to their tag page**. Click **Save Settings**.
 3. Run **Sync Audio Language Tags to Jellyfin** under **Dashboard** → **Scheduled Tasks** → **Jellyfin Enhanced** to tag existing movies and series.
 
@@ -365,7 +388,7 @@ Rating Tags show Jellyfin's community score as a yellow-star chip and its critic
 
 **How to use:**
 
-1. Turn on the **Rating** group under **Tag Groups** in **UI Settings**.
+1. Turn on the **Rating** group on the **Groups** tab of **Media Tags**.
 2. Open the row to choose **Community score** and **Critic score** under **Include**, and item types and home rows under **Choose where to show**.
 
 Administrators set defaults under the same heading in **Media Tags**.
@@ -435,7 +458,7 @@ Age Rating Tags show the official parental/content classification Jellyfin alrea
 
 ![Color-coded age classifications on movie and series posters](../images/tags/age-rating-tags.webp)
 
-**How to use:** Turn on the **Age Rating** group under **Tag Groups** in **UI Settings** and choose its position.
+**How to use:** Turn on the **Age Rating** group on the **Groups** tab of **Media Tags** and choose its position.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -458,7 +481,7 @@ Status Tags show one translucent badge per card: what is new, trending, airing n
 
 ![Status badges on library cards](../images/tags/status-tags.webp)
 
-**How to use:** Turn on the **Status** group under **Tag Groups** in **UI Settings** and choose its position. Open the row's **Choose which badges to show** to select badge groups. Administrators set starting defaults under **Display** → **Media Tags**; each user can override the six group switches.
+**How to use:** Turn on the **Status** group on the **Groups** tab of **Media Tags** and choose its position. Pick the badge families on the **Status badges** tab (the Status row's **Badges** button opens it). Administrators set starting defaults under **Display** → **Media Tags**; each user can override the six group switches.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -535,7 +558,7 @@ People Tags add age and birthplace facts to cast and guest-cast cards on item de
 
 **How to use:**
 
-1. Turn on **Show People Tags** in **UI Settings**.
+1. Turn on **Show People Tags** in **Media Tags** → **Layout**.
 2. Open a title's detail page and view its cast.
 
 Administrators can set the starting value in **Media Tags**.
@@ -677,7 +700,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 
 1. Enable suitable tag groups and ensure the items have the required metadata.
 2. Under **Display** → **Media Tags**, turn on **Enable Native Poster Tags (Experimental)** and click **Save Settings**.
-3. Each user can opt out with **Show Tags in Native Clients (Experimental)** in **UI Settings**.
+3. Each user can opt out with **Show Tags in Native Clients (Experimental)** in **Media Tags** → **Layout**.
 4. Reopen the native app's library or restart the app to pick up changed poster addresses.
 
 ![Native poster tag master switch and client exclusions](../images/admin/native-tags.webp)
@@ -759,7 +782,7 @@ Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, t
 | **Enable Tag Styles** | Off | Turns the colours on. Turning it off keeps your edits |
 | **Apply to** | **Both** | **Web** recolours the overlays in Jellyfin Web; **Native posters** recolours the tags drawn into posters for apps such as Android TV (needs **Enable Native Poster Tags (Experimental)**) |
 | **Preset** | **Default** | The colours every tag starts from (see below) |
-| **Let users pick their own preset** | Off | Adds a **Tag Colours** choice to each user's **UI Settings**. Your group and tag colours stay on top of the preset a user picks |
+| **Let users pick their own preset** | Off | Adds the **Colours** tab to each user's **Media Tags** section. Your group and tag colours stay on top of the preset a user picks |
 | **Reset all colours** | | Clears every group and tag colour and returns to the **Default** preset (saved when you click **Save Settings**) |
 
 ### Presets
@@ -804,7 +827,7 @@ With **Whole group** selected, the badge shows the tag that reads worst. Translu
 
 ### User presets
 
-With **Let users pick their own preset** on, users choose **Tag Colours** under **UI Settings** (see [Enhanced settings](enhanced-settings.md)). **Server default** follows your preset; any other choice replaces only the preset, never your group or tag colours. The web applies it right away, and native posters for that user follow the next time they load.
+With **Let users pick their own preset** on, users choose **Tag Colours** on the **Colours** tab of **Media Tags** (see [The Media Tags section](#the-media-tags-section)). **Server default** follows your preset; any other choice replaces only the preset, never your group or tag colours. The web applies it right away, and native posters for that user follow the next time they load.
 
 Styles change colours, not size, shape, position or visibility. For web layout, sizing, hiding and more detailed styling, see [CSS Customization](../advanced/css-customization.md).
 

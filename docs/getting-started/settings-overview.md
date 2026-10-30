@@ -103,7 +103,8 @@ You can change your own preferences without administrator access. Open the panel
 | **Auto-Skip Settings** | Personal intro/outro skipping preferences | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Subtitle Settings** | **Disable Custom Styles**, style/color, size, font, text effect, and position | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Random Button Settings** | Enablement, unwatched-only selection, item types, and random source | [Enhanced settings](../enhanced/enhanced-settings.md) |
-| **UI Settings** | Watch progress, file size, tag categories/order/positions, native poster preference, and other display choices | [Enhanced settings](../enhanced/enhanced-settings.md), [Tags & badges](../enhanced/tags.md) |
+| **UI Settings** | Watch progress, file size and other display choices | [Enhanced settings](../enhanced/enhanced-settings.md) |
+| **Media Tags** | Poster tag layout, groups and their order/positions/limits, status badges, rules and locks, colour preset, native poster preference, people tags and audio language links | [Enhanced settings](../enhanced/enhanced-settings.md#media-tags), [Tags & badges](../enhanced/tags.md) |
 | **Hidden Content** | Personal hide controls and surface filters, plus access to the hidden list; present when the server feature is enabled | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Spoiler Guard** | Personal overrides for admin-enabled categories and **Don't ask me to confirm when turning Spoiler Guard off**; present only when admin **Enable Spoiler Guard** is on | [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md#per-user-overrides) |
 | **Language Settings** | **Display Language** and **Clear Translation Cache** | [Enhanced settings](../enhanced/enhanced-settings.md) |

@@ -23,7 +23,7 @@ The Enhanced panel lets you choose how Jellyfin Enhanced works for your account.
 
 In mobile or TV web layouts, the player button appears beside the native settings button when those controls are available. Desktop web layouts hide it.
 
-Use **Search settings…** to filter sections by their contents, then select a section. On a phone, use the back-arrow button to return to the section list. Close the panel with ×, ++esc++, or ++question++ outside editable fields. On desktop, you can drag the header to move it.
+Use **Search settings…** to filter sections by their contents, then select a section. Matching **Media Tags** controls are also listed under the box by name: pick one (or press ++enter++ for the first) to open its tab with the control focused. On a phone, use the back-arrow button to return to the section list. Close the panel with ×, ++esc++, or ++question++ outside editable fields; focus returns to where you opened it. While the panel is open, ++tab++ stays inside it. On desktop, you can drag the header to move it.
 
 !!! note "Use a supported web client"
 
@@ -31,7 +31,7 @@ Use **Search settings…** to filter sections by their contents, then select a s
 
 ??? info "How it works"
 
-    The sections are **Shortcuts**, **Playback Settings**, **Auto-Skip Settings**, **Subtitle Settings**, **Random Button Settings**, **UI Settings**, **Hidden Content**, **Spoiler Guard**, **Language Settings**, and **About**. **Shortcuts** is hidden when the administrator disables shortcuts. **Hidden Content** and **Spoiler Guard** require their server features to be enabled.
+    The sections are **Shortcuts**, **Playback Settings**, **Auto-Skip Settings**, **Subtitle Settings**, **Random Button Settings**, **UI Settings**, **Media Tags**, **Hidden Content**, **Spoiler Guard**, **Language Settings**, and **About**. **Shortcuts** is hidden when the administrator disables shortcuts. **Hidden Content** and **Spoiler Guard** require their server features to be enabled.
 
     On desktop, the panel restores your last-opened section. A new account starts at **Shortcuts**, or the first available section if shortcuts are disabled. At widths up to 760 pixels, the panel fills the screen and starts with the section list. Tap a section to open it.
 
@@ -233,7 +233,7 @@ Choose the extra information you see on item details and add removal buttons to 
 
 Open **UI Settings** and turn on the options you want.
 
-![Personal UI Settings with progress, information and tag options](../images/enhanced/panel-ui.webp)
+![Personal UI Settings with progress and file size options and the note pointing to Media Tags](../images/enhanced/panel-ui.webp)
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -241,35 +241,9 @@ Open **UI Settings** and turn on the options you want.
 | **Percentage** / **Time Watched** / **Time Remaining** | **Percentage** | Chooses how **Show Watch Progress** shows progress. |
 | **h:m** / **y:mo:d:h:m** | **h:m** | Selects the time format for time-based progress displays. |
 | **Show File Sizes** | Off | Shows total file size on item details. |
-| **Show Audio Languages** | On | Shows available audio languages on item details. |
 | **Add Remove from Continue Watching & Next Up Buttons** | Off | Adds removal buttons to home rows and keeps your playback position. |
 
-Poster tags live in **UI Settings** too: the layout, a live preview, and one **Tag Groups** row per group, plus hover behavior and the conditional native-client preference.
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Tag Layout** | **Corners** | Chooses where poster tags appear: corners, top and bottom bands, a caption below the poster, a summary pill, or a minimal set. |
-| **Label Density** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
-| Preview **Resting** / **Hover** | **Resting** | Draws a sample poster with your layout and enabled groups; **Hover** shows what Summary and Minimal reveal on hover. Not saved. |
-| **Tag Groups** move up / move down | Status, quality, rating, age rating, language, genre | Sets the priority order. Higher groups win when space is short. |
-| Group switch | Off | Turns the group's tags on or off. |
-| **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corner picks also set the position Native Poster Tags use. |
-| **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
-| **Include** | All on | Quality: the categories and their stack order. Rating: **Community score** and **Critic score**. |
-| **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
-| **Tag Colours** | **Server default** | Shown only when the administrator turns on **Let users pick their own preset** in Tag Styles. Picks your own colour preset (**Default**, **Glass**, **Outline**, **Dark**, **Light** or **Mono**); colours the administrator changed for a group or a single tag stay on top. Applies right away on the web; posters drawn for native apps follow the next time they load. |
-
-Each group row also keeps that group's other choices: the sound language for quality, **Choose where to show** for ratings, and **Choose which badges to show** for status.
-
-Below them, **Where each look applies** lists your tag look rules and locked items:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| **Locked items** | None | Shows the items you locked from their page, each with **Unlock**, plus **Unlock all**. Locks always win. |
-| **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. **Add rule** opens the editor; arrows reorder, **On**/**Off** pauses a rule. |
-| **Otherwise** | Your Tag Layout | Every other card uses the Tag Layout and Label Density above. |
-
-See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
+Poster tags and **Show Audio Languages** moved to [Media Tags](#media-tags); **UI Settings** keeps a **Media Tags moved to its own section** note with an **Open** button.
 
 ??? info "How it works"
 
@@ -283,6 +257,64 @@ See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings
     - Use **Unhide** for Next Up or combined entries.
 
     Resuming clears Continue Watching-only hides. Combined hides retain their Next Up scope. Next Up-only and global hides remain until removed manually. See [Content management](enhanced-features.md#content-management).
+
+### Media Tags
+
+Everything about poster tags for your account: the layout, the tag groups, status badges, rules and locked items, and your colour preset. Each tab does one job; a live preview beside the tabs (a strip under them on a phone) shows the result as you change it. See [The Media Tags section](tags.md#the-media-tags-section) for the preview, the phone layout and search.
+
+![Media Tags on its Layout tab with the live preview](../images/tags/media-tags-hub.webp)
+
+=== "Layout"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | Layout tiles: **Corners**, **Bands**, **Caption**, **Summary**, **Minimal** | **Corners** | Your default layout; the line under the tiles describes the selected one. Arrow keys move between tiles. |
+    | **Label Density**: **Full** / **Compact** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
+    | **Hide Tags on Hover** | Off | Fades poster tags while you hover a card. |
+    | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags into posters for native apps. |
+    | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
+    | **Show Audio Languages** | On | Audio language links on item details. |
+
+=== "Groups"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | Move up / move down | Status, quality, rating, age rating, language, genre | Sets the priority order. Higher groups win when space is short. |
+    | Group switch | Off | Turns the group's tags on or off. |
+    | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corner picks also set the position Native Poster Tags use. |
+    | **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
+    | **Include** | All on | Quality: the categories, their stack order and the sound language. Rating: **Community score**, **Critic score** and where to show ratings. Status: the **Badges** button opens **Status badges**. |
+    | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
+
+=== "Status badges"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | **Just Added** / **New releases** / **Trending** / **Schedule** / **Milestones** | On | Which badge families the Status group may show. A poster shows one badge at a time. |
+    | **Series status** | Off | Returning / Ended / Cancelled. |
+
+    The administrator's two time windows show beside **Just Added** and **New releases**; administrators also get a link to change them. Turn the Status group itself on in **Groups**.
+
+=== "Rules & locks"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. Arrows reorder, **On**/**Off** pauses a rule, **Edit** loads it into the form, **Delete** removes it. |
+    | **Otherwise** | Your layout | Every other card uses your default layout and density; **Change** goes to the Layout tab. |
+    | **Locked items** | None | The items you locked from their page, each with **Unlock**, plus **Unlock all**. Locks always win. |
+    | **Add a rule** | Library condition, **Caption**, **Compact** | Up to five conditions, each needing a value; **Add rule** adds it at the end of the list. |
+
+=== "Colours"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | **Tag Colours** | **Server default** | Shown only when the administrator turns on **Let users pick their own preset** in Tag Styles. Each tile shows three chips in that preset's colours; colours the administrator changed for a group or a single tag stay on top. Applies right away on the web; posters drawn for native apps follow the next time they load. |
+
+=== "Server (administrators)"
+
+    Shortcuts to the plugin configuration page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that section. Other users never get this tab.
+
+See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
 
 ### Hidden Content
 
@@ -433,7 +465,7 @@ For the broader storage and backup reference, see [Settings overview](../getting
 
 ### Display defaults
 
-Choose the starting information new users see on item details. Users can override these admin preferences in **UI Settings**.
+Choose the starting information new users see on item details. Users can override these admin preferences in **UI Settings** (audio languages in **Media Tags** → **Layout**).
 
 Open **Display** → **UI Preferences** and set the starting values:
 
@@ -709,15 +741,15 @@ See [Enhanced features](enhanced-features.md) for the full gesture workflow and 
 
 ### Tags: Quality, Genre, Language, Rating, Age Rating, Status, People
 
-All tag settings have moved to [Tags & Badges](tags.md): personal **UI Settings** controls, admin **Display** → **Media Tags** defaults, quality categories/order, language preferences, rating scopes, people/review badges, hover behavior, and Tag Styles.
+All tag settings have moved to [Tags & Badges](tags.md): personal **Media Tags** controls, admin **Display** → **Media Tags** defaults, quality categories/order, language preferences, rating scopes, people/review badges, hover behavior, and Tag Styles.
 
 #### Configuration
 
-For personal tag choices, open **UI Settings**. Administrators use **Display** → **Media Tags**. See [Tags & Badges](tags.md) for exact labels, defaults, and configuration instructions.
+For personal tag choices, open **Media Tags**. Administrators use **Display** → **Media Tags**. See [Tags & Badges](tags.md) for exact labels, defaults, and configuration instructions.
 
 #### Status Tags badge groups
 
-Under **UI Settings** → **Show Status Tags** → **Choose which badges to show**, the six personal switches are Trending rank, New Movie / New Series / New Episode, Just Added, Airing Today / Airs / Returns / Coming Soon, New Season / Premiere / Finale / Complete Season, and Returning / Ended / Cancelled. All default on except the last. Administrators set starting defaults in **Display** → **Media Tags** and the two shared day windows. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
+Under **Media Tags** → **Status badges**, the six personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), and Series status (Returning / Ended / Cancelled). All default on except the last. Administrators set starting defaults in **Display** → **Media Tags** and the two shared day windows. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
 
 #### Server-Side Tag Cache
 

@@ -773,13 +773,13 @@ See total file size and available audio languages in a title's detail informatio
 
 **How to use:**
 
-1. Open **UI Settings** and enable the chip you want.
+1. Enable **Show File Sizes** in **UI Settings** or **Show Audio Languages** in **Media Tags** (**Layout** tab).
 2. Open a detail page. Selecting another media version changes its size and audio-language data.
 
 | Setting | Default | What it does |
 |---|---|---|
 | **Show file sizes** — admin **Display**; **Show File Sizes** — personal **UI Settings** | Off | Shows total file size. |
-| **Show available audio languages on item detail page** — admin **Display**; **Show Audio Languages** — personal **UI Settings** | On | Shows detail-page audio-language chips. |
+| **Show available audio languages on item detail page** — admin **Display**; **Show Audio Languages** — personal **Media Tags** | On | Shows detail-page audio-language chips. |
 
 ??? note "Supported items and audio-language links"
 

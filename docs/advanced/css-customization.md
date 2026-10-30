@@ -167,7 +167,7 @@ These are CSS custom properties, separate from plugin settings. Assign them to `
 
 ## Tags
 
-Poster tags use separate containers for quality, genre, language, rating, and age-rating badges. People tags decorate cast portraits on detail pages. Enable the relevant personal setting in **UI Settings** before trying a recipe.
+Poster tags use separate containers for quality, genre, language, rating, and age-rating badges. People tags decorate cast portraits on detail pages. Enable the relevant personal setting in **Media Tags** before trying a recipe.
 
 ### Prerequisites and placement
 
@@ -188,7 +188,7 @@ New user settings for the seven tag features are seeded from the plugin configur
 
 Server and saved user properties use PascalCase. Resolved client settings use camelCase, such as `qualityTagsEnabled`.
 
-Users can change **Hide Tags on Hover** later in their personal **UI Settings**.
+Users can change **Hide Tags on Hover** later in their personal **Media Tags** section (**Layout** tab).
 
 If tag data is stale or missing, also check the server's cache configuration under **Display** → **Media Tags**:
 
@@ -199,7 +199,7 @@ If tag data is stale or missing, also check the server's cache configuration und
 
 Exclusion changes affect the next cache rebuild. Click **Save Settings**, then open **Admin** → **Tag Cache** and click **Rebuild Server Tag Cache**. Confirm the full rebuild. See [Tags & Badges](../enhanced/tags.md) for cache operation; CSS only styles the resulting elements.
 
-Use the position grids and the **Tag Layout** choice in **UI Settings** to move tag containers.
+Use the **Position** pills on the **Groups** tab and the layout tiles on the **Layout** tab of **Media Tags** to move tag containers.
 
 The normal poster structure places `.je-tag-host` inside `.cardScalable`, before `.cardOverlayContainer`. Fallback targets are used when that structure is unavailable: a list row's image gets its own `.je-tag-host`.
 

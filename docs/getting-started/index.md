@@ -83,7 +83,7 @@ See [settings overview](settings-overview.md#the-personal-enhanced-panel) for al
 
 - Open **Shortcuts** and try **Go to Home** with ++shift+h++. Click a displayed key to customize it; ++backspace++ restores the administrator's binding.
 - Start a browser video and press ++b++ to save a bookmark. Open **Bookmarks** to return to that timestamp later.
-- In **UI Settings**, enable a poster tag category and browse a library. [Tags & badges](../enhanced/tags.md) explains their data requirements and scopes.
+- In **Media Tags** (on its **Groups** tab), turn on a poster tag group and browse a library. [Tags & badges](../enhanced/tags.md) explains their data requirements and scopes.
 - Pause a browser video and wait without interacting to try the pause screen. Adjust playback preferences in **Playback Settings**.
 - If your administrator enabled them, open **Calendar**, **Requests**, or **Seerr Recommendations** (**Recommendations** in Plugin Pages or JE-managed Custom Tabs) to try the connected services.
 

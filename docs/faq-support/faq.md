@@ -164,7 +164,7 @@ These screenshots show external account management. They do not show JE feature 
 
 ### Tags not showing on posters?
 
-Open **UI Settings** in the Enhanced panel, enable the tag groups you want, and check the item's metadata; your saved choices override administrator defaults. See [Tags & Badges](../enhanced/tags.md) for setup, scopes, and native posters, and the [score sources and fallback rules](../enhanced/tags.md#rating-tags) for season/episode differences between server-cache, batch, and player paths. For stale data, use [targeted cache troubleshooting](../installation/troubleshooting.md#stale-caches-or-missing-assets).
+Open **Media Tags** in the Enhanced panel, turn on the tag groups you want on its **Groups** tab, and check the item's metadata; your saved choices override administrator defaults. See [Tags & Badges](../enhanced/tags.md) for setup, scopes, and native posters, and the [score sources and fallback rules](../enhanced/tags.md#rating-tags) for season/episode differences between server-cache, batch, and player paths. For stale data, use [targeted cache troubleshooting](../installation/troubleshooting.md#stale-caches-or-missing-assets).
 
 ### Bookmarks not syncing across devices?
 

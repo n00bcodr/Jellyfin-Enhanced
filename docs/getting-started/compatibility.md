@@ -145,7 +145,7 @@ Connect only the services your chosen features need. The table shows where to se
 | Elsewhere streaming providers and TMDB reviews | **TMDB API Key**, the relevant switches, and appropriate TMDB item IDs | **Elsewhere & Reviews**; [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) |
 | MDBList ratings and rating synchronization | **MDBList API Key** and the relevant display/fetch/sync switches; fetching depends on the account's available allowance | **Display → MDBList Ratings**; [MDBList settings](../other/other-settings.md#mdblist-ratings) |
 | Standalone Letterboxd links | **Enable Letterboxd Links**; movies need an IMDb ID. No Letterboxd account/API key is configured in JE | **Extras → External Links**; [Other settings](../other/other-settings.md) |
-| Ordinary poster rating tags | Stored Jellyfin community or critic ratings; no JE TMDB/MDBList key merely to display those values | **Display → Media Tags** or personal **UI Settings**; [Tags & badges](../enhanced/tags.md) |
+| Ordinary poster rating tags | Stored Jellyfin community or critic ratings; no JE TMDB/MDBList key merely to display those values | **Display → Media Tags** or personal **Media Tags**; [Tags & badges](../enhanced/tags.md) |
 
 ??? note "Service and network details"
 
