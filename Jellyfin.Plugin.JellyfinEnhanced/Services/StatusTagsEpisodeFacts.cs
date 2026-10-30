@@ -31,6 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private DateTime? _firstAdded;
         private DateTime? _lastAdded;
         private int _count;
+        private int? _newestSeason;
         private bool _missingAdded;
         private readonly SortedSet<string> _allIds = new(StringComparer.Ordinal);
         private readonly Dictionary<int, int> _lastEpisodeBySeason = new();
@@ -68,6 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var season = seasonNumber ?? _containerSeason;
+            if (season is > 0) _newestSeason = Math.Max(_newestSeason ?? 0, season.Value);
             if (season is { } numberedSeason && episodeNumber is { } numberedEpisode)
             {
                 _lastEpisodeBySeason[numberedSeason] = Math.Max(_lastEpisodeBySeason.GetValueOrDefault(numberedSeason), numberedEpisode);
@@ -115,7 +117,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (_seasonFirstAired.Count == 0) return null;
                 var season = _isSeason && _containerSeason is { } own && _seasonFirstAired.ContainsKey(own)
                     ? own
-                    : _seasonFirstAired.Keys.Max();
+                    : _newestSeason ?? _seasonFirstAired.Keys.Max();
+                if (!_seasonFirstAired.ContainsKey(season)) return null;
                 var aired = TagCacheService.ToUnixMilliseconds(_seasonFirstAired[season].Aired);
                 return aired is { } ms ? new TagSeasonPremiere { Season = season, Aired = ms } : null;
             }
@@ -139,7 +142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (_latestAired != null) ids.Add(_latestAiredId.ToString("N"));
                 if (SeasonPremiere is { } premiere) ids.Add(_seasonFirstAired[premiere.Season].Id.ToString("N"));
                 // Every episode contributes to the count, even one in the middle.
-                if (_isSeason) ids.UnionWith(_allIds);
+                ids.UnionWith(_allIds);
 
                 return ids.Count > 0 ? ids.ToArray() : null;
             }

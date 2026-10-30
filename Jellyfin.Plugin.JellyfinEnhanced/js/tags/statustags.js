@@ -154,11 +154,12 @@
      * @property {number|null} latest - Series/Season: newest episode DateCreated (ms).
      * @property {string|null} status - Series: Jellyfin status (Continuing/Ended/Unreleased).
      * @property {number|null} latestAired - Series/Season: newest episode air date (ms).
-     * @property {{s: number, e: number}|null} latestIndex - Its season/episode numbers.
+     * @property {{s: number, e: number, isLast: boolean}|null} latestIndex - Its season/episode numbers.
      * @property {{s: number, aired: number}|null} seasonPremiere - Series: newest season; Season: itself.
      * @property {{first: number, last: number, count: number}|null} addedSpan - Season: episode added dates.
      * @property {number|null} season - Season/Episode: season number.
      * @property {number|null} episode - Episode: episode number.
+     * @property {boolean|null} isLast - Whether this is the last locally available episode in its season.
      * @property {string|null} seriesId - The series whose TMDB schedule applies (Series: itself).
      * @property {string|null|undefined} seriesTmdb - That series' TMDB id; undefined when unknown.
      */
@@ -446,9 +447,9 @@
     /**
      * Whether TMDB's newest aired episode ended its season: TMDB marks it a
      * finale (episode_type, since 2023), or, without a type, nothing more is
-     * scheduled in that season. A series TMDB lists as ended or cancelled has
-     * finished its last season too.
+     * scheduled in that season and the local episode is its season’s last.
      * @param {SeriesFacts} facts
+     * @param {boolean|null} isLast - Local season-boundary confirmation for the fallback.
      * @returns {boolean}
      */
     function lastAiredEndsSeason(facts, isLast) {
@@ -582,8 +583,8 @@
     }
 
     /**
-     * The lowest-priority Series badge: TMDB's status when it has arrived
-     * (it is live and knows cancellations), else Jellyfin's.
+     * The lowest-priority Series badge: Jellyfin first, with TMDB refining
+     * an ended series to cancelled or supplying an absent Jellyfin status.
      * @param {StatusData} data
      * @param {SeriesFacts|null} facts
      * @returns {{kind: string, key: string, label: string}|null}
@@ -733,7 +734,7 @@
         if (readsSeries) requestSeries(ctx, /** @type {string} */ (data.seriesId));
         const badge = pickBadge(data);
         if (readsSeries || (data.tmdb && (data.type === 'Movie' || data.type === 'Series'))) {
-            liveCards.set(el, { domId: el.closest('[data-id]')?.getAttribute('data-id'), id: itemId ? String(itemId) : null, data, shown: badgeKey(badge), rev: trackRev });
+            liveCards.set(el, { domId: el.closest('[data-id]')?.getAttribute('data-id'), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
             el.dataset[LIVE_ATTR] = '1';
         }
         applyStatusTag(ctx, el, badge);
@@ -791,7 +792,7 @@
                 replacedAt.clear();
                 return;
             }
-            for (const id of updatedIds) replacedAt.set(String(id), trackRev);
+            for (const id of updatedIds) replacedAt.set(normId(id), trackRev);
             return;
         }
         staleBelowRev = trackRev;

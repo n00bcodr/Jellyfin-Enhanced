@@ -38,8 +38,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The rate limit's sliding window.</summary>
         public static readonly TimeSpan RateWindow = TimeSpan.FromSeconds(10);
 
-        private static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(10);
-
         private readonly TmdbResponseCache _tmdbResponseCache;
         private readonly Logger _logger;
         private readonly TimeProvider _timeProvider;
@@ -125,9 +123,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (_tmdbResponseCache.TryGetFresh(apiPath, string.Empty, apiKey, out cached))
                     return cached.IsSuccess ? cached.Content : null;
                 await WaitForRateWindowAsync(cancellationToken).ConfigureAwait(false);
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(LookupTimeout);
-                var response = await _tmdbResponseCache.GetAsync(apiPath, string.Empty, apiKey, timeout.Token).ConfigureAwait(false);
+                // TmdbResponseCache owns a 30-second upstream timeout. Caller
+                // cancellation must not free this slot while its shared HTTP
+                // request is still running, or subsequent callers can exceed four.
+                var response = await _tmdbResponseCache.GetAsync(apiPath, string.Empty, apiKey, CancellationToken.None).ConfigureAwait(false);
                 return response.IsSuccess ? response.Content : null;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
