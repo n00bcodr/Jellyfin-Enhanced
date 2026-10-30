@@ -409,8 +409,7 @@
         let ctrl = controllers.get(host) || null;
         const itemId = identityOf(host);
         if (ctrl && ctrl.itemId !== itemId) {
-            teardown(ctrl);
-            controllers.delete(host);
+            forget(ctrl);
             ctrl = null;
         }
         if (!ctrl && create) {
@@ -926,11 +925,24 @@
      * @param {HTMLElement} target
      */
     function clearCard(target) {
+        // The user review key lives on the render target (the host, or the
+        // image of a card without one): a lookup still out for the old item
+        // checks it before adding its chip.
+        if (target?.dataset) delete target.dataset.jeReviewKey;
         const host = findHost(target);
+        if (host) delete host.dataset.jeReviewKey;
         const ctrl = host ? controllers.get(host) : null;
         if (!host || !ctrl) return;
+        forget(ctrl);
+    }
+
+    /**
+     * Tear a card's controller down and drop it.
+     * @param {CardController} ctrl
+     */
+    function forget(ctrl) {
         teardown(ctrl);
-        controllers.delete(host);
+        controllers.delete(ctrl.host);
     }
 
     /**
@@ -949,6 +961,7 @@
     function clearAll() {
         for (const host of document.querySelectorAll('.je-tag-host')) clearCard(/** @type {HTMLElement} */ (host));
         document.querySelectorAll('.je-tag-caption').forEach((el) => el.remove());
+        document.querySelectorAll('[data-je-review-key]').forEach((el) => { delete /** @type {HTMLElement} */ (el).dataset.jeReviewKey; });
     }
 
     /**

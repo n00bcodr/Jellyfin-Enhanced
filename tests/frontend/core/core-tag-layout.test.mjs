@@ -38,9 +38,10 @@ function entry(overrides = {}) {
  * cards, rendering tag-cache entries the way the pipeline's server-cache path
  * does (every enabled renderer into the card's host, in registration order).
  */
-function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = null } = {}) {
+function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = null, reviewSource = null } = {}) {
   const renderers = new Map();
   const userChange = new Map();
+  const reviewListeners = [];
   const h = createHarness({
     html,
     JE: {
@@ -48,7 +49,7 @@ function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = n
         qualityTagsEnabled: true, genreTagsEnabled: true, languageTagsEnabled: true, ratingTagsEnabled: true,
         ageRatingTagsEnabled: true, statusTagsEnabled: true, qualityTagsPreferredAudioLanguage: 'none', ...settings,
       },
-      pluginConfig: { TagCacheServerMode: true, ...(reviews ? { ShowUserReviews: true, ShowUserRatingOnPosters: true } : {}), ...plugin },
+      pluginConfig: { TagCacheServerMode: true, ...(reviews || reviewSource ? { ShowUserReviews: true, ShowUserRatingOnPosters: true } : {}), ...plugin },
       t: key => key,
       cdn: { flagSvg: code => `http://jellyfin.test/flags/${code}.svg` },
       session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange: (name, fn) => userChange.set(name, fn) },
@@ -56,8 +57,8 @@ function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = n
       tagPipeline: {
         registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name),
         clearProcessed() {}, scheduleScan() {},
-        peekReviewRatings: () => reviews, getReviewRatingsRequestedAt: () => 1,
-        getReviewRatings: async () => reviews, onReviewRatingsChanged() {},
+        peekReviewRatings: () => (reviewSource ? reviewSource.peek() : reviews), getReviewRatingsRequestedAt: () => 1,
+        getReviewRatings: async () => (reviewSource ? reviewSource.get() : reviews), onReviewRatingsChanged: fn => reviewListeners.push(fn),
       },
     },
   });
@@ -67,11 +68,11 @@ function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = n
     'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js', 'tags/userreviewtags.js']) h.load(file);
   const JE = h.JE;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags(); JE.initializeStatusTags(); JE.initializeLanguageTags();
-  if (reviews) JE.initializeUserReviewTags();
+  if (reviews || reviewSource) JE.initializeUserReviewTags();
   const layout = JE.core.tagLayout;
   const targetOf = (root = h.document) => root.querySelector('.je-tag-host') || root.querySelector('.listItemImage');
   return Object.assign(h, {
-    renderers, userChange, layout,
+    renderers, userChange, layout, reviewListeners,
     /** Render an entry into a card (default: the first) through every enabled renderer. */
     render(e = entry(), target = targetOf(), id = ID) {
       for (const [, r] of renderers) if (r.isEnabled() && r.renderFromServerCache) r.renderFromServerCache(target, e, id);
@@ -454,4 +455,38 @@ test('the user review chip joins the rating group and follows its slot and summa
   delete h.document.querySelector('.card').dataset.jeRatingTagged;
   h.renderers.get('rating').renderFromServerCache(host, entry({ CommunityRating: null, CriticRating: null }), ID);
   assert.equal(host.querySelector('.je-tag-pill-fact[data-je-group="rating"]').textContent, '♥ 9');
+});
+
+test('a review lookup that answers after its card was reused for another item adds nothing to the new item', async t => {
+  // The averages are still loading when A renders, so A's chip waits on them.
+  const loading = deferred();
+  let averages = null;
+  const h = setup(t, { reviewSource: { peek: () => averages, get: () => loading.promise.then(() => averages) } });
+  const host = h.render();
+  assert.equal(host.querySelector('.je-userreview-tag'), null, 'A\'s lookup is still out');
+  assert.equal(host.dataset.jeReviewKey, 'movie:42');
+  h.document.querySelector('.card').setAttribute('data-id', OTHER);
+  h.render(entry({ TmdbId: null, CommunityRating: 6.5 }), host, OTHER);
+  averages = new Map([['movie:42', 4.5]]);
+  loading.resolve();
+  await settle();
+  assert.equal(host.querySelector('.je-userreview-tag'), null, 'A\'s answer is not committed to B');
+  for (const listener of h.reviewListeners) listener(null);
+  assert.equal(host.querySelector('.je-userreview-tag'), null, 'nor does a later change to A\'s average reach B');
+  assert.equal(host.dataset.jeReviewKey, undefined, 'A\'s stale key is dropped');
+  assert.deepEqual(Array.from(host.querySelectorAll('.rating-tag .rating-text'), r => r.textContent), ['91%', '6.5'], 'B\'s own ratings');
+});
+
+test('a review lookup cut short by clearing the card adds nothing', async t => {
+  const loading = deferred();
+  let averages = null;
+  const h = setup(t, { reviewSource: { peek: () => averages, get: () => loading.promise.then(() => averages) } });
+  const host = h.render();
+  h.layout.clearCard(host);
+  assert.equal(host.dataset.jeReviewKey, undefined, 'cleanup drops the review key');
+  delete h.document.querySelector('.card').dataset.jeRatingTagged;
+  averages = new Map([['movie:42', 4.5]]);
+  loading.resolve();
+  await settle();
+  assert.equal(host.querySelector('.je-userreview-tag'), null);
 });

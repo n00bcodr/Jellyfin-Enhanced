@@ -393,6 +393,33 @@
         }
     }
 
+    /** @type {WeakMap<HTMLElement, number>} render target → its latest appendUserRatingToContainer call */
+    const _renderGeneration = new WeakMap();
+    /** @type {WeakMap<HTMLElement, string>} render target → item id its data-je-review-key was set for */
+    const _reviewKeyOwner = new WeakMap();
+
+    /**
+     * Normalised id of the item a card shows (its data-id / data-itemid,
+     * which a virtualised list rewrites when it reuses the card).
+     * @param {HTMLElement} el - Render target or anything inside the card.
+     * @returns {string}
+     */
+    function cardIdentity(el) {
+        const holder = el.closest('[data-id]') || el.closest('[data-itemid]');
+        const raw = holder?.getAttribute('data-id') || holder?.getAttribute('data-itemid') || '';
+        return raw.replace(/-/g, '').toLowerCase();
+    }
+
+    /**
+     * Whether a card's review key was set for the item it shows now (not
+     * for the item a virtualised list showed in it before).
+     * @param {HTMLElement} el - Render target carrying data-je-review-key.
+     * @returns {boolean}
+     */
+    function reviewKeyBelongs(el) {
+        return _reviewKeyOwner.get(el) === cardIdentity(el);
+    }
+
     /**
      * Resolve the tmdbKey and mediaType for a Jellyfin item.
      * Returns null if the item type is unsupported or TMDB ID is missing.
@@ -498,6 +525,11 @@
         for (const host of hosts) {
             const key = host.dataset.jeReviewKey;
             if (keys && !keys.has(key)) continue;
+            // Left by the item this card showed before it was reused.
+            if (!reviewKeyBelongs(host)) {
+                delete host.dataset.jeReviewKey;
+                continue;
+            }
             // Per-type / home-row scope: a card the rating renderer leaves
             // bare never gets a chip from here either.
             if (typeof JE.isRatingTagExcludedByScope === 'function' && JE.isRatingTagExcludedByScope(host, null)) continue;
@@ -524,13 +556,24 @@
         if (!JE.pluginConfig?.ShowUserRatingOnPosters) return;
         if (!JE.currentSettings?.ratingTagsEnabled) return;
 
+        // A newer render of this card supersedes any lookup still out for it.
+        const generation = (_renderGeneration.get(containerOrEl) || 0) + 1;
+        _renderGeneration.set(containerOrEl, generation);
         const resolved = resolveTmdbKey(item, extras);
-        if (!resolved) return;
+        if (!resolved) {
+            // This item has no review key: drop the previous item's, so a
+            // change to the averages no longer updates this card.
+            delete containerOrEl.dataset.jeReviewKey;
+            return;
+        }
 
         const { tmdbKey, mediaType } = resolved;
+        const reviewKey = `${mediaType}:${tmdbKey}`;
         // Remember the key on the card so a later change to the averages can
-        // update this chip in place (see refreshChangedChips).
-        containerOrEl.dataset.jeReviewKey = `${mediaType}:${tmdbKey}`;
+        // update this chip in place (see refreshChangedChips), and which item
+        // it belongs to.
+        containerOrEl.dataset.jeReviewKey = reviewKey;
+        _reviewKeyOwner.set(containerOrEl, cardIdentity(containerOrEl));
         const known = peekUserRating(tmdbKey, mediaType);
         if (known !== undefined) {
             applyChip(containerOrEl, known, false);
@@ -539,6 +582,13 @@
 
         fetchUserRating(tmdbKey, mediaType).then((rating) => {
             if (rating === undefined) return; // lookup aborted — render nothing
+            // The card may have been rendered again, cleared, or reused for
+            // another item (a virtualised list) while the lookup was out: the
+            // answer only belongs on the card if it still shows this item,
+            // with this key, from this render.
+            if (_renderGeneration.get(containerOrEl) !== generation
+                || containerOrEl.dataset.jeReviewKey !== reviewKey
+                || !reviewKeyBelongs(containerOrEl)) return;
             // Averages that arrived while this lookup was out are newer than
             // its answer (and may already be on the chip): resolve again.
             const current = peekUserRating(tmdbKey, mediaType);
