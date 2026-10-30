@@ -184,6 +184,43 @@ public class RatingSourceTests
         Assert.Equal(8.1, cache.GetSourceRatings(episode)!.Imdb);
         Assert.Equal(cache.GetSourceRatings(series), cache.GetSourceRatings(new Season { SeriesId = series.Id }));
     }
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    public void EnrichmentRequiresEnabledNamedSourceDemand(bool adminOn, bool userOn, bool fetches)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = adminOn;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        f.Core.Write(Guid.NewGuid().ToString("N"), JsonSerializer.Serialize(new JellyfinEnhancedUserSettings { RatingTagsEnabled = userOn, RatingTagsSources = ["imdb"] }));
+        var requests = 0;
+        using var transport = new IntegrationTransport((request, _) => {
+            requests++;
+            return Task.FromResult(IntegrationTransport.Response(request.RequestUri!.AbsolutePath == "/user"
+                ? "{\"rate_limit\":1000,\"rate_limit_remaining\":1000}" : "[]"));
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<Guid>());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { movie });
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        cache.BuildFullCache(null, default);
+        cache.WarmSourceRatingsForItems([movie], default);
+        cache.BuildEntryOnDemand(movie);
+        Assert.Equal(fetches ? 2 : 0, requests);
+        if (!fetches)
+        {
+            f.Plugin.Configuration.RatingTagsEnabled = true;
+            f.Plugin.Configuration.RatingTagsSources = ["community", "critic"];
+            cache.BuildFullCache(null, default);
+            cache.WarmSourceRatingsForItems([movie], default);
+            Assert.Equal(0, requests);
+        }
+    }
+
     private sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
     {
         public override List<MediaBrowser.Model.Dto.MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => [];

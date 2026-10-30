@@ -3,6 +3,7 @@ using System.Threading;
 using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks;
 using MediaBrowser.Controller.Entities;
 
@@ -39,10 +40,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return id == null ? null : TagSourceRatings.FromMdblist(_mdblistService.GetCachedEntry(item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", id));
         }
 
+        /// <summary>Only named-source consumers may trigger upstream enrichment; legacy scores remain cache-only.</summary>
+        private bool HasSourceRatingDemand()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || !SourceRatingsConfigured) return false;
+            static bool Named(string[]? sources) => RatingSourceSettings.NormalizeSources(sources)?.Any(id => id is not ("community" or "critic")) == true;
+            if (config.RatingTagsEnabled && Named(config.RatingTagsSources)) return true;
+            var users = new UserConfigurationManager(_applicationPaths, _logger);
+            return users.GetAllUserIds().Any(id =>
+            {
+                var settings = users.GetUserConfiguration<JellyfinEnhancedUserSettings>(id, "settings.json");
+                return settings.RatingTagsEnabled && Named(settings.RatingTagsSources);
+            });
+        }
+
         /// <summary>Warm only accessible request items, deduplicating children by series. Used without the bulk cache too.</summary>
         public void WarmSourceRatingsForItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken)
         {
-            if (_mdblistService == null || string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
+            if (_mdblistService == null || !HasSourceRatingDemand()) return;
             var titles = items.Select(item => item is MediaBrowser.Controller.Entities.TV.Season or MediaBrowser.Controller.Entities.TV.Episode ? GetParentSeries(item) ?? item : item)
                 .Where(item => item is MediaBrowser.Controller.Entities.Movies.Movie or MediaBrowser.Controller.Entities.TV.Series)
                 .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie",
@@ -56,7 +72,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void WarmSourceRatings(CancellationToken cancellationToken)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (_mdblistService == null || string.IsNullOrWhiteSpace(config?.MdblistApiKey)) return;
+            if (_mdblistService == null || config == null || !HasSourceRatingDemand()) return;
             MdblistRatingsFetchRunner.RunAsync(_libraryManager, _mdblistService, _logger,
                 Math.Max(MdblistService.SafetyMargin, config.MdblistFetchReserve), null, cancellationToken).GetAwaiter().GetResult();
         }
