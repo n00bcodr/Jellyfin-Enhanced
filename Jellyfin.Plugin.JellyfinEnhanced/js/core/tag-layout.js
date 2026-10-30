@@ -968,7 +968,8 @@
      * @returns {boolean[]} Per chip, whether it is shown.
      */
     function chipsThatFit(widths, available, gap, maxRows, moreWidth) {
-        const fits = (need, room) => need <= room + 0.5;
+        // Flex wraps a chip that overflows by any fraction of a pixel.
+        const fits = (need, room) => need <= room + 0.01;
         let rows = 0;
         let x = 0;
         for (const w of widths) {

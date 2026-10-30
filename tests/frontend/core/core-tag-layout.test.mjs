@@ -541,6 +541,8 @@ test('chipsThatFit wraps like flex-wrap and leaves room for the "+N" chip', t =>
   assert.equal(fit([30, 30, 30, 30, 30, 30], 100, 3, 2, 20), '111111', 'exactly two full rows need no "+N"');
   assert.equal(fit([30, 150, 30, 30], 100, 3, 1, 20), '1010', 'a chip wider than the row can never be shown whole: it goes behind "+N" and the rest still fill the rows');
   assert.equal(fit([150], 100, 3, 2, 20), '0', 'only "+1" is left');
+  // Measured in the lab: a bottom band 0.4px short of room for "+2" wraps it to a third row.
+  assert.equal(fit([36.5, 33.5, 24.5, 34.6, 50, 16.9, 16.9, 16.9], 101, 3, 2, 24), '11110100', 'the second flag goes behind "+N" instead');
   // Measured in the lab: a 113px caption strip, full labels.
   assert.equal(fit([37, 34, 93, 40, 35, 36, 19.2, 20, 20, 20], 109, 3, 2, 22), '1101100000',
     '"Dolby Digital+ 5.1" fits a row only without "+N" after it: the rating chips fill row two instead of leaving it empty');
