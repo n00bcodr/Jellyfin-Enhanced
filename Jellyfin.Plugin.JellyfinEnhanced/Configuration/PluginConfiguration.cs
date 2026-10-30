@@ -151,6 +151,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             StatusTagsJustAdded = true;
             StatusTagsNewRelease = true;
             StatusTagsTrending = true;
+            // Status Tags schedule, milestone and series-status defaults.
+            StatusTagsSchedule = true;
+            StatusTagsMilestones = true;
+            StatusTagsSeriesStatus = false;
             StatusTagsJustAddedDays = 7;
             StatusTagsNewReleaseDays = 30;
             TagLayout = "corners";
@@ -761,6 +765,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool StatusTagsNewRelease { get; set; } = true;
         /// <summary>Default for the trending badge. Admin off also disables the trending endpoint for everyone.</summary>
         public bool StatusTagsTrending { get; set; } = true;
+        // Status Tags schedule, milestone and series-status defaults.
+        /// <summary>Default for the schedule badges (Airing Today, Airs {date}, Returns {date}, Coming Soon).</summary>
+        public bool StatusTagsSchedule { get; set; } = true;
+        /// <summary>Default for the milestone badges (New Season, Season Premiere, Season/Series Finale, Complete Season).</summary>
+        public bool StatusTagsMilestones { get; set; } = true;
+        /// <summary>Default for the lowest-priority series status badge (Returning, Ended, Cancelled).</summary>
+        public bool StatusTagsSeriesStatus { get; set; } = false;
         /// <summary>Admin-only: days an item counts as "Just Added" (or a series/season's latest episode as "New Episode"). 1-365.</summary>
         public int StatusTagsJustAddedDays { get; set; } = 7;
         /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>

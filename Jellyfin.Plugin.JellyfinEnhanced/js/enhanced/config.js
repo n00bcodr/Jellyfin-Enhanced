@@ -130,6 +130,7 @@
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right', ageRatingTagsPosition: 'bottom-right', statusTagsPosition: 'top-right',
             ratingTagsOnMovies: true, ratingTagsOnSeries: true, ratingTagsOnSeasons: true, ratingTagsOnEpisodes: true, ratingTagsOnContinueWatching: true, ratingTagsOnNextUp: true,
             statusTagsJustAdded: true, statusTagsNewRelease: true, statusTagsTrending: true,
+            statusTagsSchedule: true, statusTagsMilestones: true, statusTagsSeriesStatus: false,
             // Poster tag layout scalars (0 = a document from before layouts; see core/tag-layout.js).
             tagLayout: 'corners', tagLabelDensity: 'full', tagLayoutSettingsVersion: 0,
             qualityTagsPreferredAudioLanguage: '',
