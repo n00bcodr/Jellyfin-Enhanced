@@ -337,6 +337,8 @@
 
     /** @param {*} value @returns {*} A deep copy (JSON values only). */
     const copy = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
+    /** @param {*} a @param {*} b @returns {boolean} Whether two JSON values are equal (null and missing alike). */
+    const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
     /**
      * The fields another administrator changed: the server's 409 body.
@@ -589,7 +591,7 @@
             let moved = false;
             if (event.type === 'saved' && event.values) {
                 for (const [key, value] of Object.entries(event.values)) {
-                    if (store.values.has(key) || JSON.stringify(config[key] ?? null) === JSON.stringify(value ?? null)) continue;
+                    if (store.values.has(key) || sameValue(config[key], value)) continue;
                     // The server stored something else (it normalised the value, or theirs was taken).
                     config[key] = copy(value);
                     moved = true;
@@ -612,13 +614,19 @@
         function setMany(values, opts = {}) {
             // A late callback of a page that is gone must not save anything.
             if (disposed) return;
+            let edited = false;
             for (const [key, value] of Object.entries(values)) {
+                // Editors hand back whole documents (the layout writes its order, caps and
+                // profiles together): a field that did not change is not an edit, so it
+                // neither saves nor can conflict with another administrator's change.
+                if (!store.values.has(key) && sameValue(config[key], value)) continue;
                 // What the server should still hold when this edit is saved.
                 if (!store.values.has(key) && !store.base.has(key)) store.base.set(key, copy(config[key]));
                 config[key] = value;
                 store.values.set(key, value);
+                edited = true;
             }
-            schedule();
+            if (edited) schedule();
             refresh(opts.redraw === false ? { controls: false } : {});
         }
 

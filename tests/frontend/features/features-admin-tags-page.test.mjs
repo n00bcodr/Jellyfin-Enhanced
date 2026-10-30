@@ -165,6 +165,69 @@ test('every declared field reads its configuration field and saves the new value
   assert.equal(h.server.DevMode, false, 'fields the page does not own keep the server value');
 });
 
+/**
+ * The binding oracle, independent of the page's own declarations: every
+ * control id of the old main form's Media Tags and Tag Cache fieldsets
+ * (configPage.html at aa1354dd) and the PluginConfiguration field its own
+ * load/save line used there.
+ */
+const OLD_FORM = JSON.parse(readFileSync(new URL('./features-admin-tags-page.old-form-fields.json', import.meta.url), 'utf8'));
+/** Positions are the nine anchors on Layout defaults now (Corners). */
+const POSITION_GROUPS = { qualityTagsPosition: 'quality', genreTagsPosition: 'genre', languageTagsPosition: 'language', ratingTagsPosition: 'rating', ageRatingTagsPosition: 'ageRating', statusTagsPosition: 'status' };
+/** Fields the new page writes with a control on purpose: without the server cache the browser cache is always on. */
+const ALSO_WRITES = { tagCacheServerMode: ['EnableTagsLocalStorageFallback'] };
+
+test('every old-form control writes exactly its own field (oracle from the old form, payload delta per control)', async t => {
+  const declared = new Map();
+  const driven = [];
+  const displayOnly = [];
+  // Two starting points, so every control is enabled in one: server cache on, then off.
+  for (const serverMode of [true, false]) {
+    const h = setup(t, { config: { NativePosterTagsEnabled: true, TagStylesEnabled: true, TagCacheServerMode: serverMode, StatusTagsEnabled: true } });
+    await h.settle(); await h.settle();
+    for (const s of h.A.sections) for (const f of s.fields || []) declared.set(f.id, f.key);
+    for (const [id, key] of Object.entries(OLD_FORM.fields)) {
+      assert.equal(declared.get(id), key, `${id} is declared for ${key}, as on the old form`);
+      if (driven.includes(id)) continue;
+      const before = structuredClone(h.server);
+      const count = h.patches.length;
+      let expected;
+      if (POSITION_GROUPS[id]) {
+        if (!serverMode) continue;
+        h.$(`.je-ta-lrow[data-group="${POSITION_GROUPS[id]}"] .je-ta-anchor[data-slot="bc"]`).click();
+        expected = 'bottom-center';
+      } else {
+        const el = h.$(`[data-je-setting-id="${id}"]`);
+        assert.ok(el, `${id} is on the page`);
+        assert.equal(el.dataset.jeField, key, `${id} is bound to ${key}`);
+        const inputs = el.matches('input, select, textarea') ? [el] : [...el.querySelectorAll('input')];
+        if (inputs.every((i) => i.disabled) || el.closest('[data-field-row]')?.hidden) continue;
+        if (el.type === 'checkbox') { expected = !el.checked; h.change(el, expected); }
+        else if (el.tagName === 'SELECT') { expected = [...el.options].find((o) => o.value !== el.value && !o.disabled).value; h.change(el, expected); }
+        else if (el.type === 'number') { expected = Number(el.value) >= Number(el.max) ? Number(el.value) - 1 : Number(el.value) + 1; h.change(el, String(expected)); }
+        else if (el.tagName === 'TEXTAREA' || el.type === 'text') { h.change(el, `  ${id}  `); expected = id; }
+        else { const radio = inputs.find((r) => !r.checked); expected = radio.value; h.change(radio, true); }
+      }
+      await h.ctx.flush();
+      assert.equal(h.patches.length, count + 1, `${id}: one save`);
+      const delta = h.patches.at(-1).Changes;
+      assert.deepEqual(Object.keys(delta).sort(), [key, ...(ALSO_WRITES[id] || [])].sort(), `${id} changes exactly ${key}`);
+      assert.equal(String(delta[key]), String(expected), `${id} saves the value chosen`);
+      for (const other of Object.keys(before)) if (other !== key && !(ALSO_WRITES[id] || []).includes(other)) assert.deepEqual(h.server[other], before[other], `${id} leaves ${other} alone`);
+      driven.push(id);
+      // Switch it back, so switches that enable others (the server cache) leave them as they were.
+      const el = h.$(`[data-je-setting-id="${id}"]`);
+      if (el?.type === 'checkbox') { h.change(el, !expected); await h.ctx.flush(); }
+    }
+  }
+  for (const id of Object.keys(OLD_FORM.fields)) if (!driven.includes(id)) displayOnly.push(id);
+  // Shown but not editable on its own: the browser cache follows the server cache switch.
+  assert.deepEqual(displayOnly, ['enableTagsLocalStorageFallback']);
+  assert.equal(driven.length, Object.keys(OLD_FORM.fields).length - 1);
+  // Ids the old form bound with custom code, or actions: each still has its control.
+  assert.deepEqual(OLD_FORM.unmapped, ['ratingTagsSources', 'tagLayout', 'tagShapeLandscapeDefault', 'tagShapeListDefault', 'tagLookRulesJson', 'clearTagsCacheBtn', 'tagStyleResetAll', 'rebuildTagCacheBtn']);
+});
+
 test('a save sends only the changed fields, each with the value read before the edit', async t => {
   const h = setup(t);
   // Another admin (or the main configuration page) changed two fields meanwhile.
