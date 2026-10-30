@@ -284,12 +284,12 @@
   "tv"
  ],
  "inputs": {
-  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "0558d2c62c20e512b4164efdfa5155c7092d65000e97d116d9d1066fecafd052",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/core/media-language.js": "2ab0347859b3c81faa94a94098490a9163ec2a98026a9d5a693cb51f73523968",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsoutlined.woff2": "5741bbaa09c4b7d9654753144a38133072ca51cf0c931d13ab93bd391c3fc8be",
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded.woff2": "05cc9b9f8de1f641e9f8e54106c8fa665a834c7fbfab573b4f5a81704e78170a",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/awardstags.js": "04323721de037c708f25954980d7bc4ebe180d430f792ea374511f4d497055ed",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "2086644d04573b36a859000735848831c88725f83608c4cda9fe273c116bc79e",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "00f4a25fc0f7e64c138273da3406670f6851a8a78798e91a6812e60ac14ca125",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/awardstags.js": "1d3fde1beefb3156fbeeb34ff4a067b392c74a8f00206a4a98476ab282be7c35",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "3d21326725e4f44ab8c8fac9bcda3e650ce3d6fccbda9a46bb4fb8e0ce11f394",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "1926fa997c17c008c3bfbbc02356281699e825f39c4c72adaf328ebcbe0bf585",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/rating-sources.js": "ff7874f3c8bb2941c799390ae05a6b1439bdaaa22df0ce5bc90696f0016e727d",
   "css/ratings.css": "b87ae170cda8c05175fd03f49d7a090e3d704e06fcc47425bbc02e86b726fdf2"
  },

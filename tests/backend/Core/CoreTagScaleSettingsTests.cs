@@ -104,9 +104,25 @@ public class CoreTagScaleSettingsTests
         }
     }
 
+    [Theory]
+    [InlineData("smaller", "tight", 0.85f, 0.75f)]
+    [InlineData("default", "default", 1f, 1f)]
+    [InlineData("largest", "roomy", 1.3f, 1.5f)]
+    public void AwardsScaleTheirIconAndInterChipGap(string scale, string gap, float size, float spacing)
+    {
+        using var renderer = new PosterTagRenderer();
+        var plan = renderer.Plan(180, 270, Layout() with { TagScale = scale, TagGap = gap });
+        var awards = Assert.Single(plan.Groups, g => g.Group == PosterTagGroup.Awards);
+        Assert.Equal(14 * size, awards.Items[0].IconWidth);
+        Assert.Equal(14 * size, awards.Items[0].IconHeight);
+        Assert.Equal(PosterTagCss.Lu(4 * size * spacing), awards.Gap);
+        Assert.Equal(awards.Items[0].Height + awards.Gap, awards.Items[1].Y - awards.Items[0].Y, 4);
+    }
+
     private static PosterTagLayout Layout() => new([
         new(PosterTagGroup.Quality, PosterTagCorner.TopLeft, [new QualityTag("4K", "resolution"), new QualityTag("HEVC", "videoCodec")]),
         new(PosterTagGroup.Rating, PosterTagCorner.TopLeft, [new RatingTag(PosterRatingSource.Community, "8.1", true)]),
         new(PosterTagGroup.Language, PosterTagCorner.BottomLeft, [new LanguageTag("gb", "English", false)]),
+        new(PosterTagGroup.Awards, PosterTagCorner.BottomRight, [new AwardTag("imdbTop250", "Top 250"), new AwardTag("oscar", "Oscar winner")]),
     ], false, false);
 }

@@ -205,7 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 PosterTagGroup.Quality => PosterTagCss.Lu(css.QualityGap),
                 PosterTagGroup.Genre => PosterTagCss.Lu(css.GenreGap),
                 PosterTagGroup.Rating => PosterTagCss.Lu(css.RatingGap),
-                PosterTagGroup.Awards => 4,
+                PosterTagGroup.Awards => PosterTagCss.Lu(css.StackGap),
                 PosterTagGroup.Language => PosterTagCss.Lu(css.LanguageGap),
                 _ => 0f, // the age-rating container has no gap
             };
@@ -432,9 +432,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var layout = _text.Layout(text, css.ChipFontSize, smallCaps: false, letterSpacing: 0f);
             var colours = styles.Resolve(TagStyleKeys.Awards, tag.Id);
             var style = tag.Id + (colours.IsEmpty ? "" : "\n" + colours.Encode());
-            var width = 2 * PosterTagCss.Lu(css.ChipPaddingH) + 14 + PosterTagCss.Lu(css.RatingInnerGap) + PosterTagCss.LuCeil(layout.Width);
-            var height = Math.Max(14, PosterTagCss.Lu(css.ChipFontSize)) + 2 * PosterTagCss.Lu(css.ChipPaddingV);
-            return new PlannedItem(PosterTagTileKind.Award, tag, text, style, width, height) { TextLayout = layout, IconWidth = 14, IconHeight = 14 };
+            var iconSize = 14 * css.Scale;
+            var width = 2 * PosterTagCss.Lu(css.ChipPaddingH) + iconSize + PosterTagCss.Lu(css.RatingInnerGap) + PosterTagCss.LuCeil(layout.Width);
+            var height = Math.Max(iconSize, PosterTagCss.Lu(css.ChipFontSize)) + 2 * PosterTagCss.Lu(css.ChipPaddingV);
+            return new PlannedItem(PosterTagTileKind.Award, tag, text, style, width, height) { TextLayout = layout, IconWidth = iconSize, IconHeight = iconSize };
         }
 
         private PlannedItem MeasureAge(AgeRatingTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)

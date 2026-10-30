@@ -194,3 +194,23 @@ for (const reveal of ['hover', 'focus', 'forced']) {
     await expect(page).toHaveURL(destination);
   });
 }
+
+
+test('Awards size and gap multiply chip icons, text and inter-chip spacing', async ({ page }) => {
+  await prepare(page, 'corners');
+  const metrics = async () => page.locator('#awards-navigation-proof .awards-tag').first().evaluate(el => {
+    const css = getComputedStyle(el), logo = el.querySelector('.awards-tag-logo');
+    return { font: parseFloat(css.fontSize), icon: logo.getBoundingClientRect().width,
+      gap: parseFloat(getComputedStyle(el.closest('.awards-overlay-container')).gap) };
+  });
+  const baseline = await metrics();
+  await page.evaluate(async () => {
+    const JE = window.JellyfinEnhanced;
+    Object.assign(JE.currentSettings, { tagScale: 'largest', tagGap: 'roomy' });
+    await JE.core.tagLayout.reinitialize();
+  });
+  const scaled = await metrics();
+  expect(scaled.font / baseline.font).toBeCloseTo(1.3, 2);
+  expect(scaled.icon / baseline.icon).toBeCloseTo(1.3, 2);
+  expect(scaled.gap / baseline.gap).toBeCloseTo(1.3 * 1.5, 2);
+});

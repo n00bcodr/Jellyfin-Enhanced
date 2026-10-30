@@ -5,17 +5,17 @@
     const LABELS = { imdbTop250: 'Top 250', certifiedFresh: 'Certified Fresh', oscar: 'Oscar winner', emmy: 'Emmy winner', letterboxdTop250: 'Top 250' };
     const IDS = Object.keys(LABELS);
     const CSS = `
-        .awards-overlay-container { display:flex; flex-direction:column; gap:4px; pointer-events:none; max-width:100%; }
+        .awards-overlay-container { display:flex; flex-direction:column; gap:calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); pointer-events:none; max-width:100%; }
         /* Only chip anchors intercept hover; empty poster space still reaches Jellyfin. */
         .je-tag-host:has(.awards-overlay-container) { z-index:2; }
         .awards-link { display:inline-flex; color:inherit; text-decoration:none; pointer-events:auto; }
         .je-tag-pill[href] { pointer-events:auto; text-decoration:none; }
-        .awards-tag { display:inline-flex; align-items:center; gap:4px; padding:4px 8px; background:rgba(15,15,15,.85); color:#fff; border-radius:4px; font-size:13px; font-weight:700; line-height:1; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.3); }
-        .awards-tag-logo { display:inline-flex; width:14px; height:14px; flex:0 0 14px; }
+        .awards-tag { display:inline-flex; align-items:center; gap:calc(4px * var(--je-tag-scale, 1)); padding:calc(4px * var(--je-tag-scale, 1)) calc(8px * var(--je-tag-scale, 1)); background:rgba(15,15,15,.85); color:#fff; border-radius:4px; font-size:calc(13px * var(--je-tag-scale, 1)); font-weight:700; line-height:1; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.3); }
+        .awards-tag-logo { display:inline-flex; width:calc(14px * var(--je-tag-scale, 1)); height:calc(14px * var(--je-tag-scale, 1)); flex:0 0 calc(14px * var(--je-tag-scale, 1)); }
         .awards-tag-logo svg { width:100%; height:100%; }
-        @supports (container-type:inline-size) { html:not(.layout-mobile) .je-tag-host .awards-tag { font-size:clamp(9px,6.8cqw,13px); padding:clamp(2px,2cqw,4px) clamp(4px,4.5cqw,8px); } }
-        .layout-mobile .awards-tag { font-size:11px; padding:2px 6px; }
-        @media(max-width:480px) { .awards-tag { font-size:11px; padding:2px 4px; } }
+        @supports (container-type:inline-size) { html:not(.layout-mobile) .je-tag-host .awards-tag { font-size:calc(clamp(9px,6.8cqw,13px) * var(--je-tag-scale, 1)); padding:calc(clamp(2px,2cqw,4px) * var(--je-tag-scale, 1)) calc(clamp(4px,4.5cqw,8px) * var(--je-tag-scale, 1)); } }
+        .layout-mobile .awards-tag { font-size:calc(11px * var(--je-tag-scale, 1)); padding:calc(2px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1)); }
+        @media(max-width:480px) { .awards-tag { font-size:calc(11px * var(--je-tag-scale, 1)); padding:calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1)); } }
     `;
     /** Read cache or batch facts, accepting either DTO key casing. */
     function read(facts, key) { return facts?.[key] ?? facts?.[key[0].toUpperCase() + key.slice(1)]; }

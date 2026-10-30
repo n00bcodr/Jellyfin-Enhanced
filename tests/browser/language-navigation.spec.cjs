@@ -52,6 +52,7 @@ async function prepare(page, style, slot) {
     // Keep those policies out of the fixture without saving any preferences.
     JE.pluginConfig = { ...JE.pluginConfig, LanguageTagsPriority: '', LanguageTagsPriorityStrict: false, LanguageTagsMergeRegions: false };
     JE.currentSettings = { ...JE.currentSettings, languageTagsEnabled: true, languageTagsShowAudio: style !== 'subtitles', languageTagsShowSubtitles: style === 'subtitles',
+      languageTagsPriority: null, languageTagsPriorityStrict: null, awardsTagsEnabled: false,
       languageTagsStyle: style === 'codes' ? 'codes' : 'flags', languageTagsCountBadge: style === 'badge' ? 'only' : 'off', tagsHideOnHover: false,
       qualityTagsEnabled: false, genreTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false,
       tagGroupOrder: ['language'], tagGroupCaps: { language: 0 }, tagLookRules: [], tagLayoutLocks: {}, tagShapeOverrides: { landscape: null, list: null },
