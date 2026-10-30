@@ -542,11 +542,11 @@ test('chipsThatFit wraps like flex-wrap and leaves room for the "+N" chip', t =>
   assert.equal(fit([150, 30], 100, 3, 1, 20), 0, 'a chip wider than the row cannot be shown whole next to "+N"');
 });
 
-/** Give a caption card's outlet, chips and "+N" chip fixed widths, then run the fitting pass. */
-function fitCaption(h, { card = 120, outlet = 100, chip = 30, more = 20 } = {}) {
+/** Give a card's wrapping slot (default: the caption strip), its chips and "+N" chip fixed widths, then run the fitting pass. */
+function fitCaption(h, { card = 120, outlet = 100, chip = 30, more = 20, slot = () => h.document.querySelector('.je-tag-caption') } = {}) {
   const host = h.host();
   h.layout.refreshPresentation(host); // queues the card for the fitting pass
-  const strip = h.document.querySelector('.je-tag-caption');
+  const strip = slot();
   measure(host, { width: card });
   measure(strip, { width: outlet });
   for (const el of strip.querySelectorAll(':scope > [data-je-group] > *')) measure(el, { width: chip });
@@ -587,4 +587,26 @@ test('compact caption chips get the same two-row treatment, and a late group lan
   h.layout.commitGroup(h.host(), 'language', h.layout.getGroup(h.host(), 'language'));
   assert.ok(strip.lastElementChild.classList.contains('je-tag-more'), 'the overflow chip stays last');
   assert.equal(strip.lastElementChild.previousElementSibling.dataset.jeGroup, 'language');
+});
+
+test('the summary and minimal reveal uses compact labels, keeps to two rows with "+N" and to the bottom of the card', t => {
+  for (const tagLayout of ['summary', 'minimal']) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout } });
+    const host = h.render();
+    const reveal = () => host.querySelector('.je-tag-slot[data-je-slot="hover"]');
+    assert.deepEqual(Array.from(reveal().querySelectorAll('.quality-overlay-label'), l => l.textContent), ['4K', 'DV', 'HEVC', 'ATMOS'],
+      `${tagLayout}: compact labels whatever the user's density`);
+    assert.equal(reveal().querySelector('.rating-tag-critic'), null, 'compact drops the critic chip next to the community score');
+    if (tagLayout === 'minimal') {
+      assert.equal(host.querySelector('.je-tag-slot[data-je-slot="corner"] .rating-tag-critic') !== null, true, 'the corner score keeps the user\'s density');
+    }
+    const fitted = fitCaption(h, { slot: reveal, outlet: 112 }); // 6px side padding: 100px for chips
+    const more = fitted.lastElementChild;
+    assert.ok(more.classList.contains('je-tag-more'));
+    assert.equal(fitted.querySelectorAll(':scope > [data-je-group] > :not([data-je-overflow])').length, 5, 'two rows of 30px chips in 100px, one place for "+N"');
+    assert.equal(more.textContent, `+${fitted.querySelectorAll(':scope > [data-je-group] > [data-je-overflow]').length}`);
+    const css = h.document.getElementById('je-tag-layout').textContent;
+    assert.match(css, /\[data-je-slot="hover"\] \{\s*left: 0; right: 0; bottom: 0;\s*max-height: 40%;/, 'the reveal never grows past the bottom 40% of the card');
+    assert.match(css, /\.je-tag-more \{[^}]*pointer-events: none;/, 'nothing in the reveal takes a click from Jellyfin\'s buttons');
+  }
 });

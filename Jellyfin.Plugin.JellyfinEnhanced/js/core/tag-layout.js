@@ -83,9 +83,19 @@
     const SUMMARY_SLOTS = new Set(['pill', 'dots', 'corner']);
     const PILL_MAX_FACTS = 3;
 
+    /**
+     * Settings for the hover/focus reveal's chips: always compact labels, so
+     * its two rows say as much as they can in the bottom of the card.
+     * @param {TagLayoutSettings} conf
+     * @returns {TagLayoutSettings}
+     */
+    function revealSettings(conf) {
+        return conf.density === 'compact' ? conf : { ...conf, density: 'compact' };
+    }
+
     /** Layouts whose representations are fitted to the card's measured size. */
     const FIT_LAYOUTS = new Set(['bands', 'caption', 'summary', 'minimal']);
-    /** Rows a wrapping slot (caption strip) shows before its "+N" overflow chip. */
+    /** Rows a wrapping slot (caption strip, hover reveal) shows before its "+N" overflow chip. */
     const FIT_MAX_ROWS = 2;
 
     /** Compact quality labels; audio "<codec> <channels>" is handled in compactQualityLabel. */
@@ -778,14 +788,14 @@
             const dots = buildDots(rec.master, conf);
             if (dots) { placeSorted(ctrl, conf, slotElement(ctrl, 'dots'), dots); nodes.push(dots); }
         } else if (slot !== 'pill') {
-            const chips = buildChips(group, rec.master, conf);
+            const chips = buildChips(group, rec.master, slot === 'hover' ? revealSettings(conf) : conf);
             if (conf.layout === 'corners') chips.dataset.jeCorner = SLOT_TO_POSITION[slot];
             if (chips.children.length > 0) { placeSorted(ctrl, conf, slotElement(ctrl, slot), chips); nodes.push(chips); }
         }
         // Summaries (pill, dots, corner score) keep their full chips for the
         // hover/focus scrim of the summary and minimal layouts.
         if (SUMMARY_SLOTS.has(slot) && (conf.layout === 'summary' || conf.layout === 'minimal')) {
-            const full = buildChips(group, rec.master, conf);
+            const full = buildChips(group, rec.master, revealSettings(conf));
             if (full.children.length > 0) { placeSorted(ctrl, conf, slotElement(ctrl, 'hover'), full); nodes.push(full); }
         }
         ctrl.nodes.set(group, nodes);
@@ -847,8 +857,9 @@
     // separate phases, so a page of cards costs two layouts, not one per
     // card — and hides what does not fit, never half a chip or fact:
     //   - the summary pill's lowest-priority facts;
-    //   - in the caption strip, chips past its two rows, lowest priority
-    //     first, behind a "+N" chip whose title names them.
+    //   - in the caption strip and the hover reveal, chips past their two
+    //     rows, lowest priority first, behind a "+N" chip whose title names
+    //     them.
 
     /**
      * Whether a slot still holds any group representation.
@@ -875,7 +886,14 @@
      * @returns {HTMLElement[]}
      */
     function rowSlots(ctrl) {
-        return ctrl.outlet && ctrl.outlet.isConnected ? [ctrl.outlet] : [];
+        const slots = [];
+        if (ctrl.outlet && ctrl.outlet.isConnected) slots.push(ctrl.outlet);
+        for (const child of ctrl.host.children) {
+            if (child.classList.contains('je-tag-slot') && /** @type {HTMLElement} */ (child).dataset.jeSlot === 'hover') {
+                slots.push(/** @type {HTMLElement} */ (child));
+            }
+        }
+        return slots;
     }
 
     /**

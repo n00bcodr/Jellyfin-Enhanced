@@ -210,11 +210,14 @@
             .je-tag-pill-flag { display: inline; width: 1.45em; height: auto; border-radius: 2px; vertical-align: -0.2em; }
             .je-tag-host [data-je-overflow], .je-tag-caption [data-je-overflow] { display: none !important; }
 
+            /* The reveal keeps to the bottom of the card (two rows of compact
+               chips, then "+N"), clear of the centre play button; Jellyfin's
+               overlay buttons stay above it and clickable. */
             ${SLOT}[data-je-slot="hover"] {
                 left: 0; right: 0; bottom: 0;
-                max-height: 100%;
+                max-height: 40%;
                 overflow: hidden;
-                padding: 28px 6px 6px;
+                padding: 18px 6px 6px;
                 flex-direction: row;
                 flex-wrap: wrap;
                 align-items: flex-end;
