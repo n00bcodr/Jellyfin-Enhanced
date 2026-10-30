@@ -115,6 +115,42 @@ public class NativeStatusBandTests
     }
 
     [Fact]
+    public void Bands_shared_web_width_height_fixtures_skip_rejected_chips_and_count_all_omissions()
+    {
+        using var stream = typeof(NativeStatusBandTests).Assembly.GetManifestResourceStream("NativeBandFit.json")!;
+        using var doc = System.Text.Json.JsonDocument.Parse(stream);
+        foreach (var fixture in doc.RootElement.EnumerateArray())
+        {
+            float Number(string key) => fixture.GetProperty(key).GetSingle();
+            var widths = fixture.GetProperty("widths").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+            var heights = fixture.GetProperty("heights").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+            var expected = fixture.GetProperty("shown").EnumerateArray().Select(v => v.GetBoolean()).ToArray();
+            Assert.Equal(expected, PosterTagPlanner.BandChipsThatFit(widths, Number("available"), Number("gap"), (int)Number("maxRows"), Number("moreWidth")));
+            var items = widths.Select((w, i) => new PlannedItem(PosterTagTileKind.Status, new StatusTag("fixture", i.ToString(), ""), i.ToString(), "", w, heights[i])).ToArray();
+            var placed = PosterTagPlanner.FitBandChips(items, Number("available"), Number("height"), Number("gap"), count =>
+                new PlannedItem(PosterTagTileKind.Status, new StatusTag("overflow", "+" + count, ""), "+" + count, "", Number("moreWidth"), 18));
+            Assert.Equal(expected, items.Select(placed.Contains));
+            var more = placed.SingleOrDefault(p => p.Text.StartsWith('+'));
+            Assert.Equal(Number("hidden") == 0 ? null : "+" + Number("hidden"), more?.Text);
+        }
+    }
+
+    [Fact]
+    public void Bands_render_skips_a_wide_middle_quality_chip_but_keeps_later_small_chips()
+    {
+        using var renderer = new PosterTagRenderer();
+        using var source = new SKBitmap(360, 540);
+        source.Erase(SKColors.DarkSlateBlue);
+        var layout = new PosterTagLayout([new(PosterTagGroup.Quality, PosterTagCorner.BottomLeft,
+            [new QualityTag("4K", "resolution"), new QualityTag(new string('W', 100), "edition"), new QualityTag("BD", "source")])], false, false, Bands: true);
+        var plan = renderer.Plan(360, 540, layout);
+        Assert.Equal(new[] { "4K", "BD", "+1" }, plan.Groups.Single().Items.Select(i => i.Text));
+        using var rendered = renderer.Render(source, layout);
+        Assert.NotNull(rendered);
+        Assert.NotEqual(source.Bytes, rendered.Bytes);
+    }
+
+    [Fact]
     public void Status_label_colours_and_compact_quality_keep_distinct_warm_tiles()
     {
         using var renderer = new PosterTagRenderer();

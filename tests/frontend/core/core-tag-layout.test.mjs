@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { setImmediate as settle } from 'node:timers/promises';
 import { createHarness, deferred, plain } from '../helpers/harness.mjs';
@@ -1157,5 +1158,17 @@ test('side-centre columns fit whole chips and an overflow count inside short car
     assert.equal(column.lastElementChild.hasAttribute('data-je-overflow'),false);
     fitCard(h,{width:113,height:16});
     assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).hasAttribute('data-je-overflow'),true);
+  }
+});
+
+test('Bands shared native/web width and height fixtures retain later chips after a rejection', t => {
+  const h = setup(t);
+  const fixtures = JSON.parse(readFileSync(new URL('../../fixtures/native-band-fit.json', import.meta.url), 'utf8'));
+  for (const f of fixtures) {
+    const rows = [], more = { row: 0 };
+    const shown = h.layout.chipsThatFit(f.widths, f.available, f.gap, f.maxRows, f.moreWidth, rows, more);
+    assert.deepEqual(shown, f.shown, f.name);
+    assert.equal(shown.filter(v => !v).length, f.hidden, f.name);
+    assert.equal(h.layout.rowsHeight(shown, rows, f.heights, 18, f.gap, more.row), f.height, f.name);
   }
 });

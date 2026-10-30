@@ -239,7 +239,71 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return new PlannedGroup(group.Group, group.Corner, width, height, gap, clips, items);
         }
 
-        /// <summary>Static band rows keep priority order, reserve indicator room, and count the omitted suffix as +N.</summary>
+        /// <summary>The web chipsThatFit skip-and-continue policy, with +N space reserved on the final row.</summary>
+        internal static bool[] BandChipsThatFit(IReadOnlyList<float> widths, float available, float gap, int maxRows, float moreWidth)
+        {
+            static bool Fits(float need, float room) => need <= room + 0.01f;
+            int rows = 0;
+            float x = 0;
+            foreach (var width in widths)
+            {
+                if (rows == 0 || !Fits(x + gap + width, available)) { rows++; x = width; }
+                else x += gap + width;
+            }
+            if (rows <= maxRows && widths.All(w => Fits(w, available))) return widths.Select(_ => true).ToArray();
+            float Room(int row) => row == maxRows ? available - gap - moreWidth : available;
+            int current = 1;
+            x = 0;
+            return widths.Select(width =>
+            {
+                if (Fits(x == 0 ? width : x + gap + width, Room(current)))
+                {
+                    x = x == 0 ? width : x + gap + width;
+                    return true;
+                }
+                if (current < maxRows && x > 0 && Fits(width, Room(current + 1)))
+                {
+                    current++;
+                    x = width;
+                    return true;
+                }
+                return false;
+            }).ToArray();
+        }
+
+        /// <summary>Fit whole bottom-band chips in two rows, retrying one row when height requires it.</summary>
+        internal static List<PlannedItem> FitBandChips(IReadOnlyList<PlannedItem> items, float width, float maxHeight, float gap, Func<int, PlannedItem> overflow)
+        {
+            for (int rows = 2; rows >= 1; rows--)
+            {
+                var more = overflow(1);
+                float reserved = more.Width;
+                List<PlannedItem> shown;
+                while (true)
+                {
+                    var fit = BandChipsThatFit(items.Select(i => i.Width).ToArray(), width, gap, rows, reserved);
+                    shown = items.Where((_, i) => fit[i]).ToList();
+                    var hidden = items.Count - shown.Count;
+                    if (hidden == 0) break;
+                    more = overflow(hidden);
+                    if (more.Width <= reserved) { shown.Add(more); break; }
+                    reserved = more.Width;
+                }
+                float x = 0, y = 0, rowHeight = 0;
+                foreach (var chip in shown)
+                {
+                    if (x > 0 && x + chip.Width > width + 0.01f) { y += rowHeight + gap; x = rowHeight = 0; }
+                    chip.X = 6 + x;
+                    chip.Y = y;
+                    x += chip.Width + gap;
+                    rowHeight = Math.Max(rowHeight, chip.Height);
+                }
+                if (shown.All(i => i.Width <= width + 0.01f) && y + rowHeight <= maxHeight + 0.01f) return shown;
+            }
+            return new List<PlannedItem>();
+        }
+
+        /// <summary>Static band rows keep priority order, reserve indicator room, and count every omitted chip as +N.</summary>
         private (List<PlannedGroup> Groups, List<PlannedBand> Bands) PlaceBands(List<PlannedGroup> source, PosterTagCss css, float cardHeight, bool indicator)
         {
             var groups = new List<PlannedGroup>();
@@ -273,22 +337,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     return true;
                 }
 
-                var shown = new List<PlannedItem>();
-                foreach (var item in items)
+                List<PlannedItem> shown;
+                if (!top)
                 {
-                    shown.Add(item);
-                    if (!Fit(shown, out _)) { shown.RemoveAt(shown.Count - 1); break; }
+                    shown = FitBandChips(items, width, maxHeight, gap, hidden =>
+                        MeasureStatus(new StatusTag("overflow", "+" + hidden.ToString(CultureInfo.InvariantCulture), ""), css, TagStyleSet.Empty));
                 }
-                if (shown.Count < items.Count)
+                else
                 {
-                    while (true)
+                    shown = new List<PlannedItem>();
+                    foreach (var item in items)
                     {
-                        int hidden = items.Count - shown.Count;
-                        var more = MeasureStatus(new StatusTag("overflow", "+" + hidden.ToString(CultureInfo.InvariantCulture), ""), css, TagStyleSet.Empty);
-                        var trial = shown.Append(more).ToList();
-                        if (Fit(trial, out _)) { shown = trial; break; }
-                        if (shown.Count == 0) break;
-                        shown.RemoveAt(shown.Count - 1);
+                        shown.Add(item);
+                        if (!Fit(shown, out _)) { shown.RemoveAt(shown.Count - 1); break; }
+                    }
+                    if (shown.Count < items.Count)
+                    {
+                        while (true)
+                        {
+                            int hidden = items.Count - shown.Count;
+                            var more = MeasureStatus(new StatusTag("overflow", "+" + hidden.ToString(CultureInfo.InvariantCulture), ""), css, TagStyleSet.Empty);
+                            var trial = shown.Append(more).ToList();
+                            if (Fit(trial, out _)) { shown = trial; break; }
+                            if (shown.Count == 0) break;
+                            shown.RemoveAt(shown.Count - 1);
+                        }
                     }
                 }
                 if (shown.Count == 0 || !Fit(shown, out var height)) continue;
