@@ -12,6 +12,11 @@ namespace JE.Tests;
 public class CoreNativeDateContextTests
 {
     [Theory]
+    [InlineData("en-GB-u", "bad/")]
+    [InlineData("en-GB-u-ca-", "bad/")]
+    [InlineData("en-GB-u-ca-gregory-ca-buddhist", "bad/")]
+    [InlineData("en-GB-u-12", "bad/")]
+    [InlineData("en-GB-u-abcdefghi", "bad/")]
     [InlineData("bad/", "bad/")]
     [InlineData("auto", "Not/AZone")]
     [InlineData("not-a-real-locale", "../etc/passwd")]
@@ -27,6 +32,9 @@ public class CoreNativeDateContextTests
 
     [Theory]
     [InlineData(" en-us ", " Australia/Perth ", "en-US", "Australia/Perth")]
+    [InlineData("en-GB-u-ca-gregory", "Australia/Perth", "en-GB-u-ca-gregory", "Australia/Perth")]
+    [InlineData("de-DE-u-co-phonebk", "Europe/Berlin", "de-DE-u-co-phonebk", "Europe/Berlin")]
+    [InlineData("fa-u-nu-latn", "Asia/Tehran", "fa-u-nu-latn", "Asia/Tehran")]
     [InlineData("fa", "Asia/Tehran", "fa", "Asia/Tehran")]
     [InlineData("zh-cn", "Asia/Shanghai", "zh-CN", "Asia/Shanghai")]
     [InlineData("zh-hk", "Asia/Hong_Kong", "zh-HK", "Asia/Hong_Kong")]
@@ -49,11 +57,23 @@ public class CoreNativeDateContextTests
         var saved = fixture.Core.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(userId, "settings.json");
         Assert.Equal(expectedLocale, saved.NativePosterDateLocale);
         Assert.Equal(expectedZone, saved.NativePosterTimeZone);
+        if (expectedLocale?.Contains("-u-", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var baseLocale = expectedLocale.Split("-u-", StringSplitOptions.None)[0];
+            var settings = Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.PosterTagSettings.FromSettingsJson(
+                System.Text.Json.JsonSerializer.Serialize(saved), fixture.Plugin.Configuration);
+            Assert.Equal(System.Globalization.CultureInfo.GetCultureInfo(baseLocale).Name, settings.StatusCulture.Name);
+            Assert.Equal(baseLocale == "fa" ? "۱۲ مهر" : baseLocale == "en-GB" ? "4 Oct" : "4. Okt.",
+                Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.StatusRules.FormatShortDate(new DateOnly(2026, 10, 4), settings.StatusCulture));
+        }
         var disk = File.ReadAllText(Path.Combine(fixture.Core.ConfigRoot, userId, "settings.json"));
         Assert.DoesNotContain(new string('x', 100), disk);
     }
 
     [Theory]
+    [InlineData("en-GB-u-ca-gregory", "Australia/Perth", "en-GB-u-ca-gregory", "Australia/Perth")]
+    [InlineData("de-DE-u-co-phonebk", "UTC", "de-DE-u-co-phonebk", "UTC")]
+    [InlineData("en-GB-u-ca-", "UTC", null, "UTC")]
     [InlineData("bad/", "bad/", null, null)]
     [InlineData("not-a-real-locale", "../etc/passwd", null, null)]
     [InlineData(" DE-de ", "W. Australia Standard Time", "de-DE", "Australia/Perth")]

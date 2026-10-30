@@ -38,7 +38,7 @@ public static class StatusRules
     /// <summary>A valid culture for relative date formatting; invalid, auto and absent values use English.</summary>
     public static CultureInfo Culture(string? name)
     {
-        try { return CultureInfo.GetCultureInfo(NativePosterDateContext.Locale(name) ?? "en"); }
+        try { return CultureInfo.GetCultureInfo(NativePosterDateContext.FormattingLocale(name) ?? "en"); }
         catch (CultureNotFoundException) { return CultureInfo.GetCultureInfo("en"); }
     }
 

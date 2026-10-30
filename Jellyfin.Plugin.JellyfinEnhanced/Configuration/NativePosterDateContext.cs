@@ -19,13 +19,46 @@ public static class NativePosterDateContext
         .Where(c => c.Name.Length > 0).ToDictionary(c => c.Name, c => c.Name, StringComparer.OrdinalIgnoreCase);
     private static readonly Regex ZonePattern = new(@"\A[A-Za-z0-9_+-]+(?:/[A-Za-z0-9_+-]+)*\z", RegexOptions.CultureInvariant);
 
-    /// <summary>Registered BCP 47 culture, at most 35 characters; invalid or unknown values use the display-language fallback.</summary>
+    /// <summary>Registered BCP 47 base plus an optional Unicode extension, bounded to 35 characters.</summary>
     public static string? Locale(string? value)
     {
         // Check before trimming so an arbitrarily padded string also stays bounded.
         if (value == null || value.Length > 35) return null;
         value = value.Trim();
-        return LocalePattern.IsMatch(value) && Cultures.TryGetValue(value, out var canonical) ? canonical : null;
+        var extension = value.IndexOf("-u-", StringComparison.OrdinalIgnoreCase);
+        var name = extension < 0 ? value : value[..extension];
+        if (!LocalePattern.IsMatch(name) || !Cultures.TryGetValue(name, out var canonical)) return null;
+        if (extension < 0) return canonical;
+
+        // Unicode attributes precede keyword/type pairs. Reject empty/oversize
+        // subtags, duplicate attributes/keys and other extension singletons.
+        var subtags = value[(extension + 3)..].Split('-');
+        var attributes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var hasKey = false;
+        foreach (var subtag in subtags)
+        {
+            if (subtag.Length is < 2 or > 8 || !subtag.All(c => char.IsAsciiLetterOrDigit(c))) return null;
+            if (subtag.Length == 2)
+            {
+                // Unicode locale keys are alphanumeric followed by a letter.
+                if (!char.IsAsciiLetter(subtag[1]) || !keys.Add(subtag)) return null;
+                hasKey = true;
+            }
+            else if (!hasKey && !attributes.Add(subtag)) return null;
+        }
+        // Keep the browser's bounded value verbatim for save/load. Formatting
+        // uses its registered base; extensions cannot discard language/region.
+        return value;
+    }
+
+    /// <summary>Canonical language/script/region for formatting; Unicode preferences remain stored on the user.</summary>
+    public static string? FormattingLocale(string? value)
+    {
+        var locale = Locale(value);
+        if (locale == null) return null;
+        var extension = locale.IndexOf("-u-", StringComparison.OrdinalIgnoreCase);
+        return Cultures[extension < 0 ? locale : locale[..extension]];
     }
 
     /// <summary>Resolvable IANA zone, at most 64 characters. Recognized Windows IDs are converted to IANA before storage.</summary>
