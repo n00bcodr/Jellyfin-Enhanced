@@ -770,7 +770,11 @@
             });
         }
 
-        document.getElementById('releaseNotesBtn').addEventListener('click', async () => { await showReleaseNotesNotification(); resetAutoCloseTimer(); });
+        document.getElementById('releaseNotesBtn').addEventListener('click', async () => {
+            // Release this dialog's focus boundary before opening the secondary modal.
+            ctx.closePanel();
+            await showReleaseNotesNotification();
+        });
 
         const setupPresetHandlers = (containerId, presets, type) => {
             const container = document.getElementById(containerId);

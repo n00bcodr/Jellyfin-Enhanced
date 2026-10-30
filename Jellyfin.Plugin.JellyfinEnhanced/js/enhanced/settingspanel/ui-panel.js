@@ -23,6 +23,13 @@
     JE.showEnhancedPanel = async () => {
         // Refresh user settings when panel opens to ensure correct user's settings are displayed
         const currentUserId = ApiClient.getCurrentUserId();
+        const openingEpoch = JE.session?.getEpoch();
+        /** Read the host's server identity, including clients exposing it as a property. */
+        const serverId = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const openingServerId = serverId();
+        /** Reject replies from an earlier session, even after an A → B → A switch. */
+        const sameOpeningIdentity = () => ApiClient.getCurrentUserId() === currentUserId
+            && serverId() === openingServerId && JE.session?.getEpoch() === openingEpoch;
         if (currentUserId) {
             try {
                 // Fetch fresh settings for the current user
@@ -31,6 +38,7 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
                     dataType: 'json'
                 });
+                if (!sameOpeningIdentity()) return;
 
                 // Update the userConfig with fresh data
                 if (settingsResponse) {
@@ -43,9 +51,12 @@
                     }
                 }
             } catch (e) {
+                if (!sameOpeningIdentity()) return;
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
             }
         }
+
+        if (!sameOpeningIdentity()) return;
 
         // Re-initialize shortcuts to ensure they're populated before building the panel
         if (typeof JE.initializeShortcuts === 'function') {
@@ -138,31 +149,46 @@
         };
 
         // --- The page behind is inert while the dialog is open ---------
-        // Tab containment alone lets a click or a script move focus to the
-        // page behind. Every other child of <body> present at open time gets
-        // `inert` (no focus, clicks or screen-reader reach); a focusin guard
-        // and a mousedown guard cover browsers without inert support and a
-        // click on inert content blurring to <body>. Nodes added later (the
-        // release notes card the panel opens, toasts) stay usable.
+        // Native inert retargets background clicks to body; newly appended
+        // controls also belong to the background. Guard by dialog containment,
+        // rather than membership in the list of nodes made inert at opening.
         /** @type {HTMLElement[]} body children this panel made inert */
         const inertBackground = [];
         /** @type {HTMLElement|null} the last control focused inside the dialog */
         let lastFocusInside = null;
         /** @param {EventTarget|null} target @returns {boolean} */
-        const isBackground = (target) => target instanceof Node && !help.contains(target)
-            && inertBackground.some((node) => node.contains(target));
-        const trackFocusInside = (e) => {
-            if (e.target instanceof HTMLElement && e.target !== help) lastFocusInside = e.target;
-        };
-        const guardFocus = (e) => {
-            if (!isBackground(e.target)) return;
-            const back = lastFocusInside && lastFocusInside.isConnected && help.contains(lastFocusInside) ? lastFocusInside : help;
+        const isInside = (target) => target instanceof Node && help.contains(target);
+        /** Restore focus after an outside press, script focus or destinationless blur. */
+        const restoreFocus = () => {
+            if (!help.isConnected || isInside(document.activeElement)) return;
+            const back = lastFocusInside && lastFocusInside.isConnected
+                && help.contains(lastFocusInside) && !lastFocusInside.matches(':disabled')
+                && !lastFocusInside.closest('[inert], [hidden]')
+                ? lastFocusInside : help;
             back.focus({ preventScroll: true });
+            // A control disabled since it last had focus cannot take focus again.
+            if (!isInside(document.activeElement)) help.focus({ preventScroll: true });
         };
+        /** Remember the most recent control inside the active dialog. */
+        const trackFocusInside = (e) => {
+            if (e.target instanceof HTMLElement) lastFocusInside = e.target;
+        };
+        /** Reject focus into any element outside the dialog, including late additions. */
+        const guardFocus = (e) => {
+            if (!isInside(e.target)) restoreFocus();
+        };
+        /** A blur to body need not emit focusin; wait for the browser's focus move to finish. */
+        const guardBlur = (e) => {
+            if (!isInside(e.relatedTarget)) queueMicrotask(restoreFocus);
+        };
+        /** Prevent outside activation and the default pointer action that blurs to body. */
         const guardPointer = (e) => {
-            // Keep focus where it is: a press on the inert page would blur to <body>.
-            if (isBackground(e.target)) e.preventDefault();
+            if (isInside(e.target)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            restoreFocus();
         };
+        /** Hold the page and install the active dialog's focus/pointer boundary. */
         const holdBackground = () => {
             for (const node of Array.from(document.body.children)) {
                 if (node === help || !(node instanceof HTMLElement) || node.hasAttribute('inert')) continue;
@@ -170,21 +196,27 @@
                 inertBackground.push(node);
             }
             help.addEventListener('focusin', trackFocusInside);
+            help.addEventListener('focusout', guardBlur);
             document.addEventListener('focusin', guardFocus, true);
-            document.addEventListener('mousedown', guardPointer, true);
+            for (const type of ['pointerdown', 'mousedown', 'click']) document.addEventListener(type, guardPointer, true);
         };
+        /** Release only nodes held by this dialog and remove every boundary listener. */
         const releaseBackground = () => {
             while (inertBackground.length) inertBackground.pop().removeAttribute('inert');
             help.removeEventListener('focusin', trackFocusInside);
+            help.removeEventListener('focusout', guardBlur);
             document.removeEventListener('focusin', guardFocus, true);
-            document.removeEventListener('mousedown', guardPointer, true);
+            for (const type of ['pointerdown', 'mousedown', 'click']) document.removeEventListener(type, guardPointer, true);
         };
 
+        let closed = false;
         /**
          * Close this panel: every close path (Escape/?, the close button,
-         * auto-close, the toggle) goes through here.
+         * auto-close, navigation, the toggle) goes through here.
          */
         const closePanel = () => {
+            if (closed) return;
+            closed = true;
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             if (closeOpenPanel === closePanel) closeOpenPanel = null;
             help.remove();
@@ -201,6 +233,7 @@
         };
 
         const resetAutoCloseTimer = () => {
+            if (closed) return;
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             autoCloseTimer = setTimeout(() => {
                 if (!isMouseInside && document.getElementById(panelId)) closePanel();
@@ -299,6 +332,8 @@
         document.body.appendChild(help);
         closeOpenPanel = closePanel;
         holdBackground();
+        const stopNavigation = JE.core?.navigation?.onNavigate(closePanel);
+        if (stopNavigation) panelMediaCleanups.push(stopNavigation);
         // The dialog itself takes focus first (no ring: it is not a control).
         help.focus({ preventScroll: true });
 

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createHarness } from '../helpers/harness.mjs';
 
 const STORE = 'JE_panelSize_user-a';
@@ -83,6 +84,7 @@ function setup(t, { width = 1400, height = 900, stored = null, storage } = {}) {
     + '<div class="je-panel-main"><button id="jePanelBack"></button><section class="je-pane" data-pane="ui"><h3 class="je-pane-title">UI</h3><input type="checkbox" id="someToggle"></section></div></div>'
     + `<div class="panel-footer">footer</div>${ui.buildPanelResizeHandlesHtml()}`;
   for (const name of ['wireShortcutEditor', 'wireSettingsListeners', 'wireHiddenContentListeners', 'wireMiscSettingsControls', 'wireTagGroupEditor', 'wireLanguageControls']) ui[name] = () => {};
+  ui.wireShortcutEditor = ctx => { h.context = ctx; };
   h.load('enhanced/settingspanel/ui-panel.js');
 
   const $ = selector => h.document.querySelector(selector);
@@ -96,6 +98,7 @@ function setup(t, { width = 1400, height = 900, stored = null, storage } = {}) {
   };
   return {
     ...h, $, panel, queries,
+    context: () => h.context,
     async open() { await h.JE.showEnhancedPanel(); },
     close() { $('#closeSettingsPanel').click(); },
     size: () => { const r = panel().getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; },
@@ -374,11 +377,11 @@ test('the page behind is inert while the dialog is open: outside focus comes bac
   h.key(grip, 'Tab');
   assert.equal(h.document.activeElement, h.preset('default'));
 
-  // Something the panel opens later (release notes card, toasts) is not held.
+  // Controls appended later are still outside the active dialog.
   const card = h.document.createElement('button');
   h.document.body.appendChild(card);
   card.focus();
-  assert.equal(h.document.activeElement, card);
+  assert.equal(h.document.activeElement, h.preset('default'));
 
   h.close();
   assert.equal(opener.hasAttribute('inert'), false, 'close releases the page');
@@ -389,6 +392,32 @@ test('the page behind is inert while the dialog is open: outside focus comes bac
   const after = new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
   opener.dispatchEvent(after);
   assert.equal(after.defaultPrevented, false, 'and its presses are no longer guarded');
+});
+
+test('body-retargeted presses and focusout with no destination keep focus inside', async t => {
+  const h = setup(t);
+  await h.open();
+  const inside = h.preset('large');
+  inside.focus();
+  for (const type of ['pointerdown', 'mousedown', 'click']) {
+    const event = new h.window.MouseEvent(type, { bubbles: true, cancelable: true });
+    h.document.body.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, true, type);
+  }
+  inside.blur(); // activeElement becomes body; focusin is never fired there.
+  await Promise.resolve();
+  assert.equal(h.document.activeElement, inside);
+  inside.dispatchEvent(new h.window.FocusEvent('focusout', { bubbles: true, relatedTarget: h.$('#opener') }));
+  await Promise.resolve();
+  assert.equal(h.document.activeElement, inside);
+  inside.disabled = true;
+  h.$('#opener').focus();
+  await Promise.resolve();
+  assert.equal(h.document.activeElement, h.panel(), 'an unavailable last control falls back to the dialog');
+  h.close();
+  const event = new h.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+  h.document.body.dispatchEvent(event);
+  assert.equal(event.defaultPrevented, false);
 });
 
 test('an element that was already inert before the panel opened stays inert after it closes', async t => {
@@ -536,4 +565,118 @@ test('pointer announcements coalesce for 250ms and discard pending updates on cl
   h.close();
   await new Promise(resolve => setTimeout(resolve, 280));
   assert.equal(status.textContent, 'Panel size 1082 × 762', 'no announcement after teardown');
+});
+
+for (const method of ['pushState', 'replaceState']) test(`shared navigation ${method} closes and restores the page exactly once`, async t => {
+  const h = setup(t);
+  h.load('core/navigation.js');
+  const nav = h.JE.core.navigation;
+  const baseline = nav.getNavCallbackCount();
+  await h.open();
+  const ctx = h.context();
+  let cleanups = 0;
+  ctx.onClose(() => cleanups++);
+  assert.equal(nav.getNavCallbackCount(), baseline + 1);
+  const panel = h.panel();
+  h.window.history[method]({}, '', '#/hidden-content');
+  assert.equal(h.panel(), null);
+  assert.equal(h.$('#opener').hasAttribute('inert'), false);
+  assert.equal(nav.getNavCallbackCount(), baseline);
+  assert.equal(cleanups, 1);
+  const outside = h.document.createElement('button');
+  h.document.body.append(outside);
+  outside.focus();
+  const nativeTimeout = h.window.setTimeout;
+  let scheduled = 0;
+  h.window.setTimeout = (...args) => { scheduled++; return nativeTimeout(...args); };
+  ctx.resetAutoCloseTimer();
+  assert.equal(scheduled, 0, 'a closed dialog cannot restart its auto-close timer');
+  ctx.closePanel();
+  ctx.closePanel();
+  assert.equal(cleanups, 1);
+  assert.equal(h.document.activeElement, outside);
+  assert.equal(panel.isConnected, false);
+  await h.open();
+  assert.equal(nav.getNavCallbackCount(), baseline + 1);
+  h.close();
+  assert.equal(nav.getNavCallbackCount(), baseline);
+});
+
+for (const page of [true, false]) test(`Manage Hidden Content closes before opening its ${page ? 'page' : 'fallback modal'}`, async t => {
+  const h = setup(t);
+  const steps = [];
+  h.JE.hiddenContent = { showManagementPanel: () => steps.push('modal') };
+  h.JE.hiddenContentPage = { showPage: () => steps.push('page') };
+  h.JE.pluginConfig.HiddenContentEnabled = page;
+  h.load('enhanced/settingspanel/ui-panel-hidden-content.js');
+  await h.open();
+  const btn = h.document.createElement('button');
+  btn.id = 'manageHiddenContentBtn';
+  h.panel().append(btn);
+  h.JE.internals.enhancedUi.wireHiddenContentListeners(h.context());
+  h.context().onClose(() => steps.push('close'));
+  btn.click();
+  assert.equal(h.panel(), null);
+  assert.equal(h.$('#opener').hasAttribute('inert'), false);
+  assert.deepEqual(steps, ['close', page ? 'page' : 'modal']);
+});
+
+for (const transition of ['user', 'round-trip', 'server', 'unannounced', 'rejection', 'unchanged']) {
+  test(`opening settings response is published only to its original identity (${transition})`, async t => {
+    const h = setup(t);
+    let user = 'user-a', server = 'server-a', resolve, reject;
+    h.window.ApiClient.getCurrentUserId = () => user;
+    h.window.ApiClient.serverId = () => server;
+    h.load('core/navigation.js');
+    h.load('core/session.js');
+    const pending = new Promise((yes, no) => { resolve = yes; reject = no; });
+    h.window.ApiClient.ajax = () => pending;
+    h.JE.toCamelCase = data => ({ owner: data.Owner });
+    let loads = 0, shortcuts = 0;
+    h.JE.loadSettings = () => { loads++; return h.JE.userConfig.settings; };
+    h.JE.initializeShortcuts = () => shortcuts++;
+    const opening = h.open();
+    assert.equal(h.panel(), null, 'the GET is still pending');
+    if (transition === 'server') server = 'server-b';
+    else if (transition !== 'unchanged') user = 'user-b';
+    if (transition !== 'unannounced') h.JE.session.checkNow('test-switch');
+    if (transition === 'round-trip') {
+      user = 'user-a';
+      h.JE.session.checkNow('test-return');
+    }
+    const incoming = { owner: 'incoming' };
+    h.JE.userConfig.settings = incoming;
+    h.JE.currentSettings = incoming;
+    if (transition === 'rejection') reject(new Error('old identity request failed'));
+    else resolve({ Owner: 'opening-user' });
+    await opening;
+    if (transition === 'unchanged') {
+      assert.equal(h.JE.userConfig.settings.owner, 'opening-user');
+      assert.equal(loads, 1);
+      assert.equal(shortcuts, 1);
+      assert.ok(h.panel());
+    } else {
+      assert.equal(h.JE.userConfig.settings, incoming, 'stale response cannot overwrite incoming settings');
+      assert.equal(h.JE.currentSettings, incoming);
+      assert.equal(loads, 0);
+      assert.equal(shortcuts, 0);
+      assert.equal(h.panel(), null, 'stale opening cannot create a dialog');
+      assert.equal(h.$('#opener').hasAttribute('inert'), false);
+    }
+  });
+}
+
+
+test('the guide describes Reset size after keyboard resizing and the control restores Default', async t => {
+  const guide = readFileSync(new URL('../../../docs/enhanced/enhanced-settings.md', import.meta.url), 'utf8');
+  assert.match(guide, /Reset size\*\* appears after dragging or resizing with the arrow keys/);
+  const h = setup(t);
+  await h.open();
+  assert.equal(h.reset().hidden, true);
+  h.key(h.grip(), 'ArrowRight');
+  assert.equal(h.reset().hidden, false);
+  h.reset().click();
+  assert.deepEqual(h.pressed(), ['default']);
+  assert.equal(h.reset().hidden, true);
+  assert.deepEqual(h.size(), [1042, 722]);
 });
