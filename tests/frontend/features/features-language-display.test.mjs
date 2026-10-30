@@ -133,3 +133,30 @@ for (const audio of [['tgl', 'tl', 'fil'], ['nob', 'nb', 'nno', 'nn', 'nor']]) {
     assert.ok(h.JE.core.mediaLanguage.matchesLanguage(audio[0], audio.at(-1)));
   });
 }
+
+for (const style of ['flags', 'codes']) {
+  test(`Summary subtitle ${style} keeps CC and full-name title`, t => {
+    const h = setup(t, { languageTagsShowAudio: false, languageTagsShowSubtitles: true, languageTagsStyle: style,
+      tagLayout: 'summary', tagLayoutSettingsVersion: 1, tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } });
+    h.renderer.renderFromServerCache(h.target, { SubtitleLanguages: ['en'] });
+    const pill = h.target.querySelector('.je-tag-pill');
+    assert.equal(pill.querySelector('.language-cc').textContent, 'CC');
+    assert.equal(pill.title, 'Subtitles: English');
+    assert.equal(pill.getAttribute('aria-label'), 'Subtitles: English');
+    assert.equal(pill.querySelector('.je-tag-pill-fact').title, 'Subtitles: English');
+    if (style === 'flags') assert.ok(pill.querySelector('img.je-tag-pill-flag'));
+    else assert.equal(pill.textContent, 'CC EN');
+  });
+}
+
+for (const [audio, text, title] of [[['en'], 'EN', 'English'], [['en', 'ja'], 'Dual', '2 audio languages'], [['en', 'ja', 'fr'], 'Multi', '3 audio languages']]) {
+  test(`Summary keeps the original title for ${text}`, t => {
+    const h = setup(t, { languageTagsStyle: 'codes', languageTagsCountBadge: 'both',
+      tagLayout: 'summary', tagLayoutSettingsVersion: 1, tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: audio });
+    const pill = h.target.querySelector('.je-tag-pill');
+    assert.equal(pill.textContent, text);
+    assert.equal(pill.title, title);
+    assert.equal(pill.getAttribute('aria-label'), title);
+  });
+}

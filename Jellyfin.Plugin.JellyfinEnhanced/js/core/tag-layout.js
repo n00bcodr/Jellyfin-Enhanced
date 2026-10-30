@@ -897,7 +897,7 @@
      * The one short fact a group contributes to the summary pill, or null.
      * @param {string} group
      * @param {HTMLElement} master - The group's capped display copy (buildChips).
-     * @returns {{text: string, glyph?: string, flag?: HTMLElement}|null}
+     * @returns {{text: string, title?: string, glyph?: string, flag?: HTMLElement}|null}
      */
     function pillFact(group, master) {
         switch (group) {
@@ -925,14 +925,19 @@
             case 'language': {
                 const first = master.firstElementChild;
                 if (first?.classList.contains('language-code') || first?.classList.contains('language-count-badge')) {
-                    return { text: (first.textContent || '').trim() };
+                    const copy = first.cloneNode(true);
+                    const marker = copy.querySelector('.language-cc');
+                    const glyph = marker?.textContent || undefined;
+                    marker?.remove();
+                    return { text: (copy.textContent || '').trim(), glyph, title: first.getAttribute('title') || undefined };
                 }
-                const img = master.querySelector('img');
+                const img = first?.matches('img') ? first : first?.querySelector('img');
                 if (!img) return null;
                 const flag = /** @type {HTMLElement} */ (img.cloneNode(true));
                 flag.className = 'je-tag-pill-flag';
                 /** @type {HTMLImageElement} */ (flag).onerror = () => flag.remove();
-                return { text: img.getAttribute('alt') || '', flag };
+                return { text: img.getAttribute('alt') || '', title: first?.getAttribute('title') || undefined,
+                    glyph: first?.querySelector('.language-cc')?.textContent || undefined, flag };
             }
             case 'genre': {
                 const text = master.querySelector('.genre-tag')?.getAttribute('title') || '';
@@ -1090,20 +1095,21 @@
             const span = document.createElement('span');
             span.className = 'je-tag-pill-fact';
             span.dataset.jeGroup = fact.group;
+            if (fact.title) span.title = fact.title;
+            if (fact.glyph) {
+                const glyph = document.createElement('span');
+                glyph.className = fact.group === 'language' ? 'language-cc' : 'je-tag-pill-glyph';
+                glyph.setAttribute('aria-hidden', 'true');
+                glyph.textContent = fact.glyph;
+                span.append(glyph, ' ');
+            }
             if (fact.flag) {
                 span.appendChild(fact.flag);
             } else {
-                if (fact.glyph) {
-                    const glyph = document.createElement('span');
-                    glyph.className = 'je-tag-pill-glyph';
-                    glyph.setAttribute('aria-hidden', 'true');
-                    glyph.textContent = fact.glyph;
-                    span.append(glyph, ' ');
-                }
                 span.append(fact.text);
             }
             pill.appendChild(span);
-            spoken.push(fact.text);
+            spoken.push(fact.title || fact.text);
         });
         pill.title = spoken.join(' · ');
         pill.setAttribute('aria-label', spoken.join(', '));
