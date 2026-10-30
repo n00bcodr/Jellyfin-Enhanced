@@ -20,7 +20,7 @@ Choose the starting preferences for accounts that haven't loaded JE yet. You can
 
 1. As an administrator, open **Dashboard → Plugins → Jellyfin Enhanced**. This is the server configuration page; your personal panel is separate.
 2. In **Overview**, check **Service Status** and **Optional Dependencies** for integrations you plan to use.
-3. In **Display** and **Playback**, choose starting preferences.
+3. In **Display** and **Playback**, choose starting preferences. Poster tags have their own page: **Open Media Tags** on the Display tab's **Media Tags** card (it saves as you go).
 4. In **Pages**, enable the pages you want and choose how users reach them. [JE pages & tabs](pages-and-tabs.md) explains the options.
 5. If you use Seerr, Sonarr, Radarr, Bazarr, Shoko, or TMDB-based features, connect them now; see **Connect optional services** below.
 6. Click **Save Settings**, then refresh affected web clients.

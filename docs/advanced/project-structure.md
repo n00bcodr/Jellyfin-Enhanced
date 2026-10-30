@@ -75,6 +75,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
 │   ├── configPage.css
+│   ├── mediaTagsPage.html          # Media Tags settings page shell (loads js/enhanced/admintags/)
 │   └── whats-new-seed.json
 ├── Controllers/
 │   ├── JellyfinEnhancedController.cs  # Most plugin endpoints
@@ -109,6 +110,8 @@ Jellyfin.Plugin.JellyfinEnhanced/
     │   ├── homeremoval/
     │   ├── itemdetails/
     │   ├── player/
+    │   ├── admintags/              # Media Tags settings page (admin, not in the bundle)
+    │   │   └── sections/
     │   ├── settingspanel/
     │   └── spoilerguard/
     ├── jellyseerr/
@@ -147,6 +150,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 |---|---|
 | `Configuration/PluginConfiguration.cs` | Server settings and administrator defaults. |
 | `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
+| `Configuration/mediaTagsPage.html` | The Media Tags settings page (`#/configurationpage?name=JellyfinEnhancedMediaTags`, a second `PluginPageInfo` outside the menu). A shell that loads `js/enhanced/admintags/`; see [Admin Media Tags page](admin-media-tags.md). |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
 | `Configuration/LanguageTagDisplaySettings.cs` | Language display enums, save normalization and admin defaults for new-user seeding and reset-all. |
 | `Configuration/TagLookSettings.cs` | Tag look rules and per-item locks: models and validation (`TagLookValidation`) for `settings.json` and the administrator's default rules. |
@@ -245,7 +249,8 @@ These indexes group client modules and relevant supporting server files by web f
 | `homeremoval/` | `features-remove-home.js` and `features-remove-multiselect.js`: Continue Watching / Next Up removal and multi-select. |
 | `itemdetails/` | `features-details-media-info.js`, `features-release-dates.js`, `features-details-page.js`: media information, file sizes, audio languages, release dates and detail-page orchestration. |
 | `player/` | `playback.js` supplies speed, seeking and track cycling; `auto-skip.js` consumes its player state for media-segment skipping; `subtitles.js` handles styles/presets; `pausescreen.js` supplies the pause overlay; `osd-rating.js` shows Jellyfin community/critic scores; `playback-rating-badge.js` supplies the playback-start age-rating/genre card. |
-| `settingspanel/` | Twelve modules: `ui-entry-points.js`, `ui-release-notes.js`, `ui-panel-template.js`, `ui-panel-shortcut-editor.js`, `ui-panel-settings.js`, `ui-panel-tag-editor.js` (the Media Tags group editor), `ui-panel-hidden-content.js`, `ui-panel-language.js`, `ui-panel-tag-looks.js` (tag look rules and locked items), `ui-panel-tag-preview.js` (the Media Tags live preview: three sample cards drawn by the layout controller), `ui-panel-media-tags.js` (the Media Tags section: tabs, Layout/Status badges/Colours/Server tabs, the phone preview strip and its search entries), `ui-panel.js` (the panel host: dialog, section nav, settings search). The shell orchestrates section wiring after its producers. |
+| `admintags/` | The Media Tags settings page, loaded by `Configuration/mediaTagsPage.html` only (not listed in `component-scripts.json`): `admin-tags.js` (section registry, declarative fields, auto-save, tabs, deep links, preview hand-over), `admin-tags.css`, `tag-styles-editor.js` (the Tag Styles editor) and `sections/*.js`, one module per tab or Groups panel. See [Admin Media Tags page](admin-media-tags.md). |
+| `settingspanel/` | Twelve modules: `ui-entry-points.js`, `ui-release-notes.js`, `ui-panel-template.js`, `ui-panel-shortcut-editor.js`, `ui-panel-settings.js`, `ui-panel-tag-editor.js` (the Media Tags group editor), `ui-panel-hidden-content.js`, `ui-panel-language.js`, `ui-panel-tag-looks.js` (tag look rules and locked items), `ui-panel-tag-preview.js` (the Media Tags live preview: sample cards drawn by the layout controller; also used by the Media Tags settings page with a seeded new-user document), `ui-panel-media-tags.js` (the Media Tags section: tabs, Layout/Status badges/Colours/Server tabs, the phone preview strip and its search entries), `ui-panel.js` (the panel host: dialog, section nav, settings search). The shell orchestrates section wiring after its producers. |
 | `spoilerguard/` | Twelve modules: `ids.js`, `state.js`, `image-refresh.js`, `snooze.js`, `dialog.js`, `identity.js`, `styles.js`, `settings-tab.js`, `seerr-toggle.js`, `detail-button.js`, `watched-refresh.js`, `index.js`. The final module publishes `JE.spoilerBlur`; server filters perform image/metadata protection. |
 
 ### Catch Up

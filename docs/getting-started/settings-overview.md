@@ -11,12 +11,16 @@ The admin page controls server features, service connections, and starting prefe
 3. Check the unsaved indicator, then click **Save Settings**.
 4. Refresh affected web clients.
 
+Media Tags have their own settings page, opened from the **Media Tags** card on the **Display** tab. It is laid out like the personal Media Tags settings, saves each change as you make it (no **Save Settings**), and previews the cards a new user would see. See [Tags & badges](../enhanced/tags.md).
+
+![The Media Tags card on the Display tab](../images/media-tags-admin-card.png)
+
 ![Enhanced administrator Overview tab](../images/admin/overview.webp)
 
 | Tab | What you'll find | Detailed guide |
 | --- | --- | --- |
 | **Overview** | **Service Status**, **Optional Dependencies**, **Features**, and **Quick Actions** for connection tests, overwriting personal settings, and clearing client tag caches | [Defaults and resets](#admin-defaults-and-personal-overrides), [compatibility](compatibility.md) |
-| **Display** | Watch progress, file information, poster/detail tags and their styles, native poster tags, Spoiler Guard, icons/theme, random-button defaults, language, awards, and MDBList ratings | [Enhanced settings](../enhanced/enhanced-settings.md), [Tags & badges](../enhanced/tags.md), [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md) |
+| **Display** | Watch progress, file information, the **Media Tags** card (opens the [Media Tags settings page](../enhanced/tags.md) for poster tags, their layout, rules and colours, the tag cache and native poster tags), Spoiler Guard, icons/theme, random-button defaults, language, awards, and MDBList ratings | [Enhanced settings](../enhanced/enhanced-settings.md), [Tags & badges](../enhanced/tags.md), [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md) |
 | **Playback** | Tab-switch playback behavior, pause screen, long-press speed, automatic intro/outro skipping, subtitle defaults, and panel/toast timing | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Pages** | Enablement, content options, and placement for Bookmarks, Hidden Content, Requests, Calendar, Recommendations, Activity, and Catch Up | [JE pages & tabs](pages-and-tabs.md) |
 | **Seerr** | Connection and shared TMDB key, URL mappings, search/discovery, automatic requests, recently-added scan, watchlist sync, user import/blocking, permission audit, and response-cache diagnostics | [Seerr settings](../seerr/seerr-settings.md), [permission audit](../seerr/permission-audit.md) |
@@ -24,7 +28,7 @@ The admin page controls server features, service connections, and starting prefe
 | **Elsewhere & Reviews** | Streaming providers, regions, shared TMDB key, provider branding, TMDB reviews, release dates, and user reviews | [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) |
 | **Extras** | UI tweaks, header shortcuts, active streams, plugin icons, Letterboxd links, and **Custom Image Assets** | [Other settings](../other/other-settings.md) |
 | **Keyboard** | **Disable Keyboard Shortcuts** and the server's shortcut bindings; click a key to edit it | [Enhanced features](../enhanced/enhanced-features.md#playback-controls) and [personal shortcut controls](#admin-defaults-and-personal-overrides) |
-| **Admin** | Optional usage statistics, maintenance mode, tag-cache operations, and **Dev Mode** | [Other settings](../other/other-settings.md), [Community Analytics](../advanced/community-analytics.md), [Tags & badges](../enhanced/tags.md) |
+| **Admin** | Optional usage statistics, maintenance mode, and **Dev Mode** (the tag cache rebuild is on the Media Tags page) | [Other settings](../other/other-settings.md), [Community Analytics](../advanced/community-analytics.md), [Tags & badges](../enhanced/tags.md) |
 | **Docs** | **Documentation** embedded from the hosted site, with **Open in new tab** | [Quick start](index.md) |
 
 Select a tab to see it on the admin page.
