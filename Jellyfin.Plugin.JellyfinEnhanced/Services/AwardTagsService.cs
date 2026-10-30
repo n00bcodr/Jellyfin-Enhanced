@@ -99,7 +99,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (config.AwardsTagsCertifiedFresh)
                         {
                             var ratings = _mdblist.GetCachedEntry(title.Type, title.Id);
-                            confirmed &= ratings?.Confirmed == true;
+                            // A quota skip leaves the old confirmed entry intact; it is not proof of a fresh refresh.
+                            confirmed &= ratings?.Confirmed == true
+                                && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - ratings.FetchedAtUnixMs < ttl.TotalMilliseconds;
                             if (ratings?.Confirmed == true) facts = facts with { CertifiedFresh = ratings.Ratings.Any(r => r.Source == "tomatoes" && r.Certified == true) };
                         }
                     }

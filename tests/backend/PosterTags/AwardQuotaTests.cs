@@ -85,6 +85,66 @@ public class AwardQuotaTests
     }
 
     [Theory]
+    [InlineData(503, 25, true)]
+    [InlineData(503, 25, false)]
+    [InlineData(200, 25, true)]
+    [InlineData(503, 2, true)]
+    public async Task CertificationConfirmationRequiresFreshFactsAndRecoversAfterShortRetry(int status, int ageHours, bool found)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.MdblistApiKey = "fixture-only";
+        config.AwardsTagsEnabled = config.AwardsTagsCertifiedFresh = true;
+        config.AwardsTagsImdb = config.AwardsTagsLetterboxd = config.AwardsTagsOscar = config.AwardsTagsEmmy = false;
+        config.AwardsTagsRefreshHours = 24;
+        config.MdblistFetchReserve = 100;
+        var requests = 0;
+        using var transport = new IntegrationTransport((request, _) => {
+            Assert.Equal("/user", request.RequestUri!.AbsolutePath);
+            Interlocked.Increment(ref requests);
+            return Task.FromResult(IntegrationTransport.Response(status == 200
+                ? "{\"rate_limit\":1000,\"rate_limit_remaining\":100}" : "{}", status));
+        });
+        using var mdblist = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        using var wiki = new WikidataAwardsService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var service = new AwardTagsService(transport, f.Core.Paths.Object, mdblist, wiki, f.Core.Logger);
+        var cached = new MdblistCacheEntry { Found = found, Confirmed = true,
+            FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Ratings = found ? [new() { Source = "tomatoes", Certified = true }] : [] };
+        mdblist.MergeMediaBatchIntoCache("movie", ["42"], new Dictionary<string, MdblistCacheEntry> { ["42"] = cached });
+        // First publish good facts, then make both the Awards projection and provider entry due.
+        await service.RefreshAsync([("movie", "42")], config, null, default);
+        Assert.Equal(found, service.GetCached("movie", "42", config)!.CertifiedFresh);
+        cached.FetchedAtUnixMs = DateTimeOffset.UtcNow.AddHours(-ageHours).ToUnixTimeMilliseconds();
+        await mdblist.GetAccountStatusAsync(default);
+        var path = Path.Combine(f.Core.ConfigRoot, "award-tags.json");
+        var disk = JsonSerializer.Deserialize<AwardTagsService.Disk>(File.ReadAllText(path))!;
+        Assert.Single(disk.Titles).Value.NextRefresh = 0;
+        File.WriteAllText(path, JsonSerializer.Serialize(disk));
+        service = new AwardTagsService(transport, f.Core.Paths.Object, mdblist, wiki, f.Core.Logger);
+        await service.RefreshAsync([("movie", "42")], config, null, default);
+        Assert.Equal(found, service.GetCached("movie", "42", config)!.CertifiedFresh);
+        Assert.Same(cached, mdblist.GetCachedEntry("movie", "42"));
+        disk = JsonSerializer.Deserialize<AwardTagsService.Disk>(File.ReadAllText(path))!;
+        var title = Assert.Single(disk.Titles).Value;
+        var retryMinutes = (DateTimeOffset.FromUnixTimeMilliseconds(title.NextRefresh) - DateTimeOffset.UtcNow).TotalMinutes;
+        Assert.InRange(retryMinutes, ageHours > 24 ? 55 : 1435, ageHours > 24 ? 65 : 1445);
+        var calls = requests;
+        await service.RefreshAsync([("movie", "42")], config, null, default);
+        if (ageHours <= 24) Assert.Equal(calls, requests); // Fresh facts do not cause quota probes or media retries.
+
+        // Recovery by another warmer must publish after the one-hour deadline, including after restart.
+        title.NextRefresh -= (long)TimeSpan.FromHours(2).TotalMilliseconds;
+        File.WriteAllText(path, JsonSerializer.Serialize(disk));
+        mdblist.MergeMediaBatchIntoCache("movie", ["42"], new Dictionary<string, MdblistCacheEntry> {
+            ["42"] = new() { Found = true, Confirmed = true, FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Ratings = [new() { Source = "tomatoes", Certified = !found }] } });
+        service = new AwardTagsService(transport, f.Core.Paths.Object, mdblist, wiki, f.Core.Logger);
+        await service.RefreshAsync([("movie", "42")], config, null, default);
+        Assert.Equal(ageHours > 24 ? !found : found, service.GetCached("movie", "42", config)!.CertifiedFresh);
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task AccountStatusCannotPublishInsideAChartRequestOrRestoreItsSpend(bool statusStartedBeforeChart)
