@@ -49,11 +49,16 @@ public class LogoTagTests
         return image.Encode(SKEncodedImageFormat.Png, 100).ToArray();
     }
 
-    private static (TagLogoService Service, IntegrationTransport Transport, Clock Clock, string Dir) Service(Func<HttpRequestMessage, HttpResponseMessage> answer, int failFast = 0)
+    private static (TagLogoService Service, IntegrationTransport Transport, Clock Clock, string Dir) Service(Func<HttpRequestMessage, HttpResponseMessage> answer, Func<bool>? slow = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "je-logos-" + Guid.NewGuid().ToString("N"));
         var clock = new Clock();
-        var transport = new IntegrationTransport((request, _) => Task.FromResult(answer(request)));
+        // A slow answer makes lookups queue for the four upstream slots, as on a real network.
+        var transport = new IntegrationTransport(async (request, _) =>
+        {
+            if (slow?.Invoke() == true) await Task.Delay(20);
+            return answer(request);
+        });
         var cache = new TmdbResponseCache(transport, clock);
         var service = new TagLogoService(transport, cache, clock, Path.Combine(dir, "tag-logos.json"), Path.Combine(dir, "logos"), null, 4, 1000, TimeSpan.FromSeconds(10));
         return (service, transport, clock, dir);
@@ -135,7 +140,7 @@ public class LogoTagTests
     public async Task FailuresKeepEarlierDataRetryAfterAnHourAndStopEarlyWhenOffline()
     {
         var fail = false;
-        var (service, transport, clock, dir) = Service(_ => fail ? IntegrationTransport.Response("{}", 503) : IntegrationTransport.Response(Providers));
+        var (service, transport, clock, dir) = Service(_ => fail ? IntegrationTransport.Response("{}", 503) : IntegrationTransport.Response(Providers), () => fail);
         try
         {
             await service.WarmAsync("key", [("movie", "603", TagLogoService.LookupKind.Providers)], "US", CancellationToken.None);
@@ -153,7 +158,7 @@ public class LogoTagTests
             var calls = transport.Calls;
             var many = Enumerable.Range(1000, 200).Select(id => ("movie", id.ToString(System.Globalization.CultureInfo.InvariantCulture), TagLogoService.LookupKind.Providers));
             await service.WarmAsync("key", many, "US", CancellationToken.None);
-            Assert.InRange(transport.Calls - calls, TagLogoService.FailFastAfter, TagLogoService.FailFastAfter + 8);
+            Assert.InRange(transport.Calls - calls, TagLogoService.FailFastAfter, TagLogoService.FailFastAfter + TagLogoService.MaxInFlight);
         }
         finally
         {

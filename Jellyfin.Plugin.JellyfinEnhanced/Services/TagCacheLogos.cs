@@ -84,11 +84,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     try
                     {
+                        // The lookups run outside the rebuild lock (they can take minutes on
+                        // a large library); only the republish needs it.
+                        if (ShouldAbortCacheWork || _cacheReleased) return;
+                        WarmLogos(CancellationToken.None);
                         _rebuildLock.Wait();
                         try
                         {
                             if (ShouldAbortCacheWork || _cacheReleased) return;
-                            WarmLogos(CancellationToken.None);
                             RefreshLogos();
                         }
                         finally

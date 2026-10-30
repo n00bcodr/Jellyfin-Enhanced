@@ -175,12 +175,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var changed = 0;
             var failures = 0;
             var successes = 0;
+            // Offline or a bad key: once the first lookups all fail, leave the rest
+            // for the next run instead of failing them one by one. Checked once a
+            // lookup holds an upstream slot, so queued lookups see earlier failures.
+            bool GiveUp() => Volatile.Read(ref successes) == 0 && Volatile.Read(ref failures) >= FailFastAfter;
             var tasks = due.Select(async t =>
             {
-                // Offline or a bad key: once the first lookups all fail, leave the
-                // rest for the next run instead of failing them one by one.
-                if (Volatile.Read(ref successes) == 0 && Volatile.Read(ref failures) >= FailFastAfter) return;
-                var result = await FetchLookupAsync(apiKey, t.MediaType, t.TmdbId, t.Kind, region, cancellationToken).ConfigureAwait(false);
+                var result = await FetchLookupAsync(apiKey, t.MediaType, t.TmdbId, t.Kind, region, GiveUp, cancellationToken).ConfigureAwait(false);
+                if (result == null) return;
                 if (result.Failed) Interlocked.Increment(ref failures);
                 else Interlocked.Increment(ref successes);
                 var key = KeyOf(t.MediaType, t.TmdbId, t.Kind, region);
@@ -195,13 +197,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return changed;
         }
 
-        private async Task<Lookup> FetchLookupAsync(string apiKey, string mediaType, string tmdbId, LookupKind kind, string region, CancellationToken cancellationToken)
+        /// <summary>One lookup; null when it was skipped because <paramref name="giveUp"/> said so.</summary>
+        private async Task<Lookup?> FetchLookupAsync(string apiKey, string mediaType, string tmdbId, LookupKind kind, string region, Func<bool> giveUp, CancellationToken cancellationToken)
         {
             var path = kind == LookupKind.Providers ? $"{mediaType}/{tmdbId}/watch/providers" : $"{mediaType}/{tmdbId}";
             var now = _time.GetUtcNow().ToUnixTimeMilliseconds();
             try
             {
-                var body = await FetchBodyAsync(apiKey, path, cancellationToken).ConfigureAwait(false);
+                var body = await FetchBodyAsync(apiKey, path, giveUp, cancellationToken).ConfigureAwait(false);
                 if (body == null) return new Lookup(now, Array.Empty<LogoRef>(), false);
                 var items = kind == LookupKind.Providers ? ParseProviders(body, region) : ParseDetails(body, mediaType);
                 return items == null ? new Lookup(now, Array.Empty<LogoRef>(), true) : new Lookup(now, items, false);
@@ -210,6 +213,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 throw;
             }
+            catch (WarmSkippedException)
+            {
+                return null;
+            }
             catch (Exception ex)
             {
                 _logger?.Debug($"[LogoTags] TMDB lookup {path} failed: {ex.Message}");
@@ -217,14 +224,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        private sealed class WarmSkippedException : Exception
+        {
+        }
+
         /// <summary>Read through the shared response cache with bounded upstream work; null on 404.</summary>
-        private async Task<string?> FetchBodyAsync(string apiKey, string apiPath, CancellationToken cancellationToken)
+        private async Task<string?> FetchBodyAsync(string apiKey, string apiPath, Func<bool> giveUp, CancellationToken cancellationToken)
         {
             if (_tmdb.TryGetFresh(apiPath, string.Empty, apiKey, out var cached)) return Read(cached);
             await _slots.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (_tmdb.TryGetFresh(apiPath, string.Empty, apiKey, out cached)) return Read(cached);
+                if (giveUp()) throw new WarmSkippedException();
                 await WaitForRateWindowAsync(cancellationToken).ConfigureAwait(false);
                 // The response cache owns the upstream timeout; keep the slot until it ends.
                 return Read(await _tmdb.GetAsync(apiPath, string.Empty, apiKey, CancellationToken.None).ConfigureAwait(false));
