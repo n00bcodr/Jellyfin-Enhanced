@@ -1,7 +1,9 @@
 [
-  {"name":"wide middle followed by narrow", "widths":[30,600,30], "heights":[18,18,18], "available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":18,"shown":[true,false,true],"hidden":1},
-  {"name":"wide first followed by narrow", "widths":[600,30,30], "heights":[18,18,18], "available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":18,"shown":[false,true,true],"hidden":1},
-  {"name":"later chip fills second row", "widths":[120,100,100,20], "heights":[18,18,18,18], "available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":39,"shown":[true,true,false,true],"hidden":1},
-  {"name":"one row skips wide middle", "widths":[30,150,30,30], "heights":[18,18,18,18], "available":100,"gap":3,"maxRows":1,"moreWidth":20,"height":18,"shown":[true,false,true,false],"hidden":2},
-  {"name":"all fit without overflow reserve", "widths":[80,80], "heights":[18,18], "available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":18,"shown":[true,true],"hidden":0}
+  {"name":"wide middle followed by narrow","widths":[30,600,30],"heights":[18,18,18],"available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":18,"shown":[true,false,true],"hidden":1},
+  {"name":"wide first followed by narrow","widths":[600,30,30],"heights":[18,18,18],"available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":18,"shown":[false,true,true],"hidden":1},
+  {"name":"later chip fills second row","widths":[120,100,100,20],"heights":[18,18,18,18],"available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":39,"shown":[true,true,false,true],"hidden":1},
+  {"name":"one row skips wide middle","widths":[30,150,30,30],"heights":[18,18,18,18],"available":100,"gap":3,"maxRows":1,"moreWidth":20,"height":18,"shown":[true,false,true,false],"hidden":2},
+  {"name":"all fit without overflow reserve","widths":[80,80],"heights":[18,18],"available":168,"gap":3,"maxRows":2,"moreWidth":34.25,"height":18,"shown":[true,true],"hidden":0},
+  {"name":"twelve chips reserve total at 168px boundary","widths":[30,30,30,30,30,30,30,30,30,30,30,30],"heights":[18,18,18,18,18,18,18,18,18,18,18,18],"available":168,"gap":3,"maxRows":2,"moreWidths":{"1":34.25,"12":41.375},"height":39,"shown":[true,true,true,true,true,true,true,true,false,false,false,false],"hidden":4},
+  {"name":"twelve chips at total reservation boundary","widths":[30,30,30,30,30,30,30,30,30,30,30,30],"heights":[18,18,18,18,18,18,18,18,18,18,18,18],"available":173.375,"gap":3,"maxRows":2,"moreWidths":{"1":34.25,"12":41.375},"height":39,"shown":[true,true,true,true,true,true,true,true,true,false,false,false],"hidden":3}
 ]

@@ -1166,7 +1166,7 @@ test('Bands shared native/web width and height fixtures retain later chips after
   const fixtures = JSON.parse(readFileSync(new URL('../../fixtures/native-band-fit.json', import.meta.url), 'utf8'));
   for (const f of fixtures) {
     const rows = [], more = { row: 0 };
-    const shown = h.layout.chipsThatFit(f.widths, f.available, f.gap, f.maxRows, f.moreWidth, rows, more);
+    const shown = h.layout.chipsThatFit(f.widths, f.available, f.gap, f.maxRows, f.moreWidths?.[String(f.widths.length)] ?? f.moreWidth, rows, more);
     assert.deepEqual(shown, f.shown, f.name);
     assert.equal(shown.filter(v => !v).length, f.hidden, f.name);
     assert.equal(h.layout.rowsHeight(shown, rows, f.heights, 18, f.gap, more.row), f.height, f.name);

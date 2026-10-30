@@ -276,19 +276,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         {
             for (int rows = 2; rows >= 1; rows--)
             {
-                var more = overflow(1);
-                float reserved = more.Width;
-                List<PlannedItem> shown;
-                while (true)
-                {
-                    var fit = BandChipsThatFit(items.Select(i => i.Width).ToArray(), width, gap, rows, reserved);
-                    shown = items.Where((_, i) => fit[i]).ToList();
-                    var hidden = items.Count - shown.Count;
-                    if (hidden == 0) break;
-                    more = overflow(hidden);
-                    if (more.Width <= reserved) { shown.Add(more); break; }
-                    reserved = more.Width;
-                }
+                // Web prepareFit measures +<total count> before selecting chips.
+                // Keep that reservation even when the actual omitted count is shorter.
+                var reserved = overflow(items.Count).Width;
+                var fit = BandChipsThatFit(items.Select(i => i.Width).ToArray(), width, gap, rows, reserved);
+                var shown = items.Where((_, i) => fit[i]).ToList();
+                var hidden = items.Count - shown.Count;
+                if (hidden > 0) shown.Add(overflow(hidden));
                 float x = 0, y = 0, rowHeight = 0;
                 foreach (var chip in shown)
                 {

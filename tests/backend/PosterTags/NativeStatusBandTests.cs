@@ -134,11 +134,13 @@ public class NativeStatusBandTests
             float Number(string key) => fixture.GetProperty(key).GetSingle();
             var widths = fixture.GetProperty("widths").EnumerateArray().Select(v => v.GetSingle()).ToArray();
             var heights = fixture.GetProperty("heights").EnumerateArray().Select(v => v.GetSingle()).ToArray();
+            float MoreWidth(int count) => fixture.TryGetProperty("moreWidths", out var measured)
+                ? measured.GetProperty(count >= 10 ? "12" : "1").GetSingle() : Number("moreWidth");
             var expected = fixture.GetProperty("shown").EnumerateArray().Select(v => v.GetBoolean()).ToArray();
-            Assert.Equal(expected, PosterTagPlanner.BandChipsThatFit(widths, Number("available"), Number("gap"), (int)Number("maxRows"), Number("moreWidth")));
+            Assert.Equal(expected, PosterTagPlanner.BandChipsThatFit(widths, Number("available"), Number("gap"), (int)Number("maxRows"), MoreWidth(widths.Length)));
             var items = widths.Select((w, i) => new PlannedItem(PosterTagTileKind.Status, new StatusTag("fixture", i.ToString(), ""), i.ToString(), "", w, heights[i])).ToArray();
             var placed = PosterTagPlanner.FitBandChips(items, Number("available"), Number("height"), Number("gap"), count =>
-                new PlannedItem(PosterTagTileKind.Status, new StatusTag("overflow", "+" + count, ""), "+" + count, "", Number("moreWidth"), 18));
+                new PlannedItem(PosterTagTileKind.Status, new StatusTag("overflow", "+" + count, ""), "+" + count, "", MoreWidth(count), 18));
             Assert.Equal(expected, items.Select(placed.Contains));
             var more = placed.SingleOrDefault(p => p.Text.StartsWith('+'));
             Assert.Equal(Number("hidden") == 0 ? null : "+" + Number("hidden"), more?.Text);
