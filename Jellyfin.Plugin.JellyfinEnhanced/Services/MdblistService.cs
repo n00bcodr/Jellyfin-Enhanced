@@ -108,6 +108,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
 
                 var fetched = await FetchFromMdblistAsync(mediaType, tmdbId, cancellationToken).ConfigureAwait(false);
+                // A caller that gave up must not publish anything: the cache is
+                // shared with the tag-rating warmers and every other viewer.
+                cancellationToken.ThrowIfCancellationRequested();
                 _cache[key] = fetched;
                 ScheduleDebouncedSave();
                 return fetched;
@@ -315,6 +318,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 return ParseResponse(doc, now);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
