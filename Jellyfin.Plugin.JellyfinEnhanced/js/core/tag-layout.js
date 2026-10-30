@@ -1120,6 +1120,8 @@
                     anchor.className = 'language-link';
                     anchor.href = link.getAttribute('href');
                     anchor.title = chip.getAttribute('title') || '';
+                    // Mouse/touch only: keyboard focus stays on the poster's own link.
+                    anchor.setAttribute('tabindex', '-1');
                     for (const attr of ['target', 'rel']) {
                         if (link.hasAttribute(attr)) anchor.setAttribute(attr, link.getAttribute(attr));
                     }
@@ -1356,6 +1358,7 @@
         const pill = document.createElement(link?.matches('a[href]') && !link.contains(ctrl.host) ? 'a' : 'div');
         if (pill.tagName === 'A') {
             pill.setAttribute('href', link.getAttribute('href'));
+            pill.setAttribute('tabindex', '-1');
             for (const attr of ['target', 'rel']) {
                 if (link.hasAttribute(attr)) pill.setAttribute(attr, link.getAttribute(attr));
             }

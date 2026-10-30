@@ -92,7 +92,7 @@ test('a language code or count badge remains visible as a Summary pill fact', t 
   assert.match(h.target.querySelector('.je-tag-pill').textContent, /EN/);
 });
 
-test('hoverable language chips use native anchors through clones and caption moves', async t => {
+test('hoverable language chips use unfocusable native anchors through clones and caption moves', async t => {
   const h = setup(t, { languageTagsShowSubtitles: true });
   const overlay = h.document.createElement('div'); overlay.className = 'cardOverlayContainer';
   const link = h.document.createElement('a'); link.className = 'cardImageContainer'; link.href = '#/details?id=a';
@@ -100,7 +100,10 @@ test('hoverable language chips use native anchors through clones and caption mov
   h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['en'], SubtitleLanguages: ['fr'] });
   const anchors = h.target.querySelectorAll('a.language-link');
   assert.equal(anchors.length, 2);
-  for (const a of anchors) assert.equal(a.getAttribute('href'), '#/details?id=a');
+  for (const a of anchors) {
+    assert.equal(a.getAttribute('href'), '#/details?id=a');
+    assert.equal(a.getAttribute('tabindex'), '-1');
+  }
   assert.equal(anchors[0].title, 'English');
   assert.equal(anchors[1].title, 'Subtitles: French');
   assert.ok(anchors[0].querySelector('img.language-flag'));
@@ -108,12 +111,18 @@ test('hoverable language chips use native anchors through clones and caption mov
   h.JE.currentSettings.tagLayout = 'caption';
   h.JE.currentSettings.tagLayoutSettingsVersion = 1;
   await h.JE.core.tagLayout.reinitialize();
-  assert.equal(h.document.querySelectorAll('.je-tag-caption a.language-link').length, 2);
+  const captioned = h.document.querySelectorAll('.je-tag-caption a.language-link');
+  assert.equal(captioned.length, 2);
+  for (const a of captioned) assert.equal(a.getAttribute('tabindex'), '-1');
   h.JE.currentSettings.tagLayout = 'summary';
   h.JE.currentSettings.tagLayouts = { summary: { groups: [{ group: 'language', slot: 'pill' }] } };
   await h.JE.core.tagLayout.reinitialize();
   assert.equal(h.target.querySelector('a.je-tag-pill').getAttribute('href'), '#/details?id=a');
-  assert.equal(h.target.querySelectorAll('[data-je-slot="hover"] a.language-link').length, 2);
+  assert.equal(h.target.querySelector('a.je-tag-pill').getAttribute('tabindex'), '-1');
+  const hovered = h.target.querySelectorAll('[data-je-slot="hover"] a.language-link');
+  assert.equal(hovered.length, 2);
+  for (const a of hovered) assert.equal(a.getAttribute('tabindex'), '-1');
+  assert.equal(link.hasAttribute('tabindex'), false);
 });
 
 test('container batch fallback reads subtitle facts from the projected first episode', t => {

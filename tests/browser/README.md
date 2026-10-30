@@ -66,5 +66,13 @@ npx playwright test --config tests/browser/playwright.config.cjs language-naviga
 Without the lab variables it uses the fixture host. Both modes check actual
 left-click navigation and new tabs from Control/Command-click and middle-click
 for audio flags, codes, subtitle captions, subtitle summary pills and count
-badges. Lab fixtures change only the current browser's display settings and
-card facts; no user preferences or media metadata are saved.
+badges, and that Tab and Shift+Tab move through the card's own link without
+stopping on language links or the Summary pill. Lab fixtures change only the
+current browser's display settings and card facts; no user preferences or
+media metadata are saved. In the lab the spec picks a Movie card the pipeline
+has already tagged and uses `getReviewRatings()` as a narrow cache-readiness
+wait, not a pipeline-idle promise. It hands the fixture facts to the unmodified
+registered language renderer, whose `markTagged()` bookkeeping and renderer
+guards protect against later same-card scans and batch renders. The fixture
+also owns language priority, group order/caps, look rules/locks and shape settings
+in browser memory, so saved lab policies cannot change the requested badges.
