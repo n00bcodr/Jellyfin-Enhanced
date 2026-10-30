@@ -16,6 +16,11 @@
     /** Groups whose containers had 4px phone edge offsets before layouts existed. */
     const LEGACY_MOBILE_GROUPS = ':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])';
     const LEGACY_EDGE = (slot) => `.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${slot}"] > ${LEGACY_MOBILE_GROUPS}`;
+    /** Corners slots of a card with a non-default edge spacing (data-je-edge, set by core/tag-layout.js). */
+    const EDGE = '.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot';
+    const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
+    /** Chips with a box of their own (not the genre circle or a flag image). */
+    const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .language-chip)';
 
     /**
      * Build the shared layout stylesheet.
@@ -130,6 +135,49 @@
                     margin-top: max(0px, ${INDICATOR_OFFSET} - 2px - var(--je-indicator-before, 0px));
                 }
             }
+
+            /* Edge spacing (corners only): the default 6px inset above stays as it
+               is; tight (3px) and flush (0px) restate every anchor's offset, the
+               corner containers' size limits, the centre budgets' defaults and the
+               indicator gap with the card's own inset. */
+            .je-tag-host[data-je-layout="corners"][data-je-edge="tight"] { --je-edge: 3px; }
+            /* Flush chips touch the card edge: the host clips to the artwork's
+               rounded corners (radius measured by the fitting pass), so a chip in a
+               corner takes the card's curve and none paints outside the card. */
+            .je-tag-host[data-je-layout="corners"][data-je-edge="flush"] {
+                --je-edge: 0px;
+                overflow: hidden;
+                border-radius: var(--je-card-radius, 0px);
+            }
+            ${EDGE}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) { inset: var(--je-edge); }
+            ${EDGE}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
+                max-height: calc(90% + 1.8 * var(--je-edge));
+            }
+            @media (max-width: 480px) {
+                ${EDGE}:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) > :is(.quality-overlay-container, .genre-overlay-container) { max-height: calc(85% + 1.7 * var(--je-edge)); }
+            }
+            ${EDGE}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="c"]) {
+                width: max(0px, calc(100% - 2 * var(--je-anchor-reserve, var(--je-edge))));
+            }
+            ${EDGE}[data-je-slot="tc"] { top: var(--je-anchor-top, var(--je-edge)); }
+            ${EDGE}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, var(--je-edge)); }
+            ${EDGE}[data-je-slot="c"] { max-width: calc(100% - 2 * var(--je-edge)); }
+            ${EDGE}:is([data-je-slot="ml"], [data-je-slot="mr"]) {
+                max-height: max(0px, calc(100% - 2 * var(--je-anchor-reserve, var(--je-edge))));
+                max-width: calc(50% - var(--je-edge));
+            }
+            ${EDGE}[data-je-slot="ml"] { left: var(--je-edge); }
+            ${EDGE}[data-je-slot="mr"] { right: var(--je-edge); }
+            ${INDICATORS}[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"],
+            .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
+                top: calc(var(--je-edge) + ${INDICATOR_OFFSET});
+            }
+            /* Flush: the chip corners that touch an edge are square, like a tab
+               hanging off the card (the corner itself follows the card's curve). */
+            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) > [data-je-group] > ${BOX_CHIP} { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+            ${FLUSH}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) > [data-je-group] > ${BOX_CHIP} { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="tr"]) > [data-je-group]:first-child > ${BOX_CHIP}:first-child { border-top-left-radius: 0; border-top-right-radius: 0; }
+            ${FLUSH}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${BOX_CHIP}:last-child { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 
             /* Genre names float toward the inside of the card. */
             .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"], [data-je-slot="poster"], [data-je-slot="top"]) .genre-tag .genre-text {

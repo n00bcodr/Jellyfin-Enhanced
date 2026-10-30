@@ -85,6 +85,14 @@
         },
     };
 
+    /**
+     * Edge spacing of the corners layout (all nine anchors): the inset, in
+     * CSS px, between a chip and the card edges. "default" is the inset the
+     * corners always had; tight and flush move every anchor closer, flush
+     * onto the edge (the host then clips to the card's rounded corners).
+     */
+    const EDGE_SPACINGS = Object.assign(Object.create(null), { default: 6, tight: 3, flush: 0 });
+
     /** Built-in chip limits (0 = unlimited): the limits each group had before caps existed. */
     const DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1 };
     const MAX_CAP = 10;
@@ -236,6 +244,18 @@
     }
 
     /**
+     * Canonical edge spacing id: null for a missing or empty value (inherit),
+     * "default" for anything unknown.
+     * @param {*} value
+     * @returns {string|null}
+     */
+    function readEdge(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const lowered = String(value).trim().toLowerCase();
+        return Object.hasOwn(EDGE_SPACINGS, lowered) ? lowered : 'default';
+    }
+
+    /**
      * Clamp a cap value to 0..MAX_CAP, or undefined when not a number.
      * @param {*} value
      * @returns {number|undefined}
@@ -368,6 +388,7 @@
      * @property {{landscape: TagShapeLook|null, list: TagShapeLook|null}} shapes - The
      *   per-shape looks in effect (the user's own, else the administrator's on a
      *   normalized document; none on a legacy one unless the user set them).
+     * @property {string} edge - Corners edge spacing: 'default', 'tight' or 'flush'.
      * @property {string} lookKey - Identifies the presentation (see lookKeyOf).
      */
 
@@ -442,7 +463,11 @@
         const ownShapes = s.tagShapeOverrides;
         const shapes = readShapeOverrides(ownShapes && typeof ownShapes === 'object' ? ownShapes : (legacy ? null : pick(p, 'tagShapeOverrides')));
 
-        const conf = { layout, legacy, density, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, shapes, lookKey: '' };
+        // Edge spacing: the document's own, else the administrator's; a
+        // legacy document keeps the inset it always had.
+        const edge = legacy ? 'default' : (readEdge(s.tagEdgeSpacing) || readEdge(pick(p, 'tagEdgeSpacing')) || 'default');
+
+        const conf = { layout, legacy, density, order, orderChosen, caps, profiles, slots: profiles[layout], indicatorGap, reserveCaption, locked: false, shapes, edge, lookKey: '' };
         conf.lookKey = lookKeyOf(conf);
         return conf;
     }
@@ -471,6 +496,8 @@
         if (!s.tagShapeOverrides || typeof s.tagShapeOverrides !== 'object' || Array.isArray(s.tagShapeOverrides)) {
             s.tagShapeOverrides = { landscape: null, list: null };
         }
+        // Nor into the administrator's edge spacing.
+        if (!readEdge(s.tagEdgeSpacing)) s.tagEdgeSpacing = 'default';
         s.tagLayoutSettingsVersion = 1;
         if (s === JE.currentSettings) invalidateSettings();
         return true;
@@ -479,13 +506,13 @@
     /**
      * A string that differs whenever two settings would present a card
      * differently (layout, density, slots, caps — a shape look can change
-     * them —, lock marker).
+     * them —, lock marker, corners edge spacing).
      * @param {TagLayoutSettings} conf
      * @returns {string}
      */
     function lookKeyOf(conf) {
         return [conf.layout, conf.density, conf.locked ? 'L' : '', DEFAULT_ORDER.map((g) => conf.slots[g] || '').join(','),
-            DEFAULT_ORDER.map((g) => conf.caps[g]).join(',')].join('|');
+            DEFAULT_ORDER.map((g) => conf.caps[g]).join(','), conf.edge === 'default' ? '' : conf.edge].join('|');
     }
 
     /** @type {TagLayoutSettings|null} memoised until the next invalidateSettings() */
@@ -1466,6 +1493,7 @@
         delete ctrl.host.dataset.jeLocked;
         delete ctrl.host.dataset.jeIndicatorGap;
         delete ctrl.host.dataset.jeShape;
+        delete ctrl.host.dataset.jeEdge;
     }
 
     /**
@@ -1498,6 +1526,8 @@
         if (conf.legacy) ctrl.host.dataset.jeLegacy = '1';
         if (conf.reserveCaption && !isIgnoredContext(ctrl.host)) ensureOutlet(ctrl);
         if (conf.locked) ctrl.host.dataset.jeLocked = '1';
+        // Corners edge spacing (tags/tag-layout-styles.js); the default inset has no marker.
+        if (conf.layout === 'corners' && conf.edge && conf.edge !== 'default') ctrl.host.dataset.jeEdge = conf.edge;
         // Waiting for item data: keep the groups, show none yet.
         if (isAwaiting(ctrl.host)) return;
         const groups = Array.from(ctrl.groups.keys()).sort((a, b) => rankOf(ctrl, conf, a) - rankOf(ctrl, conf, b));
@@ -1696,12 +1726,47 @@
      * @param {CardController} ctrl
      */
     function scheduleFit(ctrl) {
-        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl))) return;
+        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl))) return;
         pendingFit.add(ctrl);
         if (fitScheduled) return;
         fitScheduled = true;
         if (typeof JE.core.dom?.afterNextPaint === 'function') JE.core.dom.afterNextPaint(flushFit);
         else requestAnimationFrame(flushFit);
+    }
+
+    /**
+     * The inset (CSS px) of a card's corners edge spacing.
+     * @param {CardController} ctrl
+     * @returns {number}
+     */
+    function edgeOf(ctrl) {
+        const edge = ctrl.layout === 'corners' ? ctrl.host.dataset.jeEdge : undefined;
+        return edge && Object.hasOwn(EDGE_SPACINGS, edge) ? EDGE_SPACINGS[edge] : EDGE_SPACINGS.default;
+    }
+
+    /**
+     * Whether a flush card still needs its artwork's corner radius, which
+     * the host clips to so no chip paints outside the card.
+     * @param {CardController} ctrl
+     * @returns {boolean}
+     */
+    function needsRadius(ctrl) {
+        return ctrl.host.dataset.jeEdge === 'flush' && !ctrl.host.style.getPropertyValue('--je-card-radius');
+    }
+
+    /**
+     * The corner radius of the artwork a card's tags sit on (reads only):
+     * the card's image container, else the element the host sits in (a
+     * list row's image, the settings panel's sample cards).
+     * @param {CardController} ctrl
+     * @returns {string}
+     */
+    function cardRadiusOf(ctrl) {
+        const parent = ctrl.host.parentElement;
+        const art = (parent?.classList.contains('cardScalable') && parent.querySelector('.cardImageContainer')) || parent;
+        if (!art) return '0px';
+        const style = getComputedStyle(art);
+        return style.borderTopLeftRadius || style.borderRadius.split(' ')[0] || '0px';
     }
 
     /** Run the fitting pass for every queued card that is still on the page. */
@@ -1716,6 +1781,7 @@
             // are. The image's height only for cards whose shape is measured.
             const widths = list.map((ctrl) => ctrl.host.clientWidth);
             const heights = list.map((ctrl, i) => (widths[i] > 0 && needsShape(ctrl) ? ctrl.host.clientHeight : 0));
+            const radii = list.map((ctrl, i) => (widths[i] > 0 && needsRadius(ctrl) ? cardRadiusOf(ctrl) : null));
             const shown = list.filter((ctrl, i) => widths[i] > 0);
             // Writes: a card whose shape was measured is presented in its
             // shape's look (one not laid out as a portrait, measured again
@@ -1740,6 +1806,7 @@
             for (const ctrl of narrowed) {
                 if (ctrl.layout === 'bands' && !presented.has(ctrl)) presentAll(ctrl);
             }
+            list.forEach((ctrl, i) => { if (radii[i] !== null) ctrl.host.style.setProperty('--je-card-radius', radii[i]); });
             for (const ctrl of shown) prepareFit(ctrl);
             // Read every occupied corner before writing centre-anchor budgets.
             const anchors = shown.map(measureAnchors);
@@ -1766,6 +1833,7 @@
     function measureAnchors(ctrl) {
         const centres = centreSlots(ctrl);
         if (!centres.length) return [];
+        const edge = edgeOf(ctrl);
         const host = ctrl.host.getBoundingClientRect();
         const boxes = {};
         for (const el of ctrl.host.children) {
@@ -1774,13 +1842,13 @@
             boxes[slot] = Array.from(el.children).filter((g) => /** @type {HTMLElement} */ (g).dataset.jeGroup).map((g) => g.getBoundingClientRect());
         }
         /** @param {string[]} slots @returns {number} Symmetric horizontal reserve. */
-        const width = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.endsWith('l') ? b.right - host.left + 4 : host.right - b.left + 4)));
+        const width = (slots) => Math.max(edge, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.endsWith('l') ? b.right - host.left + 4 : host.right - b.left + 4)));
         /** @param {string[]} slots @returns {number} Symmetric vertical reserve. */
-        const height = (slots) => Math.max(6, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.startsWith('t') ? b.bottom - host.top + 4 : host.bottom - b.top + 4)));
+        const height = (slots) => Math.max(edge, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.startsWith('t') ? b.bottom - host.top + 4 : host.bottom - b.top + 4)));
         const scalable = ctrl.host.parentElement;
         const progress = scalable?.querySelector('.itemProgressBar, .cardProgressBar, .cardProgress');
-        const bottom = progress ? Math.max(6, host.bottom - progress.getBoundingClientRect().top + 4) : 6;
-        let top = 6;
+        const bottom = progress ? Math.max(edge, host.bottom - progress.getBoundingClientRect().top + 4) : edge;
+        let top = edge;
         let topReserve = width(['tl', 'tr']);
         for (const overlay of scalable?.querySelectorAll('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
             const b = overlay.getBoundingClientRect();
@@ -1791,7 +1859,7 @@
         }
         return centres.map((el) => {
             const slot = el.dataset.jeSlot;
-            return { el, top, bottom, reserve: slot === 'tc' ? topReserve : slot === 'bc' ? width(['bl', 'br']) : slot === 'ml' ? height(['tl', 'bl']) : slot === 'mr' ? height(['tr', 'br']) : 6 };
+            return { el, top, bottom, reserve: slot === 'tc' ? topReserve : slot === 'bc' ? width(['bl', 'br']) : slot === 'ml' ? height(['tl', 'bl']) : slot === 'mr' ? height(['tr', 'br']) : edge };
         });
     }
 
@@ -1909,7 +1977,8 @@
             }
             if (ctrl.layout === 'corners') {
                 const vertical = ['ml', 'mr'].includes(slotEl.dataset.jeSlot || '');
-                const reserve = parseFloat(slotEl.style.getPropertyValue('--je-anchor-reserve')) || 6;
+                const measured = parseFloat(slotEl.style.getPropertyValue('--je-anchor-reserve'));
+                const reserve = Number.isFinite(measured) ? measured : edgeOf(ctrl);
                 const limit = Math.max(0, vertical ? ctrl.host.clientHeight - 2 * reserve : ctrl.host.clientHeight / 3);
                 const heights = rects.map((r) => r.height);
                 const rowGap = parseFloat(style.rowGap) || 0;
@@ -2361,6 +2430,7 @@
         DEFAULT_ORDER: DEFAULT_ORDER.slice(),
         DEFAULT_CAPS: { ...DEFAULT_CAPS },
         MAX_CAP,
+        EDGE_SPACINGS: { ...EDGE_SPACINGS },
         DEFAULT_PROFILES,
         SHAPES: SHAPES.slice(),
         RECOMMENDED_SHAPES,
@@ -2371,6 +2441,7 @@
         /** @type {Function|null} set by tags/tag-layout-styles.js */
         buildStyles: null,
         normalizeGroup,
+        readEdge,
         normalizeSettings,
         promoteLegacySettings,
         invalidateSettings,

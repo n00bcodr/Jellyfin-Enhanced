@@ -121,7 +121,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 groups.Sort((a, b) => IndexOf(order, a.Group).CompareTo(IndexOf(order, b.Group)));
             }
 
-            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles);
+            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles) { EdgeInset = settings.EdgeInset };
         }
 
         /// <summary>

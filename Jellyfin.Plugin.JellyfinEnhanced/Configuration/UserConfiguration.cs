@@ -118,6 +118,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string>? TagGroupOrder { get; set; }
         public TagGroupCaps? TagGroupCaps { get; set; }
         public string TagLabelDensity { get; set; } = "full";
+        // How close corners-layout chips sit to the card edge (default 6px, tight 3px,
+        // flush 0px); null follows the admin's default (normalized documents only).
+        public string? TagEdgeSpacing { get; set; }
         // Tag Styles preset this user picked (TagStyleKeys.Presets); null follows the
         // admin's preset. Only honoured while TagStylesAllowUserPreset is on.
         public string? TagStylePreset { get; set; }

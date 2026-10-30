@@ -160,19 +160,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var groups = new List<PlannedGroup>();
             foreach (var g in layout.Groups)
             {
-                var planned = PlanGroup(g, css, cardHeight, layout.Styles ?? TagStyleSet.Empty);
+                var planned = PlanGroup(g, css, cardHeight, layout.Styles ?? TagStyleSet.Empty, layout.EdgeInset);
                 if (planned is not null)
                 {
                     groups.Add(planned);
                 }
             }
 
-            Place(groups, css, cardHeight, layout.TopRightOffset);
-            PlaceCentres(groups, css, cardHeight);
+            Place(groups, css, cardHeight, layout.TopRightOffset, layout.EdgeInset);
+            PlaceCentres(groups, css, cardHeight, layout.EdgeInset);
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
         }
 
-        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight, TagStyleSet styles)
+        private PlannedGroup? PlanGroup(PosterTagGroupLayout group, PosterTagCss css, float cardHeight, TagStyleSet styles, float inset)
         {
             var items = new List<PlannedItem>();
             // Right-corner chips are right-aligned, so an overflowing one shows the end of its text.
@@ -216,9 +216,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 contentHeight += items[i].Height + (i > 0 ? gap : 0f);
             }
 
-            // max-height: 90% (quality, genre, language); max-width: calc(100% - 12px) (quality, rating, age).
+            // max-height: 90% (quality, genre, language); max-width: the corner slot's width, calc(100% - 2 × inset)
+            // (quality, rating, age).
             float maxHeight = PosterTagCss.Lu(0.9f * cardHeight);
-            float maxWidth = PosterTagCss.Lu(css.CardWidth - (2 * PosterTagCss.CornerInset));
+            float maxWidth = PosterTagCss.Lu(css.CardWidth - (2 * inset));
             bool hasMaxHeight = group.Group is PosterTagGroup.Quality or PosterTagGroup.Genre or PosterTagGroup.Language;
             bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating;
             float width = hasMaxWidth ? Math.Min(contentWidth, maxWidth) : contentWidth;
@@ -228,14 +229,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return new PlannedGroup(group.Group, group.Corner, width, height, gap, clips, items);
         }
 
-        private static void Place(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, bool topRightOffset)
+        private static void Place(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, bool topRightOffset, float inset)
         {
             var boundary = new Dictionary<PosterTagCorner, float>();
             foreach (var g in groups.Where(g => !IsCentre(g.Corner)))
             {
-                g.X = g.IsLeft ? PosterTagCss.CornerInset : css.CardWidth - PosterTagCss.CornerInset - g.Width;
-                float top = PosterTagCss.CornerInset + (topRightOffset && g.Corner == PosterTagCorner.TopRight ? PosterTagCss.TopRightIndicatorOffset : 0f);
-                g.Y = g.IsTop ? top : cardHeight - PosterTagCss.CornerInset - g.Height;
+                g.X = g.IsLeft ? inset : css.CardWidth - inset - g.Width;
+                float top = inset + (topRightOffset && g.Corner == PosterTagCorner.TopRight ? PosterTagCss.TopRightIndicatorOffset : 0f);
+                g.Y = g.IsTop ? top : cardHeight - inset - g.Height;
                 g.NaturalY = g.Y;
 
                 // applyCornerStacking (tag-renderer-base.js): each later container in a corner moves away from it just
@@ -272,9 +273,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// stack between the occupied corner stacks. All dimensions are CSS px.
         /// Static images omit whole chips that have no room (there is no hover tooltip).
         /// </summary>
-        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight)
+        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, float inset)
         {
-            float inset = PosterTagCss.CornerInset;
             foreach (var anchor in groups.Where(g => IsCentre(g.Corner)).GroupBy(g => g.Corner))
             {
                 var corner = anchor.Key;

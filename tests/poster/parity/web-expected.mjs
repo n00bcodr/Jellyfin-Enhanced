@@ -321,6 +321,11 @@ async function runProfile(profile) {
     // one set to exactly top-right cleared the indicator before layouts.
     const layoutCss = JE.core.tagLayout.buildStyles();
     const offsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-indicator-gap\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\]/g)].map((m) => m[1]));
+    // Edge spacing: the inset each marker declares (--je-edge) and the slots
+    // whose edge rules use it; a host without the marker keeps the 6px default.
+    const edgeInsets = Object.fromEntries([...layoutCss.matchAll(/\[data-je-edge="([a-z]+)"\] \{\s*--je-edge: (\d+(?:\.\d+)?)px;/g)].map((m) => [m[1], Number(m[2])]));
+    const edgeSlots = new Set([...layoutCss.matchAll(/\[data-je-edge\] > \.je-tag-slot(?::is\(([^)]*)\)|\[data-je-slot="([a-z]+)"\])/g)]
+        .flatMap((m) => (m[1] ? [...m[1].matchAll(/data-je-slot="([a-z]+)"/g)].map((s) => s[1]) : [m[2]])));
     const legacyOffsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\] > \[data-je-indicator-gap\](?=\s*[,{])/g)].map((m) => m[1]));
 
     const hosts = [];
@@ -351,7 +356,11 @@ async function runProfile(profile) {
                 const group = CONTAINERS[d.element.className.split(' ')[0]];
                 const offset = (host.dataset.jeIndicatorGap === '1' && offsetSlots.has(d.slot))
                     || (d.element.dataset.jeIndicatorGap === '1' && legacyOffsetSlots.has(d.slot));
-                return { g: group, c: cornerOf(d.element.dataset.jeCorner || ''), o: indicator && offset, t: readTags(group, d.element) };
+                const placed = { g: group, c: cornerOf(d.element.dataset.jeCorner || ''), o: indicator && offset, t: readTags(group, d.element) };
+                // Only a non-default edge spacing adds the inset, so other profiles' expectations stay as they were.
+                const edge = host.dataset.jeEdge;
+                if (edge) placed.e = edgeSlots.has(d.slot) && edge in edgeInsets ? edgeInsets[edge] : 6;
+                return placed;
             })
             .filter((g) => g.t.length > 0);
     }
@@ -408,6 +417,7 @@ async function runProfile(profile) {
         layoutOrder: layoutConf.order ? layoutConf.order.filter((g) => g !== 'status').join(',') : null,
         layoutOff: offGroups.join(','),
         layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),
+        edgeSpacing: layoutConf.edge,
     };
 
     writeFileSync(join(outDir, `web-${profile.name}.json`), JSON.stringify({ settings, items }));

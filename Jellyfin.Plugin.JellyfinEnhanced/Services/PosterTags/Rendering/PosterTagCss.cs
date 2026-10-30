@@ -17,7 +17,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Logical card width of a landscape (thumb) card, in CSS px.</summary>
         public const float LandscapeCardWidth = 290f;
 
-        /// <summary>Distance of every tag container from the two edges of its corner.</summary>
+        /// <summary>Default distance of every tag container from the two edges of its corner (<c>PosterTagLayout.EdgeInset</c> sets it per layout).</summary>
         public const float CornerInset = 6f;
 
         /// <summary>Gap the corner stacking leaves between containers sharing a corner (CORNER_STACK_GAP).</summary>

@@ -623,3 +623,32 @@ for (const editor of ['landscape', 'list', 'default']) {
     });
   }
 }
+
+test('the Edge Spacing pills show the effective spacing, save it and the preview follows', async t => {
+  const h = setup(t, { plugin: { TagEdgeSpacing: 'tight' }, observer: true });
+  await h.open();
+  assert.deepEqual(Array.from(h.document.querySelectorAll('input[name="jeTagEdge"]'), r => r.value), ['default', 'tight', 'flush']);
+  assert.equal(h.$('input[name="jeTagEdge"]:checked').value, 'tight', 'a normalized document inherits the admin default');
+  assert.equal(h.$('#jeTagEdgeChoice').getAttribute('role'), 'radiogroup');
+  h.observers.forEach(o => o.fire());
+  await h.settle();
+  await h.change(h.$('input[name="jeTagEdge"][value="flush"]'), true);
+  assert.equal(h.saved().tagEdgeSpacing, 'flush');
+  assert.equal(h.saved().tagLayoutSettingsVersion, 1);
+  await h.settle();
+  const hosts = Array.from(h.document.querySelectorAll('.je-mtp-sample .je-tag-host[data-je-layout="corners"]'));
+  assert.ok(hosts.length > 0, 'the preview draws corners samples');
+  for (const host of hosts) assert.equal(host.dataset.jeEdge, 'flush');
+});
+
+test('a legacy document promoted by the Edge Spacing pills keeps everything else it showed', async t => {
+  const h = setup(t, { plugin: { TagEdgeSpacing: 'flush', TagGroupCaps: { genre: 9 } }, stored: { tagLayoutSettingsVersion: 0 } });
+  await h.open();
+  assert.equal(h.$('input[name="jeTagEdge"]:checked').value, 'default', 'a legacy document ignores the admin default');
+  await h.change(h.$('input[name="jeTagEdge"][value="tight"]'), true);
+  const saved = h.saved();
+  assert.equal(saved.tagEdgeSpacing, 'tight');
+  assert.equal(saved.tagLayoutSettingsVersion, 1);
+  assert.equal(saved.tagLayout, 'corners');
+  assert.equal(saved.tagGroupCaps.genre, 3, 'the built-in caps are pinned, not the admin\'s');
+});

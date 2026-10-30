@@ -3901,6 +3901,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagGroupOrder = TagLayoutRules.NormalizeOrder(config.TagGroupOrder),
                 TagGroupCaps = TagLayoutRules.NormalizeCaps(config.TagGroupCaps),
                 TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
+                TagEdgeSpacing = TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
                 // Tag look rules starting default (normalized; null = none)
                 TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
                 // Per-shape tag looks starting default (normalized; null = none)

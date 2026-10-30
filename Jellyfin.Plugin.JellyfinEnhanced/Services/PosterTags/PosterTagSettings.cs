@@ -64,6 +64,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public string Digest { get; private init; } = string.Empty;
 
+        /// <summary>
+        /// The corners layout's edge spacing ("default", "tight" or "flush"): the user's own, else the administrator's;
+        /// always "default" for a document saved before layouts, like the web (core/tag-layout.js normalizeSettings).
+        /// </summary>
+        public string EdgeSpacing { get; private init; } = "default";
+
+        /// <summary>The inset (CSS px) <see cref="EdgeSpacing"/> puts between chips and the card edges.</summary>
+        public float EdgeInset => TagLayoutRules.EdgeInset(EdgeSpacing);
+
         /// <summary>The Tag Styles for native posters, with the user's own preset when allowed (empty unless the target includes native clients).</summary>
         public TagStyleSet Styles { get; private init; } = TagStyleSet.Empty;
 
@@ -425,6 +434,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowUserReviews = config.ShowUserReviews,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,
+                EdgeSpacing = user.TagLayoutSettingsVersion < 1
+                    ? "default"
+                    : TagLayoutRules.NormalizeEdgeSpacing(user.TagEdgeSpacing) ?? TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
                 Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both"
                     ? TagStyleSet.Parse(config.TagStyleOverrides, config.TagStylePreset).ForUser(user.TagStylePreset, config.TagStylesAllowUserPreset)
                     : TagStyleSet.Empty,
@@ -782,6 +794,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (!Styles.IsEmpty)
             {
                 values["style.overrides"] = Styles.Hash;
+            }
+
+            // Left out at the default, so every digest from before edge spacing stays the same.
+            if (EdgeSpacing != "default")
+            {
+                values["layout.edge"] = EdgeSpacing;
             }
 
             var canonical = new StringBuilder(512);

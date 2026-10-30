@@ -178,6 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagGroupOrder = null;
             TagGroupCaps = null;
             TagLabelDensity = "full";
+            TagEdgeSpacing = "default";
             TagLookRules = null;
             TagShapeOverrides = null;
             ShowRatingInPlayer = true;
@@ -847,6 +848,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Starting label density (full or compact).</summary>
         [AnalyticsInclude]
         public string TagLabelDensity { get; set; } = "full";
+        /// <summary>Starting corners-layout edge spacing (default 6px, tight 3px, flush 0px).</summary>
+        [AnalyticsInclude]
+        public string TagEdgeSpacing { get; set; } = "default";
         /// <summary>Starting tag look rules for new users (first match wins); null = none.</summary>
         public List<TagLookRule>? TagLookRules { get; set; }
         /// <summary>Starting per-shape tag looks (landscape cards, list rows) for new users; null = every shape uses the default look.</summary>

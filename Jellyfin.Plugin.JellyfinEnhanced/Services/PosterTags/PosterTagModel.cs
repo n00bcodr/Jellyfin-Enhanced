@@ -98,6 +98,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// </summary>
     public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape, TagStyleSet? Styles = null)
     {
+        /// <summary>
+        /// Distance (CSS px) of every anchor's chips from the card edges: the corners layout's edge spacing
+        /// (6 by default, 3 tight, 0 flush; see <c>TagLayoutRules.EdgeSpacings</c>).
+        /// </summary>
+        public float EdgeInset { get; init; } = 6f;
+
         /// <summary>True when nothing would be drawn.</summary>
         public bool IsEmpty
         {

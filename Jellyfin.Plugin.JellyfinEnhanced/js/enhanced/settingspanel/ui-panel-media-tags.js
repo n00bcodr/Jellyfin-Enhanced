@@ -109,10 +109,10 @@
         return `${base}#/configurationpage?name=${encodeURIComponent(CONFIG_PAGE_NAME)}${section ? `&jeSection=${encodeURIComponent(section)}` : ''}`;
     }
 
-    /** @returns {any} The effective layout settings (layout, density), read fresh. */
+    /** @returns {any} The effective layout settings (layout, density, edge spacing), read fresh. */
     function layoutConf() {
         const L = JE.core?.tagLayout;
-        if (!L) return { layout: 'corners', density: 'full' };
+        if (!L) return { layout: 'corners', density: 'full', edge: 'default' };
         L.invalidateSettings();
         return L.normalizeSettings();
     }
@@ -188,7 +188,10 @@
         return JE.core?.tagLayout ? JE.core.tagLayout.SHAPES.map(shapeRowHtml).join('') : '';
     }
 
-    /** @returns {string} The Layout tab: tiles, density and the quick switches. */
+    /** Corners edge spacing choices (core/tag-layout.js EDGE_SPACINGS), in display order. */
+    const EDGES = ['default', 'tight', 'flush'];
+
+    /** @returns {string} The Layout tab: tiles, density, edge spacing and the quick switches. */
     function layoutPanelHtml() {
         const conf = layoutConf();
         const tiles = LAYOUTS.map((id) => `
@@ -201,6 +204,11 @@
             <label class="je-mth-pill">
                 <input type="radio" name="jeTagDensity" value="${id}" ${conf.density === id ? 'checked' : ''}>
                 <span data-je-label>${tx(`panel_settings_ui_tag_density_${id}`)}</span>
+            </label>`).join('');
+        const edge = EDGES.map((id) => `
+            <label class="je-mth-pill">
+                <input type="radio" name="jeTagEdge" value="${id}" ${conf.edge === id ? 'checked' : ''}>
+                <span data-je-label>${tx(`panel_settings_ui_tag_edge_${id}`)}</span>
             </label>`).join('');
         const native = JE.pluginConfig?.NativePosterTagsEnabled === true
             ? switchRow('nativePosterTagsToggle', JE.currentSettings.useNativePosterTags !== false, 'panel_settings_ui_native_poster_tags', 'panel_settings_ui_native_poster_tags_desc')
@@ -215,6 +223,11 @@
                     <span class="je-mth-label" id="jeMthDensityLabel">${tx('panel_settings_ui_tag_density')}</span>
                     <div class="je-mth-pills" id="jeTagDensityChoice" role="radiogroup" aria-labelledby="jeMthDensityLabel" aria-describedby="jeMthDensityDesc">${density}</div>
                     <span class="je-mth-hint" id="jeMthDensityDesc">${tx('panel_settings_ui_tag_density_desc')}</span>
+                </div>
+                <div class="je-mth-density je-mth-edge">
+                    <span class="je-mth-label" id="jeMthEdgeLabel">${tx('panel_settings_ui_tag_edge')}</span>
+                    <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
+                    <span class="je-mth-hint" id="jeMthEdgeDesc">${tx('panel_settings_ui_tag_edge_desc')}</span>
                 </div>
             </section>
             <div class="je-mth-shapes">${shapesHtml()}</div>
@@ -698,6 +711,7 @@
             const conf = layoutConf();
             hub.querySelectorAll('input[name="jeTagLayout"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.layout; });
             hub.querySelectorAll('input[name="jeTagDensity"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.density; });
+            hub.querySelectorAll('input[name="jeTagEdge"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === conf.edge; });
             if (layoutDesc) layoutDesc.textContent = JE.t(`panel_settings_ui_tag_layout_${conf.layout}`);
             const off = hub.querySelector('#jeMthBadgesOff');
             if (off) /** @type {HTMLElement} */ (off).hidden = !!JE.currentSettings?.statusTagsEnabled;

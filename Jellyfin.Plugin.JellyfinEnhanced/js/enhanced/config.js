@@ -226,6 +226,10 @@
             mergedSettings[key] = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
         }
 
+        // Corners edge spacing: null follows the admin's default (normalized
+        // documents; core/tag-layout.js reads it), so no plugin default is pinned.
+        mergedSettings.tagEdgeSpacing = typeof userSettings.tagEdgeSpacing === 'string' && userSettings.tagEdgeSpacing ? userSettings.tagEdgeSpacing : null;
+
         // Tag Styles preset: null follows the admin's preset, so it never falls
         // back to the plugin default (that would pin the admin's current choice).
         mergedSettings.tagStylePreset = typeof userSettings.tagStylePreset === 'string' && userSettings.tagStylePreset ? userSettings.tagStylePreset : null;

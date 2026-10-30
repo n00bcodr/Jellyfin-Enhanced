@@ -284,13 +284,16 @@ void ResolveAll()
             {
                 foreach (var group in layout.Groups)
                 {
-                    groups.Add(new
+                    var placed = new Dictionary<string, object>
                     {
-                        g = group.Group.ToString(),
-                        c = group.Corner.ToString(),
-                        o = layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
-                        t = group.Tags.Select(Describe).ToList(),
-                    });
+                        ["g"] = group.Group.ToString(),
+                        ["c"] = group.Corner.ToString(),
+                        ["o"] = layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
+                        ["t"] = group.Tags.Select(Describe).ToList(),
+                    };
+                    // Only a non-default edge spacing adds the inset (web-expected.mjs reads it from the layout CSS).
+                    if (settings.EdgeSpacing != "default") placed["e"] = layout.EdgeInset;
+                    groups.Add(placed);
                 }
             }
 
@@ -355,6 +358,7 @@ void ResolveAll()
             ["layoutOrder"] = settings.GroupOrder is null ? null : string.Join(",", settings.GroupOrder.Select(LayoutId)),
             ["layoutOff"] = string.Join(",", Enum.GetValues<PosterTagGroup>().Where(settings.OffGroups.Contains).Select(LayoutId)),
             ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
+            ["edgeSpacing"] = settings.EdgeSpacing,
         };
 
         var document = new { settings = summary, items, digest = settings.Digest, preferredAudioLanguage = settings.PreferredAudioLanguage };

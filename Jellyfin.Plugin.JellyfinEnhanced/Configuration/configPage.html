@@ -513,6 +513,15 @@
                                             <option value="compact">Compact (DV, Atmos; no critic score next to a community score)</option>
                                         </select>
                                     </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagEdgeSpacing">Default Edge Spacing</label>
+                                        <select is="emby-select" id="tagEdgeSpacing" name="tagEdgeSpacing" class="emby-select">
+                                            <option value="default">Default (6px from the poster edge)</option>
+                                            <option value="tight">Tight (3px)</option>
+                                            <option value="flush">Flush (touching the edge, following the rounded corners)</option>
+                                        </select>
+                                        <div class="fieldDescription">Corners layout only, on the web and on Native Poster Tags. Users saved before layouts existed keep the default spacing until they change a layout setting.</div>
+                                    </div>
                                     <div class="fieldDescription je-field-desc-sm">Tag groups, highest priority first: groups higher in the list win when space is short and stack nearest the edge. Position and limit apply to the layout selected above; switch the layout to set another one's positions.</div>
                                     <ol id="tagGroupAdminRows" class="je-tla-rows"></ol>
                                 </div>
@@ -5959,6 +5968,9 @@
                 if (select) select.value = LAYOUT_SLOTS[savedLayout] ? savedLayout : 'corners';
                 var density = document.getElementById('tagLabelDensity');
                 if (density) density.value = String(config.TagLabelDensity || '').toLowerCase() === 'compact' ? 'compact' : 'full';
+                var edge = document.getElementById('tagEdgeSpacing');
+                var savedEdge = String(config.TagEdgeSpacing || '').toLowerCase();
+                if (edge) edge.value = savedEdge === 'tight' || savedEdge === 'flush' ? savedEdge : 'default';
                 state.order = null;
                 if (Array.isArray(config.TagGroupOrder)) {
                     var seen = [];
@@ -5990,6 +6002,8 @@
             function collect(config) {
                 config.TagLayout = layout();
                 config.TagLabelDensity = (document.getElementById('tagLabelDensity') || {}).value === 'compact' ? 'compact' : 'full';
+                var edgeValue = (document.getElementById('tagEdgeSpacing') || {}).value;
+                config.TagEdgeSpacing = edgeValue === 'tight' || edgeValue === 'flush' ? edgeValue : 'default';
                 config.TagGroupOrder = state.order ? state.order.slice() : null;
                 var caps = {};
                 var anyCap = false;
@@ -9870,7 +9884,7 @@
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
             // Layout and density matter once any poster tag group is on by default.
-            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity'], noHint: true },
+            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagEdgeSpacing'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
