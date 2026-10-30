@@ -74,3 +74,17 @@ for (const key of ['statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeri
     assert.equal(refreshed, 2);
   });
 }
+
+test('release notes releases the settings dialog before opening its secondary modal', async t => {
+  const steps = [];
+  const h = createHarness({
+    html: '<input id="randomIncludeMovies"><input id="randomIncludeShows"><button id="releaseNotesBtn">Notes</button>',
+    JE: { internals: { enhancedUi: { showReleaseNotesNotification: async () => steps.push('notes') } } },
+  });
+  t.after(() => h.close());
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  h.JE.internals.enhancedUi.wireMiscSettingsControls({ closePanel: () => steps.push('close'), resetAutoCloseTimer: () => steps.push('timer') });
+  h.document.getElementById('releaseNotesBtn').click();
+  await Promise.resolve();
+  assert.deepEqual(steps, ['close', 'notes'], 'no closed-panel auto-close timer is restarted');
+});

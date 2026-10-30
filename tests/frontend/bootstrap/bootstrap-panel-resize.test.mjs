@@ -374,11 +374,11 @@ test('the page behind is inert while the dialog is open: outside focus comes bac
   h.key(grip, 'Tab');
   assert.equal(h.document.activeElement, h.preset('default'));
 
-  // Something the panel opens later (release notes card, toasts) is not held.
+  // Controls appended later are still outside the active dialog.
   const card = h.document.createElement('button');
   h.document.body.appendChild(card);
   card.focus();
-  assert.equal(h.document.activeElement, card);
+  assert.equal(h.document.activeElement, h.preset('default'));
 
   h.close();
   assert.equal(opener.hasAttribute('inert'), false, 'close releases the page');
@@ -389,6 +389,32 @@ test('the page behind is inert while the dialog is open: outside focus comes bac
   const after = new h.window.MouseEvent('mousedown', { bubbles: true, cancelable: true });
   opener.dispatchEvent(after);
   assert.equal(after.defaultPrevented, false, 'and its presses are no longer guarded');
+});
+
+test('body-retargeted presses and focusout with no destination keep focus inside', async t => {
+  const h = setup(t);
+  await h.open();
+  const inside = h.preset('large');
+  inside.focus();
+  for (const type of ['pointerdown', 'mousedown', 'click']) {
+    const event = new h.window.MouseEvent(type, { bubbles: true, cancelable: true });
+    h.document.body.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, true, type);
+  }
+  inside.blur(); // activeElement becomes body; focusin is never fired there.
+  await Promise.resolve();
+  assert.equal(h.document.activeElement, inside);
+  inside.dispatchEvent(new h.window.FocusEvent('focusout', { bubbles: true, relatedTarget: h.$('#opener') }));
+  await Promise.resolve();
+  assert.equal(h.document.activeElement, inside);
+  inside.disabled = true;
+  h.$('#opener').focus();
+  await Promise.resolve();
+  assert.equal(h.document.activeElement, h.panel(), 'an unavailable last control falls back to the dialog');
+  h.close();
+  const event = new h.window.MouseEvent('pointerdown', { bubbles: true, cancelable: true });
+  h.document.body.dispatchEvent(event);
+  assert.equal(event.defaultPrevented, false);
 });
 
 test('an element that was already inert before the panel opened stays inert after it closes', async t => {

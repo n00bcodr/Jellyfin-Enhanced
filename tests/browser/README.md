@@ -31,3 +31,14 @@ npm run test:visual
 Commit the reviewed PNG changes with their reason. Do not update them merely to clear a failure. Existing baselines were initially created on Linux; use Linux for visual comparisons. Missing browsers, missing snapshots, and unavailable servers are failures, not skips.
 
 Remaining scope: full Enhanced panel wiring, poster-tag interactions, bookmarks, hidden-content/Spoiler Guard browser journeys, playback, real touch hardware, and complete native Jellyfin navigation are not established by this fixture suite. Consult the coverage matrix for their other test layers and gaps.
+
+The settings-panel regression loads the production host in the fixture by default and checks real pointer clicks on native inert content, body-retargeted events, late background controls, and destinationless blur in all three browser projects. It can also exercise the deployed bundle on the layouts lab. Redeploy the worktree before each lab run because that server is shared:
+
+```sh
+/home/jake/je-lab/deploy.sh layouts /home/jake/je-wt/tag-layouts
+JE_PANEL_LAB_URL=http://127.0.0.1:18520 JE_PANEL_LAB_USER=real-admin \
+  JE_PANEL_SHOTS=.notes/shots/phase5-fixes-r2 \
+  npx playwright test -c tests/browser/playwright.config.cjs settings-panel --project=chromium --workers=1
+```
+
+Use `real-viewer` to check the non-admin path. Passwords come from the local lab accounts file, or `JE_PANEL_LAB_PASSWORD`. `JE_PANEL_SHOTS` optionally saves successful screenshots. The lab mode fails if the deployed host lacks the focus fix; it never injects the checkout's scripts over Jellyfin's bundle.
