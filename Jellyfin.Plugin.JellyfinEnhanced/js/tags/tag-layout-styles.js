@@ -155,10 +155,11 @@
                 left: 0; right: 0; bottom: 8px;
                 justify-content: center;
             }
+            /* One text run, so the ellipsis can apply; facts that would not fit
+               are dropped whole by the fitting pass (data-je-overflow). */
             .je-tag-pill {
-                display: inline-flex;
-                align-items: center;
-                gap: 5px;
+                display: block;
+                min-width: 0;
                 max-width: calc(100% - 16px);
                 box-sizing: border-box;
                 padding: 3px 10px;
@@ -177,10 +178,11 @@
             @supports (container-type: inline-size) {
                 html:not(.layout-mobile) .je-tag-pill { font-size: clamp(9px, 6.6cqw, 12.5px); padding: clamp(2px, 1.6cqw, 3px) clamp(6px, 5cqw, 10px); }
             }
-            .je-tag-pill-fact { display: inline-flex; align-items: center; flex-shrink: 0; }
+            .je-tag-pill-fact { display: inline; }
             .je-tag-pill-glyph { color: #ffc107; margin-right: 0.2em; }
-            .je-tag-pill-sep { opacity: 0.55; }
-            .je-tag-pill-flag { width: 1.45em; height: auto; border-radius: 2px; }
+            .je-tag-pill-sep { opacity: 0.55; padding: 0 0.35em; }
+            .je-tag-pill-flag { display: inline; width: 1.45em; height: auto; border-radius: 2px; vertical-align: -0.2em; }
+            .je-tag-host [data-je-overflow], .je-tag-caption [data-je-overflow] { display: none !important; }
 
             ${SLOT}[data-je-slot="hover"] {
                 left: 0; right: 0; bottom: 0;

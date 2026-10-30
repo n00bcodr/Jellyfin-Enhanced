@@ -500,3 +500,35 @@ test('summary pill facts come from the capped chips, not the full group', t => {
   assert.deepEqual(Array.from(host.querySelectorAll('.je-tag-slot[data-je-slot="hover"] .quality-overlay-label'), l => l.textContent), ['4K'],
     'the pill names what the chips show');
 });
+
+/** Give an element fixed layout metrics (JSDOM lays nothing out). */
+function measure(el, { width = 0, clientWidth = width, scrollWidth = clientWidth } = {}) {
+  Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => clientWidth });
+  Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => scrollWidth });
+  el.getBoundingClientRect = () => ({ width, height: 18, top: 0, left: 0, right: width, bottom: 18 });
+}
+
+test('a summary pill too wide for its card drops its lowest-priority facts whole and keeps the full text accessible', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary' } });
+  const host = h.render();
+  const pill = host.querySelector('.je-tag-pill');
+  const css = h.document.getElementById('je-tag-layout').textContent;
+  assert.match(css, /\.je-tag-pill \{\s*display: block;\s*min-width: 0;/, 'one constrained text run');
+  assert.match(css, /\.je-tag-pill-fact \{ display: inline; \}/, 'facts are inline, not shrink-proof flex items');
+  measure(host, { width: 150 });
+  measure(pill, { clientWidth: 120, scrollWidth: 170 });
+  const [status, quality, rating] = pill.querySelectorAll('.je-tag-pill-fact');
+  measure(status, { width: 50 }); measure(quality, { width: 40 }); measure(rating, { width: 60 });
+  for (const sep of pill.querySelectorAll('.je-tag-pill-sep')) measure(sep, { width: 10 });
+  h.layout.flushFit();
+  assert.deepEqual(Array.from(pill.querySelectorAll('[data-je-overflow]'), el => el.className), ['je-tag-pill-sep', 'je-tag-pill-fact'],
+    'the rating fact (and the separator before it) is dropped; no fact is cut in half');
+  assert.equal(rating.hasAttribute('data-je-overflow'), true);
+  assert.match(pill.title, /4K DV · 8\.1$/, 'the title keeps every fact');
+  assert.match(pill.getAttribute('aria-label'), /4K DV, 8\.1$/);
+  h.layout.refreshPresentation(host);
+  const wider = host.querySelector('.je-tag-pill');
+  measure(wider, { clientWidth: 200, scrollWidth: 200 });
+  h.layout.flushFit();
+  assert.equal(wider.querySelector('[data-je-overflow]'), null, 'everything fits on a wider card');
+});

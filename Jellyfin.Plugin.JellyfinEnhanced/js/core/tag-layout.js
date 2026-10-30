@@ -83,6 +83,9 @@
     const SUMMARY_SLOTS = new Set(['pill', 'dots', 'corner']);
     const PILL_MAX_FACTS = 3;
 
+    /** Layouts whose representations are fitted to the card's measured size. */
+    const FIT_LAYOUTS = new Set(['bands', 'caption', 'summary', 'minimal']);
+
     /** Compact quality labels; audio "<codec> <channels>" is handled in compactQualityLabel. */
     const COMPACT_QUALITY = { 'Dolby Vision': 'DV', 'HDR10+': 'HDR+', 'Dolby Digital+': 'DD+' };
     const DYNAMIC_RANGE = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR'];
@@ -812,6 +815,107 @@
         for (const group of groups) presentGroup(ctrl, conf, group);
         refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
+        scheduleFit(ctrl);
+    }
+
+    // ── Fitting ────────────────────────────────────────────────────────
+    // What fits on a card depends on its rendered size, which only the
+    // browser knows. After cards are presented, one pass after the next
+    // paint measures every card queued by then — every read before any
+    // write, so a page of cards costs one layout, not one per card — and
+    // hides what does not fit: the summary pill's lowest-priority facts.
+
+    /** @type {Set<CardController>} cards waiting for the next fitting pass */
+    const pendingFit = new Set();
+    let fitScheduled = false;
+    let fitting = false;
+
+    /**
+     * Queue a card for the next fitting pass (layouts that need one only).
+     * @param {CardController} ctrl
+     */
+    function scheduleFit(ctrl) {
+        if (fitting || !FIT_LAYOUTS.has(ctrl.layout || '')) return;
+        pendingFit.add(ctrl);
+        if (fitScheduled) return;
+        fitScheduled = true;
+        if (typeof JE.core.dom?.afterNextPaint === 'function') JE.core.dom.afterNextPaint(flushFit);
+        else requestAnimationFrame(flushFit);
+    }
+
+    /** Run the fitting pass for every queued card that is still on the page. */
+    function flushFit() {
+        fitScheduled = false;
+        const list = Array.from(pendingFit).filter((c) => c.host.isConnected && controllers.get(c.host) === c);
+        pendingFit.clear();
+        if (list.length === 0) return;
+        fitting = true;
+        try {
+            // Writes: show what an earlier pass hid, so it is measured afresh.
+            for (const ctrl of list) {
+                for (const root of [ctrl.host, ctrl.outlet]) {
+                    root?.querySelectorAll('[data-je-overflow]').forEach((el) => el.removeAttribute('data-je-overflow'));
+                }
+            }
+            // Reads, then writes.
+            const plans = list.map(measureFit);
+            list.forEach((ctrl, i) => applyFit(ctrl, plans[i]));
+        } finally {
+            fitting = false;
+        }
+    }
+
+    /**
+     * @typedef {Object} FitPlan
+     * @property {number} width - The card image's width (0 = not laid out: leave it be).
+     * @property {number} pillFacts - Pill facts to keep (-1 = no pill).
+     */
+
+    /**
+     * Measure a card (reads only).
+     * @param {CardController} ctrl
+     * @returns {FitPlan}
+     */
+    function measureFit(ctrl) {
+        const plan = { width: ctrl.host.clientWidth, pillFacts: -1 };
+        if (plan.width > 0 && ctrl.pill) plan.pillFacts = pillFactsThatFit(ctrl.pill);
+        return plan;
+    }
+
+    /**
+     * How many of a pill's facts fit on one line: the lowest-priority facts
+     * (with their separators) are dropped until the rest fits, so a fact is
+     * either shown whole or not at all. The first fact always stays (an
+     * ellipsis cuts it on a card too narrow for even that).
+     * @param {HTMLElement} pill
+     * @returns {number}
+     */
+    function pillFactsThatFit(pill) {
+        const facts = Array.from(pill.querySelectorAll('.je-tag-pill-fact'));
+        const excess = pill.scrollWidth - pill.clientWidth;
+        let keep = facts.length;
+        let freed = 0;
+        while (keep > 1 && freed < excess - 0.5) {
+            const fact = facts[keep - 1];
+            const sep = fact.previousElementSibling;
+            freed += fact.getBoundingClientRect().width + (sep ? sep.getBoundingClientRect().width : 0);
+            keep--;
+        }
+        return keep;
+    }
+
+    /**
+     * Apply a card's measurements (writes only).
+     * @param {CardController} ctrl
+     * @param {FitPlan} plan
+     */
+    function applyFit(ctrl, plan) {
+        if (plan.pillFacts >= 0 && ctrl.pill) {
+            Array.from(ctrl.pill.querySelectorAll('.je-tag-pill-fact')).slice(plan.pillFacts).forEach((fact) => {
+                fact.setAttribute('data-je-overflow', '');
+                fact.previousElementSibling?.setAttribute('data-je-overflow', '');
+            });
+        }
     }
 
     // ── Public operations ──────────────────────────────────────────────
@@ -842,6 +946,7 @@
             presentGroup(ctrl, conf, group);
             if (conf.layout === 'summary') refreshPill(ctrl, conf);
             syncIndicatorGap(ctrl, conf);
+            scheduleFit(ctrl);
         }
         return true;
     }
@@ -860,6 +965,7 @@
         const conf = resolveLayout(ctrl);
         if (conf.layout === 'summary') refreshPill(ctrl, conf);
         syncIndicatorGap(ctrl, conf);
+        scheduleFit(ctrl);
     }
 
     /**
@@ -1056,6 +1162,8 @@
         prepareCard,
         compactQualityLabel,
         reinitialize,
+        /** Run the pending fitting pass now (tests; the page runs it after the next paint). */
+        flushFit,
         isGroup: (name) => GROUPS.has(/** @type {string} */ (normalizeGroup(name))),
     };
     JE.core.tagLayout = api;
