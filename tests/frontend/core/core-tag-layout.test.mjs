@@ -1049,6 +1049,34 @@ test('all centre anchors accept legacy values, survive promotion and retain thei
   assert.equal(h.layout.normalizeSettings().slots.quality, 'tl');
 });
 
+test('position and layout lookups reject inherited property names and preserve the legacy fallback', t => {
+  const h = setup(t);
+  for (const value of ['constructor', '__proto__', 'toString', 'unknown']) {
+    for (const version of [0, 1]) {
+      const conf = h.layout.normalizeSettings({ tagLayoutSettingsVersion: version, tagLayout: value, qualityTagsPosition: value });
+      assert.equal(conf.layout, 'corners', value);
+      assert.equal(conf.slots.quality, 'br', value);
+      assert.equal(h.layout.normalizeSettings({ qualityTagsPosition: '' }, { QualityTagsPosition: value }).slots.quality, 'br');
+    }
+    assert.equal(h.layout.POSITION_TO_SLOT[value], undefined);
+    assert.equal(h.layout.SLOT_TO_POSITION[value], undefined);
+    assert.equal(h.layout.LAYOUT_SLOTS[value], undefined);
+  }
+  assert.equal(h.layout.normalizeSettings({ qualityTagsPosition: 'stray-top' }).slots.quality, 'tr');
+  assert.equal(h.layout.normalizeSettings({ qualityTagsPosition: 'middle-left' }).slots.quality, 'bl');
+});
+
+test('compact quality labels do not resolve inherited dictionary members', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLabelDensity: 'compact' } });
+  for (const text of ['constructor', '__proto__', 'toString', 'unknown']) {
+    const wrapper = h.document.createElement('div');
+    wrapper.innerHTML = '<span class="quality-overlay-label"></span>';
+    wrapper.firstElementChild.textContent = text;
+    h.layout.commitGroup(h.host(), 'quality', wrapper);
+    assert.equal(groupEl(h.host(), 'quality', 'tl').textContent, text);
+  }
+});
+
 test('top and bottom centre overflow counts eligible chips after the group cap and refits on short cards', t => {
   for (const slot of ['tc', 'bc']) {
     const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups: [

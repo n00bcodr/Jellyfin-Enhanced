@@ -83,6 +83,16 @@ function setup(t, { html = card(MOVIE), settings = {}, plugin = {}, withLook = t
 
 const rule = (when, layout, density = 'full', extra = {}) => ({ id: `r${Math.abs(JSON.stringify(when).split('').reduce((a, c) => a * 31 + c.charCodeAt(0) | 0, 7))}`, enabled: true, when, layout, density, ...extra });
 
+test('look slot normalization rejects inherited and unknown layout names without throwing', t => {
+  const h = setup(t);
+  for (const layout of ['constructor', '__proto__', 'toString', 'unknown']) {
+    assert.equal(h.look.normalizeSlots({ quality: 'tc' }, layout), null);
+    assert.deepEqual(plain(h.look.normalizeRules([rule([{field:'type',value:'Movie'}], layout)])), []);
+  }
+  assert.deepEqual(plain(h.look.normalizeSlots({ quality: 'tc' }, 'corners')), { quality: 'tc' });
+  assert.deepEqual(plain(h.look.normalizeRules([Object.create({ layout: 'bands', when: [{field:'type',value:'Movie'}] })])), []);
+});
+
 test('with no rules and no locks every card follows the default exactly as before rules existed', t => {
   const without = setup(t, { withLook: false, settings: { tagLayout: 'bands' } });
   without.render();

@@ -36,13 +36,13 @@
     const GROUPS = new Set(DEFAULT_ORDER);
 
     /** Valid slots per layout; "off" hides a group in any layout. */
-    const LAYOUT_SLOTS = {
+    const LAYOUT_SLOTS = Object.assign(Object.create(null), {
         corners: ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br', 'off'],
         bands: ['top', 'bottom', 'off'],
         caption: ['poster', 'caption', 'off'],
         summary: ['pill', 'hover', 'off'],
         minimal: ['top', 'dots', 'corner', 'hover', 'off'],
-    };
+    });
     const LAYOUTS = Object.keys(LAYOUT_SLOTS);
 
     /** Built-in profiles (corners comes from the position settings instead). */
@@ -66,7 +66,7 @@
         ageRating: { userKey: 'ageRatingTagsPosition', pluginKey: 'AgeRatingTagsPosition', fallback: 'bottom-right' },
         status: { userKey: 'statusTagsPosition', pluginKey: 'StatusTagsPosition', fallback: 'top-right' },
     };
-    const POSITION_TO_SLOT = { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br', 'top-center': 'tc', 'bottom-center': 'bc', 'center-left': 'ml', 'center-right': 'mr', 'center': 'c' };
+    const POSITION_TO_SLOT = Object.assign(Object.create(null), { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br', 'top-center': 'tc', 'bottom-center': 'bc', 'center-left': 'ml', 'center-right': 'mr', 'center': 'c' });
 
     /** The setting that turns each group's renderer on. */
     const ENABLED_SETTING = {
@@ -77,7 +77,7 @@
         ageRating: 'ageRatingTagsEnabled',
         status: 'statusTagsEnabled',
     };
-    const SLOT_TO_POSITION = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
+    const SLOT_TO_POSITION = Object.assign(Object.create(null), { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' });
 
     /** Group wrapper class per group (frozen DOM: Tag Styles and custom CSS target these). */
     const CONTAINER_CLASS = {
@@ -136,9 +136,9 @@
      */
     function pick(obj, key) {
         if (!obj || typeof obj !== 'object') return undefined;
-        if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+        if (Object.hasOwn(obj, key) && obj[key] !== undefined && obj[key] !== null) return obj[key];
         const pascal = key.charAt(0).toUpperCase() + key.slice(1);
-        return obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
+        return Object.hasOwn(obj, pascal) && obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
     }
 
     /**
@@ -227,7 +227,7 @@
     function positionSlot(settings, plugin, group) {
         const p = POSITION_SETTINGS[group];
         const pos = String(settings?.[p.userKey] || plugin?.[p.pluginKey] || p.fallback);
-        if (POSITION_TO_SLOT[pos]) return POSITION_TO_SLOT[pos];
+        if (Object.hasOwn(POSITION_TO_SLOT, pos)) return POSITION_TO_SLOT[pos];
         const isTop = pos.includes('top');
         const isLeft = pos.includes('left');
         return isTop ? (isLeft ? 'tl' : 'tr') : (isLeft ? 'bl' : 'br');
@@ -809,7 +809,7 @@
      * @returns {string}
      */
     function compactQualityLabel(label) {
-        if (COMPACT_QUALITY[label]) return COMPACT_QUALITY[label];
+        if (Object.hasOwn(COMPACT_QUALITY, label)) return COMPACT_QUALITY[label];
         const audio = /^(ATMOS|DTS-X|TRUEHD|DTS|Dolby Digital\+) (\d+\.\d+)$/.exec(label);
         if (audio) return audio[1] === 'Dolby Digital+' ? audio[2] : audio[1];
         return label;
