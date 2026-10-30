@@ -23,6 +23,13 @@
     JE.showEnhancedPanel = async () => {
         // Refresh user settings when panel opens to ensure correct user's settings are displayed
         const currentUserId = ApiClient.getCurrentUserId();
+        const openingEpoch = JE.session?.getEpoch();
+        /** Read the host's server identity, including clients exposing it as a property. */
+        const serverId = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const openingServerId = serverId();
+        /** Reject replies from an earlier session, even after an A → B → A switch. */
+        const sameOpeningIdentity = () => ApiClient.getCurrentUserId() === currentUserId
+            && serverId() === openingServerId && JE.session?.getEpoch() === openingEpoch;
         if (currentUserId) {
             try {
                 // Fetch fresh settings for the current user
@@ -31,6 +38,7 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
                     dataType: 'json'
                 });
+                if (!sameOpeningIdentity()) return;
 
                 // Update the userConfig with fresh data
                 if (settingsResponse) {
@@ -43,9 +51,12 @@
                     }
                 }
             } catch (e) {
+                if (!sameOpeningIdentity()) return;
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
             }
         }
+
+        if (!sameOpeningIdentity()) return;
 
         // Re-initialize shortcuts to ensure they're populated before building the panel
         if (typeof JE.initializeShortcuts === 'function') {

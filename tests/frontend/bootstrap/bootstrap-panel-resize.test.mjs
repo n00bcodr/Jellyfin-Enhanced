@@ -619,3 +619,48 @@ for (const page of [true, false]) test(`Manage Hidden Content closes before open
   assert.equal(h.$('#opener').hasAttribute('inert'), false);
   assert.deepEqual(steps, ['close', page ? 'page' : 'modal']);
 });
+
+for (const transition of ['user', 'round-trip', 'server', 'unannounced', 'rejection', 'unchanged']) {
+  test(`opening settings response is published only to its original identity (${transition})`, async t => {
+    const h = setup(t);
+    let user = 'user-a', server = 'server-a', resolve, reject;
+    h.window.ApiClient.getCurrentUserId = () => user;
+    h.window.ApiClient.serverId = () => server;
+    h.load('core/navigation.js');
+    h.load('core/session.js');
+    const pending = new Promise((yes, no) => { resolve = yes; reject = no; });
+    h.window.ApiClient.ajax = () => pending;
+    h.JE.toCamelCase = data => ({ owner: data.Owner });
+    let loads = 0, shortcuts = 0;
+    h.JE.loadSettings = () => { loads++; return h.JE.userConfig.settings; };
+    h.JE.initializeShortcuts = () => shortcuts++;
+    const opening = h.open();
+    assert.equal(h.panel(), null, 'the GET is still pending');
+    if (transition === 'server') server = 'server-b';
+    else if (transition !== 'unchanged') user = 'user-b';
+    if (transition !== 'unannounced') h.JE.session.checkNow('test-switch');
+    if (transition === 'round-trip') {
+      user = 'user-a';
+      h.JE.session.checkNow('test-return');
+    }
+    const incoming = { owner: 'incoming' };
+    h.JE.userConfig.settings = incoming;
+    h.JE.currentSettings = incoming;
+    if (transition === 'rejection') reject(new Error('old identity request failed'));
+    else resolve({ Owner: 'opening-user' });
+    await opening;
+    if (transition === 'unchanged') {
+      assert.equal(h.JE.userConfig.settings.owner, 'opening-user');
+      assert.equal(loads, 1);
+      assert.equal(shortcuts, 1);
+      assert.ok(h.panel());
+    } else {
+      assert.equal(h.JE.userConfig.settings, incoming, 'stale response cannot overwrite incoming settings');
+      assert.equal(h.JE.currentSettings, incoming);
+      assert.equal(loads, 0);
+      assert.equal(shortcuts, 0);
+      assert.equal(h.panel(), null, 'stale opening cannot create a dialog');
+      assert.equal(h.$('#opener').hasAttribute('inert'), false);
+    }
+  });
+}
