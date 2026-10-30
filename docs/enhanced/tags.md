@@ -1,9 +1,9 @@
 # Tags & Badges
 
-See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), set their order and limits, and change their colors. People Tags add age and birthplace information to cast cards.
+See quality, genres, audio languages, scores, age classifications, what is new or trending, and where a title streams or which network or studio made it while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), set their order and limits, and change their colors. People Tags add age and birthplace information to cast cards.
 
 ![Library posters with quality, genre, language and rating tags](../images/tags/library-tags.webp)
-*The optional tag groups are enabled for this example; all seven groups start off.*
+*The optional tag groups are enabled for this example; every group starts off.*
 
 ## Set up your tags
 
@@ -69,6 +69,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 | [User-review chips](#user-review-chips) | Average visible review rating, or an optional dash | Movie, series, season, and episode cards with a usable review identity |
 | [Age Rating Tags](#age-rating-tags) | Official parental/content classification | Supported library cards with classification metadata |
 | [Status Tags](#status-tags) | One badge: trending, release, schedule, milestone or series status | Supported library cards; web only |
+| [Logo Tags](#logo-tags) | The streaming service, TV network or studio as a small logo (or its name) | Movie, series, season and episode cards; seasons and episodes show their series' logo |
 | [People Tags](#people-tags) | Age, age at release, birthplace, deceased styling | Cast and guest-cast cards on web item detail pages |
 | [Audio language links](#audio-language-links) | Named audio languages linking to Jellyfin tag lists | Movie, series, season, and episode detail pages |
 | [Player badges](#player-badges) | Scores in the controls; optional age/advisory badge at playback start | Jellyfin web video player |
@@ -169,8 +170,8 @@ The limit applies after each group's own filtering (quality categories, language
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
 | Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
-| **Tag Groups** order | Status, quality, rating, age rating, language, genre | Priority order of the groups |
-| **Show up to** | Genre 3, language 3, age rating 1, status 1, quality and rating all | The same limits as before layouts existed |
+| **Tag Groups** order | Status, quality, rating, age rating, language, genre, logos | Priority order of the groups |
+| **Show up to** | Genre 3, language 3, age rating 1, status 1, quality, rating and logos all | The same limits as before layouts existed; logos are limited by the administrator's **Logos per title** |
 | **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
@@ -649,13 +650,42 @@ For series cards on screen, and parent series of season/episode cards, the brows
     [Native Poster Tags](#native-poster-tags-experimental) do not draw Status Tags into poster images.
 
 ??? info "Cache, access filtering and styling"
-    Tag cache schema 16 includes named-source `Ratings`, `LibraryId` (library rules), `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex` (`Season`, `Episode`, `IsLast`), `SeasonPremiere` (`Season`, `Aired`), `SeasonAddedSpan` (`First`, `Last`, `Count`) and `EpisodeIndex` (`Season`, `Episode`, nullable `IsLast`). Dates are Unix milliseconds UTC. Movie, series and episode entries can have `PremiereDate`. The persisted browser copy is replaced when its entry schema differs.
+    Tag cache schema 17 includes named-source `Ratings`, `LibraryId` (library rules), `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex` (`Season`, `Episode`, `IsLast`), `SeasonPremiere` (`Season`, `Aired`), `SeasonAddedSpan` (`First`, `Last`, `Count`) and `EpisodeIndex` (`Season`, `Episode`, nullable `IsLast`). Dates are Unix milliseconds UTC. Movie, series and episode entries can have `PremiereDate`. The persisted browser copy is replaced when its entry schema differs.
 
     All derived episode facts follow the existing access-filtering and `filterRevision` path. When any contributing episode is inaccessible, related aggregates are omitted conservatively; the shared entry is unchanged. The server-only `StatusEpisodeIds`, `LatestEpisodeId` and `NextEpisodePremiere` never enter client responses. `NextEpisodePremiere` records the next relevant future air date; reconciliation and snapshot load recompute elapsed boundaries without requiring a metadata save. Compatible snapshots without the optional field seed the boundary from their cached episode dates. Episode changes refresh sibling indexes and contributor lists together. With server cache off, `tag-data?latestEpisode=true` computes through the target user's access.
 
     Spoiler Guard preserves added-date badges and movie/series trending ranks. Guarded season/episode entries omit air dates and milestone indexes, suppressing premiere/finale badges. Complete Season still describes their visible added-date span.
 
     Style `.status-tag` or its `--trending`, `--new`, `--added`, `--schedule`, `--milestone`, `--status` modifiers. Each chip has `data-je-status`: existing styles keep `added`, `newMovie`, `newSeries`, `newEpisode` and `trending`; new badges use keys such as `new_season`; the number inside a trending chip is `.status-tag-rank`.
+
+## Logo Tags
+
+Logo Tags show where a title streams, or the TV network or studio behind it, as one small logo on the card. Provider logos sit on a dark pill, network and studio logos on a light one so dark logos stay readable over any poster. A title without a logo image shows its name instead, shortened to its initials when it is long (`Home Box Office` → `HBO`).
+
+![Movie posters with Netflix and Disney+ logos on dark pills and studio logos on light pills in the bottom-left corner](../images/tags/logo-tags.webp)
+
+**How to use:**
+
+1. Turn on the **Logos** group on the **Groups** tab of **Media Tags**. Choose its position and **Show up to** like any other group.
+2. Administrators choose what the logo shows under **Display** → **Media Tags** → **Logo choices (all users)**.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Admin: **Enable Logo Tags** / personal: **Logos** switch | Off | Shows the Logos group; the admin value is the starting value for new users |
+| Admin / personal: **Position** | Bottom left | The group's corner or anchor in the Corners layout. Bands puts it in the top band, Caption in the caption strip, Summary and Minimal in the hover reveal |
+| Admin: **Movies show** | **Streaming service (studio when none)** | **Streaming service**, **Studio** or **No logo** |
+| Admin: **Series show** | **Network** | **Network**, **Streaming service (network when none)** or **No logo**. Seasons and episodes show their series' logo |
+| Admin: **Streaming region** | Empty (the Seerr default region, else US) | Two-letter country code whose subscription services count |
+| Admin: **Logos per title** | 1 | 1 or 2; personal **Show up to** can show fewer |
+
+??? info "Where the logos come from"
+    - **Streaming service:** the title's subscription (flat-rate) services in the region, from TMDB's watch providers, in TMDB's order. Titles that no service streams there show their studio or network instead.
+    - **Network and studio:** the names Jellyfin has for the item (its studios), with the matching TMDB network or production-company logo when TMDB has one; otherwise the name.
+    - The server looks titles up with the **TMDB API Key** from the [Elsewhere settings](../elsewhere/elsewhere-settings.md) and keeps each answer for a day. Full tag cache builds and the daily **Refresh Tag Cache** fetch new and expired lookups in small, rate-limited batches; a failed lookup is retried after an hour. A newly added item gets its logo when its cache entry is built, and the batch lookup used with the server cache off waits at most three seconds for it.
+    - Logo images are downloaded by the server once and served from its own cache (`/JellyfinEnhanced/logo/…`), so **browsers never contact TMDB**. Without a TMDB key or internet access the server cannot look anything up: cards show the studio or network names Jellyfin has, as name chips.
+    - Turning the group on for the first user, or changing the administrator's choices, refreshes the logos of every cached item in the background.
+
+**Native Poster Tags** draw the same logos from the server's image cache, and the name chip when an image is not cached yet; the poster is redrawn once the image arrives. Tag Styles colour the pills on the **Logos** tab. Custom CSS can target `.logo-overlay-container`, `.je-logo-chip` and its `data-je-logo-kind` / `data-je-logo-style` attributes (see [CSS Customization](../advanced/css-customization.md)).
 
 ## People Tags
 
@@ -825,7 +855,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
     The master switch alone does not produce visible tags: each user's applicable groups start off.
 
 ??? info "Supported groups and preferences"
-    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, and age-classification. People Tags are not a native group.
+    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, age-classification and logos. People Tags are not a native group.
 
     It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the administrator's language-priority policy. Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. All nine Corners anchors are supported, including centred rows and side columns. Labels stay full; compact density is web only. Status Tags are web only.
 
@@ -880,7 +910,7 @@ Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, t
 1. Open **Display** → **Media Tags** and turn on **Enable Tag Styles**.
 2. Under **Apply to**, choose **Web**, **Native posters** or **Both**.
 3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set.
-4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**), then **Whole group** or one tag.
+4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**, **Logos**), then **Whole group** or one tag.
 5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an opacity of 40–100%. Watch the contrast badge and the preview.
 6. Click **Save Settings**. Refresh web clients to see the change; native posters redraw the next time they load.
 
@@ -919,6 +949,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Genre** | **Genre** | **Text** colours the genre icon |
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending** | Web only: native posters do not show Status Tags. A Trending text colour also recolours the rank |
 | **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
+| **Logos** | **Provider logo**, **Network / studio logo**, **Name chip** | Colours the pill behind the logo; **Text** colours the name chip |
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
 

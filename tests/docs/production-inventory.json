@@ -43,6 +43,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/LogoTagSettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
       "category": "Configuration"
     },
@@ -236,6 +240,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagCacheEntry.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagLogo.cs",
       "category": "Model"
     },
     {
@@ -531,6 +539,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/LogoRules.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/QualityTagRules.cs",
       "category": "Services"
     },
@@ -655,6 +667,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheLogos.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheMonitor.cs",
       "category": "Services"
     },
@@ -672,6 +688,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheSourceRatings.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagLogoService.cs",
       "category": "Services"
     },
     {
@@ -1504,6 +1524,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/languagetags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/logotags.js",
       "category": "js"
     },
     {
@@ -2381,6 +2405,13 @@
         "Authorize",
         "ResponseCache(Duration = 86400)"
       ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/logo/{size}/{file}",
+      "method": "GetLogoImage",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": []
     },
     {
       "verb": "GET",
@@ -4066,6 +4097,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "LogoTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "StatusTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -4454,6 +4493,46 @@
       "type": "string",
       "initializer": "\"bottom-right\"",
       "constructor_assignment": "\"bottom-right\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LogoTagsPosition",
+      "type": "string",
+      "initializer": "\"bottom-left\"",
+      "constructor_assignment": "\"bottom-left\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LogoTagsMovieMode",
+      "type": "string",
+      "initializer": "\"provider\"",
+      "constructor_assignment": "\"provider\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LogoTagsSeriesMode",
+      "type": "string",
+      "initializer": "\"network\"",
+      "constructor_assignment": "\"network\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LogoTagsRegion",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": "string.Empty",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LogoTagsMaxLogos",
+      "type": "int",
+      "initializer": "1",
+      "constructor_assignment": "1",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -6521,6 +6600,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
     },
     {
+      "class": "TagGroupCaps",
+      "name": "Logos",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
       "class": "TagLookCondition",
       "name": "Field",
       "type": "string",
@@ -7098,6 +7185,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "LogoTagsEnabled",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "StatusTagsEnabled",
       "type": "bool",
       "initializer": null,
@@ -7293,6 +7388,14 @@
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "LogoTagsPosition",
+      "type": "string",
+      "initializer": "\"bottom-left\"",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
     },
@@ -8471,12 +8574,20 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/SpoilerGuard/SpoilerBlurImageFilter.cs"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheLogos.cs"
+    },
+    {
       "literal": "tag-cache.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs"
     },
     {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheSourceRatings.cs"
+    },
+    {
+      "literal": "tag-logos.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagLogoService.cs"
     },
     {
       "literal": "tmdb-cache.json",
@@ -8761,10 +8872,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 386,
-    "routes": 182,
-    "configuration_properties": 631,
-    "storage_references": 75,
+    "files": 392,
+    "routes": 183,
+    "configuration_properties": 640,
+    "storage_references": 77,
     "scheduled_tasks": 13,
     "locales": 33
   }

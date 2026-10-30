@@ -37,7 +37,7 @@ Series and Season entries in `GET /JellyfinEnhanced/tag-cache/{userId}` and item
 
 Each category keeps at most four distinct values (including null for missing metadata). `Best`, `Latest` and `AllAgree` are computed over every episode independently of that bound. `AudioByLanguage` maps available track language codes and base-language fallbacks to audio category facts; clients select exact-region matches first, then `AudioRegionFallback` (generic tracks for an unavailable region), then the base language and `Categories.audioInfo`. `LatestExtras` contains source/special-format labels for the newest aired non-virtual episode. Unknown/future air dates cannot supply latest values.
 
-Persisted cache schema 16 adds the summary and server-only `QualityEpisodeIds`. Contributor IDs never appear in either response. Access filtering rebuilds summaries from visible contributors and replaces representative streams when necessary; the existing `filterRevision` changes when visibility changes. Spoiler Guard removes the summary whenever it removes quality streams. Missing summaries support legacy representative fallback. Collections are unchanged.
+Persisted cache schema 17 adds the summary and server-only `QualityEpisodeIds`. Contributor IDs never appear in either response. Access filtering rebuilds summaries from visible contributors and replaces representative streams when necessary; the existing `filterRevision` changes when visibility changes. Spoiler Guard removes the summary whenever it removes quality streams. Missing summaries support legacy representative fallback. Collections are unchanged.
 
 ## Quick Start: Normal User vs Admin
 
@@ -488,6 +488,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `LanguageTagsEnabled` | Boolean | `false` |
 | `RatingTagsEnabled` | Boolean | `false` |
 | `AgeRatingTagsEnabled` | Boolean | `false` |
+| `LogoTagsEnabled` | Boolean | `false` |
 | `StatusTagsEnabled` | Boolean | `false` |
 | `PeopleTagsEnabled` | Boolean | `false` |
 | `TagsHideOnHover` | Boolean | `false` |
@@ -506,6 +507,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `RatingTagsShowCommunity` | Boolean | `true` |
 | `RatingTagsShowCritic` | Boolean | `true` |
 | `AgeRatingTagsPosition` | String | `"bottom-right"` |
+| `LogoTagsPosition` | String | `"bottom-left"` |
 | `StatusTagsPosition` | String | `"top-right"` |
 | `StatusTagsJustAdded` | Boolean | `true` |
 | `StatusTagsNewRelease` | Boolean | `true` |
@@ -886,6 +888,7 @@ Use local GUID routes for Jellyfin metadata, the generic TMDB route for external
 | GET | `tmdb/validate` | Administrator | Supplied query `apiKey` → `{"ok":true}`. |
 | GET | `tmdb/{**apiPath}` | Authenticated | TMDB `/3/` resource path and query → upstream TMDB JSON/status. |
 | GET | `watch-providers` | Authenticated | Query `items`, optional `region` → regional flat-rate provider map. |
+| GET | `logo/{size}/{file}` | Anonymous | `size` `w45` or `w92`, `file` a logo file name the server has seen in a Logos lookup → the image from the server's cache; `404` otherwise. |
 
 Local lookups return `404` if absent and `500` on lookup errors. Boxset checks type; single studio/genre/person actions do not explicitly enforce their named type. They are local metadata lookups, rather than Seerr proxies.
 
@@ -937,6 +940,13 @@ curl -G -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
 Provider names/availability in the example are illustrative. Only usable flat-rate entries are retained. `[]` means no retained provider; `null` means refused, failed, or unusable lookup. Parentally denied titles get null results.
 
 Missing key/setup returns `503`; cancellation `499`. Successful responses use private revalidation, ETag and `304`.
+
+### Logo images
+
+The Logos tag group's images come from `GET /JellyfinEnhanced/logo/{size}/{file}` (for example `logo/w92/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg`). The route is anonymous like the CDN assets, because an `<img>` cannot send a Jellyfin token, but it is not an open TMDB proxy: only the sizes `w45` and `w92` and PNG, JPEG or WebP file names that came back from the server's own provider or company/network lookups are served. The server fetches a missing image from TMDB's image server once (at most 256 KiB, `image/*` only, SVG refused), keeps it under Jellyfin's cache directory in `jellyfin-enhanced/logos`, and answers with `Cache-Control: public, max-age=604800`, a strong `ETag` and `304` revalidation. A failed fetch returns `404` and is retried after ten minutes. Native Poster Tags draw the same cached files and never fetch during a poster request.
+
+!!! note "Privacy"
+    Browsers never contact TMDB for logos: the lookups and image downloads run on the server with the server's TMDB key, and clients only see the names and image paths in the tag cache. Without a key or internet access the group shows names.
 
 ## Spoiler Guard
 
@@ -1145,18 +1155,21 @@ It contains the full aggregate map even on deltas; absent keys mean no visible r
 | `SeasonAddedSpan` | Nullable `{First,Last,Count}` for season episode added dates |
 | `StreamData` | Nullable `{Streams,Sources,ItemName,ItemPath}` |
 | `Source`, `Edition` | Nullable canonical naming labels, computed server-side before basename trimming |
+| `Logos` | Optional array (at most two) of `{kind,name,logo}`: `kind` is `provider`, `network` or `studio`, `logo` an optional TMDB image path for the logo route below; seasons and episodes carry their series'. Present only while the administrator or at least one user has the Logos group on |
+
+The Logos group's per-user settings are `LogoTagsEnabled` (default false) and `LogoTagsPosition` (default `"bottom-left"`), with `logos` as a group id in `TagLayouts`, `TagGroupOrder` and `TagGroupCaps` (cap 0 shows every logo an entry carries). The administrator's `LogoTagsMovieMode` (`provider`, `studio`, `off`; default `provider`), `LogoTagsSeriesMode` (`network`, `provider`, `off`; default `network`), `LogoTagsRegion` (two letters, empty uses `DEFAULT_REGION`) and `LogoTagsMaxLogos` (1 or 2, default 1) decide what entries carry; unknown values fall back to the defaults on save. Provider mode falls back to the studio or network when no subscription service is known for the region. Providers come from TMDB watch providers, and network or studio logos from TMDB details matched by name to Jellyfin's studios; both lookups are kept by the server for a day (failures retried after an hour) in `tag-logos.json` beside the tag cache, warmed before full builds and the daily reconcile, and for batch items within a three-second budget. Without a TMDB key or internet access entries carry names only.
 
 Source rating preferences are `RatingTagsSources` (ordered string array; null preserves legacy include switches, empty hides source scores), `RatingTagsMinScore` (finite 0–10, default 0), and `RatingTagsColorByScore` (boolean, default false). They are per-user preferences with public admin defaults, seeded for new users and copied by reset-all-users. Unknown source ids and duplicates are removed on save. `Ratings` is immutable shared metadata, removed with Community/Critic scores by Spoiler Guard.
 
 `SubtitleLanguages` is the lowercase union of subtitle-track languages, deduplicated across forced/SDH tracks. Series and seasons union their episodes; collections union their members. It follows the same access filtering and Spoiler Guard tag stripping as `AudioLanguages`; clients must replace their stored cache when `filterRevision` changes. Subtitle streams do not enter the quality-tag stream summary.
 
-`LibraryId` is the library (collection folder) holding the item in N format; seasons and episodes carry their series'. Entries are cache schema 16; older snapshots are discarded and rebuilt. `DateCreated` is when the item was added to the library. `PremiereDate` is set for movies, series and episodes. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
+`LibraryId` is the library (collection folder) holding the item in N format; seasons and episodes carry their series'. Entries are cache schema 17; older snapshots are discarded and rebuilt. `DateCreated` is when the item was added to the library. `PremiereDate` is set for movies, series and episodes. `LatestEpisodeAdded` is set for series and seasons only: the newest `DateCreated` among their non-virtual episodes. It is omitted for a caller who cannot see the episode it came from. Null fields are omitted.
 
-`StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs. Directory paths are never returned; `Path` and `ItemPath` are basenames, including for Windows paths on a Unix server. Persisted entry schema 16 adds `Source` and `Edition`, and old snapshots rebuild.
+`StreamData.Streams` contains `Type`, `Language`, `Codec`, `CodecTag`, `Profile`, `Height`, `Channels`, `ChannelLayout`, `VideoRangeType`, `DisplayTitle`; strings/numeric fields can be null. `Sources` contains `{Path,Name}`. These are trimmed tag data, rather than complete Jellyfin item DTOs. Directory paths are never returned; `Path` and `ItemPath` are basenames, including for Windows paths on a Unix server. Persisted entry schema 17 adds `Source` and `Edition`, and old snapshots rebuild.
 
-Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `Ratings`, `OfficialRating`, `LibraryId`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, nullable `Source` and `Edition`, `SubtitleLanguages` (the selected media sources), trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
+Batch `tag-data` ignores malformed/inaccessible IDs. Items contain `Id`, `Type`, `Genres`, `CommunityRating`, `CriticRating`, `Ratings`, `Logos`, `OfficialRating`, `LibraryId`, `SeriesId`, `ProviderIds`, `Name`, basename-only `Path`, nullable `Source` and `Edition`, `SubtitleLanguages` (the selected media sources), trimmed `MediaStreams`, `MediaSources`, nullable `FirstEpisode`, and the nullable Unix-millisecond dates `DateCreated`, `PremiereDate` (movies, series and episodes) and `LatestEpisodeAdded` (series and seasons, only with `latestEpisode=true`; it counts only episodes the target user can see and costs one query per container).
 
-With `latestEpisode=true`, batch items also carry the applicable `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex`, `SeasonPremiere`, `SeasonAddedSpan` and `EpisodeIndex` facts. Episode sibling lookups use the target user too. The shared cache conservatively omits episode-derived aggregates if any contributor is inaccessible; its server-only `StatusEpisodeIds`/`LatestEpisodeId` are excluded from serialization. A changed `filterRevision` requires replacing stored data. Schema 16 invalidates older disk and IndexedDB copies, including snapshots without named-source `Ratings`.
+With `latestEpisode=true`, batch items also carry the applicable `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex`, `SeasonPremiere`, `SeasonAddedSpan` and `EpisodeIndex` facts. Episode sibling lookups use the target user too. The shared cache conservatively omits episode-derived aggregates if any contributor is inaccessible; its server-only `StatusEpisodeIds`/`LatestEpisodeId` are excluded from serialization. A changed `filterRevision` requires replacing stored data. Schema 17 invalidates older disk and IndexedDB copies, including snapshots without named-source `Ratings`.
 
 Streams use the trimmed stream fields listed above, and sources contain basename-only `Path` and `Name`.
 
@@ -1207,7 +1220,8 @@ Read effective web styles or the shipped style catalog. As an administrator, use
  "rating":{"community":{…},"critic":{…},"userReview":{…}},
  "genre":{…},
  "status":{"added":{…},"newMovie":{…},"newSeries":{…},"newEpisode":{…},"trending":{…}},
- "language":{"background":null,"border":"…","color":null}}
+ "language":{"background":null,"border":"…","color":null},
+ "logos":{"provider":{…},"company":{…},"text":{…}}}
 ```
 
 Colour objects have `background`, `border`, `color` (null keeps the built-in colour). `quality` and the status/rating maps list only chips with a non-default colour; `*` covers quality labels outside the catalog and `ageDefault` age ratings outside the colour sheet. `age` lists each age board with every rating it covers. With Tag Styles off, a native-only target, or the default preset and no overrides, every map is empty and the single objects are null. Missing configuration returns `503`.
@@ -1220,7 +1234,7 @@ Colour objects have `background`, `border`, `color` (null keeps the built-in col
  "labels":{"quality:HEVC":{"background":"rgba(239, 108, 0, 1)"},"ageRating:9":{"border":"rgba(0, 0, 0, 0)"},"status:trending":{"text":"…"}}}
 ```
 
-Groups are `quality`, `ageRating`, `rating`, `genre`, `status`, `language`. Labels are `group:label`: quality catalog labels, age board ids from the catalog, `rating:community|critic|userReview`, `genre:genre`, `status:added|newMovie|newSeries|newEpisode|trending` and `language:flag`. Fields are `background`, `border`, `text`; language takes only `border`. `TagStylePreset` is the authoritative preset; the document's own `preset` mirrors it. Saving validates the document, whichever version it is (leaving out `v` does not skip the checks): unknown keys, groups, labels or fields, the reserved keys `__proto__`, `constructor` and `prototype`, anything that is not a colour, more than 400 labels or more than 32 KB keep the current styles (logged as a warning); valid documents are stored normalised to `rgba()`. A version 1 document (`{quality:{label:{background,border,color}},age:{boardId:…},rating:{community|critic:…},genre:…}`, from before the editor redesign) is still read: each stored label becomes the colours it drew (the stored field, else the built-in colour; rating chips get no border) under the `default` preset, whatever `TagStylePreset` says, and it is converted to version 2 on the next save.
+Groups are `quality`, `ageRating`, `rating`, `genre`, `status`, `language`, `logos`. Labels are `group:label`: quality catalog labels, age board ids from the catalog, `rating:community|critic|userReview`, `genre:genre`, `status:added|newMovie|newSeries|newEpisode|trending`, `language:flag` and `logos:provider|company|text` (the pill behind a provider logo, a network or studio logo, and the name chip). Fields are `background`, `border`, `text`; language takes only `border`. `TagStylePreset` is the authoritative preset; the document's own `preset` mirrors it. Saving validates the document, whichever version it is (leaving out `v` does not skip the checks): unknown keys, groups, labels or fields, the reserved keys `__proto__`, `constructor` and `prototype`, anything that is not a colour, more than 400 labels or more than 32 KB keep the current styles (logged as a warning); valid documents are stored normalised to `rgba()`. A version 1 document (`{quality:{label:{background,border,color}},age:{boardId:…},rating:{community|critic:…},genre:…}`, from before the editor redesign) is still read: each stored label becomes the colours it drew (the stored field, else the built-in colour; rating chips get no border) under the `default` preset, whatever `TagStylePreset` says, and it is converted to version 2 on the next save.
 
 Catalog (administrator) has `quality:[{label,background,color}]`, `age:[{id,background,border,color,ratings,sample}]`, `presets` (ids in editor order), `groups` (`{group:[{key,name}]}`) and `palettes` (`{preset:{"group:label":{background,border,color}}}`, every colour concrete: the preset's colour where it sets one, else the built-in colour). It provides shipped defaults and palettes, rather than a user's effective styles.
 
@@ -1363,6 +1377,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowEditionTag`, `ShowLowQualitySourceTag`, `ShowDynamicRangeTag` | Boolean |
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
+    | `LogoTagsEnabled` | Boolean |
     | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending`, `StatusTagsSchedule`, `StatusTagsMilestones`, `StatusTagsSeriesStatus`, `TagStylesAllowUserPreset` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `LanguageTagsMergeRegions`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
     | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `RatingTagsShowCommunity`, `RatingTagsShowCritic`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
@@ -1381,11 +1396,11 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `SpoilerStripChapters`, `SpoilerStripTaglines`, `SpoilerStripRatings`, `SpoilerStripPremiereDate`, `SpoilerReplaceTitle`, `SpoilerStripCast`, `SpoilerStripReviews`, `SpoilerBlurTrickplay`, `SpoilerAdvancedMode` | Boolean |
     | `ToastDuration`, `HelpPanelAutocloseDelay`, `PauseScreenDelaySeconds`, `ResolutionTagOrder`, `SourceTagOrder`, `EditionTagOrder`, `DynamicRangeTagOrder`, `SpecialFormatTagOrder`, `VideoCodecTagOrder` | Integer |
     | `AudioInfoTagOrder`, `DefaultSubtitleStyle`, `DefaultSubtitleSize`, `DefaultSubtitleFont`, `DefaultSubtitleTextEffect`, `TagsCacheTtlDays`, `DownloadsPollIntervalSeconds`, `SpoilerBlurIntensity` | Integer |
-    | `StatusTagsJustAddedDays`, `StatusTagsNewReleaseDays` | Integer |
+    | `StatusTagsJustAddedDays`, `StatusTagsNewReleaseDays`, `LogoTagsMaxLogos` | Integer |
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
     | `MdblistRatingsSources`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
     | `AgeRatingTagsPosition`, `JellyseerrBaseUrl`, `JellyseerrUrlMappings`, `ArrTagsPrefix`, `ArrTagsLinksFilter`, `ArrTagsLinksHideFilter`, `AudioLanguageTagPrefix`, `IconStyle` | String |
-    | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagStylePreset` | String |
+    | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagStylePreset`, `LogoTagsPosition`, `LogoTagsMovieMode`, `LogoTagsSeriesMode` | String |
     | `TagLayouts`, `TagGroupCaps`, `TagShapeOverrides` | Nullable object (shapes as in `settings.json`) |
     | `TagGroupOrder` | Nullable array of group ids |
     | `TagLookRules` | Nullable array of rules (shape as in `settings.json`), normalized |
@@ -1828,6 +1843,6 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 173 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 174 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.

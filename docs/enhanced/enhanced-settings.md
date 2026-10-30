@@ -745,7 +745,7 @@ See [Enhanced features](enhanced-features.md) for the full gesture workflow and 
 
     The server retains `catchup-log.jsonl` and `catchup-log.1.jsonl` in the plugin configuration folder. It rotates before the next append once the live file exceeds 5 MiB.
 
-### Tags: Quality, Genre, Language, Rating, Age Rating, Status, People
+### Tags: Quality, Genre, Language, Rating, Age Rating, Status, Logos, People
 
 All tag settings have moved to [Tags & Badges](tags.md): personal **Media Tags** controls, admin **Display** → **Media Tags** defaults, quality categories/order, language preferences, rating scopes, people/review badges, hover behavior, and Tag Styles.
 
@@ -756,6 +756,10 @@ For personal tag choices, open **Media Tags**. Administrators use **Display** �
 #### Status Tags badge groups
 
 Under **Media Tags** → **Status badges**, the six personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), and Series status (Returning / Ended / Cancelled). All default on except the last. Administrators set starting defaults in **Display** → **Media Tags** and the two shared day windows. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
+
+#### Logo Tags
+
+The **Logos** row on the **Groups** tab of **Media Tags** turns the group on (off by default) and sets its position and **Show up to**. What the logo shows is the administrator's choice under **Display** → **Media Tags** → **Logo choices (all users)**: **Movies show** (streaming service, studio or no logo), **Series show** (network, streaming service or no logo), **Streaming region** and **Logos per title** (1 or 2). Logos need the TMDB API key for images; without one, names are shown. See [Logo Tags](tags.md#logo-tags).
 
 #### Server-Side Tag Cache
 

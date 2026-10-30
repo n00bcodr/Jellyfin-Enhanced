@@ -148,6 +148,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | `Configuration/PluginConfiguration.cs` | Server settings and administrator defaults. |
 | `Configuration/configPage.html`, `configPage.css` | Admin UI, control labels, save wiring and styling. Tabs: **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, **Docs**. |
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
+| `Configuration/LogoTagSettings.cs` | Logos group modes (movies: provider/studio/off; series: network/provider/off), region and maximum, normalized on save. |
 | `Configuration/LanguageTagDisplaySettings.cs` | Language display enums, save normalization and admin defaults for new-user seeding and reset-all. |
 | `Configuration/TagLookSettings.cs` | Tag look rules and per-item locks: models and validation (`TagLookValidation`) for `settings.json` and the administrator's default rules. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
@@ -319,6 +320,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `genretags.js`, `languagetags.js`, `qualitytags.js` | Genre badges, language flags/codes, CC subtitle chips and Dual/Multi badges (shared with the hub preview), and quality tags such as resolution, dynamic range and audio format, plus server-derived source and edition categories. |
 | `ratingtags.js`, `rating-sources.js` | Ordered Community/Critic and MDBList source chips, bundled SVG logos, native formats, minimum score and score colours. The source helper also drives the hub preview. |
 | `ageratingtags.js` | Color-coded parental/age ratings, sharing the Colored Ratings color table. |
+| `logotags.js` | Logo Tags: the streaming provider, network or studio logo chips (server-proxied images, name chips with initials as the fallback); also builds the hub preview's samples. |
 | `statustags.js` | Status Tags: first-match badge per card for added/release dates, season milestones, schedules, trending and optional series status. Batches visible series through `status-tags/series`, guards stale card/user answers and supplies compact labels and `data-je-status` styling hooks. |
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
 | `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating group through the layout controller. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
@@ -328,7 +330,9 @@ Administrator settings under **\*arr** → **Shoko**:
 | `tag-layout-styles.js` | The one stylesheet for every tag layout, keyed off `.je-tag-host[data-je-layout]` and `.je-tag-slot[data-je-slot]`. |
 | `tag-styles.js` | Retrieves the resolved Tag Styles (with the user's own preset when allowed) and injects web CSS for every chip group; paired with server `Services/PosterTags/TagStyles.cs`. |
 
-`Configuration/RatingSourceSettings.cs` validates ordered source preferences. `Model/TagSourceRatings.cs` maps MDBList scores to immutable native-unit values. `Services/TagCacheSourceRatings.cs` enriches schema 16 cache entries and batch DTOs through the existing MDBList cache, TTL and quota policy. `Assets/PosterTags/rating-source-icons.json` contains the same logo paths for native compositing.
+`Configuration/LogoTagSettings.cs` (`LogoTagRules`) normalizes the administrator's Logos modes, region and maximum. `Model/TagLogo.cs` is the immutable `{kind,name,logo}` cache-entry value. `Services/TagLogoService.cs` keeps the daily TMDB provider and company/network lookups (`tag-logos.json`), rate-limits them, and serves the allow-listed logo images from its disk cache through `/JellyfinEnhanced/logo/{size}/{file}`. `Services/TagCacheLogos.cs` projects the lookups and Jellyfin's studio names into cache entries and batch DTOs, warms them before builds and reconciles, and republishes them after settings changes.
+
+`Configuration/RatingSourceSettings.cs` validates ordered source preferences. `Model/TagSourceRatings.cs` maps MDBList scores to immutable native-unit values. `Services/TagCacheSourceRatings.cs` enriches schema 17 cache entries and batch DTOs through the existing MDBList cache, TTL and quota policy. `Assets/PosterTags/rating-source-icons.json` contains the same logo paths for native compositing.
 
 See [Tag Styles and CSS](../enhanced/tags.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
 
@@ -432,7 +436,8 @@ The client interacts with server classes through endpoints, cookies and image re
 | `StatusTagsTrendingService.cs` | Server-wide trending ranks for Status Tags: TMDB daily trending, else Seerr weekly trending, cached for 30 minutes. |
 | `MovieCollectionsBatch.cs`, `WatchProvidersBatch.cs` | Parsing/shaping batched collection and regional streaming-provider lookups. Movie collections use Seerr first, then TMDB when needed. |
 | `ItemStatsService.cs` | Aggregate item/subtree size and watch-progress data for detail chips. |
-| `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists schema 16 tag data, maintains it from library events and filters episode-derived facts using contributor IDs and `filterRevision`. |
+| `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists schema 17 tag data, maintains it from library events and filters episode-derived facts using contributor IDs and `filterRevision`. |
+| `TagLogoService.cs`, `TagCacheLogos.cs` | Logos group data: daily TMDB lookups and the logo image proxy cache; projection into tag cache entries. |
 | `StatusTagsSeriesService.cs` | Authenticated caller-filtered series schedule endpoint support: six-hour TMDB cache, four concurrent lookups, 35 starts per ten seconds, season episode-type enrichment. No per-user storage. |
 | `StatusTagsEpisodeFacts.cs` | Shared episode aggregation for cache and user-filtered batch fallback: aired episode indexes, episode-one season premiere and season added span. |
 | `ItemLibraryResolver.cs` | The library an item is in (seasons and episodes: their series'), stored as `LibraryId` in tag-cache entries and `tag-data` items for tag look rules. |
@@ -497,7 +502,7 @@ Per-user setting in the Enhanced panel:
 | `CompositeImageCache.cs` | Byte-bounded memory LRU and disk cache under Jellyfin's cache path, in-flight coalescing and bounded render concurrency. |
 | `TagStyles.cs` | The versioned Tag Styles document (preset, group and label overrides): strict save validation, version 1 reading, per-chip resolution and the web model; plus the shipped colour catalog. |
 | `TagStylePalettes.cs` | Group, label and preset ids, the six preset palettes and built-in colours shared by web CSS, the config page and native drawing, and the WCAG contrast check. |
-| `Resolution/` | `AgeRatingRules.cs`, `GenreIcons.cs`, `JsText.cs`, `LanguageFlagRules.cs`, `LanguageNames.cs`, `QualityTagRules.cs` (including source/edition categories, order and low-quality gate), `RatingRules.cs`, `ResolutionData.g.cs`. |
+| `Resolution/` | `AgeRatingRules.cs`, `GenreIcons.cs`, `JsText.cs`, `LanguageFlagRules.cs`, `LanguageNames.cs`, `LogoRules.cs` (valid logos and the name-chip text), `QualityTagRules.cs` (including source/edition categories, order and low-quality gate), `RatingRules.cs`, `ResolutionData.g.cs`. |
 | `Rendering/` | `PosterTagAssets.cs`, `PosterTagCss.cs`, `PosterTagImageScaler.cs`, `PosterTagPlan.cs`, `PosterTagRenderer.cs`, `PosterTagText.cs`, `PosterTagTileCache.cs`: embedded assets, layout, scaling, text shaping, drawing and reusable tile caching. |
 
 `ResolutionData.g.cs` is generated by repository-root `tests/poster/parity/gen-resolution-data.mjs`; do not edit it by hand. Renderer/composition version changes retire existing variant tokens, preventing old URLs from serving newly changed pixels under long-lived client caches.
@@ -515,7 +520,7 @@ Missing or wrong-length keys are recreated; old URLs can serve original artwork 
 | `Helpers/Jellyseerr/` | `SeerrHttpHelper.cs`, `JellyseerrPermissionHelper.cs`, `JellyseerrUserImportHelper.cs`: HTTP, permission and import helpers. `ParentalRatingDecision.cs`, `ParentalTagDecision.cs`, `SeerrCertificationExtractor.cs`, `SeerrTagSignatureExtractor.cs`: shared parental decisions/extraction. |
 | `Extensions/` | `ItemRepositoryExtensions.cs`, `JellyfinDbContextExtensions.cs`, `UserManagerExtensions.cs`: repository/database provider lookups and compatible user enumeration across server API changes. |
 | `Services/MediaNamingTags.cs` | Server-side source/edition detection from file and immediate parent-folder names, physical-stub priority and resolution-ranked multi-version selection. Shared by the tag cache and `/tag-data`; only labels reach clients. |
-| `Model/TagCacheEntry.cs` | Schema 16 source/edition labels, source ratings, series/season quality summaries, Status Tags facts and server-only contributor IDs for access filtering, plus precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups. |
+| `Model/TagCacheEntry.cs` | Schema 17 source/edition labels, source ratings, Logos (`Model/TagLogo.cs`), series/season quality summaries, Status Tags facts and server-only contributor IDs for access filtering, plus precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups. |
 | `Model/TagQualitySummary.cs`, `Services/SeriesQualityAggregation.cs` | Policy-independent container quality facts, bounded distinct values, audio-language variants and policy resolution; built from existing episode streams and recomputed through the cache access filter for restricted users. |
 | `Model/AnalyticsData.cs`, `WhatsNewData.cs` | Report/counter records and inclusion/exclusion annotations; configuration-schema and pending-change records. |
 | `Model/AwardsData.cs`, `MdblistRatings.cs` | Awards cache records and MDBList cache/account models. |
