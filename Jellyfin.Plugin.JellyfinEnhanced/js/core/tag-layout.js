@@ -1279,30 +1279,40 @@
      * @param {number} gap - Gap between chips.
      * @param {number} maxRows
      * @param {number} moreWidth - Width of the "+N" chip.
+     * @param {number[]} [rowsOut] - Filled with each chip's row (1-based; 0 when hidden).
      * @returns {boolean[]} Per chip, whether it is shown.
      */
-    function chipsThatFit(widths, available, gap, maxRows, moreWidth) {
+    function chipsThatFit(widths, available, gap, maxRows, moreWidth, rowsOut) {
         // Flex wraps a chip that overflows by any fraction of a pixel.
         const fits = (need, room) => need <= room + 0.01;
+        /** @type {number[]} */
+        const rowOf = [];
         let rows = 0;
         let x = 0;
         for (const w of widths) {
             if (rows === 0 || !fits(x + gap + w, available)) { rows++; x = w; } else x += gap + w;
+            rowOf.push(rows);
         }
-        if (rows <= maxRows && widths.every((w) => fits(w, available))) return widths.map(() => true);
+        if (rows <= maxRows && widths.every((w) => fits(w, available))) {
+            rowsOut?.push(...rowOf);
+            return widths.map(() => true);
+        }
         const roomOn = (row) => (row === maxRows ? available - gap - moreWidth : available);
         let row = 1;
         x = 0;
         return widths.map((w) => {
             if (fits(x === 0 ? w : x + gap + w, roomOn(row))) {
                 x = x === 0 ? w : x + gap + w;
+                rowsOut?.push(row);
                 return true;
             }
             if (row < maxRows && x > 0 && fits(w, roomOn(row + 1))) {
                 row++;
                 x = w;
+                rowsOut?.push(row);
                 return true;
             }
+            rowsOut?.push(0);
             return false;
         });
     }
@@ -1414,34 +1424,52 @@
      */
 
     /**
-     * How many chip rows a wrapping slot has height for, at most FIT_MAX_ROWS
-     * (reads only). Only a slot with a max-height (the hover reveal, held to
-     * the bottom 40% of the card) is limited: its rows must fit inside that
-     * height less its padding. On a card too short for even one row that way
-     * (a small landscape thumbnail), one row may sit in the top padding, which
-     * is only the scrim's fade-in, when it still fits above the bottom padding.
+     * The height a wrapping slot has for its chip rows, or null when it is not
+     * limited (reads only). Only a slot with a max-height is: the hover reveal,
+     * held to the bottom 40% of the card. Its rows must fit inside that height
+     * less its padding; on a card too short for even one row that way (a small
+     * landscape thumbnail), one row may sit in the top padding, which is only
+     * the scrim's fade-in, while it still fits above the bottom padding.
      * @param {CardController} ctrl
      * @param {CSSStyleDeclaration} style - The slot's computed style.
-     * @param {number} rowHeight - Tallest chip of the slot, "+N" included.
-     * @returns {number}
+     * @returns {{inside: number, oneRow: number, gap: number}|null}
      */
-    function rowsWithHeight(ctrl, style, rowHeight) {
+    function rowRoom(ctrl, style) {
         const raw = style.maxHeight;
-        if (!raw || raw === 'none' || !(rowHeight > 0)) return FIT_MAX_ROWS;
+        if (!raw || raw === 'none') return null;
         let limit = parseFloat(raw);
         if (raw.endsWith('%')) {
             // The slot is positioned in the host, which covers the image.
             const height = ctrl.host.clientHeight;
-            if (!(height > 0)) return FIT_MAX_ROWS;
+            if (!(height > 0)) return null;
             limit = (limit / 100) * height;
         }
-        if (!Number.isFinite(limit)) return FIT_MAX_ROWS;
-        const gap = parseFloat(style.rowGap) || 0;
+        if (!Number.isFinite(limit)) return null;
         const padTop = parseFloat(style.paddingTop) || 0;
         const padBottom = parseFloat(style.paddingBottom) || 0;
-        const rows = (room) => Math.max(0, Math.floor((room + gap + 0.01) / (rowHeight + gap)));
-        const inside = rows(limit - padTop - padBottom);
-        return Math.min(FIT_MAX_ROWS, inside > 0 ? inside : Math.min(1, rows(limit - padBottom)));
+        return { inside: limit - padTop - padBottom, oneRow: limit - padBottom, gap: parseFloat(style.rowGap) || 0 };
+    }
+
+    /**
+     * Height of the rows a fit lays out: each row as tall as its tallest
+     * shown chip, the "+N" chip (when chips are hidden) on the last row.
+     * @param {boolean[]} shown
+     * @param {number[]} rows - Row per chip (chipsThatFit's rowsOut).
+     * @param {number[]} heights - Chip heights.
+     * @param {number} moreHeight
+     * @param {number} gap - Gap between rows.
+     * @returns {number}
+     */
+    function rowsHeight(shown, rows, heights, moreHeight, gap) {
+        /** @type {number[]} */
+        const tallest = [];
+        shown.forEach((on, i) => { if (on) tallest[rows[i] - 1] = Math.max(tallest[rows[i] - 1] || 0, heights[i]); });
+        if (shown.includes(false)) {
+            const last = Math.max(0, tallest.length - 1);
+            tallest[last] = Math.max(tallest[last] || 0, moreHeight);
+        }
+        const used = tallest.filter((h) => h !== undefined);
+        return used.reduce((sum, h) => sum + h, 0) + gap * Math.max(0, used.length - 1);
     }
 
     /**
@@ -1459,16 +1487,28 @@
             const available = slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
             const gap = parseFloat(style.columnGap) || 0;
             const rects = chips.map((chip) => chip.getBoundingClientRect());
+            const widths = rects.map((r) => r.width);
             const moreRect = more.getBoundingClientRect();
-            const maxRows = rowsWithHeight(ctrl, style, Math.max(moreRect.height, ...rects.map((r) => r.height)));
-            if (maxRows === 0) {
-                plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => false), more: false });
+            if (!(available > 0)) {
+                plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => true), more: true });
                 continue;
             }
-            const shown = available > 0
-                ? chipsThatFit(rects.map((r) => r.width), available, gap, maxRows, moreRect.width)
-                : chips.map(() => true);
-            plan.rows.push({ slot: slotEl, chips, shown, more: true });
+            const room = rowRoom(ctrl, style);
+            if (!room) {
+                plan.rows.push({ slot: slotEl, chips, shown: chipsThatFit(widths, available, gap, FIT_MAX_ROWS, moreRect.width), more: true });
+                continue;
+            }
+            // As many whole rows as the height has room for, "+N" included.
+            let shown = null;
+            for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
+                const rows = [];
+                const fit = chipsThatFit(widths, available, gap, n, moreRect.width, rows);
+                const height = rowsHeight(fit, rows, rects.map((r) => r.height), moreRect.height, room.gap);
+                if (height <= room.inside + 0.01 || (n === 1 && height <= room.oneRow + 0.01)) shown = fit;
+            }
+            plan.rows.push(shown
+                ? { slot: slotEl, chips, shown, more: true }
+                : { slot: slotEl, chips, shown: chips.map(() => false), more: false });
         }
         return plan;
     }

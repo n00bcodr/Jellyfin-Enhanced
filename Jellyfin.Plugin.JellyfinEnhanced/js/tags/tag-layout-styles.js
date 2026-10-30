@@ -327,7 +327,8 @@
             }
             /* Cards, and list rows (a season's episodes) whose image holds the tags. */
             :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
-            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
+            /* The summaries give way to the reveal, unless it had no room for a row. */
+            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
             /* The hover state on demand (the settings panel's preview card). */
             .je-tag-reveal .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
             .je-tag-reveal .je-tag-host > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }

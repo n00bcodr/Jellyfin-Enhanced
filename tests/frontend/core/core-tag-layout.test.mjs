@@ -304,7 +304,8 @@ test('hide-on-hover keeps the summary and minimal reveal; reveal follows hover a
   assert.match(css, /body\.je-tags-hide-on-hover \.card:hover \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
   assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-slot\[data-je-slot="hover"\] \{ opacity: 1; \}/,
     'cards and list rows (a season\'s episodes) alike');
-  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-slot:is\(\[data-je-slot="pill"\], \[data-je-slot="dots"\], \[data-je-slot="corner"\]\) \{ opacity: 0; \}/);
+  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host:not\(:has\(> \.je-tag-slot\[data-je-slot="hover"\]\[data-je-overflow\]\)\) > \.je-tag-slot:is\(\[data-je-slot="pill"\], \[data-je-slot="dots"\], \[data-je-slot="corner"\]\) \{ opacity: 0; \}/,
+    'the summaries stay when the reveal had no room for a row');
   assert.match(css, /prefers-reduced-motion: reduce/);
   await h.JE.reinitializeTagLayout();
   assert.equal(h.document.body.classList.contains('je-tags-hide-on-hover'), true);
@@ -702,14 +703,15 @@ function withLayout(h, { card, chip = 30, more = 20 }, fn) {
  * the card width, the host the card height (the reveal's 40% resolves against
  * it), chips 30x18 and the "+N" chip 20x18.
  */
-function fitCard(h, { width, height, chip = 30, more = 20 }) {
+function fitCard(h, { width, height, chip = 30, more = 20, tall = null }) {
   const proto = h.window.HTMLElement.prototype;
   const rect = proto.getBoundingClientRect;
   const client = Object.getOwnPropertyDescriptor(h.window.Element.prototype, 'clientWidth');
   const clientH = Object.getOwnPropertyDescriptor(h.window.Element.prototype, 'clientHeight');
   proto.getBoundingClientRect = function () {
     const w = this.classList.contains('je-tag-more') ? more : this.parentElement?.dataset?.jeGroup ? chip : 0;
-    return { width: w, height: w ? 18 : 0, top: 0, left: 0, right: w, bottom: w ? 18 : 0 };
+    const ht = !w ? 0 : tall && this.parentElement?.dataset?.jeGroup === tall ? 26 : 18;
+    return { width: w, height: ht, top: 0, left: 0, right: w, bottom: ht };
   };
   Object.defineProperty(h.window.Element.prototype, 'clientWidth', { configurable: true,
     get() { return this.matches('.je-tag-host, .je-tag-slot, .je-tag-caption') ? width : 0; } });
@@ -740,6 +742,16 @@ test('the reveal keeps only the chip rows its height has room for: one on a land
     fitCard(h, { width: 113, height: 170 });
     assert.equal(shown(), 5, 'two rows on a portrait card');
     assert.equal(more().hasAttribute('data-je-overflow'), false);
+    // 40% of 113x120 is 48px, 24px for chips: one 18px row. 135 → 54px less 24: 30px, still one row,
+    // and 140 → 56px less 24: 32px is not two rows (18 + 18) either; 160 → 64 - 24 = 40px is.
+    for (const [height, rows] of [[120, 1], [140, 1], [160, 2]]) {
+      fitCard(h, { width: 113, height });
+      assert.equal(shown(), rows === 1 ? 2 : 5, `${height}px tall: ${rows} row(s)`);
+    }
+    // Each row is as tall as its own tallest shown chip: 26px flags behind "+N" do not cost a row.
+    fitCard(h, { width: 113, height: 160, tall: 'language' });
+    assert.equal(shown(), 5, 'two 18px rows still fit in 40px');
+    assert.equal(reveal().querySelectorAll(':scope > [data-je-group="language"] > :not([data-je-overflow])').length, 0);
     // Too short for any row: nothing is half shown, and the empty scrim stays away.
     fitCard(h, { width: 113, height: 40 });
     assert.equal(shown(), 0);
