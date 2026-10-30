@@ -8958,7 +8958,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var seriesLibraryMemo = new Dictionary<Guid, string?>();
             string? TagDataLibraryId(BaseItem tagItem) => Services.ItemLibraryResolver.Resolve(_libraryManager, tagItem, null, seriesLibraryMemo);
             // Custom tag rule ids, as the server tag cache stores them, with collection
-            // matches only for collections this user can access.
+            // matches only for collections this user can access. The Spoiler Guard stubs
+            // drop them with the genres (SpoilerStripTags): a tag or collection label can
+            // be a plot fact.
             var customSeriesMemo = new Dictionary<Guid, BaseItem?>();
             string[]? TagDataCustomTags(BaseItem tagItem) => _tagCacheService.GetCustomTags(tagItem, user, customSeriesMemo);
             string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
@@ -9152,7 +9154,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spEp),
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spEp),
-                        CustomTags = TagDataCustomTags(spEp),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spEp),
                         // Suppress the parent-series rating fallback only when the
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
@@ -9199,7 +9201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeries),
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
                         LibraryId = TagDataLibraryId(spSeries),
-                        CustomTags = TagDataCustomTags(spSeries),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spSeries),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9273,7 +9275,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spMovie),
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
                         LibraryId = TagDataLibraryId(spMovie),
-                        CustomTags = TagDataCustomTags(spMovie),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spMovie),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9318,7 +9320,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeason),
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spSeason),
-                        CustomTags = TagDataCustomTags(spSeason),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spSeason),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,

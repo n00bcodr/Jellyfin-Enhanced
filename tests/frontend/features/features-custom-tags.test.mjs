@@ -170,6 +170,23 @@ test('the batch fallback copies go when the server copy is replaced (access or S
   assert.equal(hit('other'), false);
 });
 
+test('a Spoiler Guard stub without matches replaces the stored ones in the batch fallback', t => {
+  const h = setup(t);
+  const spec = h.renderer();
+  const fresh = () => {
+    h.JE.core.tagLayout.removeGroup(h.host, 'custom');
+    delete h.document.querySelector('.card').dataset.jeCustomTagged;
+  };
+  spec.render(h.host, { Id: 'item', Type: 'Episode', CustomTags: [ID.signed] }, {});
+  fresh();
+  // The server strips CustomTags from a guarded item's /tag-data stub, as it strips its genres.
+  spec.render(h.host, { Id: 'item', Type: 'Episode', Genres: [] }, {});
+  assert.deepEqual(h.labels(), []);
+  fresh();
+  assert.equal(spec.renderFromCache(h.host, 'item'), true, 'still a hit: nothing to fetch');
+  assert.deepEqual(h.labels(), []);
+});
+
 test('a label or icon edit applies to drawn rule ids at once, without new matches', t => {
   const h = setup(t);
   h.JE.pluginConfig = { ...h.JE.pluginConfig, CustomTagRules: [{ Id: ID.signed, Label: 'Autographed', Icon: 'favorite' }] };

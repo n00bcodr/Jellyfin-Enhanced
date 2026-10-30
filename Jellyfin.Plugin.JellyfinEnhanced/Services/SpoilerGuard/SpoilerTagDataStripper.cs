@@ -30,7 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The user's spoiler state the policy was built from (non-empty).</summary>
         public UserSpoilerBlur State { get; }
 
-        /// <summary>Strip genres, languages and stream data (SpoilerStripTags).</summary>
+        /// <summary>Strip genres, languages, stream data and Custom tag matches (SpoilerStripTags).</summary>
         public bool StripGenres { get; }
 
         /// <summary>Strip community/critic ratings and an Episode/Season's own age rating (SpoilerStripRatings).</summary>
@@ -243,7 +243,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var revisionKeys = guardedKinds.Keys.ToList();
             revisionKeys.Sort(StringComparer.Ordinal);
-            var fingerprint = $"naming2|g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
+            // "c1": the tag strip covers Custom tag matches too, so copies stored before it are replaced.
+            var fingerprint = $"naming2|c1|g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
 
             foreach (var kvp in items.ToList())
             {
@@ -439,6 +440,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 stripped.StreamData = null;
                 stripped.QualitySummary = null;
                 stripped.QualityEpisodeIds = null;
+                // Custom tag labels can be plot facts (a tag or collection naming a twist).
+                stripped.CustomTags = null;
             }
             // Latest policy reads its naming facts from the summary rather than StreamData.
             // Replace the shared summary before filtering; keep technical categories unchanged.

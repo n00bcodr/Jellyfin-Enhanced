@@ -14,7 +14,8 @@
 // ("collection:3f9a…"), so a label, icon or colour edit applies at once;
 // ids of rules that no longer exist are ignored. The public configuration
 // carries ids, labels and icons only: what a rule matches (the tooltip's
-// second line) is in the admin-only private configuration.
+// second line) is in the admin-only private configuration. Spoiler Guard's
+// tag strip removes the matches server side, like genres.
 (function(JE) {
     'use strict';
 
