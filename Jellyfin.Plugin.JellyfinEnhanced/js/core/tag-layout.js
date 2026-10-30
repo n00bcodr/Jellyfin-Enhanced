@@ -223,7 +223,11 @@
      * keeps corners with its position settings, arrival ordering, full labels
      * and the built-in limits — exactly what it showed before layouts existed —
      * whatever the administrator's new defaults are. A normalized document
-     * inherits each value it does not set: user → administrator → built-in.
+     * inherits each slot and cap it does not set: user → administrator →
+     * built-in. Its priority order is its own: without one, corners keeps
+     * arrival order and the other layouts use the default order (the
+     * administrator's order reaches users only through new-user seeding,
+     * "apply defaults to all users" and Reset, which copy it).
      * @param {Object} [settings] - Defaults to JE.currentSettings.
      * @param {Object} [plugin] - Defaults to JE.pluginConfig.
      * @returns {TagLayoutSettings}
@@ -261,8 +265,7 @@
 
         let order = null;
         if (!legacy) {
-            const chosen = readOrder(s.tagGroupOrder) || readOrder(pick(p, 'tagGroupOrder'))
-                || (layout === 'corners' ? null : DEFAULT_ORDER);
+            const chosen = readOrder(s.tagGroupOrder) || (layout === 'corners' ? null : DEFAULT_ORDER);
             if (chosen) order = chosen.concat(DEFAULT_ORDER.filter((g) => !chosen.includes(g)));
         }
 
@@ -274,6 +277,28 @@
         }
 
         return { layout, legacy, density, order, caps, profiles, slots: profiles[layout], indicatorGap };
+    }
+
+    /**
+     * Make a legacy document (no tagLayoutSettingsVersion) a normalized one
+     * without changing what it shows, before the first layout write: corners,
+     * full labels, the built-in limits as explicit caps (so the administrator's
+     * caps do not take over) and no order (arrival order). The position
+     * settings and any corners profile already read the same either way.
+     * Every caller that writes version 1 must call this first.
+     * @param {Object} [settings] - Defaults to JE.currentSettings; changed in place.
+     * @returns {boolean} True when the document was promoted.
+     */
+    function promoteLegacySettings(settings) {
+        const s = settings || JE.currentSettings;
+        if (!s || Number(s.tagLayoutSettingsVersion) >= 1) return false;
+        s.tagLayout = 'corners';
+        s.tagLabelDensity = 'full';
+        s.tagGroupCaps = { ...DEFAULT_CAPS };
+        s.tagGroupOrder = null;
+        s.tagLayoutSettingsVersion = 1;
+        if (s === JE.currentSettings) invalidateSettings();
+        return true;
     }
 
     /** @type {TagLayoutSettings|null} memoised until the next invalidateSettings() */
@@ -1025,6 +1050,7 @@
         buildStyles: null,
         normalizeGroup,
         normalizeSettings,
+        promoteLegacySettings,
         invalidateSettings,
         resolveLayout,
         ensureHost,

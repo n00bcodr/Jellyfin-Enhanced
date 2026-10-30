@@ -371,9 +371,11 @@
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // --- Tag layout and label density ---
         // Either choice promotes a document saved before layouts existed to the
-        // normalized version (its corners, positions and limits carry over),
-        // then every card is re-presented from the facts it already holds.
+        // normalized version (its corners, positions, arrival order, full labels
+        // and limits carry over, so only the chosen value changes), then every
+        // card is re-presented from the facts it already holds.
         const saveTagLayoutSetting = (key, value) => {
+            JE.core?.tagLayout?.promoteLegacySettings(JE.currentSettings);
             JE.currentSettings[key] = value;
             JE.currentSettings.tagLayoutSettingsVersion = 1;
             JE.saveUserSettings('settings.json', JE.currentSettings);

@@ -141,7 +141,7 @@ With **Hide Tags on Hover** off, genre names expand beside their icons on hover.
 ![Tag layout defaults on the configuration page: default layout and density, then one row per group with move buttons, a limit stepper and position pills](../images/tags/tag-layout-admin-defaults.webp)
 
 ??? info "Upgrades, defaults, and limits"
-    - Settings saved before layouts existed keep the **Corners** layout, your corner choices, the original stacking order and limits until you change something in the layout editor. Administrators' new layout defaults never change an existing user's view.
+    - Settings saved before layouts existed keep the **Corners** layout, your corner choices, full labels, the original stacking order and limits. Your first change in the layout editor changes only what you changed; everything else carries over. Administrators' new layout defaults never change an existing user's view.
     - The editor shows such settings in the default order; the order is saved the first time you move a group.
     - New users, and **Apply defaults to all users**, start from the administrator's layout defaults. A group hidden in the Corners layout on the configuration page reaches users the same way; the Position selects apply to everyone who has not picked a corner.
     - **Caption** needs a title block below the image. List rows and other cards without one show the caption groups in the poster's top-left stack instead. The caption strip has room for two rows of chips; lower-priority chips that do not fit are left out. Space for it is reserved as soon as a card appears so titles do not jump when the chips arrive.

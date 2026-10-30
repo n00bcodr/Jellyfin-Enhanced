@@ -249,7 +249,8 @@ synth('language-priority-strict-casing', { LanguageTagsEnabled: true }, {
 });
 
 // Tag layouts (native posters always draw corners): the corners profile's corner slots and
-// "off", the explicit priority order (stacking within a shared corner) and the per-group caps;
+// "off", the user's own priority order (stacking within a shared corner; the admin's order is
+// never inherited, only copied in by seeding) and the per-group caps (admin caps fill gaps);
 // a document from before layouts (version 0) ignores order and caps.
 const allBottomLeft = { QualityTagsPosition: 'bottom-left', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'bottom-left', AgeRatingTagsPosition: 'bottom-left', LanguageTagsPosition: 'bottom-left' };
 synth('layout-order-caps', {
@@ -261,7 +262,7 @@ synth('layout-corners-profile-off', {
     ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands',
     TagLayouts: { Corners: { Groups: [{ Group: 'genre', Slot: 'off' }, { Group: 'quality', Slot: 'br' }, { Group: 'rating', Slot: 'tr' }, { Group: 'agerating', Slot: 'bl' }] } },
 });
-synth('layout-admin-order-caps', { ...allOn, ...allBottomLeft, TagLayoutSettingsVersion: 1, TagLayout: 'corners' }, {
+synth('layout-admin-caps-not-order', { ...allOn, ...allBottomLeft, TagLayoutSettingsVersion: 1, TagLayout: 'corners' }, {
     TagGroupOrder: ['ageRating', 'genre', 'quality'], TagGroupCaps: { Genre: 0, Language: 0, Quality: 3 },
 });
 synth('layout-legacy-ignores-order', {

@@ -80,16 +80,46 @@ public class PosterLayoutTests
     }
 
     [Fact]
-    public void Admin_order_applies_when_the_user_has_none_but_not_to_a_document_from_before_layouts()
+    public void Admin_order_is_never_inherited_only_an_own_order_restacks()
     {
+        // The admin order reaches users only by being copied in (new-user seeding, apply to all, Reset).
         var config = new PluginConfiguration { TagGroupOrder = ["ageRating", "genre"] };
+        var arrival = new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Language };
         var normalized = PosterTagResolver.Resolve(Entry(), Settings("{" + AllOn + "," + AllBottomLeft + ",tagLayoutSettingsVersion:1}", config), Context(), false)!;
-        Assert.Equal(PosterTagGroup.AgeRating, normalized.Groups[0].Group);
-        Assert.Equal(PosterTagGroup.Genre, normalized.Groups[1].Group);
+        Assert.Equal(arrival, normalized.Groups.Select(g => g.Group));
 
         var legacy = PosterTagResolver.Resolve(Entry(), Settings("{" + AllOn + "," + AllBottomLeft + ",tagGroupOrder:['language']}", config), Context(), false)!;
-        Assert.Equal(new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Language }, legacy.Groups.Select(g => g.Group));
-        Assert.Null(Settings("{tagLayoutSettingsVersion:1}").GroupOrder);
+        Assert.Equal(arrival, legacy.Groups.Select(g => g.Group));
+        Assert.Null(Settings("{tagLayoutSettingsVersion:1}", config).GroupOrder);
+    }
+
+    /// <summary>What a poster draws, group by group: its corner and its tags, in stacking order.</summary>
+    private static List<string> Drawn(PosterTagLayout layout) =>
+        layout.Groups.Select(g => $"{g.Group}@{g.Corner}: {string.Join(" | ", g.Tags.Select(t => t.ToString()))}").ToList();
+
+    /// <summary>
+    /// A version-0 document whose groups share corners, and the same document after the web's first
+    /// layout edit promoted it (core/tag-layout.js promoteLegacySettings: corners, full labels, the
+    /// legacy limits as explicit caps, no order) plus that one edit.
+    /// </summary>
+    private const string LegacyDoc = AllOn + ",qualityTagsPosition:'bottom-left',languageTagsPosition:'bottom-left',ratingTagsPosition:'bottom-left',genreTagsPosition:'top-right',ageRatingTagsPosition:'bottom-right'";
+    private const string Promoted = ",tagLayoutSettingsVersion:1,tagLayout:'corners',tagLabelDensity:'full',tagGroupOrder:null";
+    private const string LegacyCaps = "quality:0,genre:3,language:3,rating:0,ageRating:1,status:1";
+
+    [Theory]
+    [InlineData(",ageRatingTagsPosition:'top-left',tagGroupCaps:{" + LegacyCaps + "},tagLayouts:{corners:{groups:[{group:'ageRating',slot:'tl'}]}}", PosterTagGroup.AgeRating)]
+    [InlineData(",tagGroupCaps:{quality:0,genre:2,language:3,rating:0,ageRating:1,status:1}", PosterTagGroup.Genre)]
+    [InlineData(",tagLabelDensity:'compact',tagGroupCaps:{" + LegacyCaps + "}", null)]
+    public void Promoting_a_document_from_before_layouts_changes_only_the_edited_group(string edit, PosterTagGroup? changed)
+    {
+        // Admin defaults that would restack and cap every shared corner if they leaked in.
+        var config = new PluginConfiguration { TagGroupOrder = ["genre", "rating"], TagGroupCaps = new TagGroupCaps { Quality = 1, Language = 1 }, TagLayout = "bands", TagLabelDensity = "compact" };
+        var before = Drawn(PosterTagResolver.Resolve(Entry(), Settings("{" + LegacyDoc + "}", config), Context(), false)!);
+        var after = Drawn(PosterTagResolver.Resolve(Entry(), Settings("{" + LegacyDoc + Promoted + edit + "}", config), Context(), false)!);
+
+        var name = changed?.ToString() + "@";
+        Assert.Equal(before.Where(d => changed is null || !d.StartsWith(name, StringComparison.Ordinal)), after.Where(d => changed is null || !d.StartsWith(name, StringComparison.Ordinal)));
+        if (changed is not null) Assert.NotEqual(before.Single(d => d.StartsWith(name, StringComparison.Ordinal)), after.Single(d => d.StartsWith(name, StringComparison.Ordinal)));
     }
 
     [Fact]

@@ -496,8 +496,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// the corners layout, with full labels, whatever the web layout is): the user's own corners
         /// profile (a corner slot overrides the position setting, "off" hides the group; the
         /// administrator's corners profile never applies, the position settings stand for it), the
-        /// explicit priority order and the caps. A document from before layouts (version 0) keeps
-        /// arrival order and the built-in caps.
+        /// user's own priority order and the caps. Without an own order the groups keep arrival order
+        /// (the administrator's order reaches users only by being copied in: new-user seeding, "apply
+        /// defaults to all users", Reset), so a document promoted from before layouts never picks it
+        /// up. A document from before layouts (version 0) keeps arrival order and the built-in caps.
         /// </summary>
         private static NativeLayout ResolveLayout(JellyfinEnhancedUserSettings user, PluginConfiguration config)
         {
@@ -513,7 +515,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
 
             List<PosterTagGroup>? order = null;
-            var explicitOrder = legacy ? null : TagLayoutRules.NormalizeOrder(user.TagGroupOrder) ?? TagLayoutRules.NormalizeOrder(config.TagGroupOrder);
+            var explicitOrder = legacy ? null : TagLayoutRules.NormalizeOrder(user.TagGroupOrder);
             if (explicitOrder is not null)
             {
                 // Complete the order as the web does (missing groups follow in the default order),

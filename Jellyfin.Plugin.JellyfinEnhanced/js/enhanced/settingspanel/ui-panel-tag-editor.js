@@ -393,11 +393,18 @@
     // ── Writes ─────────────────────────────────────────────────────────
 
     /**
-     * Save the document as a normalized layout document (version 1) and
-     * re-present every card.
+     * Before the first layout write, turn a legacy document into a normalized
+     * one that still shows exactly what it showed (core/tag-layout.js
+     * promoteLegacySettings), so one edit changes only what it edits.
+     */
+    function promote() {
+        layoutApi().promoteLegacySettings(JE.currentSettings);
+    }
+
+    /**
+     * Save the (already promoted) layout document and re-present every card.
      */
     function saveLayout() {
-        JE.currentSettings.tagLayoutSettingsVersion = 1;
         layoutApi().invalidateSettings();
         JE.saveUserSettings('settings.json', JE.currentSettings);
         if (typeof JE.reinitializeTagLayout === 'function') JE.reinitializeTagLayout();
@@ -412,6 +419,7 @@
      */
     function writeSlot(layout, group, slot) {
         const L = layoutApi();
+        promote();
         const profiles = JE.currentSettings.tagLayouts && typeof JE.currentSettings.tagLayouts === 'object'
             ? { ...JE.currentSettings.tagLayouts } : {};
         const pascal = layout.charAt(0).toUpperCase() + layout.slice(1);
@@ -434,6 +442,7 @@
      * @param {number} cap
      */
     function writeCap(group, cap) {
+        promote();
         const caps = {};
         const own = JE.currentSettings.tagGroupCaps;
         if (own && typeof own === 'object') {
@@ -487,6 +496,7 @@
         JE.currentSettings.tagLayouts = copy(p.TagLayouts);
         JE.currentSettings.tagGroupOrder = Array.isArray(p.TagGroupOrder) ? p.TagGroupOrder.slice() : null;
         JE.currentSettings.tagGroupCaps = copy(p.TagGroupCaps);
+        JE.currentSettings.tagLayoutSettingsVersion = 1;
         for (const pos of Object.values(L.POSITION_SETTINGS)) {
             JE.currentSettings[pos.userKey] = p[pos.pluginKey] || pos.fallback;
         }
@@ -752,6 +762,7 @@
                 const to = from + (move.dataset.dir === 'up' ? -1 : 1);
                 if (from < 0 || to < 0 || to >= order.length) return;
                 order.splice(to, 0, order.splice(from, 1)[0]);
+                promote();
                 JE.currentSettings.tagGroupOrder = order;
                 saveLayout();
                 sync();
