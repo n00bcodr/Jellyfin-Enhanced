@@ -85,7 +85,7 @@
     let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
-    let requestQueue = [];               // { el, itemId, itemType }
+    let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId }
 
     // ── Pipeline-level exclusions ─────────────────────────────────────
     // Elements matching these selectors are skipped before any renderer runs.
@@ -1022,8 +1022,12 @@
     function renderCard(card, serverEntry, hosts) {
         const { el, itemId, itemType } = card;
         const renderTarget = resolveRenderTarget(el);
+        const layout = JE.core.tagLayout;
         // Tag look rules match on the entry (library, genres, age rating).
-        if (serverEntry) JE.core.tagLayout?.setCardContext?.(renderTarget, serverEntry, itemId);
+        // The card's identity travels with a queued fetch, so an answer for
+        // an item the card no longer shows is dropped.
+        const cardId = layout?.cardIdentity?.(renderTarget) ?? '';
+        if (serverEntry) layout?.setCardContext?.(renderTarget, serverEntry, itemId, cardId);
         // Caption layout: reserve the strip below the image now, before the
         // tag data (possibly a batch fetch away) arrives.
         JE.core.tagLayout?.prepareCard(renderTarget);
@@ -1053,7 +1057,7 @@
         hosts.push(renderTarget);
 
         if (!allCacheHits) {
-            requestQueue.push({ el, renderTarget, itemId, itemType });
+            requestQueue.push({ el, renderTarget, itemId, itemType, cardId });
         }
     }
 
@@ -1291,7 +1295,7 @@
 
     /**
      * Fetch item data for a batch of cards and fan out to all enabled renderers.
-     * @param {Array<{el: HTMLElement, renderTarget: HTMLElement, itemId: string, itemType: string}>} batch - Queued card entries.
+     * @param {Array<{el: HTMLElement, renderTarget: HTMLElement, itemId: string, itemType: string, cardId: string}>} batch - Queued card entries.
      * @param {number} generation - Batch generation counter to detect stale navigations.
      * @returns {Promise<void>}
      */
@@ -1406,7 +1410,8 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
-                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId);
+                    // Dropped by the layout when the card shows another item by now.
+                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, entry.cardId);
                     for (const [name, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;
                         try {
@@ -1464,7 +1469,7 @@
         } catch (err) {
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
-            for (const { el, renderTarget: queuedRenderTarget, itemId } of batch) {
+            for (const { el, renderTarget: queuedRenderTarget, itemId, cardId } of batch) {
                 if (generation !== batchGeneration) break; // navigation or user switch
                 try {
                     const item = JE.helpers?.getItemCached
@@ -1481,7 +1486,7 @@
                         renderTarget = resolveRenderTarget(el);
                     }
                     const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
-                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId);
+                    JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, cardId);
 
                     for (const [, renderer] of renderers) {
                         if (!renderer.isEnabled()) continue;

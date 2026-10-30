@@ -250,3 +250,32 @@ test('a document from before layouts ignores the admin default rules but keeps i
   own.render();
   assert.equal(own.layoutOf(MOVIE), 'minimal');
 });
+
+test('a late answer for the item a reused card showed before never overwrites the item it shows now', t => {
+  const h = setup(t, { settings: { tagLookRules: [rule([{ field: 'library', value: KIDS_LIB }], 'bands')] } });
+  const host = h.hostOf(MOVIE);
+  // The pipeline asks for MOVIE's data and captures the card's identity.
+  const askedFor = h.layout.cardIdentity(host);
+  assert.equal(askedFor, MOVIE);
+  // Meanwhile the virtualised card is reused for OTHER, whose data arrives first.
+  h.document.querySelector('.card').setAttribute('data-id', OTHER);
+  h.render(OTHER, entry({ LibraryId: MOVIES_LIB }));
+  assert.equal(h.layoutOf(OTHER), 'corners');
+  // MOVIE's (kids library) answer lands late: dropped, OTHER keeps its facts.
+  assert.equal(h.layout.setCardContext(host, entry({ LibraryId: KIDS_LIB }), MOVIE, askedFor), false);
+  assert.equal(h.layoutOf(OTHER), 'corners');
+  assert.equal(h.layout.resolveLayout(host).layout, 'corners');
+  // Its own (late) answer still applies.
+  assert.equal(h.layout.setCardContext(host, entry({ LibraryId: KIDS_LIB }), OTHER, OTHER), true);
+  assert.equal(h.layoutOf(OTHER), 'bands');
+});
+
+test('the card identity is the item the card shows, not the artwork it borrows', t => {
+  const html = card(EPISODE, 'Episode').replace(`Items/${EPISODE}/Images`, `Items/${SERIES}/Images`);
+  const h = setup(t, { html, settings: { tagLookRules: [rule([{ field: 'library', value: KIDS_LIB }], 'bands')] } });
+  const host = h.hostOf(EPISODE);
+  assert.equal(h.layout.cardIdentity(host), EPISODE);
+  // The pipeline resolved the series artwork id; the data is still the episode card's.
+  assert.equal(h.layout.setCardContext(host, entry({ Type: 'Episode', LibraryId: KIDS_LIB }), SERIES, EPISODE), true);
+  assert.equal(h.layout.resolveLayout(host).layout, 'bands');
+});

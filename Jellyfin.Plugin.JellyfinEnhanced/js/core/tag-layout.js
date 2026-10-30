@@ -531,22 +531,42 @@
     }
 
     /**
+     * The identity of the item a card shows (its data-id), to capture when
+     * the card's item data is requested and hand back with setCardContext.
+     * Distinct from the artwork id the pipeline resolves, which can name the
+     * series an episode card borrows its image from.
+     * @param {HTMLElement} target - Render target.
+     * @returns {string}
+     */
+    function cardIdentity(target) {
+        return target ? identityOf(findHost(target) || target) : '';
+    }
+
+    /**
      * Record what the item data says about a card (type, genres, rating,
      * library, series) so rules can match it, and re-present the card if its
      * look changes. The pipeline calls this before rendering a card from a
-     * server-cache entry or a fetched item.
+     * server-cache entry or a fetched item. Data for a
+     * card that shows another item by now (a reused virtualised card) is
+     * dropped.
      * @param {HTMLElement} target - Render target.
      * @param {Object} entry - Tag-cache entry or /tag-data item.
      * @param {string} itemId - The id the pipeline resolved for the card.
+     * @param {string} [cardId] - cardIdentity() when the data was requested;
+     *   omitted, the card's identity now.
+     * @returns {boolean} False when the data was dropped.
      */
-    function setCardContext(target, entry, itemId) {
-        if (!target || !entry) return;
+    function setCardContext(target, entry, itemId, cardId) {
+        if (!target || !entry) return false;
         const host = findHost(target) || target;
-        cardData.set(host, { entry, itemId, cardId: identityOf(host) });
+        const current = identityOf(host);
+        if (cardId !== undefined && cardId !== null && cardId !== current) return false;
+        cardData.set(host, { entry, itemId, cardId: current });
         const ctrl = controllers.get(host);
-        if (!ctrl || !ctrl.host.isConnected || !ctrl.groups.size) return;
+        if (!ctrl || !ctrl.host.isConnected || !ctrl.groups.size) return true;
         const looks = currentLooks();
         if ((looks.rules.length || looks.locks.size) && resolveLayout(ctrl).lookKey !== ctrl.lookKey) presentAll(ctrl);
+        return true;
     }
 
     // ── Representations ────────────────────────────────────────────────
@@ -1148,6 +1168,7 @@
         invalidateSettings,
         resolveLayout,
         setCardContext,
+        cardIdentity,
         ensureHost,
         commitGroup,
         removeGroup,
