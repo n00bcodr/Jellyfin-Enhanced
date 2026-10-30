@@ -241,6 +241,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return label;
         }
 
+        /// <summary>The category key of a quality label (composite labels by their base), or <see cref="Other"/>.</summary>
+        /// <param name="label">A quality label.</param>
+        /// <returns>The category key.</returns>
+        internal static string CategoryOf(string label)
+        {
+            var index = CategoryIndex(label);
+            return index < 0 ? Other : Categories[index].Key;
+        }
+
         private static int CategoryIndex(string label)
         {
             var normalized = NormalizeLabel(label);

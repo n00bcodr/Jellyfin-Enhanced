@@ -388,6 +388,24 @@
                                 </div>
                             </div>`;
                             })()}
+                            ${(() => {
+                                // Tag Styles: user presets. Only while the admin lets users pick
+                                // one; the empty value follows the admin's preset.
+                                if (!JE.pluginConfig?.TagStylesAllowUserPreset) return '';
+                                const presets = JE.tagStyles?.PRESETS || ['default', 'glass', 'outline', 'dark', 'light', 'mono'];
+                                const mine = presets.includes(JE.currentSettings.tagStylePreset) ? JE.currentSettings.tagStylePreset : '';
+                                const server = presets.includes(JE.pluginConfig.TagStylePreset) ? JE.pluginConfig.TagStylePreset : 'default';
+                                const selectStyle = `width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;`;
+                                return `
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
+                                <label for="tagStylePresetSelect" style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_tag_style_preset'))}</label>
+                                <div id="tagStylePresetDesc" style="font-size:12px; color:rgba(255,255,255,0.6); margin:2px 0 8px;">${escapeHtml(JE.t('panel_settings_ui_tag_style_preset_desc'))}</div>
+                                <select id="tagStylePresetSelect" aria-describedby="tagStylePresetDesc" style="${selectStyle}">
+                                    <option value="" ${mine === '' ? 'selected' : ''}>${escapeHtml(JE.t('panel_settings_ui_tag_style_preset_server', { preset: JE.t(`panel_settings_ui_tag_style_preset_${server}`) }))}</option>
+                                    ${presets.map((id) => `<option value="${id}" ${mine === id ? 'selected' : ''}>${escapeHtml(JE.t(`panel_settings_ui_tag_style_preset_${id}`))}</option>`).join('')}
+                                </select>
+                            </div>`;
+                            })()}
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
                                     <div style="display: flex; align-items: center; gap: 12px;">

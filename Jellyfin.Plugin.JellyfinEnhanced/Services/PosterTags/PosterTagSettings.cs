@@ -62,7 +62,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public string Digest { get; private init; } = string.Empty;
 
-        /// <summary>The admin's colour overrides for native posters (empty unless the target includes native clients).</summary>
+        /// <summary>The Tag Styles for native posters, with the user's own preset when allowed (empty unless the target includes native clients).</summary>
         public TagStyleSet Styles { get; private init; } = TagStyleSet.Empty;
 
         /// <summary>Effective <c>qualityTagsEnabled</c>.</summary>
@@ -334,7 +334,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowUserReviews = config.ShowUserReviews,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,
-                Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both" ? TagStyleSet.Parse(config.TagStyleOverrides) : TagStyleSet.Empty,
+                Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both"
+                    ? TagStyleSet.Parse(config.TagStyleOverrides, config.TagStylePreset).ForUser(user.TagStylePreset, config.TagStylesAllowUserPreset)
+                    : TagStyleSet.Empty,
             };
 
             return settings with { Digest = settings.ComputeDigest() };

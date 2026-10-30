@@ -1226,27 +1226,52 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return false;
         }
 
-        /// <summary>Tag colour overrides for the Jellyfin Web overlays (empty unless the target includes web).</summary>
+        /// <summary>
+        /// Effective Tag Styles for the Jellyfin Web overlays (empty unless the target includes web). <paramref name="preset"/>
+        /// is the caller's own preset, honoured only while the admin lets users pick one.
+        /// </summary>
+        /// <param name="preset">The user's preset id, or null for the admin's.</param>
+        /// <returns>The web model of <see cref="TagStyleSet.ToWebModel"/>.</returns>
         [HttpGet("tag-styles")]
         [Authorize]
-        public ActionResult GetTagStyles()
+        public ActionResult GetTagStyles([FromQuery] string? preset = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null) return StatusCode(503);
-            var set = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both" ? TagStyleSet.Parse(config.TagStyleOverrides) : TagStyleSet.Empty;
+            var set = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both"
+                ? TagStyleSet.Parse(config.TagStyleOverrides, config.TagStylePreset).ForUser(preset, config.TagStylesAllowUserPreset)
+                : TagStyleSet.Empty;
             return new JsonResult(set.ToWebModel());
         }
 
-        /// <summary>The shipped default tag colours the config page's style editor starts from.</summary>
+        /// <summary>
+        /// What the config page's style editor draws from: the shipped default colours, every group's labels and
+        /// each preset's palette (resolved to concrete colours, with the WCAG contrast of text over background).
+        /// </summary>
+        /// <returns>The catalog.</returns>
         [HttpGet("tag-styles/catalog")]
         [Authorize]
         public ActionResult GetTagStyleCatalog()
         {
             if (!IsAdminUser()) return Forbid();
+            static object Web(TagColors c) => new { background = c.Background, border = c.Border, color = c.Text };
+            var groups = TagStyleKeys.Groups.ToDictionary(
+                g => g,
+                g => TagStyleCatalog.Labels(g).Select(l => new { key = l.Key, name = l.Name }).ToList(),
+                StringComparer.Ordinal);
+            var palettes = TagStyleKeys.Presets.ToDictionary(
+                p => p,
+                p => TagStyleKeys.Groups
+                    .SelectMany(g => TagStyleCatalog.Labels(g).Select(l => (Key: g + ":" + l.Key, Colors: TagStylePalettes.Concrete(p, g, l.Key))))
+                    .ToDictionary(e => e.Key, e => Web(e.Colors), StringComparer.Ordinal),
+                StringComparer.Ordinal);
             return new JsonResult(new
             {
                 quality = TagStyleCatalog.Quality.Select(q => new { label = q.Label, background = q.Background, color = q.Text }),
-                age = TagStyleCatalog.AgeGroups.Select(g => new { id = g.Id, background = g.Background, border = g.Border, color = g.Text, ratings = g.Ratings }),
+                age = TagStyleCatalog.AgeGroups.Select(g => new { id = g.Id, background = g.Background, border = g.Border, color = g.Text, ratings = g.Ratings, sample = g.Sample }),
+                presets = TagStyleKeys.Presets,
+                groups,
+                palettes,
             });
         }
 
@@ -3710,7 +3735,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.PauseScreenDelaySeconds,
                 config.ShowPlaybackRatingBadge,
                 config.NativePosterTagsEnabled,
-                TagStyleWebActive = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both" && !TagStyleSet.Parse(config.TagStyleOverrides).IsEmpty,
+                TagStyleWebActive = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both"
+                    && (config.TagStylesAllowUserPreset || !TagStyleSet.Parse(config.TagStyleOverrides, config.TagStylePreset).IsEmpty),
+                // Tag Styles: user presets
+                TagStylesAllowUserPreset = config.TagStylesEnabled && config.TagStylesAllowUserPreset,
+                TagStylePreset = TagStyleKeys.NormalizePreset(config.TagStylePreset),
                 config.QualityTagsEnabled,
                 config.ShowResolutionTag,
                 config.ShowSourceTag,
@@ -5242,6 +5271,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                         StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
                         StatusTagsTrending = defaultConfig.StatusTagsTrending,
+                        // Tag Styles preset: null follows the admin's preset.
+                        TagStylePreset = null,
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -5325,6 +5356,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Unknown layouts, groups and slots are normalized away and caps
                 // clamped, so a stale client cannot store an unusable layout.
                 TagLayoutRules.Normalize(userConfiguration);
+                // An unknown Tag Styles preset follows the admin's instead.
+                userConfiguration.TagStylePreset = TagStyleKeys.KnownPreset(userConfiguration.TagStylePreset);
 
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
@@ -8244,6 +8277,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                 StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
                 StatusTagsTrending = defaultConfig.StatusTagsTrending,
+                // Tag Styles preset: null follows the admin's preset.
+                TagStylePreset = null,
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,

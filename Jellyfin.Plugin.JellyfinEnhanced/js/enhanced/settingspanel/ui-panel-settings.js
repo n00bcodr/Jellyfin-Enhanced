@@ -383,6 +383,18 @@
         document.getElementById('tagLayoutSelect')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLayout', e.target.value));
         document.getElementById('tagLabelDensitySelect')?.addEventListener('change', (e) => saveTagLayoutSetting('tagLabelDensity', e.target.value));
 
+        // --- Tag Styles: user presets ---
+        // The empty choice stores null (follow the admin's preset); the web
+        // stylesheet is re-fetched right away, native posters pick the change
+        // up through the per-user settings digest.
+        document.getElementById('tagStylePresetSelect')?.addEventListener('change', (e) => {
+            JE.currentSettings.tagStylePreset = e.target.value || null;
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            if (typeof JE.initializeTagStyles === 'function') JE.initializeTagStyles();
+            JE.toast(JE.t('toast_tag_style_preset_updated'));
+            resetAutoCloseTimer();
+        });
+
         // Live-toggle the body class so hover fade CSS applies immediately (no refresh needed)
         const hideOnHoverCheckbox = document.getElementById('tagsHideOnHoverToggle');
         if (hideOnHoverCheckbox) {

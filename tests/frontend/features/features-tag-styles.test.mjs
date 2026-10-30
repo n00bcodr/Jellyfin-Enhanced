@@ -1,0 +1,156 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHarness, deferred } from '../helpers/harness.mjs';
+
+const c = (background, border, color) => ({ background, border, color });
+// Controls wireSettingsListeners expects (as the panel template renders them).
+const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
+  'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
+  'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
+  'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
+  'disableCustomSubtitleStyles', 'longPress2xEnabled', 'nativePosterTagsToggle', 'randomIncludeMovies', 'randomIncludeShows'];
+
+/** tag-styles.js with ui-kit's injectCss and a captured tag-styles endpoint. */
+function setup(t, { pluginConfig = {}, currentSettings = {}, respond } = {}) {
+  const requests = [];
+  const h = createHarness({
+    JE: { pluginConfig: { TagStyleWebActive: true, ...pluginConfig }, currentSettings, t: key => key },
+    apiClient: {
+      getUrl: (path, params) => `http://jellyfin.test/${path}${params ? `?${new URLSearchParams(params)}` : ''}`,
+      ajax: async request => { requests.push(request.url); return respond ? respond(request.url) : {}; }
+    }
+  });
+  t.after(() => h.close());
+  h.load('core/ui-kit.js');
+  h.load('tags/tag-styles.js');
+  const css = () => h.document.getElementById('je-tag-style-overrides')?.textContent ?? '';
+  return { ...h, requests, css };
+}
+
+test('group and label rules cover every chip group, status and language included', async t => {
+  const h = setup(t, { respond: () => ({
+    quality: { '*': c('rgba(255, 0, 0, 1)', null, null), '4K': c('rgba(255, 0, 0, 1)', null, 'rgba(0, 0, 255, 1)') },
+    age: [{ ratings: ['PG-13', 'TV-14'], ...c('rgba(1, 2, 3, 1)', null, null) }],
+    ageDefault: c('rgba(9, 9, 9, 1)', null, null),
+    rating: { community: c(null, 'rgba(255, 255, 255, 0.35)', 'rgba(255, 209, 102, 1)'), userReview: c(null, null, 'rgba(1, 1, 1, 1)') },
+    genre: c(null, 'rgba(4, 4, 4, 1)', null),
+    status: { trending: c(null, null, 'rgba(0, 255, 0, 1)'), added: c('rgba(5, 5, 5, 1)', null, null) },
+    language: c(null, 'rgba(255, 255, 255, 0.6)', null)
+  }) });
+  await h.JE.initializeTagStyles();
+  const css = h.css();
+  assert.match(css, /\.quality-overlay-label \{ background: rgba\(255, 0, 0, 1\) !important; \}/, 'the group-wide "*" rule');
+  assert.match(css, /\.quality-overlay-label\[data-quality="4K"\] \{ background: rgba\(255, 0, 0, 1\) !important;color: rgba\(0, 0, 255, 1\) !important; \}/);
+  assert.match(css, /\.age-rating-tag\[rating="PG-13"\], \.age-rating-overlay-container \.age-rating-tag\[rating="TV-14"\] \{ background-color: rgba\(1, 2, 3, 1\)/);
+  assert.match(css, /\.age-rating-overlay-container\.age-rating-overlay-container \.age-rating-tag \{ background-color: rgba\(9, 9, 9, 1\)/);
+  assert.match(css, /\.rating-tag-tmdb \{ color: rgba\(255, 209, 102, 1\) !important;outline: 1px solid rgba\(255, 255, 255, 0\.35\) !important; outline-offset: -1px !important; \}/,
+    'rating chips take the border as an inner ring');
+  assert.match(css, /\.rating-tag-tmdb \.rating-star-icon \{ color: rgba\(255, 209, 102, 1\)/);
+  assert.match(css, /\.rating-tag-userreview \.je-userreview-icon \{ color: rgba\(1, 1, 1, 1\)/);
+  assert.doesNotMatch(css, /rating-tag-critic/, 'chips without styles get no rule');
+  assert.match(css, /\.genre-tag \{ border-color: rgba\(4, 4, 4, 1\)/);
+  assert.match(css, /\.status-tag\[data-je-status="trending"\] \{ color: rgba\(0, 255, 0, 1\) !important; \}/);
+  assert.match(css, /\.status-tag\[data-je-status="trending"\] \.status-tag-rank \{ color: rgba\(0, 255, 0, 1\)/);
+  assert.match(css, /\.status-tag\[data-je-status="added"\] \{ background-color: rgba\(5, 5, 5, 1\)/);
+  assert.match(css, /\.language-flag:not\(\.language-flag-partial\) \{ outline: 1px solid rgba\(255, 255, 255, 0\.6\)/,
+    'partial dubs keep their dashed outline');
+
+  // The rules really reach the chips the renderers draw.
+  h.document.body.insertAdjacentHTML('beforeend', '<div class="status-overlay-container"><div class="status-tag status-tag--trending" data-je-status="trending">#1</div></div>');
+  assert.equal(h.window.getComputedStyle(h.document.querySelector('.status-tag')).color, 'rgb(0, 255, 0)');
+});
+
+test('nothing but a colour reaches the stylesheet', async t => {
+  const evil = 'red; } body { display: none } .x {';
+  const h = setup(t, { respond: () => ({
+    quality: { '4K"] , body, [x="': c('rgba(1, 1, 1, 1)', null, null), HDR: c(evil, 'url(javascript:alert(1))', 'rgba(1,1,1,1) !important; x: y') },
+    age: [{ ratings: ['PG"]{} body{display:none} x["'], ...c(evil, null, null) }],
+    rating: { critic: c(null, evil, null) },
+    status: { trending: c(evil, null, null), '<script>': c('rgba(1, 1, 1, 1)', null, null) },
+    language: c(null, evil, null)
+  }) });
+  await h.JE.initializeTagStyles();
+  const css = h.css();
+  assert.doesNotMatch(css, /display: none|javascript|x: y|<script>/);
+  assert.match(css, /\[data-quality="4K\\"\] , body, \[x=\\""\]/, 'quotes in a label stay inside the attribute string');
+  assert.doesNotMatch(css, /HDR/, 'a chip whose every value is rejected gets no rule');
+  const sheet = h.document.getElementById('je-tag-style-overrides').sheet;
+  assert.ok(sheet.cssRules.length >= 1);
+  for (const rule of sheet.cssRules) assert.doesNotMatch(rule.selectorText, /^body$/);
+});
+
+test('an empty model removes the stylesheet', async t => {
+  let model = { genre: c('rgba(1, 1, 1, 1)', null, null) };
+  const h = setup(t, { respond: () => model });
+  await h.JE.initializeTagStyles();
+  assert.notEqual(h.css(), '');
+  model = { quality: {}, age: [], rating: {}, status: {} };
+  await h.JE.initializeTagStyles();
+  assert.equal(h.document.getElementById('je-tag-style-overrides'), null);
+});
+
+test('the user preset is sent only while the admin allows it, and the latest answer wins', async t => {
+  const answers = [];
+  const h = setup(t, {
+    pluginConfig: { TagStylesAllowUserPreset: true },
+    currentSettings: { tagStylePreset: 'light' },
+    respond: () => { const d = deferred(); answers.push(d); return d.promise; }
+  });
+  const first = h.JE.initializeTagStyles();
+  h.JE.currentSettings.tagStylePreset = 'mono';
+  const second = h.JE.initializeTagStyles();
+  assert.deepEqual(h.requests, ['http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=light', 'http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=mono']);
+  answers[1].resolve({ genre: c('rgba(2, 2, 2, 1)', null, null) });
+  await second;
+  answers[0].resolve({ genre: c('rgba(1, 1, 1, 1)', null, null) });
+  await first;
+  assert.match(h.css(), /rgba\(2, 2, 2, 1\)/, 'a slower earlier answer cannot overwrite the newer preset');
+
+  h.JE.pluginConfig.TagStylesAllowUserPreset = false;
+  h.JE.initializeTagStyles();
+  h.JE.currentSettings.tagStylePreset = 'neon';
+  h.JE.pluginConfig.TagStylesAllowUserPreset = true;
+  h.JE.initializeTagStyles();
+  assert.deepEqual(h.requests.slice(2), ['http://jellyfin.test/JellyfinEnhanced/tag-styles', 'http://jellyfin.test/JellyfinEnhanced/tag-styles']);
+  answers[2].resolve({}); answers[3].resolve({});
+});
+
+test('a user switch re-applies the incoming user\'s preset', async t => {
+  const h = setup(t, { pluginConfig: { TagStylesAllowUserPreset: true }, currentSettings: { tagStylePreset: 'glass' }, respond: () => ({}) });
+  await h.JE.initializeTagStyles();
+  h.JE.currentSettings = { tagStylePreset: 'dark' };
+  h.document.dispatchEvent(new h.window.CustomEvent('je:user-data-loaded', { detail: {} }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.requests.at(-1), 'http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=dark');
+});
+
+test('the settings panel preset select saves the choice and re-applies the styles', async t => {
+  const writes = [], toasts = [];
+  const h = createHarness({
+    html: toggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button>'
+      + '<select id="tagStylePresetSelect"><option value="">server</option><option value="mono">mono</option></select>',
+    JE: { pluginConfig: { TagStylesAllowUserPreset: true }, userConfig: { settings: {}, shortcuts: { Shortcuts: [] } }, currentSettings: {}, t: key => key, toast: m => toasts.push(m) },
+    apiClient: { ajax: async request => { writes.push(request); } }
+  });
+  t.after(() => h.close());
+  h.load('core/ui-kit.js'); h.load('core/tag-renderer-base.js'); h.load('core/tag-layout.js');
+  h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
+  assert.equal(h.JE.currentSettings.tagStylePreset, null, 'no preset of their own: follow the admin');
+  h.JE.toast = m => toasts.push(m);
+  let applied = 0; h.JE.initializeTagStyles = () => { applied++; };
+  h.load('enhanced/settingspanel/ui-panel-settings.js');
+  const ctx = { createToast: () => '', resetAutoCloseTimer() {}, help: h.document.body, primaryAccentColor: '#fff' };
+  h.JE.internals.enhancedUi.wireSettingsListeners(ctx);
+  const select = h.document.getElementById('tagStylePresetSelect');
+  select.value = 'mono';
+  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(JSON.parse(writes.at(-1).data).tagStylePreset, 'mono');
+  assert.equal(applied, 1);
+  assert.equal(toasts.at(-1), 'toast_tag_style_preset_updated');
+  select.value = '';
+  select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(JSON.parse(writes.at(-1).data).tagStylePreset, null, 'back to the admin\'s preset');
+  assert.equal(applied, 2);
+});

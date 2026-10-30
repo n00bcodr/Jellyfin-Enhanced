@@ -102,6 +102,9 @@ test('a replacement cache swapped in under the cards reinitializes the status ba
   renderer.render(h.hosts[1], { Id: 's1', Type: 'Season', DateCreated: h.window.Date.now() - 400 * 24 * 60 * MINUTE, LatestEpisodeAdded: h.window.Date.now() - 60 * MINUTE });
   assert.equal(h.badge(h.hosts[0]), '#3 Today');
   assert.equal(h.badge(h.hosts[1]), 'New Episode');
+  // Tag Styles target each badge kind through data-je-status.
+  assert.equal(h.hosts[0].querySelector('.status-tag').dataset.jeStatus, 'trending');
+  assert.equal(h.hosts[1].querySelector('.status-tag').dataset.jeStatus, 'newEpisode');
   renderer.onServerCacheRefresh(null, { replaced: true });
   assert.equal(h.badge(h.hosts[0]), null, 'every status overlay is removed');
   assert.equal(h.badge(h.hosts[1]), null);
