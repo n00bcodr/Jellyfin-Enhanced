@@ -61,7 +61,17 @@ async function prepare(page, style, slot) {
     const host = JE.core.tagLayout.ensureHost(card.querySelector('.cardScalable'));
     for (const group of JE.core.tagLayout.GROUPS) JE.core.tagLayout.removeGroup(host, group);
     const facts = { audio: style === 'badge' ? ['en', 'ja'] : ['en'], subtitles: ['en'] };
-    if (isLab) JE.core.tagLayout.commitGroup(host, 'language', JE.core.languageTags.buildGroup(facts));
+    if (isLab) {
+      // A queued server-cache render can replace this fixture's Dual chip with
+      // the real movie's single English track after commitGroup. Own the facts
+      // at that render boundary for this card only; every other card stays real.
+      const renderer = JE.tagPipeline.getRenderer('language');
+      const render = renderer.renderFromServerCache;
+      renderer.renderFromServerCache = (container, data, itemId) => card.contains(container)
+        ? JE.core.tagLayout.commitGroup(host, 'language', JE.core.languageTags.buildGroup(facts))
+        : render(container, data, itemId);
+      JE.core.tagLayout.commitGroup(host, 'language', JE.core.languageTags.buildGroup(facts));
+    }
     else JE.tagPipeline.language.renderFromServerCache(host, { AudioLanguages: facts.audio, SubtitleLanguages: facts.subtitles });
     JE.core.tagLayout.flushFit();
     return card.querySelector('a.cardImageContainer[href]').href;
