@@ -262,8 +262,9 @@
             .je-tag-host [data-je-overflow], .je-tag-caption [data-je-overflow] { display: none !important; }
 
             /* The reveal keeps to the bottom of the card (two rows of compact
-               chips, then "+N"), clear of the centre play button; Jellyfin's
-               overlay buttons stay above it and clickable. */
+               chips, then "+N"; the fitting pass keeps fewer whole rows when 40%
+               of a short card has room for less), clear of the centre play
+               button; Jellyfin's overlay buttons stay above it and clickable. */
             ${SLOT}[data-je-slot="hover"] {
                 left: 0; right: 0; bottom: 0;
                 max-height: 40%;

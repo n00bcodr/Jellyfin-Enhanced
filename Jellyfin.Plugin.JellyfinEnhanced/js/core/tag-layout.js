@@ -904,8 +904,9 @@
     // card — and hides what does not fit, never half a chip or fact:
     //   - the summary pill's lowest-priority facts;
     //   - in the caption strip, the bottom band and the hover reveal, chips
-    //     past their two rows, lowest priority first, behind a "+N" chip
-    //     whose title names them;
+    //     past their two rows (fewer when the reveal's share of the card
+    //     height has room for less), lowest priority first, behind a "+N"
+    //     chip whose title names them;
     // and it switches bands on cards narrower than NARROW_CARD_PX to compact
     // labels.
 
@@ -1084,8 +1085,40 @@
     /**
      * @typedef {Object} FitPlan
      * @property {number} pillFacts - Pill facts to keep (-1 = no pill).
-     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[]}>} rows - Wrapping slots.
+     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[], more: boolean}>} rows -
+     *   Wrapping slots; `more` is false when not even the "+N" chip has room.
      */
+
+    /**
+     * How many chip rows a wrapping slot has height for, at most FIT_MAX_ROWS
+     * (reads only). Only a slot with a max-height (the hover reveal, held to
+     * the bottom 40% of the card) is limited: its rows must fit inside that
+     * height less its padding. On a card too short for even one row that way
+     * (a small landscape thumbnail), one row may sit in the top padding, which
+     * is only the scrim's fade-in, when it still fits above the bottom padding.
+     * @param {CardController} ctrl
+     * @param {CSSStyleDeclaration} style - The slot's computed style.
+     * @param {number} rowHeight - Tallest chip of the slot, "+N" included.
+     * @returns {number}
+     */
+    function rowsWithHeight(ctrl, style, rowHeight) {
+        const raw = style.maxHeight;
+        if (!raw || raw === 'none' || !(rowHeight > 0)) return FIT_MAX_ROWS;
+        let limit = parseFloat(raw);
+        if (raw.endsWith('%')) {
+            // The slot is positioned in the host, which covers the image.
+            const height = ctrl.host.clientHeight;
+            if (!(height > 0)) return FIT_MAX_ROWS;
+            limit = (limit / 100) * height;
+        }
+        if (!Number.isFinite(limit)) return FIT_MAX_ROWS;
+        const gap = parseFloat(style.rowGap) || 0;
+        const padTop = parseFloat(style.paddingTop) || 0;
+        const padBottom = parseFloat(style.paddingBottom) || 0;
+        const rows = (room) => Math.max(0, Math.floor((room + gap + 0.01) / (rowHeight + gap)));
+        const inside = rows(limit - padTop - padBottom);
+        return Math.min(FIT_MAX_ROWS, inside > 0 ? inside : Math.min(1, rows(limit - padBottom)));
+    }
 
     /**
      * Measure a card (reads only).
@@ -1101,11 +1134,17 @@
             const style = getComputedStyle(slotEl);
             const available = slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
             const gap = parseFloat(style.columnGap) || 0;
-            const widths = chips.map((chip) => chip.getBoundingClientRect().width);
+            const rects = chips.map((chip) => chip.getBoundingClientRect());
+            const moreRect = more.getBoundingClientRect();
+            const maxRows = rowsWithHeight(ctrl, style, Math.max(moreRect.height, ...rects.map((r) => r.height)));
+            if (maxRows === 0) {
+                plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => false), more: false });
+                continue;
+            }
             const shown = available > 0
-                ? chipsThatFit(widths, available, gap, FIT_MAX_ROWS, more.getBoundingClientRect().width)
+                ? chipsThatFit(rects.map((r) => r.width), available, gap, maxRows, moreRect.width)
                 : chips.map(() => true);
-            plan.rows.push({ slot: slotEl, chips, shown });
+            plan.rows.push({ slot: slotEl, chips, shown, more: true });
         }
         return plan;
     }
@@ -1144,12 +1183,14 @@
                 fact.previousElementSibling?.setAttribute('data-je-overflow', '');
             });
         }
-        for (const { slot, chips, shown } of plan.rows) {
+        for (const { slot, chips, shown, more: room } of plan.rows) {
             const more = moreChipOf(slot);
             if (!more) continue;
             const hidden = chips.filter((chip, i) => !shown[i]);
             for (const chip of hidden) chip.setAttribute('data-je-overflow', '');
-            if (hidden.length === 0) {
+            // Not a single row fits: no empty scrim either.
+            if (!room) slot.setAttribute('data-je-overflow', '');
+            if (hidden.length === 0 || !room) {
                 more.setAttribute('data-je-overflow', '');
                 more.removeAttribute('title');
                 continue;

@@ -657,6 +657,70 @@ function withLayout(h, { card, chip = 30, more = 20 }, fn) {
   }
 }
 
+/**
+ * Fit a card of the given size: the host, its slots and the caption strip get
+ * the card width, the host the card height (the reveal's 40% resolves against
+ * it), chips 30x18 and the "+N" chip 20x18.
+ */
+function fitCard(h, { width, height, chip = 30, more = 20 }) {
+  const proto = h.window.HTMLElement.prototype;
+  const rect = proto.getBoundingClientRect;
+  const client = Object.getOwnPropertyDescriptor(h.window.Element.prototype, 'clientWidth');
+  const clientH = Object.getOwnPropertyDescriptor(h.window.Element.prototype, 'clientHeight');
+  proto.getBoundingClientRect = function () {
+    const w = this.classList.contains('je-tag-more') ? more : this.parentElement?.dataset?.jeGroup ? chip : 0;
+    return { width: w, height: w ? 18 : 0, top: 0, left: 0, right: w, bottom: w ? 18 : 0 };
+  };
+  Object.defineProperty(h.window.Element.prototype, 'clientWidth', { configurable: true,
+    get() { return this.matches('.je-tag-host, .je-tag-slot, .je-tag-caption') ? width : 0; } });
+  Object.defineProperty(h.window.Element.prototype, 'clientHeight', { configurable: true,
+    get() { return this.matches('.je-tag-host') ? height : 0; } });
+  try { h.layout.refreshPresentation(h.host()); h.layout.flushFit(); } finally {
+    proto.getBoundingClientRect = rect;
+    Object.defineProperty(h.window.Element.prototype, 'clientWidth', client);
+    Object.defineProperty(h.window.Element.prototype, 'clientHeight', clientH);
+  }
+}
+
+test('the reveal keeps only the chip rows its height has room for: one on a landscape thumbnail, two on a poster', t => {
+  for (const tagLayout of ['summary', 'minimal']) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout } });
+    h.render();
+    const reveal = () => h.host().querySelector('.je-tag-slot[data-je-slot="hover"]');
+    const shown = () => reveal().querySelectorAll(':scope > [data-je-group] > :not([data-je-overflow])').length;
+    const more = () => reveal().lastElementChild;
+    // A 113x64 episode thumbnail: 40% is 25.6px, less 18px + 6px padding leaves
+    // no room for an 18px row; one row still fits above the bottom padding.
+    fitCard(h, { width: 113, height: 64 });
+    assert.equal(shown(), 2, `${tagLayout}: one row of 30px chips in 101px, with room for "+N"`);
+    assert.ok(more().classList.contains('je-tag-more'));
+    assert.equal(more().hasAttribute('data-je-overflow'), false, 'the "+N" chip shares the row that fits');
+    assert.equal(more().textContent, `+${reveal().querySelectorAll(':scope > [data-je-group] > [data-je-overflow]').length}`);
+    // A 113x170 poster: 68px less padding holds both rows.
+    fitCard(h, { width: 113, height: 170 });
+    assert.equal(shown(), 5, 'two rows on a portrait card');
+    assert.equal(more().hasAttribute('data-je-overflow'), false);
+    // Too short for any row: nothing is half shown, and the empty scrim stays away.
+    fitCard(h, { width: 113, height: 40 });
+    assert.equal(shown(), 0);
+    assert.equal(reveal().hasAttribute('data-je-overflow'), true, 'the reveal is not shown at all');
+    // A wide landscape card fits everything on its rows again.
+    fitCard(h, { width: 400, height: 225 });
+    assert.equal(reveal().hasAttribute('data-je-overflow'), false);
+    assert.equal(reveal().querySelectorAll(':scope > [data-je-group] > [data-je-overflow]').length, 0);
+  }
+});
+
+test('the caption strip and the bottom band are not limited by the card height', t => {
+  for (const [tagLayout, slot] of [['caption', '.je-tag-caption'], ['bands', '.je-tag-slot[data-je-slot="bottom"]']]) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout } });
+    h.render();
+    fitCard(h, { width: 172, height: 40 }); // a bottom band wider than 160px keeps full labels
+    const el = h.document.querySelector(slot);
+    assert.ok(el.querySelectorAll(':scope > [data-je-group] > :not([data-je-overflow])').length > 5, `${tagLayout}: two rows whatever the card height`);
+  }
+});
+
 test('bands on a card under 160px switch to compact labels and keep the bottom band to two rows with "+N"', t => {
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'bands' } });
   const host = h.render();
