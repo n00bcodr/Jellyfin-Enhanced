@@ -205,6 +205,90 @@ public class RatingSourceTests
         Assert.True(service.NeedsFetch("movie", "1") != service.NeedsFetch("movie", "2"));
     }
 
+    [Fact]
+    public async Task LateAccountStatusFromTheBulkRunnerNeverRestoresSpentQuota()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.MdblistApiKey = "fixture-key";
+        config.MdblistRatingsEnabled = true;
+        config.MdblistRatingsFetchEnabled = true;
+        config.MdblistFetchReserve = 400;
+        var firstUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var users = 0;
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            if (request.RequestUri!.AbsolutePath == "/user")
+            {
+                // The runner's own /user (the first) answers 401 only after the warmer has spent one request.
+                if (Interlocked.Increment(ref users) == 1)
+                {
+                    firstUser.SetResult();
+                    await releaseUser.Task.WaitAsync(token);
+                }
+                return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":401}");
+            }
+            Interlocked.Increment(ref batches);
+            return IntegrationTransport.Response("[]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "1" } } });
+        var bulk = new Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks.MdblistRatingsFetchTask(library.Object, service, f.Core.Logger).ExecuteAsync(new Progress<double>(), default);
+        await firstUser.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            await service.WarmTagRatingsAsync(new[] { ("movie", "2") }, default, 400);
+            Assert.Equal(400, service.RemainingQuota());
+        }
+        finally { releaseUser.TrySetResult(); }
+        await bulk.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, batches);
+        Assert.Equal(400, service.RemainingQuota());
+        Assert.True(service.NeedsFetch("movie", "1"));
+    }
+
+    [Fact]
+    public async Task ForcedAccountStatusRefreshStartedBeforeABatchIsReconciledWithItsSpend()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        var forcedUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseUser = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var users = 0;
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            if (request.RequestUri!.AbsolutePath == "/user")
+            {
+                if (Interlocked.Increment(ref users) == 2)
+                {
+                    forcedUser.SetResult();
+                    await releaseUser.Task.WaitAsync(token);
+                }
+                return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":401}");
+            }
+            Interlocked.Increment(ref batches);
+            return IntegrationTransport.Response("[]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        Assert.Equal(401, (await service.GetAccountStatusAsync(default))!.RateLimitRemaining);
+        // As the settings page's status check does: a forced refresh of the saved key, answered late.
+        var forced = service.GetAccountStatusAsync(default, forceRefresh: true);
+        await forcedUser.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default, 400);
+            Assert.Equal(400, service.RemainingQuota());
+        }
+        finally { releaseUser.TrySetResult(); }
+        Assert.Equal(400, (await forced.WaitAsync(TimeSpan.FromSeconds(5)))!.RateLimitRemaining);
+        Assert.Equal(400, service.RemainingQuota());
+        await service.WarmTagRatingsAsync(new[] { ("movie", "2") }, default, 400);
+        Assert.Equal(1, batches);
+        Assert.True(service.NeedsFetch("movie", "2"));
+    }
+
     [Theory]
     [InlineData(503)]
     [InlineData(429)]

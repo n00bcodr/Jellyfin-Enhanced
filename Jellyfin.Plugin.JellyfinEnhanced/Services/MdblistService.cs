@@ -69,6 +69,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public const int SafetyMargin = 5;
         private readonly object _accountStatusLock = new();
         private MdblistAccountStatus? _accountStatus;
+        // Requests counted locally so far, and the /user queries started and
+        // last published, all under _accountStatusLock. A /user answer is
+        // reconciled against the requests spent since it was started, so a
+        // slow response can't hand back quota that has already been used.
+        private long _quotaSpent;
+        private long _accountStatusQueries;
+        private long _accountStatusPublishedQuery;
 
         public MdblistService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
         {
@@ -202,7 +209,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// instead of the saved config's; always fetched fresh and never
         /// cached/stored, so it can't pollute the real quota tracking with a
         /// key that isn't actually the one in use.</param>
-        public async Task<MdblistAccountStatus?> GetAccountStatusAsync(CancellationToken cancellationToken, bool forceRefresh = false, string? apiKeyOverride = null)
+        public Task<MdblistAccountStatus?> GetAccountStatusAsync(CancellationToken cancellationToken, bool forceRefresh = false, string? apiKeyOverride = null) =>
+            GetAccountStatusCoreAsync(cancellationToken, forceRefresh, apiKeyOverride, quotaGateHeld: false);
+
+        /// <summary>GetAccountStatusAsync for callers that may already hold
+        /// _backgroundQuotaGate (quotaGateHeld), which the publication of a
+        /// fresh status otherwise takes so it can't land between a background
+        /// batch's reserve check and its decrement.</summary>
+        private async Task<MdblistAccountStatus?> GetAccountStatusCoreAsync(CancellationToken cancellationToken, bool forceRefresh, string? apiKeyOverride, bool quotaGateHeld)
         {
             var testingOverride = !string.IsNullOrWhiteSpace(apiKeyOverride);
 
@@ -220,6 +234,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var apiKey = testingOverride ? apiKeyOverride : JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
+
+            long query, spentAtStart;
+            lock (_accountStatusLock)
+            {
+                query = ++_accountStatusQueries;
+                spentAtStart = _quotaSpent;
+            }
 
             try
             {
@@ -248,11 +269,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 };
 
-                if (!testingOverride)
+                if (testingOverride) return status;
+
+                if (!quotaGateHeld) await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    lock (_accountStatusLock) { _accountStatus = status; }
+                    lock (_accountStatusLock)
+                    {
+                        // A query older than the one already published is
+                        // superseded; otherwise take off whatever was spent
+                        // locally after it was sent, which its answer may not
+                        // include yet.
+                        if (query < _accountStatusPublishedQuery && _accountStatus != null) return _accountStatus;
+                        status.RateLimitRemaining = (int)Math.Max(0, status.RateLimitRemaining - (_quotaSpent - spentAtStart));
+                        _accountStatus = status;
+                        _accountStatusPublishedQuery = query;
+                        return status;
+                    }
                 }
-                return status;
+                finally
+                {
+                    if (!quotaGateHeld) _backgroundQuotaGate.Release();
+                }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -262,6 +300,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 _logger.Warning($"[MDBList] Failed to fetch account status: {ex.GetType().Name}");
                 return null;
+            }
+        }
+
+        private void RecordQuotaSpent()
+        {
+            lock (_accountStatusLock)
+            {
+                _quotaSpent++;
+                if (_accountStatus != null)
+                {
+                    _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
+                }
             }
         }
 
@@ -300,13 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // status immediately: a burst of back-to-back calls within the
                 // same AccountStatusTtl window should still throttle correctly
                 // rather than all reading the same stale "remaining" value.
-                lock (_accountStatusLock)
-                {
-                    if (_accountStatus != null)
-                    {
-                        _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
-                    }
-                }
+                RecordQuotaSpent();
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -357,7 +401,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.MdblistApiKey;
             if (string.IsNullOrWhiteSpace(apiKey)) return null;
 
-            var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
+            var status = await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false);
             if (status != null && status.RateLimitRemaining <= SafetyMargin)
             {
                 _logger.Warning($"[MDBList] Only {status.RateLimitRemaining} requests remaining today, skipping media batch lookup for {mediaType} ({tmdbIds.Count} ids)");
@@ -383,13 +427,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 // The request was made either way; see the matching comment in
                 // FetchFromMdblistAsync for why this decrements immediately.
-                lock (_accountStatusLock)
-                {
-                    if (_accountStatus != null)
-                    {
-                        _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
-                    }
-                }
+                RecordQuotaSpent();
 
                 var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
@@ -440,7 +478,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // One background batch at a time across the bulk runner and the
         // incremental warmers, held from the reserve check through the request
         // and its local quota decrement, so two callers can never both pass
-        // the same "remaining > reserve" check.
+        // the same "remaining > reserve" check. Every fresh /user status is
+        // published under it too (GetAccountStatusCoreAsync).
         private readonly SemaphoreSlim _backgroundQuotaGate = new(1, 1);
 
         /// <summary>
@@ -455,7 +494,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false) == null)
+                if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
                 {
                     return new MdblistReservedBatch(MdblistReservedBatchStatus.QuotaUnknown, null, null);
                 }
