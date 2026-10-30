@@ -162,6 +162,63 @@ public class ApiMediaTagsPageTests
         Assert.False(f.Plugin.Configuration.TagsHideOnHover);
     }
 
+    /// <summary>A full save as the main configuration page posts it: the whole configuration it read, with its edits.</summary>
+    private static Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration MainPageSave(ApiPluginFixture f, Action<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration> edit)
+    {
+        var read = StjSerializer.Deserialize<Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration>(StjSerializer.Serialize(f.Plugin.Configuration))!;
+        edit(read);
+        return read;
+    }
+
+    /// <summary>Waits until <paramref name="thread"/> is blocked (on the configuration write lock).</summary>
+    private static void WaitUntilBlocked(Thread thread)
+        => Assert.True(SpinWait.SpinUntil(() => thread.ThreadState.HasFlag(ThreadState.WaitSleepJoin), 5000), "the patch is waiting for the lock");
+
+    [Fact]
+    public void AMainPageSaveCommittedWhileThePatchWaitsIsNotPutBackByThePatch()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        IActionResult? result = null;
+        var patch = new Thread(() => result = controller.PatchConfiguration(Patch(new { TagsHideOnHover = true }, new { TagsHideOnHover = false })));
+        // Another save holds the configuration write lock: the patch arrives and waits for it.
+        lock (Jellyfin.Plugin.JellyfinEnhanced.JellyfinEnhanced.AnalyticsCredentialLock)
+        {
+            patch.Start();
+            WaitUntilBlocked(patch);
+            // The main configuration page's full save commits meanwhile (Monitor is reentrant on this thread).
+            f.Plugin.UpdateConfiguration(MainPageSave(f, c => c.DisableTagsOnSearchPage = true));
+            Assert.True(f.Plugin.Configuration.DisableTagsOnSearchPage);
+        }
+
+        Assert.True(patch.Join(5000));
+        Assert.Equal("{\"values\":{\"TagsHideOnHover\":true}}", StjSerializer.Serialize(Assert.IsType<OkObjectResult>(result).Value));
+        Assert.True(f.Plugin.Configuration.TagsHideOnHover);
+        Assert.True(f.Plugin.Configuration.DisableTagsOnSearchPage, "the patch keeps the field the main page saved while it waited");
+    }
+
+    [Fact]
+    public void APatchArrivingDuringAMainPageSaveWaitsAndBuildsOnIt()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        IActionResult? result = null;
+        var patch = new Thread(() => result = controller.PatchConfiguration(Patch(new { TagsHideOnHover = true }, new { TagsHideOnHover = false })));
+        // The reverse order: the main page's save is in its critical section first.
+        f.Plugin.UpdateConfiguration(
+            current =>
+            {
+                patch.Start();
+                WaitUntilBlocked(patch);
+                Assert.False(f.Plugin.Configuration.TagsHideOnHover, "the patch does not write inside another save");
+                return MainPageSave(f, c => c.DisableTagsOnSearchPage = true);
+            });
+        Assert.True(patch.Join(5000));
+        Assert.IsType<OkObjectResult>(result);
+        Assert.True(f.Plugin.Configuration.TagsHideOnHover);
+        Assert.True(f.Plugin.Configuration.DisableTagsOnSearchPage, "the patch is applied on top of the save that went first");
+    }
+
     [Fact]
     public void SectionModulesNameTheTabAndGroupOfEachSetting()
     {

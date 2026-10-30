@@ -8576,7 +8576,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
         /// <summary>
         /// Saves a few plugin configuration fields on top of the configuration the server holds now (the Media Tags
-        /// page saves field by field), so another administrator's changes to other fields are never overwritten.
+        /// page saves field by field). It reads and writes inside the same critical section as every other save, so
+        /// it never puts back an older value of a field it was not asked to change, even one another save (the main
+        /// configuration page's) wrote while this request was waiting.
         /// A field listed in <c>Expected</c> with the value the caller read before editing it is refused with 409 and
         /// the server's value when that value has changed since; nothing is written then. Admin only.
         /// </summary>

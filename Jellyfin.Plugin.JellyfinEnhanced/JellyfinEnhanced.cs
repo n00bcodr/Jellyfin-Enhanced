@@ -232,12 +232,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         // rather than serving a stale snapshot until the daily 3 AM refresh.
         public override void UpdateConfiguration(BasePluginConfiguration configuration)
         {
-            // Capture the outgoing value BEFORE base.UpdateConfiguration replaces
-            // Configuration, so an actual OFF<->ON transition is distinguishable
-            // from an unrelated config save (this method fires on every save).
-            var tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
-            var sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
-            var analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+            ArgumentNullException.ThrowIfNull(configuration);
+            UpdateConfiguration(_ => configuration);
+        }
+
+        /// <summary>
+        /// Saves the configuration <paramref name="build"/> makes from the stored one, with the side effects of a
+        /// full save. <paramref name="build"/> runs inside the same critical section as every other save (a full
+        /// save from the configuration page included), so a writer that changes a few fields on top of the stored
+        /// configuration (the Media Tags page's field patch) can never put back fields another save changed while
+        /// it was building its copy.
+        /// </summary>
+        /// <param name="build">Makes the configuration to save from the stored one; null saves nothing.</param>
+        /// <param name="saved">Reads the configuration as stored (normalised), still inside the critical section.</param>
+        /// <returns>Whether a configuration was saved.</returns>
+        internal bool UpdateConfiguration(Func<PluginConfiguration, BasePluginConfiguration?> build, Action<PluginConfiguration>? saved = null)
+        {
+            bool tagCacheWasEnabled;
+            bool sourceRatingsWereConfigured;
+            bool analyticsWasEnabled;
 
             // The Analytics* identity/bookkeeping fields are server-minted and
             // never editable on the config page, but a save replaces the whole
@@ -256,6 +269,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // backend row exists.
             lock (AnalyticsCredentialLock)
             {
+                var configuration = build(Configuration);
+                if (configuration == null) return false;
+
+                // Capture the outgoing value BEFORE base.UpdateConfiguration replaces
+                // Configuration, so an actual OFF<->ON transition is distinguishable
+                // from an unrelated config save (this method fires on every save).
+                tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
+                sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
+                analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+
                 if (configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                 {
                     var incomingIncomplete = string.IsNullOrEmpty(incoming.AnalyticsInstallId) || string.IsNullOrEmpty(incoming.AnalyticsInstallSecret);
@@ -292,6 +315,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
 
                 base.UpdateConfiguration(configuration);
+                if (Configuration is PluginConfiguration stored) saved?.Invoke(stored);
             }
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
@@ -361,12 +385,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 QueueAnalyticsTransition("send initial analytics report", () =>
                     _analyticsReportingService.ForceSendAsync(CancellationToken.None));
             }
+
+            return true;
         }
 
         /// <summary>
         /// Guards every read-modify-write of the Analytics install credentials
         /// (AnalyticsInstallId/Secret) across UpdateConfiguration's object swap
         /// and AnalyticsReportingService's post-HTTP writes + SaveConfiguration.
+        /// It is also the configuration write lock: every UpdateConfiguration
+        /// builds and swaps its configuration under it (see the overload taking
+        /// a builder), so saves never interleave.
         /// </summary>
         internal static readonly object AnalyticsCredentialLock = new object();
 

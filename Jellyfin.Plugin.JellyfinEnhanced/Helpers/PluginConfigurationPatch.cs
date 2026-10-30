@@ -18,9 +18,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     /// </summary>
     public static class PluginConfigurationPatch
     {
-        // Patches are read-modify-write: one at a time.
-        private static readonly object Gate = new object();
-
         private static readonly MethodInfo MemberwiseCloneMethod = typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
         /// <summary>The outcome of <see cref="Apply"/>.</summary>
@@ -38,7 +35,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
         /// <summary>
         /// Applies <paramref name="changes"/> to the plugin's current configuration and saves it through
-        /// <see cref="JellyfinEnhanced.UpdateConfiguration"/> (the same side effects as a full save).
+        /// the plugin's <c>UpdateConfiguration</c> (the same side effects as a full save, in the same critical section).
         /// </summary>
         /// <param name="plugin">The plugin.</param>
         /// <param name="changes">Field (PluginConfiguration property name) → new value.</param>
@@ -47,60 +44,67 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         public static Result Apply(JellyfinEnhanced plugin, IReadOnlyDictionary<string, JsonElement> changes, IReadOnlyDictionary<string, JsonElement>? expected)
         {
             var options = JsonDefaults.Options;
-            lock (Gate)
+            var properties = new Dictionary<string, PropertyInfo>(StringComparer.Ordinal);
+            foreach (var key in changes.Keys)
             {
-                var current = plugin.Configuration;
-                var properties = new Dictionary<string, PropertyInfo>(StringComparer.Ordinal);
-                foreach (var key in changes.Keys)
+                var property = typeof(PluginConfiguration).GetProperty(key, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || property.GetSetMethod() == null || property.GetIndexParameters().Length > 0)
                 {
-                    var property = typeof(PluginConfiguration).GetProperty(key, BindingFlags.Public | BindingFlags.Instance);
-                    if (property == null || property.GetSetMethod() == null || property.GetIndexParameters().Length > 0)
-                    {
-                        return new Result { Error = $"Unknown configuration field '{key}'." };
-                    }
-
-                    properties[key] = property;
+                    return new Result { Error = $"Unknown configuration field '{key}'." };
                 }
 
-                var conflicts = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
-                foreach (var (key, property) in properties)
-                {
-                    if (expected == null || !expected.TryGetValue(key, out var before)) continue;
-                    var now = ToNode(property.GetValue(current), property.PropertyType, options);
-                    if (!JsonNode.DeepEquals(now, JsonNode.Parse(before.GetRawText()))
-                        && !JsonNode.DeepEquals(now, JsonNode.Parse(changes[key].GetRawText())))
-                    {
-                        conflicts[key] = now;
-                    }
-                }
-
-                if (conflicts.Count > 0) return new Result { Conflicts = conflicts };
-
-                // A shallow copy keeps every field this request does not name (including ones the API never shows);
-                // the named ones are replaced, never mutated, so the live configuration is untouched until the swap.
-                var next = (PluginConfiguration)MemberwiseCloneMethod.Invoke(current, null)!;
-                foreach (var (key, property) in properties)
-                {
-                    try
-                    {
-                        property.SetValue(next, changes[key].Deserialize(property.PropertyType, options));
-                    }
-                    catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
-                    {
-                        return new Result { Error = $"Invalid value for '{key}'." };
-                    }
-                }
-
-                plugin.UpdateConfiguration(next);
-                var saved = plugin.Configuration;
-                var values = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
-                foreach (var (key, property) in properties)
-                {
-                    values[key] = ToNode(property.GetValue(saved), property.PropertyType, options);
-                }
-
-                return new Result { Values = values };
+                properties[key] = property;
             }
+
+            // The values do not depend on the stored configuration: read them before taking the write lock.
+            var values = new Dictionary<string, object?>(StringComparer.Ordinal);
+            foreach (var (key, property) in properties)
+            {
+                try
+                {
+                    values[key] = changes[key].Deserialize(property.PropertyType, options);
+                }
+                catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
+                {
+                    return new Result { Error = $"Invalid value for '{key}'." };
+                }
+            }
+
+            // The read, the conflict check and the swap happen inside the plugin's configuration write lock,
+            // which every save takes (a full save from the main configuration page too): the copy is made from
+            // the configuration as it is at that moment, never from one another save has replaced since.
+            var conflicts = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+            var stored = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+            plugin.UpdateConfiguration(
+                current =>
+                {
+                    foreach (var (key, property) in properties)
+                    {
+                        if (expected == null || !expected.TryGetValue(key, out var before)) continue;
+                        var now = ToNode(property.GetValue(current), property.PropertyType, options);
+                        if (!JsonNode.DeepEquals(now, JsonNode.Parse(before.GetRawText()))
+                            && !JsonNode.DeepEquals(now, JsonNode.Parse(changes[key].GetRawText())))
+                        {
+                            conflicts[key] = now;
+                        }
+                    }
+
+                    if (conflicts.Count > 0) return null;
+
+                    // A shallow copy keeps every field this request does not name (including ones the API never shows);
+                    // the named ones are replaced, never mutated, so the live configuration is untouched until the swap.
+                    var next = (PluginConfiguration)MemberwiseCloneMethod.Invoke(current, null)!;
+                    foreach (var (key, property) in properties) property.SetValue(next, values[key]);
+                    return next;
+                },
+                // The stored values, as the save normalised them, before any later save.
+                saved =>
+                {
+                    foreach (var (key, property) in properties) stored[key] = ToNode(property.GetValue(saved), property.PropertyType, options);
+                });
+            if (conflicts.Count > 0) return new Result { Conflicts = conflicts };
+
+            return new Result { Values = stored };
         }
 
         // Round-trips through text so values compare by their JSON, whatever node type produced them.
