@@ -22,7 +22,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// </summary>
     public sealed class AwardTagsService
     {
-        private readonly IHttpClientFactory _http;
         private readonly MdblistService _mdblist;
         private readonly WikidataAwardsService _wikidata;
         private readonly Logger _logger;
@@ -35,7 +34,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public AwardTagsService(IHttpClientFactory http, IApplicationPaths paths, MdblistService mdblist, WikidataAwardsService wikidata, Logger logger)
         {
-            _http = http;
             _mdblist = mdblist;
             _wikidata = wikidata;
             _logger = logger;
@@ -151,19 +149,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (old?.NextRefresh > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) return old;
             try
             {
-                // At most 250 entries: chart membership is intentionally bounded, not an entire arbitrary list.
-                var uri = $"https://api.mdblist.com/lists/{id}/items?apikey={Uri.EscapeDataString(config.MdblistApiKey)}&limit=250&sort=rank&order=asc";
-                var quota = await _mdblist.GetAccountStatusAsync(token).ConfigureAwait(false);
-                if (quota == null || quota.RateLimitRemaining <= Math.Max(MdblistService.SafetyMargin, config.MdblistFetchReserve))
-                    throw new HttpRequestException("MDBList quota reserve");
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-                timeout.CancelAfter(TimeSpan.FromSeconds(20));
-                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-                using var response = await _http.CreateClient().SendAsync(request, timeout.Token).ConfigureAwait(false);
-                _mdblist.RecordAwardListRequest();
-                response.EnsureSuccessStatusCode();
-                using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false), cancellationToken: timeout.Token).ConfigureAwait(false);
-                var ranks = ParseList(json.RootElement);
+                var ranks = await _mdblist.GetAwardListWithinReserveAsync(id, config.MdblistFetchReserve, token).ConfigureAwait(false);
+                if (ranks == null) throw new HttpRequestException("MDBList chart unavailable within quota reserve");
                 var fresh = new CachedList { Ranks = ranks, Confirmed = true, NextRefresh = DateTimeOffset.UtcNow.Add(ttl).ToUnixTimeMilliseconds() };
                 lock (_sync) _lists[key] = fresh;
                 return fresh;

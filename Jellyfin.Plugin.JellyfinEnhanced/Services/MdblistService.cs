@@ -473,15 +473,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        /// <summary>Account for a request made by the Awards list consumer under the shared quota budget.</summary>
-        internal void RecordAwardListRequest()
-        {
-            lock (_accountStatusLock)
-            {
-                if (_accountStatus != null) _accountStatus.RateLimitRemaining = Math.Max(0, _accountStatus.RateLimitRemaining - 1);
-            }
-        }
-
         private readonly SemaphoreSlim _tagRatingsGate = new(1, 1);
 
         // One background batch at a time across the bulk runner and the
@@ -518,6 +509,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 var results = await GetMediaBatchAsync(mediaType, tmdbIds, cancellationToken).ConfigureAwait(false);
                 return new MdblistReservedBatch(results == null ? MdblistReservedBatchStatus.Failed : MdblistReservedBatchStatus.Sent, RemainingQuota(), results);
+            }
+            finally { _backgroundQuotaGate.Release(); }
+        }
+
+        /// <summary>
+        /// Fetch a bounded Awards chart under the same reserve/status/spend gate as
+        /// background rating batches. Unknown quota sends nothing; callers retain
+        /// their last good snapshot and retry rather than confirming a missing chart.
+        /// </summary>
+        internal async Task<Dictionary<string, int>?> GetAwardListWithinReserveAsync(string id, int reserve, CancellationToken cancellationToken)
+        {
+            var apiKey = JellyfinEnhanced.Instance?.Configuration.MdblistApiKey;
+            if (string.IsNullOrWhiteSpace(apiKey) || !AwardTagsService.IsListId(id)) return null;
+            await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (await GetAccountStatusCoreAsync(cancellationToken, false, null, quotaGateHeld: true).ConfigureAwait(false) == null)
+                    return null;
+                var remaining = RemainingQuota();
+                if (remaining == null || remaining.Value <= Math.Max(SafetyMargin, reserve)) return null;
+
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(20));
+                var uri = $"{ApiBase}/lists/{id}/items?apikey={Uri.EscapeDataString(apiKey)}&limit=250&sort=rank&order=asc";
+                using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+                using var response = await _httpClientFactory.CreateClient().SendAsync(request, timeout.Token).ConfigureAwait(false);
+                RecordQuotaSpent();
+                response.EnsureSuccessStatusCode();
+                await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
+                using var json = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token).ConfigureAwait(false);
+                return AwardTagsService.ParseList(json.RootElement);
             }
             finally { _backgroundQuotaGate.Release(); }
         }
