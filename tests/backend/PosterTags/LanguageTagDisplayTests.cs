@@ -3,6 +3,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using SkiaSharp;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
 namespace JE.Tests;
 
@@ -162,6 +163,37 @@ public class LanguageTagDisplayTests
         var baseline = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true}", config).Digest;
         foreach (var setting in new[] { "\"LanguageTagsStyle\":\"codes\"", "\"LanguageTagsShowSubtitles\":true", "\"LanguageTagsShowAudio\":false", "\"LanguageTagsCountBadge\":\"both\"" })
             Assert.NotEqual(baseline, PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true," + setting + "}", config).Digest);
+    }
+
+    [Fact]
+    public void CodesPostersResolvedBeforeIsoDisplayCodesCannotReuseTheirDigestOrToken()
+    {
+        // Resolver version 6 drew Codes through the audio-equivalence canonicaliser (tgl -> FIL, nob/nno -> NO,
+        // cmn -> ZH). The ISO display-code fix changed those pixels for unchanged settings and data, so the
+        // digest (and with it every composite cache key and signed image token) must differ from the
+        // version-6 value recorded for this exact Codes document.
+        const string version6CodesDigest = "77b4c98fd8cb85e5";
+        var config = new PluginConfiguration();
+        var codes = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsStyle\":\"codes\"}", config);
+        Assert.NotEqual("6", PosterTagSettings.ResolverVersion);
+        Assert.NotEqual(version6CodesDigest, codes.Digest);
+        Assert.Equal("TL", LanguageFlagRules.ShortCode("tgl"));
+
+        var directory = Path.Combine(Path.GetTempPath(), "je-poster-tests-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(directory, "secret"), _ => { });
+            var user = Guid.Parse("11111111-1111-1111-1111-111111111111");
+            var item = Guid.Parse("22222222-2222-2222-2222-222222222222");
+            var old = tokens.Mint(user, item, version6CodesDigest, PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+            Assert.False(tokens.Verify(old, user, item, codes.Digest, PosterTagComposer.PixelVersion, out _));
+            var current = tokens.Mint(user, item, codes.Digest, PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+            Assert.True(tokens.Verify(current, user, item, codes.Digest, PosterTagComposer.PixelVersion, out _));
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
     }
 
     [Fact]
