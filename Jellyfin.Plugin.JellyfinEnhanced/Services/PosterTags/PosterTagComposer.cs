@@ -71,10 +71,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private readonly PosterTagDataProvider _data;
         private readonly CompositeImageCache _cache;
         private readonly Lazy<PosterTagRenderer> _renderer;
+        private readonly Lazy<PosterTagStatusProvider> _status;
 
         public PosterTagComposer(PosterTagDataProvider data, CompositeImageCache cache, IServiceProvider services)
         {
             _data = data;
+            _status = new Lazy<PosterTagStatusProvider>(services.GetRequiredService<PosterTagStatusProvider>);
             _cache = cache;
             // Resolved on the first actual render: the renderer loads fonts and
             // icons, which a server with the feature off should never pay for.
@@ -101,12 +103,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             CancellationToken cancellationToken,
             PosterTagDataSnapshot? snapshot = null)
         {
-            var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken).ConfigureAwait(false);
+            var data = await _data.GetRenderDataAsync(httpContext, item, user, snapshot, cancellationToken, settings.Shows(PosterTagGroup.Status)).ConfigureAwait(false);
             if (data == null) return new PosterTagComposeResult(PosterTagComposeStatus.NoData, null, string.Empty, false);
 
-            var key = CompositeKey(image, settings.Digest, topRightOffset, data.DataKey, quality);
+            var status = settings.Shows(PosterTagGroup.Status)
+                ? await _status.Value.GetAsync(httpContext, item, user, data.Entry, settings, cancellationToken).ConfigureAwait(false) : null;
+            // Include remote facts and the filtered parent as well as the five-minute URL bucket.
+            var dataKey = status == null ? data.DataKey : data.DataKey + "|status:" + System.Text.Json.JsonSerializer.Serialize(status);
+            var key = CompositeKey(image, settings.Digest, topRightOffset, dataKey, quality);
             var itemType = data.Entry.Type ?? item.GetBaseItemKind().ToString();
-            Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality);
+            Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality, status);
 
             var bytes = useCache
                 ? await _cache.GetOrCreateAsync(key, Extension(image.ContentType), Render, cancellationToken).ConfigureAwait(false)
@@ -178,7 +184,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagSettings settings,
             string itemType,
             bool topRightOffset,
-            int quality)
+            int quality,
+            Resolution.PosterStatusContext? status)
         {
             var source = await image.Load().ConfigureAwait(false);
             // The file loader already refuses oversized files before reading
@@ -211,7 +218,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 Played: topRightOffset,
                 UnplayedItemCount: null,
                 UserReviewAverage: data.Reviews.Average,
-                UserReviewCount: data.Reviews.Count);
+                UserReviewCount: data.Reviews.Count,
+                Status: status);
             var layout = PosterTagResolver.Resolve(data.Entry, settings, context, landscape);
             if (layout == null || layout.IsEmpty) return CompositeImageCache.Passthrough;
 

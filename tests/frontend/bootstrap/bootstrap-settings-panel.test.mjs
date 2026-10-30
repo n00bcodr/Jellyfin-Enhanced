@@ -88,3 +88,18 @@ test('release notes releases the settings dialog before opening its secondary mo
   await Promise.resolve();
   assert.deepEqual(steps, ['close', 'notes'], 'no closed-panel auto-close timer is restarted');
 });
+
+
+test('a personal status save remembers web date context without changing legacy layout or implicit native opt-in', async t => {
+  const h = setup(t);
+  h.JE.currentSettings.statusTagsEnabled = true;
+  h.JE.currentSettings.tagLayoutSettingsVersion = 0;
+  h.JE.getStatusDateContext = () => ({ locale: 'de-DE', timeZone: 'Australia/Perth' });
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  const saved = JSON.parse(h.writes.at(-1).data);
+  assert.equal(saved.nativePosterDateLocale, 'de-DE');
+  assert.equal(saved.nativePosterTimeZone, 'Australia/Perth');
+  assert.equal(saved.tagLayoutSettingsVersion, 0);
+  assert.equal(saved.useNativePosterTags, null);
+  assert.equal(h.JE.currentSettings.nativePosterTimeZone, undefined, 'the save snapshot leaves browser presentation unchanged');
+});

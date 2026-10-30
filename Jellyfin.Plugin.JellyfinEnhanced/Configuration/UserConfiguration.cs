@@ -135,6 +135,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;
         public bool ReviewsExpandedByDefault { get; set; }
+        /// <summary>Last web date context, captured only when saving personal preferences; null uses JE language/server timezone.</summary>
+        public string? NativePosterDateLocale { get; set; }
+        public string? NativePosterTimeZone { get; set; }
+
         public string DisplayLanguage { get; set; } = string.Empty;
         public string CalendarDisplayMode { get; set; } = "list";
         public string CalendarDefaultViewMode { get; set; } = "agenda";

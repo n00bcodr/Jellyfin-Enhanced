@@ -46,6 +46,7 @@
      * @returns {Promise<void>}
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
+        const isCurrentSettings = settings === JE.currentSettings;
         const throwOnError = options?.throwOnError === true;
         if (typeof ApiClient === 'undefined' || !ApiClient.getCurrentUserId) {
             if (throwOnError) throw new Error('ApiClient not available');
@@ -60,11 +61,19 @@
                 return;
             }
 
+            // Native images have no browser locale/timezone. Remember this user's
+            // current web context with an explicit personal save (no background writes).
+            if (fileName === 'settings.json' && isCurrentSettings && settings.statusTagsEnabled
+                && typeof JE.getStatusDateContext === 'function') {
+                const context = JE.getStatusDateContext();
+                settings = { ...settings, nativePosterDateLocale: context.locale, nativePosterTimeZone: context.timeZone };
+            }
+
             // Convert data back to PascalCase for server C# deserialization
             let dataToSave = settings;
             // currentSettings carries the resolved native-poster value (on). Leave it
             // unset on disk until the user explicitly switches it in the panel.
-            if (fileName === 'settings.json' && settings === JE.currentSettings
+            if (fileName === 'settings.json' && isCurrentSettings
                 && JE.userConfig?.settings?.useNativePosterTags == null) {
                 dataToSave = { ...settings, useNativePosterTags: null };
             }

@@ -66,8 +66,8 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
   // Dates in English unless a test picks a language.
   h.document.documentElement.setAttribute('lang', 'en-US');
   const files = layout
-    ? ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/statustags.js']
-    : ['core/ui-kit.js', 'core/tag-renderer-base.js', 'tags/statustags.js'];
+    ? ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/status-vocabulary.js', 'tags/statustags.js']
+    : ['core/ui-kit.js', 'core/tag-renderer-base.js', 'tags/status-vocabulary.js', 'tags/statustags.js'];
   for (const file of files) h.load(file);
   h.JE.initializeStatusTags();
   const hosts = [...h.document.querySelectorAll('.je-tag-host')];

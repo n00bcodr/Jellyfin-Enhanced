@@ -65,7 +65,7 @@ function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = n
   t.after(() => h.close());
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js',
-    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/rating-sources.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js', 'tags/userreviewtags.js']) h.load(file);
+    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/rating-sources.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/status-vocabulary.js', 'tags/statustags.js', 'tags/userreviewtags.js']) h.load(file);
   const JE = h.JE;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags(); JE.initializeStatusTags(); JE.initializeLanguageTags();
   if (reviews || reviewSource) JE.initializeUserReviewTags();

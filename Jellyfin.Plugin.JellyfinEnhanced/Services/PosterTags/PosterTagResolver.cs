@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
@@ -24,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// and has none (or its key is invalid), which the web shows as a dash chip; null when review
     /// data is not available for this item, which draws no user-review chip.
     /// </param>
-    public sealed record PosterTagItemContext(string ItemType, bool Played, int? UnplayedItemCount, double? UserReviewAverage, int? UserReviewCount);
+    public sealed record PosterTagItemContext(string ItemType, bool Played, int? UnplayedItemCount, double? UserReviewAverage, int? UserReviewCount, PosterStatusContext? Status = null);
 
     /// <summary>
     /// Decides which tags the web would draw on a card, from JE's tag-cache entry and the user's
@@ -105,6 +107,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 groups.Add(Group(PosterTagGroup.AgeRating, settings, new List<PosterTag>(1) { age }));
             }
 
+            if (settings.Shows(PosterTagGroup.Status) && StatusRules.Resolve(entry, settings, context.Status ?? new PosterStatusContext(DateTimeOffset.UtcNow)) is { } status)
+                groups.Add(Group(PosterTagGroup.Status, settings, new List<PosterTag>(1) { status }));
+
             if (settings.Shows(PosterTagGroup.Language) && LanguageFlagRules.ResolveGroup(entry, settings) is { } languages)
             {
                 groups.Add(Group(PosterTagGroup.Language, settings, languages));
@@ -121,7 +126,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 groups.Sort((a, b) => IndexOf(order, a.Group).CompareTo(IndexOf(order, b.Group)));
             }
 
-            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles);
+            return new PosterTagLayout(groups, HasTopRightOffset(groups, settings, context), landscape, settings.Styles, settings.Bands);
         }
 
         /// <summary>
@@ -143,6 +148,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private static bool HasTopRightOffset(List<PosterTagGroupLayout> groups, PosterTagSettings settings, PosterTagItemContext context)
         {
             if (!ShowsPlayedIndicator(context)) return false;
+            if (settings.Bands) return true;
             foreach (var group in groups)
             {
                 if (string.Equals(settings.PositionOf(group.Group), "top-right", StringComparison.Ordinal)) return true;
@@ -171,9 +177,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             where T : PosterTag
         {
             List<PosterTag> list = tags is List<PosterTag> same ? same : tags.ConvertAll(t => (PosterTag)t);
+            if (settings.CompactBands)
+            {
+                if (group == PosterTagGroup.Quality) list = list.Select(t => t is QualityTag q ? q with { DisplayText = CompactQuality(q.Label) } : t).ToList();
+                if (group == PosterTagGroup.Rating && list.OfType<RatingTag>().Any(t => t.Source == PosterRatingSource.Community))
+                    list.RemoveAll(t => t is RatingTag { Source: PosterRatingSource.Critic });
+            }
             var cap = settings.CapOf(group);
             if (cap > 0 && list.Count > cap) list.RemoveRange(cap, list.Count - cap);
             return new PosterTagGroupLayout(group, PosterTagSettings.CornerOf(settings.PositionOf(group)), list);
+        }
+
+        /// <summary>The web's compact quality labels, retaining the full label for colour identity.</summary>
+        private static string CompactQuality(string label)
+        {
+            var exact = label switch { "Dolby Vision" => "DV", "HDR10+" => "HDR+", "Dolby Digital+" => "DD+", "BluRay" => "BD",
+                "Director's Cut" => "DC", "Extended" => "Ext", "Unrated" => "Unr", "Remastered" => "Rem", "Criterion" => "CC", "Special Edition" => "Special", "Mixed" => "±", _ => null };
+            if (exact != null) return exact;
+            var audio = Regex.Match(label, @"^(ATMOS|DTS-X|TRUEHD|DTS|Dolby Digital\+) (\d+\.\d+)$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
+            return audio.Success ? audio.Groups[audio.Groups[1].Value == "Dolby Digital+" ? 2 : 1].Value : label;
         }
 
         private static int IndexOf(IReadOnlyList<PosterTagGroup> order, PosterTagGroup group)

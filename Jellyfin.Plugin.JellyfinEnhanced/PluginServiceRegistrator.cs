@@ -187,6 +187,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<PosterTagDataProvider>();
             serviceCollection.AddSingleton<CompositeImageCache>();
             serviceCollection.AddSingleton<PosterTagRenderer>();
+            serviceCollection.AddSingleton<PosterTagStatusProvider>();
             serviceCollection.AddSingleton<PosterTagComposer>();
             serviceCollection.AddSingleton<NativePosterTagStamper>();
             serviceCollection.AddSingleton<PosterTagImageFilter>();

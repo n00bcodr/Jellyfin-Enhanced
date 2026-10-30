@@ -62,7 +62,7 @@ function setup(t, { html = poster() + thumb() + listRow(), settings = {}, plugin
   t.after(() => h.close());
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
-    'tags/rating-sources.js', 'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js']) h.load(file);
+    'tags/rating-sources.js', 'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/status-vocabulary.js', 'tags/statustags.js']) h.load(file);
   const JE = h.JE;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags(); JE.initializeStatusTags(); JE.initializeLanguageTags();
   const layout = JE.core.tagLayout;

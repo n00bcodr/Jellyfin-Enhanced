@@ -33,6 +33,57 @@ public class IntegrationStatusTagsTrendingTests
         }
     }
 
+    private sealed class NativeClock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.Parse("2026-10-30T12:00:00Z");
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task NativeRanksRefreshDailyAndNeverFallBackToSeerrWithoutAKey()
+    {
+        using var env = new IntegrationEnvironment();
+        var clock = new NativeClock { Now = DateTimeOffset.Parse("2026-10-30T23:59:00Z") };
+        using var transport = new IntegrationTransport((request, _) =>
+        {
+            Assert.Equal("api.themoviedb.org", request.RequestUri!.Host);
+            return Task.FromResult(IntegrationTransport.Response("{\"results\":[{\"id\":2,\"media_type\":\"movie\"}]}"));
+        });
+        using var cache = new TmdbResponseCache(transport, clock);
+        var service = new StatusTagsTrendingService(transport, cache, env.Logger, clock);
+        var config = new PluginConfiguration { StatusTagsEnabled = true, TMDB_API_KEY = "key", JellyseerrEnabled = true, JellyseerrUrls = "http://seerr.test", JellyseerrApiKey = "key" };
+        var first = await service.GetNativeAsync(config, default);
+        Assert.Equal(1, first.Movies["2"]);
+        var calls = transport.Calls;
+        clock.Now = clock.Now.AddSeconds(30);
+        Assert.Same(first, await service.GetNativeAsync(config, default));
+        Assert.Equal(calls, transport.Calls);
+        clock.Now = clock.Now.AddSeconds(30);
+        Assert.NotSame(first, await service.GetNativeAsync(config, default));
+        Assert.True(transport.Calls > calls);
+        calls = transport.Calls;
+        config.TMDB_API_KEY = "";
+        Assert.Empty((await service.GetNativeAsync(config, default)).Movies);
+        Assert.Equal(calls, transport.Calls);
+    }
+
+    [Fact]
+    public async Task NativeEmptyRetryBypassesTheLongerResponseCache()
+    {
+        using var env = new IntegrationEnvironment();
+        var clock = new NativeClock();
+        bool recovered = false;
+        using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response(recovered
+            ? "{\"results\":[{\"id\":2,\"media_type\":\"movie\"}]}" : "{\"results\":[]}")));
+        using var cache = new TmdbResponseCache(transport, clock);
+        var service = new StatusTagsTrendingService(transport, cache, env.Logger, clock);
+        var config = new PluginConfiguration { StatusTagsEnabled = true, TMDB_API_KEY = "key" };
+        Assert.Empty((await service.GetNativeAsync(config, default)).Movies);
+        recovered = true;
+        clock.Now = clock.Now.AddMinutes(5);
+        Assert.Equal(1, (await service.GetNativeAsync(config, default)).Movies["2"]);
+    }
+
     private static string Page(HttpRequestMessage request) => System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query)["page"] ?? "";
 
     [Fact]

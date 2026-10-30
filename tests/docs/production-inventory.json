@@ -475,6 +475,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagStatusProvider.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagUserCache.cs",
       "category": "Services"
     },
@@ -540,6 +544,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/ResolutionData.g.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
       "category": "Services"
     },
     {
@@ -1520,6 +1528,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/ratingtags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.json",
       "category": "js"
     },
     {
@@ -7466,6 +7482,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "NativePosterDateLocale",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "NativePosterTimeZone",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "DisplayLanguage",
       "type": "string",
       "initializer": "string.Empty",
@@ -8761,9 +8793,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 386,
+    "files": 390,
     "routes": 182,
-    "configuration_properties": 631,
+    "configuration_properties": 633,
     "storage_references": 75,
     "scheduled_tasks": 13,
     "locales": 33

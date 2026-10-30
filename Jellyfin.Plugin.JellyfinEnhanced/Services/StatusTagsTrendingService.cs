@@ -54,12 +54,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly TmdbResponseCache _tmdbResponseCache;
         private readonly Logger _logger;
+        private readonly TimeProvider _nativeTime;
+        private readonly object _nativeLock = new();
+        private Task<TrendingSnapshot>? _nativeFlight;
+        private TrendingSnapshot? _nativeCached;
+        private DateTime _nativeUntil;
+        private PluginConfiguration? _nativeConfig;
 
         public StatusTagsTrendingService(IHttpClientFactory httpClientFactory, TmdbResponseCache tmdbResponseCache, Logger logger)
+            : this(httpClientFactory, tmdbResponseCache, logger, TimeProvider.System)
+        {
+        }
+
+        internal StatusTagsTrendingService(IHttpClientFactory httpClientFactory, TmdbResponseCache tmdbResponseCache, Logger logger, TimeProvider timeProvider)
         {
             _httpClientFactory = httpClientFactory;
             _tmdbResponseCache = tmdbResponseCache;
             _logger = logger;
+            _nativeTime = timeProvider;
         }
 
         /// <summary>The list served when trending is off or has no source.</summary>
@@ -104,6 +116,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return shared.WaitAsync(cancellationToken);
+        }
+
+        /// <summary>Native posters use TMDB daily ranks only, refreshed at UTC midnight; no key means no popular chip.</summary>
+        public Task<TrendingSnapshot> GetNativeAsync(PluginConfiguration config, CancellationToken cancellationToken)
+        {
+            if (!config.StatusTagsEnabled || !config.StatusTagsTrending || string.IsNullOrWhiteSpace(config.TMDB_API_KEY)) return Task.FromResult(Empty);
+            lock (_nativeLock)
+            {
+                if (!ReferenceEquals(config, _nativeConfig))
+                {
+                    _nativeConfig = config;
+                    _nativeCached = null;
+                    _nativeFlight = null;
+                }
+                if (_nativeCached != null && _nativeTime.GetUtcNow().UtcDateTime < _nativeUntil) return Task.FromResult(_nativeCached);
+                // A web response cached at 23:59 must not become tomorrow's daily snapshot.
+                // GetAsync still coalesces upstream work and stores the refreshed response.
+                _nativeFlight ??= FetchNativeAsync(config, bypassResponseCache: true);
+                return _nativeFlight.WaitAsync(cancellationToken);
+            }
+        }
+
+        private async Task<TrendingSnapshot> FetchNativeAsync(PluginConfiguration config, bool bypassResponseCache)
+        {
+            await Task.Yield();
+            TrendingSnapshot answer;
+            try { answer = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache).ConfigureAwait(false) ?? Empty; }
+            catch (Exception ex) { _logger.Debug($"[StatusTags] Native trending unavailable: {ex.Message}"); answer = Empty; }
+            lock (_nativeLock)
+            {
+                if (ReferenceEquals(config, _nativeConfig))
+                {
+                    _nativeCached = answer;
+                    var now = _nativeTime.GetUtcNow().UtcDateTime;
+                    _nativeUntil = answer.Source == null ? now.AddMinutes(5) : now.Date.AddDays(1);
+                    _nativeFlight = null;
+                }
+            }
+            return answer;
         }
 
         private async Task<TrendingSnapshot> FetchAndStoreAsync(PluginConfiguration config, long generation, bool bypassResponseCache)

@@ -23,7 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The genre circle.</summary>
         public const string Genre = "genre";
 
-        /// <summary>Status Tags (web only: native posters do not draw them).</summary>
+        /// <summary>Status Tags, shared by web and native posters.</summary>
         public const string Status = "status";
 
         /// <summary>Language flags (only the border ring applies: a flag is an image).</summary>
@@ -45,10 +45,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public static readonly IReadOnlyList<(string Key, string Name)> RatingLabels = new[] { ("community", "Community"), ("critic", "Critic"), ("userReview", "User review"), ("imdb", "IMDb"), ("tmdb", "TMDb"), ("rtCritic", "RT critic"), ("rtAudience", "RT audience"), ("metacritic", "Metacritic"), ("letterboxd", "Letterboxd"), ("trakt", "Trakt") };
 
         /// <summary>The Status Tags labels (the <c>data-je-status</c> values the web draws).</summary>
-        public static readonly IReadOnlyList<(string Key, string Name)> StatusLabels = new[]
-        {
-            ("added", "Just Added"), ("newMovie", "New Movie"), ("newSeries", "New Series"), ("newEpisode", "New Episode"), ("trending", "Trending"),
-        };
+        public static readonly IReadOnlyList<(string Key, string Name)> StatusLabels = Resolution.StatusRules.StyleLabels;
 
         /// <summary>A known preset id, or null.</summary>
         /// <param name="preset">Any string.</param>

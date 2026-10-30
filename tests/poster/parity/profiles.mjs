@@ -367,5 +367,12 @@ for (const style of ['flags', 'codes']) {
 synth('language-subs-only', { LanguageTagsEnabled: true, LanguageTagsShowAudio: false, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes' });
 synth('language-subs-strict-merge', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes', LanguageTagsCountBadge: 'both' }, { LanguageTagsPriority: 'French, English, Hindi', LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });
 
+// Native Bands now follows its active profile, density, order and limits.
+synth('native-bands-full', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' });
+synth('native-bands-compact', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' });
+synth('native-bands-custom', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagGroupOrder: ['language', 'quality', 'genre'], TagGroupCaps: { Quality: 2 },
+    TagLayouts: { Bands: { Groups: [{ Group: 'language', Slot: 'top' }, { Group: 'quality', Slot: 'top' }, { Group: 'rating', Slot: 'off' }, { Group: 'genre', Slot: 'bottom' }] } } });
+synth('native-bands-admin', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' }, { TagLayouts: { Bands: { Groups: [{ Group: 'quality', Slot: 'top' }, { Group: 'language', Slot: 'off' }] } } });
+
 writeFileSync(join(dataDir, 'profiles.json'), JSON.stringify(profiles, null, 1));
 console.log(`${profiles.length} profiles (${users.length} real users), ${Object.keys(syntheticEntries).length} synthetic entries, ${Object.keys(syntheticReviews).length} synthetic review keys`);

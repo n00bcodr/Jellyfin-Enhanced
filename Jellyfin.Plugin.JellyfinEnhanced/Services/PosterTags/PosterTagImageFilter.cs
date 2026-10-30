@@ -237,7 +237,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // Taken once: the composite is drawn from this very snapshot, so a
             // tag-cache update between the check and the render can't put new
             // data under the old token's immutable response.
-            var snapshot = _data.GetPinnedSnapshot(itemId, user);
+            var snapshot = _data.GetPinnedSnapshot(itemId, user, settings.Shows(PosterTagGroup.Status));
             var strong = !variant.IsWeak
                 && snapshot != null
                 && string.Equals(variant.DataHash, snapshot.PinnedHash, StringComparison.Ordinal);
@@ -277,7 +277,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // identifies exactly one composite.
             if (response.StatusCode == StatusCodes.Status304NotModified)
             {
-                if (!NoStoreAlreadyRequired(http)) response.Headers[HeaderNames.CacheControl] = StrongCacheControl;
+                if (!NoStoreAlreadyRequired(http)) response.Headers[HeaderNames.CacheControl] = plan.Settings.Shows(PosterTagGroup.Status) ? "public,max-age=300" : StrongCacheControl;
                 return;
             }
 
@@ -358,7 +358,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return;
             }
 
-            headers[HeaderNames.CacheControl] = plan.Strong ? StrongCacheControl : WeakCacheControl;
+            headers[HeaderNames.CacheControl] = plan.Settings.Shows(PosterTagGroup.Status) ? "public,max-age=300" : plan.Strong ? StrongCacheControl : WeakCacheControl;
             headers.Remove(HeaderNames.Pragma);
             if (!plan.Strong && !StringValues.IsNullOrEmpty(heldIfNoneMatch))
             {

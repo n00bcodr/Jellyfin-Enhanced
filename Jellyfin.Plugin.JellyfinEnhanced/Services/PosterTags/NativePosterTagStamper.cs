@@ -174,7 +174,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 session.Settings.Digest,
                 PosterTagComposer.PixelVersion,
                 flags,
-                _data.GetPinnedDataHash(ownerId, session.User));
+                _data.GetPinnedDataHash(ownerId, session.User, session.Settings.Shows(PosterTagGroup.Status)));
             var stamped = ImageTagDecoration.WithVariant(tag, token, session.Marker);
             if (dto != null && !ReferenceEquals(stamped, tag)) ReKeyPrimaryBlurhash(dto, tag, stamped);
             return stamped;

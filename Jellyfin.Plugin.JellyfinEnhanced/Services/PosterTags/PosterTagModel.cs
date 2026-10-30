@@ -27,6 +27,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         Rating,
         AgeRating,
         Language,
+        Status,
     }
 
     /// <summary>Rating chip source.</summary>
@@ -51,7 +52,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <paramref name="Label"/> is the exact text the web shows; <paramref name="Category"/> is the web's
     /// quality category key (resolution, source, dynamicRange, specialFormat, videoCodec, audioInfo).
     /// </summary>
-    public sealed record QualityTag(string Label, string Category) : PosterTag;
+    public sealed record QualityTag(string Label, string Category, string? DisplayText = null) : PosterTag;
 
     /// <summary>A genre chip. <paramref name="Icon"/> is the Material Symbols glyph name the web uses.</summary>
     public sealed record GenreTag(string Genre, string Icon) : PosterTag;
@@ -88,6 +89,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <summary>An age rating badge. <paramref name="ColorKey"/> is the normalised key used by the web's rating colours.</summary>
     public sealed record AgeRatingTag(string Text, string ColorKey) : PosterTag;
 
+    /// <summary>One localized status chip, styled with the web vocabulary's stable label key.</summary>
+    public sealed record StatusTag(string Key, string Text, string StyleKey) : PosterTag;
+
     /// <summary>The tags of one group and where they go.</summary>
     public sealed record PosterTagGroupLayout(PosterTagGroup Group, PosterTagCorner Corner, IReadOnlyList<PosterTag> Tags);
 
@@ -96,7 +100,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <paramref name="TopRightOffset"/> mirrors the web rule that pushes top-right tags down when the card shows a
     /// played or unplayed-count indicator. <paramref name="Landscape"/> selects the landscape logical card width.
     /// </summary>
-    public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape, TagStyleSet? Styles = null)
+    public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape, TagStyleSet? Styles = null, bool Bands = false)
     {
         /// <summary>True when nothing would be drawn.</summary>
         public bool IsEmpty
