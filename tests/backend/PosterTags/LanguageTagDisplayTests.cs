@@ -2,6 +2,7 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using SkiaSharp;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
 
 namespace JE.Tests;
 
@@ -72,20 +73,91 @@ public class LanguageTagDisplayTests
         Assert.All(tags.Skip(1), tag => Assert.True(tag.Subtitle));
     }
 
-    [Fact]
-    public void NativeTilesDrawCodesSubtitleFlagsAndBadgeAndChangeTheDigest()
+    private static PosterTagLayout Isolated(LanguageTag tag) => new(
+        [new(PosterTagGroup.Language, PosterTagCorner.TopLeft, [tag])], false, false);
+
+    /// <summary>Read an interior rectangle in the isolated tile, excluding its border and shadow.</summary>
+    private static SKColor[] Pixels(SKBitmap image, SKRect rect) =>
+        (from y in Enumerable.Range((int)Math.Ceiling(rect.Top), Math.Max(0, (int)Math.Floor(rect.Bottom) - (int)Math.Ceiling(rect.Top)))
+         from x in Enumerable.Range((int)Math.Ceiling(rect.Left), Math.Max(0, (int)Math.Floor(rect.Right) - (int)Math.Ceiling(rect.Left)))
+         select image.GetPixel(x, y)).ToArray();
+
+    [Theory]
+    [InlineData("EN")]
+    [InlineData("NB")]
+    [InlineData("NN")]
+    [InlineData("TL")]
+    [InlineData("Dual")]
+    [InlineData("Multi")]
+    public void IsolatedNativeChipPlansAndPaintsItsText(string text)
     {
-        var entry = new TagCacheEntry { Type = "Movie", AudioLanguages = ["en", "ja"], SubtitleLanguages = ["fr"] };
-        using var source = new SKBitmap(300, 450);
-        source.Erase(SKColors.DarkBlue);
-        using var renderer = new Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering.PosterTagRenderer();
-        foreach (var style in new[] { "flags", "codes" })
-        {
-            var layout = Resolve(entry, ",\"LanguageTagsShowSubtitles\":true,\"LanguageTagsCountBadge\":\"only\",\"LanguageTagsStyle\":\"" + style + "\"")!;
-            using var output = renderer.Render(source, layout);
-            Assert.NotNull(output);
-            Assert.False(source.Bytes.SequenceEqual(output!.Bytes));
-        }
+        var badge = text is "Dual" or "Multi";
+        var layout = Isolated(new LanguageTag("gb", "English", false) { Code = badge ? null : text, CountBadge = badge ? text : null });
+        using var renderer = new PosterTagRenderer();
+        var plan = renderer.Plan(180, 270, layout);
+        var group = Assert.Single(plan.Groups);
+        var item = Assert.Single(group.Items);
+        Assert.Equal(PosterTagTileKind.LanguageChip, item.Kind);
+        Assert.Equal(text, item.Text);
+        Assert.NotNull(item.TextLayout);
+        Assert.Equal(0, item.IconWidth);
+        using var source = new SKBitmap(180, 270);
+        source.Erase(SKColors.Transparent);
+        using var output = renderer.Render(source, layout)!;
+        var interior = Pixels(output, SKRect.Create(group.X + item.X + 4, group.Y + item.Y + 3, item.Width - 8, item.Height - 6));
+        // A box or its border alone cannot satisfy the interior text assertion.
+        Assert.True(interior.Count(c => c.Red > 220 && c.Green > 220 && c.Blue > 220 && c.Alpha > 200) > 8);
+        using var other = renderer.Render(source, Isolated(new LanguageTag("gb", "English", false) { Code = "ZZ" }))!;
+        Assert.False(output.Bytes.SequenceEqual(other.Bytes));
+    }
+
+    [Fact]
+    public void IsolatedSubtitleFlagPaintsBothCcTextAndTheSelectedFlag()
+    {
+        using var renderer = new PosterTagRenderer();
+        var layout = Isolated(new LanguageTag("fr", "French", false) { Subtitle = true });
+        var group = Assert.Single(renderer.Plan(180, 270, layout).Groups);
+        var item = Assert.Single(group.Items);
+        Assert.Equal("CC ", item.Text);
+        Assert.True(item.IconWidth > 0);
+        Assert.StartsWith("fr|False|", item.Style);
+        using var source = new SKBitmap(180, 270);
+        source.Erase(SKColors.Transparent);
+        using var output = renderer.Render(source, layout)!;
+        var text = Pixels(output, SKRect.Create(group.X + item.X + 4, group.Y + item.Y + 3, item.Width - item.IconWidth - 9, item.Height - 6));
+        Assert.True(text.Count(c => c.Red > 220 && c.Green > 220 && c.Blue > 220 && c.Alpha > 200) > 8);
+        var flag = Pixels(output, SKRect.Create(group.X + item.X + item.Width - item.IconWidth - 5, group.Y + item.Y + 3, item.IconWidth, item.IconHeight));
+        Assert.Contains(flag, c => c.Blue > 120 && c.Red < 80 && c.Alpha > 240);
+        Assert.Contains(flag, c => c.Red > 180 && c.Blue < 120 && c.Alpha > 240);
+        using var differentFlag = renderer.Render(source, Isolated(new LanguageTag("jp", "Japanese", false) { Subtitle = true }))!;
+        Assert.False(output.Bytes.SequenceEqual(differentFlag.Bytes));
+    }
+
+    [Fact]
+    public void IsolatedPartialCodeIsDimmedAndHasADashedOutline()
+    {
+        using var renderer = new PosterTagRenderer();
+        var full = Isolated(new LanguageTag("gb", "English", false) { Code = "EN" });
+        var partial = Isolated(new LanguageTag("gb", "English", true) { Code = "EN" });
+        var group = Assert.Single(renderer.Plan(180, 270, full).Groups);
+        var item = Assert.Single(group.Items);
+        using var source = new SKBitmap(180, 270);
+        source.Erase(SKColors.Transparent);
+        using var fullImage = renderer.Render(source, full)!;
+        using var partialImage = renderer.Render(source, partial)!;
+        var body = SKRect.Create(group.X + item.X + 3, group.Y + item.Y + 3, item.Width - 6, item.Height - 6);
+        var fullPixels = Pixels(fullImage, body);
+        var partialPixels = Pixels(partialImage, body);
+        Assert.True(partialPixels.Average(c => c.Alpha) < fullPixels.Average(c => c.Alpha) * 0.7);
+        var top = Pixels(partialImage, SKRect.Create(group.X + item.X + 4, group.Y + item.Y, item.Width - 8, 1));
+        // Alternating bright dashes and dimmer gaps, beyond the rounded corners.
+        Assert.True(top.Max(c => c.Alpha) - top.Min(c => c.Alpha) > 30);
+        Assert.False(fullImage.Bytes.SequenceEqual(partialImage.Bytes));
+    }
+
+    [Fact]
+    public void LanguageDisplaySettingsChangeTheDigest()
+    {
         var config = new PluginConfiguration();
         var baseline = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true}", config).Digest;
         foreach (var setting in new[] { "\"LanguageTagsStyle\":\"codes\"", "\"LanguageTagsShowSubtitles\":true", "\"LanguageTagsShowAudio\":false", "\"LanguageTagsCountBadge\":\"both\"" })
