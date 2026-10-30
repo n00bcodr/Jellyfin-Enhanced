@@ -46,7 +46,13 @@ test('group and label rules cover every chip group, status and language included
     language: c(null, 'rgba(255, 255, 255, 0.6)', null)
   }) });
   await h.JE.initializeTagStyles();
-  const css = h.css();
+  const raw = h.css();
+  // Every page-wide selector skips chips inside a marked preview (the Media Tags admin page's).
+  const guard = ':where(:not([data-je-tag-styles-scope] *))';
+  for (const rule of raw.split('\n')) {
+    for (const selector of rule.slice(0, rule.indexOf(' { ')).split(', ')) assert.ok(selector.endsWith(guard), selector);
+  }
+  const css = raw.replaceAll(guard, '');
   assert.match(css, /\.quality-overlay-label \{ background: rgba\(255, 0, 0, 1\) !important; \}/, 'the group-wide "*" rule');
   assert.match(css, /\.quality-overlay-label\[data-quality="4K"\] \{ background: rgba\(255, 0, 0, 1\) !important;color: rgba\(0, 0, 255, 1\) !important; \}/);
   assert.match(css, /\.age-rating-tag\[rating="PG-13"\], \.age-rating-overlay-container \.age-rating-tag\[rating="TV-14"\] \{ background-color: rgba\(1, 2, 3, 1\)/);
@@ -63,9 +69,11 @@ test('group and label rules cover every chip group, status and language included
   assert.match(css, /\.language-flag:not\(\.language-flag-partial\) \{ outline: 1px solid rgba\(255, 255, 255, 0\.6\)/,
     'partial dubs keep their dashed outline');
 
-  // The rules really reach the chips the renderers draw.
-  h.document.body.insertAdjacentHTML('beforeend', '<div class="status-overlay-container"><div class="status-tag status-tag--trending" data-je-status="trending">#1</div></div>');
+  // The rules really reach the chips the renderers draw, except inside a marked preview.
+  h.document.body.insertAdjacentHTML('beforeend', '<div class="status-overlay-container"><div class="status-tag status-tag--trending" data-je-status="trending">#1</div></div>'
+    + '<div data-je-tag-styles-scope><div class="status-overlay-container"><div class="status-tag status-tag--trending" data-je-status="trending" id="scoped">#1</div></div></div>');
   assert.equal(h.window.getComputedStyle(h.document.querySelector('.status-tag')).color, 'rgb(0, 255, 0)');
+  assert.notEqual(h.window.getComputedStyle(h.document.getElementById('scoped')).color, 'rgb(0, 255, 0)');
 });
 
 test('nothing but a colour reaches the stylesheet', async t => {
@@ -92,6 +100,7 @@ test('buildCss accepts one element id as its scope and nothing wider', async t =
   const model = { quality: { '*': c('rgba(1, 1, 1, 1)', null, null) } };
   const scoped = h.JE.tagStyles.buildCss(model, '#tagStylePreview');
   assert.match(scoped, /^#tagStylePreview \.quality-overlay-container/);
+  assert.doesNotMatch(scoped, /:where/, 'a scoped sheet needs no guard');
   for (const bad of ['#tagStylePreview, body', 'body', '#a b', '#a{}', '#a>.b', '.preview', '#']) {
     assert.throws(() => h.JE.tagStyles.buildCss(model, bad), /single #id/, bad);
   }

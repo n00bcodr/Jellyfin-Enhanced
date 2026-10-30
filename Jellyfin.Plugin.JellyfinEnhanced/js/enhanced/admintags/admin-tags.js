@@ -43,6 +43,7 @@
     const SAVE_DELAY_MS = 400;
     const UNDO_MS = 10000;
     const TAB_STORE_KEY = 'JE_mediaTagsAdminTab';
+    const PREVIEW_STYLE_ID = 'je-tag-admin-preview-styles';
 
     /** The section modules the page loads, in order (paths under js/enhanced/admintags/). */
     const SECTION_FILES = [
@@ -598,6 +599,7 @@
                 for (const s of sections) s.load?.(ctx, bodyOf(s));
                 refresh();
             }
+            if (event.type === 'saved' && event.values && Object.keys(event.values).some((key) => key.startsWith('TagStyle'))) loadPreviewStyles();
             drawSaveState();
         };
         store.views.add(onStore);
@@ -823,6 +825,31 @@
         if (typeof createPreview === 'function') {
             preview = createPreview(mount, { source: () => ({ settings: seedUser(config), plugin: config }) });
         }
+        // Tag Styles: the preview shows the saved server styles (what a new
+        // user gets), scoped to it; the signed-in user's page-wide styles
+        // leave it alone (tag-styles.js skips marked elements).
+        const previewBody = /** @type {HTMLElement} */ (root.querySelector('#jeTaPreviewBody'));
+        previewBody.setAttribute(JE.tagStyles?.SCOPE_ATTR || 'data-je-tag-styles-scope', '');
+        let stylesSeq = 0;
+        /**
+         * Fetch the server's effective web Tag Styles (GET tag-styles without a
+         * preset: the administrator's) and style the preview with them.
+         * @returns {Promise<void>}
+         */
+        async function loadPreviewStyles() {
+            const seq = ++stylesSeq;
+            let styles;
+            try {
+                styles = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/tag-styles'), dataType: 'json' });
+            } catch (err) {
+                if (!disposed) console.warn('🪼 Jellyfin Enhanced: could not load the Tag Styles for the preview', err);
+                return;
+            }
+            if (disposed || seq !== stylesSeq) return;
+            const css = typeof JE.tagStyles?.buildCss === 'function' ? JE.tagStyles.buildCss(styles || {}, '#jeTaPreviewBody') : '';
+            if (css) JE.core.ui.injectCss(PREVIEW_STYLE_ID, css);
+            else JE.core.ui.removeCss(PREVIEW_STYLE_ID);
+        }
         /** Outline the group being edited in the preview. */
         function syncSpotlight() {
             if (!preview) return;
@@ -909,6 +936,7 @@
             clearTimeout(snackTimer);
             preview?.dispose();
             preview = null;
+            JE.core.ui.removeCss(PREVIEW_STYLE_ID);
             for (const s of sections) s.dispose?.(ctx);
         }
 
@@ -946,6 +974,7 @@
         for (const s of sections) s.render?.(ctx, bodyOf(s));
         refresh({ controls: false });
         drawSaveState();
+        loadPreviewStyles();
         let start = requestedTarget();
         if (!start.tab || !TABS.some((t) => t.id === start.tab)) {
             let saved = null;

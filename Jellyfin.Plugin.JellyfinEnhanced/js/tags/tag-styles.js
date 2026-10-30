@@ -54,6 +54,12 @@
      */
     // One element id, as `#tagStylePreview`: no combinators, lists or braces.
     const SCOPE_ID = /^#[A-Za-z_][A-Za-z0-9_-]*$/;
+    // Page-wide rules leave out chips inside an element with this attribute:
+    // a preview that draws other styles with its own scoped sheet (the Media
+    // Tags admin page draws the server defaults, not the signed-in user's).
+    // :where() adds no specificity, so every other chip matches as before.
+    const SCOPE_ATTR = 'data-je-tag-styles-scope';
+    const OUTSIDE_SCOPES = `:where(:not([${SCOPE_ATTR}] *))`;
 
     function push(rules, selector, body) {
         if (body) rules.push(`${selector} { ${body} }`);
@@ -66,6 +72,7 @@
      *   limited to (`#tagStylePreview` for the config page's live preview);
      *   omitted, the rules style the whole page. Anything but a single `#id`
      *   is refused, so a caller can never widen the rules to other elements.
+     *   Unscoped rules skip chips inside `[data-je-tag-styles-scope]`.
      * @returns {string} The CSS, empty when nothing is styled.
      */
     function buildCss(styles, scope) {
@@ -74,62 +81,68 @@
             throw new Error('tag-styles: scope must be a single #id selector');
         }
         const P = scope ? `${scope} ` : '';
+        /**
+         * Pushes one rule for these selectors (the page-wide sheet guards each one's subject).
+         * @param {string|string[]} selectors
+         * @param {string} body
+         */
+        const add = (selectors, body) => push(rules, [].concat(selectors).map((sel) => (scope ? sel : sel + OUTSIDE_SCOPES)).join(', '), body);
         const quality = styles.quality || {};
         // Beat category rules (including editions) regardless of reinjection order.
         const Q = `${P}.quality-overlay-container.quality-overlay-container.quality-overlay-container .quality-overlay-label`;
         // The "*" rule covers labels outside the catalog; per-label rules win on specificity.
-        if (quality['*']) push(rules, Q, `${decl('background', quality['*'].background)}${decl('color', quality['*'].color)}${decl('border-color', quality['*'].border)}`);
+        if (quality['*']) add(Q, `${decl('background', quality['*'].background)}${decl('color', quality['*'].color)}${decl('border-color', quality['*'].border)}`);
         for (const [label, c] of Object.entries(quality)) {
             if (label === '*' || !c) continue;
-            push(rules, `${Q}[data-quality="${attr(label)}"]`, `${decl('background', c.background)}${decl('color', c.color)}${decl('border-color', c.border)}`);
+            add(`${Q}[data-quality="${attr(label)}"]`, `${decl('background', c.background)}${decl('color', c.color)}${decl('border-color', c.border)}`);
         }
 
         const A = `${P}.age-rating-overlay-container .age-rating-tag`;
-        if (styles.ageDefault) push(rules, `${P}.age-rating-overlay-container.age-rating-overlay-container .age-rating-tag`, box(styles.ageDefault));
+        if (styles.ageDefault) add(`${P}.age-rating-overlay-container.age-rating-overlay-container .age-rating-tag`, box(styles.ageDefault));
         for (const board of Array.isArray(styles.age) ? styles.age : []) {
             const ratings = Array.isArray(board?.ratings) ? board.ratings : [];
             if (!ratings.length) continue;
-            push(rules, ratings.map((r) => `${A}[rating="${attr(r)}"]`).join(', '), box(board));
+            add(ratings.map((r) => `${A}[rating="${attr(r)}"]`), box(board));
         }
 
         const chips = styles.rating || {};
         const R = `${P}.rating-overlay-container .rating-tag`;
         if (chips.community) {
-            push(rules, `${R}.rating-tag-tmdb`, decl('background', chips.community.background) + decl('color', chips.community.color) + ring(chips.community.border));
-            push(rules, `${R}.rating-tag-tmdb .rating-star-icon`, decl('color', chips.community.color));
+            add(`${R}.rating-tag-tmdb`, decl('background', chips.community.background) + decl('color', chips.community.color) + ring(chips.community.border));
+            add(`${R}.rating-tag-tmdb .rating-star-icon`, decl('color', chips.community.color));
         }
         if (chips.critic) {
-            push(rules, `${R}.rating-tag-critic`, decl('background', chips.critic.background) + decl('color', chips.critic.color) + ring(chips.critic.border));
+            add(`${R}.rating-tag-critic`, decl('background', chips.critic.background) + decl('color', chips.critic.color) + ring(chips.critic.border));
         }
         if (chips.userReview) {
-            push(rules, `${R}.rating-tag-userreview`, decl('background', chips.userReview.background) + decl('color', chips.userReview.color) + ring(chips.userReview.border));
-            push(rules, `${R}.rating-tag-userreview .je-userreview-icon`, decl('color', chips.userReview.color));
+            add(`${R}.rating-tag-userreview`, decl('background', chips.userReview.background) + decl('color', chips.userReview.color) + ring(chips.userReview.border));
+            add(`${R}.rating-tag-userreview .je-userreview-icon`, decl('color', chips.userReview.color));
         }
 
         for (const [id, c] of Object.entries(chips)) {
             if (!c || ['community', 'critic', 'userReview'].includes(id)) continue;
-            push(rules, `${R}[data-je-rating-source="${attr(id)}"]`, decl('background', c.background) + decl('color', c.color) + ring(c.border));
+            add(`${R}[data-je-rating-source="${attr(id)}"]`, decl('background', c.background) + decl('color', c.color) + ring(c.border));
         }
 
-        if (styles.genre) push(rules, `${P}.genre-overlay-container .genre-tag`, box(styles.genre));
+        if (styles.genre) add(`${P}.genre-overlay-container .genre-tag`, box(styles.genre));
 
         const status = styles.status || {};
         for (const key of STATUS_LABELS) {
             const c = status[key];
             if (!c) continue;
             const S = `${P}.status-overlay-container .status-tag[data-je-status="${key}"]`;
-            push(rules, S, box(c));
+            add(S, box(c));
             // The rank ("#3") keeps its accent unless the text colour is styled.
-            if (key === 'trending') push(rules, `${S} .status-tag-rank`, decl('color', c.color));
+            if (key === 'trending') add(`${S} .status-tag-rank`, decl('color', c.color));
         }
 
         if (styles.language) {
-            push(rules, `${P}.language-overlay-container .language-flag:not(.language-flag-partial)`, ring(styles.language.border));
+            add(`${P}.language-overlay-container .language-flag:not(.language-flag-partial)`, ring(styles.language.border));
         }
         for (const label of ['flag', 'subtitles', 'countBadge']) {
             const color = styles.languageLabels?.[label];
             if (!color) continue;
-            push(rules, `${P}.language-overlay-container.language-overlay-container [data-je-language="${label}"]:not(.language-flag-partial)`, ring(color.border));
+            add(`${P}.language-overlay-container.language-overlay-container [data-je-language="${label}"]:not(.language-flag-partial)`, ring(color.border));
         }
         return rules.join('\n');
     }
@@ -196,5 +209,5 @@
         }
     };
 
-    JE.tagStyles = { PRESETS, buildCss, deactivate };
+    JE.tagStyles = { PRESETS, SCOPE_ATTR, buildCss, deactivate };
 })(window.JellyfinEnhanced);

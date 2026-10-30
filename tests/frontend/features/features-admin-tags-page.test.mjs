@@ -60,9 +60,10 @@ function serverPatch(server, body) {
  * mocked server (`server`), without a page built yet. Field saves go through
  * `patch` (default: serverPatch) and are recorded in `patches`.
  * @param {import('node:test').TestContext} t
- * @param {{server: object, url?: string, apiClient?: object, globals?: object, patch?: Function}} options
+ * @param {{server: object, url?: string, apiClient?: object, globals?: object, patch?: Function, routes?: Object<string, Function>}} options
+ *   routes: GET path suffix → answer, before the defaults.
  */
-function boot(t, { server, url, apiClient = {}, globals = {}, patch }) {
+function boot(t, { server, url, apiClient = {}, globals = {}, patch, routes = {} }) {
   const posts = [];
   const patches = [];
   const h = createHarness({
@@ -81,6 +82,7 @@ function boot(t, { server, url, apiClient = {}, globals = {}, patch }) {
           return (patch || ((b) => serverPatch(server, b)))(body);
         }
         if (request.type === 'POST') { posts.push(path); return { message: 'started' }; }
+        for (const [suffix, answer] of Object.entries(routes)) if (path.endsWith(suffix)) return answer(request);
         if (path.endsWith('/tag-cache/summary')) return { enabled: true, entries: 1234, lastModified: 0, rebuilding: false };
         if (path.endsWith('/Localization/Cultures')) return [{ TwoLetterISOLanguageName: 'en', DisplayName: 'English' }, { TwoLetterISOLanguageName: 'ja', DisplayName: 'Japanese' }];
         if (path.endsWith('/tag-styles/catalog')) return catalog;
@@ -711,6 +713,53 @@ test('the hub preview draws a supplied document and hands the signed-in user\'s 
   assert.equal(mount.querySelector('[data-sample="movie"] .genre-overlay-container'), null);
   assert.match(h.document.getElementById('je-tag-preview').textContent, /:is\(#jellyfin-enhanced-panel, \.je-tag-admin\) \.je-mtp-samples/);
   preview.dispose();
+});
+
+test('the preview draws the saved server Tag Styles, scoped to it, whatever this browser\'s own styles are', async t => {
+  const server = structuredClone({ ...BASE, TagStylesEnabled: true, TagStylePreset: 'default' });
+  let fetches = 0;
+  const h = boot(t, {
+    server,
+    // GET tag-styles without a preset: the server's model for its own preset (empty while Tag Styles are off).
+    routes: { '/JellyfinEnhanced/tag-styles': () => { fetches++; return server.TagStylesEnabled ? { quality: { '4K': { color: server.TagStylePreset === 'glass' ? 'rgba(10, 20, 30, 1)' : 'rgba(40, 50, 60, 1)' } } } : {}; } },
+  });
+  h.load('tags/tag-styles.js');
+  h.load('enhanced/settingspanel/ui-panel-tag-preview.js');
+  // The signed-in administrator's own page-wide styles (their preset): red 4K chips.
+  h.JE.core.ui.injectCss('je-tag-style-overrides', h.JE.tagStyles.buildCss({ quality: { '4K': { color: 'rgba(255, 0, 0, 1)' } } }));
+  h.document.body.insertAdjacentHTML('beforeend', '<div class="quality-overlay-container"><span class="quality-overlay-label resolution" data-quality="4K" id="libraryChip">4K</span></div>');
+  const root = h.document.getElementById('jeTaRoot');
+  const ctx = h.A.createPage(root, structuredClone(server), { confirm: () => true });
+  h.cleanup.push(() => ctx.dispose());
+  await h.settle(); await h.settle();
+  const chip = () => root.querySelector('#jeTaPreviewBody [data-sample="movie"] .quality-overlay-label[data-quality="4K"]');
+  const colour = (el) => h.window.getComputedStyle(el).color;
+  assert.ok(chip(), 'the preview draws a 4K chip');
+  assert.equal(fetches, 1);
+  assert.match(h.document.getElementById('je-tag-admin-preview-styles').textContent, /^#jeTaPreviewBody \.quality-overlay-container/);
+  assert.equal(colour(chip()), 'rgb(40, 50, 60)', 'the server default, not the browser\'s red');
+  assert.equal(colour(h.document.getElementById('libraryChip')), 'rgb(255, 0, 0)', 'the page-wide styles are untouched');
+  // A Colours save refreshes the preview's styles.
+  root.querySelector('#jeTaTab-colours').click();
+  await h.settle(); await h.settle();
+  root.querySelector('.je-ts-preset[data-preset="glass"]').click();
+  await ctx.flush();
+  await h.settle();
+  assert.equal(server.TagStylePreset, 'glass');
+  assert.equal(fetches, 2);
+  assert.equal(colour(chip()), 'rgb(10, 20, 30)');
+  // Tag Styles off: no preview styles, and the browser's own still stay out of the preview.
+  h.change(root.querySelector('#tagStylesEnabled'), false);
+  await ctx.flush();
+  await h.settle();
+  assert.equal(h.document.getElementById('je-tag-admin-preview-styles'), null);
+  assert.notEqual(colour(chip()), 'rgb(255, 0, 0)');
+  assert.equal(colour(h.document.getElementById('libraryChip')), 'rgb(255, 0, 0)');
+  // A save of an unrelated field fetches nothing.
+  h.change(root.querySelector('#tagsHideOnHover'), true);
+  await ctx.flush();
+  await h.settle();
+  assert.equal(fetches, 3);
 });
 
 test('each section module is a self-contained file the page loads, and every declaration is one line', () => {
