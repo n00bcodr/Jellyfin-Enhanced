@@ -1198,6 +1198,7 @@
         const unprocessed = [];
         for (const el of elements) {
             if (!processedCards.has(el)) unprocessed.push(el);
+            else JE.core.tagLayout?.resumePresentation?.(el.closest('.cardScalable') || el);
         }
         if (unprocessed.length === 0) return;
 

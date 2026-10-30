@@ -92,6 +92,7 @@ function setupReal(t, { html = episodeCard(), settings = {}, storage = {}, cache
   const hostOf = id => h.document.querySelector(`[data-id="${id}"] .je-tag-host`);
   return Object.assign(h, {
     layout, requests, hostOf,
+    timeout() { for (const [id, timer] of [...timers]) if (timer.ms === 8000) { timers.delete(id); timer.fn(); } },
     scan() { while (idle.length) idle.shift()({ timeRemaining: () => 50 }); },
     fetch() { for (const [id, timer] of [...timers]) if (timer.ms === 150) { timers.delete(id); timer.fn(); } },
     /** Answer every pending /tag-data request and let the batch finish (idle yields included). */
@@ -273,4 +274,16 @@ test('a wait token cannot release a newer hold for the same card identity', t =>
   assert.equal(h.shown(EPISODE), false);
   h.layout.releaseCardContext(host, current);
   assert.ok(h.shown(EPISODE));
+});
+
+test('a detached waiting card presents retained groups after timeout and reconnection without another fetch', t => {
+  const h = setupReal(t, { settings: { tagLayoutLocks: seriesLock } });
+  h.scan();
+  const card = h.document.querySelector('.card');
+  assert.equal(h.shown(EPISODE), false);
+  card.remove(); h.timeout();
+  h.document.body.append(card);
+  h.JE.tagPipeline.scheduleScan(); h.scan();
+  assert.ok(h.shown(EPISODE), 'reattachment presents the retained quality group');
+  assert.equal(h.requests.length, 0, 'no response needed for safety-release presentation');
 });

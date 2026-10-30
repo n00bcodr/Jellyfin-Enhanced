@@ -367,6 +367,7 @@
      * @property {string|null} layout - Layout the card is currently presented in.
      * @property {number} seq - Arrival counter (legacy ordering).
      * @property {string} lookKey - lookKey of the settings the card is presented with.
+     * @property {boolean} [pendingPresentation] - A detached card needs presentation on reconnection.
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
@@ -665,7 +666,18 @@
         if (!rec || rec.token !== token || token.cardId !== identityOf(host)) return;
         if (!endAwait(host)) return;
         const ctrl = controllers.get(host);
-        if (ctrl && ctrl.host.isConnected && ctrl.groups.size) presentAll(ctrl);
+        if (!ctrl || !ctrl.groups.size) return;
+        if (ctrl.host.isConnected) presentAll(ctrl);
+        else ctrl.pendingPresentation = true;
+    }
+
+    /**
+     * Finish a detached card's safety release when a scan sees it reattached.
+     * @param {HTMLElement} target - Existing render target; never creates a host.
+     */
+    function resumePresentation(target) {
+        const ctrl = target ? controllerFor(target, false) : null;
+        if (ctrl?.pendingPresentation && ctrl.host.isConnected) presentAll(ctrl);
     }
 
     // ── Representations ────────────────────────────────────────────────
@@ -1038,6 +1050,7 @@
      * @param {CardController} ctrl
      */
     function presentAll(ctrl) {
+        ctrl.pendingPresentation = false;
         const conf = resolveLayout(ctrl);
         teardown(ctrl);
         ctrl.layout = conf.layout;
@@ -1276,6 +1289,7 @@
         cardIdentity,
         awaitCardContext,
         releaseCardContext,
+        resumePresentation,
         ensureHost,
         commitGroup,
         removeGroup,
