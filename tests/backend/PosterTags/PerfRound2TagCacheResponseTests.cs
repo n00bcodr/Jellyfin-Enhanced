@@ -55,7 +55,7 @@ public class PerfRound2TagCacheResponseTests
             Directory.CreateDirectory(Fixture.Core.ConfigRoot);
             File.WriteAllText(Path.Combine(Fixture.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new
             {
-                SchemaVersion = 14, Version = 9, LastModified = 200,
+                SchemaVersion = 15, Version = 9, LastModified = 200,
                 Items = new Dictionary<string, TagCacheEntry>
                 {
                     [First.ToString("N")] = new() { Type = "Movie", Genres = ["First secret"], LastUpdated = 100 },

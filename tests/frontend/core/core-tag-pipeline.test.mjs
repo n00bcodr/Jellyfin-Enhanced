@@ -112,14 +112,14 @@ async function loadWithStoredCopy(t, meta) {
   return { calls, cleared };
 }
 
-for (const schema of [undefined, 11, 12, 13]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
+for (const schema of [undefined, 11, 12, 13, 14]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
   const { calls, cleared } = await loadWithStoredCopy(t, schema === undefined ? {} : { schema });
   assert.deepEqual(cleared, ['server-a:user-a'], 'the copy without the current schema is cleared');
   assert.ok(calls.length > 0 && calls.every(url => !url.includes('since=')), 'a full download, never a delta on top of it');
 });
 
 test('a stored tag cache copy with the current entry schema is restored and only the delta is fetched', async t => {
-  const { calls, cleared } = await loadWithStoredCopy(t, { schema: 14 });
+  const { calls, cleared } = await loadWithStoredCopy(t, { schema: 15 });
   assert.deepEqual(cleared, []);
   assert.ok(calls.some(url => url.includes('since=40')), 'the delta since the stored cursor');
 });

@@ -48,7 +48,7 @@ internal static class SeriesQualityAggregation
         return detected.Audio.GetOrAdd(key, code => new(QualityTagRules.DetectAggregationAudio(streams, code))).Label;
     }
 
-    internal sealed record Episode(string Id, long? Aired, TagStreamData? Streams);
+    internal sealed record Episode(string Id, long? Aired, TagStreamData? Streams, string? Source = null, string? Edition = null);
     private static readonly string[] Categories = { QualityTagRules.Resolution, QualityTagRules.DynamicRange, QualityTagRules.VideoCodec, QualityTagRules.AudioInfo };
 
     /// <summary>Normalize fixed policy values at settings and rendering boundaries.</summary>
@@ -92,7 +92,7 @@ internal static class SeriesQualityAggregation
         {
             NextPremiere = episodes.Select(e => e.Aired).Where(date => date > boundary).Min(),
             EpisodeCount = episodes.Count, Categories = categories, AudioByLanguage = audio, AudioRegionFallback = regionFallback,
-            LatestExtras = latest < 0 ? Array.Empty<string>() : labels[latest].Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToArray(),
+            LatestExtras = latest < 0 ? Array.Empty<string>() : QualityTagRules.Detect(episodes[latest].Streams, null, episodes[latest].Source, episodes[latest].Edition).Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToArray(),
         };
     }
 
@@ -118,7 +118,7 @@ internal static class SeriesQualityAggregation
     /// <summary>Apply a policy while retaining representative source/format tags, except latest uses its own.</summary>
     public static List<string> Resolve(TagCacheEntry entry, string policy, string? preferred, Func<string, bool>? shown = null)
     {
-        var representative = QualityTagRules.Detect(entry.StreamData, preferred);
+        var representative = QualityTagRules.Detect(entry.StreamData, preferred, entry.Source, entry.Edition);
         if (entry.Type is not ("Series" or "Season") || entry.QualitySummary == null || Normalize(policy) == "representative") return representative;
         var summary = entry.QualitySummary;
         var result = policy == "latest" ? summary.LatestExtras.ToList() : representative.Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToList();

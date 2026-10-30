@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public float? CommunityRating { get; set; }
         public float? CriticRating { get; set; }
 
-        // Multi-source ratings (schema v14). Immutable, shared across users.
+        // Multi-source ratings (schema v15). Immutable, shared across users.
         /// <summary>MDBList source values in their native units; absent without a configured key.</summary>
         public TagSourceRatings? Ratings { get; set; }
 
@@ -40,7 +40,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string[]? PartialAudioLanguages { get; set; }
         public TagStreamData? StreamData { get; set; }
 
-        // Source and edition naming facts (schema v14).
+        // Source and edition naming facts (schema v15).
         /// <summary>Canonical release source, derived server-side from the selected version's file/folder name.</summary>
         public string? Source { get; set; }
         /// <summary>Edition label from the selected version's file/folder name; contains no path.</summary>
@@ -116,7 +116,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public string[]? StatusEpisodeIds { get; set; }
 
-        // Series/season quality aggregation (schema v14). Contributors stay server-side.
+        // Series/season quality aggregation (schema v15). Contributors stay server-side.
         public TagQualitySummary? QualitySummary { get; set; }
         public string[]? QualityEpisodeIds { get; set; }
 

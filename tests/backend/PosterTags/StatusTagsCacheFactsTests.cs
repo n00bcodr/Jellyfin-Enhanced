@@ -168,7 +168,7 @@ public class StatusTagsCacheFactsTests
         cachedSeason.SeasonNumber = 2;
         var snapshot = JsonSerializer.SerializeToNode(new
         {
-            SchemaVersion = 14, Version = 7, LastModified = 200, LastReconciledUtcTicks = DateTime.UtcNow.AddDays(-1).Ticks, Items = entries,
+            SchemaVersion = 15, Version = 7, LastModified = 200, LastReconciledUtcTicks = DateTime.UtcNow.AddDays(-1).Ticks, Items = entries,
         })!;
         if (legacySnapshot)
             foreach (var (_, entry) in snapshot["Items"]!.AsObject()) entry!.AsObject().Remove("NextEpisodePremiere");
@@ -333,7 +333,7 @@ public class StatusTagsCacheFactsTests
         Directory.CreateDirectory(f.Core.ConfigRoot);
         File.WriteAllText(Path.Combine(f.Core.ConfigRoot, "tag-cache.json"), JsonSerializer.Serialize(new
         {
-            SchemaVersion = 14, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks,
+            SchemaVersion = 15, Version = 7, LastModified = 200, LastReconciledUtcTicks = new DateTime(2026, 1, 1).Ticks,
             Items = new Dictionary<string, TagCacheEntry>
             {
                 [seasonKey] = new()

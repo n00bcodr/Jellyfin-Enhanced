@@ -89,7 +89,9 @@ public class SourceEditionTagsTests
         movie.Sources[0].Id = "low"; movie.Sources[1].Id = "best";
         var users = new Mock<IUserManager>(); users.Setup(x => x.GetUserById(user.Id)).Returns(user);
         var library = new Mock<ILibraryManager>(); library.Setup(x => x.GetItemById<BaseItem>(movie.Id, user)).Returns(movie);
-        var controller = ApiAssetTests.Controller(fixture.Core, users.Object, library.Object);
+        using var cache = new TagCacheService(library.Object, fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), fixture.Core.Logger,
+            new Jellyfin.Plugin.JellyfinEnhanced.Helpers.MatroskaLanguageCache(fixture.Core.Paths.Object, fixture.Core.Logger));
+        var controller = ApiAssetTests.Controller(fixture.Core, users.Object, library.Object, cache);
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", user.Id.ToString())], "test"));
         JsonElement Read(string? version)
         {

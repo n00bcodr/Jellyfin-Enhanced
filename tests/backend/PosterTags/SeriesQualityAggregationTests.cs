@@ -83,6 +83,26 @@ public class SeriesQualityAggregationTests
     }
 
     [Fact]
+    public void PoliciesRetainNamingFactsFromTheAppropriateEpisode()
+    {
+        var summary = SeriesQualityAggregation.Build([
+            new("first", 1, Streams(1080), "WEB", "Criterion"),
+            new("latest", 2, Streams(2160), "REMUX", "Extended")], 100);
+        var entry = new TagCacheEntry { Type = "Series", StreamData = Streams(1080),
+            Source = "WEB", Edition = "Criterion", QualitySummary = summary };
+        foreach (var policy in new[] { "representative", "best", "shared", "mixed" })
+        {
+            var labels = SeriesQualityAggregation.Resolve(entry, policy, null);
+            Assert.Contains("WEB", labels);
+            Assert.Contains("edition:Criterion", labels);
+        }
+        var latest = SeriesQualityAggregation.Resolve(entry, "latest", null);
+        Assert.Contains("REMUX", latest);
+        Assert.Contains("edition:Extended", latest);
+        Assert.DoesNotContain("WEB", latest);
+    }
+
+    [Fact]
     public void AgreementAudioPreferencesAndEntryValueContractsSurviveRoundTrip()
     {
         var first = Streams(1080);
@@ -110,12 +130,12 @@ public class SeriesQualityAggregationTests
         Directory.CreateDirectory(f.Core.ConfigRoot);
         var path = Path.Combine(f.Core.ConfigRoot, "tag-cache.json");
         var items = new Dictionary<string, TagCacheEntry> { [Guid.NewGuid().ToString("N")] = new() { Type = "Series", QualitySummary = SeriesQualityAggregation.Build([Fact(2160, 1)]) } };
-        foreach (var schema in new[] { 13, 14 })
+        foreach (var schema in new[] { 13, 14, 15 })
         {
             File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = schema, Version = 1, LastModified = 10, Items = items }));
             using var cache = new TagCacheService(Mock.Of<ILibraryManager>(), f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
             cache.LoadFromDisk();
-            Assert.Equal(schema == 14 ? 1 : 0, cache.Count);
+            Assert.Equal(schema == 15 ? 1 : 0, cache.Count);
         }
     }
 
@@ -162,6 +182,8 @@ public class SeriesQualityAggregationTests
         Episode Make(int n, int height) => new() { Id = Guid.NewGuid(), SeriesId = series.Id, SeasonId = season.Id, ParentId = season.Id,
             ParentIndexNumber = 1, IndexNumber = n, PremiereDate = DateTime.UtcNow.AddDays(n - 10), StreamHeight = height };
         var low = Make(1, 1080); var high = Make(2, 2160);
+        low.Path = "/private/Show.WEB-DL.{edition-Criterion}.mkv";
+        high.Path = "/private/Show.REMUX.{edition-Extended}.mkv";
         BaseItem[] all = [series, season, low, high];
         var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
         var hidden = new HashSet<Guid>();
@@ -183,6 +205,15 @@ public class SeriesQualityAggregationTests
         Assert.Equal(1, low.Reads); Assert.Equal(1, high.Reads);
         Assert.True(cache.TryGetEntry(series.Id, out var original));
         Assert.Equal("4K", original.QualitySummary!.Categories["resolution"].Best);
+        Assert.Equal("WEB", original.Source);
+        Assert.Equal("Criterion", original.Edition);
+        Assert.Contains("REMUX", original.QualitySummary.LatestExtras);
+        hidden.Add(low.Id); cache.InvalidateUserAccess();
+        var highOnly = cache.GetCacheForUser(user, out _, out _, out _)[series.Id.ToString("N")];
+        Assert.Equal("REMUX", highOnly.Source);
+        Assert.Equal("Extended", highOnly.Edition);
+        Assert.Equal("WEB", original.Source);
+        hidden.Clear(); cache.InvalidateUserAccess();
         var full = cache.GetCacheForUser(user, out _, out _, out var allRevision);
         hidden.Add(high.Id); cache.InvalidateUserAccess();
         var restricted = cache.GetCacheForUser(user, out _, out _, out var restrictedRevision)[series.Id.ToString("N")];
@@ -203,6 +234,6 @@ public class SeriesQualityAggregationTests
         }
         Assert.Equal(1, low.Reads); Assert.Equal(2, high.Reads);
         var snapshot = JsonDocument.Parse(File.ReadAllText(Path.Combine(f.Core.ConfigRoot, "tag-cache.json")));
-        Assert.Equal(14, snapshot.RootElement.GetProperty("SchemaVersion").GetInt32());
+        Assert.Equal(15, snapshot.RootElement.GetProperty("SchemaVersion").GetInt32());
     }
 }
