@@ -96,6 +96,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
+            _tagCache.LogosWarmed += OnLogosWarmed;
         }
 
         /// <summary>
@@ -163,6 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded -= OnItemChanged;
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
+            _tagCache.LogosWarmed -= OnLogosWarmed;
         }
 
         /// <summary>SHA-256 (hex) of an entry's content, ignoring its build timestamp. Memoized per instance.</summary>
@@ -272,6 +274,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             foreach (var key in _memo.OrderBy(kvp => kvp.Value.BuiltAt).Take(MaxMemoEntries / 4).Select(kvp => kvp.Key).ToList())
             {
                 _memo.TryRemove(key, out _);
+            }
+        }
+
+        // A background logo warm (queued by an on-demand build) finished: drop the
+        // memoized builds of those movies and series and of their seasons and
+        // episodes, so the next poster request projects the new logos.
+        private void OnLogosWarmed(IReadOnlyCollection<Guid> owners)
+        {
+            if (_memo.IsEmpty && _building.IsEmpty) return;
+            var seriesIds = owners.Select(id => id.ToString("N")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            lock (_memoLock)
+            {
+                _memoGeneration++;
+                foreach (var pair in _memo)
+                {
+                    if (owners.Contains(pair.Key) || (pair.Value.Entry?.SeriesId is { } seriesId && seriesIds.Contains(seriesId)))
+                        _memo.TryRemove(pair.Key, out _);
+                }
             }
         }
 

@@ -2047,13 +2047,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// touching the cache (native poster tags when the cache is off or has no
         /// entry yet). Same derivation as the cache, including the Series/Season
         /// episode scan, so it can be expensive for containers: callers memoize.
-        /// Null for non-taggable items or when the build fails.
+        /// Logos are read from stored lookups only: a poster request never waits
+        /// on TMDB, and what is missing is warmed in the background for a later
+        /// build (<see cref="QueueLogoWarm"/>). Null for non-taggable items or
+        /// when the build fails.
         /// </summary>
         public TagCacheEntry? BuildEntryOnDemand(BaseItem item)
         {
             if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
             WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
-            WarmLogosForItems(new[] { item }, CancellationToken.None);
+            QueueLogoWarm(new[] { item });
             return BuildEntryForItem(item);
         }
 

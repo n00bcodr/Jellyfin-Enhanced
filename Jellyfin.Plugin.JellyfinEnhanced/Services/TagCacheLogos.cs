@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -32,6 +33,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>Request-path warming waits at most this long; the rest finishes in the background.</summary>
         private static readonly TimeSpan LogoRequestBudget = TimeSpan.FromSeconds(3);
+
+        // Owners native posters found missing logo data, waiting for one background warm.
+        private readonly ConcurrentDictionary<Guid, BaseItem> _pendingLogoOwners = new();
+        private int _logoWarmQueued;
+
+        /// <summary>How long owners queued by poster reads gather before their background warm runs.</summary>
+        internal TimeSpan LogoWarmDelay { get; set; } = TimeSpan.FromSeconds(2);
+
+        /// <summary>Owners waiting for the background warm (tests).</summary>
+        internal int PendingLogoWarms => _pendingLogoOwners.Count;
+
+        /// <summary>Raised after a background warm with the ids of the movies and series it warmed.</summary>
+        internal event Action<IReadOnlyCollection<Guid>>? LogosWarmed;
+
+        /// <summary>The settings refreshes and background warms queued so far (tests).</summary>
+        internal Task LogoWorkQueue
+        {
+            get
+            {
+                lock (_logoRefreshLock) return _logoRefreshQueue;
+            }
+        }
 
         /// <summary>Longer names show as an initialism on text chips (web and native).</summary>
         public const int LogoTextMaxLength = 12;
@@ -247,6 +270,64 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             catch (AggregateException ex)
             {
                 _logger.Debug($"[LogoTags] Warming logos failed: {ex.InnerException?.Message ?? ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Native poster reads: never warm during the request. The items'
+        /// owners whose lookups are due or whose logo image is not cached are
+        /// queued, and one background warm runs after <see cref="LogoWarmDelay"/>
+        /// on the logo work queue (behind settings refreshes), within the lookup
+        /// service's concurrency and rate limits. The poster meanwhile draws what
+        /// is stored: a name chip, or no chip.
+        /// </summary>
+        public void QueueLogoWarm(IEnumerable<BaseItem> items)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (_logoService == null || config == null || _disposed || string.IsNullOrWhiteSpace(config.TMDB_API_KEY) || !HasLogoDemand()) return;
+            var region = LogoTagRules.Region(config);
+            foreach (var item in items)
+            {
+                var owner = LogoOwner(item, null);
+                if (owner == null || _pendingLogoOwners.ContainsKey(owner.Id) || !NeedsLogoWarm(owner, config, region)) continue;
+                _pendingLogoOwners.TryAdd(owner.Id, owner);
+            }
+
+            if (_pendingLogoOwners.IsEmpty || Interlocked.Exchange(ref _logoWarmQueued, 1) == 1) return;
+            lock (_logoRefreshLock)
+            {
+                _logoRefreshQueue = _logoRefreshQueue.ContinueWith(_ => RunQueuedLogoWarmAsync(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+            }
+        }
+
+        /// <summary>True when an owner has a due lookup, or a stored logo whose image is not cached.</summary>
+        private bool NeedsLogoWarm(BaseItem owner, PluginConfiguration config, string region)
+        {
+            var logos = _logoService!;
+            if (LogoLookups(owner, config, false).Concat(LogoLookups(owner, config, true)).Any(l => logos.IsDue(l.MediaType, l.TmdbId, l.Kind, region))) return true;
+            return (ResolveLogos(owner, config, logos) ?? Array.Empty<TagLogo>()).Any(l => l.Logo != null && !logos.IsCached(TagLogoService.DefaultSize, l.Logo[1..]));
+        }
+
+        private async Task RunQueuedLogoWarmAsync()
+        {
+            try
+            {
+                await Task.Delay(LogoWarmDelay).ConfigureAwait(false);
+                // Reset before taking the owners: one queued after this starts its own run.
+                Volatile.Write(ref _logoWarmQueued, 0);
+                var owners = new List<BaseItem>();
+                foreach (var id in _pendingLogoOwners.Keys)
+                {
+                    if (_pendingLogoOwners.TryRemove(id, out var owner)) owners.Add(owner);
+                }
+
+                if (owners.Count == 0 || _disposed) return;
+                await WarmLogoOwnersAsync(owners, CancellationToken.None).ConfigureAwait(false);
+                LogosWarmed?.Invoke(owners.Select(o => o.Id).ToArray());
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[LogoTags] Background logo warm failed: {ex.Message}");
             }
         }
 

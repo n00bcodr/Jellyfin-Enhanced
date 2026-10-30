@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
@@ -8,7 +10,11 @@ using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Globalization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Moq;
 using SkiaSharp;
 
 namespace JE.Tests;
@@ -357,6 +363,67 @@ public class LogoTagTests
         finally
         {
             Cleanup(service, dir);
+        }
+    }
+
+    // Named Movie: GetBaseItemKind reads the class name.
+    private sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
+    {
+        public override List<MediaBrowser.Model.Dto.MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => [];
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AColdNativePosterReadMakesNoUpstreamCallAndQueuesOneBackgroundWarm(bool serverCache)
+    {
+        using var fixture = new ApiPluginFixture();
+        var config = fixture.Plugin.Configuration;
+        config.TagCacheServerMode = serverCache;
+        config.LogoTagsEnabled = true;
+        config.TMDB_API_KEY = "fixture-key";
+        config.SpoilerBlurEnabled = false;
+        config.ShowUserReviews = false;
+        var (logos, transport, _, dir) = Service(request => request.RequestUri!.Host == "image.tmdb.org"
+            ? Image(Png)
+            : request.RequestUri.AbsolutePath == "/3/movie/603/watch/providers" ? IntegrationTransport.Response(Providers) : IntegrationTransport.Response("{}", 404));
+        var library = new Mock<ILibraryManager>();
+        using var cache = new TagCacheService(library.Object, fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), fixture.Core.Logger,
+            new MatroskaLanguageCache(fixture.Core.Paths.Object, fixture.Core.Logger), null, logos) { LogoWarmDelay = TimeSpan.FromSeconds(1) };
+        var resolver = new SpoilerUserResolver(fixture.Core.Manager, library.Object, fixture.Core.Logger, null!);
+        using var provider = new PosterTagDataProvider(cache, library.Object, new SpoilerTagDataStripper(library.Object, Mock.Of<IUserDataManager>(), resolver), resolver,
+            new PosterTagReviewRatings(fixture.Core.Manager, new PosterTagUserCache(Mock.Of<IUserManager>()), fixture.Core.Logger), fixture.Core.Logger);
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var movie = new Movie { Id = Guid.NewGuid(), Studios = ["Warner Bros Pictures"], ProviderIds = new(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = "603" } };
+        try
+        {
+            Assert.False(cache.TryGetEntry(movie.Id, out _), "a cold entry: the poster read builds it on demand");
+            var cold = await provider.GetRenderDataAsync(new DefaultHttpContext(), movie, user, null, CancellationToken.None);
+            // Only what is stored: the studio name chip, and no TMDB request during the read.
+            Assert.Equal(new TagLogo { Kind = "studio", Name = "Warner Bros Pictures" }, Assert.Single(cold!.Entry.Logos!));
+            Assert.Equal(0, transport.Calls);
+            Assert.Equal(1, cache.PendingLogoWarms);
+            cache.BuildEntryOnDemand(movie);
+            Assert.Equal(1, cache.PendingLogoWarms);
+            Assert.Equal(0, transport.Calls);
+
+            // The background warm: the provider lookup and its logo image, once.
+            await cache.LogoWorkQueue.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(0, cache.PendingLogoWarms);
+            Assert.Equal(2, transport.Calls);
+            Assert.True(logos.IsCached("w92", "pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg"));
+            var warm = await provider.GetRenderDataAsync(new DefaultHttpContext(), movie, user, null, CancellationToken.None);
+            Assert.Equal("Netflix", Assert.Single(warm!.Entry.Logos!).Name);
+            Assert.NotEqual(cold.DataKey, warm.DataKey);
+
+            // Warm data: nothing more is queued or fetched.
+            cache.BuildEntryOnDemand(movie);
+            Assert.Equal(0, cache.PendingLogoWarms);
+            Assert.Equal(2, transport.Calls);
+        }
+        finally
+        {
+            Cleanup(logos, dir);
         }
     }
 
