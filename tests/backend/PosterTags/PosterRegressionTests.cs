@@ -169,6 +169,31 @@ public class PosterRegressionTests
         var expected = corners.ToDictionary(c => c, Render);
         await Task.WhenAll(Enumerable.Range(0, 32).Select(i => Task.Run(() => Assert.Equal(expected[corners[i % 4]], Render(corners[i % 4])))));
     }
+    [Theory]
+    [InlineData("IMAX", "specialFormat", false)]
+    [InlineData("IMAX", "specialFormat", true)]
+    [InlineData("4K", "resolution", false)]
+    [InlineData("4K", "resolution", true)]
+    public void Tile_cache_keeps_edition_colours_separate_in_both_category_orders(string label, string category, bool editionFirst)
+    {
+        using var source = Poster();
+        using var cached = new PosterTagRenderer(1L << 20);
+        using var uncached = new PosterTagRenderer(0);
+        SKColor[]? previous = null;
+        var categories = editionFirst ? new[] { "edition", category } : new[] { category, "edition" };
+        foreach (var current in categories.Concat(categories))
+        {
+            var layout = new PosterTagLayout([new(PosterTagGroup.Quality, PosterTagCorner.TopLeft,
+                [new QualityTag(label, current)])], false, false);
+            using var actual = cached.Render(source, layout);
+            using var expected = uncached.Render(source, layout);
+            Assert.Equal(expected!.Pixels, actual!.Pixels);
+            if (previous is not null) Assert.False(previous.SequenceEqual(actual.Pixels), "The categories have different built-in colours.");
+            previous = actual.Pixels;
+        }
+        Assert.Equal(2, cached.TileCacheCount);
+    }
+
     [Fact]
     public void Cache_budget_eviction_and_disabling_preserve_pixels()
     {
