@@ -386,7 +386,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsEnabled = user.RatingTagsEnabled,
                 AgeRatingTagsEnabled = user.AgeRatingTagsEnabled,
                 CustomTagsEnabled = user.CustomTagsEnabled,
-                CustomTagRules = CustomTagMatcher.For(config.CustomTagRules),
+                CustomTagRules = CustomTagMatcher.For(config),
                 QualityTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Quality) ?? Position(user.QualityTagsPosition, config.QualityTagsPosition, "top-left"),
                 GenreTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Genre) ?? Position(user.GenreTagsPosition, config.GenreTagsPosition, "top-right"),
                 LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
@@ -811,7 +811,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["custom.enabled"] = "1";
                 values["custom.position"] = CustomTagsPosition;
                 values["custom.cap"] = Int(CustomCap);
-                values["custom.rules"] = string.Join("\n", CustomTagRules.Rules.Select(r => CustomTagRuleSet.RuleId(r) + "=" + r.Label + "|" + r.Icon));
+                values["custom.rules"] = string.Join("\n", CustomTagRules.Rules.Select((r, i) => CustomTagRules.Ids[i] + "=" + r.Label + "|" + r.Icon));
             }
 
             if (!Styles.IsEmpty)

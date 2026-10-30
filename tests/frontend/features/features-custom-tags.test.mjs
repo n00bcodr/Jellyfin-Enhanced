@@ -3,14 +3,23 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createHarness, plain, jsRoot } from '../helpers/harness.mjs';
 
-/** The administrator's rules as the public configuration serves them (PascalCase, normalised). */
+/** Opaque rule ids, as the server derives them (a keyed hash of the match type and value). */
+const ID = { criterion: 'collection:9f2c1e0b7a6d5c4e', remaster: 'tag:1a2b3c4d5e6f7081', signed: 'tag:aa11bb22cc33dd44', approved: 'tag:0f0e0d0c0b0a0908' };
+/** The administrator's rules as the public configuration serves them: ids, labels and icons only. */
 const RULES = [
-  { Match: 'collection', Value: 'Criterion', Label: 'Criterion', Icon: null },
-  { Match: 'tag', Value: '4K Remaster', Label: 'Remaster', Icon: 'auto_awesome' },
-  { Match: 'tag', Value: 'Signed', Label: 'Signed', Icon: null },
-  { Match: 'tag', Value: 'Director Approved', Label: 'Approved', Icon: null },
+  { Id: ID.criterion, Label: 'Criterion', Icon: null },
+  { Id: ID.remaster, Label: 'Remaster', Icon: 'auto_awesome' },
+  { Id: ID.signed, Label: 'Signed', Icon: null },
+  { Id: ID.approved, Label: 'Approved', Icon: null },
 ];
-const ALL = ['collection:criterion', 'tag:4k remaster', 'tag:signed', 'tag:director approved'];
+/** What each rule matches, from the private configuration only administrators receive. */
+const SOURCES = [
+  { Id: ID.criterion, Match: 'collection', Value: 'Criterion' },
+  { Id: ID.remaster, Match: 'tag', Value: '4K Remaster' },
+  { Id: ID.signed, Match: 'tag', Value: 'Signed' },
+  { Id: ID.approved, Match: 'tag', Value: 'Director Approved' },
+];
+const ALL = [ID.criterion, ID.remaster, ID.signed, ID.approved];
 
 /**
  * The real Custom renderer over the real layout controller on one card.
@@ -38,21 +47,30 @@ function setup(t, settings = {}, plugin = {}) {
     labels() { return this.chips().map(el => el.dataset.jeCustom); } };
 }
 
-test('chips follow the server\'s rule order, carry the label, the optional icon and a two-line tooltip', t => {
-  const h = setup(t);
-  h.render({ Type: 'Movie', CustomTags: ['tag:4k remaster', 'tag:gone', 'collection:criterion', 'tag:4k remaster'] });
-  assert.deepEqual(h.labels(), ['Remaster', 'Criterion'], 'ids without a rule are skipped, repeats drawn once');
-  const [remaster, criterion] = h.chips();
+test('chips carry the label, the optional icon and, for administrators, a two-line tooltip', t => {
+  const h = setup(t, {}, { CustomTagRuleSources: SOURCES });
+  h.render({ Type: 'Movie', CustomTags: [ID.criterion, 'tag:gone', ID.remaster, ID.criterion] });
+  assert.deepEqual(h.labels(), ['Criterion', 'Remaster'], 'ids without a rule are skipped, repeats drawn once');
+  const [criterion, remaster] = h.chips();
   assert.equal(remaster.querySelector('.custom-tag-icon').textContent, 'auto_awesome');
   assert.equal(remaster.querySelector('.custom-tag-icon').getAttribute('aria-hidden'), 'true');
   assert.equal(remaster.querySelector('.custom-tag-text').textContent, 'Remaster');
   assert.equal(remaster.title, 'Remaster\ncustom_tags_source_tag:4K Remaster');
   assert.equal(criterion.querySelector('.custom-tag-icon'), null);
   assert.equal(criterion.title, 'Criterion\ncustom_tags_source_collection:Criterion');
-  assert.equal(criterion.dataset.jeCustomRule, 'collection:criterion');
+  assert.equal(criterion.dataset.jeCustomRule, ID.criterion);
   // Corners by default: the top-left stack, in the frozen group wrapper.
   assert.equal(h.host.querySelector('.custom-overlay-container').closest('[data-je-slot]').dataset.jeSlot, 'tl');
   assert.equal(h.host.querySelector('.custom-overlay-container').dataset.jeGroup, 'custom');
+});
+
+test('without the private configuration (non-administrators) nothing names what a rule matches', t => {
+  const h = setup(t);
+  h.render({ Type: 'Movie', CustomTags: [ID.criterion, ID.remaster] });
+  assert.deepEqual(h.chips().map(el => el.title), ['Criterion', 'Remaster'], 'the label only');
+  const markup = h.host.innerHTML + JSON.stringify(h.JE.customTags.currentRules().rules.get(ID.criterion));
+  for (const name of ['4K Remaster', 'custom_tags_source']) assert.ok(!markup.includes(name), name);
+  assert.deepEqual(plain(h.JE.customTags.currentRules().rules.get(ID.criterion)), { id: ID.criterion, label: 'Criterion', icon: null, match: null, value: null });
 });
 
 test('an entry without matches, or with only retired rules, draws nothing', t => {
@@ -90,7 +108,7 @@ test('the other layouts place the group in their slots and the summary pill stat
   assert.equal(summary.host.querySelector('.je-tag-pill').textContent, 'Criterion', 'the label, never the icon ligature');
 
   const hover = setup(t, { tagLayoutSettingsVersion: 1, tagLayout: 'minimal' });
-  hover.render({ Type: 'Movie', CustomTags: ['tag:4k remaster'] });
+  hover.render({ Type: 'Movie', CustomTags: [ID.remaster] });
   assert.ok(hover.host.querySelector('[data-je-slot="hover"] .custom-tag'), 'full chips on hover in minimal');
 
   const off = setup(t, { tagLayoutSettingsVersion: 1, tagLayout: 'corners', tagLayouts: { corners: { groups: [{ group: 'custom', slot: 'off' }] } } });
@@ -107,14 +125,14 @@ test('the priority order places custom chips relative to the other groups in a s
   age.className = 'age-rating-overlay-container';
   age.innerHTML = '<div class="age-rating-tag" rating="PG">PG</div>';
   h.JE.core.tagLayout.commitGroup(h.host, 'agerating', age);
-  h.render({ Type: 'Movie', CustomTags: ['tag:signed'] });
+  h.render({ Type: 'Movie', CustomTags: [ID.signed] });
   const stack = h.host.querySelector('[data-je-slot="tl"]');
   assert.deepEqual([...stack.children].map(el => el.dataset.jeGroup), ['custom', 'ageRating']);
 });
 
 test('the batch fallback keeps per-item matches only while the rules stay the same', t => {
   const h = setup(t);
-  h.batch({ CustomTags: ['tag:signed'] });
+  h.batch({ CustomTags: [ID.signed] });
   assert.deepEqual(h.labels(), ['Signed']);
   h.JE.core.tagLayout.removeGroup(h.host, 'custom');
   delete h.document.querySelector('.card').dataset.jeCustomTagged;
@@ -126,23 +144,44 @@ test('the batch fallback keeps per-item matches only while the rules stay the sa
   assert.equal(h.renderer().renderFromCache(h.host, 'other'), true);
 
   // A rule added since may match the item: the stored match is not trusted.
-  h.JE.pluginConfig = { ...h.JE.pluginConfig, CustomTagRules: RULES.concat({ Match: 'tag', Value: 'New', Label: 'New', Icon: null }) };
+  h.JE.pluginConfig = { ...h.JE.pluginConfig, CustomTagRules: RULES.concat({ Id: 'tag:5e5e5e5e5e5e5e5e', Label: 'New', Icon: null }) };
   h.JE.reinitializeCustomTags();
   assert.equal(h.renderer().renderFromCache(h.host, 'item'), false);
 });
 
+test('the batch fallback copies go when the server copy is replaced (access or Spoiler Guard changed)', t => {
+  const h = setup(t);
+  const spec = h.renderer();
+  /** The card as if it had not been drawn yet. */
+  const fresh = () => {
+    h.JE.core.tagLayout.removeGroup(h.host, 'custom');
+    delete h.document.querySelector('.card').dataset.jeCustomTagged;
+  };
+  const hit = id => { fresh(); return spec.renderFromCache(h.host, id); };
+  spec.render(h.host, { Id: 'item', Type: 'Movie', CustomTags: [ID.signed] }, {});
+  fresh();
+  spec.render(h.host, { Id: 'other', Type: 'Movie', CustomTags: [ID.criterion] }, {});
+  assert.equal(hit('item'), true);
+  // A delta drops the items it carries; a replacement drops them all.
+  spec.onServerCacheRefresh(['item']);
+  assert.equal(hit('item'), false);
+  assert.equal(hit('other'), true);
+  spec.onServerCacheRefresh(null, { replaced: true });
+  assert.equal(hit('other'), false);
+});
+
 test('a label or icon edit applies to drawn rule ids at once, without new matches', t => {
   const h = setup(t);
-  h.JE.pluginConfig = { ...h.JE.pluginConfig, CustomTagRules: [{ Match: 'tag', Value: 'SIGNED', Label: 'Autographed', Icon: 'favorite' }] };
+  h.JE.pluginConfig = { ...h.JE.pluginConfig, CustomTagRules: [{ Id: ID.signed, Label: 'Autographed', Icon: 'favorite' }] };
   h.JE.reinitializeCustomTags();
-  h.render({ Type: 'Movie', CustomTags: ['tag:signed'] });
+  h.render({ Type: 'Movie', CustomTags: [ID.signed] });
   assert.deepEqual(h.labels(), ['Autographed']);
   assert.equal(h.host.querySelector('.custom-tag-icon').textContent, 'favorite');
 });
 
 test('an icon outside the bundled genre set is never drawn (it would render as a word)', t => {
-  const h = setup(t, {}, { CustomTagRules: [{ Match: 'tag', Value: 'Signed', Label: 'Signed', Icon: 'not_in_subset' }] });
-  h.render({ Type: 'Movie', CustomTags: ['tag:signed'] });
+  const h = setup(t, {}, { CustomTagRules: [{ Id: ID.signed, Label: 'Signed', Icon: 'not_in_subset' }] });
+  h.render({ Type: 'Movie', CustomTags: [ID.signed] });
   assert.equal(h.host.querySelector('.custom-tag-icon'), null);
 });
 

@@ -3696,7 +3696,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // action endpoint to round-trip a corruption error envelope.
                 SonarrInstancesCorrupt = config.IsSonarrInstancesCorrupt(),
                 RadarrInstancesCorrupt = config.IsRadarrInstancesCorrupt(),
+
+                // What each Custom tag rule matches, by rule id (the chip tooltip's second line).
+                CustomTagRuleSources = CustomTagRuleSourcesForAdmins(config),
             };
+        }
+
+        /// <summary>The Custom tag rules as every client may see them: id, label and icon, in table order.</summary>
+        private static object[] CustomTagRulesForClients(PluginConfiguration config)
+        {
+            var matcher = CustomTagMatcher.For(config);
+            return matcher.Rules.Select((rule, i) => (object)new { Id = matcher.Ids[i], rule.Label, rule.Icon }).ToArray();
+        }
+
+        /// <summary>The tag or collection each Custom tag rule matches, by id (admins only).</summary>
+        private static object[] CustomTagRuleSourcesForAdmins(PluginConfiguration config)
+        {
+            var matcher = CustomTagMatcher.For(config);
+            return matcher.Rules.Select((rule, i) => (object)new { Id = matcher.Ids[i], rule.Match, rule.Value }).ToArray();
         }
         // [AllowAnonymous]: public-config is loaded by `loadLoginImageEarly` before
         // the user logs in, so we cannot gate the whole endpoint on [Authorize].
@@ -3891,9 +3908,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LanguageTagsCountBadge = LanguageTagDisplay.NormalizeCountBadge(config.LanguageTagsCountBadge),
                 config.AgeRatingTagsPosition,
                 config.StatusTagsPosition,
-                // Custom tag group: starting corner and the administrator's rules (normalized).
+                // Custom tag group: starting corner and rules.
                 config.CustomTagsPosition,
-                CustomTagRules = CustomTagRuleSet.Normalize(config.CustomTagRules),
+                // Rule ids, labels and icons only: the tag or collection a rule matches is
+                // admin-only (CustomTagRuleSources in the private config).
+                CustomTagRules = CustomTagRulesForClients(config),
                 config.StatusTagsJustAdded,
                 config.StatusTagsNewRelease,
                 config.StatusTagsTrending,
@@ -8938,10 +8957,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // it (Seasons/Episodes take their Series'), memoized per series.
             var seriesLibraryMemo = new Dictionary<Guid, string?>();
             string? TagDataLibraryId(BaseItem tagItem) => Services.ItemLibraryResolver.Resolve(_libraryManager, tagItem, null, seriesLibraryMemo);
-            // Custom tag rule ids, as the server tag cache stores them (Spoiler Guard does
-            // not strip them: they are the administrator's labels, not plot facts).
+            // Custom tag rule ids, as the server tag cache stores them, with collection
+            // matches only for collections this user can access.
             var customSeriesMemo = new Dictionary<Guid, BaseItem?>();
-            string[]? TagDataCustomTags(BaseItem tagItem) => _tagCacheService.GetCustomTags(tagItem, customSeriesMemo);
+            string[]? TagDataCustomTags(BaseItem tagItem) => _tagCacheService.GetCustomTags(tagItem, user, customSeriesMemo);
             string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
             {
                 if (!seriesOnly && !string.IsNullOrWhiteSpace(tagItem.OfficialRating))

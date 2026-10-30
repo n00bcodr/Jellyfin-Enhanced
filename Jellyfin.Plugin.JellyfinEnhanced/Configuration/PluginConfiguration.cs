@@ -864,6 +864,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string CustomTagsPosition { get; set; } = "top-left";
         /// <summary>Custom tag rules (match type, value, label, optional icon), normalised on save; at most 20.</summary>
         public List<CustomTagRule> CustomTagRules { get; set; } = new List<CustomTagRule>();
+        /// <summary>
+        /// Secret the Custom tag rule ids are derived from (see <see cref="CustomTagRuleSet.RuleId"/>),
+        /// so the ids clients see do not reveal a rule's tag or collection name. Generated when
+        /// rules are first saved and kept across saves; admin-only (never in the public config).
+        /// </summary>
+        public string CustomTagRuleKey { get; set; } = string.Empty;
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

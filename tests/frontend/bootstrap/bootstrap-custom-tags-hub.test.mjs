@@ -7,9 +7,10 @@ const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'a
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
   'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
+// As the public configuration serves them: opaque ids, labels and icons.
 const RULES = [
-  { Match: 'tag', Value: '4K Remaster', Label: 'Remaster', Icon: 'auto_awesome' },
-  { Match: 'collection', Value: 'Criterion', Label: 'Criterion', Icon: null },
+  { Id: 'tag:1a2b3c4d5e6f7081', Label: 'Remaster', Icon: 'auto_awesome' },
+  { Id: 'collection:9f2c1e0b7a6d5c4e', Label: 'Criterion', Icon: null },
 ];
 
 /**

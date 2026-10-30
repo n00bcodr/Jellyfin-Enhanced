@@ -1216,6 +1216,7 @@
     "ColoredActivityIconsEnabled": false,
     "ColoredRatingsEnabled": false,
     "CustomPluginLinks": "",
+    "CustomTagRuleKey": "",
     "CustomTagsEnabled": false,
     "CustomTagsPosition": "top-left",
     "DEFAULT_PROVIDERS": "",

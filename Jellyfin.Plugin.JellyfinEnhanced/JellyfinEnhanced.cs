@@ -68,6 +68,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             CleanupOldScript();
             CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
             BackfillMissingDefaultShortcuts();
+            BackfillCustomTagRuleKey();
+        }
+
+        /// <summary>
+        /// The Custom tag rule id key to store: the current one, else a posted one, else a new
+        /// one once there are rules (see <see cref="PluginConfiguration.CustomTagRuleKey"/>).
+        /// </summary>
+        private static string EnsureCustomTagRuleKey(PluginConfiguration incoming, PluginConfiguration? current)
+        {
+            if (!string.IsNullOrEmpty(current?.CustomTagRuleKey)) return current.CustomTagRuleKey;
+            if (!string.IsNullOrEmpty(incoming.CustomTagRuleKey)) return incoming.CustomTagRuleKey;
+            return incoming.CustomTagRules.Count > 0 ? CustomTagRuleSet.NewKey() : string.Empty;
+        }
+
+        // Rules saved before the key existed get one, so their ids stop naming the source.
+        private void BackfillCustomTagRuleKey()
+        {
+            try
+            {
+                var config = Configuration;
+                if (config == null || config.CustomTagRules.Count == 0 || !string.IsNullOrEmpty(config.CustomTagRuleKey)) return;
+                config.CustomTagRuleKey = CustomTagRuleSet.NewKey();
+                SaveConfiguration();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Jellyfin Enhanced: could not store the Custom tag rule key: {ex.Message}");
+            }
         }
 
         // Dedupes Shortcuts (XmlSerializer appends to constructor-initialized lists, doubling on each restart)
@@ -285,9 +313,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
                 // Custom tag rules: unknown match types dropped, values and labels trimmed,
                 // repeated rules collapsed, at most 20 (a save can come from anywhere).
+                // The rule id key is the server's: the stored one wins over a posted one.
                 if (configuration is PluginConfiguration customTagsConfig)
                 {
                     customTagsConfig.CustomTagRules = CustomTagRuleSet.Normalize(customTagsConfig.CustomTagRules);
+                    customTagsConfig.CustomTagRuleKey = EnsureCustomTagRuleKey(customTagsConfig, Configuration as PluginConfiguration);
                 }
 
                 // Tag Styles: only a valid document is stored (normalised to version 2); anything

@@ -4654,6 +4654,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "CustomTagRuleKey",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowRatingInPlayer",
       "type": "bool",
       "initializer": "true",
@@ -8855,7 +8863,7 @@
     "build_targets": 2,
     "files": 389,
     "routes": 182,
-    "configuration_properties": 641,
+    "configuration_properties": 642,
     "storage_references": 75,
     "scheduled_tasks": 13,
     "locales": 33

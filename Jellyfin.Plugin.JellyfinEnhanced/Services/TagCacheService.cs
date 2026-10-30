@@ -1617,7 +1617,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (since.HasValue && alsoInclude == null && since.Value >= generation.MaxLastUpdated
                 && TryGetAccessDigest(access, generation, out var memoizedRevision))
             {
-                accessRevision = memoizedRevision;
+                accessRevision = memoizedRevision + CollectionAccessSuffix(accessibleSet);
                 return new Dictionary<string, TagCacheEntry>();
             }
 
@@ -1640,14 +1640,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(kvp.Value, accessibleSet), accessibleSet, generation.Cache));
+                var visible = WithVisibleCustomTags(kvp.Value, Guid.TryParse(kvp.Key, out var itemId) ? itemId : Guid.Empty, accessibleSet);
+                result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(visible, accessibleSet), accessibleSet, generation.Cache));
             }
 
-            accessRevision = FormatAccessRevision(excludedCount, excludedSum);
+            var keyRevision = FormatAccessRevision(excludedCount, excludedSum);
+            // The collection matches' access is part of the revision (not of the memo,
+            // which covers the cache keys only).
+            accessRevision = keyRevision + CollectionAccessSuffix(accessibleSet);
             // Only a walk that saw one unchanged state leaves results for other
             // requests: its digest as the memo and, for a whole-cache walk, its
             // result as shareable.
-            if (StoreAccessDigest(access, generation, accessRevision) && !since.HasValue && alsoInclude == null)
+            if (StoreAccessDigest(access, generation, keyRevision) && !since.HasValue && alsoInclude == null)
             {
                 shareKey = new SerializedItemsKey(generation.Version, generation.Timestamp, generation.Epoch, accessRevision);
             }
@@ -1944,7 +1948,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             timestamp = generation.Timestamp;
             if (!live || !generation.Quiescent) return false;
 
-            accessRevision = ResolveAccessDigest(access, generation);
+            accessRevision = ResolveAccessDigest(access, generation) + CollectionAccessSuffix(access.Ids);
             if (!IsUnchangedSince(generation)) return false;
 
             shareable = true;

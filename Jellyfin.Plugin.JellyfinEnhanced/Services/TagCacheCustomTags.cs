@@ -33,13 +33,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// </list>
     /// Not covered until the next full build or reconcile: a collection whose membership changes
     /// without Jellyfin raising an item event for it.
+    /// <para>
+    /// Per user: a collection match is only served to a user who can access a collection that
+    /// produced it (<see cref="VisibleCustomTags"/>, applied by the tag cache projection, /tag-data
+    /// and native posters); the rule collections a user cannot access are part of their
+    /// accessRevision (<see cref="CollectionAccessSuffix"/>), so a stored copy is replaced when
+    /// that changes. Tag matches need no filtering: the tags are on the item itself.
+    /// </para>
     /// </remarks>
     public partial class TagCacheService
     {
-        /// <summary>The ids of the collections the map came from and their members' collection names.</summary>
-        private sealed record CollectionMembership(string Fingerprint, IReadOnlySet<Guid> CollectionIds, IReadOnlyDictionary<Guid, string[]> NamesByItem)
+        /// <summary>One collection an item belongs to: its id (for access checks) and name (for matching).</summary>
+        private readonly record struct CollectionRef(Guid Id, string Name);
+
+        /// <summary>The ids of the collections the map came from and, per member, those collections.</summary>
+        private sealed record CollectionMembership(string Fingerprint, IReadOnlySet<Guid> CollectionIds, IReadOnlyDictionary<Guid, CollectionRef[]> ByItem)
         {
-            public static readonly CollectionMembership Empty = new(string.Empty, new HashSet<Guid>(), new Dictionary<Guid, string[]>());
+            public static readonly CollectionMembership Empty = new(string.Empty, new HashSet<Guid>(), new Dictionary<Guid, CollectionRef[]>());
         }
 
         private volatile CollectionMembership? _collections;
@@ -53,7 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private int _customRefreshQueued;
 
         /// <summary>The matcher for the current configuration.</summary>
-        private static CustomTagMatcher CurrentCustomTagMatcher() => CustomTagMatcher.For(JellyfinEnhanced.Instance?.Configuration?.CustomTagRules);
+        private static CustomTagMatcher CurrentCustomTagMatcher() => CustomTagMatcher.For(JellyfinEnhanced.Instance?.Configuration);
 
         /// <summary>
         /// The rule ids an item matches: its own tags plus its Series' (Seasons/Episodes),
@@ -74,23 +84,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             IEnumerable<string>? collections = null;
             if (matcher.HasCollectionRules && ServerModeEnabled)
             {
-                var names = Collections(matcher).NamesByItem;
-                var own = names.TryGetValue(item.Id, out var a) ? a : Array.Empty<string>();
-                var parent = series != null && names.TryGetValue(series.Id, out var b) ? b : Array.Empty<string>();
-                collections = own.Concat(parent);
+                collections = CollectionsOf(Collections(matcher), item.Id, series?.Id).Select(c => c.Name);
             }
 
             return matcher.Match(tags, collections);
         }
 
+        /// <summary>The collections holding an item or its Series.</summary>
+        private static IEnumerable<CollectionRef> CollectionsOf(CollectionMembership membership, Guid itemId, Guid? seriesId)
+        {
+            var own = membership.ByItem.TryGetValue(itemId, out var a) ? a : Array.Empty<CollectionRef>();
+            var parent = seriesId is { } sid && sid != Guid.Empty && membership.ByItem.TryGetValue(sid, out var b) ? b : Array.Empty<CollectionRef>();
+            return own.Concat(parent);
+        }
+
         /// <summary>
         /// The rule ids for the batch endpoint (<c>/tag-data</c>): as the cache computes them
-        /// (see <see cref="CustomTagsFor"/>), with the parent Series looked up once per request.
+        /// (see <see cref="CustomTagsFor"/>), with the parent Series looked up once per request,
+        /// and collection matches only for collections <paramref name="user"/> can access.
         /// </summary>
         /// <param name="item">The item.</param>
+        /// <param name="user">The requesting user.</param>
         /// <param name="seriesMemo">Parent Series looked up so far in this request, by id.</param>
         /// <returns>The rule ids, or null.</returns>
-        public string[]? GetCustomTags(BaseItem item, Dictionary<Guid, BaseItem?>? seriesMemo = null)
+        public string[]? GetCustomTags(BaseItem item, JUser user, Dictionary<Guid, BaseItem?>? seriesMemo = null)
         {
             var matcher = CurrentCustomTagMatcher();
             if (matcher.IsEmpty) return null;
@@ -107,7 +124,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (seriesMemo != null) seriesMemo[seriesId] = series;
             }
 
-            return CustomTagsFor(item, series);
+            var ids = CustomTagsFor(item, series);
+            if (ids == null || !Array.Exists(ids, CustomTagRuleSet.IsCollectionId)) return ids;
+            return VisibleCustomTags(ids, item.Id, series?.Id, ResolveUserAccess(user).Ids);
+        }
+
+        /// <summary>
+        /// A cache entry as one user may see it: its collection matches only for collections the
+        /// user can access (see <see cref="VisibleCustomTags"/>). The shared entry is never
+        /// changed; a clone is returned when something is dropped.
+        /// </summary>
+        /// <param name="entry">A cache entry (or an on-demand build).</param>
+        /// <param name="itemId">The entry's item id.</param>
+        /// <param name="user">The viewer.</param>
+        /// <returns>The entry or a filtered clone.</returns>
+        public TagCacheEntry FilterCustomTagsForUser(TagCacheEntry entry, Guid itemId, JUser user)
+        {
+            if (entry.CustomTags is not { } ids || !Array.Exists(ids, CustomTagRuleSet.IsCollectionId)) return entry;
+            return WithVisibleCustomTags(entry, itemId, ResolveUserAccess(user).Ids);
+        }
+
+        /// <summary>The entry with only the collection matches <paramref name="access"/> admits (a clone when any is dropped).</summary>
+        private TagCacheEntry WithVisibleCustomTags(TagCacheEntry entry, Guid itemId, HashSet<string> access)
+        {
+            if (entry.CustomTags is not { } ids || !Array.Exists(ids, CustomTagRuleSet.IsCollectionId)) return entry;
+            var seriesId = Guid.TryParse(entry.SeriesId, out var sid) ? sid : (Guid?)null;
+            var visible = VisibleCustomTags(ids, itemId, seriesId, access);
+            if (SameIds(visible, ids)) return entry;
+            var filtered = entry.Clone();
+            filtered.CustomTags = visible;
+            return filtered;
+        }
+
+        /// <summary>
+        /// The matched rule ids one user may see: tag matches as they are, a collection match
+        /// only while a collection that produced it (holding the item or its Series, with the
+        /// rule's name) is in the user's access set. Null when nothing is left.
+        /// </summary>
+        private string[]? VisibleCustomTags(string[] ids, Guid itemId, Guid? seriesId, HashSet<string> access)
+        {
+            var matcher = CurrentCustomTagMatcher();
+            var names = matcher.HasCollectionRules && ServerModeEnabled
+                ? CollectionsOf(Collections(matcher), itemId, seriesId).Where(c => access.Contains(c.Id.ToString("N"))).Select(c => c.Name)
+                : Enumerable.Empty<string>();
+            var allowed = matcher.Match(null, names) ?? Array.Empty<string>();
+            var visible = ids.Where(id => !CustomTagRuleSet.IsCollectionId(id) || Array.IndexOf(allowed, id) >= 0).ToArray();
+            return visible.Length == 0 ? null : visible;
+        }
+
+        /// <summary>
+        /// The part of a user's accessRevision that covers collection matches: a digest of the
+        /// rule collections the user cannot access ("" when none), so a stored copy is replaced
+        /// when a collection's access changes even if no cache entry did.
+        /// </summary>
+        private string CollectionAccessSuffix(HashSet<string> access)
+        {
+            var matcher = CurrentCustomTagMatcher();
+            if (!matcher.HasCollectionRules || !ServerModeEnabled) return string.Empty;
+            ulong sum = 0;
+            var count = 0;
+            foreach (var id in Collections(matcher).CollectionIds)
+            {
+                var key = id.ToString("N");
+                if (access.Contains(key)) continue;
+                sum = unchecked(sum + StableKeyHash(key));
+                count++;
+            }
+
+            return count == 0 ? string.Empty : ";c" + count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + sum.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         /// <summary>The collection membership for the current rules, read once and then kept.</summary>
@@ -141,7 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var fingerprint = CollectionFingerprint(matcher);
             if (!matcher.HasCollectionRules) return CollectionMembership.Empty with { Fingerprint = fingerprint };
             var ids = new HashSet<Guid>();
-            var names = new Dictionary<Guid, List<string>>();
+            var byItem = new Dictionary<Guid, List<CollectionRef>>();
             try
             {
                 var boxSets = _libraryManager.GetItemList(new InternalItemsQuery
@@ -157,8 +241,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     foreach (var child in folder.GetLinkedChildren())
                     {
                         if (child == null) continue;
-                        if (!names.TryGetValue(child.Id, out var list)) names[child.Id] = list = new List<string>(1);
-                        if (!list.Contains(boxSet.Name, StringComparer.OrdinalIgnoreCase)) list.Add(boxSet.Name);
+                        if (!byItem.TryGetValue(child.Id, out var list)) byItem[child.Id] = list = new List<CollectionRef>(1);
+                        if (!list.Exists(c => c.Id == boxSet.Id)) list.Add(new CollectionRef(boxSet.Id, boxSet.Name));
                     }
                 }
             }
@@ -167,14 +251,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"[TagCache] Failed to read collections for Custom tags: {ex.Message}");
             }
 
-            return new CollectionMembership(fingerprint, ids, names.ToDictionary(p => p.Key, p => p.Value.ToArray()));
+            return new CollectionMembership(fingerprint, ids, byItem.ToDictionary(p => p.Key, p => p.Value.OrderBy(c => c.Id).ToArray()));
         }
 
         /// <summary>
-        /// Re-read the collections and return the items whose collection names changed
-        /// (added to, removed from or renamed collections). Before the first read (a snapshot
-        /// just loaded) the earlier members are unknown: every cached entry with a collection
-        /// match counts as changed too. Callers hold the rebuild lock.
+        /// Re-read the collections and return the items whose collections changed (added to,
+        /// removed from or renamed collections, or another collection of the same name). Before
+        /// the first read (a snapshot just loaded) the earlier members are unknown: every cached
+        /// entry with a collection match counts as changed too. Callers hold the rebuild lock.
         /// </summary>
         private HashSet<Guid> RefreshCollectionMembership()
         {
@@ -189,18 +273,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var changed = new HashSet<Guid>();
-            foreach (var id in before.NamesByItem.Keys.Concat(after.NamesByItem.Keys))
+            foreach (var id in before.ByItem.Keys.Concat(after.ByItem.Keys))
             {
-                var a = before.NamesByItem.TryGetValue(id, out var x) ? x : Array.Empty<string>();
-                var b = after.NamesByItem.TryGetValue(id, out var y) ? y : Array.Empty<string>();
-                if (!a.SequenceEqual(b, StringComparer.Ordinal)) changed.Add(id);
+                var a = before.ByItem.TryGetValue(id, out var x) ? x : Array.Empty<CollectionRef>();
+                var b = after.ByItem.TryGetValue(id, out var y) ? y : Array.Empty<CollectionRef>();
+                if (!a.SequenceEqual(b)) changed.Add(id);
             }
 
             if (unknown)
             {
                 foreach (var (key, entry) in _cache)
                 {
-                    if (entry.CustomTags?.Any(t => t.StartsWith(CustomTagRuleSet.MatchCollection + ":", StringComparison.Ordinal)) == true
+                    if (entry.CustomTags is { } tags && Array.Exists(tags, CustomTagRuleSet.IsCollectionId)
                         && Guid.TryParse(key, out var id)) changed.Add(id);
                 }
             }
@@ -220,7 +304,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _collections = ReadCollections(matcher);
             }
 
-            return CustomTagRuleSet.MatchFingerprint(matcher.Rules);
+            return matcher.Fingerprint;
         }
 
         /// <summary>
@@ -249,7 +333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!SameIds(before, after) && Guid.TryParse(key, out var id)) roots.Add(id);
             }
 
-            return roots.Count > 0 && PatchCustomTags(roots, includeRoots: collectionChanged, CancellationToken.None);
+            return roots.Count > 0 && PatchCustomTags(roots, includeRoots: collectionChanged, touchCollectionMatches: collectionChanged, CancellationToken.None);
         }
 
         /// <summary>The CustomTags of the batch's Series entries, to compare after the batch (see <see cref="ApplyCustomTagFollowUps"/>).</summary>
@@ -270,17 +354,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool ReconcileCustomTags(CancellationToken cancellationToken)
         {
             var matcher = CurrentCustomTagMatcher();
-            if (!matcher.HasCollectionRules && (_collections?.NamesByItem.Count ?? 0) == 0) return false;
+            if (!matcher.HasCollectionRules && (_collections?.ByItem.Count ?? 0) == 0) return false;
             var changed = RefreshCollectionMembership();
-            return changed.Count > 0 && PatchCustomTags(changed, includeRoots: true, cancellationToken);
+            return changed.Count > 0 && PatchCustomTags(changed, includeRoots: true, touchCollectionMatches: true, cancellationToken);
         }
 
         /// <summary>
         /// Recompute CustomTags in place for some items (rebuild lock held): the roots
         /// themselves when <paramref name="includeRoots"/> is set, and every cached Season
         /// and Episode of a root that is a Series. Only the metadata is read, never streams.
+        /// With <paramref name="touchCollectionMatches"/> (their collections changed) an entry
+        /// with a collection match is re-stamped even when its ids stay the same: which users
+        /// may see the match can have changed, and a delta must carry it again.
         /// </summary>
-        private bool PatchCustomTags(IEnumerable<Guid> roots, bool includeRoots, CancellationToken cancellationToken)
+        private bool PatchCustomTags(IEnumerable<Guid> roots, bool includeRoots, bool touchCollectionMatches, CancellationToken cancellationToken)
         {
             var rootKeys = roots.Select(id => id.ToString("N")).ToHashSet(StringComparer.Ordinal);
             var ids = new List<Guid>();
@@ -290,11 +377,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (hit && Guid.TryParse(key, out var id)) ids.Add(id);
             }
 
-            return PatchCustomTagsOf(ids, cancellationToken);
+            return PatchCustomTagsOf(ids, touchCollectionMatches, cancellationToken);
         }
 
-        /// <summary>Recompute and store CustomTags for cached items, reading their metadata in pages.</summary>
-        private bool PatchCustomTagsOf(IReadOnlyList<Guid> ids, CancellationToken cancellationToken)
+        /// <summary>Recompute and store CustomTags for cached items, reading their metadata in pages (see <see cref="PatchCustomTags"/>).</summary>
+        private bool PatchCustomTagsOf(IReadOnlyList<Guid> ids, bool touchCollectionMatches, CancellationToken cancellationToken)
         {
             if (ids.Count == 0) return false;
             using var writes = BeginInPlaceWrites();
@@ -321,7 +408,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
 
                     var tags = CustomTagsFor(item, series);
-                    if (SameIds(tags, entry.CustomTags)) continue;
+                    if (SameIds(tags, entry.CustomTags) && !(touchCollectionMatches && tags != null && Array.Exists(tags, CustomTagRuleSet.IsCollectionId))) continue;
                     var updated = entry.Clone();
                     updated.CustomTags = tags;
                     updated.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -346,7 +433,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal void QueueCustomTagRefreshIfStale()
         {
             if (!ServerModeEnabled) return;
-            var wanted = CustomTagRuleSet.MatchFingerprint(JellyfinEnhanced.Instance?.Configuration?.CustomTagRules);
+            var wanted = CurrentCustomTagMatcher().Fingerprint;
             if (wanted == _customTagsFingerprint || Interlocked.CompareExchange(ref _customRefreshQueued, 1, 0) != 0) return;
             _ = Task.Run(() =>
             {
@@ -376,7 +463,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (ShouldAbortCacheWork || _cacheReleased) return;
             var matcher = CurrentCustomTagMatcher();
-            var fingerprint = CustomTagRuleSet.MatchFingerprint(matcher.Rules);
+            var fingerprint = matcher.Fingerprint;
             if (fingerprint == _customTagsFingerprint) return;
             var sw = System.Diagnostics.Stopwatch.StartNew();
             lock (_collectionsLock)
@@ -385,7 +472,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var ids = _cache.Keys.Select(key => Guid.TryParse(key, out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).ToList();
-            PatchCustomTagsOf(ids, CancellationToken.None);
+            PatchCustomTagsOf(ids, touchCollectionMatches: false, CancellationToken.None);
             if (ShouldAbortCacheWork) return;
             _customTagsFingerprint = fingerprint;
             ScheduleDebouncedSave();

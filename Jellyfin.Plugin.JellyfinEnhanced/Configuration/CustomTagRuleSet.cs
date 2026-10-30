@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
@@ -29,7 +30,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// Validation of the Custom tag rules (<c>PluginConfiguration.CustomTagRules</c>) and the
     /// matcher the tag cache, the batch endpoint and native posters share. A rule is
     /// identified by its match type and value (<see cref="RuleId"/>), so editing its label,
-    /// icon or colours never needs the cache to re-match; adding a rule does.
+    /// icon or colours never needs the cache to re-match; adding a rule does. The id hides the
+    /// value (a keyed hash of it), so cache entries, /tag-data and the public configuration
+    /// never name the tag or collection a rule matches.
     /// </summary>
     public static class CustomTagRuleSet
     {
@@ -84,21 +87,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 if (match == null || value.Length == 0 || value.Length > MaxValueLength || label.Length == 0) continue;
                 if (label.Length > MaxLabelLength) label = label[..MaxLabelLength].TrimEnd();
                 var normalized = new CustomTagRule { Match = match, Value = value, Label = label, Icon = NormalizeIcon(rule.Icon) };
-                if (!seen.Add(RuleId(normalized))) continue;
+                if (!seen.Add(ContentKey(normalized))) continue;
                 result.Add(normalized);
             }
 
             return result;
         }
 
-        /// <summary>A rule's stable id: <c>tag:&lt;value&gt;</c> or <c>collection:&lt;value&gt;</c>, the value lower-cased.</summary>
+        /// <summary>
+        /// A rule's stable id: <c>tag:</c> or <c>collection:</c> and 16 hex digits of an HMAC
+        /// of the match type and lower-cased value under the server's secret
+        /// (<c>PluginConfiguration.CustomTagRuleKey</c>), so clients can tell rules apart without
+        /// learning (or confirming a guess of) the tag or collection name.
+        /// </summary>
         /// <param name="rule">A normalised rule.</param>
+        /// <param name="key">The server's rule id key (empty in tests).</param>
         /// <returns>The id.</returns>
-        public static string RuleId(CustomTagRule rule)
+        public static string RuleId(CustomTagRule rule, string? key)
         {
             ArgumentNullException.ThrowIfNull(rule);
-            return rule.Match + ":" + rule.Value.ToLowerInvariant();
+            var hash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(key ?? string.Empty), Encoding.UTF8.GetBytes(ContentKey(rule)));
+            return rule.Match + ":" + Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
         }
+
+        /// <summary>Whether a rule id belongs to a collection rule.</summary>
+        /// <param name="id">A rule id.</param>
+        /// <returns>True for a collection rule's id.</returns>
+        public static bool IsCollectionId(string? id) => id != null && id.StartsWith(MatchCollection + ":", StringComparison.Ordinal);
+
+        /// <summary>A new random rule id key (32 hex digits).</summary>
+        /// <returns>The key.</returns>
+        public static string NewKey() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+
+        /// <summary>What makes two rules the same rule: the match type and the lower-cased value.</summary>
+        private static string ContentKey(CustomTagRule rule) => rule.Match + ":" + rule.Value.ToLowerInvariant();
 
         /// <summary>
         /// Whether a string can be a Custom chip label (a Tag Styles <c>custom:</c> label):
@@ -119,9 +141,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// re-match.
         /// </summary>
         /// <param name="rules">The rules (normalised or not).</param>
+        /// <param name="key">The server's rule id key.</param>
         /// <returns>The fingerprint.</returns>
-        public static string MatchFingerprint(IEnumerable<CustomTagRule?>? rules) =>
-            string.Join("\n", Normalize(rules).Select(RuleId).Order(StringComparer.Ordinal));
+        public static string MatchFingerprint(IEnumerable<CustomTagRule?>? rules, string? key) =>
+            string.Join("\n", Normalize(rules).Select(rule => RuleId(rule, key)).Order(StringComparer.Ordinal));
 
         /// <summary>The canonical match type, or null when unknown.</summary>
         private static string? NormalizeMatch(string? match)
@@ -166,37 +189,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// </summary>
     public sealed class CustomTagMatcher
     {
-        private static volatile Tuple<List<CustomTagRule>?, CustomTagMatcher>? _memo;
+        private static volatile Tuple<List<CustomTagRule>?, string, CustomTagMatcher>? _memo;
         private readonly Dictionary<string, int> _byTag;
         private readonly Dictionary<string, int> _byCollection;
 
         /// <summary>
-        /// The matcher for a rule list, kept while the list instance stays the same (a
-        /// configuration save replaces it).
+        /// The matcher for a configuration's rules, kept while the rule list instance and the
+        /// key stay the same (a configuration save replaces the list).
         /// </summary>
-        /// <param name="rules">The configured rules.</param>
+        /// <param name="config">The plugin configuration (null: no rules).</param>
         /// <returns>The matcher.</returns>
-        public static CustomTagMatcher For(List<CustomTagRule>? rules)
+        public static CustomTagMatcher For(PluginConfiguration? config)
         {
+            var rules = config?.CustomTagRules;
+            var key = config?.CustomTagRuleKey ?? string.Empty;
             var memo = _memo;
-            if (memo != null && ReferenceEquals(memo.Item1, rules)) return memo.Item2;
-            var matcher = new CustomTagMatcher(rules);
-            _memo = Tuple.Create(rules, matcher);
+            if (memo != null && ReferenceEquals(memo.Item1, rules) && string.Equals(memo.Item2, key, StringComparison.Ordinal)) return memo.Item3;
+            var matcher = new CustomTagMatcher(rules, key);
+            _memo = Tuple.Create(rules, key, matcher);
             return matcher;
         }
 
         /// <summary>A matcher over the normalised form of <paramref name="rules"/>.</summary>
         /// <param name="rules">The rules (normalised here).</param>
-        public CustomTagMatcher(IEnumerable<CustomTagRule?>? rules)
+        /// <param name="key">The server's rule id key (see <see cref="CustomTagRuleSet.RuleId"/>).</param>
+        public CustomTagMatcher(IEnumerable<CustomTagRule?>? rules, string? key = null)
         {
             Rules = CustomTagRuleSet.Normalize(rules);
-            Ids = Rules.Select(CustomTagRuleSet.RuleId).ToArray();
+            Ids = Rules.Select(rule => CustomTagRuleSet.RuleId(rule, key)).ToArray();
+            Fingerprint = string.Join("\n", Ids.Order(StringComparer.Ordinal));
             _byTag = new Dictionary<string, int>(StringComparer.Ordinal);
             _byCollection = new Dictionary<string, int>(StringComparer.Ordinal);
             for (var i = 0; i < Rules.Count; i++)
             {
-                var key = Rules[i].Value.ToLowerInvariant();
-                (Rules[i].Match == CustomTagRuleSet.MatchTag ? _byTag : _byCollection).TryAdd(key, i);
+                var value = Rules[i].Value.ToLowerInvariant();
+                (Rules[i].Match == CustomTagRuleSet.MatchTag ? _byTag : _byCollection).TryAdd(value, i);
             }
         }
 
@@ -205,6 +232,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>The rule ids, in table order.</summary>
         public IReadOnlyList<string> Ids { get; }
+
+        /// <summary>What decides which items match (see <see cref="CustomTagRuleSet.MatchFingerprint"/>).</summary>
+        public string Fingerprint { get; }
 
         /// <summary>True when there is no rule.</summary>
         public bool IsEmpty => Rules.Count == 0;

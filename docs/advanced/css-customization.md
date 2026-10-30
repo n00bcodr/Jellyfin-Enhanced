@@ -560,7 +560,7 @@ The default look is a dark translucent pill with a blurred backdrop, the same fo
 
 ### Custom Tags CSS
 
-Each [Custom tag](../enhanced/tags.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:4k remaster`, `collection:criterion`). The default look is a dark blue-grey chip with a faint border.
+Each [Custom tag](../enhanced/tags.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
 
 **Colour one label and hide the icons:**
 

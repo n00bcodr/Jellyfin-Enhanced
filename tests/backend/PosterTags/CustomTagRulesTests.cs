@@ -1,5 +1,7 @@
 using System.Reflection;
+using System.Security.Claims;
 using System.Text.Json;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
@@ -8,9 +10,11 @@ using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Globalization;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
+using Microsoft.AspNetCore.Mvc;
 using Moq;
 using SkiaSharp;
 
@@ -25,6 +29,9 @@ public class CustomTagRulesTests
 {
     private static CustomTagRule Rule(string match, string value, string label, string? icon = null) =>
         new() { Match = match, Value = value, Label = label, Icon = icon };
+
+    /// <summary>A rule's id under the test configuration's (empty) key.</summary>
+    private static string Id(string match, string value, string? key = null) => CustomTagRuleSet.RuleId(Rule(match, value, "x"), key);
 
     [Fact]
     public void NormalizeDropsUnknownMatchTypesTrimsLabelsAndCollapsesDuplicates()
@@ -48,8 +55,12 @@ public class CustomTagRulesTests
         Assert.Equal(CustomTagRuleSet.MaxLabelLength, rules[1].Label.Length);
         Assert.Equal("A label that is far long", rules[1].Label);
         Assert.Null(rules[2].Icon);
-        Assert.Equal("tag:4k remaster", CustomTagRuleSet.RuleId(rules[0]));
-        Assert.Equal("collection:criterion collection", CustomTagRuleSet.RuleId(rules[1]));
+        // Ids name the match type but not the value: a keyed hash, the same for any case of it.
+        Assert.Matches("^tag:[0-9a-f]{16}$", CustomTagRuleSet.RuleId(rules[0], "key"));
+        Assert.Matches("^collection:[0-9a-f]{16}$", CustomTagRuleSet.RuleId(rules[1], "key"));
+        Assert.DoesNotContain("criterion", CustomTagRuleSet.RuleId(rules[1], "key"), StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(CustomTagRuleSet.RuleId(rules[0], "key"), CustomTagRuleSet.RuleId(Rule("tag", "4k REMASTER", "Other"), "key"));
+        Assert.NotEqual(CustomTagRuleSet.RuleId(rules[0], "key"), CustomTagRuleSet.RuleId(rules[0], "other key"));
         Assert.Empty(CustomTagRuleSet.Normalize(null));
     }
 
@@ -73,21 +84,22 @@ public class CustomTagRulesTests
 
         Assert.True(matcher.HasCollectionRules);
         Assert.True(matcher.IsRuleCollection("  CRITERION "));
-        Assert.Equal(new[] { "collection:criterion", "tag:4k remaster" }, matcher.Match(new[] { "4k  remaster", "other" }, new[] { "criterion" }));
+        Assert.Equal(new[] { Id("collection", "criterion"), Id("tag", "4k remaster") }, matcher.Match(new[] { "4k  remaster", "other" }, new[] { "criterion" }));
         Assert.Null(matcher.Match(new[] { "other" }, null));
         Assert.Null(new CustomTagMatcher(null).Match(new[] { "4K Remaster" }, null));
-        Assert.Equal("Remaster", matcher.Find("tag:4k remaster")?.Label);
+        Assert.Equal("Remaster", matcher.Find(Id("tag", "4k remaster"))?.Label);
         Assert.Null(matcher.Find("tag:unknown"));
     }
 
     [Fact]
     public void MatchFingerprintIgnoresLabelsIconsAndOrder()
     {
-        var a = CustomTagRuleSet.MatchFingerprint(new[] { Rule("tag", "A", "One"), Rule("collection", "B", "Two") });
-        var b = CustomTagRuleSet.MatchFingerprint(new[] { Rule("collection", "b", "Changed", "star"), Rule("tag", "a", "Other") });
+        var a = CustomTagRuleSet.MatchFingerprint(new[] { Rule("tag", "A", "One"), Rule("collection", "B", "Two") }, "key");
+        var b = CustomTagRuleSet.MatchFingerprint(new[] { Rule("collection", "b", "Changed", "star"), Rule("tag", "a", "Other") }, "key");
         Assert.Equal(a, b);
-        Assert.NotEqual(a, CustomTagRuleSet.MatchFingerprint(new[] { Rule("tag", "A", "One") }));
-        Assert.Equal(string.Empty, CustomTagRuleSet.MatchFingerprint(null));
+        Assert.NotEqual(a, CustomTagRuleSet.MatchFingerprint(new[] { Rule("tag", "A", "One") }, "key"));
+        Assert.NotEqual(a, CustomTagRuleSet.MatchFingerprint(new[] { Rule("tag", "A", "One"), Rule("collection", "B", "Two") }, "new key"));
+        Assert.Equal(string.Empty, CustomTagRuleSet.MatchFingerprint(null, "key"));
     }
 
     [Theory]
@@ -115,11 +127,11 @@ public class CustomTagRulesTests
     [Fact]
     public void CustomTagsTakePartInContentEqualityAndClones()
     {
-        var a = new TagCacheEntry { Type = "Movie", CustomTags = ["tag:signed"] };
+        var a = new TagCacheEntry { Type = "Movie", CustomTags = [Id("tag", "signed")] };
         var b = a.Clone();
         Assert.Equal(a.CustomTags, b.CustomTags);
         Assert.True(TagCacheEntry.ContentEquals(a, b));
-        b.CustomTags = ["tag:signed", "collection:criterion"];
+        b.CustomTags = [Id("tag", "signed"), Id("collection", "criterion")];
         Assert.False(TagCacheEntry.ContentEquals(a, b));
     }
 
@@ -127,12 +139,15 @@ public class CustomTagRulesTests
     {
         public readonly List<BaseItem> Items = new();
         public readonly Mock<ILibraryManager> Mock = new();
+        /// <summary>Items a user's queries (their access set) do not return, by user id.</summary>
+        public readonly Dictionary<Guid, HashSet<Guid>> HiddenFrom = new();
 
         public Library()
         {
             IEnumerable<BaseItem> Select(InternalItemsQuery q)
             {
                 IEnumerable<BaseItem> selected = Items;
+                if (q.User != null && HiddenFrom.TryGetValue(q.User.Id, out var hidden)) selected = selected.Where(i => !hidden.Contains(i.Id));
                 if (q.ItemIds?.Length > 0) selected = selected.Where(i => q.ItemIds.Contains(i.Id));
                 else if (q.IncludeItemTypes?.Length > 0) selected = selected.Where(i => q.IncludeItemTypes.Contains(i.GetBaseItemKind()));
                 if (q.ParentId != Guid.Empty) selected = selected.Where(i => i.ParentId == q.ParentId || (i is Episode e && e.SeriesId == q.ParentId));
@@ -179,11 +194,11 @@ public class CustomTagRulesTests
             using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
             cache.BuildFullCache(null, CancellationToken.None);
 
-            Assert.Equal(new[] { "tag:4k remaster" }, TagsOf(cache, tagged));
-            Assert.Equal(new[] { "collection:criterion" }, TagsOf(cache, member));
+            Assert.Equal(new[] { Id("tag", "4k remaster") }, TagsOf(cache, tagged));
+            Assert.Equal(new[] { Id("collection", "criterion") }, TagsOf(cache, member));
             Assert.Null(TagsOf(cache, plain));
             // Seasons and episodes take their series' tags.
-            foreach (var item in new BaseItem[] { series, season, episode }) Assert.Equal(new[] { "tag:4k remaster" }, TagsOf(cache, item));
+            foreach (var item in new BaseItem[] { series, season, episode }) Assert.Equal(new[] { Id("tag", "4k remaster") }, TagsOf(cache, item));
             Assert.Equal(cache.BuildEntryOnDemand(member)!.CustomTags, TagsOf(cache, member));
 
             // A collection change re-reads membership and patches old and new members.
@@ -191,7 +206,7 @@ public class CustomTagRulesTests
             cache.EnqueueUpdate(boxSet.Id);
             Flush(cache);
             Assert.Null(TagsOf(cache, member));
-            Assert.Equal(new[] { "collection:criterion" }, TagsOf(cache, plain));
+            Assert.Equal(new[] { Id("collection", "criterion") }, TagsOf(cache, plain));
 
             // A series whose own tags change patches its seasons and episodes.
             series.Tags = [];
@@ -203,7 +218,7 @@ public class CustomTagRulesTests
             boxSet.LinkedChildren = [new LinkedChild { ItemId = plain.Id }, new LinkedChild { ItemId = series.Id }];
             cache.EnqueueUpdate(boxSet.Id);
             Flush(cache);
-            foreach (var item in new BaseItem[] { series, season, episode }) Assert.Equal(new[] { "collection:criterion" }, TagsOf(cache, item));
+            foreach (var item in new BaseItem[] { series, season, episode }) Assert.Equal(new[] { Id("collection", "criterion") }, TagsOf(cache, item));
 
             // A removed collection drops its members' matches.
             library.Items.Remove(boxSet);
@@ -216,6 +231,136 @@ public class CustomTagRulesTests
         {
             BaseItem.LibraryManager = previous;
         }
+    }
+
+    [Fact]
+    public void CollectionMatchesOnlyReachUsersWhoCanAccessTheCollection()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        f.Plugin.Configuration.CustomTagRules = CustomTagRuleSet.Normalize(new[] { Rule("collection", "Hidden Box", "Boxed"), Rule("tag", "Signed", "Signed") });
+        var library = new Library();
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Mock.Object;
+        try
+        {
+            var member = new Movie { Id = Guid.NewGuid(), Name = "Member", Tags = ["Signed"] };
+            var series = new Series { Id = Guid.NewGuid(), Name = "Show" };
+            var episode = new Episode { Id = Guid.NewGuid(), Name = "Pilot", SeriesId = series.Id, ParentId = series.Id, IndexNumber = 1, ParentIndexNumber = 1 };
+            var box = new BoxSet { Id = Guid.NewGuid(), Name = "Hidden Box", LinkedChildren = [new LinkedChild { ItemId = member.Id }, new LinkedChild { ItemId = series.Id }] };
+            library.Items.AddRange(new BaseItem[] { member, series, episode, box });
+            var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+            var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+            library.HiddenFrom[viewer.Id] = [];
+
+            using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            cache.BuildFullCache(null, CancellationToken.None);
+            var both = new[] { Id("collection", "Hidden Box"), Id("tag", "Signed") };
+            Assert.Equal(both, TagsOf(cache, member));
+
+            // The viewer can see the collection: same matches, and a browser copy exists under this revision.
+            var visible = cache.GetCacheForUser(viewer, out _, out _, out var visibleRevision);
+            Assert.Equal(both, visible[member.Id.ToString("N")].CustomTags);
+
+            // The collection is blocked for the viewer (the member stays visible): the projection, the
+            // batch endpoint and native posters drop the collection match, the shared entry keeps it,
+            // and the revision changes, so the stored copy is replaced rather than patched.
+            library.HiddenFrom[viewer.Id].Add(box.Id);
+            cache.InvalidateUserAccess();
+            var hidden = cache.GetCacheForUser(viewer, out _, out _, out var hiddenRevision);
+            Assert.NotEqual(visibleRevision, hiddenRevision);
+            Assert.Equal(new[] { Id("tag", "Signed") }, hidden[member.Id.ToString("N")].CustomTags);
+            Assert.Null(hidden[episode.Id.ToString("N")].CustomTags);
+            Assert.Equal(both, TagsOf(cache, member));
+            Assert.Equal(both, cache.GetCacheForUser(admin, out _, out _, out var adminRevision)[member.Id.ToString("N")].CustomTags);
+            Assert.NotEqual(adminRevision, hiddenRevision);
+            Assert.Equal(new[] { Id("tag", "Signed") }, cache.GetCustomTags(member, viewer));
+            Assert.Null(cache.GetCustomTags(episode, viewer));
+            Assert.Equal(both, cache.GetCustomTags(member, admin));
+            Assert.Equal(new[] { Id("collection", "Hidden Box") }, cache.GetCustomTags(episode, admin));
+            Assert.True(cache.TryGetEntry(member.Id, out var shared));
+            Assert.Equal(new[] { Id("tag", "Signed") }, cache.FilterCustomTagsForUser(shared, member.Id, viewer).CustomTags);
+
+            // A delta with nothing new still reports the viewer's current revision.
+            var cursor = cache.GetCacheForUser(viewer, out _, out var timestamp, out _).Values.Max(e => e.LastUpdated);
+            cache.GetCacheForUser(viewer, out _, out _, out var deltaRevision, since: cursor);
+            Assert.Equal(hiddenRevision, deltaRevision);
+
+            // Shared serialized bytes are never served across the two access sets.
+            var adminItems = cache.GetShareableCacheForUser(admin, out _, out _, out _, out var shareKey);
+            Assert.NotNull(shareKey);
+            cache.StoreSerializedItems(shareKey!, JsonSerializer.SerializeToUtf8Bytes(adminItems), adminItems.Count);
+            Assert.False(cache.TryGetSerializedItems(viewer, out _, out _, out var sharedRevision, out _, out _, out _));
+            Assert.Equal(hiddenRevision, sharedRevision);
+
+            // Native posters: the pinned data (and so the poster cache identity) follows the viewer's access.
+            var resolver = new SpoilerUserResolver(f.Core.Manager, library.Mock.Object, f.Core.Logger, null!);
+            using var native = new PosterTagDataProvider(cache, library.Mock.Object, new SpoilerTagDataStripper(library.Mock.Object, Mock.Of<IUserDataManager>(), resolver), resolver,
+                new PosterTagReviewRatings(f.Core.Manager, new PosterTagUserCache(Mock.Of<IUserManager>()), f.Core.Logger), f.Core.Logger);
+            var viewerPinned = native.GetPinnedSnapshot(member.Id, viewer)!;
+            var adminPinned = native.GetPinnedSnapshot(member.Id, admin)!;
+            Assert.Equal(new[] { Id("tag", "Signed") }, viewerPinned.Entry.CustomTags);
+            Assert.Equal(both, adminPinned.Entry.CustomTags);
+            Assert.NotEqual(adminPinned.PinnedHash, viewerPinned.PinnedHash);
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void ThePublicConfigurationNamesNoRuleSourceAndAdminsGetThemPrivately(bool authenticated, bool admin)
+    {
+        using var fixture = new ApiPluginFixture();
+        fixture.Plugin.UpdateConfiguration(new PluginConfiguration
+        {
+            CustomTagRules = [Rule("collection", "Secret Collection", "Boxed", "star"), Rule("tag", "secret-tag", "Signed", "auto_awesome")],
+        });
+        var config = fixture.Plugin.Configuration;
+        Assert.Matches("^[0-9a-f]{32}$", config.CustomTagRuleKey);
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        var privateController = ApiAssetTests.Controller(fixture.Core, Mock.Of<IUserManager>());
+        foreach (var c in new[] { controller, privateController })
+        {
+            c.HttpContext.User = new ClaimsPrincipal(authenticated
+                ? new ClaimsIdentity([new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test")
+                : new ClaimsIdentity());
+        }
+
+        var json = JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value);
+        Assert.DoesNotContain("secret", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(config.CustomTagRuleKey, json);
+        using (var document = JsonDocument.Parse(json))
+        {
+            var rules = document.RootElement.GetProperty("CustomTagRules").EnumerateArray().ToList();
+            Assert.Equal(2, rules.Count);
+            Assert.Equal(new[] { "Id", "Label", "Icon" }, rules[0].EnumerateObject().Select(p => p.Name));
+            Assert.Equal(CustomTagMatcher.For(config).Ids, rules.Select(r => r.GetProperty("Id").GetString()));
+            Assert.Equal(new[] { "Boxed", "Signed" }, rules.Select(r => r.GetProperty("Label").GetString()));
+        }
+
+        var privateJson = JsonSerializer.Serialize(Assert.IsType<JsonResult>(privateController.GetPrivateConfig()).Value);
+        Assert.DoesNotContain(config.CustomTagRuleKey, privateJson);
+        if (!admin)
+        {
+            Assert.Equal("{}", privateJson);
+            return;
+        }
+
+        using var privateDocument = JsonDocument.Parse(privateJson);
+        var sources = privateDocument.RootElement.GetProperty("CustomTagRuleSources").EnumerateArray().ToList();
+        Assert.Equal(new[] { ("collection", "Secret Collection"), ("tag", "secret-tag") }, sources.Select(r => (r.GetProperty("Match").GetString()!, r.GetProperty("Value").GetString()!)));
+        Assert.Equal(CustomTagMatcher.For(config).Ids, sources.Select(r => r.GetProperty("Id").GetString()));
+
+        // The key stays the server's: a later save (posting another key or none) keeps it.
+        var key = config.CustomTagRuleKey;
+        fixture.Plugin.UpdateConfiguration(new PluginConfiguration { CustomTagRules = [Rule("tag", "secret-tag", "Signed")], CustomTagRuleKey = "posted" });
+        Assert.Equal(key, fixture.Plugin.Configuration.CustomTagRuleKey);
     }
 
     [Fact]
@@ -239,7 +384,7 @@ public class CustomTagRulesTests
             // An added rule re-matches every entry.
             f.Plugin.Configuration.CustomTagRules = CustomTagRuleSet.Normalize(new[] { Rule("tag", "signed", "Signed copy") });
             refreshAll.Invoke(cache, null);
-            Assert.Equal(new[] { "tag:signed" }, TagsOf(cache, signed));
+            Assert.Equal(new[] { Id("tag", "signed") }, TagsOf(cache, signed));
             Assert.True(cache.Version > version);
             // A label or icon edit matches the same items: nothing to re-match.
             var afterAdd = cache.Version;
@@ -252,7 +397,7 @@ public class CustomTagRulesTests
         var path = Path.Combine(f.Core.ConfigRoot, "tag-cache.json");
         using (var doc = JsonDocument.Parse(File.ReadAllText(path)))
         {
-            Assert.Equal("tag:signed", doc.RootElement.GetProperty("CustomTagsFingerprint").GetString());
+            Assert.Equal(Id("tag", "signed"), doc.RootElement.GetProperty("CustomTagsFingerprint").GetString());
         }
 
         // A collection a rule names, removed right after a snapshot load (before anything read the
@@ -268,7 +413,7 @@ public class CustomTagRulesTests
             using (var built = Create())
             {
                 built.BuildFullCache(null, CancellationToken.None);
-                Assert.Equal(new[] { "collection:box" }, TagsOf(built, boxed));
+                Assert.Equal(new[] { Id("collection", "box") }, TagsOf(built, boxed));
             }
 
             using var loaded = Create();
@@ -309,7 +454,7 @@ public class CustomTagRulesTests
     {
         var config = NativeConfig();
         var settings = PosterTagSettings.FromSettingsJson("{customTagsEnabled:true,tagLayoutSettingsVersion:1,tagGroupCaps:{custom:2}}", config);
-        var entry = new TagCacheEntry { Type = "Movie", CustomTags = ["tag:signed", "collection:criterion", "tag:gone", "tag:4k remaster"] };
+        var entry = new TagCacheEntry { Type = "Movie", CustomTags = [Id("tag", "signed"), Id("collection", "criterion"), "tag:gone", Id("tag", "4k remaster")] };
         var layout = PosterTagResolver.Resolve(entry, settings, Movie(), false)!;
 
         var group = Assert.Single(layout.Groups);
@@ -318,7 +463,7 @@ public class CustomTagRulesTests
         // The server listed the ids in rule order; an id with no rule any more is skipped; the cap keeps two.
         Assert.Equal(new[] { ("Signed", (string?)null), ("Criterion", null) }, group.Tags.Cast<CustomTag>().Select(t => (t.Label, t.Icon)));
 
-        var icon = PosterTagResolver.Resolve(new TagCacheEntry { Type = "Movie", CustomTags = ["tag:4k remaster"] }, settings, Movie(), false)!;
+        var icon = PosterTagResolver.Resolve(new TagCacheEntry { Type = "Movie", CustomTags = [Id("tag", "4k remaster")] }, settings, Movie(), false)!;
         Assert.Equal("auto_awesome", Assert.IsType<CustomTag>(Assert.Single(Assert.Single(icon.Groups).Tags)).Icon);
         Assert.Null(PosterTagResolver.Resolve(new TagCacheEntry { Type = "Movie" }, settings, Movie(), false));
     }
@@ -356,7 +501,7 @@ public class CustomTagRulesTests
         {
             using var source = new SKBitmap(180, 270);
             source.Erase(SKColors.Navy);
-            var layout = new PosterTagLayout([new(PosterTagGroup.Custom, PosterTagCorner.TopLeft, [new CustomTag("Remaster", icon, "tag:4k remaster")])], false, false);
+            var layout = new PosterTagLayout([new(PosterTagGroup.Custom, PosterTagCorner.TopLeft, [new CustomTag("Remaster", icon, Id("tag", "4k remaster"))])], false, false);
             using var output = renderer.Render(source, layout);
             Assert.NotNull(output);
             Assert.Contains(Enumerable.Range(4, 30).SelectMany(y => Enumerable.Range(4, 90).Select(x => output.GetPixel(x, y))), p => p != SKColors.Navy);

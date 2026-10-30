@@ -8,11 +8,13 @@
 //
 // The server decides which rules an item matches (TagCacheService
 // CustomTags, the same ids on /tag-data): the tag cache matches tags and
-// collections; with the tag cache off, /tag-data matches tags only. Each
-// rule is identified by its match type and value ("tag:4k remaster"), so a
-// label, icon or colour edit applies at once; ids of rules that no longer
-// exist are ignored. Spoiler Guard does not apply: the labels are the
-// administrator's, not facts about the plot.
+// collections; with the tag cache off, /tag-data matches tags only.
+// Collection matches only reach users who can access the collection. Each
+// rule has an opaque id derived from its match type and value
+// ("collection:3f9a…"), so a label, icon or colour edit applies at once;
+// ids of rules that no longer exist are ignored. The public configuration
+// carries ids, labels and icons only: what a rule matches (the tooltip's
+// second line) is in the admin-only private configuration.
 (function(JE) {
     'use strict';
 
@@ -45,39 +47,48 @@
 
     /**
      * @typedef {Object} CustomTagRule
-     * @property {string} id - "tag:<value>" or "collection:<value>", the value lower-cased.
-     * @property {string} match - "tag" or "collection".
-     * @property {string} value - The tag or collection name.
+     * @property {string} id - The server's opaque rule id ("tag:…" or "collection:…").
      * @property {string} label - The chip text (also its Tag Styles label).
      * @property {string|null} icon - A Material Symbols name from ICONS, or null.
+     * @property {string|null} match - "tag" or "collection" (administrators only, else null).
+     * @property {string|null} value - The tag or collection name (administrators only, else null).
      */
 
-    /** @type {{source: *, rules: Map<string, CustomTagRule>, key: string}|null} */
+    /** @type {{source: *, sources: *, rules: Map<string, CustomTagRule>, key: string}|null} */
     let rulesMemo = null;
 
     /**
      * The administrator's rules (public configuration, already normalised by
-     * the server) by id, memoised per configuration object.
+     * the server) by id, in table order, memoised per configuration object.
+     * What each rule matches comes from the private configuration, which only
+     * administrators receive (CustomTagRuleSources).
      * @returns {{rules: Map<string, CustomTagRule>, key: string}}
      */
     function currentRules() {
         const source = JE.pluginConfig?.CustomTagRules;
-        if (rulesMemo && rulesMemo.source === source) return rulesMemo;
+        const sources = JE.pluginConfig?.CustomTagRuleSources;
+        if (rulesMemo && rulesMemo.source === source && rulesMemo.sources === sources) return rulesMemo;
+        /** @type {Map<string, {match: string, value: string}>} */
+        const matches = new Map();
+        for (const raw of Array.isArray(sources) ? sources : []) {
+            const id = String(pick(raw, 'id') || '');
+            const match = String(pick(raw, 'match') || '').toLowerCase();
+            const value = String(pick(raw, 'value') || '').trim();
+            if (id && (match === 'tag' || match === 'collection') && value) matches.set(id, { match, value });
+        }
         /** @type {Map<string, CustomTagRule>} */
         const rules = new Map();
         for (const raw of Array.isArray(source) ? source : []) {
-            const match = String(pick(raw, 'match') || '').toLowerCase();
-            const value = String(pick(raw, 'value') || '').trim();
+            const id = String(pick(raw, 'id') || '');
             const label = String(pick(raw, 'label') || '').trim();
-            if ((match !== 'tag' && match !== 'collection') || !value || !label) continue;
-            const id = `${match}:${value.toLowerCase()}`;
-            if (rules.has(id)) continue;
+            if (!id || !label || rules.has(id)) continue;
             const icon = String(pick(raw, 'icon') || '').toLowerCase();
-            rules.set(id, { id, match, value, label, icon: ICONS.includes(icon) ? icon : null });
+            const from = matches.get(id);
+            rules.set(id, { id, label, icon: ICONS.includes(icon) ? icon : null, match: from?.match ?? null, value: from?.value ?? null });
         }
         // What the persisted per-item matches were computed under (see setCachedEntry).
         const key = [...rules.keys()].sort().join('\n');
-        rulesMemo = { source, rules, key };
+        rulesMemo = { source, sources, rules, key };
         return rulesMemo;
     }
 
@@ -99,11 +110,13 @@
     }
 
     /**
-     * The tooltip of a chip: its label, and on a second line where it comes from.
+     * The tooltip of a chip: its label and, for administrators (who know
+     * what the rule matches), a second line saying where it comes from.
      * @param {CustomTagRule} rule
      * @returns {string}
      */
     function titleOf(rule) {
+        if (!rule.match || !rule.value) return rule.label;
         const source = JE.t(rule.match === 'collection' ? 'custom_tags_source_collection' : 'custom_tags_source_tag', { name: rule.value });
         return `${rule.label}\n${source}`;
     }
@@ -111,7 +124,7 @@
     /**
      * One chip, as every Custom chip is drawn (the settings panel's preview
      * builds its samples with it too).
-     * @param {{id: string, match: string, value: string, label: string, icon: string|null}} rule
+     * @param {CustomTagRule} rule
      * @returns {HTMLElement}
      */
     function buildChip(rule) {
@@ -301,6 +314,20 @@
                 if (ctx.isTagged(el)) return;
                 if (ctx.shouldIgnore(el)) return;
                 applyCustomTags(ctx, el, entry.CustomTags);
+            },
+            // The fallback copies were filtered for this user like the server
+            // cache: when that is replaced (access or Spoiler Guard changed, a
+            // rebuild) they go too, and a delta drops the items it carries.
+            onServerCacheRefresh(ctx, updatedIds) {
+                if (!updatedIds) {
+                    ctx.clearPersistent();
+                    ctx.hot?.clear();
+                    return;
+                }
+                for (const id of updatedIds) {
+                    ctx.deletePersistent(String(id));
+                    ctx.hot?.delete(String(id));
+                }
             },
         },
     };
