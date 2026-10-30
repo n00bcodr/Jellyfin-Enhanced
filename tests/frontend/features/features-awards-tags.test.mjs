@@ -99,3 +99,24 @@ for (const layout of ['corners', 'caption', 'summary']) {
         }
     });
 }
+
+
+test('a full mixed Summary pill keeps Awards in the reveal outside its three facts', async t => {
+    const groups = ['language', 'quality', 'rating', 'awards'];
+    const h = setup(t, { tagLayout: 'summary', languageTagsEnabled: true, qualityTagsEnabled: true, ratingTagsEnabled: true,
+        tagGroupOrder: groups, tagLayouts: { summary: { groups: groups.map(group => ({ group, slot: 'pill' })) } } });
+    h.render({ ImdbRank: 12, OscarWinner: true, OscarYear: 2024 });
+    for (const [group, html] of [
+        ['language', '<span class="language-code" title="English">EN</span>'],
+        ['quality', '<span class="quality-overlay-label resolution">4K</span>'],
+        ['rating', '<span class="rating-tag rating-tag-tmdb"><span class="rating-text">8</span></span>'],
+    ]) {
+        const wrap = h.document.createElement('div');
+        wrap.innerHTML = html;
+        h.JE.core.tagLayout.commitGroup(h.host, group, wrap);
+    }
+    const pill = h.document.querySelector('a.je-tag-pill');
+    assert.deepEqual([...pill.querySelectorAll('.je-tag-pill-fact')].map(el => el.dataset.jeGroup), groups.slice(0, 3));
+    assert.equal(pill.getAttribute('href'), '#details');
+    assert.equal(h.document.querySelectorAll('[data-je-slot="hover"] a.awards-link').length, 2);
+});

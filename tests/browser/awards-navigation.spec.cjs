@@ -133,3 +133,64 @@ for (const layout of ['corners', 'caption', 'summary']) {
     await expect(page).toHaveURL(destination);
   });
 }
+
+
+for (const reveal of ['hover', 'focus', 'forced']) {
+  test(`mixed Summary: ${reveal} disables the hidden pill and exposes both award links`, async ({ page }, info) => {
+    const destination = await prepare(page, 'summary');
+    await page.evaluate(async () => {
+      const JE = window.JellyfinEnhanced;
+      const groups = ['language', 'quality', 'rating', 'awards'];
+      Object.assign(JE.currentSettings, { languageTagsEnabled: true, qualityTagsEnabled: true, ratingTagsEnabled: true,
+        tagGroupOrder: groups, tagGroupCaps: { language: 1, quality: 1, rating: 1, awards: 2 },
+        tagLayouts: { summary: { groups: groups.map(group => ({ group, slot: 'pill' })) } } });
+      await JE.core.tagLayout.reinitialize();
+      const host = JE.core.tagLayout.ensureHost(document.querySelector('#awards-navigation-proof .cardScalable'));
+      for (const [group, html] of [
+        ['language', '<span class="language-code" title="English">EN</span>'],
+        ['quality', '<span class="quality-overlay-label resolution">4K</span>'],
+        ['rating', '<span class="rating-tag rating-tag-tmdb"><span class="rating-text">8</span></span>'],
+      ]) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        JE.core.tagLayout.commitGroup(host, group, wrap);
+      }
+      JE.core.tagLayout.flushFit();
+    });
+    const card = page.locator('#awards-navigation-proof');
+    const pill = card.locator('a.je-tag-pill');
+    const slot = card.locator('[data-je-slot="pill"]');
+    await expect(pill.locator('.je-tag-pill-fact')).toHaveCount(3);
+    expect(await pill.locator('.je-tag-pill-fact').evaluateAll(list => list.map(el => el.dataset.jeGroup)))
+      .toEqual(['language', 'quality', 'rating']);
+    await expect(pill).toHaveCSS('pointer-events', 'auto');
+    if (reveal === 'hover') await card.hover();
+    else if (reveal === 'focus') await card.locator('a.cardImageContainer').focus();
+    else await card.evaluate(el => el.classList.add('je-tag-reveal'));
+    await expect(slot).toHaveCSS('opacity', '0');
+    const links = card.locator('a.awards-link');
+    // Test hit targets before hovering a chip: forced reveal must work without :hover as well.
+    for (const link of await links.all()) {
+      expect(await link.evaluate(el => {
+        const r = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+      })).toBe(true);
+    }
+    await expect(pill).toHaveCSS('pointer-events', 'none');
+    for (const [index, title] of ['IMDb Top 250 · Rank #12', 'Oscar winner · 2024'].entries()) {
+      await expect(links.nth(index)).toHaveAttribute('title', title);
+      await links.nth(index).hover();
+    }
+    if (process.env.JE_AWARDS_SHOTS) {
+      mkdirSync(process.env.JE_AWARDS_SHOTS, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.JE_AWARDS_SHOTS, `${info.project.name}-mixed-summary-${reveal}.png`) });
+    }
+    await page.mouse.move(0, 0);
+    await card.evaluate(el => { el.classList.remove('je-tag-reveal'); document.activeElement?.blur(); });
+    await expect(slot).toHaveCSS('opacity', '1');
+    await expect(pill).toHaveCSS('pointer-events', 'auto');
+    await card.hover();
+    await links.nth(1).click();
+    await expect(page).toHaveURL(destination);
+  });
+}
