@@ -33,10 +33,11 @@
 // The work runs in idle slices: the pixel work of artwork already decoded
 // (draw, read back, histogram) while the idle period lasts, then reads (which
 // image, is it loaded) for a batch of cards and the writes for cards whose
-// colour is known. Images still to sample are decoded off the main thread
-// (createImageBitmap, resized while decoding; without it, the image's own
-// decode()), and their pixel work waits for a slice: a full-size image drawn
-// small without createImageBitmap takes a slice of its own.
+// colour is known, then decode launches. Images still to sample are decoded
+// off the main thread (createImageBitmap, resized while decoding; without it,
+// the image's own decode()), and every launch and every pixel step waits for
+// a slice: a decode settling only queues the next step. A full-size image
+// drawn small without createImageBitmap takes a slice of its own.
 //
 // Public surface: JE.tagPosterColours { ALGORITHM, dominant, normalise,
 // coloursOf, keyOf, setActive, isActive, track, release, stats, clearMemory }.
@@ -223,6 +224,13 @@
     const sampling = new Map();
     /** @type {Decoded[]} */
     const ready = [];
+    /**
+     * Decode steps waiting for a slice to launch them: a sample's source
+     * image, decoded, to resize into a bitmap; or (`fallback`: no bitmap)
+     * to decode for drawing. A step holds its sample's slot.
+     * @type {{job: Job, source: HTMLImageElement, fallback: boolean}[]}
+     */
+    const launches = [];
     /** @type {Map<string, Map<string, number[]|null>>} new colours not yet persisted, per store scope */
     const unsaved = new Map();
     let persistTimer = 0;
@@ -494,6 +502,7 @@
     function dropSamples() {
         toSample.clear();
         sampling.clear();
+        launches.length = 0;
         for (const step of ready.splice(0)) if (step.bitmap) /** @type {ImageBitmap} */ (step.drawable).close?.();
     }
 
@@ -509,9 +518,9 @@
      * One idle slice: pixel steps for decoded artwork while the idle period
      * lasts (at least one when the slice ran late, at most one full-size
      * drawing), then reads for a batch of queued cards and the writes for
-     * those whose colour is known; the rest are queued for sampling, and
-     * free decode slots are filled. Every part is timed in the slice
-     * counters.
+     * those whose colour is known; the rest are queued for sampling. Then
+     * the decode steps waiting for a launch go out, and free decode slots
+     * are filled. Every part is timed in the slice counters.
      * @param {IdleDeadline} [deadline]
      */
     function runSlice(deadline) {
@@ -561,7 +570,7 @@
             if (!job.img && art.img) job.img = art.img;
             toSample.set(art.key, job);
         }
-        // Decodes start while idle time lasts too (at least one when the slice ran late).
+        // Decode launches while idle time lasts too (at least one when the slice ran late).
         let launched = 0;
         pumpSamples(() => (left() >= STEP_MIN_MS || (late && !launched)) && ++launched > 0);
         const spent = performance.now() - started;
@@ -570,18 +579,24 @@
         counters.steps += steps;
         counters.totalMs += spent;
         counters.maxMs = Math.max(counters.maxMs, spent);
-        if (queue.size || ready.length || (toSample.size && sampling.size < MAX_DECODES)) scheduleSlice();
+        if (queue.size || ready.length || launches.length || (toSample.size && sampling.size < MAX_DECODES)) scheduleSlice();
     }
 
     /**
-     * Start decodes while slots are free (a decoded artwork holds its slot
-     * until its pixel step ran); cards showing an artwork already being
-     * decoded join that decode, and its result goes to every one of them.
-     * Nothing here runs pixel work: a decode, even one that settles at once,
-     * only queues its step for a slice.
-     * @param {() => boolean} more - Whether the slice has time for another decode to start.
+     * Launch the decode steps waiting for a slice, then start decodes while
+     * slots are free (a decoded artwork holds its slot until its pixel step
+     * ran); cards showing an artwork already being decoded join that
+     * decode, and its result goes to every one of them. Nothing here runs
+     * pixel work, and nothing launches outside a slice: a decode, even one
+     * that settles at once, only queues its next step.
+     * @param {() => boolean} more - Whether the slice has time for another launch.
      */
     function pumpSamples(more) {
+        while (launches.length) {
+            if (!more()) return;
+            const { job, source, fallback } = /** @type {{job: Job, source: HTMLImageElement, fallback: boolean}} */ (launches.shift());
+            launch(job, source, fallback);
+        }
         for (const [key, job] of toSample) {
             if (sampling.size >= MAX_DECODES) return;
             const running = sampling.get(key);
@@ -600,19 +615,99 @@
                 continue;
             }
             sampling.set(key, job);
-            decode(job).then((decoded) => {
-                if (sampling.get(key) !== job || job.gen !== generation) {
-                    if (decoded?.bitmap) /** @type {ImageBitmap} */ (decoded.drawable).close?.();
-                    return;
-                }
-                if (!decoded) finish(job, FAILED);
-                else ready.push(decoded);
-                scheduleSlice();
-            }, (err) => {
-                finish(job, failure(job, err));
-                scheduleSlice();
-            });
+            start(job);
         }
+    }
+
+    /**
+     * Start a sample (in a slice): its card's image when loaded, else the
+     * artwork URL in an image of its own, decoded off the main thread; a
+     * slice then launches the resize.
+     * @param {Job} job
+     */
+    function start(job) {
+        if (job.img && job.img.complete && job.img.naturalWidth > 0) {
+            launch(job, job.img, false);
+            return;
+        }
+        const image = new Image();
+        image.decoding = 'async';
+        image.src = job.url;
+        settle(job, attempt(() => image.decode()), () => launches.push({ job, source: image, fallback: false }));
+    }
+
+    /**
+     * Launch one decode of a source image (in a slice, timed): resized with
+     * createImageBitmap; else (or when that rejected) the image's own
+     * decode(), before a slice draws it. The image is same-origin, so the
+     * canvas stays readable.
+     * @param {Job} job
+     * @param {HTMLImageElement} source
+     * @param {boolean} fallback - createImageBitmap rejected: draw the image.
+     */
+    function launch(job, source, fallback) {
+        const width = source.naturalWidth, height = source.naturalHeight;
+        if (!(width > 0 && height > 0)) {
+            finish(job, FAILED);
+            return;
+        }
+        const scale = Math.min(1, SAMPLE_SIZE / Math.max(width, height));
+        const w = Math.max(1, Math.floor(width * scale + 0.5));
+        const h = Math.max(1, Math.floor(height * scale + 0.5));
+        if (!fallback && typeof createImageBitmap === 'function') {
+            settle(job, attempt(() => createImageBitmap(source, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' })),
+                (bitmap) => ready.push({ job, drawable: bitmap, bitmap: true, w, h }),
+                (err) => {
+                    if (err?.name === 'SecurityError') return false;
+                    // Drawn from the image instead.
+                    launches.push({ job, source, fallback: true });
+                    return true;
+                });
+            return;
+        }
+        // An image of the sampler's own was decoded by start().
+        if (source !== job.img || typeof source.decode !== 'function') {
+            ready.push({ job, drawable: source, bitmap: false, w, h });
+            scheduleSlice();
+            return;
+        }
+        settle(job, attempt(() => source.decode()), () => ready.push({ job, drawable: source, bitmap: false, w, h }));
+    }
+
+    /**
+     * A call that may throw, as a promise.
+     * @param {() => Promise<*>} fn
+     * @returns {Promise<*>}
+     */
+    function attempt(fn) {
+        try {
+            return Promise.resolve(fn());
+        } catch (err) {
+            return Promise.reject(err);
+        }
+    }
+
+    /**
+     * Wait for a decode step off the main thread. Its outcome only queues
+     * work for a slice: the next step (`done`), another launch (`retry`
+     * returns true) or the sample's failure.
+     * @param {Job} job
+     * @param {Promise<*>} promise
+     * @param {(value: *) => void} done
+     * @param {(err: *) => boolean} [retry]
+     */
+    function settle(job, promise, done, retry) {
+        promise.then((value) => {
+            if (sampling.get(job.key) !== job || job.gen !== generation) {
+                value?.close?.();
+                return;
+            }
+            done(value);
+            scheduleSlice();
+        }, (err) => {
+            if (!retry?.(err)) finish(job, failure(job, err));
+            scheduleSlice();
+        });
     }
 
     /**
@@ -655,40 +750,6 @@
             console.debug(`${logPrefix} could not sample artwork`, err);
         }
         return FAILED;
-    }
-
-    /**
-     * Decode one artwork, off the main thread: small, with createImageBitmap
-     * (resized while decoding); else (or when it rejects) the image itself,
-     * decoded before a slice draws it. The image is same-origin, so the
-     * canvas stays readable.
-     * @param {Job} job
-     * @returns {Promise<Decoded|null>} Null for an image without pixels.
-     */
-    async function decode(job) {
-        let source = job.img && job.img.complete && job.img.naturalWidth > 0 ? job.img : null;
-        if (!source) {
-            const image = new Image();
-            image.decoding = 'async';
-            image.src = job.url;
-            await image.decode();
-            source = image;
-        }
-        const width = source.naturalWidth, height = source.naturalHeight;
-        if (!(width > 0 && height > 0)) return null;
-        const scale = Math.min(1, SAMPLE_SIZE / Math.max(width, height));
-        const w = Math.max(1, Math.floor(width * scale + 0.5));
-        const h = Math.max(1, Math.floor(height * scale + 0.5));
-        if (typeof createImageBitmap === 'function') {
-            try {
-                return { job, drawable: await createImageBitmap(source, { resizeWidth: w, resizeHeight: h, resizeQuality: 'medium' }), bitmap: true, w, h };
-            } catch (err) {
-                if (err?.name === 'SecurityError') throw err;
-                // Drawn from the image instead.
-            }
-        }
-        if (typeof source.decode === 'function') await source.decode();
-        return { job, drawable: source, bitmap: false, w, h };
     }
 
     /**

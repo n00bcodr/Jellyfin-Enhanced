@@ -579,6 +579,39 @@ test('without createImageBitmap, 200 cards are drawn one per idle period, never 
   assert.equal(stats.decoding + stats.waiting + stats.queued, 0);
 });
 
+test('every decode and bitmap launch runs inside a timed slice, for background-image and <img> cards alike', async t => {
+  const bg = id => card(id).replace(/<div><img src="[^"]*"><\/div>/, '').replace('class="cardImageContainer coveredImage"', `class="cardImageContainer coveredImage" style="background-image: url('${img(id)}')"`);
+  const legacy = Array.from({ length: 8 }, (_, i) => (i + 1).toString(16).padStart(32, '0'));
+  const art = Object.fromEntries([...legacy, ID, ID2].map((id, i) => [img(id), solid([200, 30 + 10 * i, 30])]));
+  const h = setup(t, { html: legacy.map(bg).join('') + card(ID) + card(ID2), art });
+  let inSlice = false;
+  const outside = [];
+  const inside = [];
+  const realTimeout = h.window.setTimeout;
+  h.window.requestIdleCallback = (fn) => realTimeout(() => {
+    inSlice = true;
+    try { fn({ timeRemaining: () => 50, didTimeout: false }); } finally { inSlice = false; }
+  }, 1);
+  const record = (what, url) => (inSlice ? inside : outside).push([what, url]);
+  const bitmap = h.window.createImageBitmap;
+  h.window.createImageBitmap = (source, options) => {
+    record('createImageBitmap', source.src);
+    // The cards' own images cannot be resized here: drawn from the image instead.
+    if (source.isConnected) return Promise.reject(Object.assign(new Error('unsupported'), { name: 'InvalidStateError' }));
+    return bitmap(source, options);
+  };
+  h.window.HTMLImageElement.prototype.decode = function () { record('decode', this.src); return Promise.resolve(); };
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(h.document.querySelectorAll('[data-je-poster-colour]').length, 10, 'every card coloured');
+  assert.deepEqual(outside, [], 'no decode or bitmap launch from a promise callback');
+  assert.equal(inside.filter(([what]) => what === 'decode').length, 10, 'each background image and each fallback image decoded once');
+  assert.equal(inside.filter(([what]) => what === 'createImageBitmap').length, 10);
+  const stats = h.P.stats();
+  assert.equal(stats.fallback, 2, 'the two <img> cards were drawn');
+  assert.equal(stats.steps, 10);
+});
+
 test('a createImageBitmap that rejects falls back to drawing the image', async t => {
   const h = setup(t, { art: { [img(ID)]: solid([30, 60, 200]) } });
   h.window.createImageBitmap = async () => { const err = new Error('unsupported'); err.name = 'InvalidStateError'; throw err; };
