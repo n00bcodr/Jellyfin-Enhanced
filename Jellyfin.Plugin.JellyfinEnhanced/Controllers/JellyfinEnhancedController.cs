@@ -3861,6 +3861,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsPriorityStrict,
                 config.LanguageTagsMergeRegions,
                 config.QualityTagsPreferredAudioLanguage,
+                SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(config.SeriesQualityAggregation),
                 config.QualityTagsAudioLanguageFromUser,
                 config.RatingTagsPosition,
                 config.RatingTagsOnMovies,
@@ -5351,6 +5352,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         TagsHideOnHover = defaultConfig.TagsHideOnHover,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
+                // Series/season quality aggregation default.
+                SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
                         GenreTagsPosition = defaultConfig.GenreTagsPosition,
                         LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                         RatingTagsPosition = defaultConfig.RatingTagsPosition,
@@ -5456,6 +5459,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Unknown layouts, groups and slots are normalized away and caps
                 // clamped, so a stale client cannot store an unusable layout.
                 TagLayoutRules.Normalize(userConfiguration);
+                if (userConfiguration.SeriesQualityAggregation != null)
+                    userConfiguration.SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(userConfiguration.SeriesQualityAggregation);
                 // An unknown Tag Styles preset follows the admin's instead.
                 userConfiguration.TagStylePreset = TagStyleKeys.KnownPreset(userConfiguration.TagStylePreset);
                 // Rules and locks: invalid entries are dropped one by one (ids
@@ -8366,6 +8371,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                 TagsHideOnHover = defaultConfig.TagsHideOnHover,
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
+                // Series/season quality aggregation default.
+                SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
                 GenreTagsPosition = defaultConfig.GenreTagsPosition,
                 LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                 RatingTagsPosition = defaultConfig.RatingTagsPosition,
@@ -8735,6 +8742,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             if (property.AttributeProvider is System.Reflection.PropertyInfo clrProperty
                                 && (clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.LatestEpisodeId)
                                     || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.StatusEpisodeIds)
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.QualityEpisodeIds)
                                     || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.NextEpisodePremiere)))
                             {
                                 property.ShouldSerialize = static (_, _) => false;
@@ -9315,6 +9323,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     MediaStreams = trimmedStreams,
                     MediaSources = trimmedSources,
                     FirstEpisode = firstEpisodeData,
+                    QualitySummary = isContainer ? _tagCacheService.GetQualitySummaryForUser(item, user) : null,
                     DateCreated = Services.TagCacheService.ToUnixMilliseconds(item.DateCreated),
                     PremiereDate = TagDataPremiereDate(item),
                     LatestEpisodeAdded = episodeFacts.LatestAdded,

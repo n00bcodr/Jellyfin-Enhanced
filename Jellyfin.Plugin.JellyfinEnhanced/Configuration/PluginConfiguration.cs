@@ -133,6 +133,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagCacheServerMode = true;
             EnableTagsLocalStorageFallback = false;
             QualityTagsPosition = "top-left";
+            // Series/season quality aggregation default.
+            SeriesQualityAggregation = "representative";
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
             LanguageTagsPriority = string.Empty;
@@ -708,6 +710,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DisableCustomSubtitleStyles { get; set; }
         [AnalyticsInclude]
         public string QualityTagsPosition { get; set; } = "top-left";
+
+        // Series/season quality aggregation default (independent of poster layout).
+        [AnalyticsInclude]
+        public string SeriesQualityAggregation { get; set; } = "representative";
         [AnalyticsInclude]
         public string GenreTagsPosition { get; set; } = "top-right";
         [AnalyticsInclude]

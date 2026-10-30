@@ -429,6 +429,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 stripped.AudioLanguages = null;
                 stripped.PartialAudioLanguages = null;
                 stripped.StreamData = null;
+                stripped.QualitySummary = null;
+                stripped.QualityEpisodeIds = null;
             }
             if (stripRatingsEnabled)
             {

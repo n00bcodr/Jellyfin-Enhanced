@@ -223,6 +223,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagQualitySummary.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/WhatsNewData.cs",
       "category": "Model"
     },
@@ -544,6 +548,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeerrScanTriggerService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/SeriesQualityAggregation.cs",
       "category": "Services"
     },
     {
@@ -4190,6 +4198,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "SeriesQualityAggregation",
+      "type": "string",
+      "initializer": "\"representative\"",
+      "constructor_assignment": "\"representative\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "GenreTagsPosition",
       "type": "string",
       "initializer": "\"top-right\"",
@@ -6910,6 +6926,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "SeriesQualityAggregation",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "GenreTagsPosition",
       "type": "string",
       "initializer": "\"top-right\"",
@@ -8449,9 +8473,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 375,
+    "files": 377,
     "routes": 182,
-    "configuration_properties": 599,
+    "configuration_properties": 601,
     "storage_references": 72,
     "scheduled_tasks": 13,
     "locales": 33
