@@ -587,7 +587,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>The position strings the corners layout's slots stand for (core/tag-layout.js SLOT_TO_POSITION).</summary>
-        private static readonly IReadOnlyDictionary<string, string> CornerSlotPositions = new Dictionary<string, string>(StringComparer.Ordinal)
+        internal static readonly IReadOnlyDictionary<string, string> CornerSlotPositions = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["tl"] = "top-left",
             ["tr"] = "top-right",

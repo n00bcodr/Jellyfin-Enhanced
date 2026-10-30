@@ -18,6 +18,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     /// </summary>
     public static class PluginConfigurationPatch
     {
+        /// <summary>The largest request body the patch endpoint reads (the page sends a few fields at a time).</summary>
+        public const int MaxRequestBytes = 64 * 1024;
+
         private static readonly MethodInfo MemberwiseCloneMethod = typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
         /// <summary>The outcome of <see cref="Apply"/>.</summary>
@@ -67,14 +70,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             var values = new Dictionary<string, object?>(StringComparer.Ordinal);
             foreach (var (key, property) in properties)
             {
+                object? value;
                 try
                 {
-                    values[key] = changes[key].Deserialize(property.PropertyType, options);
+                    value = changes[key].Deserialize(property.PropertyType, options);
                 }
                 catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
                 {
                     return new Result { Error = $"Invalid value for '{key}'." };
                 }
+
+                // The field's own contract (ranges, known values, document normalisation, length).
+                if (!MediaTagsPageFields.TryNormalize(key, value, out var normalized, out var problem))
+                {
+                    return new Result { Error = $"Invalid value for '{key}': {problem}." };
+                }
+
+                values[key] = normalized;
             }
 
             // The read, the conflict check and the swap happen inside the plugin's configuration write lock,

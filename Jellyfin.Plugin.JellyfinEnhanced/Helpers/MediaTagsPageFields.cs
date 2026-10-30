@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 {
@@ -58,6 +61,174 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
             return fields;
         }
+
+        /// <summary>The longest text a field without its own limit takes.</summary>
+        public const int MaxText = 1024;
+
+        // Day windows and the cache lifetime: what the page's number inputs allow (the save path clamps the windows too).
+        private const int MinDays = 1;
+        private const int MaxDays = 365;
+
+        // A quality tag's place in its list.
+        private const int MaxTagOrder = 99;
+
+        private static readonly Dictionary<string, int> TextLimits = new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["TagStyleOverrides"] = TagStyleSet.MaxDocumentLength,
+            ["NativePosterTagsWebClientNames"] = 4096,
+            ["TagCacheExcludedLibraryIds"] = 8192,
+            ["LanguageTagsPriority"] = 256,
+            ["QualityTagsPreferredAudioLanguage"] = 32,
+        };
+
+        private static readonly string[] StyleTargets = { "web", "native", "both" };
+
+        /// <summary>
+        /// Checks one value the page sends against the field's contract, with the same normalisers the server
+        /// applies when it reads, seeds or saves the field, and gives the value to store (canonical spelling,
+        /// normalised documents). A value those normalisers would replace, rather than only respell, is refused.
+        /// </summary>
+        /// <param name="field">The field (one of <see cref="Allowed"/>).</param>
+        /// <param name="value">The value, already read as the property's type.</param>
+        /// <param name="normalized">The value to store.</param>
+        /// <param name="error">Why the value was refused.</param>
+        /// <returns>True when the value is accepted.</returns>
+        public static bool TryNormalize(string field, object? value, out object? normalized, out string? error)
+        {
+            normalized = value;
+            error = null;
+            if (value is string text && text.Length > (TextLimits.TryGetValue(field, out var limit) ? limit : MaxText))
+            {
+                error = $"longer than {(TextLimits.TryGetValue(field, out var max) ? max : MaxText)} characters";
+                return false;
+            }
+
+            switch (field)
+            {
+                case "TagLayout":
+                    return OneOf(value as string, TagLayoutRules.NormalizeLayout, TagLayoutRules.LayoutSlots.Keys, out normalized, out error);
+                case "TagLabelDensity":
+                    return OneOf(value as string, TagLayoutRules.NormalizeDensity, new[] { "full", "compact" }, out normalized, out error);
+                case "LanguageTagsStyle":
+                    return OneOf(value as string, LanguageTagDisplay.NormalizeStyle, new[] { LanguageTagDisplay.StyleFlags, LanguageTagDisplay.StyleCodes }, out normalized, out error);
+                case "LanguageTagsCountBadge":
+                    return OneOf(value as string, LanguageTagDisplay.NormalizeCountBadge, new[] { LanguageTagDisplay.BadgeOff, LanguageTagDisplay.BadgeOnly, LanguageTagDisplay.BadgeWithChips }, out normalized, out error);
+                case "SeriesQualityAggregation":
+                    return OneOf(value as string, SeriesQualityAggregation.Normalize, new[] { "representative", "latest", "best", "shared", "mixed" }, out normalized, out error);
+                case "TagStyleTarget":
+                    return OneOf(value as string, v => StyleTargets.FirstOrDefault(t => t == v?.Trim().ToLowerInvariant()) ?? string.Empty, StyleTargets, out normalized, out error);
+                case "QualityTagsPosition":
+                case "GenreTagsPosition":
+                case "LanguageTagsPosition":
+                case "RatingTagsPosition":
+                case "AgeRatingTagsPosition":
+                case "StatusTagsPosition":
+                    var positions = PosterTagSettings.CornerSlotPositions.Values.ToArray();
+                    return OneOf(value as string, v => positions.FirstOrDefault(p => p == v?.Trim().ToLowerInvariant()) ?? string.Empty, positions, out normalized, out error);
+                case "StatusTagsJustAddedDays":
+                case "StatusTagsNewReleaseDays":
+                case "TagsCacheTtlDays":
+                    return InRange((int)value!, MinDays, MaxDays, out error);
+                case "ResolutionTagOrder":
+                case "SourceTagOrder":
+                case "DynamicRangeTagOrder":
+                case "SpecialFormatTagOrder":
+                case "VideoCodecTagOrder":
+                case "AudioInfoTagOrder":
+                case "EditionTagOrder":
+                    return InRange((int)value!, 1, MaxTagOrder, out error);
+                case "ClearLocalStorageTimestamp":
+                    if ((long)value! >= 0) return true;
+                    error = "must not be negative";
+                    return false;
+                case "RatingTagsMinScore":
+                    var minimum = (double)value!;
+                    if (RatingSourceSettings.NormalizeMinimum(minimum) == minimum) return true;
+                    error = "must be between 0 and 10";
+                    return false;
+                case "RatingTagsSources":
+                    var sources = (string[]?)value;
+                    if (sources == null || RatingSourceSettings.NormalizeSources(sources)!.Length == sources.Length) return true;
+                    error = $"must name distinct sources of {string.Join(", ", RatingSourceSettings.SourceIds)}";
+                    return false;
+                case "TagStyleOverrides":
+                    if (TagStyleSet.TryValidate(value as string, null, out _, out error)) return true;
+                    return false;
+                case "TagStylePreset":
+                    if (string.IsNullOrEmpty(value as string)) break;
+                    if (TagStyleSet.TryValidate(null, value as string, out var styles, out error))
+                    {
+                        normalized = styles.Preset;
+                        return true;
+                    }
+
+                    return false;
+                case "TagCacheExcludedLibraryIds":
+                    var ids = ((string?)value ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    if (ids.All(id => TagLookValidation.NormalizeItemId(id) != null)) return true;
+                    error = "must be library ids separated by commas";
+                    return false;
+                case "TagGroupOrder":
+                    var order = (List<string>?)value;
+                    normalized = TagLayoutRules.NormalizeOrder(order);
+                    if (order == null || (normalized as List<string>)?.Count == order.Count) return true;
+                    error = $"must name distinct groups of {string.Join(", ", TagLayoutRules.DefaultGroupOrder)}";
+                    return false;
+                case "TagGroupCaps":
+                    var caps = (TagGroupCaps?)value;
+                    normalized = TagLayoutRules.NormalizeCaps(caps);
+                    if (caps == null || SameCaps(caps, normalized as TagGroupCaps)) return true;
+                    error = $"caps must be between 0 and {TagLayoutRules.MaxCap}";
+                    return false;
+                case "TagLayouts":
+                    normalized = TagLayoutRules.NormalizeProfiles((TagLayoutProfiles?)value);
+                    return true;
+                case "TagShapeOverrides":
+                    normalized = TagShapeRules.Normalize((TagShapeOverrides?)value);
+                    return true;
+                case "TagLookRules":
+                    var rules = (List<TagLookRule>?)value;
+                    if (rules != null && rules.Count > TagLookValidation.MaxRules)
+                    {
+                        error = $"more than {TagLookValidation.MaxRules} rules";
+                        return false;
+                    }
+
+                    normalized = TagLookValidation.NormalizeRules(rules);
+                    if (rules == null || (normalized as List<TagLookRule>)?.Count == rules.Count) return true;
+                    error = "every rule needs a known layout and density and at least one valid condition";
+                    return false;
+            }
+
+            if (value == null && field != "TagStylePreset")
+            {
+                error = "must not be null";
+                return false;
+            }
+
+            return true;
+        }
+
+        // An enum-like text: accepted when the normaliser only respells it (case, spaces), stored as it spells it.
+        private static bool OneOf(string? value, Func<string?, string> normalize, IEnumerable<string> known, out object? normalized, out string? error)
+        {
+            var canonical = normalize(value);
+            normalized = canonical;
+            error = null;
+            if (value != null && string.Equals(canonical, value.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+            error = $"must be one of {string.Join(", ", known)}";
+            return false;
+        }
+
+        private static bool InRange(int value, int min, int max, out string? error)
+        {
+            error = value >= min && value <= max ? null : $"must be between {min} and {max}";
+            return error == null;
+        }
+
+        private static bool SameCaps(TagGroupCaps a, TagGroupCaps? b)
+            => a.Quality == b?.Quality && a.Genre == b?.Genre && a.Language == b?.Language
+                && a.Rating == b?.Rating && a.AgeRating == b?.AgeRating && a.Status == b?.Status;
 
         private static IEnumerable<string> ReadSectionModules()
         {

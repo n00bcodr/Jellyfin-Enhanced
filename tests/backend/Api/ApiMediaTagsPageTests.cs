@@ -141,10 +141,10 @@ public class ApiMediaTagsPageTests
         var order = new List<string> { "quality", "genre" };
         Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(new { TagGroupOrder = order }, new { TagGroupOrder = (object?)null })));
         Assert.Equal(order, f.Plugin.Configuration.TagGroupOrder);
-        // An equal list read back from the API is not a conflict; the server clamps the day window.
-        var ok = Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(new { TagGroupOrder = new[] { "genre" }, StatusTagsNewReleaseDays = 500 }, new { TagGroupOrder = new[] { "quality", "genre" } })));
-        Assert.Equal("{\"values\":{\"TagGroupOrder\":[\"genre\"],\"StatusTagsNewReleaseDays\":365}}", StjSerializer.Serialize(ok.Value));
-        Assert.Equal(365, f.Plugin.Configuration.StatusTagsNewReleaseDays);
+        // An equal list read back from the API is not a conflict; the server stores the canonical spelling.
+        var ok = Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(new { TagGroupOrder = new[] { "Genre" }, TagLayout = " Bands " }, new { TagGroupOrder = new[] { "quality", "genre" } })));
+        Assert.Equal("{\"values\":{\"TagGroupOrder\":[\"genre\"],\"TagLayout\":\"bands\"}}", StjSerializer.Serialize(ok.Value));
+        Assert.Equal("bands", f.Plugin.Configuration.TagLayout);
     }
 
     [Fact]
@@ -222,6 +222,95 @@ public class ApiMediaTagsPageTests
         Assert.False(f.Plugin.Configuration.DevMode);
         Assert.Equal("server-key", f.Plugin.Configuration.TMDB_API_KEY);
         Assert.False(f.Plugin.Configuration.AnalyticsEnabled);
+    }
+
+    [Theory]
+    // Values outside a known set.
+    [InlineData("TagLayout", "\"not-a-layout\"", "must be one of corners, bands, caption, summary, minimal")]
+    [InlineData("TagLabelDensity", "\"huge\"", "must be one of full, compact")]
+    [InlineData("LanguageTagsCountBadge", "\"sometimes\"", "must be one of off, only, both")]
+    [InlineData("SeriesQualityAggregation", "\"worst\"", "must be one of")]
+    [InlineData("TagStyleTarget", "\"tv\"", "must be one of web, native, both")]
+    [InlineData("QualityTagsPosition", "\"middle-ish\"", "must be one of")]
+    [InlineData("TagStylePreset", "\"neon\"", "unknown preset")]
+    [InlineData("RatingTagsSources", "[\"imdb\",\"imdb\"]", "must name distinct sources")]
+    [InlineData("RatingTagsSources", "[\"rotten\"]", "must name distinct sources")]
+    [InlineData("TagGroupOrder", "[\"quality\",\"cast\"]", "must name distinct groups")]
+    [InlineData("TagCacheExcludedLibraryIds", "\"movies,shows\"", "must be library ids")]
+    [InlineData("TagStyleOverrides", "\"{not json\"", "document is not valid JSON")]
+    [InlineData("TagLookRules", "[{\"Layout\":\"nowhere\",\"When\":[]}]", "every rule needs")]
+    // Numbers outside their range.
+    [InlineData("TagsCacheTtlDays", "-2147483648", "must be between 1 and 365")]
+    [InlineData("TagsCacheTtlDays", "0", "must be between 1 and 365")]
+    [InlineData("StatusTagsJustAddedDays", "366", "must be between 1 and 365")]
+    [InlineData("ResolutionTagOrder", "-1", "must be between 1 and 99")]
+    [InlineData("RatingTagsMinScore", "11", "must be between 0 and 10")]
+    [InlineData("ClearLocalStorageTimestamp", "-5", "must not be negative")]
+    [InlineData("TagGroupCaps", "{\"Quality\":-1}", "caps must be between 0 and 10")]
+    // Text that is not nullable.
+    [InlineData("LanguageTagsPriority", "null", "must not be null")]
+    public void OutOfContractValuesAreRefusedWithTheReasonAndNothingIsWritten(string field, string json, string reason)
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        var before = StjSerializer.Serialize(f.Plugin.Configuration);
+        var refused = Assert.IsType<BadRequestObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest
+        {
+            Changes = new() { ["TagsHideOnHover"] = StjSerializer.SerializeToElement(true), [field] = StjSerializer.Deserialize<JsonElement>(json) },
+        }));
+        var error = JsonConvert.SerializeObject(refused.Value);
+        Assert.Contains($"Invalid value for '{field}'", error, StringComparison.Ordinal);
+        Assert.Contains(reason, error, StringComparison.Ordinal);
+        Assert.Equal(before, StjSerializer.Serialize(f.Plugin.Configuration));
+    }
+
+    [Fact]
+    public void OversizedTextAndBodiesAreRefused()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        // A correctly typed 1 MiB string, and one just over a field's own limit.
+        foreach (var (field, length, limit) in new[] { ("NativePosterTagsWebClientNames", 1024 * 1024, 4096), ("LanguageTagsPriority", 257, 256), ("QualityTagsPreferredAudioLanguage", 33, 32) })
+        {
+            var refused = Assert.IsType<BadRequestObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest
+            {
+                Changes = new() { [field] = StjSerializer.SerializeToElement(new string('a', length)) },
+            }));
+            Assert.Contains($"longer than {limit} characters", JsonConvert.SerializeObject(refused.Value), StringComparison.Ordinal);
+        }
+
+        Assert.Equal(string.Empty, f.Plugin.Configuration.LanguageTagsPriority);
+        Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest
+        {
+            Changes = new() { ["NativePosterTagsWebClientNames"] = StjSerializer.SerializeToElement(new string('a', 4096)) },
+        }));
+        // The body itself: Kestrel answers 413 past the action's limit before anything is read.
+        var bodyLimit = typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.PatchConfiguration))!
+            .GetCustomAttributes(typeof(RequestSizeLimitAttribute), false).Cast<RequestSizeLimitAttribute>().Single();
+        Assert.Equal(64 * 1024, ((Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata)bodyLimit).MaxRequestBodySize);
+    }
+
+    [Fact]
+    public void DocumentsAreStoredNormalisedAndNullStillInherits()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        // An unknown group and a slot the layout has not: dropped, as when the server reads the defaults.
+        var ok = Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest
+        {
+            Changes = new()
+            {
+                ["TagLayouts"] = StjSerializer.Deserialize<JsonElement>("{\"Bands\":{\"Groups\":[{\"Group\":\"Quality\",\"Slot\":\"top\"},{\"Group\":\"genre\",\"Slot\":\"tl\"}]}}"),
+                ["TagShapeOverrides"] = StjSerializer.Deserialize<JsonElement>("null"),
+                ["TagGroupCaps"] = StjSerializer.Deserialize<JsonElement>("{\"Quality\":2}"),
+            },
+        }));
+        using var values = System.Text.Json.JsonDocument.Parse(StjSerializer.Serialize(ok.Value));
+        var layouts = values.RootElement.GetProperty("values").GetProperty("TagLayouts");
+        Assert.Equal("[{\"Group\":\"quality\",\"Slot\":\"top\"}]", layouts.GetProperty("Bands").GetProperty("Groups").GetRawText());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, values.RootElement.GetProperty("values").GetProperty("TagShapeOverrides").ValueKind);
+        Assert.Null(f.Plugin.Configuration.TagShapeOverrides);
+        Assert.Equal(2, f.Plugin.Configuration.TagGroupCaps!.Quality);
     }
 
     /// <summary>A full save as the main configuration page posts it: the whole configuration it read, with its edits.</summary>
