@@ -283,10 +283,34 @@
         return wrap;
     }
 
+    const clickOwners = new WeakSet();
+
+    /**
+     * Chips receive title hover above Jellyfin's card link. Delegate from the
+     * card because the layout clones groups and may move them into captions.
+     * @param {MouseEvent} event
+     */
+    function forwardLanguageClick(event) {
+        const target = event.target instanceof Element ? event.target : null;
+        const group = target?.closest('.language-overlay-container');
+        const card = group?.closest('.card');
+        const link = card?.querySelector('.cardOverlayContainer a.cardImageContainer, a.cardImageContainer[href]');
+        if (!link || event.defaultPrevented) return;
+        event.preventDefault();
+        event.stopPropagation();
+        link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true,
+            ctrlKey: event.ctrlKey, metaKey: event.metaKey, shiftKey: event.shiftKey, altKey: event.altKey, button: event.button }));
+    }
+
     /** Attach the language group through the shared renderer/layout controller. */
     function insertLanguageTags(ctx, container, languages) {
         if (!container || ctx.isTagged(container)) return;
         ctx.removeExistingOverlay(container);
+        const owner = container.closest('.card') || container;
+        if (!clickOwners.has(owner)) {
+            clickOwners.add(owner);
+            owner.addEventListener('click', forwardLanguageClick);
+        }
         if (container.style.position !== 'relative') container.style.position = 'relative';
         const cap = JE.core.tagLayout ? JE.core.tagLayout.resolveLayout(container).caps.language : 3;
         ctx.commitOverlay(container, buildGroup(languages, cap));
@@ -331,6 +355,10 @@
                     flex-shrink: 0;
                     object-fit: cover;
                 }
+                /* The host is otherwise below Jellyfin's full-card image link.
+                   Its empty space remains pointer-transparent; only language
+                   chips receive hover, and forward clicks to the image link. */
+                .je-tag-host:has(.${containerClass}) { z-index: 2; }
                 .${containerClass} > * { pointer-events: auto; }
                 .language-chip {
                     display: inline-flex; align-items: center; gap: 3px;

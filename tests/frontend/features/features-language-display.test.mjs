@@ -85,3 +85,23 @@ test('feature defaults preserve audio flags and invalid display enums normalize 
   assert.equal(h.chips().length, 1);
   assert.ok(h.chips()[0].matches('img.language-flag'));
 });
+
+test('a language code or count badge remains visible as a Summary pill fact', t => {
+  const h = setup(t, { tagLayout: 'summary', tagLayoutSettingsVersion: 1, tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } }, languageTagsStyle: 'codes' });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['en'] });
+  assert.match(h.target.querySelector('.je-tag-pill').textContent, /EN/);
+});
+
+test('hoverable language chips retain Jellyfin link clicks and modifier keys', t => {
+  const h = setup(t, { languageTagsShowSubtitles: true });
+  const overlay = h.document.createElement('div'); overlay.className = 'cardOverlayContainer';
+  const link = h.document.createElement('a'); link.className = 'cardImageContainer'; link.href = '#/details?id=a';
+  overlay.append(link); h.target.append(overlay);
+  const received = [];
+  link.addEventListener('click', event => { received.push(event.ctrlKey); event.preventDefault(); });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['en'], SubtitleLanguages: ['fr'] });
+  h.target.querySelector('.language-subtitle').dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, ctrlKey: true }));
+  assert.deepEqual(received, [true]);
+  h.renderer.injectCss();
+  assert.match(h.document.getElementById('language-tags-styles').textContent, /\.je-tag-host:has\(\.language-overlay-container\) \{ z-index: 2;/);
+});

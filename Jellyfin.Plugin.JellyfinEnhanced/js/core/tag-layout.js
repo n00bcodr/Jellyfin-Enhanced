@@ -923,6 +923,10 @@
                 return text ? { text } : null;
             }
             case 'language': {
+                const first = master.firstElementChild;
+                if (first?.classList.contains('language-code') || first?.classList.contains('language-count-badge')) {
+                    return { text: (first.textContent || '').trim() };
+                }
                 const img = master.querySelector('img');
                 if (!img) return null;
                 const flag = /** @type {HTMLElement} */ (img.cloneNode(true));
