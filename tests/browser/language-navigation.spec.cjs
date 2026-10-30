@@ -11,7 +11,7 @@ async function prepare(page, style, slot) {
     await page.getByText('Manual Login', { exact: true }).click();
     await page.locator('#txtManualName').fill(process.env.JE_LANGUAGE_LAB_USER || 'real-admin');
     await page.locator('#txtManualPassword').fill(process.env.JE_LANGUAGE_LAB_PASSWORD);
-    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await page.locator('#txtManualPassword').press('Enter');
     await page.waitForFunction(() => window.ApiClient?.getCurrentUserId());
     await page.goto(`${lab}/web/index.html#/home`);
     await page.waitForFunction(() => window.JellyfinEnhanced?.core?.languageTags);
