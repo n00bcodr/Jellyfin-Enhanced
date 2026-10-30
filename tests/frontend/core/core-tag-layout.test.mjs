@@ -297,7 +297,9 @@ test('hide-on-hover keeps the summary and minimal reveal; reveal follows hover a
   h.render();
   const css = h.document.getElementById('je-tag-layout').textContent;
   assert.match(css, /body\.je-tags-hide-on-hover \.card:hover \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
-  assert.match(css, /\.card:is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-slot\[data-je-slot="hover"\] \{ opacity: 1; \}/);
+  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-slot\[data-je-slot="hover"\] \{ opacity: 1; \}/,
+    'cards and list rows (a season\'s episodes) alike');
+  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-slot:is\(\[data-je-slot="pill"\], \[data-je-slot="dots"\], \[data-je-slot="corner"\]\) \{ opacity: 0; \}/);
   assert.match(css, /prefers-reduced-motion: reduce/);
   await h.JE.reinitializeTagLayout();
   assert.equal(h.document.body.classList.contains('je-tags-hide-on-hover'), true);

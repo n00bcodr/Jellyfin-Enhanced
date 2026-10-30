@@ -314,8 +314,9 @@
                 background: linear-gradient(to top, rgba(0, 0, 0, 0.86), rgba(0, 0, 0, 0.55) 62%, rgba(0, 0, 0, 0));
                 opacity: 0;
             }
-            .card:is(:hover, :focus-within) .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
-            .card:is(:hover, :focus-within) .je-tag-host > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
+            /* Cards, and list rows (a season's episodes) whose image holds the tags. */
+            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
+            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
             html .je-tag-host > .je-tag-slot[data-je-slot="hover"] .genre-tag {
                 width: auto; min-width: 0; height: auto;
                 padding: 2px 7px 2px 4px;
