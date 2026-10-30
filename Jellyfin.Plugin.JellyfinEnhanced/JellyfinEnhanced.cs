@@ -284,20 +284,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
                 // Tag Styles: only a valid document is stored (normalised to version 2); anything
                 // else keeps the current one, since a save can come from anywhere (API, restored backup).
-                if (configuration is PluginConfiguration stylesConfig)
+                if (configuration is PluginConfiguration stylesConfig
+                    && !Services.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration as PluginConfiguration, out var styleError))
                 {
-                    if (Services.PosterTags.TagStyleSet.TryValidate(stylesConfig.TagStyleOverrides, stylesConfig.TagStylePreset, out var styles, out var styleError))
-                    {
-                        stylesConfig.TagStyleOverrides = styles.Serialize();
-                        stylesConfig.TagStylePreset = styles.Preset;
-                    }
-                    else
-                    {
-                        _logger.Warning($"Jellyfin Enhanced: Tag Styles not saved ({styleError}); keeping the current styles.");
-                        var currentStyles = Configuration as PluginConfiguration;
-                        stylesConfig.TagStyleOverrides = currentStyles?.TagStyleOverrides ?? string.Empty;
-                        stylesConfig.TagStylePreset = currentStyles?.TagStylePreset ?? Services.PosterTags.TagStyleKeys.DefaultPreset;
-                    }
+                    _logger.Warning($"Jellyfin Enhanced: Tag Styles not saved ({styleError}); keeping the current styles.");
                 }
 
                 base.UpdateConfiguration(configuration);

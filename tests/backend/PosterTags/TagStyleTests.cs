@@ -239,12 +239,59 @@ public class TagStyleTests
     [InlineData("{\"v\":2,\"groups\":{\"quality\":{\"text\":5}}}", "not a colour")]
     [InlineData("{\"v\":2,\"groups\":{\"quality\":{\"shadow\":\"#fff\"}}}", "does not apply")]
     [InlineData("{\"v\":2,\"groups\":{\"language\":{\"background\":\"#fff\"}}}", "does not apply")]
+    [InlineData("{\"v\":2,\"groups\":{\"__proto__\":{\"text\":\"#fff\"}}}", "unknown group")]
+    [InlineData("{\"v\":2,\"labels\":{\"quality:constructor\":{\"text\":\"#fff\"}}}", "unknown label")]
+    [InlineData("{\"v\":2,\"__proto__\":{}}", "unknown key")]
     [InlineData("[1]", "not a JSON object")]
     [InlineData("{\"v\":2", "not valid JSON")]
     public void Validation_rejects_unknown_keys_bad_colours_and_fields_that_do_not_apply(string json, string reason)
     {
         Assert.False(TagStyleSet.TryValidate(json, "default", out _, out var error));
         Assert.Contains(reason, error);
+    }
+
+    // Leaving out "v" is no way around the checks: a legacy-shaped document is validated as strictly.
+    [Theory]
+    [InlineData("{\"__proto__\":{\"4K\":{\"background\":\"#fff\"}}}", "reserved key '__proto__'")]
+    [InlineData("{\"quality\":{\"constructor\":{\"background\":\"#fff\"}}}", "reserved key 'constructor'")]
+    [InlineData("{\"quality\":{\"4K\":{\"prototype\":\"#fff\"}}}", "reserved key 'prototype'")]
+    [InlineData("{\"genre\":{\"__proto__\":\"#fff\"}}", "reserved key '__proto__'")]
+    [InlineData("{\"groups\":{\"quality\":{\"text\":\"#fff\"}}}", "unknown key 'groups'")]
+    [InlineData("{\"quality\":{\"8K-ULTRA\":{\"background\":\"#fff\"}}}", "unknown label")]
+    [InlineData("{\"age\":{\"999\":{\"background\":\"#fff\"}}}", "unknown label")]
+    [InlineData("{\"rating\":{\"userReview\":{\"color\":\"#fff\"}}}", "unknown label")]
+    [InlineData("{\"quality\":{\"4K\":{\"shadow\":\"#fff\"}}}", "does not apply")]
+    [InlineData("{\"quality\":{\"4K\":{\"text\":\"#fff\"}}}", "does not apply")]
+    [InlineData("{\"rating\":{\"critic\":{\"border\":\"#fff\"}}}", "does not apply")]
+    [InlineData("{\"quality\":{\"4K\":{\"background\":\"url(x)\"}}}", "not a colour")]
+    [InlineData("{\"genre\":{\"color\":\"red;}body{display:none\"}}", "not a colour")]
+    [InlineData("{\"quality\":{\"4K\":{\"background\":5}}}", "not a colour")]
+    [InlineData("{\"quality\":[1]}", "not an object")]
+    [InlineData("{\"quality\":{\"4K\":\"#fff\"}}", "not an object")]
+    public void Validation_rejects_a_legacy_shaped_document_with_reserved_or_unknown_keys_or_bad_colours(string json, string reason)
+    {
+        Assert.False(TagStyleSet.TryValidate(json, "default", out var set, out var error));
+        Assert.Contains(reason, error);
+        Assert.Same(TagStyleSet.Empty, set);
+
+        // Reading a stored document stays lenient: the same input just loses the bad entries.
+        Assert.True(TagStyleSet.Parse(json).IsEmpty);
+    }
+
+    [Fact]
+    public void A_rejected_legacy_save_keeps_the_current_styles()
+    {
+        var current = new PluginConfiguration { TagStyleOverrides = "{\"v\":2,\"labels\":{\"rating:critic\":{\"text\":\"rgba(0, 0, 0, 1)\"}}}", TagStylePreset = "glass" };
+        var posted = new PluginConfiguration { TagStyleOverrides = "{\"quality\":{\"__proto__\":{\"background\":\"#fff\"}}}", TagStylePreset = "default" };
+        Assert.False(TagStyleSet.ApplyToSave(posted, current, out var error));
+        Assert.Contains("reserved key", error);
+        Assert.Equal(current.TagStyleOverrides, posted.TagStyleOverrides);
+        Assert.Equal("glass", posted.TagStylePreset);
+
+        var valid = new PluginConfiguration { TagStyleOverrides = V1Valid, TagStylePreset = "glass" };
+        Assert.True(TagStyleSet.ApplyToSave(valid, current, out _));
+        Assert.Equal("default", valid.TagStylePreset);
+        Assert.StartsWith("{\"v\":2,", valid.TagStyleOverrides);
     }
 
     [Fact]

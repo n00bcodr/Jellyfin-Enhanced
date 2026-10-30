@@ -109,7 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.ValueKind != JsonValueKind.Object) return Create(stored ?? TagStyleKeys.DefaultPreset, NoEntries, NoEntries);
                 var root = doc.RootElement;
-                return root.TryGetProperty("v", out _) ? ReadV2(root, stored, strict: false, out _)! : ReadV1(root);
+                return root.TryGetProperty("v", out _) ? ReadV2(root, stored, strict: false, out _)! : ReadV1(root, strict: false, out _)!;
             }
             catch (JsonException)
             {
@@ -118,9 +118,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>
-        /// Validates a document being saved. A version 2 document must only hold known keys, known groups and
-        /// labels, fields that apply to the group and parseable colours; a version 1 document is migrated the
-        /// lenient way it is read (<see cref="Parse"/>). Nothing over <see cref="MaxDocumentLength"/> is accepted.
+        /// Validates a document being saved. Either version must only hold known keys, known groups and labels,
+        /// fields that apply to the group and parseable colours (so leaving out <c>v</c> is no way around the
+        /// checks); a valid version 1 document is migrated like <see cref="Parse"/> does. Nothing over
+        /// <see cref="MaxDocumentLength"/> is accepted.
         /// </summary>
         /// <param name="json">The posted document.</param>
         /// <param name="preset">The posted <c>TagStylePreset</c>.</param>
@@ -160,13 +161,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     return false;
                 }
 
-                if (!root.TryGetProperty("v", out _))
-                {
-                    set = ReadV1(root);
-                    return true;
-                }
-
-                var parsed = ReadV2(root, stored, strict: true, out error);
+                var parsed = root.TryGetProperty("v", out _) ? ReadV2(root, stored, strict: true, out error) : ReadV1(root, strict: true, out error);
                 if (parsed is null) return false;
                 set = parsed;
                 return true;
@@ -176,6 +171,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 error = "document is not valid JSON";
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Applies save validation to a configuration being saved: a valid document is stored normalised to
+        /// version 2 with its preset; anything else keeps the current document and preset, since a save can
+        /// come from anywhere (API, restored backup).
+        /// </summary>
+        /// <param name="posted">The configuration being saved; its Tag Styles fields are rewritten.</param>
+        /// <param name="current">The stored configuration, or null.</param>
+        /// <param name="error">Why the posted styles were rejected.</param>
+        /// <returns>True when the posted styles were accepted.</returns>
+        internal static bool ApplyToSave(Configuration.PluginConfiguration posted, Configuration.PluginConfiguration? current, out string? error)
+        {
+            if (TryValidate(posted.TagStyleOverrides, posted.TagStylePreset, out var styles, out error))
+            {
+                posted.TagStyleOverrides = styles.Serialize();
+                posted.TagStylePreset = styles.Preset;
+                return true;
+            }
+
+            posted.TagStyleOverrides = current?.TagStyleOverrides ?? string.Empty;
+            posted.TagStylePreset = current?.TagStylePreset ?? TagStyleKeys.DefaultPreset;
+            return false;
         }
 
         /// <summary>The same overrides under another preset.</summary>
@@ -298,18 +316,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// the new palettes nor the saved preset name recolour anything (including groups the old preset
         /// never touched when it was applied to one tab only).
         /// </summary>
-        private static TagStyleSet ReadV1(JsonElement root)
+        /// <param name="root">The document.</param>
+        /// <param name="strict">Save validation: reject the first problem (unknown key, reserved key, field or
+        /// a value that is not a colour) instead of skipping it.</param>
+        /// <param name="error">The problem, in strict mode.</param>
+        /// <returns>The set, or null with <paramref name="error"/> in strict mode.</returns>
+        private static TagStyleSet? ReadV1(JsonElement root, bool strict, out string? error)
         {
+            error = null;
             var labels = new Dictionary<string, TagColors>(StringComparer.Ordinal);
-            void Entry(string group, string label, JsonElement value)
+
+            // One label entry; false (with error) stops a strict read.
+            bool Entry(string group, string label, JsonElement value, out string? problem)
             {
-                if (labels.Count >= MaxEntries || label.Length is 0 or > MaxKeyLength || !IsV1Label(group, label)) return;
-                if (ReadColorsV1(value, group) is not { } stored) return;
+                problem = null;
+                if (labels.Count >= MaxEntries)
+                {
+                    problem = strict ? $"more than {MaxEntries} labels" : null;
+                    return !strict;
+                }
+
+                if (label.Length is 0 or > MaxKeyLength || IsReservedKey(label) || !IsV1Label(group, label))
+                {
+                    problem = strict ? (IsReservedKey(label) ? $"reserved key '{label}'" : $"unknown label '{Clip(label)}'") : null;
+                    return !strict;
+                }
+
+                var stored = ReadColorsV1(value, group, strict, out problem);
+                if (problem is not null) return false;
+                if (stored is null) return true;
                 var builtin = TagStylePalettes.Builtin(group, label);
                 labels[group + ":" + label] = new TagColors(
                     stored.Background ?? builtin.Background,
                     group == TagStyleKeys.Rating ? null : stored.Border ?? builtin.Border,
                     stored.Text ?? builtin.Text);
+                return true;
             }
 
             foreach (var section in root.EnumerateObject())
@@ -322,14 +363,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     "genre" => TagStyleKeys.Genre,
                     _ => null,
                 };
-                if (group is null || section.Value.ValueKind != JsonValueKind.Object) continue;
+                if (group is null)
+                {
+                    if (!strict) continue;
+                    error = IsReservedKey(section.Name) ? $"reserved key '{section.Name}'" : $"unknown key '{Clip(section.Name)}'";
+                    return null;
+                }
+
+                if (section.Value.ValueKind != JsonValueKind.Object)
+                {
+                    if (!strict) continue;
+                    error = $"'{section.Name}' is not an object";
+                    return null;
+                }
+
                 if (group == TagStyleKeys.Genre)
                 {
-                    Entry(group, "genre", section.Value);
+                    if (!Entry(group, "genre", section.Value, out error)) return null;
                     continue;
                 }
 
-                foreach (var entry in section.Value.EnumerateObject()) Entry(group, entry.Name, entry.Value);
+                foreach (var entry in section.Value.EnumerateObject())
+                {
+                    if (!Entry(group, entry.Name, entry.Value, out error)) return null;
+                }
             }
 
             return Create(TagStyleKeys.DefaultPreset, new Dictionary<string, TagColors>(StringComparer.Ordinal), labels);
@@ -476,17 +533,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private static bool IsV1Label(string group, string label) =>
             TagStyleCatalog.IsLabel(group, label) && (group != TagStyleKeys.Rating || label is "community" or "critic");
 
-        /// <summary>A version 1 colour object: <c>background</c>, <c>border</c> (not on rating chips, which never drew one) and <c>color</c> for the text.</summary>
-        private static TagColors? ReadColorsV1(JsonElement e, string group)
+        /// <summary>
+        /// A version 1 colour object: <c>background</c>, <c>border</c> (not on rating chips, which never drew one)
+        /// and <c>color</c> for the text. Lenient mode skips anything else; strict mode rejects it.
+        /// </summary>
+        private static TagColors? ReadColorsV1(JsonElement e, string group, bool strict, out string? error)
         {
-            if (e.ValueKind != JsonValueKind.Object) return null;
-            string? Field(string name) =>
-                (name != "border" || group != TagStyleKeys.Rating) && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
-                    ? TagStylePalettes.NormaliseColour(v.GetString())
-                    : null;
-            var colors = new TagColors(Field("background"), Field("border"), Field("color"));
+            error = null;
+            if (e.ValueKind != JsonValueKind.Object)
+            {
+                if (strict) error = $"colours of '{group}' are not an object";
+                return null;
+            }
+
+            string? background = null, border = null, text = null;
+            foreach (var p in e.EnumerateObject())
+            {
+                bool applies = p.Name is "background" or "color" || (p.Name == "border" && group != TagStyleKeys.Rating);
+                var colour = applies && p.Value.ValueKind == JsonValueKind.String ? TagStylePalettes.NormaliseColour(p.Value.GetString()) : null;
+                if (colour is null)
+                {
+                    if (!strict) continue;
+                    error = !applies
+                        ? IsReservedKey(p.Name) ? $"reserved key '{p.Name}'" : $"field '{Clip(p.Name)}' does not apply to '{group}'"
+                        : $"'{p.Name}' of '{group}' is not a colour";
+                    return null;
+                }
+
+                switch (p.Name)
+                {
+                    case "background": background = colour; break;
+                    case "border": border = colour; break;
+                    default: text = colour; break;
+                }
+            }
+
+            var colors = new TagColors(background, border, text);
             return colors.IsEmpty ? null : colors;
         }
+
+        /// <summary>Object-prototype names a JavaScript reader of the document could trip over; never a valid key.</summary>
+        private static bool IsReservedKey(string key) => key is "__proto__" or "constructor" or "prototype";
 
         private static string Clip(string value) => value.Length > 40 ? value[..40] : value;
 
