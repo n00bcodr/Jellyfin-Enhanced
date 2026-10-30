@@ -1,5 +1,5 @@
 // /js/tags/ratingtags.js
-// Jellyfin Rating Tags - Display TMDB and Rotten Tomato ratings on posters.
+// Jellyfin Rating Tags - Display ordered Jellyfin and MDBList scores on posters.
 // A spec over the core tag-renderer factory (js/core/tag-renderer-base.js),
 // which owns the cache/ignore/tagged/CSS/reinitialize plumbing. This module
 // supplies only the rating-specific parts: rating normalization, the chip
@@ -39,9 +39,6 @@
         nextup: { userKey: 'ratingTagsOnNextUp', pluginKey: 'RatingTagsOnNextUp' },
     };
     const HOME_ROW_SCOPE_LIST = Object.values(HOME_ROW_SCOPES);
-    // Which scores the group includes (the group editor's Include pills).
-    const COMMUNITY_SCOPE = { userKey: 'ratingTagsShowCommunity', pluginKey: 'RatingTagsShowCommunity' };
-    const CRITIC_SCOPE = { userKey: 'ratingTagsShowCritic', pluginKey: 'RatingTagsShowCritic' };
 
     /**
      * Resolve one scope switch: user override, then admin default, then on.
@@ -194,62 +191,20 @@
     }
 
     /**
-     * Create and append TMDB and/or critic rating tag elements to a card.
+     * Create ordered source chips before the shared layout applies density and caps.
      * @param {Object} ctx - Factory context.
      * @param {HTMLElement} el - The card container to receive the rating overlay.
-     * @param {{tmdb: string|null, critic: number|null}} rating - Rating data to display.
+     * @param {{tmdb: string|null, critic: number|null, ratings?: Object|null}} rating - Rating data to display.
      * @returns {void}
      */
     function applyRatingTag(ctx, el, rating) {
         if (!rating) return;
-        // A score the user left out of the group is dropped here, before
-        // anything is built, so a card left with neither behaves exactly like
-        // one without ratings (the user-review chip still gets its own group).
-        rating = {
-            tmdb: isScopeEnabled(COMMUNITY_SCOPE) ? rating.tmdb : null,
-            critic: isScopeEnabled(CRITIC_SCOPE) ? rating.critic : null,
-        };
-        if (!rating.tmdb && rating.critic === null) return;
-
+        const facts = JE.ratingSources.resolve(rating.tmdb, rating.critic, rating.ratings);
         ctx.removeExistingOverlay(el);
-
+        if (!facts.length) return;
         const container = document.createElement('div');
         container.className = containerClass;
-
-        if (rating.critic !== null) {
-            const criticTag = document.createElement('div');
-            criticTag.className = `${tagClass} rating-tag-critic`;
-
-            const icon = document.createElement('span');
-            icon.className = `rating-tomato-icon ${rating.critic < 60 ? 'rotten' : 'fresh'}`;
-            const text = document.createElement('span');
-            text.className = 'rating-text';
-            text.textContent = `${rating.critic}%`;
-
-            criticTag.appendChild(icon);
-            criticTag.appendChild(text);
-            container.appendChild(criticTag);
-        }
-
-        if (rating.tmdb) {
-            // Show a dash instead of "0.0" — a zero rating means no data, not a genuine score
-            const displayRating = parseFloat(rating.tmdb) === 0 ? '—' : rating.tmdb;
-
-            const tmdbTag = document.createElement('div');
-            tmdbTag.className = `${tagClass} rating-tag-tmdb`;
-
-            const starIcon = document.createElement('span');
-            starIcon.className = 'material-icons rating-star-icon';
-            starIcon.textContent = 'star';
-
-            const ratingText = document.createElement('span');
-            ratingText.className = 'rating-text';
-            ratingText.textContent = displayRating;
-
-            tmdbTag.appendChild(starIcon);
-            tmdbTag.appendChild(ratingText);
-            container.appendChild(tmdbTag);
-        }
+        for (const fact of facts) container.appendChild(JE.ratingSources.chip(fact));
 
         ctx.commitOverlay(el, container);
     }
@@ -308,6 +263,12 @@
                 .rating-tomato-icon.fresh { background-image: url(assets/img/fresh.svg); }
                 .rating-tomato-icon.rotten { background-image: url(assets/img/rotten.svg); }
                 .rating-text { line-height: 1; }
+                .je-rating-source-logo { display: inline-flex; width: 14px; height: 14px; flex-shrink: 0; }
+                .je-rating-source-logo svg { width: 100%; height: 100%; }
+                .rating-tag--source { color: #fff; }
+                .rating-tag[data-je-rating-compact] > :first-child { display: none; }
+                .rating-tag[data-je-rating-compact]::before { content: ''; width: 2px; height: 2px; border-radius: 50%; background: var(--je-rating-source-color); }
+
 
                 .layout-mobile .${tagClass} {
                     padding: 2px 6px;
@@ -360,7 +321,7 @@
                 // Check hot cache
                 const cached = getCachedEntry(ctx, itemId);
                 if (cached && cached.tmdb !== undefined) {
-                    if (cached.tmdb || cached.critic !== null) {
+                    if (cached.tmdb || cached.critic !== null || cached.ratings) {
                         applyRatingTag(ctx, el, cached);
                     }
                     // Still need to append user rating even on cache hit
@@ -383,7 +344,7 @@
                     ? normalizeCriticPercent(sourceItem.CriticRating)
                     : null;
 
-                const rating = { tmdb, critic };
+                const rating = { tmdb, critic, ratings: item.Ratings ?? extras.ratingParentSeries?.Ratings };
                 // Store tmdbId in cache entry so renderFromCache can call appendUserRatingToContainer
                 const tmdbId = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb || null;
                 const seriesTmdbId = extras?.parentSeries?.ProviderIds?.Tmdb || extras?.parentSeries?.ProviderIds?.tmdb || null;
@@ -396,7 +357,7 @@
                     sgSeriesId: item.SeriesId || (item.Type === 'Series' ? item.Id : null),
                     sgPlayed: item.UserData?.Played === true });
 
-                if (tmdb || critic !== null) {
+                if (tmdb || critic !== null || rating.ratings) {
                     applyRatingTag(ctx, el, rating);
                     if (typeof JE.appendUserRatingToContainer === 'function') {
                         JE.appendUserRatingToContainer(el, item, extras);
@@ -431,7 +392,7 @@
                     }
                     return true;
                 }
-                if (cached.tmdb || cached.critic !== null) {
+                if (cached.tmdb || cached.critic !== null || cached.ratings) {
                     applyRatingTag(ctx, el, cached);
                 }
                 if (typeof JE.appendUserRatingToContainer === 'function' && (cached.tmdbId || cached.seriesTmdbId)) {
@@ -453,7 +414,7 @@
                     }
                     JE.appendUserRatingToContainer(el, syntheticItem);
                 }
-                return !!(cached.tmdb || cached.critic !== null);
+                return !!(cached.tmdb || cached.critic !== null || cached.ratings);
             },
             renderFromServerCache(ctx, el, entry, itemId) {
                 if (ctx.isTagged(el)) return;
@@ -486,8 +447,8 @@
                     const critic = entry.CriticRating != null
                         ? normalizeCriticPercent(entry.CriticRating)
                         : null;
-                    if (tmdb || critic !== null) {
-                        applyRatingTag(ctx, el, { tmdb, critic });
+                    if (tmdb || critic !== null || entry.Ratings) {
+                        applyRatingTag(ctx, el, { tmdb, critic, ratings: entry.Ratings });
                     }
                 }
                 if (typeof JE.appendUserRatingToContainer === 'function') {

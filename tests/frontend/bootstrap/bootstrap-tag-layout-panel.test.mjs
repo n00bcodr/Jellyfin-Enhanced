@@ -26,7 +26,7 @@ function setup(t, stored = {}, cards = '') {
     apiClient: { ajax: async request => { writes.push(request); } } });
   t.after(() => h.close());
   h.load('core/ui-kit.js'); h.load('core/tag-renderer-base.js'); h.load('core/tag-layout.js');
-  h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
+  h.load('tags/rating-sources.js'); h.load('enhanced/config.js'); h.JE.currentSettings = h.JE.loadSettings();
   h.JE.toast = message => toasts.push(message); // ui-kit installs its own
   const real = h.JE.reinitializeTagLayout;
   h.JE.reinitializeTagLayout = () => { reinit.push(h.JE.currentSettings.tagLayout); return real(); };

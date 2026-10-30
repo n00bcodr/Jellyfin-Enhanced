@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "4";
+        public const string ResolverVersion = "5";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -206,6 +206,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Effective <c>ratingTagsShowCritic</c>: the critic (tomato) score chip.</summary>
         public bool RatingTagsShowCritic { get; private init; } = true;
+
+        // Multi-source rating preferences participate in signed image digests.
+        public string[]? RatingTagsSources { get; private init; }
+        public double RatingTagsMinScore { get; private init; }
+        public bool RatingTagsColorByScore { get; private init; }
+        public bool RatingTagsCompact { get; private init; }
+
 
         /// <summary>Admin <c>LanguageTagsPriority</c> as the web's lowercase term list.</summary>
         public IReadOnlyList<string> LanguagePriorityTerms { get; private init; } = Array.Empty<string>();
@@ -378,6 +385,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsOnNextUp = user.RatingTagsOnNextUp,
                 RatingTagsShowCommunity = user.RatingTagsShowCommunity,
                 RatingTagsShowCritic = user.RatingTagsShowCritic,
+                RatingTagsSources = RatingSourceSettings.NormalizeSources(user.RatingTagsSources),
+                RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(user.RatingTagsMinScore),
+                RatingTagsColorByScore = user.RatingTagsColorByScore,
+                RatingTagsCompact = user.TagLabelDensity == "compact",
                 LanguagePriorityTerms = LanguageFlagRules.ParsePriorityTerms(config.LanguageTagsPriority),
                 LanguagePriorityStrict = config.LanguageTagsPriorityStrict,
                 LanguageMergeRegions = config.LanguageTagsMergeRegions,
@@ -620,6 +631,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsOnNextUp = config.RatingTagsOnNextUp,
                 RatingTagsShowCommunity = config.RatingTagsShowCommunity,
                 RatingTagsShowCritic = config.RatingTagsShowCritic,
+                RatingTagsSources = RatingSourceSettings.Defaults(config).ToArray(),
+                RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(config.RatingTagsMinScore),
+                RatingTagsColorByScore = config.RatingTagsColorByScore,
                 AgeRatingTagsPosition = config.AgeRatingTagsPosition,
             };
             TagLayoutRules.ApplyDefaults(defaults, config);
@@ -689,6 +703,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["rating.cap"] = Int(RatingCap);
                 values["rating.showCommunity"] = Bool(RatingTagsShowCommunity);
                 values["rating.showCritic"] = Bool(RatingTagsShowCritic);
+                values["rating.sources"] = RatingTagsSources == null ? "legacy" : string.Join(",", RatingTagsSources);
+                values["rating.minimum"] = RatingTagsMinScore.ToString(CultureInfo.InvariantCulture);
+                values["rating.color"] = Bool(RatingTagsColorByScore);
+                values["rating.compact"] = Bool(RatingTagsCompact && RatingTagsSources?.Any(id => id is not ("community" or "critic")) == true);
                 values["rating.onMovies"] = Bool(RatingTagsOnMovies);
                 values["rating.onSeries"] = Bool(RatingTagsOnSeries);
                 values["rating.onSeasons"] = Bool(RatingTagsOnSeasons);

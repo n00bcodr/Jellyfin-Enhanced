@@ -83,8 +83,8 @@ function setup(t, settings = {}) {
   t.after(() => h.close());
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
-    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js',
-    'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
+    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/rating-sources.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js',
+    'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
   const JE = h.JE;
   JE.currentSettings = JE.loadSettings();
   JE.escapeHtml = JE.core.ui.escapeHtml;

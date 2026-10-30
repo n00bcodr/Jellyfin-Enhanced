@@ -126,24 +126,9 @@
                 break;
             }
             case 'rating':
-                if (sample.rating.critic && effectiveBool('ratingTagsShowCritic', 'RatingTagsShowCritic')) {
-                    const chip = add('rating-tag rating-tag-critic');
-                    const icon = document.createElement('span');
-                    icon.className = 'rating-tomato-icon fresh';
-                    const text = document.createElement('span');
-                    text.className = 'rating-text';
-                    text.textContent = sample.rating.critic;
-                    chip.append(icon, text);
-                }
-                if (sample.rating.community && effectiveBool('ratingTagsShowCommunity', 'RatingTagsShowCommunity')) {
-                    const chip = add('rating-tag rating-tag-tmdb');
-                    const star = document.createElement('span');
-                    star.className = 'material-icons rating-star-icon';
-                    star.textContent = 'star';
-                    const text = document.createElement('span');
-                    text.className = 'rating-text';
-                    text.textContent = sample.rating.community;
-                    chip.append(star, text);
+                for (const fact of JE.ratingSources.resolve(sample.rating.community, sample.rating.critic?.replace('%', ''),
+                    { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 })) {
+                    wrap.appendChild(JE.ratingSources.chip(fact));
                 }
                 break;
             case 'ageRating':

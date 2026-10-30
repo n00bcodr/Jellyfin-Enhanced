@@ -35,6 +35,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Average of this server's user reviews (person_heart chip).</summary>
         UserReview,
+        Imdb, Tmdb, RtCritic, RtAudience, Metacritic, Letterboxd, Trakt,
     }
 
     /// <summary>One resolved tag. Carries meaning, not visuals; the renderer owns colours, icons and sizes.</summary>
@@ -60,7 +61,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// A rating chip. <paramref name="Text"/> is the formatted value exactly as the web shows it
     /// ("83%", "7.5", "—"). <paramref name="Fresh"/> selects the fresh/rotten icon for critic ratings.
     /// </summary>
-    public sealed record RatingTag(PosterRatingSource Source, string Text, bool Fresh) : PosterTag;
+    public sealed record RatingTag(PosterRatingSource Source, string Text, bool Fresh, string? ScoreColor = null, bool Compact = false) : PosterTag
+    {
+        /// <summary>Stable source id, shared with web selectors and Tag Styles labels.</summary>
+        public string SourceId => Source switch
+        {
+            PosterRatingSource.UserReview => "userReview", PosterRatingSource.RtCritic => "rtCritic",
+            PosterRatingSource.RtAudience => "rtAudience", _ => Source.ToString().ToLowerInvariant()
+        };
+        public bool IsSource => Source is not (PosterRatingSource.Community or PosterRatingSource.Critic or PosterRatingSource.UserReview);
+    }
 
     /// <summary>An age rating badge. <paramref name="ColorKey"/> is the normalised key used by the web's rating colours.</summary>
     public sealed record AgeRatingTag(string Text, string ColorKey) : PosterTag;

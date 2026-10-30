@@ -32,7 +32,7 @@ const SCRIPTS = [
     'core/media-language.js',
     'core/tag-renderer-base.js',
     'core/tag-layout.js',
-    'enhanced/config.js',
+    'tags/rating-sources.js', 'enhanced/config.js',
     'tags/tag-pipeline.js',
     'tags/tag-layout-styles.js',
     'tags/genretags.js',
@@ -86,7 +86,7 @@ class Element {
         this.children = [];
         this.parentElement = null;
         this.dataset = {};
-        this.style = {};
+        this.style = { setProperty(name, value) { this[name] = value; } };
         this.attributes = {};
         this._text = '';
         this.classList = new ClassList(this);
@@ -106,6 +106,7 @@ class Element {
         if (deep) for (const child of this.children) copy.appendChild(child.cloneNode(true));
         return copy;
     }
+    append(...nodes) { for (const node of nodes) this.appendChild(node); }
     replaceChildren(...nodes) { this.children = []; for (const n of nodes) this.appendChild(n); }
     set textContent(v) { this._text = String(v); this.children = []; }
     get parentNode() { return this.parentElement; }
@@ -256,6 +257,7 @@ function readTags(group, container) {
                 const text = child.querySelector('.rating-text')?.textContent ?? '';
                 if (child.classList.contains('je-userreview-tag')) tags.push(`UserReview|${text}`);
                 else if (child.classList.contains('rating-tag-critic')) tags.push(`Critic|${text}|${child.querySelector('.rating-tomato-icon')?.classList.contains('fresh') ? 'fresh' : 'rotten'}`);
+                else if (child.classList.contains('rating-tag--source')) tags.push(`${child.dataset.jeRatingSource}|${text}`);
                 else tags.push(`Community|${text}`);
                 break;
             }
@@ -387,6 +389,9 @@ async function runProfile(profile) {
         groupOrder: [...order.keys()].join(','),
         ratingTagsShowCommunity: scope('ratingTagsShowCommunity', 'RatingTagsShowCommunity'),
         ratingTagsShowCritic: scope('ratingTagsShowCritic', 'RatingTagsShowCritic'),
+        ratingTagsSources: JE.ratingSources.normalizeSources(s.ratingTagsSources)?.join(',') ?? null,
+        ratingTagsMinScore: JE.ratingSources.settings().minimum,
+        ratingTagsColorByScore: JE.ratingSources.settings().color,
         layoutOrder: layoutConf.order ? layoutConf.order.filter((g) => g !== 'status').join(',') : null,
         layoutOff: offGroups.join(','),
         layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),

@@ -28,7 +28,7 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
       ajax: async request => { if (request.type === 'GET') return []; writes.push(request); },
     } });
   t.after(() => h.close());
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   h.JE.toast = message => toasts.push(message);
@@ -161,13 +161,13 @@ test('the cap stepper clamps to 1..10, offers All only for quality and rating, a
   assert.ok(h.calls.includes('reinitializeTagLayout'));
 });
 
-test('rating include pills save the switches and re-render rating tags; the preview follows', async t => {
+test('rating source checkboxes save ordered sources and re-render rating tags; the preview follows', async t => {
   const h = setup(t, { stored: { ratingTagsEnabled: true, tagLayoutSettingsVersion: 1 } });
   const chips = () => Array.from(h.preview().querySelectorAll('.rating-tag')).map(c => c.className);
   assert.deepEqual(chips(), ['rating-tag rating-tag-critic', 'rating-tag rating-tag-tmdb']);
 
-  await h.change(h.row('rating').querySelector('[data-include-key="ratingTagsShowCommunity"]'), false);
-  assert.equal(h.saved().ratingTagsShowCommunity, false);
+  await h.change(h.row('rating').querySelector('[data-rating-source="community"]'), false);
+  assert.deepEqual(h.saved().ratingTagsSources, ['critic']);
   assert.ok(h.calls.includes('reinitializeRatingTags'));
   assert.deepEqual(chips(), ['rating-tag rating-tag-critic']);
 
@@ -311,4 +311,21 @@ test('status badge families live on the Status badges tab with defaults and pers
   const inherited = setup(t, { plugin: { StatusTagsSeriesStatus: true, StatusTagsSchedule: false } });
   assert.equal(inherited.$('#statusTagsSeriesStatusToggle').checked, true);
   assert.equal(inherited.$('#statusTagsScheduleToggle').checked, false);
+});
+
+test('rating source order, minimum and colour persist through the real hub and preview', async t => {
+  const h = setup(t, { stored: { ratingTagsEnabled: true, ratingTagsSources: ['imdb', 'tmdb', 'rtCritic'], tagLayoutSettingsVersion: 1 } });
+  const box = h.row('rating');
+  const chips = () => [...h.preview().querySelectorAll('.rating-tag')].map(el => el.dataset.jeRatingSource);
+  assert.deepEqual(chips(), ['imdb', 'tmdb', 'rtCritic']);
+  await h.click(box.querySelector('[data-source="tmdb"] [data-rating-move="-1"]'));
+  assert.deepEqual(h.saved().ratingTagsSources, ['tmdb', 'imdb', 'rtCritic']);
+  assert.deepEqual(chips(), ['tmdb', 'imdb', 'rtCritic']);
+  await h.change(box.querySelector('[data-rating-minimum]'), '8');
+  assert.equal(h.saved().ratingTagsMinScore, 8);
+  await h.change(box.querySelector('[data-rating-color]'), true);
+  assert.equal(h.saved().ratingTagsColorByScore, true);
+  await h.change(box.querySelector('[data-rating-source="letterboxd"]'), true);
+  assert.deepEqual(h.saved().ratingTagsSources, ['tmdb', 'imdb', 'rtCritic', 'letterboxd']);
+  assert.ok(h.preview().querySelector('[data-je-rating-source="letterboxd"] svg'));
 });

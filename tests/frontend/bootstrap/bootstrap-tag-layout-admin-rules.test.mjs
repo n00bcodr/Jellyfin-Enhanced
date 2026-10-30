@@ -46,7 +46,7 @@ test('the configuration page\'s layout rules match the layout controller and the
   }
 
   // Stepper limits: the panel editor's nextCap against the page's flags and MAX_CAP.
-  h.load('enhanced/settingspanel/ui-panel-tag-editor.js');
+  h.load('tags/rating-sources.js'); h.load('enhanced/settingspanel/ui-panel-tag-editor.js');
   h.document.body.innerHTML = '<div id="jeTagGroupEditor"><ol class="je-tge-rows"></ol></div>';
   h.JE.internals.enhancedUi.wireTagGroupEditor({});
   const { nextCap } = h.JE.internals.enhancedUi.tagGroupEditor;

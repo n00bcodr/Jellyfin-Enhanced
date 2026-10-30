@@ -43,7 +43,7 @@ for (const [label, press, expected] of [['rebinding', 'q', 'Q'], ['disabling', '
     const [file, saved] = h.saves.at(-1); assert.equal(file, 'shortcuts.json');
     const reloaded = createHarness({ JE: { pluginConfig: { Shortcuts: [{ Name: 'CycleAudioTracks', Key: 'A' }, { Name: 'GoToHome', Key: 'H' }] }, userConfig: { shortcuts: plain(saved) } } });
     t.after(() => reloaded.close());
-    reloaded.load('enhanced/config.js'); reloaded.JE.initializeShortcuts();
+    reloaded.load('tags/rating-sources.js'); reloaded.load('enhanced/config.js'); reloaded.JE.initializeShortcuts();
     assert.equal(reloaded.JE.state.activeShortcuts.CycleAudioTracks, expected);
     assert.equal(reloaded.JE.state.activeShortcuts.GoToHome, 'H', 'bindings the user never changed keep the plugin default');
   });

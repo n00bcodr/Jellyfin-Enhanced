@@ -65,7 +65,7 @@ function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = n
   t.after(() => h.close());
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js',
-    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js', 'tags/userreviewtags.js']) h.load(file);
+    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/rating-sources.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js', 'tags/userreviewtags.js']) h.load(file);
   const JE = h.JE;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags(); JE.initializeStatusTags(); JE.initializeLanguageTags();
   if (reviews || reviewSource) JE.initializeUserReviewTags();
@@ -138,7 +138,7 @@ test('config.js keeps structured layout values as stored and drops malformed one
     tagGroupOrder: ['status'], tagGroupCaps: [1, 2],
   } } } });
   t.after(() => h.close());
-  h.load('enhanced/config.js');
+  h.load('tags/rating-sources.js'); h.load('enhanced/config.js');
   const merged = h.JE.loadSettings();
   assert.equal(merged.tagLayout, 'minimal');
   assert.equal(merged.tagLayoutSettingsVersion, 1);
@@ -662,7 +662,7 @@ test('the caption strip keeps two rows, hides the lowest-priority chips whole an
   assert.ok(more.classList.contains('je-tag-more'));
   assert.equal(more.textContent, '+5');
   assert.equal(more.hasAttribute('data-je-overflow'), false);
-  assert.match(more.title, /^8\.1, PG-13, /, 'the title names the hidden chips');
+  assert.match(more.title, /^rating_source_community: 8\.1, PG-13, /, 'the title names the hidden chips');
   // A wide card shows everything: no "+N".
   const wide = fitCaption(h, { outlet: 400 });
   assert.equal(wide.querySelectorAll('[data-je-group] [data-je-overflow]').length, 0);

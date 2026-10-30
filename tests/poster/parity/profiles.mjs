@@ -125,6 +125,10 @@ const synthetic = {
     // toFixed switches to exponent notation from 1e21.
     r18: movie({ CommunityRating: 1e21, CriticRating: 1e21 }),
     r19: movie({ CommunityRating: -3e38, CriticRating: -1e21 }),
+    // Seven independent sources, native units, zero, missing values and parent-series entries.
+    rs01: movie({ Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 } }),
+    rs02: movie({ Ratings: { imdb: 0, tmdb: null, rtAudience: 49, letterboxd: 2.5 } }),
+    rs03: { Type: 'Season', SeriesTmdbId: '2000', SeasonNumber: 2, Ratings: { imdb: 8.1, rtCritic: 92 } },
     // Age ratings
     a01: movie({ OfficialRating: 'DE-12' }),
     a02: movie({ OfficialRating: '  FSK   16 ' }),
@@ -192,6 +196,11 @@ const synth = (name, settingsRaw, pluginOverrides = {}, jellyfinAudioPreference 
     profiles.push({ name, user: admin.id, synthetic: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference, reviews: 'synthetic' });
 
 synth('all-on-defaults', { ...allOn });
+synth('rating-sources-all', { RatingTagsEnabled: true, RatingTagsSources: ['trakt', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd'] });
+synth('rating-sources-minimum-cap', { RatingTagsEnabled: true, RatingTagsSources: ['metacritic', 'letterboxd', 'imdb', 'tmdb', 'rtCritic'], RatingTagsMinScore: 8, RatingTagsColorByScore: true, TagGroupCaps: { Rating: 2 }, TagLayoutSettingsVersion: 1 });
+synth('rating-sources-empty', { RatingTagsEnabled: true, RatingTagsSources: [] });
+synth('rating-sources-unknown', { RatingTagsEnabled: true, RatingTagsSources: ['invalid', 'imdb', 'imdb', 'trakt'] });
+
 synth('positions-mirror', {
     ...allOn, QualityTagsPosition: 'bottom-right', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'top-left',
     AgeRatingTagsPosition: 'top-left', LanguageTagsPosition: 'top-right', VideoCodecTagOrder: 0,

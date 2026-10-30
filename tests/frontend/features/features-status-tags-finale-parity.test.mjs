@@ -72,6 +72,16 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
     switchUser() { epoch++; for (const fn of changes.values()) fn({ userId: 'user-b' }); } });
 }
 
+/** Drain scheduled slices until an observable result settles; an empty idle queue alone can precede a batch response. */
+async function drainUntil(h, ready, message) {
+  const deadline = performance.now() + 5000;
+  while (!ready() && performance.now() < deadline) {
+    while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+    await delay(10);
+  }
+  assert.ok(ready(), message);
+}
+
 for (const cache of [false, true]) {
   test(`series and final regular episode agree with server cache ${cache ? 'on' : 'off'}`, async t => {
     // Episode first proves the batch preloads parent facts before any renderer runs.
@@ -143,7 +153,7 @@ for (const count of [30, 230]) {
     const episodes = parents.map((parent, i) => ({ ...finale, Id: (i + 1001).toString(16).padStart(32, '0'), SeriesId: parent.Id }));
     // Two cards for one episode also exercise parent-id deduplication.
     const h = await setup(t, { parent: null, parents, cards: [...episodes, episodes[0]] });
-    assert.ok(episodes.every(item => h.key(item.Id) === 'series_finale'));
+    await drainUntil(h, () => episodes.every(item => h.key(item.Id) === 'series_finale'), 'initial parent batches finished rendering');
     if (count === 30) assert.equal(h.calls.filter(c => c.url.includes('/tag-data/')).length, 2, 'initial episodes and parent facts each use one batch');
     const initialRequests = h.calls.length;
     const ajax = h.window.ApiClient.ajax;
@@ -170,11 +180,8 @@ for (const count of [30, 230]) {
       }
       return nodes;
     };
-    await delay(500);
-    while (h.idle.length) {
-      while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
-      await delay(60);
-    }
+    await drainUntil(h, () => passes === Math.ceil(count / 200) && inFlight === 0
+      && episodes.every(item => h.key(item.Id) === 'series_finale'), 'refreshed parent batches finished rendering');
     const refreshed = h.calls.slice(initialRequests).filter(c => c.url.includes('/tag-data/'));
     assert.equal(refreshed.length, Math.ceil(count / 200), 'expired parents share the existing 200-id lookup batches');
     assert.ok(refreshed.every(c => JSON.parse(c.data).length <= 200), 'no request exceeds the pipeline limit');
@@ -273,4 +280,15 @@ test('a cached projection retains its original fetch timestamp when restoring pa
   h.window.Date.now = () => NOW + 11 * 60 * 1000;
   pipeline.rememberItemFacts(aggregate, SERIES, NOW);
   assert.equal(pipeline.peekItemFacts(SERIES), null, 'restoring the snapshot never extends the fetch TTL');
+});
+
+
+test('fixture settling waits for an in-flight parent response after its idle queue empties', async t => {
+  const response = deferred();
+  const h = await setup(t, { cards: [finale], parentResponse: response });
+  assert.notEqual(h.key(EPISODE), 'series_finale');
+  const settled = drainUntil(h, () => h.key(EPISODE) === 'series_finale', 'deferred parent response rendered');
+  response.resolve({ Items: [aggregate] });
+  await settled;
+  assert.equal(h.key(EPISODE), 'series_finale');
 });

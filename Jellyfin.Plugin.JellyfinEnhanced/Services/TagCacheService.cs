@@ -25,7 +25,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// The cache is stored in memory (ConcurrentDictionary) and persisted to disk as JSON.
     /// Clients fetch the full cache in one GET request instead of making per-page batch calls.
     /// </summary>
-    public class TagCacheService : IDisposable
+    public partial class TagCacheService : IDisposable
     {
         private readonly ILibraryManager _libraryManager;
         private readonly IApplicationPaths _applicationPaths;
@@ -312,7 +312,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // StatusEpisodeIds) and an Episode's own PremiereDate.
         // v13 combines both field sets; v11 and v12 snapshots must rebuild.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 13;
+        // v14 adds independent MDBList source ratings.
+        private const int CurrentCacheSchemaVersion = 14;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -483,13 +484,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
             _localization = localizationManager;
             _logger = logger;
             _languageCache = languageCache;
+            _mdblistService = mdblistService;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -632,6 +634,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void BuildFullCacheBody(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
         {
+            WarmSourceRatings(cancellationToken);
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var languageCacheAtStart = LanguageCacheCounters();
@@ -862,6 +865,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Info("[TagCache] No previous reconciliation marker; seeding marker and running delta reconciliation");
             }
 
+            WarmSourceRatings(cancellationToken);
+            RefreshSourceRatings();
             var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
             _logger.Info($"[TagCache] Reconciling changes since {changedSinceUtc:O}");
             var languageCacheAtStart = LanguageCacheCounters();
@@ -1369,6 +1374,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // every cached sibling, including ones not otherwise in this batch.
             var siblingsChanged = item is MediaBrowser.Controller.Entities.TV.Season season
                 && RefreshStatusSiblings(season.Id, episodeScans);
+            WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return siblingsChanged;
 
@@ -1621,7 +1627,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                result[kvp.Key] = WithoutHiddenLatestEpisode(kvp.Value, accessibleSet);
+                result[kvp.Key] = ApplySourceRatingAvailability(WithoutHiddenLatestEpisode(kvp.Value, accessibleSet));
             }
 
             accessRevision = FormatAccessRevision(excludedCount, excludedSum);
@@ -1978,7 +1984,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!ServerModeEnabled || _cacheReleased) return false;
             var cache = _cache; // one volatile read of the current generation
             if (!cache.TryGetValue(itemId.ToString("N"), out var found) || found == null) return false;
-            entry = found;
+            entry = ApplySourceRatingAvailability(found);
             return true;
         }
 
@@ -1992,6 +1998,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public TagCacheEntry? BuildEntryOnDemand(BaseItem item)
         {
             if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
+            WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
             return BuildEntryForItem(item);
         }
 
@@ -2564,6 +2571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Parent Series of a Season/Episode, looked up once per item
                 // (both fallbacks below read it).
                 var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
+                entry.Ratings = GetSourceRatings(series ?? item);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
 
                 if (isContainer)

@@ -31,11 +31,19 @@
       "category": "Assets"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/rating-source-icons.json",
+      "category": "Assets"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/vector-icons.json",
       "category": "Assets"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/RatingSourceSettings.cs",
       "category": "Configuration"
     },
     {
@@ -220,6 +228,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagCacheEntry.cs",
+      "category": "Model"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagSourceRatings.cs",
       "category": "Model"
     },
     {
@@ -636,6 +648,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheSourceRatings.cs",
       "category": "Services"
     },
     {
@@ -1472,6 +1488,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/rating-sources.js",
       "category": "js"
     },
     {
@@ -4318,6 +4338,30 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "RatingTagsSources",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "RatingTagsMinScore",
+      "type": "double",
+      "initializer": "0",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "RatingTagsColorByScore",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -6998,6 +7042,30 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "RatingTagsSources",
+      "type": "string[]?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "RatingTagsMinScore",
+      "type": "double",
+      "initializer": "0",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "RatingTagsColorByScore",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "AgeRatingTagsPosition",
       "type": "string",
       "initializer": "\"bottom-right\"",
@@ -8151,6 +8219,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs"
     },
     {
+      "literal": "rating-source-icons.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs"
+    },
+    {
       "literal": "vector-icons.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs"
     },
@@ -8449,10 +8521,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 375,
+    "files": 380,
     "routes": 182,
-    "configuration_properties": 599,
-    "storage_references": 72,
+    "configuration_properties": 605,
+    "storage_references": 73,
     "scheduled_tasks": 13,
     "locales": 33
   }

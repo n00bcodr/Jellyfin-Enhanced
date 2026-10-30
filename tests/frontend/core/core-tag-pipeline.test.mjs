@@ -119,7 +119,7 @@ for (const schema of [undefined, 11, 12]) test(`a stored tag cache copy from an 
 });
 
 test('a stored tag cache copy with the current entry schema is restored and only the delta is fetched', async t => {
-  const { calls, cleared } = await loadWithStoredCopy(t, { schema: 13 });
+  const { calls, cleared } = await loadWithStoredCopy(t, { schema: 14 });
   assert.deepEqual(cleared, []);
   assert.ok(calls.some(url => url.includes('since=40')), 'the delta since the stored cursor');
 });

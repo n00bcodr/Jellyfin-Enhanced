@@ -28,6 +28,7 @@
     "core/tag-look.js",
 
     "// enhanced",
+    "tags/rating-sources.js",
     "enhanced/config.js",
     "enhanced/helpers.js",
     "enhanced/header-actions.js",

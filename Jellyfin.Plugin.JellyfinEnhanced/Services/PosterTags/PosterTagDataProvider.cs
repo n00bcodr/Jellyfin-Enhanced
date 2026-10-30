@@ -142,6 +142,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 entry = built;
             }
 
+            entry = TagCacheService.ApplySourceRatingAvailability(entry);
             var stripped = false;
             var policy = CreateSpoilerPolicy(httpContext, user);
             if (policy != null)

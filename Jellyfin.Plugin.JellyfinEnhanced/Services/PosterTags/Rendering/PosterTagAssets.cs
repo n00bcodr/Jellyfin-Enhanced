@@ -71,6 +71,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 typeface = LoadBrotliTypeface("fonts.NotoSans-Bold.ttf.br");
                 LoadIcons(icons);
                 LoadVectorIcons(vectors);
+                LoadVectorIcons(vectors, "rating-source-icons.json");
                 var (qualityColours, bases) = LoadQualityColours();
                 var ageStyles = LoadAgeRatingStyles();
 
@@ -224,9 +225,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
         }
 
-        private static void LoadVectorIcons(Dictionary<string, PosterTagVectorIcon> vectors)
+        private static void LoadVectorIcons(Dictionary<string, PosterTagVectorIcon> vectors, string filename = "vector-icons.json")
         {
-            using var doc = ReadJson("vector-icons.json");
+            using var doc = ReadJson(filename);
             foreach (var entry in doc.RootElement.EnumerateObject())
             {
                 var vb = entry.Value.GetProperty("viewBox");

@@ -829,8 +829,10 @@
                     const short = compactQualityLabel(text);
                     if (short !== text) chip.textContent = short;
                 }
-            } else if (group === 'rating' && node.querySelector('.rating-tag-tmdb')) {
-                node.querySelector('.rating-tag-critic')?.remove();
+            } else if (group === 'rating') {
+                for (const chip of node.querySelectorAll('.rating-tag--source')) chip.dataset.jeRatingCompact = '1';
+                // Legacy Community/Critic chips retain their historical compact density.
+                if (node.querySelector('.rating-tag-tmdb')) node.querySelector('.rating-tag-critic')?.remove();
             } else if (group === 'status') {
                 // Status badges carry their own short label ("Season Premiere" → "Premiere").
                 for (const chip of node.querySelectorAll('[data-je-compact]')) {
@@ -910,6 +912,8 @@
                 return text ? { text } : null;
             }
             case 'rating': {
+                const source = master.querySelector('.rating-tag--source');
+                if (source) return source.getAttribute('aria-label') || source.textContent;
                 const community = master.querySelector('.rating-tag-tmdb .rating-text')?.textContent;
                 if (community) return { text: community, glyph: '★' };
                 const critic = master.querySelector('.rating-tag-critic .rating-text')?.textContent;

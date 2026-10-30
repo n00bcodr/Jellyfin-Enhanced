@@ -105,6 +105,11 @@
             push(rules, `${R}.rating-tag-userreview .je-userreview-icon`, decl('color', chips.userReview.color));
         }
 
+        for (const [id, c] of Object.entries(chips)) {
+            if (!c || ['community', 'critic', 'userReview'].includes(id)) continue;
+            push(rules, `${R}[data-je-rating-source="${attr(id)}"]`, decl('background', c.background) + decl('color', c.color) + ring(c.border));
+        }
+
         if (styles.genre) push(rules, `${P}.genre-overlay-container .genre-tag`, box(styles.genre));
 
         const status = styles.status || {};

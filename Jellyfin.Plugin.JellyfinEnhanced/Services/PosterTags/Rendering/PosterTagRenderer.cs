@@ -554,6 +554,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 DrawIcon(canvas, icon, x, y + icon.Metrics.BaselineOffset(size, boxHeight), size, glyph, space);
             }
 
+            private static string SourceColor(string id) => id switch
+            {
+                "community" => "#ffc107", "imdb" => "#f5c518", "tmdb" => "#01b4a4", "rtAudience" => "#ffeab0",
+                "metacritic" => "#ffcc33", "letterboxd" => "#00e054", _ => "#ed1c24"
+            };
+
             private void PaintRating(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
                 var css = plan.Css;
@@ -565,6 +571,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     PosterRatingSource.UserReview => UserReviewText,
                     _ => SKColors.White,
                 };
+                if (tag.ScoreColor != null) textColor = CssColor.Parse(tag.ScoreColor, textColor);
                 SKColor? ring = null;
                 var nl = item.Style.IndexOf('\n');
                 if (nl >= 0)
@@ -585,7 +592,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float contentHeight = Math.Max(item.IconHeight, textHeight);
                 float iconTop = contentTop + PosterTagCss.Lu((contentHeight - item.IconHeight) / 2f);
 
-                switch (tag.Source)
+                if (tag.Compact)
+                {
+                    using var dot = new SKPaint { Color = CssColor.Parse(SourceColor(tag.SourceId), SKColors.White), IsAntialias = true };
+                    canvas.DrawCircle(x + 1, iconTop + 1, 1, dot);
+                }
+                else if (tag.IsSource)
+                {
+                    if (Assets.GetVectorIcon("rating-" + tag.SourceId) is { } sourceLogo)
+                        DrawVectorContain(canvas, sourceLogo, SKRect.Create(x, iconTop, item.IconWidth, item.IconHeight));
+                }
+                else switch (tag.Source)
                 {
                     case PosterRatingSource.Critic:
                         var tomato = Assets.GetVectorIcon(tag.Fresh ? "rt-fresh" : "rt-rotten");
