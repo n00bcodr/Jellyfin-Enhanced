@@ -954,11 +954,12 @@
     }
 
     /**
-     * Which chips a wrapping row shows within maxRows rows, in priority
-     * order, leaving room for a "+N" chip after them when some are left out.
-     * A chip wider than the whole row can never be shown whole, so it is left
-     * out without holding back the chips after it. Mirrors flex-wrap: a chip
-     * joins the current row if it fits after the gap, else starts the next.
+     * Which chips a wrapping row shows within maxRows rows. When they do not
+     * all fit, chips are placed in priority order the way flex-wrap lays
+     * them out (a chip joins the current row if it fits after the gap, else
+     * starts the next row), keeping room for the "+N" chip at the end of the
+     * last row; a chip with no room left is hidden and the chips after it
+     * still fill the space, so a wide label never leaves a row empty.
      * @param {number[]} widths - Chip widths in display order.
      * @param {number} available - Content width of the row.
      * @param {number} gap - Gap between chips.
@@ -967,25 +968,28 @@
      * @returns {boolean[]} Per chip, whether it is shown.
      */
     function chipsThatFit(widths, available, gap, maxRows, moreWidth) {
-        const rowsFor = (list) => {
-            let rows = 0;
-            let x = 0;
-            for (const w of list) {
-                if (rows === 0 || x + gap + w > available + 0.5) { rows++; x = w; } else x += gap + w;
-            }
-            return rows;
-        };
-        const fitting = widths.map((w, i) => i).filter((i) => widths[i] <= available + 0.5);
-        for (let keep = fitting.length; keep >= 0; keep--) {
-            const shown = fitting.slice(0, keep);
-            const list = shown.map((i) => widths[i]);
-            if (shown.length < widths.length) list.push(moreWidth);
-            if (keep === 0 || rowsFor(list) <= maxRows) {
-                const set = new Set(shown);
-                return widths.map((w, i) => set.has(i));
-            }
+        const fits = (need, room) => need <= room + 0.5;
+        let rows = 0;
+        let x = 0;
+        for (const w of widths) {
+            if (rows === 0 || !fits(x + gap + w, available)) { rows++; x = w; } else x += gap + w;
         }
-        return widths.map(() => false);
+        if (rows <= maxRows && widths.every((w) => fits(w, available))) return widths.map(() => true);
+        const roomOn = (row) => (row === maxRows ? available - gap - moreWidth : available);
+        let row = 1;
+        x = 0;
+        return widths.map((w) => {
+            if (fits(x === 0 ? w : x + gap + w, roomOn(row))) {
+                x = x === 0 ? w : x + gap + w;
+                return true;
+            }
+            if (row < maxRows && x > 0 && fits(w, roomOn(row + 1))) {
+                row++;
+                x = w;
+                return true;
+            }
+            return false;
+        });
     }
 
     /** @type {Set<CardController>} cards waiting for the next fitting pass */
