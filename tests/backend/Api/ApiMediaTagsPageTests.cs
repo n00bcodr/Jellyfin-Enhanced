@@ -371,6 +371,54 @@ public class ApiMediaTagsPageTests
     }
 
     [Fact]
+    public async Task ServerWritesDuringAPatchAreKeptByThePatch()
+    {
+        using var f = new ApiPluginFixture();
+        var users = new Mock<IUserManager>();
+#if NET9_0
+        users.SetupGet(x => x.Users).Returns(Array.Empty<Jellyfin.Database.Implementations.Entities.User>());
+#else
+        users.Setup(x => x.GetUsers()).Returns(Array.Empty<Jellyfin.Database.Implementations.Entities.User>());
+#endif
+        var sessions = new Mock<MediaBrowser.Controller.Session.ISessionManager>();
+        sessions.SetupGet(x => x.Sessions).Returns(Array.Empty<MediaBrowser.Controller.Session.SessionInfo>());
+        var maintenance = new MaintenanceModeService(users.Object, sessions.Object, f.Core.Paths.Object, f.Core.Logger);
+        // A manual maintenance window the administrator turned on with the page's toggle.
+        f.Plugin.Configuration.MaintenanceModeEnabled = true;
+        f.Plugin.Configuration.ClearTranslationCacheTimestamp = 1;
+        await maintenance.EnableAsync("", 0, "none", null);
+
+        // The patch's critical section, as PluginConfigurationPatch.Apply builds it: a shallow copy of the
+        // stored configuration with the patched field, swapped in when the builder returns. Meanwhile the
+        // maintenance window ends (clearing the toggle) and the translation refresh task sets its signal.
+        var ending = new Thread(() => maintenance.DisableAsync().GetAwaiter().GetResult());
+        var refreshing = new Thread(() => new Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks.ClearTranslationCacheTask(f.Core.Logger).ExecuteAsync(new Progress<double>(), default).GetAwaiter().GetResult());
+        Assert.True(f.Plugin.UpdateConfiguration(current =>
+        {
+            var next = (Jellyfin.Plugin.JellyfinEnhanced.Configuration.PluginConfiguration)typeof(object)
+                .GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(current, null)!;
+            next.TagsHideOnHover = true;
+            foreach (var writer in new[] { ending, refreshing })
+            {
+                writer.Start();
+                // Each writer either waits for the configuration write lock or (without it) finishes its write now.
+                Assert.True(SpinWait.SpinUntil(() => (writer.ThreadState & (ThreadState.WaitSleepJoin | ThreadState.Stopped)) != 0, 5000));
+            }
+
+            return next;
+        }));
+
+        Assert.True(ending.Join(5000));
+        Assert.True(refreshing.Join(5000));
+        Assert.True(f.Plugin.Configuration.TagsHideOnHover);
+        // Both writes are kept: the toggle the ended window cleared, and the translation refresh signal.
+        Assert.Equal(
+            new { MaintenanceModeEnabled = false, SignalKept = true },
+            new { f.Plugin.Configuration.MaintenanceModeEnabled, SignalKept = f.Plugin.Configuration.ClearTranslationCacheTimestamp > 1 });
+        Assert.False(maintenance.GetStatus().IsActive);
+    }
+
+    [Fact]
     public void SectionModulesNameTheTabAndGroupOfEachSetting()
     {
         // A synthetic module with a setting that is new in this build.

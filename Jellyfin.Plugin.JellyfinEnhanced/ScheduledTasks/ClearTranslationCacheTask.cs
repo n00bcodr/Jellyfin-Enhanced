@@ -37,18 +37,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks
 
         public Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
-            var config = JellyfinEnhanced.Instance?.Configuration;
-            if (config == null)
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin?.Configuration == null)
             {
                 _logger.Warning("[Clear Translation Cache] Plugin configuration is not available.");
                 progress?.Report(100);
                 return Task.CompletedTask;
             }
 
-            config.ClearTranslationCacheTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            JellyfinEnhanced.Instance!.SaveConfiguration();
+            // Set and saved inside the configuration write lock, so a save or Media Tags patch swapping the
+            // configuration at the same moment cannot put the previous signal back.
+            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            plugin.UpdateConfiguration(
+                config =>
+                {
+                    config.ClearTranslationCacheTimestamp = timestamp;
+                    return config;
+                },
+                fullSave: false);
 
-            _logger.Info($"[Clear Translation Cache] Translation cache clear signal set at {new DateTimeOffset(DateTimeOffset.FromUnixTimeMilliseconds(config.ClearTranslationCacheTimestamp).DateTime, TimeSpan.Zero):O}. All clients will clear their translation cache on next page load.");
+            _logger.Info($"[Clear Translation Cache] Translation cache clear signal set at {new DateTimeOffset(DateTimeOffset.FromUnixTimeMilliseconds(timestamp).DateTime, TimeSpan.Zero):O}. All clients will clear their translation cache on next page load.");
 
             progress?.Report(100);
             return Task.CompletedTask;

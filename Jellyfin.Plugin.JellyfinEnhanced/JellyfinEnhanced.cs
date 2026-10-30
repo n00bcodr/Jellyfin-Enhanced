@@ -77,39 +77,47 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             List<Shortcut>? originalShortcuts = null;
             try
             {
-                var config = Configuration;
-                if (config == null) return;
-                config.Shortcuts ??= new List<Shortcut>();
-                originalShortcuts = config.Shortcuts;
-
-                var seen = new HashSet<string>(StringComparer.Ordinal);
-                var dedupedReversed = new List<Shortcut>(originalShortcuts.Count);
-                var emptyKeyNames = new HashSet<string>(StringComparer.Ordinal);
-                for (int i = originalShortcuts.Count - 1; i >= 0; i--)
-                {
-                    var s = originalShortcuts[i];
-                    var name = s?.Name ?? string.Empty;
-                    if (string.IsNullOrEmpty(name)) continue;
-                    if (string.IsNullOrEmpty(s?.Key))
+                int duplicatesDropped = 0;
+                List<string> malformed = new();
+                List<Shortcut> missing = new();
+                // Read, rewritten and saved inside the configuration write lock, like every configuration write.
+                var saved = UpdateConfiguration(
+                    config =>
                     {
-                        emptyKeyNames.Add(name);
-                        continue;
-                    }
-                    if (seen.Add(name)) dedupedReversed.Add(s!);
-                }
-                var deduped = new List<Shortcut>(dedupedReversed.Count);
-                for (int i = dedupedReversed.Count - 1; i >= 0; i--) deduped.Add(dedupedReversed[i]);
-                var malformed = emptyKeyNames.Where(n => !seen.Contains(n)).ToList();
-                int duplicatesDropped = originalShortcuts.Count - deduped.Count - malformed.Count;
+                        config.Shortcuts ??= new List<Shortcut>();
+                        originalShortcuts = config.Shortcuts;
 
-                var defaults = new PluginConfiguration().Shortcuts ?? new List<Shortcut>();
-                var missing = defaults.Where(d => !seen.Contains(d.Name ?? string.Empty)).ToList();
-                deduped.AddRange(missing);
+                        var seen = new HashSet<string>(StringComparer.Ordinal);
+                        var dedupedReversed = new List<Shortcut>(originalShortcuts.Count);
+                        var emptyKeyNames = new HashSet<string>(StringComparer.Ordinal);
+                        for (int i = originalShortcuts.Count - 1; i >= 0; i--)
+                        {
+                            var s = originalShortcuts[i];
+                            var name = s?.Name ?? string.Empty;
+                            if (string.IsNullOrEmpty(name)) continue;
+                            if (string.IsNullOrEmpty(s?.Key))
+                            {
+                                emptyKeyNames.Add(name);
+                                continue;
+                            }
+                            if (seen.Add(name)) dedupedReversed.Add(s!);
+                        }
+                        var deduped = new List<Shortcut>(dedupedReversed.Count);
+                        for (int i = dedupedReversed.Count - 1; i >= 0; i--) deduped.Add(dedupedReversed[i]);
+                        malformed = emptyKeyNames.Where(n => !seen.Contains(n)).ToList();
+                        duplicatesDropped = originalShortcuts.Count - deduped.Count - malformed.Count;
 
-                if (duplicatesDropped == 0 && missing.Count == 0 && malformed.Count == 0) return;
+                        var defaults = new PluginConfiguration().Shortcuts ?? new List<Shortcut>();
+                        missing = defaults.Where(d => !seen.Contains(d.Name ?? string.Empty)).ToList();
+                        deduped.AddRange(missing);
 
-                config.Shortcuts = deduped;
-                SaveConfiguration();
+                        if (duplicatesDropped == 0 && missing.Count == 0 && malformed.Count == 0) return null;
+
+                        config.Shortcuts = deduped;
+                        return config;
+                    },
+                    fullSave: false);
+                if (!saved) return;
                 _logger.Info(
                     $"Normalized shortcut list: dropped {duplicatesDropped} duplicate(s), " +
                     $"{malformed.Count} malformed entry/entries" +
@@ -139,8 +147,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             if (original == null) return;
             try
             {
-                var config = Configuration;
-                if (config != null) config.Shortcuts = original;
+                lock (AnalyticsCredentialLock)
+                {
+                    var config = Configuration;
+                    if (config != null) config.Shortcuts = original;
+                }
             }
             catch (Exception ex)
             {
@@ -237,16 +248,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         }
 
         /// <summary>
-        /// Saves the configuration <paramref name="build"/> makes from the stored one, with the side effects of a
-        /// full save. <paramref name="build"/> runs inside the same critical section as every other save (a full
-        /// save from the configuration page included), so a writer that changes a few fields on top of the stored
-        /// configuration (the Media Tags page's field patch) can never put back fields another save changed while
-        /// it was building its copy.
+        /// Saves the configuration <paramref name="build"/> makes from the stored one. <paramref name="build"/> runs
+        /// inside the configuration write lock, the critical section every configuration write in the plugin goes
+        /// through (a full save from the configuration page, the Media Tags page's field patch, and the server's own
+        /// bookkeeping writes: the maintenance toggle clear, the translation refresh signal, analytics state, the
+        /// shortcut backfill), so a writer that builds on the stored configuration can never put back fields another
+        /// write changed while it was building.
         /// </summary>
-        /// <param name="build">Makes the configuration to save from the stored one; null saves nothing.</param>
+        /// <param name="build">Makes the configuration to save from the stored one (a new object, or the stored one
+        /// changed in place); null saves nothing.</param>
         /// <param name="saved">Reads the configuration as stored (normalised), still inside the critical section.</param>
+        /// <param name="fullSave">False for a server bookkeeping write that changes a field of the stored configuration
+        /// in place: it is saved in the same critical section, without a full save's normalisation of posted values
+        /// and without its after-effects (page checks, cache flushes, transitions), as before it took the lock.</param>
         /// <returns>Whether a configuration was saved.</returns>
-        internal bool UpdateConfiguration(Func<PluginConfiguration, BasePluginConfiguration?> build, Action<PluginConfiguration>? saved = null)
+        internal bool UpdateConfiguration(Func<PluginConfiguration, BasePluginConfiguration?> build, Action<PluginConfiguration>? saved = null, bool fullSave = true)
         {
             bool tagCacheWasEnabled;
             bool sourceRatingsWereConfigured;
@@ -269,15 +285,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // backend row exists.
             lock (AnalyticsCredentialLock)
             {
-                var configuration = build(Configuration);
+                // Capture the outgoing value BEFORE build (which may change the stored
+                // object in place) and base.UpdateConfiguration replace Configuration,
+                // so an actual OFF<->ON transition is distinguishable from an
+                // unrelated config save (this method fires on every save).
+                var stored = Configuration;
+                tagCacheWasEnabled = stored.TagCacheServerMode;
+                sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
+                analyticsWasEnabled = stored.AnalyticsEnabled;
+
+                var configuration = build(stored);
                 if (configuration == null) return false;
 
-                // Capture the outgoing value BEFORE base.UpdateConfiguration replaces
-                // Configuration, so an actual OFF<->ON transition is distinguishable
-                // from an unrelated config save (this method fires on every save).
-                tagCacheWasEnabled = Configuration?.TagCacheServerMode == true;
-                sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
-                analyticsWasEnabled = Configuration?.AnalyticsEnabled == true;
+                if (!fullSave)
+                {
+                    base.UpdateConfiguration(configuration);
+                    if (Configuration is PluginConfiguration written) saved?.Invoke(written);
+                    return true;
+                }
 
                 if (configuration is PluginConfiguration incoming && Configuration is PluginConfiguration current)
                 {
@@ -315,7 +340,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 }
 
                 base.UpdateConfiguration(configuration);
-                if (Configuration is PluginConfiguration stored) saved?.Invoke(stored);
+                if (Configuration is PluginConfiguration normalised) saved?.Invoke(normalised);
             }
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);
 
@@ -390,12 +415,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
         }
 
         /// <summary>
-        /// Guards every read-modify-write of the Analytics install credentials
-        /// (AnalyticsInstallId/Secret) across UpdateConfiguration's object swap
-        /// and AnalyticsReportingService's post-HTTP writes + SaveConfiguration.
-        /// It is also the configuration write lock: every UpdateConfiguration
-        /// builds and swaps its configuration under it (see the overload taking
-        /// a builder), so saves never interleave.
+        /// The configuration write lock. Every configuration write builds and
+        /// saves under it through the UpdateConfiguration overload taking a
+        /// builder: full saves and Media Tags field patches (which swap in a new
+        /// object) and the in-place bookkeeping writes (maintenance toggle clear,
+        /// translation refresh signal, AnalyticsReportingService's post-HTTP
+        /// credential/report state, the startup shortcut backfill), so no write
+        /// can land on an object another write is replacing. Named for its first
+        /// job: guarding the Analytics install credentials across the swap.
         /// </summary>
         internal static readonly object AnalyticsCredentialLock = new object();
 
