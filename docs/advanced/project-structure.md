@@ -327,6 +327,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `tag-pipeline.js` | Restores/downloads the bulk server cache, applies `?since=` deltas and scans cards in idle slices. |
 | `tag-layout-styles.js` | The one stylesheet for every tag layout, keyed off `.je-tag-host[data-je-layout]` and `.je-tag-slot[data-je-slot]`. |
 | `tag-styles.js` | Retrieves the resolved Tag Styles (with the user's own preset when allowed) and injects web CSS for every chip group; paired with server `Services/PosterTags/TagStyles.cs`. |
+| `tag-poster-colours.js` | The Poster preset on the web: samples each card's artwork in idle slices (dominant colour, normalised for contrast; the same algorithm as `Services/PosterTags/PosterColour.cs`), sets `--je-tag-bg/-border/-fg` on the card and keeps the colours in memory and in the tag cache store. |
 
 `Configuration/RatingSourceSettings.cs` validates ordered source preferences. `Model/TagSourceRatings.cs` maps MDBList scores to immutable native-unit values. `Services/TagCacheSourceRatings.cs` enriches schema 16 cache entries and batch DTOs through the existing MDBList cache, TTL and quota policy. `Assets/PosterTags/rating-source-icons.json` contains the same logo paths for native compositing.
 
@@ -496,7 +497,8 @@ Per-user setting in the Enhanced panel:
 | `PosterTagVariantToken.cs` | Signed `-jet` variants bound to user, item, settings, pixel version, flags and data hash. |
 | `CompositeImageCache.cs` | Byte-bounded memory LRU and disk cache under Jellyfin's cache path, in-flight coalescing and bounded render concurrency. |
 | `TagStyles.cs` | The versioned Tag Styles document (preset, group and label overrides): strict save validation, version 1 reading, per-chip resolution and the web model; plus the shipped colour catalog. |
-| `TagStylePalettes.cs` | Group, label and preset ids, the six preset palettes and built-in colours shared by web CSS, the config page and native drawing, and the WCAG contrast check. |
+| `TagStylePalettes.cs` | Group, label and preset ids, the preset palettes and built-in colours shared by web CSS, the config page and native drawing, and the WCAG contrast check. |
+| `PosterColour.cs` | The Poster preset's colours: an artwork's dominant colour (downscaled histogram) normalised for legible text, its worst-case contrast, and the example colours; the renderer samples each poster with it. |
 | `Resolution/` | `AgeRatingRules.cs`, `GenreIcons.cs`, `JsText.cs`, `LanguageFlagRules.cs`, `LanguageNames.cs`, `QualityTagRules.cs` (including source/edition categories, order and low-quality gate), `RatingRules.cs`, `ResolutionData.g.cs`. |
 | `Rendering/` | `PosterTagAssets.cs`, `PosterTagCss.cs`, `PosterTagImageScaler.cs`, `PosterTagPlan.cs`, `PosterTagRenderer.cs`, `PosterTagText.cs`, `PosterTagTileCache.cs`: embedded assets, layout, scaling, text shaping, drawing and reusable tile caching. |
 

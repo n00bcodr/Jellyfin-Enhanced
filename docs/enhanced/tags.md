@@ -89,10 +89,10 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
 **How to use — personal preferences:**
 
-1. In **Media Tags**, on the **Layout** tab, pick a layout tile and a **Label Density**. The live preview shows your layout as you change it.
+1. In **Media Tags**, on the **Layout** tab, pick a layout tile, a **Label Density** and, for Corners, an **Edge Spacing**. The live preview shows your layout as you change it.
 2. On the **Groups** tab, open a group to choose where it goes in that layout and how many tags it shows. Use the arrow buttons to change the priority order.
 
-**How to use — admin defaults:** under **Display** → **Media Tags**, open **Tag layout defaults**, set the starting layout, density, order, positions and limits, and click **Save Settings**.
+**How to use — admin defaults:** under **Display** → **Media Tags**, open **Tag layout defaults**, set the starting layout, density, edge spacing, order, positions and limits, and click **Save Settings**.
 
 | Layout | Where tags go | Default arrangement |
 |---|---|---|
@@ -125,6 +125,21 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 === "Minimal"
 
     ![Movie posters with quality dots and a corner score; the hovered poster shows every tag](../images/tags/tag-layout-minimal.webp)
+
+#### Edge spacing
+
+**Edge Spacing** sets how close the Corners layout puts tags to the poster edge, on all nine anchors:
+
+| Edge Spacing | Distance from the edge | Notes |
+|---|---|---|
+| **Default** | 6px | What Corners always looked like |
+| **Tight** | 3px | |
+| **Flush** | 0px | Tags touch the edge, like a tab hanging off the poster: the chip corners against an edge are square, and a tag in a corner follows the poster's own rounded corner. Nothing is drawn outside the poster |
+
+The gap below Jellyfin's played or unplayed-count indicator, the room kept above the progress bar for bottom-centre tags, and the space the centre anchors leave between corner stacks all follow the chosen spacing. The other layouts have their own spacing and ignore it. Native Poster Tags draw with the same spacing.
+
+!!! note "Flush and rounded posters"
+    Flush tags are clipped to the poster's rounded corners rather than being given a radius of their own, so a corner tag takes exactly the curve your theme gives the poster.
 
 #### Episode thumbnails and list rows
 
@@ -204,7 +219,8 @@ With **Hide Tags on Hover** off, genre names expand beside their icons on hover.
     - The **Bands** bottom band keeps to two rows (then `+N`), and on cards narrower than 160px both bands use compact labels.
     - The **Summary** pill drops its lowest-priority facts when the card is too narrow for all of them; its tooltip keeps every fact. The hover reveal of **Summary** and **Minimal** always uses compact labels and keeps to two rows at the bottom of the poster (then `+N`), clear of the play button; on short cards such as episode thumbnails it shows only the rows that fit in the bottom 40% of the image. Jellyfin's card buttons stay on top and clickable.
     - **Hide Tags on Hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
-    - [Native Poster Tags](#native-poster-tags-experimental) always draw corners, whatever web layout you choose. They follow the Corners positions, hidden groups, order and limits, and keep full labels.
+    - Settings saved before layouts keep the **Default** edge spacing whatever the administrator picks; the first layout change pins it, so only a later Edge Spacing change moves the tags.
+    - [Native Poster Tags](#native-poster-tags-experimental) always draw corners, whatever web layout you choose. They follow the Corners positions, hidden groups, order, limits and edge spacing, and keep full labels.
 
 ### Rules and locked items
 
@@ -906,6 +922,15 @@ Each preset sets a background, border and text colour for every kind of tag. Eac
 | **Dark** | Near-black chips without a border; white text with gold and red scores |
 | **Light** | Near-white chips without a border; dark text, darker gold and red scores, age ratings in their board colour |
 | **Mono** | Neutral dark grey chips with light grey text and a faint border |
+| **Poster** | Each tag takes its colour from the poster it sits on: the artwork's main colour, kept saturated (a red poster gives red tags) and darkened or lightened just enough that white or black text reads at 4.5:1 or better; a grey or very dark poster gives a neutral dark tag. The border is a lighter or darker shade of the same colour. Flags keep their own look |
+
+#### The Poster preset
+
+The colour comes from the artwork your browser is already showing (never the blurred placeholder shown while it loads): a 32px copy is read once, in idle time, and the result is remembered per poster in the browser, so scrolling back is instant. A new poster image for an item is read again. Nothing is sent anywhere. If the browser cannot read an image (for example artwork served from another site), that poster keeps the **Default** colours. Native posters work out the same colour from the image they draw on.
+
+Group and tag colours you set stay on top, field by field: set a group's text to white and every tag of the group keeps white text over its poster colour. **Default** on a row hands that field back to the poster. Because the colours depend on the artwork, the [contrast check](#contrast-check) shows the worst case Poster can produce, and the preview shows the colours of a red poster.
+
+![Movie posters with flush Poster tags: each tag's colour matches its poster](../images/tags/tag-poster-preset.webp)
 
 ### Groups and single tags
 
@@ -932,7 +957,7 @@ The badge under the colour rows rates the text against the background, both show
 | **AA large only** (amber) | 3:1 to 4.5:1 | Readable for large or bold text only |
 | **Low contrast** (red) | under 3:1 | Hard to read |
 
-With **Whole group** selected, the badge shows the tag that reads worst. Translucent presets also depend on the artwork behind them, so check the preview.
+With **Whole group** selected, the badge shows the tag that reads worst. Translucent presets also depend on the artwork behind them, so check the preview. Under **Poster**, a tag whose text or background comes from the artwork is rated by the worst case over any artwork, and the badge says so.
 
 ### User presets
 
@@ -944,7 +969,7 @@ Styles change colours, not size, shape, position or visibility. For web layout, 
     Native colours need **Enable Native Poster Tags (Experimental)**. Enable the tag feature and supply metadata first: CSS cannot create missing tags or restyle pixels already drawn into an image.
 
 ??? info "Stored style configuration"
-    The saved fields are `TagStylesEnabled`, `TagStyleTarget` (`both`, `web` or `native`), `TagStylePreset` (`default`, `glass`, `outline`, `dark`, `light` or `mono`), `TagStylesAllowUserPreset`, and `TagStyleOverrides`: an empty string, or a version 2 document `{"v":2,"preset":…,"groups":{…},"labels":{…}}` holding only the colours you set. Settings saved before this editor (version 1, with colours per quality label, age board, rating chip and genre) still load and look exactly as before: each tag you had changed keeps the colours it was drawn with, and the preset becomes **Default**, because the old presets were already baked into those colours. They are converted to version 2 on the next save. `TagStyleApplyScope` is no longer used. Each user's choice is `TagStylePreset` in their settings (`null` follows the admin). Saving checks the document, in either version: anything that is not a colour, an unknown group, tag or field, or a document over 32 KB keeps the current styles. See the [API reference](../advanced/api.md#style-and-native-preview-contracts) for the full format.
+    The saved fields are `TagStylesEnabled`, `TagStyleTarget` (`both`, `web` or `native`), `TagStylePreset` (`default`, `glass`, `outline`, `dark`, `light`, `mono` or `poster`), `TagStylesAllowUserPreset`, and `TagStyleOverrides`: an empty string, or a version 2 document `{"v":2,"preset":…,"groups":{…},"labels":{…}}` holding only the colours you set. Settings saved before this editor (version 1, with colours per quality label, age board, rating chip and genre) still load and look exactly as before: each tag you had changed keeps the colours it was drawn with, and the preset becomes **Default**, because the old presets were already baked into those colours. They are converted to version 2 on the next save. `TagStyleApplyScope` is no longer used. Each user's choice is `TagStylePreset` in their settings (`null` follows the admin). Saving checks the document, in either version: anything that is not a colour, an unknown group, tag or field, or a document over 32 KB keeps the current styles. See the [API reference](../advanced/api.md#style-and-native-preview-contracts) for the full format.
 
 ??? info "Web CSS behavior"
     Saved Tag Styles use stronger important colour rules than simple CSS recipes, but sufficiently specific important custom CSS can override them. Status chips carry `data-je-status` (`added`, `newMovie`, `newSeries`, `newEpisode`, `trending`) if you want to target one kind yourself. Prefer the corner controls to transforms that can disrupt shared-corner stacking. Genre-name styling requires **Hide Tags on Hover** off. Hiding a displayed flag with CSS does not make a fourth flag appear.

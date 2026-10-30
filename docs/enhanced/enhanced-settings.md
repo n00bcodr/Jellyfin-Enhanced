@@ -275,6 +275,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | **Episode thumbnails** / **List rows** → **Use a different look** | Off | Optional layout, density, Position pills and chip limit per shape. **Use recommended** starts with compact bands for thumbnails or compact corners for list images. Locks and rules take precedence. Portrait and square cards, and Native Poster Tags, keep the default look. |
     | Layout tiles: **Corners**, **Bands**, **Caption**, **Summary**, **Minimal** | **Corners** | Your default layout; the line under the tiles describes the selected one. Arrow keys move between tiles. |
     | **Label Density**: **Full** / **Compact** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
+    | **Edge Spacing**: **Default** / **Tight** / **Flush** | The administrator's (**Default**) | How far Corners tags sit from the poster edge: 6px, 3px or touching it. Flush tags follow the poster's rounded corners. Settings saved before layouts keep **Default** until you change it. |
     | **Hide Tags on Hover** | Off | Fades poster tags while you hover a card. |
     | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags into posters for native apps. |
     | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
