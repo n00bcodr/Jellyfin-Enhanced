@@ -147,8 +147,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
 
         /// <summary>
         /// Custom tag group: the ids of the administrator's rules the item matches
-        /// (<c>tag:&lt;name&gt;</c> or <c>collection:&lt;name&gt;</c>, see
-        /// <see cref="Configuration.CustomTagRuleSet.RuleId"/>), in rule order. Tags are the
+        /// (<c>tag:&lt;hash&gt;</c> or <c>collection:&lt;hash&gt;</c>, see
+        /// <see cref="Configuration.CustomTagRuleSet.RuleId"/>), in the rule order of when it
+        /// was matched; renderers treat it as a set and draw the current rule order. Tags are the
         /// item's own plus, for a Season/Episode, its Series'; collections are the
         /// collections holding the item (or its Series). Null when no rule matches.
         /// </summary>

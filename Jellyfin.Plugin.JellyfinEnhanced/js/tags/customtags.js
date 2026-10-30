@@ -94,18 +94,20 @@
     }
 
     /**
-     * The rules an item matched, in the order the server listed them (the
-     * rule table's), skipping ids no rule has any more.
+     * The rules an item matched, in the current rule table order: the ids
+     * are a set (stored entries keep the order of when they were matched,
+     * so a reorder needs no re-match), and ids no rule has any more are
+     * skipped. Native posters resolve the same way
+     * (PosterTagResolver.ResolveCustom).
      * @param {*} ids - CustomTags from the tag cache entry or /tag-data.
      * @returns {CustomTagRule[]}
      */
     function rulesFor(ids) {
         if (!Array.isArray(ids) || ids.length === 0) return [];
-        const { rules } = currentRules();
+        const matched = new Set(ids.map(String));
         const out = [];
-        for (const id of ids) {
-            const rule = rules.get(String(id));
-            if (rule && !out.includes(rule)) out.push(rule);
+        for (const [id, rule] of currentRules().rules) {
+            if (matched.has(id)) out.push(rule);
         }
         return out;
     }

@@ -73,6 +73,23 @@ test('without the private configuration (non-administrators) nothing names what 
   assert.deepEqual(plain(h.JE.customTags.currentRules().rules.get(ID.criterion)), { id: ID.criterion, label: 'Criterion', icon: null, match: null, value: null });
 });
 
+test('chips follow the current rule order, whatever order the cached ids were stored in', t => {
+  const h = setup(t, { tagLayoutSettingsVersion: 1, tagLayout: 'corners', tagGroupCaps: { custom: 1 } });
+  // Stored before a reorder: Signed first.
+  const stored = { Type: 'Movie', CustomTags: [ID.signed, ID.criterion] };
+  h.render(stored);
+  assert.deepEqual(h.labels(), ['Criterion'], 'the cap keeps the first rule in the table');
+
+  // The administrator moves Signed to the top: the same stored ids now draw Signed first.
+  h.JE.pluginConfig = { ...h.JE.pluginConfig, CustomTagRules: [RULES[2], RULES[0], RULES[1], RULES[3]] };
+  h.JE.reinitializeCustomTags();
+  h.JE.core.tagLayout.removeGroup(h.host, 'custom');
+  delete h.document.querySelector('.card').dataset.jeCustomTagged;
+  h.render(stored);
+  assert.deepEqual(h.labels(), ['Signed']);
+  assert.deepEqual(plain(h.JE.customTags.rulesFor([ID.criterion, ID.signed]).map(r => r.label)), ['Signed', 'Criterion'], 'cache and batch data draw alike');
+});
+
 test('an entry without matches, or with only retired rules, draws nothing', t => {
   const h = setup(t);
   h.render({ Type: 'Movie' });

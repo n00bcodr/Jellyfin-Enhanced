@@ -389,6 +389,8 @@ synth('custom-order-cap-position', { ...allOn, CustomTagsEnabled: true, CustomTa
 synth('custom-off-in-corners', { CustomTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: { Groups: [{ Group: 'custom', Slot: 'off' }] } } }, customRules);
 synth('custom-rules-group-off', { QualityTagsEnabled: true }, customRules);
 synth('custom-admin-default-on', null, { ...customRules, CustomTagsEnabled: true, CustomTagsPosition: 'bottom-left' });
+// Rules reordered after the entries were matched (their ids keep the old order): both sides draw the new order.
+synth('custom-reordered-cap', { CustomTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Custom: 1 } }, { ...customRules, CustomTagRules: [...customRules.CustomTagRules].reverse() });
 
 synth('language-subs-only', { LanguageTagsEnabled: true, LanguageTagsShowAudio: false, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes' });
 synth('language-subs-strict-merge', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes', LanguageTagsCountBadge: 'both' }, { LanguageTagsPriority: 'French, English, Hindi', LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });

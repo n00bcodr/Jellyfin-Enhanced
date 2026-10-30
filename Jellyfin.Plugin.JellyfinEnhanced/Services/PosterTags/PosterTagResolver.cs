@@ -168,19 +168,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>
-        /// customtags.js rulesFor: the rules the entry matched, in the server's (rule table) order,
-        /// skipping ids no rule has any more; null when none is left.
+        /// customtags.js rulesFor: the rules the entry matched, in the current rule table order
+        /// (the cached ids are a set: a reorder needs no re-match), skipping ids no rule has any
+        /// more; null when none is left.
         /// </summary>
         private static List<PosterTag>? ResolveCustom(TagCacheEntry entry, PosterTagSettings settings)
         {
             if (entry.CustomTags is not { Length: > 0 } ids) return null;
+            var matcher = settings.CustomTagRules;
             List<PosterTag>? tags = null;
-            foreach (var id in ids)
+            for (var i = 0; i < matcher.Rules.Count; i++)
             {
-                if (settings.CustomTagRules.Find(id) is not { } rule) continue;
+                var id = matcher.Ids[i];
+                if (Array.IndexOf(ids, id) < 0) continue;
                 tags ??= new List<PosterTag>(ids.Length);
-                if (tags.Exists(t => ((CustomTag)t).RuleId == id)) continue;
-                tags.Add(new CustomTag(rule.Label, rule.Icon, id));
+                tags.Add(new CustomTag(matcher.Rules[i].Label, matcher.Rules[i].Icon, id));
             }
 
             return tags;

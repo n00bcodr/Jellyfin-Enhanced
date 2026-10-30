@@ -475,8 +475,14 @@ public class CustomTagRulesTests
         var group = Assert.Single(layout.Groups);
         Assert.Equal(PosterTagGroup.Custom, group.Group);
         Assert.Equal(PosterTagCorner.TopLeft, group.Corner);
-        // The server listed the ids in rule order; an id with no rule any more is skipped; the cap keeps two.
-        Assert.Equal(new[] { ("Signed", (string?)null), ("Criterion", null) }, group.Tags.Cast<CustomTag>().Select(t => (t.Label, t.Icon)));
+        // The configured rule order, whatever order the entry stored; an id with no rule any more is
+        // skipped; the cap keeps two.
+        Assert.Equal(new[] { ("Criterion", (string?)null), ("Remaster", "auto_awesome") }, group.Tags.Cast<CustomTag>().Select(t => (t.Label, t.Icon)));
+
+        // Reordering the rules changes the first chip at once: the cached ids are a set, no re-match.
+        var reversed = new PluginConfiguration { CustomTagRules = Enumerable.Reverse(config.CustomTagRules).ToList() };
+        var capOne = PosterTagSettings.FromSettingsJson("{customTagsEnabled:true,tagLayoutSettingsVersion:1,tagGroupCaps:{custom:1}}", reversed);
+        Assert.Equal("Signed", Assert.IsType<CustomTag>(Assert.Single(Assert.Single(PosterTagResolver.Resolve(entry, capOne, Movie(), false)!.Groups).Tags)).Label);
 
         var icon = PosterTagResolver.Resolve(new TagCacheEntry { Type = "Movie", CustomTags = [Id("tag", "4k remaster")] }, settings, Movie(), false)!;
         Assert.Equal("auto_awesome", Assert.IsType<CustomTag>(Assert.Single(Assert.Single(icon.Groups).Tags)).Icon);
