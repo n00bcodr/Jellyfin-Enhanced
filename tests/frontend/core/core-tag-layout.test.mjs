@@ -728,3 +728,19 @@ test('settings saved before layouts keep the original indicator rule: only a con
   const css = h.document.getElementById('je-tag-layout').textContent;
   assert.match(css, /\.cardScalable:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="tr"\] > \[data-je-indicator-gap\]:first-child,/);
 });
+
+test('settings saved before layouts keep the 4px phone edge offsets of rating, age rating and status', t => {
+  const h = setup(t);
+  h.render();
+  const css = h.document.getElementById('je-tag-layout').textContent;
+  const phone = css.slice(css.indexOf('@media (max-width: 480px)'));
+  const groups = ':is\\(\\[data-je-group="rating"\\], \\[data-je-group="ageRating"\\], \\[data-je-group="status"\\]\\)';
+  for (const [slot, rule] of [['tl', 'margin-left: -2px'], ['bl', 'margin-left: -2px'], ['tr', 'margin-right: -2px'], ['br', 'margin-right: -2px']]) {
+    assert.match(phone, new RegExp(`\\.je-tag-host\\[data-je-legacy\\] > \\.je-tag-slot\\[data-je-slot="${slot}"\\] > ${groups} \\{ ${rule}; \\}`), `${slot}: 6px slot inset - 2px = the old 4px`);
+  }
+  assert.match(phone, new RegExp(`\\[data-je-slot="tl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="tr"\\] > ${groups}:first-child \\{ margin-top: -2px; \\}`), 'the edge chip of a top stack');
+  assert.match(phone, new RegExp(`\\[data-je-slot="bl"\\] > ${groups}:first-child, [^{]*\\[data-je-slot="br"\\] > ${groups}:first-child \\{ margin-bottom: -2px; \\}`), 'and of a bottom stack');
+  assert.match(phone, /margin-top: calc\(clamp\(20px, 3vw, 30px\) - 2px\);/, 'a rating set to exactly top-right keeps 4px + the indicator offset');
+  assert.match(css.slice(0, css.indexOf('@media (max-width: 480px)')), /\[data-je-slot="tl"\], .*\[data-je-slot="tr"\],\s*.*\[data-je-slot="bl"\], .*\[data-je-slot="br"\] \{\s*inset: 6px;/, 'everything else keeps 6px');
+  assert.equal(h.host().dataset.jeLegacy, '1');
+});

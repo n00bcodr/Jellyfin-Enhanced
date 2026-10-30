@@ -12,6 +12,9 @@
     const host = (layout) => `.je-tag-host[data-je-layout="${layout}"] > .je-tag-slot`;
     const INDICATORS = '.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host';
     const INDICATOR_OFFSET = 'clamp(20px, 3vw, 30px)';
+    /** Groups whose containers had 4px phone edge offsets before layouts existed. */
+    const LEGACY_MOBILE_GROUPS = ':is([data-je-group="rating"], [data-je-group="ageRating"], [data-je-group="status"])';
+    const LEGACY_EDGE = (slot) => `.je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="${slot}"] > ${LEGACY_MOBILE_GROUPS}`;
 
     /**
      * Build the shared layout stylesheet.
@@ -54,10 +57,24 @@
             }
             /* Settings saved before layouts (data-je-legacy) keep the original
                web geometry: only a container set to exactly top-right clears the
-               indicator (the containers stacked after it follow it). */
+               indicator (the containers stacked after it follow it), ... */
             ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:first-child,
             .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > [data-je-indicator-gap]:first-child {
                 margin-top: ${INDICATOR_OFFSET};
+            }
+            /* ... and on phones the rating, age rating and status containers sit
+               4px from the card edges instead of 6px. */
+            @media (max-width: 480px) {
+                ${LEGACY_EDGE('tl')} { margin-left: -2px; }
+                ${LEGACY_EDGE('bl')} { margin-left: -2px; }
+                ${LEGACY_EDGE('tr')} { margin-right: -2px; }
+                ${LEGACY_EDGE('br')} { margin-right: -2px; }
+                ${LEGACY_EDGE('tl')}:first-child, ${LEGACY_EDGE('tr')}:first-child { margin-top: -2px; }
+                ${LEGACY_EDGE('bl')}:first-child, ${LEGACY_EDGE('br')}:first-child { margin-bottom: -2px; }
+                ${INDICATORS}[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap]:first-child,
+                .cardIndicators ~ .je-tag-host[data-je-legacy] > .je-tag-slot[data-je-slot="tr"] > ${LEGACY_MOBILE_GROUPS}[data-je-indicator-gap]:first-child {
+                    margin-top: calc(${INDICATOR_OFFSET} - 2px);
+                }
             }
 
             /* Genre names float toward the inside of the card. */
