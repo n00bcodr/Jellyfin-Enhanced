@@ -507,6 +507,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStylePalettes.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs",
       "category": "Services"
     },
@@ -4020,6 +4024,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagStylesAllowUserPreset",
+      "type": "bool",
+      "initializer": null,
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagsCacheTtlDays",
       "type": "int",
       "initializer": null,
@@ -6884,6 +6896,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "TagStylePreset",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowRatingInPlayer",
       "type": "bool",
       "initializer": "true",
@@ -8195,9 +8215,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 365,
+    "files": 366,
     "routes": 181,
-    "configuration_properties": 574,
+    "configuration_properties": 576,
     "storage_references": 71,
     "scheduled_tasks": 13,
     "locales": 33

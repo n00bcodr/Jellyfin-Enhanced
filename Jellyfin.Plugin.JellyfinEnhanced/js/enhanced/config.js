@@ -213,6 +213,10 @@
             const value = userSettings[key];
             mergedSettings[key] = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
         }
+
+        // Tag Styles preset: null follows the admin's preset, so it never falls
+        // back to the plugin default (that would pin the admin's current choice).
+        mergedSettings.tagStylePreset = typeof userSettings.tagStylePreset === 'string' && userSettings.tagStylePreset ? userSettings.tagStylePreset : null;
         mergedSettings.tagGroupOrder = Array.isArray(userSettings.tagGroupOrder) ? userSettings.tagGroupOrder : null;
 
         mergedSettings.displayLanguage = Object.prototype.hasOwnProperty.call(userSettings, 'displayLanguage')

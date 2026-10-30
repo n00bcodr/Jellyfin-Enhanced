@@ -487,6 +487,7 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `TagGroupOrder` | Nullable array of group ids (`status`, `quality`, `rating`, `ageRating`, `language`, `genre`) | `null` |
 | `TagGroupCaps` | Nullable object `{Quality,Genre,Language,Rating,AgeRating,Status}` of integers 0–10, `0` = unlimited | `null` |
 | `TagLabelDensity` | String: `full` or `compact` | `"full"` |
+| `TagStylePreset` | Nullable string: `default`, `glass`, `outline`, `dark`, `light` or `mono`; unknown values are stored as `null` | `null` (follow the admin's preset; only used while the admin allows user presets) |
 | `ShowRatingInPlayer` | Boolean | `true` |
 | `RemoveContinueWatchingEnabled` | Boolean | `false` |
 | `LastOpenedTab` | String | `""` |
@@ -1043,7 +1044,9 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 |---|---|---|
 | **Server-Side Tag Cache** | `true` | `TagCacheServerMode`; gates cached delivery and rebuild. |
 | **Enable Tag Styles** | `false` | `TagStylesEnabled`; enables effective overrides. |
-| **Apply Tag Styles To** | `"both"` | `TagStyleTarget`; `both`, `web`, or `native`. |
+| **Apply to** (Tag Styles) | `"both"` | `TagStyleTarget`; `both`, `web`, or `native`. |
+| **Preset** (Tag Styles) | `"default"` | `TagStylePreset`; `default`, `glass`, `outline`, `dark`, `light` or `mono`. |
+| **Let users pick their own preset** | `false` | `TagStylesAllowUserPreset`; honours each user's `TagStylePreset` (below). |
 | **Enable Native Poster Tags (Experimental)** | `false` | `NativePosterTagsEnabled`; delivery toggle, rather than a preview prerequisite. |
 
 | Method | Path | Access | Request → response |
@@ -1129,11 +1132,32 @@ Any signed-in user may call it, non-administrators included. The server shares o
 
 Read effective web styles or the shipped style catalog. As an administrator, use native preview to inspect how tags render on an item's artwork.
 
-`tag-styles` returns `{quality,age,rating,genre}`. The first three are maps; `genre` is a nullable color object. Color objects have `background`, `border`, `color`. Age keys are individual rating strings.
+`tag-styles` (any signed-in user) returns every chip's effective colours, already resolved field by field (label override, then group override, then the preset palette). Optional `preset` query: the caller's own preset, honoured only while **Let users pick their own preset** is on; otherwise the admin's preset applies.
 
-If disabled or native-only, maps are empty and genre null. Missing configuration returns `503`. `TagStyleOverrides` defaults to `""` and stores editor-generated overrides.
+```json
+{"v":2,"preset":"glass",
+ "quality":{"*":{"background":"rgba(255, 255, 255, 0.161)","border":"rgba(255, 255, 255, 0.349)","color":"rgba(255, 255, 255, 1)"},"4K":{…}},
+ "age":[{"ratings":["PG-13","TV-14"],"background":"…","border":"…","color":"…"}],
+ "ageDefault":{…},
+ "rating":{"community":{…},"critic":{…},"userReview":{…}},
+ "genre":{…},
+ "status":{"added":{…},"newMovie":{…},"newSeries":{…},"newEpisode":{…},"trending":{…}},
+ "language":{"background":null,"border":"…","color":null}}
+```
 
-Catalog has `quality:[{label,background,color}]`, `age:[{id,background,border,color,ratings}]`. It provides shipped defaults, rather than a user's effective styles.
+Colour objects have `background`, `border`, `color` (null keeps the built-in colour). `quality` and the status/rating maps list only chips with a non-default colour; `*` covers quality labels outside the catalog and `ageDefault` age ratings outside the colour sheet. `age` lists each age board with every rating it covers. With Tag Styles off, a native-only target, or the default preset and no overrides, every map is empty and the single objects are null. Missing configuration returns `503`.
+
+`TagStyleOverrides` stores a version 2 document, `""` when nothing is overridden:
+
+```json
+{"v":2,"preset":"glass",
+ "groups":{"quality":{"background":"rgba(30, 136, 229, 1)","text":"rgba(255, 255, 255, 1)"}},
+ "labels":{"quality:HEVC":{"background":"rgba(239, 108, 0, 1)"},"ageRating:9":{"border":"rgba(0, 0, 0, 0)"},"status:trending":{"text":"…"}}}
+```
+
+Groups are `quality`, `ageRating`, `rating`, `genre`, `status`, `language`. Labels are `group:label`: quality catalog labels, age board ids from the catalog, `rating:community|critic|userReview`, `genre:genre`, `status:added|newMovie|newSeries|newEpisode|trending` and `language:flag`. Fields are `background`, `border`, `text`; language takes only `border`. `TagStylePreset` is the authoritative preset; the document's own `preset` mirrors it. Saving validates the document, whichever version it is (leaving out `v` does not skip the checks): unknown keys, groups, labels or fields, the reserved keys `__proto__`, `constructor` and `prototype`, anything that is not a colour, more than 400 labels or more than 32 KB keep the current styles (logged as a warning); valid documents are stored normalised to `rgba()`. A version 1 document (`{quality:{label:{background,border,color}},age:{boardId:…},rating:{community|critic:…},genre:…}`, from before the editor redesign) is still read: each stored label becomes the colours it drew (the stored field, else the built-in colour; rating chips get no border) under the `default` preset, whatever `TagStylePreset` says, and it is converted to version 2 on the next save.
+
+Catalog (administrator) has `quality:[{label,background,color}]`, `age:[{id,background,border,color,ratings,sample}]`, `presets` (ids in editor order), `groups` (`{group:[{key,name}]}`) and `palettes` (`{preset:{"group:label":{background,border,color}}}`, every colour concrete: the preset's colour where it sets one, else the built-in colour). It provides shipped defaults and palettes, rather than a user's effective styles.
 
 Native preview accepts a Jellyfin item GUID, optional target `userId` (missing/empty uses caller), `width=360`, optional `height`, nullable boolean `topRightOffset`. Dimensions clamp to `32..2048` pixels.
 
@@ -1274,7 +1298,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `ShowAwards`, `DoesTheDogDieEnabled`, `MdblistEnabled`, `MdblistRatingsEnabled`, `MdblistRatingsShowOnItemDetails`, `MdblistRatingsShowPercentSymbol`, `ShowReleaseDates`, `ShowUserRatingOnPosters`, `ShowUserRatingDash` | Boolean |
     | `PauseScreenEnabled`, `ShowPlaybackRatingBadge`, `NativePosterTagsEnabled`, `TagStyleWebActive`, `QualityTagsEnabled`, `ShowResolutionTag`, `ShowSourceTag`, `ShowDynamicRangeTag` | Boolean |
     | `ShowSpecialFormatTag`, `ShowVideoCodecTag`, `ShowAudioInfoTag`, `GenreTagsEnabled`, `LanguageTagsEnabled`, `RatingTagsEnabled`, `AgeRatingTagsEnabled`, `PeopleTagsEnabled` | Boolean |
-    | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending` | Boolean |
+    | `StatusTagsEnabled`, `StatusTagsJustAdded`, `StatusTagsNewRelease`, `StatusTagsTrending`, `TagStylesAllowUserPreset` | Boolean |
     | `DisableAllShortcuts`, `DisableCustomSubtitleStyles`, `LanguageTagsPriorityStrict`, `LanguageTagsMergeRegions`, `QualityTagsAudioLanguageFromUser`, `RatingTagsOnMovies`, `RatingTagsOnSeries`, `RatingTagsOnSeasons`, `RatingTagsOnEpisodes` | Boolean |
     | `RatingTagsOnContinueWatching`, `RatingTagsOnNextUp`, `RatingTagsShowCommunity`, `RatingTagsShowCritic`, `ShowRatingInPlayer`, `DisableTagsOnSearchPage`, `TagsHideOnHover`, `TagCacheServerMode`, `EnableTagsLocalStorageFallback`, `JellyseerrEnabled` | Boolean |
     | `JellyseerrShowSearchResults`, `JellyseerrSearchExcludeLibraryItems`, `JellyseerrShowReportButton`, `JellyseerrShowIssueIndicator`, `JellyseerrEnable4KRequests`, `JellyseerrEnable4KTvRequests`, `ShowCollectionsInSearch`, `JellyseerrShowAdvanced` | Boolean |
@@ -1296,7 +1320,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
     | `SplashScreenImageUrl`, `DEFAULT_REGION`, `DEFAULT_PROVIDERS`, `IGNORE_PROVIDERS`, `ElsewhereCustomBrandingText`, `ElsewhereCustomBrandingImageUrl`, `WatchProgressDefaultMode`, `WatchProgressTimeFormat` | String |
     | `MdblistRatingsSources`, `DefaultLanguage`, `QualityTagsPosition`, `GenreTagsPosition`, `LanguageTagsPosition`, `LanguageTagsPriority`, `QualityTagsPreferredAudioLanguage`, `RatingTagsPosition` | String |
     | `AgeRatingTagsPosition`, `JellyseerrBaseUrl`, `JellyseerrUrlMappings`, `ArrTagsPrefix`, `ArrTagsLinksFilter`, `ArrTagsLinksHideFilter`, `AudioLanguageTagPrefix`, `IconStyle` | String |
-    | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity` | String |
+    | `StatusTagsPosition`, `TagLayout`, `TagLabelDensity`, `TagStylePreset` | String |
     | `TagLayouts`, `TagGroupCaps` | Nullable object (shapes as in `settings.json`) |
     | `TagGroupOrder` | Nullable array of group ids |
     | `CalendarFirstDayOfWeek`, `CalendarTimeFormat`, `MaintenanceModeMessage`, `MaintenanceModeAction`, `MaintenanceModeAffectedUsers` | String |

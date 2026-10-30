@@ -544,32 +544,47 @@
 
                             <div class="checkboxContainer"><label><input id="tagStylesEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Tag Styles</span></label></div>
                             <div class="je-setting-description" data-desc-for="tagStylesEnabled">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">Change the colours of quality, age rating, rating and genre tags. While off, the tags keep their built-in colours and any custom CSS you use for them keeps working. Edits you made are kept.</div>
+                                <div class="fieldDescription je-field-desc-sm-font-lg">Change the colours of quality, age rating, rating, genre, status and language tags. While off, the tags keep their built-in colours and any custom CSS you use for them keeps working. Edits you made are kept.</div>
                             </div>
                             <div id="tagStylesBody">
-                            <div class="selectContainer">
-                                <label class="selectLabel" for="tagStyleTarget">Apply Tag Styles To</label>
-                                <select is="emby-select" id="tagStyleTarget" name="tagStyleTarget" class="emby-select-withcolor emby-select">
-                                    <option value="both">Both (Jellyfin Web and poster images)</option>
-                                    <option value="web">Jellyfin Web only</option>
-                                    <option value="native">Poster images only (apps without web overlays)</option>
-                                </select>
-                            </div>
-                            <div class="je-setting-description" data-desc-for="tagStyleTarget">
-                                <div class="fieldDescription je-field-desc-sm-font-lg">
-                                    <ul style="margin:4px 0 0 20px; padding:0;">
-                                        <li>Jellyfin Web: recolours the overlay tags in the web interface. Only the tags you edit are affected, and they win over any custom CSS colours. Custom CSS that hides or moves tags still works</li>
-                                        <li>Poster images: the colours are drawn into the posters shown by apps that cannot run the web overlays, such as Android TV. Custom CSS can never reach these. Needs Enable Native Poster Tags above, and posters redraw the next time they are viewed</li>
-                                        <li>Each tag keeps its default colours until you change it. Tag size, shape and position are not affected</li>
-                                    </ul>
-                                </div>
-                            </div>
                             <div id="tagStyleEditor" class="je-ts-editor">
-                                <div id="tagStylePresets" class="je-ts-presets"></div>
-                                <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
-                                <div id="tagStyleGrid" class="je-ts-grid"><div class="fieldDescription">Loading tags...</div></div>
-                                <div id="tagStylePanel" class="je-ts-panel" style="display: none;"></div>
-                                <button id="tagStyleResetAll" class="raised emby-button" is="emby-button" type="button"><span>Reset All Tag Styles</span></button>
+                                <div class="je-ts-row">
+                                    <label class="je-ts-row-label" id="tagStyleTargetLabel" for="tagStyleTarget">Apply to</label>
+                                    <div id="tagStyleTargetPills" class="je-ts-pills" role="radiogroup" aria-labelledby="tagStyleTargetLabel">
+                                        <button type="button" class="je-ts-pill" role="radio" data-target="web">Web</button>
+                                        <button type="button" class="je-ts-pill" role="radio" data-target="native">Native posters</button>
+                                        <button type="button" class="je-ts-pill" role="radio" data-target="both">Both</button>
+                                    </div>
+                                    <input type="hidden" id="tagStyleTarget" name="tagStyleTarget" value="both"/>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="tagStyleTarget">
+                                    <div class="fieldDescription je-field-desc-sm-font-lg">
+                                        <ul style="margin:4px 0 0 20px; padding:0;">
+                                            <li>Web: recolours the overlay tags in the web interface. Only what you change is affected, and it wins over any custom CSS colours. Custom CSS that hides or moves tags still works</li>
+                                            <li>Native posters: the colours are drawn into the posters shown by apps that cannot run the web overlays, such as Android TV. Custom CSS can never reach these. Needs Enable Native Poster Tags above, and posters redraw the next time they are viewed. Status tags are not drawn into posters</li>
+                                            <li>Tag size, shape and position are not affected</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div class="je-ts-section-label" id="tagStylePresetLabel">Preset</div>
+                                <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel"><div class="fieldDescription">Loading tags...</div></div>
+                                <div id="tagStyleTabs" class="je-ts-tabs" role="tablist" aria-label="Tag group"></div>
+                                <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
+                                    <div class="je-ts-section-label" id="tagStyleTargetsLabel">Editing</div>
+                                    <div id="tagStyleTargets" class="je-ts-targets" role="radiogroup" aria-labelledby="tagStyleTargetsLabel"></div>
+                                    <div id="tagStyleGroupNote" class="fieldDescription je-ts-note"></div>
+                                    <div id="tagStyleRows" class="je-ts-rows"></div>
+                                    <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
+                                </div>
+                                <div class="je-ts-section-label">Preview</div>
+                                <div id="tagStylePreview" class="je-ts-preview" aria-hidden="true"></div>
+                                <div class="je-ts-footer">
+                                    <div class="checkboxContainer"><label><input id="tagStylesAllowUserPreset" is="emby-checkbox" type="checkbox"/><span>Let users pick their own preset</span></label></div>
+                                    <button id="tagStyleResetAll" class="raised emby-button" is="emby-button" type="button"><span>Reset all colours</span></button>
+                                </div>
+                                <div class="je-setting-description" data-desc-for="tagStylesAllowUserPreset">
+                                    <div class="fieldDescription je-field-desc-sm-font-lg">Shows a Tag Colours preset choice in each user's settings panel. Your group and label colours stay on top of whichever preset a user picks.</div>
+                                </div>
                             </div>
                             </div>
                         </div>
@@ -4212,6 +4227,7 @@
                     if (el.type === 'file') return; // can't be read back, and not part of the saved config shape
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
+                    if (el.closest('#tagStyleRows')) return; // Tag Styles colour pickers: redrawn per editing target, the state is pushed below
                     const key = el.id || el.name || ('#' + i);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
@@ -4219,6 +4235,8 @@
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
                 // So are the tag layout defaults' order, limits and per-layout positions.
                 if (typeof tagLayoutAdmin !== 'undefined') parts.push('tagLayouts=' + tagLayoutAdmin.snapshot());
+                // So is the Tag Styles document (preset tiles, swatches and opacity pills are buttons).
+                parts.push('tagStyles=' + tagStyles.snapshot());
                 return parts.join('');
             }
 
@@ -6404,64 +6422,145 @@
             });
         })();
 
-        // Tag Styles editor: colour overrides for the quality / age rating / rating / genre tags.
-        // State is { quality: {label: {background,color}}, age: {groupId: {...}}, rating: {community|critic: {...}}, genre: {...} }
-        // holding only what differs from the shipped defaults; serialize() returns '' when nothing is overridden.
+        // Tag Styles editor: preset → group → label. State mirrors the stored document
+        // { v: 2, preset, groups: {group: {background, border, text}}, labels: {'group:label': {...}} }
+        // (normalised rgba() strings, only what the admin set). The catalog brings every
+        // preset's palette resolved per label, so each chip is drawn in its effective colours:
+        // label override, else group override, else the preset (the order the server uses).
         const tagStyles = (() => {
-            const SECTIONS = [
-                { key: 'quality', title: 'Quality', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Text']] },
-                { key: 'age', title: 'Age ratings', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Text']] },
-                { key: 'rating', title: 'Rating chips', fields: [['background', 'Background'], ['color', 'Text and star']] },
-                { key: 'genre', title: 'Genre', fields: [['background', 'Background'], ['border', 'Border'], ['color', 'Icon']] }
+            const GROUPS = [
+                { key: 'quality', title: 'Quality' }, { key: 'ageRating', title: 'Age' }, { key: 'rating', title: 'Rating' },
+                { key: 'genre', title: 'Genre' }, { key: 'status', title: 'Status' }, { key: 'language', title: 'Language' }
             ];
-            const CHIPS = [
-                { key: 'community', label: 'Community rating', defaults: { background: 'rgba(0, 0, 0, 0.85)', color: '#ffc107' }, text: '7.8', icon: 'star' },
-                { key: 'critic', label: 'Critic rating', defaults: { background: 'rgba(0, 0, 0, 0.8)', color: '#ffffff' }, text: '85%', icon: null }
-            ];
-            const GENRE = [{ key: 'all', label: 'Genre circle', defaults: { background: 'rgba(10, 10, 10, 0.8)', border: 'rgba(255, 255, 255, 0.2)', color: '#E0E0E0' } }];
+            const PRESET_TITLES = { default: 'Default', glass: 'Glass', outline: 'Outline', dark: 'Dark', light: 'Light', mono: 'Mono' };
+            const FIELDS = [['background', 'Background'], ['border', 'Border'], ['text', 'Text']];
+            const SWATCHES = ['#1e88e5', '#ef6c00', '#2e7d32', '#546e7a', '#8e24aa', '#ffd166', '#ff6b6b', '#111111', '#ffffff', '#e0e0e0'];
+            const OPACITIES = [40, 60, 80, 100];
+            const NOTES = {
+                genre: 'Text colours the genre icon.',
+                status: 'Status tags are drawn on the web only: native posters do not show them.',
+                language: 'Flags are images, so only the border ring can be coloured. Partial dubs keep their dashed outline.'
+            };
+            const RATING_SAMPLES = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'] };
+            const STATUS_SAMPLES = { added: 'Just Added', newMovie: 'New Movie', newSeries: 'New Series', newEpisode: 'New Episode', trending: '#3 Today' };
+            const ALL = '*';
 
-            let state = { quality: {}, age: {}, rating: {}, genre: {} };
-            let items = { quality: [], age: [], rating: CHIPS, genre: GENRE };
+            let cat = null;
+            let state = { preset: 'default', groups: {}, labels: {} };
             let current = 'quality';
-            let selected = null;
-            let lastPreset = 'default';
-            let lastScope = 'all';
-            let presetSelect = null;
-            let scopeSelect = null;
-            const canvas = document.createElement('canvas').getContext('2d');
+            let target = ALL;
+            let canvas = null;
+            // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
+            let legacy = null;
+            // A version 1 document migrated since load: the snapshots before (from) and after (to).
+            let migrated = null;
 
-            // Any CSS colour to {r,g,b,a} through the canvas parser.
+            // <tag-style-contrast> pure helpers (tests/frontend extracts and runs this block)
+            /**
+             * Parses `rgba(r, g, b, a)`, `rgb(r, g, b)` or `#rrggbb`.
+             * @param {string} css
+             * @returns {{r: number, g: number, b: number, a: number}|null}
+             */
+            function rgbaOf(css) {
+                const value = String(css || '').trim().toLowerCase();
+                const hex = /^#([0-9a-f]{6})$/.exec(value);
+                if (hex) return { r: parseInt(hex[1].slice(0, 2), 16), g: parseInt(hex[1].slice(2, 4), 16), b: parseInt(hex[1].slice(4, 6), 16), a: 1 };
+                const fn = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/.exec(value);
+                if (!fn) return null;
+                return { r: +fn[1], g: +fn[2], b: +fn[3], a: fn[4] === undefined ? 1 : +fn[4] };
+            }
+
+            /**
+             * Paints `top` over the opaque colour `under`, rounding to whole channel values.
+             * @param {{r: number, g: number, b: number, a: number}} top
+             * @param {{r: number, g: number, b: number}} under
+             * @returns {{r: number, g: number, b: number, a: number}}
+             */
+            function compositeOver(top, under) {
+                const mix = (t, u) => Math.round(t * top.a + u * (1 - top.a));
+                return { r: mix(top.r, under.r), g: mix(top.g, under.g), b: mix(top.b, under.b), a: 1 };
+            }
+
+            /**
+             * WCAG 2 relative luminance of an opaque colour.
+             * @param {{r: number, g: number, b: number}} c
+             * @returns {number}
+             */
+            function luminance(c) {
+                const ch = (v) => { const s = v / 255; return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+                return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+            }
+
+            /**
+             * WCAG contrast of text over a chip background, both painted over a dark poster (#262626).
+             * @param {string} text
+             * @param {string} background
+             * @returns {number|null} The ratio (1-21), or null when a colour does not parse.
+             */
+            function contrastRatio(text, background) {
+                const t = rgbaOf(text), b = rgbaOf(background);
+                if (!t || !b) return null;
+                const bg = compositeOver(b, { r: 38, g: 38, b: 38 });
+                const fg = compositeOver(t, bg);
+                const l1 = luminance(fg), l2 = luminance(bg);
+                return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+            }
+
+            /**
+             * The contrast badge for a ratio: AA from 4.5, AA large only from 3, else low.
+             * @param {number} ratio
+             * @returns {{level: string, label: string}}
+             */
+            function contrastLevel(ratio) {
+                if (ratio >= 4.5) return { level: 'aa', label: 'AA' };
+                if (ratio >= 3) return { level: 'large', label: 'AA large only' };
+                return { level: 'low', label: 'Low contrast' };
+            }
+            // </tag-style-contrast>
+
+            /**
+             * Any CSS colour to {r,g,b,a} through the canvas parser.
+             * @param {string} css
+             * @returns {{r: number, g: number, b: number, a: number}}
+             */
             function parse(css) {
+                const direct = rgbaOf(css);
+                if (direct) return direct;
+                canvas = canvas || document.createElement('canvas').getContext('2d');
+                if (!canvas) return { r: 0, g: 0, b: 0, a: 1 };
                 canvas.fillStyle = '#000000';
                 canvas.fillStyle = css;
-                const v = canvas.fillStyle;
-                if (v.charAt(0) === '#') {
-                    return { r: parseInt(v.slice(1, 3), 16), g: parseInt(v.slice(3, 5), 16), b: parseInt(v.slice(5, 7), 16), a: 1 };
-                }
-                const p = v.slice(v.indexOf('(') + 1, v.indexOf(')')).split(',').map(parseFloat);
-                return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+                return rgbaOf(canvas.fillStyle) || { r: 0, g: 0, b: 0, a: 1 };
+            }
+            /**
+             * Like parse, but null for anything that is not a colour (the canvas keeps its previous
+             * fill for an invalid one, so it is tried over two different fills).
+             * @param {string} css
+             * @returns {{r: number, g: number, b: number, a: number}|null}
+             */
+            function parseColour(css) {
+                const direct = rgbaOf(css);
+                if (direct) return direct;
+                canvas = canvas || document.createElement('canvas').getContext('2d');
+                if (!canvas || typeof css !== 'string' || !css.trim()) return null;
+                canvas.fillStyle = '#000000';
+                canvas.fillStyle = css;
+                const overBlack = canvas.fillStyle;
+                canvas.fillStyle = '#ffffff';
+                canvas.fillStyle = css;
+                return overBlack === canvas.fillStyle ? rgbaOf(overBlack) : null;
             }
             const toHex = (c) => '#' + [c.r, c.g, c.b].map((n) => Math.round(n).toString(16).padStart(2, '0')).join('');
             const toCss = (c) => 'rgba(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' + Math.round(c.b) + ', ' + (Math.round(c.a * 1000) / 1000) + ')';
-            const same = (a, b) => toCss(parse(a)) === toCss(parse(b));
+            const norm = (css) => toCss(parse(css));
 
-            const section = () => SECTIONS.find((s) => s.key === current);
-            const entry = (sec, key) => (sec === 'genre' ? state.genre : state[sec][key]) || null;
-            const value = (sec, item, field) => {
-                const o = entry(sec, item.key);
-                return (o && o[field]) || item.defaults[field];
-            };
-            const isChanged = (sec, item) => !!entry(sec, item.key);
-
-            function setField(sec, item, field, css) {
-                lastPreset = 'custom';
-                const o = Object.assign({}, entry(sec, item.key) || {});
-                if (same(css, item.defaults[field])) delete o[field]; else o[field] = css;
-                const empty = Object.keys(o).length === 0;
-                if (sec === 'genre') state.genre = empty ? {} : o;
-                else if (empty) delete state[sec][item.key]; else state[sec][item.key] = o;
-            }
-
+            /**
+             * Creates an element with an optional class and text.
+             * @param {string} tag
+             * @param {string} [cls]
+             * @param {string} [text]
+             * @returns {HTMLElement}
+             */
             function el(tag, cls, text) {
                 const n = document.createElement(tag);
                 if (cls) n.className = cls;
@@ -6469,263 +6568,586 @@
                 return n;
             }
 
-            function chip(sec, item) {
-                const v = (f) => value(sec, item, f);
-                let n;
-                if (sec === 'quality') {
-                    n = el('span', 'je-ts-q', item.label);
-                    n.style.background = v('background');
-                    n.style.color = v('color');
-                    n.style.borderColor = v('border');
-                } else if (sec === 'age') {
-                    n = el('span', 'je-ts-age', item.sample);
-                    n.style.background = v('background');
-                    n.style.borderColor = v('border');
-                    n.style.color = v('color');
-                } else if (sec === 'rating') {
-                    n = el('span', 'je-ts-rate');
-                    n.style.background = v('background');
-                    n.style.color = v('color');
-                    if (item.icon) { const i = el('i', 'material-icons', item.icon); n.appendChild(i); } else { n.appendChild(el('i', 'je-ts-tomato')); }
-                    n.appendChild(document.createTextNode(item.text));
+            const labelsOf = (g) => (cat && cat.groups[g]) || [];
+            const labelKey = (g, l) => g + ':' + l;
+            const fieldsOf = (g) => (g === 'language' ? FIELDS.filter(([f]) => f === 'border') : FIELDS);
+
+            /**
+             * A preset's colours for one label, as {background, border, text}.
+             * @param {string} preset
+             * @param {string} g - Group id.
+             * @param {string} l - Label key.
+             * @returns {{background: string, border: string, text: string}}
+             */
+            function palette(preset, g, l) {
+                const p = ((cat && cat.palettes[preset]) || {})[labelKey(g, l)] || {};
+                return { background: p.background, border: p.border, text: p.color };
+            }
+
+            /**
+             * The colours a label shows: label override, group override, then preset.
+             * @param {string} g
+             * @param {string} l
+             * @returns {{background: string, border: string, text: string}}
+             */
+            function effective(g, l) {
+                const own = state.labels[labelKey(g, l)] || {};
+                const shared = state.groups[g] || {};
+                const pal = palette(state.preset, g, l);
+                const out = {};
+                FIELDS.forEach(([f]) => { out[f] = own[f] || shared[f] || pal[f]; });
+                return out;
+            }
+
+            /**
+             * The colours the current editing target shows. For the whole group a field is the
+             * group override, else the preset colour when every label shares it, else null (varies).
+             * @returns {{background: string|null, border: string|null, text: string|null}}
+             */
+            function targetColours() {
+                if (target !== ALL) return effective(current, target);
+                const shared = state.groups[current] || {};
+                const out = {};
+                FIELDS.forEach(([f]) => {
+                    const values = new Set(labelsOf(current).map((l) => palette(state.preset, current, l.key)[f]));
+                    out[f] = shared[f] || (values.size === 1 ? [...values][0] : null);
+                });
+                return out;
+            }
+
+            /** @returns {Object} The override bag the editing target writes to. */
+            const targetEntry = () => (target === ALL ? state.groups[current] : state.labels[labelKey(current, target)]) || {};
+
+            /**
+             * Sets (or with null clears) one field of the editing target, then redraws.
+             * @param {string} field
+             * @param {string|null} css
+             * @returns {void}
+             */
+            function setField(field, css) {
+                const bag = target === ALL ? state.groups : state.labels;
+                const key = target === ALL ? current : labelKey(current, target);
+                const o = Object.assign({}, bag[key] || {});
+                if (css) o[field] = norm(css); else delete o[field];
+                if (Object.keys(o).length) bag[key] = o; else delete bag[key];
+                renderGroup();
+                renderPreview();
+            }
+
+            /**
+             * Paints a chip in the given colours. Rating chips and flags have no border of
+             * their own: theirs is an inner ring, as on the web and native posters.
+             * @param {HTMLElement} n
+             * @param {string} g
+             * @param {{background: string, border: string, text: string}} c
+             * @returns {HTMLElement} n
+             */
+            function paint(n, g, c) {
+                if (g !== 'language') {
+                    n.style.background = c.background || '';
+                    n.style.color = c.text || '';
+                }
+                if (g === 'rating' || g === 'language') {
+                    const ring = c.border && parse(c.border).a > 0;
+                    n.style.outline = ring ? '1px solid ' + c.border : '';
+                    n.style.outlineOffset = ring ? '-1px' : '';
                 } else {
-                    n = el('span', 'je-ts-genre');
-                    n.style.background = v('background');
-                    n.style.borderColor = v('border');
-                    n.style.color = v('color');
-                    n.appendChild(el('i', 'material-icons', 'theaters'));
+                    n.style.borderColor = c.border || '';
                 }
                 return n;
             }
 
+            /**
+             * A sample chip for a label, with the real chip classes.
+             * @param {string} g
+             * @param {{key: string, name: string}} label
+             * @param {{background: string, border: string, text: string}} c
+             * @returns {HTMLElement}
+             */
+            function chip(g, label, c) {
+                let n;
+                if (g === 'quality') {
+                    n = el('span', 'je-ts-chip je-ts-q quality-overlay-label', label.name);
+                } else if (g === 'ageRating') {
+                    n = el('span', 'je-ts-chip je-ts-age age-rating-tag', label.name);
+                } else if (g === 'rating') {
+                    const [icon, text] = RATING_SAMPLES[label.key] || ['star', '8.1'];
+                    n = el('span', 'je-ts-chip je-ts-rate rating-tag');
+                    n.appendChild(icon ? el('i', 'material-icons je-ts-rate-icon', icon) : el('i', 'je-ts-tomato'));
+                    n.appendChild(document.createTextNode(text));
+                } else if (g === 'genre') {
+                    n = el('span', 'je-ts-chip je-ts-genre genre-tag');
+                    n.appendChild(el('i', 'material-icons', 'theaters'));
+                } else if (g === 'status') {
+                    n = el('span', 'je-ts-chip je-ts-status status-tag', STATUS_SAMPLES[label.key] || label.name);
+                } else {
+                    n = el('img', 'je-ts-chip je-ts-flag language-flag');
+                    n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');
+                    n.alt = '';
+                }
+                return paint(n, g, c);
+            }
+
+            /**
+             * A labelled pill/radio button.
+             * @param {string} cls
+             * @param {boolean} checked
+             * @param {Function} onClick
+             * @returns {HTMLButtonElement}
+             */
+            function radio(cls, checked, onClick) {
+                const b = el('button', cls + (checked ? ' active' : ''));
+                b.type = 'button';
+                b.setAttribute('role', 'radio');
+                b.setAttribute('aria-checked', String(checked));
+                b.addEventListener('click', onClick);
+                return b;
+            }
+
+            /** @returns {void} */
+            function renderTargetPills() {
+                const value = document.querySelector('#tagStyleTarget').value || 'both';
+                document.querySelectorAll('#tagStyleTargetPills .je-ts-pill').forEach((b) => {
+                    const on = b.dataset.target === value;
+                    b.classList.toggle('active', on);
+                    b.setAttribute('aria-checked', String(on));
+                });
+            }
+
+            /** @returns {void} */
+            function renderPresets() {
+                const bar = document.querySelector('#tagStylePresets');
+                bar.textContent = '';
+                const age = labelsOf('ageRating').find((l) => l.name === 'PG-13') || labelsOf('ageRating')[0];
+                cat.presets.forEach((id) => {
+                    const tile = radio('je-ts-preset', state.preset === id, () => { state.preset = id; render(); });
+                    tile.dataset.preset = id;
+                    tile.appendChild(el('span', 'je-ts-preset-title', PRESET_TITLES[id] || id));
+                    const mini = el('span', 'je-ts-preset-chips');
+                    mini.appendChild(chip('quality', { key: '4K', name: '4K' }, palette(id, 'quality', '4K')));
+                    mini.appendChild(chip('rating', { key: 'community', name: 'Community' }, palette(id, 'rating', 'community')));
+                    if (age) mini.appendChild(chip('ageRating', age, palette(id, 'ageRating', age.key)));
+                    tile.appendChild(mini);
+                    bar.appendChild(tile);
+                });
+            }
+
+            /** @returns {void} */
             function renderTabs() {
                 const tabs = document.querySelector('#tagStyleTabs');
                 tabs.textContent = '';
-                SECTIONS.forEach((s) => {
-                    const b = el('button', 'je-ts-tab' + (s.key === current ? ' active' : ''), s.title);
+                GROUPS.forEach((g) => {
+                    const b = el('button', 'je-ts-tab' + (g.key === current ? ' active' : ''), g.title);
                     b.type = 'button';
-                    b.addEventListener('click', () => { current = s.key; selected = null; render(); });
+                    b.setAttribute('role', 'tab');
+                    b.setAttribute('aria-selected', String(g.key === current));
+                    b.dataset.group = g.key;
+                    b.addEventListener('click', () => { current = g.key; target = ALL; renderTabs(); renderGroup(); });
                     tabs.appendChild(b);
                 });
             }
 
-            function renderGrid() {
-                const grid = document.querySelector('#tagStyleGrid');
-                grid.textContent = '';
-                items[current].forEach((item) => {
-                    const cell = el('button', 'je-ts-cell' + (isChanged(current, item) ? ' changed' : '') + (selected === item.key ? ' selected' : ''));
-                    cell.type = 'button';
-                    cell.title = item.hint || item.label;
-                    cell.appendChild(chip(current, item));
-                    cell.addEventListener('click', () => { selected = item.key; render(); });
-                    grid.appendChild(cell);
+            /** @returns {void} */
+            function renderTargets() {
+                const box = document.querySelector('#tagStyleTargets');
+                box.textContent = '';
+                const all = radio('je-ts-target je-ts-target-all' + (state.groups[current] ? ' changed' : ''), target === ALL, () => { target = ALL; renderGroup(); });
+                all.textContent = 'Whole group';
+                all.dataset.label = ALL;
+                box.appendChild(all);
+                labelsOf(current).forEach((label) => {
+                    const changed = !!state.labels[labelKey(current, label.key)];
+                    const cell = radio('je-ts-target' + (changed ? ' changed' : ''), target === label.key, () => { target = label.key; renderGroup(); });
+                    cell.dataset.label = label.key;
+                    cell.title = current === 'ageRating'
+                        ? 'Applies to: ' + ((cat.age.find((a) => a.id === label.key) || {}).ratings || []).join(', ')
+                        : label.name;
+                    cell.setAttribute('aria-label', current === 'ageRating' ? label.name + ' board' : label.name);
+                    cell.appendChild(chip(current, label, effective(current, label.key)));
+                    box.appendChild(cell);
                 });
             }
 
-            function renderPanel() {
-                const panel = document.querySelector('#tagStylePanel');
-                panel.textContent = '';
-                const item = items[current].find((i) => i.key === selected);
-                if (!item) { panel.style.display = 'none'; return; }
-                panel.style.display = '';
-                panel.appendChild(el('div', 'je-ts-panel-title', item.hint || item.label));
-                section().fields.forEach(([field, label]) => {
-                    const c = parse(value(current, item, field));
-                    const row = el('div', 'je-ts-field');
-                    row.appendChild(el('label', null, label));
-                    const color = document.createElement('input');
-                    color.type = 'color';
-                    color.value = toHex(c);
-                    const alpha = document.createElement('input');
-                    alpha.type = 'range';
-                    alpha.min = '0';
-                    alpha.max = '100';
-                    alpha.value = String(Math.round(c.a * 100));
-                    const pct = el('span', 'je-ts-alpha', alpha.value + '%');
-                    const apply = () => {
-                        const base = parse(color.value);
-                        base.a = parseInt(alpha.value, 10) / 100;
-                        pct.textContent = alpha.value + '%';
-                        setField(current, item, field, toCss(base));
-                        renderGrid();
-                    };
-                    color.addEventListener('input', apply);
-                    alpha.addEventListener('input', apply);
-                    row.appendChild(color);
-                    row.appendChild(alpha);
-                    row.appendChild(pct);
-                    panel.appendChild(row);
-                });
-                const reset = el('button', 'raised emby-button', 'Reset This Tag');
-                reset.type = 'button';
-                reset.addEventListener('click', () => {
-                    if (current === 'genre') state.genre = {}; else delete state[current][item.key];
-                    lastPreset = 'custom';
-                    render();
-                });
-                panel.appendChild(reset);
-            }
-
-            // Presets derive every tag's colours from its own defaults, so hues stay recognisable.
-            const rgba = (c, a) => toCss({ r: c.r, g: c.g, b: c.b, a: a });
-            const isDark = (c) => (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) < 40;
-            const PRESETS = [
-                { id: 'glass', title: 'Glass', make: (field, d) => {
-                    const bg = parse(d.background);
-                    if (field === 'background') return rgba(bg, isDark(bg) ? 0.3 : 0.4);
-                    if (field === 'border') return 'rgba(255, 255, 255, 0.4)';
-                    return null;
-                } },
-                { id: 'outline', title: 'Outline', make: (field, d) => {
-                    const bg = parse(d.background);
-                    if (isDark(bg)) return field === 'background' ? rgba(bg, 0.35) : (field === 'border' ? 'rgba(255, 255, 255, 0.5)' : null);
-                    if (field === 'background') return rgba(bg, 0.12);
-                    if (field === 'border') return rgba(bg, 0.9);
-                    return rgba(bg, 1);
-                } },
-                { id: 'mono', title: 'Dark', make: (field) => ({ background: 'rgba(20, 20, 20, 0.85)', border: 'rgba(255, 255, 255, 0.2)', color: 'rgba(255, 255, 255, 1)' }[field]) },
-                { id: 'light', title: 'Light', make: (field) => ({ background: 'rgba(255, 255, 255, 0.88)', border: 'rgba(0, 0, 0, 0.15)', color: 'rgba(17, 17, 17, 1)' }[field]) },
-                { id: 'default', title: 'Default colours', make: () => null }
-            ];
-
-            function applyPreset(preset, scope) {
-                SECTIONS.filter((s) => scope === 'all' || s.key === current).forEach((s) => {
-                    items[s.key].forEach((item) => {
-                        s.fields.forEach(([field]) => {
-                            const css = preset.id === 'default' ? item.defaults[field] : preset.make(field, item.defaults);
-                            setField(s.key, item, field, css || item.defaults[field]);
-                        });
+            /** @returns {void} */
+            function renderRows() {
+                const rows = document.querySelector('#tagStyleRows');
+                rows.textContent = '';
+                const colours = targetColours();
+                const own = targetEntry();
+                fieldsOf(current).forEach(([field, name]) => {
+                    const varies = !colours[field];
+                    const c = parse(colours[field] || 'rgba(0, 0, 0, 0)');
+                    const alpha = c.a > 0 && !varies ? c.a : 1;
+                    const row = el('div', 'je-ts-field-row');
+                    row.dataset.field = field;
+                    row.appendChild(el('span', 'je-ts-row-name', current === 'genre' && field === 'text' ? 'Icon' : name));
+                    const now = el('span', 'je-ts-swatch je-ts-swatch-current' + (varies ? ' je-ts-swatch-varies' : ''));
+                    if (!varies) now.style.setProperty('--je-ts-swatch', colours[field]);
+                    now.title = varies ? 'Varies by label' : 'Now: ' + colours[field];
+                    row.appendChild(now);
+                    const list = el('div', 'je-ts-swatches');
+                    SWATCHES.forEach((hex) => {
+                        const b = el('button', 'je-ts-swatch');
+                        b.type = 'button';
+                        b.style.setProperty('--je-ts-swatch', hex);
+                        b.setAttribute('aria-label', name + ' ' + hex);
+                        b.title = hex;
+                        if (own[field] && toHex(parse(own[field])) === hex) b.classList.add('active');
+                        b.addEventListener('click', () => setField(field, toCss(Object.assign(parse(hex), { a: alpha }))));
+                        list.appendChild(b);
                     });
-                });
-                lastPreset = preset.id;
-                render();
-            }
-
-            function applyColours(picked, scope) {
-                lastPreset = 'custom';
-                SECTIONS.filter((s) => scope === 'all' || s.key === current).forEach((s) => {
-                    items[s.key].forEach((item) => {
-                        s.fields.forEach(([field]) => { if (picked[field]) setField(s.key, item, field, picked[field]); });
+                    const any = document.createElement('input');
+                    any.type = 'color';
+                    any.className = 'je-ts-any';
+                    any.value = toHex(c);
+                    any.setAttribute('aria-label', 'Any ' + name.toLowerCase() + ' colour');
+                    any.addEventListener('input', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha }))));
+                    list.appendChild(any);
+                    row.appendChild(list);
+                    const opacity = el('div', 'je-ts-opacity');
+                    opacity.setAttribute('role', 'group');
+                    opacity.setAttribute('aria-label', name + ' opacity');
+                    OPACITIES.forEach((pct) => {
+                        const on = !varies && Math.round(c.a * 100) === pct;
+                        const b = el('button', 'je-ts-pill je-ts-opacity-pill' + (on ? ' active' : ''), pct + '%');
+                        b.type = 'button';
+                        b.setAttribute('aria-pressed', String(on));
+                        // A colour that varies by label has no single value to fade: pick one first.
+                        b.disabled = varies;
+                        if (varies) b.title = 'Pick a colour first';
+                        b.addEventListener('click', () => setField(field, toCss(Object.assign({}, c, { a: pct / 100 }))));
+                        opacity.appendChild(b);
                     });
+                    row.appendChild(opacity);
+                    const reset = el('button', 'je-ts-reset', 'Default');
+                    reset.type = 'button';
+                    reset.disabled = !own[field];
+                    reset.title = target === ALL ? 'Back to the preset colour' : 'Back to the group or preset colour';
+                    reset.addEventListener('click', () => setField(field, null));
+                    row.appendChild(reset);
+                    rows.appendChild(row);
                 });
-                render();
             }
 
-            function renderPresets() {
-                const bar = document.querySelector('#tagStylePresets');
-                if (bar.childElementCount) return;
-                const row = (label) => { const r = el('div', 'je-ts-presets-row'); r.appendChild(el('span', 'je-ts-presets-label', label)); bar.appendChild(r); return r; };
-
-                const scope = el('select', 'je-ts-select');
-                [['all', 'All tags'], ['tab', 'This tab only']].forEach(([v, text]) => { const o = el('option', null, text); o.value = v; scope.appendChild(o); });
-                row('Apply to').appendChild(scope);
-                scopeSelect = scope;
-
-                const presetRow = row('Preset');
-                const preset = el('select', 'je-ts-select');
-                PRESETS.forEach((p) => { const o = el('option', null, p.title); o.value = p.id; preset.appendChild(o); });
-                const applyPresetBtn = el('button', 'raised emby-button', 'Apply Preset');
-                applyPresetBtn.type = 'button';
-                applyPresetBtn.addEventListener('click', () => applyPreset(PRESETS.find((p) => p.id === preset.value), scope.value));
-                presetSelect = preset;
-                presetRow.appendChild(preset);
-                presetRow.appendChild(applyPresetBtn);
-
-                const colourRow = row('Colours');
-                const picks = {};
-                [['background', 'Background', '#000000', 60], ['border', 'Border', '#ffffff', 50], ['color', 'Text', '#ffffff', 100]].forEach(([field, label, hex, alpha]) => {
-                    const box = el('div', 'je-ts-pick');
-                    const head = el('label', 'je-ts-pick-head');
-                    const use = document.createElement('input');
-                    use.type = 'checkbox';
-                    head.appendChild(use);
-                    head.appendChild(el('span', null, label));
-                    const controls = el('div', 'je-ts-pick-controls');
-                    const color = document.createElement('input');
-                    color.type = 'color';
-                    color.value = hex;
-                    const range = document.createElement('input');
-                    range.type = 'range';
-                    range.min = '0';
-                    range.max = '100';
-                    range.value = String(alpha);
-                    color.disabled = range.disabled = true;
-                    use.addEventListener('change', () => { color.disabled = range.disabled = !use.checked; });
-                    const read = () => { const c = parse(color.value); c.a = parseInt(range.value, 10) / 100; return toCss(c); };
-                    controls.appendChild(color);
-                    controls.appendChild(range);
-                    box.appendChild(head);
-                    box.appendChild(controls);
-                    picks[field] = { use, read };
-                    colourRow.appendChild(box);
+            /** @returns {void} */
+            function renderContrast() {
+                const box = document.querySelector('#tagStyleContrast');
+                box.textContent = '';
+                if (current === 'language') return;
+                // One label: its own contrast. Whole group: the label that reads worst.
+                let worst = null;
+                (target === ALL ? labelsOf(current) : [{ key: target }]).forEach((label) => {
+                    const c = effective(current, label.key);
+                    const ratio = contrastRatio(c.text, c.background);
+                    if (ratio !== null && (!worst || ratio < worst.ratio)) worst = { ratio, name: label.name };
                 });
-                const applyColoursBtn = el('button', 'raised emby-button', 'Apply Colours');
-                applyColoursBtn.type = 'button';
-                applyColoursBtn.addEventListener('click', () => {
-                    const picked = {};
-                    Object.keys(picks).forEach((f) => { if (picks[f].use.checked) picked[f] = picks[f].read(); });
-                    if (Object.keys(picked).length) applyColours(picked, scope.value);
-                });
-                colourRow.appendChild(applyColoursBtn);
+                if (!worst) return;
+                const grade = contrastLevel(worst.ratio);
+                const badge = el('span', 'je-ts-contrast-badge je-ts-contrast-' + grade.level, grade.label + ' · ' + worst.ratio.toFixed(1) + ':1');
+                badge.dataset.level = grade.level;
+                box.appendChild(badge);
+                box.appendChild(el('span', 'je-ts-contrast-hint', target === ALL
+                    ? 'Lowest in the group (' + worst.name + '): text over background, on a dark poster'
+                    : 'Text over background, on a dark poster'));
             }
 
+            /** @returns {void} */
+            function renderGroup() {
+                renderTargets();
+                document.querySelector('#tagStyleGroupNote').textContent = NOTES[current] || '';
+                renderRows();
+                renderContrast();
+            }
+
+            /**
+             * The editor's effective colours in the web model's shape (GET tag-styles), for the
+             * shared stylesheet generator.
+             * @returns {Object}
+             */
+            function webModel() {
+                const web = (c) => ({ background: c.background, border: c.border, color: c.text });
+                const map = (g) => {
+                    const out = {};
+                    labelsOf(g).forEach((l) => { out[l.key] = web(effective(g, l.key)); });
+                    return out;
+                };
+                return {
+                    quality: map('quality'),
+                    age: labelsOf('ageRating').map((l) => Object.assign(
+                        { ratings: ((cat.age.find((a) => a.id === l.key) || {}).ratings || []).slice() },
+                        web(effective('ageRating', l.key)))),
+                    rating: map('rating'),
+                    genre: web(effective('genre', 'genre')),
+                    status: map('status'),
+                    language: { border: effective('language', 'flag').border }
+                };
+            }
+
+            /**
+             * A chip as the tag modules draw it (their element, classes and attributes), plus the
+             * editor's look classes. Its colours come from the preview stylesheet, or with
+             * `inline` (no generator on this page) from inline styles.
+             * @param {string} g
+             * @param {{key: string, name: string}} label
+             * @param {boolean} inline
+             * @returns {HTMLElement}
+             */
+            function productionChip(g, label, inline) {
+                let n;
+                if (g === 'quality') {
+                    n = el('div', 'quality-overlay-label je-ts-chip je-ts-q', label.name);
+                    n.dataset.quality = label.key;
+                } else if (g === 'ageRating') {
+                    n = el('div', 'age-rating-tag je-ts-chip je-ts-age', label.name);
+                    n.setAttribute('rating', label.name);
+                } else if (g === 'rating') {
+                    const [icon, text] = RATING_SAMPLES[label.key] || ['star', '8.1'];
+                    const kind = { community: 'rating-tag-tmdb', critic: 'rating-tag-critic', userReview: 'rating-tag-userreview je-userreview-tag' }[label.key] || 'rating-tag-tmdb';
+                    n = el('div', 'rating-tag ' + kind + ' je-ts-chip je-ts-rate');
+                    if (label.key === 'community') n.appendChild(el('i', 'material-icons rating-star-icon je-ts-rate-icon', icon));
+                    else if (label.key === 'userReview') {
+                        // The glyph sits inside: the review module's own icon rules set a font this page may not have.
+                        const wrap = el('span', 'je-userreview-icon je-ts-rate-icon');
+                        wrap.appendChild(el('i', 'material-icons je-ts-rate-icon', icon));
+                        n.appendChild(wrap);
+                    }
+                    else n.appendChild(el('i', 'rating-tomato-icon fresh je-ts-tomato'));
+                    n.appendChild(el('span', 'rating-text', text));
+                } else if (g === 'genre') {
+                    n = el('div', 'genre-tag je-ts-chip je-ts-genre');
+                    n.appendChild(el('i', 'material-icons', 'theaters'));
+                } else if (g === 'status') {
+                    n = el('div', 'status-tag status-tag--' + label.key + ' je-ts-chip je-ts-status');
+                    n.dataset.jeStatus = label.key;
+                    if (label.key === 'trending') n.append(el('span', 'status-tag-rank', '#3'), ' Today');
+                    else n.textContent = STATUS_SAMPLES[label.key] || label.name;
+                } else {
+                    n = el('img', 'language-flag je-ts-chip je-ts-flag');
+                    n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');
+                    n.alt = '';
+                    n.dataset.lang = 'gb';
+                }
+                return inline ? paint(n, g, effective(g, label.key)) : n;
+            }
+
+            // The container class each group's chips sit in on a poster.
+            const CONTAINERS = {
+                quality: 'quality-overlay-container', ageRating: 'age-rating-overlay-container', rating: 'rating-overlay-container',
+                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container'
+            };
+
+            /**
+             * Draws a synthetic card with chips in the default corners, each group in its
+             * production container.
+             * @param {string} cls
+             * @param {string} title
+             * @param {Object<string, Array<[string, string]>>} corners - corner → [group, label] list.
+             * @param {boolean} inline - Paint inline (no stylesheet generator).
+             * @returns {HTMLElement}
+             */
+            function card(cls, title, corners, inline) {
+                const n = el('div', 'je-ts-card ' + cls);
+                const art = el('div', 'je-ts-art');
+                Object.keys(corners).forEach((corner) => {
+                    const stack = el('div', 'je-ts-corner je-ts-corner-' + corner);
+                    let box = null;
+                    corners[corner].forEach(([g, l]) => {
+                        const label = labelsOf(g).find((x) => x.key === l || x.name === l);
+                        if (!label) return;
+                        if (!box || box.dataset.group !== g) {
+                            box = el('div', CONTAINERS[g] + ' je-ts-corner-group');
+                            box.dataset.group = g;
+                            stack.appendChild(box);
+                        }
+                        box.appendChild(productionChip(g, label, inline));
+                    });
+                    art.appendChild(stack);
+                });
+                n.appendChild(art);
+                n.appendChild(el('div', 'je-ts-card-title', title));
+                return n;
+            }
+
+            /**
+             * Redraws the preview: production-shaped chips styled by the web's own stylesheet
+             * generator (tag-styles.js), limited to the preview so unsaved colours never reach
+             * the rest of the page. A broken production selector breaks the preview too.
+             * @returns {void}
+             */
+            function renderPreview() {
+                const box = document.querySelector('#tagStylePreview');
+                box.textContent = '';
+                const je = window.JellyfinEnhanced;
+                const generate = je && je.tagStyles && typeof je.tagStyles.buildCss === 'function' ? je.tagStyles.buildCss : null;
+                box.dataset.styles = generate ? 'generated' : 'inline';
+                if (generate) {
+                    const sheet = el('style');
+                    sheet.id = 'tagStylePreviewCss';
+                    sheet.textContent = generate(webModel(), '#tagStylePreview');
+                    box.appendChild(sheet);
+                }
+                box.appendChild(card('je-ts-card-movie', 'Movie', {
+                    tl: [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']],
+                    tr: [['status', 'trending'], ['genre', 'genre']],
+                    bl: [['language', 'flag']],
+                    br: [['rating', 'critic'], ['rating', 'community'], ['ageRating', 'PG-13']]
+                }, !generate));
+                box.appendChild(card('je-ts-card-episode', 'Episode', {
+                    tl: [['quality', '1080p'], ['quality', 'HEVC']],
+                    tr: [['status', 'newEpisode']],
+                    bl: [['language', 'flag']],
+                    br: [['rating', 'userReview'], ['ageRating', 'R']]
+                }, !generate));
+            }
+
+            /** @returns {void} */
             function render() {
+                if (!cat) return;
+                renderTargetPills();
                 renderPresets();
-                if (scopeSelect) scopeSelect.value = lastScope;
-                if (presetSelect && [...presetSelect.options].some((o) => o.value === lastPreset)) presetSelect.value = lastPreset;
                 renderTabs();
-                renderGrid();
-                renderPanel();
+                renderGroup();
+                renderPreview();
             }
 
-            function load(json, preset, scope) {
-                lastPreset = preset || 'default';
-                lastScope = scope === 'tab' ? 'tab' : 'all';
-                state = { quality: {}, age: {}, rating: {}, genre: {} };
+            /**
+             * Reads a stored colour object into {background, border, text}, normalised.
+             * @param {Object} o
+             * @param {string} textKey - 'text' (version 2) or 'color' (version 1).
+             * @returns {Object|null}
+             */
+            function readColours(o, textKey) {
+                if (!o || typeof o !== 'object') return null;
+                const out = {};
+                [['background', 'background'], ['border', 'border'], ['text', textKey]].forEach(([f, k]) => {
+                    if (typeof o[k] === 'string' && o[k]) out[f] = norm(o[k]);
+                });
+                return Object.keys(out).length ? out : null;
+            }
+
+            /**
+             * Migrates a version 1 document as the server does (TagStyleSet.ReadV1). The old editor stored
+             * only differences from the built-in colours, with its presets baked in, and the web drew the
+             * stored field, else the built-in one (rating chips had no border). Each stored catalog label
+             * becomes exactly those colours and the preset becomes Default, so nothing is recoloured.
+             * @param {Object} doc - The parsed version 1 document.
+             * @returns {void}
+             */
+            function migrateV1(doc) {
+                state = { preset: 'default', groups: {}, labels: {} };
+                [['quality', 'quality'], ['age', 'ageRating'], ['rating', 'rating'], ['genre', 'genre']].forEach(([section, g]) => {
+                    const entries = section === 'genre' ? { genre: doc.genre } : doc[section];
+                    if (!entries || typeof entries !== 'object') return;
+                    Object.keys(entries).forEach((l) => {
+                        const o = entries[l];
+                        // Of the rating chips version 1 only styled community and critic.
+                        if (!labelsOf(g).some((x) => x.key === l) || (g === 'rating' && l === 'userReview') || !o || typeof o !== 'object') return;
+                        const stored = {};
+                        [['background', 'background'], ['border', 'border'], ['text', 'color']].forEach(([f, k]) => {
+                            const c = (g !== 'rating' || f !== 'border') && typeof o[k] === 'string' ? parseColour(o[k]) : null;
+                            if (c) stored[f] = toCss(c);
+                        });
+                        if (!Object.keys(stored).length) return;
+                        const builtin = palette('default', g, l);
+                        const out = {};
+                        fieldsOf(g).forEach(([f]) => {
+                            if (g === 'rating' && f === 'border') return;
+                            const v = stored[f] || builtin[f];
+                            if (v) out[f] = v;
+                        });
+                        state.labels[labelKey(g, l)] = out;
+                    });
+                });
+            }
+
+            /**
+             * Migrates the loaded version 1 document, remembering both snapshots (see snapshot()).
+             * @param {string} json - The document as stored.
+             * @param {Object} doc - The same, parsed.
+             * @returns {void}
+             */
+            function migrateLoaded(json, doc) {
+                migrateV1(doc);
+                migrated = { from: json + '|default', to: serialize() + '|' + state.preset };
+            }
+
+            /**
+             * Loads the stored document (version 1 or 2) and preset. A version 1 document is migrated
+             * once the catalog is in; until then serialize() hands it back untouched (the server
+             * migrates it the same way).
+             * @param {string} json
+             * @param {string} preset
+             * @returns {void}
+             */
+            function load(json, preset) {
+                state = { preset: PRESET_TITLES[preset] ? preset : 'default', groups: {}, labels: {} };
+                current = 'quality';
+                target = ALL;
+                legacy = null;
+                migrated = null;
                 try {
                     const p = json ? JSON.parse(json) : {};
-                    ['quality', 'age', 'rating'].forEach((k) => { if (p[k] && typeof p[k] === 'object') state[k] = p[k]; });
-                    if (p.genre && typeof p.genre === 'object') state.genre = p.genre;
+                    if (p && p.v === 2) {
+                        Object.keys(p.groups || {}).forEach((g) => { const c = readColours(p.groups[g], 'text'); if (c) state.groups[g] = c; });
+                        Object.keys(p.labels || {}).forEach((k) => { const c = readColours(p.labels[k], 'text'); if (c) state.labels[k] = c; });
+                    } else if (p && typeof p === 'object' && !Array.isArray(p) && Object.keys(p).length) {
+                        state.preset = 'default';
+                        if (cat) migrateLoaded(json, p); else legacy = { json, doc: p };
+                    }
                 } catch (e) { /* unreadable value: start clean */ }
-                if (!items.quality.length) {
-                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog'), dataType: 'json' }).then((cat) => {
-                        items.quality = cat.quality.map((q) => ({ key: q.label, label: q.label, defaults: { background: q.background, border: 'rgba(255, 255, 255, 0.15)', color: q.color } }));
-                        items.age = cat.age.map((g) => ({
-                            key: g.id,
-                            label: g.ratings.slice(0, 3).join(', '),
-                            sample: g.ratings[0] || 'NR',
-                            hint: 'Applies to: ' + g.ratings.join(', '),
-                            defaults: { background: g.background, border: g.border, color: g.color }
-                        }));
+                if (!cat) {
+                    ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles/catalog'), dataType: 'json' }).then((c) => {
+                        cat = c;
+                        if (legacy) { const l = legacy; legacy = null; migrateLoaded(l.json, l.doc); }
                         render();
                     }).catch(() => {
-                        document.querySelector('#tagStyleGrid').textContent = 'Could not load the tag list.';
+                        document.querySelector('#tagStylePresets').textContent = 'Could not load the tag list.';
                     });
                 }
                 render();
             }
 
-            const settings = () => ({ preset: lastPreset, scope: scopeSelect ? scopeSelect.value : lastScope });
-
-            function serialize() {
-                const out = {};
-                ['quality', 'age', 'rating'].forEach((k) => { if (Object.keys(state[k]).length) out[k] = state[k]; });
-                if (Object.keys(state.genre).length) out.genre = state.genre;
-                return Object.keys(out).length ? JSON.stringify(out) : '';
+            /**
+             * What the unsaved-changes check compares: the stored document and the preset. A version 1
+             * document migrated on load still reads as loaded, so the migration alone is no change.
+             * @returns {string}
+             */
+            function snapshot() {
+                const now = serialize() + '|' + state.preset;
+                return migrated && now === migrated.to ? migrated.from : now;
             }
+
+            /** @returns {string} The stored document, or '' when nothing is overridden. */
+            function serialize() {
+                if (legacy) return legacy.json;
+                if (!Object.keys(state.groups).length && !Object.keys(state.labels).length) return '';
+                const out = { v: 2, preset: state.preset };
+                if (Object.keys(state.groups).length) out.groups = state.groups;
+                if (Object.keys(state.labels).length) out.labels = state.labels;
+                return JSON.stringify(out);
+            }
+
+            const settings = () => ({ preset: state.preset });
 
             document.querySelector('#tagStylesEnabled').addEventListener('change', (e) => {
                 document.querySelector('#tagStylesBody').style.display = e.target.checked ? '' : 'none';
             });
 
+            document.querySelectorAll('#tagStyleTargetPills .je-ts-pill').forEach((b) => {
+                b.addEventListener('click', () => {
+                    document.querySelector('#tagStyleTarget').value = b.dataset.target;
+                    renderTargetPills();
+                });
+            });
+
             document.querySelector('#tagStyleResetAll').addEventListener('click', () => {
-                state = { quality: {}, age: {}, rating: {}, genre: {} };
-                selected = null;
-                lastPreset = 'default';
+                state = { preset: 'default', groups: {}, labels: {} };
+                legacy = null;
+                target = ALL;
                 render();
             });
 
-            return { load, serialize, settings };
+            return { load, serialize, settings, snapshot, renderTargetPills };
         })();
 
         function loadConfig() {
@@ -6825,8 +7247,10 @@
                 document.querySelector('#nativePosterTagsWebClientNames').value = config.NativePosterTagsWebClientNames || '';
                 document.querySelector('#tagStylesEnabled').checked = config.TagStylesEnabled === true;
                 document.querySelector('#tagStylesBody').style.display = config.TagStylesEnabled === true ? '' : 'none';
-                document.querySelector('#tagStyleTarget').value = config.TagStyleTarget || 'both';
-                tagStyles.load(config.TagStyleOverrides, config.TagStylePreset, config.TagStyleApplyScope);
+                document.querySelector('#tagStyleTarget').value = ['web', 'native', 'both'].includes(config.TagStyleTarget) ? config.TagStyleTarget : 'both';
+                document.querySelector('#tagStylesAllowUserPreset').checked = config.TagStylesAllowUserPreset === true;
+                tagStyles.load(config.TagStyleOverrides, config.TagStylePreset);
+                tagStyles.renderTargetPills();
                 document.querySelector('#showResolutionTag').checked = config.ShowResolutionTag !== false;
                 document.querySelector('#showSourceTag').checked = config.ShowSourceTag !== false;
                 document.querySelector('#showDynamicRangeTag').checked = config.ShowDynamicRangeTag !== false;
@@ -7432,7 +7856,7 @@
             config.TagStyleTarget = document.querySelector('#tagStyleTarget').value;
             config.TagStyleOverrides = tagStyles.serialize();
             config.TagStylePreset = tagStyles.settings().preset;
-            config.TagStyleApplyScope = tagStyles.settings().scope;
+            config.TagStylesAllowUserPreset = document.querySelector('#tagStylesAllowUserPreset').checked;
             config.ShowResolutionTag = document.querySelector('#showResolutionTag').checked;
             config.ShowSourceTag = document.querySelector('#showSourceTag').checked;
             config.ShowDynamicRangeTag = document.querySelector('#showDynamicRangeTag').checked;

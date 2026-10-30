@@ -88,6 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string>? TagGroupOrder { get; set; }
         public TagGroupCaps? TagGroupCaps { get; set; }
         public string TagLabelDensity { get; set; } = "full";
+        // Tag Styles preset this user picked (TagStyleKeys.Presets); null follows the
+        // admin's preset. Only honoured while TagStylesAllowUserPreset is on.
+        public string? TagStylePreset { get; set; }
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

@@ -257,6 +257,7 @@ Poster tags live in **UI Settings** too: the layout, a live preview, and one **T
 | **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
 | **Include** | All on | Quality: the categories and their stack order. Rating: **Community score** and **Critic score**. |
 | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
+| **Tag Colours** | **Server default** | Shown only when the administrator turns on **Let users pick their own preset** in Tag Styles. Picks your own colour preset (**Default**, **Glass**, **Outline**, **Dark**, **Light** or **Mono**); colours the administrator changed for a group or a single tag stay on top. Applies right away on the web; posters drawn for native apps follow the next time they load. |
 
 Each group row also keeps that group's other choices: the sound language for quality, **Choose where to show** for ratings, and **Choose which badges to show** for status.
 

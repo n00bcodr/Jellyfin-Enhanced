@@ -218,7 +218,8 @@
     /**
      * Pick the one badge a card shows (first match wins), or null.
      * @param {{type: string|null, tmdb: string|null, created: number|null, premiere: number|null, latest: number|null}} data
-     * @returns {{kind: 'trending'|'new'|'added', label: string, rank?: number}|null}
+     * @returns {{kind: 'trending'|'new'|'added', status: string, label: string, rank?: number}|null}
+     *   `status` is the Tag Styles label (`data-je-status`): added, newMovie, newSeries, newEpisode or trending.
      */
     function pickBadge(data) {
         const now = Date.now();
@@ -237,19 +238,19 @@
             const rank = trendingRank(data);
             if (rank !== null) {
                 const key = trending.data?.source === 'seerr-week' ? 'status_tag_trending_week' : 'status_tag_trending_today';
-                return { kind: 'trending', label: label(key, { rank: RANK_TOKEN }), rank };
+                return { kind: 'trending', status: 'trending', label: label(key, { rank: RANK_TOKEN }), rank };
             }
         }
         switch (data.type) {
             case 'Movie':
-                if (showNew && isNewRelease) return { kind: 'new', label: label('status_tag_new_movie') };
+                if (showNew && isNewRelease) return { kind: 'new', status: 'newMovie', label: label('status_tag_new_movie') };
                 break;
             case 'Series':
-                if (showNew && isNewRelease) return { kind: 'new', label: label('status_tag_new_series') };
-                if (showNew && newEpisode) return { kind: 'new', label: label('status_tag_new_episode') };
+                if (showNew && isNewRelease) return { kind: 'new', status: 'newSeries', label: label('status_tag_new_series') };
+                if (showNew && newEpisode) return { kind: 'new', status: 'newEpisode', label: label('status_tag_new_episode') };
                 break;
             case 'Season':
-                if (showNew && newEpisode) return { kind: 'new', label: label('status_tag_new_episode') };
+                if (showNew && newEpisode) return { kind: 'new', status: 'newEpisode', label: label('status_tag_new_episode') };
                 break;
             case 'Episode':
             case 'BoxSet':
@@ -258,7 +259,7 @@
             default:
                 return null;
         }
-        if (showAdded && addedRecently) return { kind: 'added', label: label('status_tag_just_added') };
+        if (showAdded && addedRecently) return { kind: 'added', status: 'added', label: label('status_tag_just_added') };
         return null;
     }
 
@@ -317,6 +318,7 @@
 
         const tag = document.createElement('div');
         tag.className = `${tagClass} ${tagClass}--${badge.kind}`;
+        if (badge.status) tag.dataset.jeStatus = badge.status;
         if (badge.kind === 'trending') {
             // "#{rank} Today": the "#N" goes in its own span (warmer colour).
             const [before, after = ''] = badge.label.split(RANK_TOKEN);

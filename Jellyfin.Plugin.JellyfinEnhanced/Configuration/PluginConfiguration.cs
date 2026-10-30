@@ -126,6 +126,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagStyleTarget = "both";
             TagStylePreset = "default";
             TagStyleApplyScope = "all";
+            TagStylesAllowUserPreset = false;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
@@ -676,8 +677,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string TagStyleTarget { get; set; }
         [AnalyticsInclude]
         public string TagStylePreset { get; set; }
+        /// <summary>Retired with the Tag Styles editor redesign: kept so older configurations still load, no longer read.</summary>
         [AnalyticsInclude]
         public string TagStyleApplyScope { get; set; }
+
+        // Tag Styles: user presets
+        /// <summary>Lets each user pick their own Tag Styles preset in the settings panel; the admin's group and label overrides stay on top.</summary>
+        [AnalyticsInclude]
+        public bool TagStylesAllowUserPreset { get; set; }
+
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }

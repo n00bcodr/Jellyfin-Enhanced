@@ -282,6 +282,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
                 }
 
+                // Tag Styles: only a valid document is stored (normalised to version 2); anything
+                // else keeps the current one, since a save can come from anywhere (API, restored backup).
+                if (configuration is PluginConfiguration stylesConfig
+                    && !Services.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration as PluginConfiguration, out var styleError))
+                {
+                    _logger.Warning($"Jellyfin Enhanced: Tag Styles not saved ({styleError}); keeping the current styles.");
+                }
+
                 base.UpdateConfiguration(configuration);
             }
             CheckPluginPages(_applicationPaths, _serverConfigurationManager, 1);

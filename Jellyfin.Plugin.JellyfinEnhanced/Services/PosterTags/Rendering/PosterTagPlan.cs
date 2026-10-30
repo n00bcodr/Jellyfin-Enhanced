@@ -133,6 +133,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// </summary>
         internal const int MaxTextLength = 256;
 
+        /// <summary>Flag tile style of a partial dub (dashed outline).</summary>
+        internal const string PartialFlagStyle = "partial";
+
+        /// <summary>Flag tile style prefix of a Tag Styles border ring; the encoded colours follow.</summary>
+        internal const string RingFlagStyle = "ring\n";
+
         private readonly PosterTagAssets _assets;
         private readonly PosterTagText _text;
 
@@ -174,7 +180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, css, styles),
                     RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
                     AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd, styles),
-                    LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css),
+                    LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css, styles),
                     _ => null,
                 };
                 if (item is not null)
@@ -278,14 +284,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var layout = _text.Layout(label, css.QualityFontSize, smallCaps: true, letterSpacing: 0f);
             float width = PosterTagCss.LuCeil(layout.Width) + (2 * PosterTagCss.Lu(css.QualityPaddingH)) + 2f;
             float height = PosterTagCss.Lu(1.2f * css.QualityFontSize) + (2 * PosterTagCss.Lu(css.QualityPaddingV)) + 2f;
-            return new PlannedItem(PosterTagTileKind.Quality, tag, label, QualityOverride(styles, label)?.Encode() ?? string.Empty, width, height) { TextLayout = layout };
+            return new PlannedItem(PosterTagTileKind.Quality, tag, label, StyleKey(styles.ResolveQuality(tag.Label)), width, height) { TextLayout = layout };
         }
 
         private PlannedItem MeasureGenre(GenreTag tag, PosterTagCss css, TagStyleSet styles)
         {
             var icon = _assets.GetIcon(tag.Icon ?? string.Empty) is null ? "theaters" : tag.Icon!;
             float size = PosterTagCss.Lu(css.GenreSize) + 2f;
-            return new PlannedItem(PosterTagTileKind.Genre, tag, icon, styles.Genre?.Encode() ?? string.Empty, size, size);
+            return new PlannedItem(PosterTagTileKind.Genre, tag, icon, StyleKey(styles.Resolve(TagStyleKeys.Genre, "genre")), size, size);
         }
 
         private PlannedItem MeasureRating(RatingTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)
@@ -315,8 +321,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var style = tag.Source == PosterRatingSource.Critic
                 ? (tag.Fresh ? "critic-fresh" : "critic-rotten")
                 : tag.Source.ToString();
-            var chipKey = tag.Source switch { PosterRatingSource.Community => "community", PosterRatingSource.Critic => "critic", _ => null };
-            if (chipKey is not null && styles.Rating.TryGetValue(chipKey, out var chip))
+            var chipKey = tag.Source switch { PosterRatingSource.Community => "community", PosterRatingSource.Critic => "critic", _ => "userReview" };
+            var chip = styles.Resolve(TagStyleKeys.Rating, chipKey);
+            if (!chip.IsEmpty)
             {
                 style += "\n" + chip.Encode();
             }
@@ -340,28 +347,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             // Only a known colour key reaches the tile key: every unknown one paints the default style, so they share
             // one key instead of each retaining an arbitrary metadata string in the tile cache.
             var style = string.Empty;
+            var board = TagStyleKeys.AnyLabel;
             if (tag.ColorKey is { } key && _assets.AgeRatingStyles.TryGetValue(key, out var known))
             {
-                style = styles.Age.TryGetValue(known.Group, out var over) ? key + "\n" + over.Encode() : key;
+                style = key;
+                board = known.Group;
+            }
+
+            var over = styles.Resolve(TagStyleKeys.AgeRating, board);
+            if (!over.IsEmpty)
+            {
+                style += "\n" + over.Encode();
             }
 
             return new PlannedItem(PosterTagTileKind.AgeRating, tag, text, style, width, height) { TextLayout = layout };
         }
 
-        /// <summary>The override for a quality label, falling back to its codec base ("ATMOS 7.1" follows "ATMOS") like the colours do.</summary>
-        private TagColors? QualityOverride(TagStyleSet styles, string label)
-        {
-            if (styles.Quality.Count == 0) return null;
-            if (styles.Quality.TryGetValue(label, out var exact)) return exact;
-            foreach (var b in _assets.QualityCompositeBases)
-            {
-                if (label.StartsWith(b + " ", StringComparison.Ordinal) && styles.Quality.TryGetValue(b, out var composite)) return composite;
-            }
+        /// <summary>A resolved style as a tile-key fragment; empty when nothing is overridden.</summary>
+        private static string StyleKey(TagColors colors) => colors.IsEmpty ? string.Empty : colors.Encode();
 
-            return null;
-        }
-
-        private PlannedItem? MeasureFlag(LanguageTag tag, PosterTagCss css)
+        private PlannedItem? MeasureFlag(LanguageTag tag, PosterTagCss css, TagStyleSet styles)
         {
             var code = PosterTagRenderer.FlagAssetCode(tag.FlagCode);
             if (code is null || !_assets.HasFlag(code))
@@ -372,7 +377,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
             float width = PosterTagCss.Lu(css.FlagWidth);
             float height = PosterTagCss.Lu(width * 0.75f);
-            return new PlannedItem(PosterTagTileKind.Flag, tag, code, tag.Partial ? "partial" : string.Empty, width, height);
+            // A partial flag keeps its dashed outline; a full one can take the Tag Styles border ring.
+            var ring = styles.Resolve(TagStyleKeys.Language, "flag");
+            var style = tag.Partial ? PartialFlagStyle : ring.Border is null ? string.Empty : RingFlagStyle + ring.Encode();
+            return new PlannedItem(PosterTagTileKind.Flag, tag, code, style, width, height);
         }
 
         /// <summary>An icon glyph's inline box width: its advance, rounded to whole px like any hinted advance.</summary>

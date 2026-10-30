@@ -492,7 +492,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         PaintGenre(canvas, plan, item, local, border, space);
                         break;
                     case PosterTagTileKind.Rating:
-                        PaintRating(canvas, plan, item, local, space);
+                        PaintRating(canvas, plan, item, local, border, space);
                         break;
                     case PosterTagTileKind.AgeRating:
                         PaintAge(canvas, plan, item, local, border, space);
@@ -554,7 +554,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 DrawIcon(canvas, icon, x, y + icon.Metrics.BaselineOffset(size, boxHeight), size, glyph, space);
             }
 
-            private void PaintRating(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, TileSpace space)
+            private void PaintRating(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
                 var css = plan.Css;
                 var tag = (RatingTag)item.Tag;
@@ -565,15 +565,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     PosterRatingSource.UserReview => UserReviewText,
                     _ => SKColors.White,
                 };
+                SKColor? ring = null;
                 var nl = item.Style.IndexOf('\n');
-                if (nl >= 0 && tag.Source != PosterRatingSource.UserReview)
+                if (nl >= 0)
                 {
                     var o = TagColors.Decode(item.Style[(nl + 1)..]);
                     background = o.Background ?? background;
                     textColor = o.Text ?? textColor;
+                    ring = o.Border;
                 }
                 using var rrect = new SKRoundRect(local, 4f);
-                PaintBox(canvas, rrect, background, null, 0f, ChipShadow);
+                // Rating chips have no border; a Tag Styles border is an inner ring (outline-offset: -1px on the web).
+                PaintBox(canvas, rrect, background, ring, ring is null ? 0f : border, ChipShadow);
 
                 float fontSize = css.ChipFontSize;
                 float x = PosterTagCss.Lu(css.ChipPaddingH);
@@ -596,7 +599,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         if (Assets.GetIcon(UserReviewIconKey) is { } heart)
                         {
                             float size = PosterTagCss.UserReviewIconSize;
-                            DrawIcon(canvas, heart, x, iconTop + heart.Metrics.BaselineOffset(size, item.IconHeight), size, UserReviewText, space);
+                            DrawIcon(canvas, heart, x, iconTop + heart.Metrics.BaselineOffset(size, item.IconHeight), size, textColor, space);
                         }
 
                         break;
@@ -646,7 +649,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     return;
                 }
 
-                bool partial = item.Style.Length > 0;
+                bool partial = item.Style == PosterTagPlanner.PartialFlagStyle;
+                SKColor? styleRing = item.Style.StartsWith(PosterTagPlanner.RingFlagStyle, StringComparison.Ordinal)
+                    ? TagColors.Decode(item.Style[PosterTagPlanner.RingFlagStyle.Length..]).Border
+                    : null;
                 using var rrect = new SKRoundRect(local, 2f);
                 if (partial)
                 {
@@ -671,6 +677,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
 
                 canvas.Restore();
+
+                if (styleRing is { } ringColor)
+                {
+                    // Tag Styles border: outline: 1px solid; outline-offset: -1px, the box's outermost pixel ring.
+                    float half = border / 2f;
+                    using var inner = new SKRoundRect(SKRect.Inflate(local, -half, -half), Math.Max(0f, 2f - half));
+                    using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = border, Color = ringColor };
+                    canvas.DrawRoundRect(inner, stroke);
+                }
 
                 if (partial)
                 {
