@@ -209,7 +209,7 @@ test('the add-rule form builds conditions from libraries, types and genres, vali
 });
 
 test('editing a switched-off rule saves its edits and keeps it off', async t => {
-  const h = setup(t, { settings: { tagLookRules: [{ ...kidsRule, enabled: false }] } });
+  const h = setup(t, { settings: { tagLookRules: [{ ...kidsRule, enabled: false, shapes: { landscape: { layout: 'caption', density: 'compact' } } }] } });
   await h.open();
   h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="kids"]'), 'tag_looks_edit'));
   const form = h.form();
@@ -219,6 +219,7 @@ test('editing a switched-off rule saves its edits and keeps it off', async t => 
   const [rule] = h.writes.at(-1).tagLookRules;
   assert.equal(rule.layout, 'bands', 'the edit is saved');
   assert.equal(rule.enabled, false, 'the rule stays off');
+  assert.deepEqual(rule.shapes.landscape, { layout: 'caption', density: 'compact', slots: null, caps: null }, 'editing preserves the API-only shape look');
   assert.equal(h.mount().querySelector('[data-je-rule-id="kids"]').dataset.off, '1');
 });
 

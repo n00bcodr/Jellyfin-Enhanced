@@ -138,6 +138,56 @@
             </label>`;
     }
 
+    // Per-shape settings live here, apart from the default layout and group editor.
+    /**
+     * One shape's reduced profile editor: position pills and chip cap steppers.
+     * Uses the controller's group/slot vocabulary; the full group row also owns
+     * enable switches, category filters and reordering, which remain global.
+     * @param {string} shape
+     * @returns {string}
+     */
+    function shapeRowHtml(shape) {
+        const L = JE.core.tagLayout;
+        const own = L.normalizeSettings().shapes[shape];
+        const conf = L.resolveLayout({ shape });
+        const shapeName = JE.t(`tag_shapes_${shape}`);
+        const controls = own ? `
+            <div class="je-mth-shape-fields">
+                <label>${tx('panel_settings_ui_tag_layout')}<select data-shape-action="layout" aria-label="${tx('tag_shapes_layout_for', { shape: shapeName })}">
+                    ${LAYOUTS.map(id => `<option value="${id}" ${conf.layout === id ? 'selected' : ''}>${tx(`tag_looks_layout_${id}`)}</option>`).join('')}
+                </select></label>
+                <label>${tx('panel_settings_ui_tag_density')}<select data-shape-action="density" aria-label="${tx('tag_shapes_density_for', { shape: shapeName })}">
+                    ${['full', 'compact'].map(id => `<option value="${id}" ${conf.density === id ? 'selected' : ''}>${tx(`panel_settings_ui_tag_density_${id}`)}</option>`).join('')}
+                </select></label>
+                <button type="button" class="je-mth-button" data-shape-action="recommended">${tx('tag_shapes_recommended')}</button>
+            </div>
+            <div class="je-mth-shape-groups">${L.DEFAULT_ORDER.map(group => {
+                const groupName = JE.t(`panel_settings_ui_tag_group_${group === 'ageRating' ? 'age_rating' : group}`);
+                const cap = conf.caps[group];
+                return `<div class="je-mth-shape-group" data-shape-group="${group}">
+                    <span class="je-mth-label">${escapeHtml(groupName)}</span>
+                    <div class="je-mth-shape-positions" role="group" aria-label="${tx('tag_shapes_position_for', { group: groupName, shape: shapeName })}">
+                        ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : `panel_settings_ui_tag_slot_${conf.layout}_${slot}`)}</button>`).join('')}
+                    </div>
+                    <div class="je-mth-shape-cap" role="group" aria-label="${tx('tag_shapes_cap_for', { group: groupName, shape: shapeName })}">
+                        <button type="button" data-shape-action="cap" data-value="-1" ${cap === 0 ? 'disabled' : ''} aria-label="${tx('tag_shapes_fewer', { group: groupName })}">−</button>
+                        <output aria-live="polite">${cap === 0 ? tx('panel_settings_ui_tag_editor_summary_all') : cap}</output>
+                        <button type="button" data-shape-action="cap" data-value="1" ${cap === L.MAX_CAP ? 'disabled' : ''} aria-label="${tx('tag_shapes_more', { group: groupName })}">+</button>
+                    </div>
+                </div>`;
+            }).join('')}</div>` : '';
+        return `<section class="je-mth-card je-mth-shape" data-shape="${shape}" aria-labelledby="jeShape-${shape}">
+            <h4 class="je-mth-card-title" id="jeShape-${shape}">${escapeHtml(shapeName)}</h4>
+            <label class="je-mth-shape-toggle"><input type="checkbox" data-shape-action="enabled" ${own ? 'checked' : ''}>${tx('tag_shapes_different')}</label>
+            ${controls}
+        </section>`;
+    }
+
+    /** @returns {string} The independently editable looks for landscape cards and list rows. */
+    function shapesHtml() {
+        return JE.core?.tagLayout ? JE.core.tagLayout.SHAPES.map(shapeRowHtml).join('') : '';
+    }
+
     /** @returns {string} The Layout tab: tiles, density and the quick switches. */
     function layoutPanelHtml() {
         const conf = layoutConf();
@@ -167,6 +217,8 @@
                     <span class="je-mth-hint" id="jeMthDensityDesc">${tx('panel_settings_ui_tag_density_desc')}</span>
                 </div>
             </section>
+            <div class="je-mth-shapes">${shapesHtml()}</div>
+            <p class="je-mth-hint">${tx('tag_shapes_limitations')}</p>
             <section class="je-mth-card" aria-labelledby="jeMthSwitchesTitle">
                 <h4 class="je-mth-card-title" id="jeMthSwitchesTitle">${tx('panel_media_tags_switches_title')}</h4>
                 <p class="je-mth-hint">${tx('panel_media_tags_switches_desc')}</p>
@@ -407,6 +459,19 @@
         #jellyfin-enhanced-panel [data-layout="minimal"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 8px; background: #ef5350; }
         #jellyfin-enhanced-panel [data-layout="minimal"] i:nth-child(2) { display: block; left: 3px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #42a5f5; }
         #jellyfin-enhanced-panel [data-layout="minimal"] i:nth-child(3) { display: block; left: 9px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #66bb6a; }
+        #jellyfin-enhanced-panel .je-mth-shape-toggle { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 13px; }
+        #jellyfin-enhanced-panel .je-mth-shape-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 8px 0; }
+        #jellyfin-enhanced-panel .je-mth-shape-fields label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 120px; font-size: 12px; }
+        #jellyfin-enhanced-panel .je-mth-shape-fields select { min-height: 36px; width: 100%; border: 1px solid #666; border-radius: 5px; background: #20242b; color: #fff; font: inherit; padding: 4px; }
+        #jellyfin-enhanced-panel .je-mth-shape-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.1); }
+        #jellyfin-enhanced-panel .je-mth-shape-group > .je-mth-label { flex: 1 0 100%; }
+        #jellyfin-enhanced-panel .je-mth-shape-positions { display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 180px; }
+        #jellyfin-enhanced-panel .je-mth-shape :is(button, input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        #jellyfin-enhanced-panel .je-mth-shape-positions button, #jellyfin-enhanced-panel .je-mth-shape-cap button { min-height: 32px; padding: 3px 8px; background: rgba(255,255,255,0.06); color: #fff; border: 1px solid #666; border-radius: 16px; font: inherit; font-size: 12px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-mth-shape-positions [aria-pressed="true"] { background: var(--je-mth-accent); border-color: var(--je-mth-accent); }
+        #jellyfin-enhanced-panel .je-mth-shape-cap { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+        #jellyfin-enhanced-panel .je-mth-shape-cap output { min-width: 24px; text-align: center; }
+        #jellyfin-enhanced-panel .je-mth-shape-cap button:disabled { opacity: 0.35; cursor: default; }
         #jellyfin-enhanced-panel .je-mth-density { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
         #jellyfin-enhanced-panel .je-mth-density .je-mth-hint { flex: 1 1 200px; margin: 0; }
         #jellyfin-enhanced-panel .je-mth-pills { display: inline-flex; gap: 6px; }
@@ -639,6 +704,62 @@
         };
         document.addEventListener('je:tag-layout-changed', syncLayoutChoice);
         cleanups.push(() => document.removeEventListener('je:tag-layout-changed', syncLayoutChoice));
+
+        // Shape controls save only their own block. Keep an explicit all-off
+        // object: null would inherit the administrator's overrides again.
+        const shapeMount = hub.querySelector('.je-mth-shapes');
+        /** Redraw shape controls after a default layout change or a reset. */
+        const syncShapes = () => {
+            if (disposed || !shapeMount) return;
+            const active = document.activeElement;
+            const row = active?.closest('.je-mth-shape');
+            const focus = row ? { shape: row.dataset.shape, action: active.dataset.shapeAction, group: active.closest('[data-shape-group]')?.dataset.shapeGroup, value: active.dataset.value } : null;
+            shapeMount.innerHTML = shapesHtml();
+            if (focus) {
+                const selector = `[data-shape="${focus.shape}"] ${focus.group ? `[data-shape-group="${focus.group}"] ` : ''}[data-shape-action="${focus.action}"]${focus.value ? `[data-value="${focus.value}"]` : ''}`;
+                shapeMount.querySelector(selector)?.focus();
+            }
+        };
+        document.addEventListener('je:tag-layout-changed', syncShapes);
+        cleanups.push(() => document.removeEventListener('je:tag-layout-changed', syncShapes));
+
+        /** @param {Event} event - A shape select, switch, position or cap edit. */
+        const editShape = (event) => {
+            const control = event.target.closest('[data-shape-action]');
+            const row = control?.closest('[data-shape]');
+            if (!control || !row || !shapeMount?.contains(row)) return;
+            const action = control.dataset.shapeAction;
+            if ((event.type === 'change') !== ['enabled', 'layout', 'density'].includes(action)) return;
+            const L = JE.core.tagLayout;
+            const shape = row.dataset.shape;
+            L.invalidateSettings();
+            const shapes = L.readShapeOverrides(L.normalizeSettings().shapes);
+            // Preserve the effective looks of both shapes before promotion.
+            L.promoteLegacySettings(JE.currentSettings);
+            let look = shapes[shape];
+            if (action === 'enabled') look = control.checked ? L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape] : null;
+            else if (action === 'recommended') look = L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape];
+            else if (look) {
+                const group = control.closest('[data-shape-group]')?.dataset.shapeGroup;
+                if (action === 'layout') { look.layout = control.value; look.slots = null; }
+                if (action === 'density') look.density = control.value;
+                if (action === 'slot') look.slots = { ...(look.slots || {}), [group]: control.dataset.value };
+                if (action === 'cap') {
+                    const cap = L.resolveLayout({ shape }).caps[group];
+                    look.caps = { ...(look.caps || {}), [group]: Math.max(0, Math.min(L.MAX_CAP, cap + Number(control.dataset.value))) };
+                }
+            }
+            shapes[shape] = look;
+            JE.currentSettings.tagShapeOverrides = L.shapesToWire(shapes) || { landscape: null, list: null };
+            L.invalidateSettings();
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            JE.reinitializeTagLayout?.();
+            preview?.follow(shape === 'landscape' ? 'episode' : 'list');
+            preview?.refresh();
+            touch();
+        };
+        shapeMount?.addEventListener('change', editShape);
+        shapeMount?.addEventListener('click', editShape);
 
         // Any change in the hub may change what the samples show: redraw
         // after the control's own handler (ui-panel-settings.js and the

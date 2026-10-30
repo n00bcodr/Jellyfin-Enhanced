@@ -464,6 +464,29 @@
                                 </div>
                             </details>
 
+                            <details id="tagShapeAdminDetails" class="je-details-section">
+                                <summary>Card shape defaults</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm">Landscape cards (episode thumbnails, Continue Watching) and list rows (a season's episode list) have less room than a poster. Give them their own look, or keep the default look above. New users (and "Apply defaults to all users") start with these; users change them on the Layout tab of their Media Tags settings. Native Poster Tags draw on posters only and ignore these.</div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagShapeLandscapeDefault">Episode thumbnails</label>
+                                        <select is="emby-select" id="tagShapeLandscapeDefault" name="tagShapeLandscapeDefault" class="emby-select">
+                                            <option value="inherit">Same look as posters</option>
+                                            <option value="recommended">Recommended: bands, compact (status and age on top, quality and rating below)</option>
+                                            <option value="custom" hidden>Custom (kept as saved)</option>
+                                        </select>
+                                    </div>
+                                    <div class="inputContainer">
+                                        <label class="inputLabel inputLabelUnfocused" for="tagShapeListDefault">List rows</label>
+                                        <select is="emby-select" id="tagShapeListDefault" name="tagShapeListDefault" class="emby-select">
+                                            <option value="inherit">Same look as posters</option>
+                                            <option value="recommended">Recommended: corners, compact (quality, status and rating, up to 2 each)</option>
+                                            <option value="custom" hidden>Custom (kept as saved)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </details>
+
                             <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="peopleTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable People Tags</span></label></div>
                             </div>
@@ -4277,6 +4300,7 @@
                 parts.push('shortcuts=' + JSON.stringify(shortcutOverrides));
                 // So are the tag layout defaults' order, limits and per-layout positions.
                 if (typeof tagLayoutAdmin !== 'undefined') parts.push('tagLayouts=' + tagLayoutAdmin.snapshot());
+                if (typeof tagShapeAdmin !== 'undefined') parts.push('tagShapes=' + tagShapeAdmin.snapshot());
                 // So is the Tag Styles document (preset tiles, swatches and opacity pills are buttons).
                 parts.push('tagStyles=' + tagStyles.snapshot());
                 return parts.join('');
@@ -5985,6 +6009,84 @@
             return { load: load, collect: collect, render: render, snapshot: snapshot };
         })();
 
+        // Card shape defaults (TagShapeOverrides): each shape keeps the default
+        // look, takes the recommended look, or keeps a custom look saved
+        // elsewhere untouched. The recommended looks are core/tag-layout.js's
+        // RECOMMENDED_SHAPES in the server's wire form (a frontend test keeps
+        // the two equal).
+        var tagShapeAdmin = (function () {
+            var JE_TAG_SHAPE_RECOMMENDED = {
+                "landscape": { "layout": "bands", "density": "compact", "slots": [{ "group": "status", "slot": "top" }, { "group": "ageRating", "slot": "top" }, { "group": "quality", "slot": "bottom" }, { "group": "rating", "slot": "bottom" }, { "group": "language", "slot": "off" }, { "group": "genre", "slot": "off" }], "caps": null },
+                "list": { "layout": "corners", "density": "compact", "slots": [{ "group": "quality", "slot": "tl" }, { "group": "status", "slot": "tr" }, { "group": "rating", "slot": "br" }, { "group": "ageRating", "slot": "off" }, { "group": "language", "slot": "off" }, { "group": "genre", "slot": "off" }], "caps": { "quality": 2, "status": 2, "rating": 2 } }
+            };
+            var SHAPES = { landscape: 'tagShapeLandscapeDefault', list: 'tagShapeListDefault' };
+            /** @type {Object<string, Object|null>} the custom look each shape had when loaded */
+            var custom = {};
+
+            /** Read a key in either case. */
+            function pick(obj, key) {
+                if (!obj || typeof obj !== 'object') return undefined;
+                if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+                var pascal = key.charAt(0).toUpperCase() + key.slice(1);
+                return obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
+            }
+
+            /** A look in the server's wire form (PascalCase objects, camelCase array items). */
+            function toWire(look) {
+                var caps = look.caps ? Object.keys(look.caps).reduce(function (out, g) { out[g.charAt(0).toUpperCase() + g.slice(1)] = look.caps[g]; return out; }, {}) : null;
+                return { Layout: look.layout, Density: look.density, Slots: look.slots.map(function (s) { return { group: s.group, slot: s.slot }; }), Caps: caps };
+            }
+
+            /** Whether a stored look is exactly the recommended one. */
+            function isRecommended(shape, look) {
+                var want = JE_TAG_SHAPE_RECOMMENDED[shape];
+                if (String(pick(look, 'layout') || '').toLowerCase() !== want.layout) return false;
+                if (String(pick(look, 'density') || '').toLowerCase() !== want.density) return false;
+                var slots = pick(look, 'slots');
+                if (!Array.isArray(slots) || slots.length !== want.slots.length) return false;
+                var same = want.slots.every(function (s, i) {
+                    return String(pick(slots[i], 'group') || '').toLowerCase() === s.group.toLowerCase() && String(pick(slots[i], 'slot') || '').toLowerCase() === s.slot;
+                });
+                var caps = pick(look, 'caps');
+                var wantCaps = want.caps || {};
+                return same && ['quality', 'genre', 'language', 'rating', 'ageRating', 'status'].every(function (g) {
+                    var have = pick(caps, g);
+                    return (have === undefined ? null : Number(have)) === (wantCaps[g] === undefined ? null : wantCaps[g]);
+                });
+            }
+
+            /** Load the administrator's shape defaults into the selects. */
+            function load(config) {
+                Object.keys(SHAPES).forEach(function (shape) {
+                    var select = document.getElementById(SHAPES[shape]);
+                    if (!select) return;
+                    var look = pick(config.TagShapeOverrides, shape) || null;
+                    var customOption = select.querySelector('option[value="custom"]');
+                    custom[shape] = look && !isRecommended(shape, look) ? look : null;
+                    if (customOption) customOption.hidden = !custom[shape];
+                    select.value = !look ? 'inherit' : (custom[shape] ? 'custom' : 'recommended');
+                });
+            }
+
+            /** Write the administrator's shape defaults into the configuration being saved. */
+            function collect(config) {
+                var out = {};
+                var any = false;
+                Object.keys(SHAPES).forEach(function (shape) {
+                    var value = (document.getElementById(SHAPES[shape]) || {}).value || 'inherit';
+                    var look = value === 'recommended' ? toWire(JE_TAG_SHAPE_RECOMMENDED[shape]) : (value === 'custom' ? custom[shape] : null);
+                    out[shape.charAt(0).toUpperCase() + shape.slice(1)] = look;
+                    if (look) any = true;
+                });
+                config.TagShapeOverrides = any ? out : null;
+            }
+
+            /** The selects' state, for the unsaved-changes indicator. */
+            function snapshot() { var c = {}; collect(c); return JSON.stringify(c); }
+
+            return { load: load, collect: collect, snapshot: snapshot };
+        })();
+
         // MDBList rating sources: key (matches the API's source string), display
         // label, and logo filename (served via the "mdblist-logos" CDN source,
         // see CdnAssetService.cs).
@@ -7394,6 +7496,7 @@
                 document.querySelector('#ratingTagsShowCommunity').checked = config.RatingTagsShowCommunity !== false;
                 document.querySelector('#ratingTagsShowCritic').checked = config.RatingTagsShowCritic !== false;
                 tagLayoutAdmin.load(config);
+                tagShapeAdmin.load(config);
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
                 document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
@@ -7988,6 +8091,7 @@
             config.RatingTagsShowCommunity = document.querySelector('#ratingTagsShowCommunity').checked;
             config.RatingTagsShowCritic = document.querySelector('#ratingTagsShowCritic').checked;
             tagLayoutAdmin.collect(config);
+            tagShapeAdmin.collect(config);
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.StatusTagsJustAddedDays = Math.min(365, Math.max(1, parseInt(document.querySelector('#statusTagsJustAddedDays').value, 10) || 7));

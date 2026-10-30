@@ -330,3 +330,45 @@ test('measured shapes are re-read in a batch when the image aspect changes; the 
   h.render(ID2);
   assert.equal(h.host(ID2).dataset.jeLayout, 'corners', 'recycled cards drop the old shape and look');
 });
+
+test('a full-density thumbnail overrides compact defaults and its fitter switches labels only below the narrow width', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLabelDensity: 'compact',
+    tagShapeOverrides: { landscape: { ...RECOMMENDED.landscape, density: 'full' } } } });
+  h.renderAll();
+  const labels = id => Array.from(h.host(id).querySelectorAll('.quality-overlay-label'), el => el.textContent);
+  assert.ok(labels(ID).includes('DV'));
+  assert.ok(labels(ID2).includes('Dolby Vision'));
+  withSize(h, el => el.classList?.contains('je-tag-host') ? [120, 68] : null, () => h.layout.flushFit());
+  assert.ok(labels(ID2).includes('DV'));
+  h.layout.refreshPresentation();
+  withSize(h, el => el.classList?.contains('je-tag-host') ? [300, 170] : null, () => h.layout.flushFit());
+  assert.ok(labels(ID2).includes('Dolby Vision'));
+  assert.ok(labels(ID).includes('DV'), 'the poster keeps its own density throughout');
+});
+
+test('all unknown cards are measured before any of their shape presentations writes to the DOM', t => {
+  const h = setup(t, { html: card(ID, '') + card(ID2, ''), settings: { tagLayoutSettingsVersion: 1, tagShapeOverrides: RECOMMENDED } });
+  h.renderAll();
+  const reads = [];
+  withSize(h, el => {
+    if (!el.classList?.contains('je-tag-host')) return null;
+    reads.push({ id: el.closest('[data-id]').dataset.id, marked: h.document.querySelectorAll('.je-tag-host[data-je-shape]').length });
+    return [300, 170];
+  }, () => h.layout.flushFit());
+  assert.deepEqual(reads.slice(0, 4).map(r => r.marked), [0, 0, 0, 0], 'both widths and heights precede either shape write');
+  assert.equal(h.host(ID).dataset.jeLayout, 'bands');
+  assert.equal(h.host(ID2).dataset.jeLayout, 'bands');
+});
+
+test('the same item in a hidden old page, a thumbnail and a list keeps three independent card looks', t => {
+  const h = setup(t, { html: `<div hidden>${poster(ID)}</div>` + thumb(ID) + listRow(ID), settings: { tagLayoutSettingsVersion: 1, tagShapeOverrides: RECOMMENDED } });
+  // Jellyfin keeps old views in the document. Shape is a property of each
+  // rendered image, never cached by item id or borrowed from its first card.
+  const targets = Array.from(h.document.querySelectorAll('.je-tag-host, .listItemImage-large'));
+  for (const target of targets) h.JE.tagPipeline.getRenderer('quality').renderFromServerCache(target, entry(), ID);
+  const hosts = Array.from(h.document.querySelectorAll('.je-tag-host'));
+  assert.deepEqual(hosts.map(el => [el.dataset.jeShape, el.dataset.jeLayout]), [['portrait', 'corners'], ['landscape', 'bands'], ['list', 'corners']]);
+  assert.ok(hosts[0].textContent.includes('Dolby Vision'));
+  assert.ok(hosts[1].textContent.includes('DV'));
+  assert.equal(hosts[2].querySelector('[data-je-group="quality"]').children.length, 2);
+});

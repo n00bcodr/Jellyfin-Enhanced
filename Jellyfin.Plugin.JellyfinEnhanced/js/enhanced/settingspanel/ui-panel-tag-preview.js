@@ -1,9 +1,9 @@
 /**
  * @file Live preview of the poster tags in the settings panel's Media Tags
- * hub: three synthetic cards (a movie poster, a series poster and an episode
- * still) drawn through the real layout controller (core/tag-layout.js) and
+ * hub: four synthetic cards (movie and series posters, an episode still
+ * and a list row) drawn through the real layout controller (core/tag-layout.js) and
  * the tag modules' chip classes. Each card's look is decided by the same
- * lock → first matching rule → default resolver as the real cards
+ * lock → first matching rule → shape override → default resolver as the real cards
  * (lookSource/resolveLayout): the series sample carries the id of the most
  * recently locked item, the episode sample the facts of the first enabled
  * rule, so the labels "Locked" and "Rule N" are what the resolver answered,
@@ -41,7 +41,7 @@
     };
 
     /**
-     * The three samples. `quality` maps a quality category's setting key to
+     * The four samples. `quality` maps a quality category's setting key to
      * the chip it shows ([label, data-quality, kind class]); `status` lists
      * candidate badges in the status module's precedence (a card shows the
      * first whose family is on), each [family setting, kind, label key,
@@ -76,6 +76,7 @@
             status: [['statusTagsMilestones', 'milestone', 'status_tag_season_finale', 'status_tag_compact_finale'], ['statusTagsNewRelease', 'new', 'status_tag_new_episode', 'status_tag_compact_new_episode']],
         },
     ];
+    SAMPLES.push({ ...SAMPLES[2], key: 'list', shape: 'list', titleKey: 'tag_shapes_preview_list', id: 'a11ce0000000000000000000000000d4' });
 
     /** @returns {any} The layout controller, or null. */
     const layoutApi = () => JE.core?.tagLayout || null;
@@ -246,11 +247,12 @@
         figure.dataset.sample = sample.key;
         const card = document.createElement('div');
         card.className = `je-mtp-card je-mtp-card--${sample.shape}`;
+        card.dataset.jeShape = sample.shape === 'thumb' ? 'landscape' : sample.shape === 'list' ? 'list' : 'portrait';
         card.setAttribute('aria-hidden', 'true');
         const box = document.createElement('div');
         box.className = 'cardBox';
         const scalable = document.createElement('div');
-        scalable.className = 'cardScalable je-mtp-scalable';
+        scalable.className = `${sample.shape === 'list' ? '' : 'cardScalable '}je-mtp-scalable`;
         const art = document.createElement('div');
         art.className = `je-mtp-art je-mtp-art--${sample.key}`;
         const overlay = document.createElement('div');
@@ -307,6 +309,10 @@
         #jellyfin-enhanced-panel .je-mtp-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
         #jellyfin-enhanced-panel .je-mtp-sample { margin: 0; min-width: 0; }
         #jellyfin-enhanced-panel .je-mtp-sample[data-sample="episode"] { grid-column: 1 / -1; display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 4px 10px; align-items: start; }
+        #jellyfin-enhanced-panel .je-mtp-sample[data-sample="list"] { grid-column: 1 / -1; }
+        #jellyfin-enhanced-panel .je-mtp-card--list .cardBox { display: flex; height: 92px; gap: 8px; align-items: center; background: rgba(255,255,255,0.05); border-radius: 6px; }
+        #jellyfin-enhanced-panel .je-mtp-card--list .je-mtp-scalable { width: 140px; height: 92px; flex: 0 0 140px; }
+        #jellyfin-enhanced-panel .je-mtp-art--list { background: linear-gradient(180deg, #8fd0f2 0%, #bfe6f7 55%, #6fbf5a 56%, #3f8d3a 100%); }
         #jellyfin-enhanced-panel .je-mtp-card .cardBox { margin: 0; }
         #jellyfin-enhanced-panel .je-mtp-card--poster .je-mtp-scalable { width: 100%; aspect-ratio: 2 / 3; }
         #jellyfin-enhanced-panel .je-mtp-card--thumb { width: 140px; }
@@ -325,6 +331,7 @@
         #jellyfin-enhanced-panel .je-mtp-meta { font-size: 12px; line-height: 1.35; color: rgba(255,255,255,0.7); padding: 2px 2px 0; overflow-wrap: anywhere; }
         #jellyfin-enhanced-panel .je-mtp-meta strong { color: #fff; font-weight: 600; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="lock"] { color: #ffd166; }
+        #jellyfin-enhanced-panel .je-mtp-meta [data-source="shape"] { white-space: normal; }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="rule"] { color: #7fd3ff; }
         #jellyfin-enhanced-panel .je-mtp-meta .je-mtp-look { display: block; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mtp-foot { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: rgba(255,255,255,0.7); }
@@ -407,7 +414,7 @@
             SAMPLES.forEach((sample, i) => {
                 const figure = figures[i];
                 const card = /** @type {HTMLElement} */ (figure.querySelector('.je-mtp-card'));
-                const target = /** @type {HTMLElement} */ (card.querySelector('.cardScalable'));
+                const target = /** @type {HTMLElement} */ (card.querySelector('.je-mtp-scalable'));
                 const { id, type, entry } = sampleFacts(sample);
                 card.dataset.id = id;
                 card.dataset.type = type;
@@ -424,6 +431,7 @@
                 const look = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${conf.layout}`), density: JE.t(conf.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
                 const sourceText = source.source === 'lock' ? JE.t('panel_media_tags_preview_source_lock')
                     : source.source === 'rule' ? JE.t('panel_media_tags_preview_source_rule', { n: source.index + 1 })
+                    : source.source === 'shape' ? JE.t('tag_shapes_preview_source', { shape: JE.t(`tag_shapes_${source.shape}`) })
                     : JE.t('panel_media_tags_preview_source_default');
                 const meta = /** @type {HTMLElement} */ (figure.querySelector('.je-mtp-meta'));
                 const typeLabel = JE.t(`tag_looks_type_${type.toLowerCase()}`);
@@ -462,7 +470,7 @@
                 // A small drawing of where each group sits, never a copy of the
                 // card: a copied .je-tag-host would be picked up by the layout
                 // controller on the next re-present.
-                thumb.dataset.shape = item.card.classList.contains('je-mtp-card--thumb') ? 'thumb' : 'poster';
+                thumb.dataset.shape = item.card.dataset.jeShape === 'portrait' ? 'poster' : 'thumb';
                 const marks = [];
                 const perSlot = new Map();
                 for (const placed of L.describe(item.target)) {
@@ -521,7 +529,7 @@
             document.removeEventListener('je:tag-layout-changed', refresh);
             // Clear the cards while they are still in the document, then drop them.
             for (const figure of figures) {
-                const target = figure.querySelector('.cardScalable');
+                const target = figure.querySelector('.je-mtp-scalable');
                 if (target) L.clearCard(target);
             }
             root.remove();
@@ -538,7 +546,7 @@
                 else delete root.dataset.spot;
                 drawStrip();
             },
-            /** @param {string} key - The sample the phone strip shows ('movie', 'series', 'episode'). */
+            /** @param {string} key - The sample the phone strip shows ('movie', 'series', 'episode', 'list'). */
             follow(key) {
                 if (!SAMPLES.some((s) => s.key === key) || key === followKey) return;
                 followKey = key;

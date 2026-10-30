@@ -816,7 +816,7 @@
             const still = existing ? current.find((r) => r.id === existing.id) : null;
             // Editing keeps the rule's On/Off state (a switched-off rule stays off).
             const candidate = { id: still?.id || look.newRuleId(new Set(current.map((r) => r.id))), enabled: still ? still.enabled : true,
-                when, layout: layoutSelect.value, density: densitySelect.value, colourPreset: still?.colourPreset || null, slots: still?.slots || null };
+                when, layout: layoutSelect.value, density: densitySelect.value, colourPreset: still?.colourPreset || null, slots: still?.slots || null, shapes: still?.shapes || null };
             if (look.normalizeRules([candidate]).length !== 1) {
                 error.textContent = JE.t('tag_looks_error_value');
                 return;

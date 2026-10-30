@@ -93,7 +93,7 @@ for (const [path, close] of Object.entries(closePaths)) {
     assert.notEqual(h.ui.mediaTagsHub, firstHub);
     second.fire();
     assert.equal(second.disconnected, true, 'the observer is released once the preview is built');
-    assert.equal(h.panel().querySelectorAll('.je-mtp-card .je-tag-host').length, 3, 'three samples are drawn');
+    assert.equal(h.panel().querySelectorAll('.je-mtp-card .je-tag-host').length, h.ui.tagPreviewData.SAMPLES.length, 'every preview sample is drawn');
     h.panel().querySelector('.je-tge-row[data-group="quality"] [data-slot="br"]').click();
     await h.settle();
     assert.equal(JSON.parse(h.writes.at(-1).data).qualityTagsPosition, 'bottom-right');
