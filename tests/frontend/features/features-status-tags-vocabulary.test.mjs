@@ -137,6 +137,12 @@ const ROWS = [
   // Episode: Season Premiere → Series/Season Finale → New Episode → Just Added
   ['episode: season premiere', episode({ EpisodeNumber: 1, PremiereDate: ago(2) }), {}, null, ['season_premiere', 'Season Premiere']],
   ['episode: a special is not a premiere', episode({ SeasonNumber: 0, EpisodeNumber: 1, PremiereDate: ago(2) }), {}, null, ['new_episode', 'New Episode']],
+  ['episode: an ended show special is never its series finale', episode({ SeasonNumber: 0, EpisodeNumber: 8, PremiereDate: ago(2) }), {},
+    facts({ status: 'Ended', lastAired: { date: '2026-10-28', season: 0, episode: 8, type: 'standard' } }), ['new_episode', 'New Episode']],
+  ['series: a special cannot supply its series finale', show({ LatestEpisodeIndex: { Season: 0, Episode: 8 } }), {},
+    facts({ status: 'Ended', lastAired: { date: '2026-10-28', season: 0, episode: 8, type: 'standard' } }), null],
+  ['episode: the final regular episode can be standard on an ended show', episode({ EpisodeNumber: 10, PremiereDate: ago(2) }), {},
+    facts({ status: 'Ended', lastAired: { date: '2026-10-28', season: 3, episode: 10, type: 'standard' } }), ['series_finale', 'Series Finale']],
   ['episode: series finale', episode({ EpisodeNumber: 10, PremiereDate: ago(2) }), {},
     facts({ status: 'Ended', lastAired: { date: '2026-10-28', season: 3, episode: 10, type: 'finale' } }), ['series_finale', 'Series Finale']],
   ['episode: season finale', episode({ EpisodeNumber: 10, PremiereDate: ago(2) }), {},

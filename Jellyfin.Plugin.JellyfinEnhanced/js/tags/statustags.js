@@ -490,6 +490,8 @@
         const showStatus = isScopeEnabled(BADGE_SCOPES.seriesStatus);
         const facts = wantsSeriesFacts(data) ? seriesFactsFor(data) : null;
 
+        // Match the series aggregate: specials never identify a final regular episode.
+        const finalRegular = facts?.last?.season > 0 ? facts.last : null;
         const isNewRelease = data.premiere !== null && data.premiere <= now && now - data.premiere <= newReleaseMs;
         const comingSoon = data.premiere !== null && data.premiere > now;
         const addedRecently = isWithin(data.created, now, justAddedMs);
@@ -520,8 +522,8 @@
             case 'Series': {
                 if (showSchedule && daysToNext === 0) return makeBadge('schedule', 'airing_today');
                 // The finale of an ended show, aired recently and in the library.
-                if (showMilestones && facts?.last && TMDB_ENDED.has(facts.status || '') && lastAiredRecently
-                    && data.latestIndex && data.latestIndex.s === facts.last.season && data.latestIndex.e === facts.last.episode) {
+                if (showMilestones && finalRegular && TMDB_ENDED.has(facts.status || '') && lastAiredRecently
+                    && data.latestIndex && data.latestIndex.s === finalRegular.season && data.latestIndex.e === finalRegular.episode) {
                     return makeBadge('milestone', 'series_finale');
                 }
                 const sp = data.seasonPremiere;
@@ -565,7 +567,7 @@
                 }
                 if (showMilestones && airedRecently && facts?.last && lastAiredRecently
                     && data.season === facts.last.season && data.episode === facts.last.episode) {
-                    if (TMDB_ENDED.has(facts.status || '')) return makeBadge('milestone', 'series_finale');
+                    if (finalRegular && data.season > 0 && TMDB_ENDED.has(facts.status || '')) return makeBadge('milestone', 'series_finale');
                     if (lastAiredEndsSeason(facts, data.isLast)) return makeBadge('milestone', 'season_finale');
                 }
                 if (showNew && ((airedRecently && isWithin(data.premiere, now, justAddedMs)) || addedRecently)) return makeBadge('new', 'new_episode');
