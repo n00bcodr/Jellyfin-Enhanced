@@ -70,6 +70,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 ├── Configuration/
 │   ├── PluginConfiguration.cs
 │   ├── UserConfiguration.cs
+│   ├── TagShapeSettings.cs         # Per-shape layout/density/slot/cap validation and defaults
 │   ├── TagLookSettings.cs
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html

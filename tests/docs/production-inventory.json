@@ -47,6 +47,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs",
       "category": "Configuration"
     },
@@ -4446,6 +4450,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagShapeOverrides",
+      "type": "TagShapeOverrides?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowRatingInPlayer",
       "type": "bool",
       "initializer": "true",
@@ -6453,6 +6465,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
     },
     {
+      "class": "TagLookRule",
+      "name": "Shapes",
+      "type": "TagShapeOverrides?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
       "class": "TagLayoutLock",
       "name": "Layout",
       "type": "string",
@@ -6486,11 +6506,67 @@
     },
     {
       "class": "TagLayoutLock",
+      "name": "Shapes",
+      "type": "TagShapeOverrides?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
       "name": "LockedAt",
       "type": "long",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagShapeLook",
+      "name": "Layout",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
+    },
+    {
+      "class": "TagShapeLook",
+      "name": "Density",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
+    },
+    {
+      "class": "TagShapeLook",
+      "name": "Slots",
+      "type": "List<TagLayoutGroupSlot>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
+    },
+    {
+      "class": "TagShapeLook",
+      "name": "Caps",
+      "type": "TagGroupCaps?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
+    },
+    {
+      "class": "TagShapeOverrides",
+      "name": "Landscape",
+      "type": "TagShapeLook?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
+    },
+    {
+      "class": "TagShapeOverrides",
+      "name": "List",
+      "type": "TagShapeLook?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagShapeSettings.cs"
     },
     {
       "class": "JellyfinEnhancedUserSettings",
@@ -7128,6 +7204,14 @@
       "class": "JellyfinEnhancedUserSettings",
       "name": "TagLayoutLocks",
       "type": "Dictionary<string, TagLayoutLock>?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagShapeOverrides",
+      "type": "TagShapeOverrides?",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
@@ -8236,6 +8320,10 @@
     },
     {
       "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-media-tags.js"
+    },
+    {
+      "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-settings.js"
     },
     {
@@ -8449,10 +8537,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 375,
+    "files": 376,
     "routes": 182,
-    "configuration_properties": 599,
-    "storage_references": 72,
+    "configuration_properties": 609,
+    "storage_references": 73,
     "scheduled_tasks": 13,
     "locales": 33
   }
