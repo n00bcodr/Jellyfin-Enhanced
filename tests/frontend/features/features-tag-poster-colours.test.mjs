@@ -378,6 +378,41 @@ test('a loaded image replaced in place is resampled without the card being prese
   assert.equal(h.P.stats().slices, slices);
 });
 
+test('on a bare image (a list row), the card\'s chips and colour writes are not artwork changes', async t => {
+  const row = (id, tag = 't1') => `<div class="listItem" data-id="${id}"><div class="listItemImage listItemImage-large" style="background-image: url('${img(id, tag)}')"><div class="je-tag-host"></div></div></div>`;
+  const h = setup(t, { html: row(ID), art: { [img(ID)]: solid([200, 30, 30]), [img(ID, 't2')]: solid([30, 60, 200]) } });
+  h.window.HTMLImageElement.prototype.decode = () => Promise.resolve();
+  holdSweeps(h.window);
+  h.P.setActive(true);
+  await h.settle();
+  const target = h.document.querySelector('.listItemImage');
+  assert.equal(target.dataset.jePosterKey, `${ID}:primary:0:t1`, 'the row image is the colour target');
+  const { rechecks, slices } = h.P.stats();
+  // Reading the row's artwork queries the row image: count those queries.
+  let queries = 0;
+  const query = target.querySelector;
+  target.querySelector = function (...args) { queries++; return query.apply(this, args); };
+  // Chips come and go inside the host; the colours are rewritten on the row image itself.
+  const host = h.document.querySelector('.je-tag-host');
+  const chip = h.document.createElement('span');
+  chip.innerHTML = '<span class="je-tag">4K</span>';
+  host.appendChild(chip);
+  chip.firstChild.textContent = 'HDR';
+  target.style.setProperty('--je-tag-bg', 'rgb(1, 2, 3)');
+  target.style.setProperty('--je-tag-fg', 'rgb(255, 255, 255)');
+  chip.remove();
+  await h.settle();
+  assert.equal(queries, 0, 'the artwork is not read again');
+  assert.equal(h.P.stats().rechecks, rechecks, 'no artwork check for chips or colour writes');
+  assert.equal(h.P.stats().slices, slices);
+  // New artwork on the row image is still seen.
+  target.style.backgroundImage = `url('${img(ID, 't2')}')`;
+  await h.settle();
+  assert.equal(h.P.stats().rechecks, rechecks + 1);
+  assert.equal(target.dataset.jePosterKey, `${ID}:primary:0:t2`);
+  assert.equal(target.style.getPropertyValue('--je-tag-bg'), h.P.css(h.P.normalise([30, 60, 200]).background));
+});
+
 test('a card recycled for another item, even with a new host, takes the other item\'s colour', async t => {
   const h = setup(t, { art: { [img(ID)]: solid([200, 30, 30]), [img(ID2)]: solid([30, 60, 200]) } });
   h.P.setActive(true);

@@ -255,7 +255,7 @@
     const weakRef = (w) => (typeof WeakRef === 'function' ? new WeakRef(w) : { deref: () => w });
     let sweepTimer = 0;
     let canvas = null;
-    const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0, sampleMs: 0, maxSampleMs: 0, steps: 0, fallback: 0 };
+    const counters = { slices: 0, totalMs: 0, maxMs: 0, cards: 0, sampled: 0, failed: 0, fromMemory: 0, sampleMs: 0, maxSampleMs: 0, steps: 0, fallback: 0, rechecks: 0 };
 
     /** @returns {string} `${serverId}:${userId}`, the tag cache store's scope. */
     function scope() {
@@ -397,8 +397,8 @@
             w.observer?.disconnect();
             w.container = container;
             w.card = owner.closest('[data-id], [data-itemid]');
-            if (!w.observer && typeof MutationObserver === 'function') w.observer = new MutationObserver(() => changed(w));
-            w.observer?.observe(container, { attributes: true, attributeFilter: ['style', 'src', 'srcset'], childList: true, subtree: true });
+            if (!w.observer && typeof MutationObserver === 'function') w.observer = new MutationObserver((records) => { if (records.some(artworkRecord)) changed(w); });
+            w.observer?.observe(container, { attributes: true, attributeFilter: ['style', 'src', 'srcset'], attributeOldValue: true, childList: true, subtree: true });
             if (w.card) w.observer?.observe(w.card, { attributes: true, attributeFilter: ['data-id', 'data-itemid'] });
         }
         w.id = idOf(w.card);
@@ -409,14 +409,37 @@
         }
     }
 
+    /** @param {string|null} style @returns {string} The background image URL of an inline style. */
+    const backgroundOf = (style) => /url\(["']?([^"')]+)["']?\)/.exec(style || '')?.[1] || '';
+
+    /**
+     * Whether a mutation a watch saw can change the card's artwork or item.
+     * A bare image or list row is both the image container and the colour
+     * target, with the host inside it: its chips (anything inside the
+     * .je-tag-host, the host itself coming or going) and its colour writes
+     * (a style change keeping the background image) are not.
+     * @param {MutationRecord} record
+     * @returns {boolean}
+     */
+    function artworkRecord(record) {
+        const target = /** @type {Element} */ (record.target);
+        if (target.closest?.('.je-tag-host')) return false;
+        if (record.type === 'childList') {
+            const nodes = [...record.addedNodes, ...record.removedNodes];
+            return nodes.some((n) => n.nodeType === 1 && !/** @type {Element} */ (n).classList.contains('je-tag-host'));
+        }
+        if (record.attributeName === 'style') return backgroundOf(record.oldValue) !== backgroundOf(target.getAttribute('style'));
+        return true;
+    }
+
     /**
      * A watched card's container or item id changed: track it again if its
-     * artwork, its item or its host did (the observer also sees the card's
-     * own colour writes and chips, which change none of these).
+     * artwork, its item or its host did.
      * @param {Watch} w
      */
     function changed(w) {
         if (watches.get(w.owner) !== w) return;
+        counters.rechecks++;
         const host = w.owner.isConnected
             ? (w.host.parentElement === w.owner ? w.host : /** @type {HTMLElement|undefined} */ (Array.from(w.owner.children).find((c) => c.classList.contains('je-tag-host'))))
             : null;
