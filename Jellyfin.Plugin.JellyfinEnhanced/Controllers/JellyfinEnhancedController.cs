@@ -1253,7 +1253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [Authorize]
         public ActionResult GetTagStyleCatalog()
         {
-            if (!IsAdminUser()) return Forbid();
+            // Shipped labels and palettes contain no user or administrator configuration.
             static object Web(TagColors c) => new { background = c.Background, border = c.Border, color = c.Text };
             var groups = TagStyleKeys.Groups.ToDictionary(
                 g => g,

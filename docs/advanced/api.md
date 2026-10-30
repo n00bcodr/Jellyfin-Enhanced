@@ -1093,7 +1093,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | GET | `file-size/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size}`. |
 | GET | `watch-progress/{userId}/{itemId}` | Own/admin | `{success,progress,totalPlaybackTicks,totalRuntimeTicks}`. |
 | GET | `tag-styles` | Authenticated | Effective web override set. |
-| GET | `tag-styles/catalog` | Administrator | Shipped quality/age style catalog. |
+| GET | `tag-styles/catalog` | Authenticated | Shipped labels and palettes only; no administrator configuration. |
 | GET | `native-poster-tags/preview/{itemId}` | Administrator | JPEG diagnostic preview; query below. |
 
 ```bash

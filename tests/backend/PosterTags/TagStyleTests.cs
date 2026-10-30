@@ -12,6 +12,9 @@ public class TagStyleTests
     public void QualityCatalogMatchesEveryShippedNativeColourWithoutDuplicates()
     {
         using var assets = PosterTagAssets.Load();
+        var keys = TagStyleKeys.Groups.SelectMany(group => TagStyleCatalog.Labels(group).Select(label => group + ":" + label.Key)).ToArray();
+        Assert.Equal(keys.Length, keys.Distinct(StringComparer.Ordinal).Count());
+        Assert.Single(keys, key => key == "quality:Mixed");
         Assert.Equal(assets.QualityColours.Count, TagStyleCatalog.Quality.Count);
         foreach (var (label, background, text) in TagStyleCatalog.Quality)
         {

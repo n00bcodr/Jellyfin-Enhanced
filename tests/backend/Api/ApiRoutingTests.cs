@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
@@ -31,7 +32,13 @@ public class ApiRoutingTests
     private sealed class AnonymousAuthentication(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder)
         : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync() => Task.FromResult(AuthenticateResult.NoResult());
+        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+        {
+            var role = Request.Headers["X-Test-Role"].ToString();
+            if (role is not ("Administrator" or "User")) return Task.FromResult(AuthenticateResult.NoResult());
+            var principal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], Scheme.Name));
+            return Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(principal, Scheme.Name)));
+        }
     }
     private static TestServer Server(CoreFixture fixture)
     {
@@ -70,7 +77,27 @@ public class ApiRoutingTests
     }
 
     [Theory]
+    [InlineData("Administrator")]
+    [InlineData("User")]
+    public async Task AuthenticatedTagStyleCatalogReturnsUniqueLabelsAndEveryPalette(string role)
+    {
+        using var fixture = new CoreFixture();
+        using var server = Server(fixture);
+        using var client = server.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Role", role);
+        using var response = await client.GetAsync("/JellyfinEnhanced/tag-styles/catalog");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var quality = body.RootElement.GetProperty("quality").EnumerateArray().Select(value => value.GetProperty("label").GetString()).ToArray();
+        Assert.Equal(quality.Length, quality.Distinct(StringComparer.Ordinal).Count());
+        Assert.Single(quality, label => label == "Mixed");
+        foreach (var palette in body.RootElement.GetProperty("palettes").EnumerateObject())
+            Assert.True(palette.Value.TryGetProperty("quality:Mixed", out _));
+    }
+
+    [Theory]
     [InlineData("private-config")]
+    [InlineData("tag-styles/catalog")]
     [InlineData("host-compat")]
     [InlineData("jellyfin-urls")]
     [InlineData("jellyseerr/status")]
