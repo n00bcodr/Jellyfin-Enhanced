@@ -39,8 +39,9 @@
     // zh-Hant → Taiwanese — while a bare pt/es/zh keeps its default flag.
 
     /**
-     * Extracts audio languages from a Jellyfin item's media sources.
+     * Extracts languages of one track type from a Jellyfin item's media sources.
      * @param {Object} sourceItem - The item (or first episode) to extract languages from.
+     * @param {string} [type='Audio'] - Audio or Subtitle.
      * @returns {Array<{name: string, code: string}>} Normalized array of language objects.
      */
     function extractLanguagesFromItem(sourceItem, type = 'Audio') {
