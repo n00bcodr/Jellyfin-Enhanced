@@ -913,7 +913,7 @@
             }
             case 'rating': {
                 const source = master.querySelector('.rating-tag--source');
-                if (source) return source.getAttribute('aria-label') || source.textContent;
+                if (source) return { text: source.getAttribute('aria-label') || source.textContent };
                 const community = master.querySelector('.rating-tag-tmdb .rating-text')?.textContent;
                 if (community) return { text: community, glyph: '★' };
                 const critic = master.querySelector('.rating-tag-critic .rating-text')?.textContent;
