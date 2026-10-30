@@ -95,8 +95,10 @@
 
     /** Layouts whose representations are fitted to the card's measured size. */
     const FIT_LAYOUTS = new Set(['bands', 'caption', 'summary', 'minimal']);
-    /** Rows a wrapping slot (caption strip, hover reveal) shows before its "+N" overflow chip. */
+    /** Rows a wrapping slot (caption strip, bottom band, hover reveal) shows before its "+N" overflow chip. */
     const FIT_MAX_ROWS = 2;
+    /** Cards narrower than this show bands with compact labels. */
+    const NARROW_CARD_PX = 160;
 
     /** Compact quality labels; audio "<codec> <channels>" is handled in compactQualityLabel. */
     const COMPACT_QUALITY = { 'Dolby Vision': 'DV', 'HDR10+': 'HDR+', 'Dolby Digital+': 'DD+' };
@@ -317,6 +319,7 @@
      * @property {HTMLElement|null} pill
      * @property {string|null} layout - Layout the card is currently presented in.
      * @property {number} seq - Arrival counter (legacy ordering).
+     * @property {boolean} [narrow] - Last measured narrower than NARROW_CARD_PX (bands go compact).
      */
 
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
@@ -788,7 +791,7 @@
             const dots = buildDots(rec.master, conf);
             if (dots) { placeSorted(ctrl, conf, slotElement(ctrl, 'dots'), dots); nodes.push(dots); }
         } else if (slot !== 'pill') {
-            const chips = buildChips(group, rec.master, slot === 'hover' ? revealSettings(conf) : conf);
+            const chips = buildChips(group, rec.master, slot === 'hover' || (conf.layout === 'bands' && ctrl.narrow) ? revealSettings(conf) : conf);
             if (conf.layout === 'corners') chips.dataset.jeCorner = SLOT_TO_POSITION[slot];
             if (chips.children.length > 0) { placeSorted(ctrl, conf, slotElement(ctrl, slot), chips); nodes.push(chips); }
         }
@@ -857,9 +860,11 @@
     // separate phases, so a page of cards costs two layouts, not one per
     // card — and hides what does not fit, never half a chip or fact:
     //   - the summary pill's lowest-priority facts;
-    //   - in the caption strip and the hover reveal, chips past their two
-    //     rows, lowest priority first, behind a "+N" chip whose title names
-    //     them.
+    //   - in the caption strip, the bottom band and the hover reveal, chips
+    //     past their two rows, lowest priority first, behind a "+N" chip
+    //     whose title names them;
+    // and it switches bands on cards narrower than NARROW_CARD_PX to compact
+    // labels.
 
     /**
      * Whether a slot still holds any group representation.
@@ -888,8 +893,9 @@
     function rowSlots(ctrl) {
         const slots = [];
         if (ctrl.outlet && ctrl.outlet.isConnected) slots.push(ctrl.outlet);
+        const wrapping = ctrl.layout === 'bands' ? 'bottom' : 'hover';
         for (const child of ctrl.host.children) {
-            if (child.classList.contains('je-tag-slot') && /** @type {HTMLElement} */ (child).dataset.jeSlot === 'hover') {
+            if (child.classList.contains('je-tag-slot') && /** @type {HTMLElement} */ (child).dataset.jeSlot === wrapping) {
                 slots.push(/** @type {HTMLElement} */ (child));
             }
         }
@@ -977,9 +983,17 @@
         fitting = true;
         try {
             // Reads: cards not laid out (hidden, detached tab) are left as they are.
-            const shown = list.filter((ctrl) => ctrl.host.clientWidth > 0);
-            // Writes: show what an earlier pass hid, and give every wrapping
-            // slot its "+N" chip, so both are measured afresh.
+            const widths = list.map((ctrl) => ctrl.host.clientWidth);
+            const shown = list.filter((ctrl, i) => widths[i] > 0);
+            // Writes: bands that crossed the narrow-card width re-present with
+            // the other labels; then show what an earlier pass hid, and give
+            // every wrapping slot its "+N" chip, so both are measured afresh.
+            list.forEach((ctrl, i) => {
+                const narrow = widths[i] > 0 && widths[i] < NARROW_CARD_PX;
+                if (widths[i] === 0 || narrow === !!ctrl.narrow) return;
+                ctrl.narrow = narrow;
+                if (ctrl.layout === 'bands') presentAll(ctrl);
+            });
             for (const ctrl of shown) prepareFit(ctrl);
             // Reads, then writes.
             const plans = shown.map(measureFit);

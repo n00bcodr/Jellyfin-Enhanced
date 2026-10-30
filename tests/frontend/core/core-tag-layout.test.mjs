@@ -610,3 +610,45 @@ test('the summary and minimal reveal uses compact labels, keeps to two rows with
     assert.match(css, /\.je-tag-more \{[^}]*pointer-events: none;/, 'nothing in the reveal takes a click from Jellyfin\'s buttons');
   }
 });
+
+/**
+ * Lay a page out by rule while the fitting pass runs: the host and slots get
+ * the card width, chips and the "+N" chip fixed widths.
+ */
+function withLayout(h, { card, chip = 30, more = 20 }, fn) {
+  const proto = h.window.HTMLElement.prototype;
+  const rect = proto.getBoundingClientRect;
+  const client = Object.getOwnPropertyDescriptor(h.window.Element.prototype, 'clientWidth');
+  proto.getBoundingClientRect = function () {
+    const width = this.classList.contains('je-tag-more') ? more : this.parentElement?.dataset?.jeGroup ? chip : 0;
+    return { width, height: 18, top: 0, left: 0, right: width, bottom: 18 };
+  };
+  Object.defineProperty(h.window.Element.prototype, 'clientWidth', { configurable: true,
+    get() { return this.matches('.je-tag-host, .je-tag-slot, .je-tag-caption') ? card : 0; } });
+  try { return fn(); } finally {
+    proto.getBoundingClientRect = rect;
+    Object.defineProperty(h.window.Element.prototype, 'clientWidth', client);
+  }
+}
+
+test('bands on a card under 160px switch to compact labels and keep the bottom band to two rows with "+N"', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'bands' } });
+  const host = h.render();
+  const bottom = () => host.querySelector('.je-tag-slot[data-je-slot="bottom"]');
+  const labels = () => Array.from(host.querySelectorAll('.quality-overlay-label'), l => l.textContent);
+  assert.deepEqual(labels(), ['4K', 'Dolby Vision', 'HEVC', 'ATMOS 7.1'], 'full labels until the card is measured');
+  withLayout(h, { card: 112 }, () => h.layout.flushFit()); // 6px side padding: 100px for chips
+  assert.deepEqual(labels(), ['4K', 'DV', 'HEVC', 'ATMOS'], 'compact labels on a narrow card');
+  assert.equal(host.querySelector('.rating-tag-critic'), null);
+  const chips = Array.from(bottom().querySelectorAll(':scope > [data-je-group] > *'));
+  assert.equal(chips.length, 8, 'quality 4, rating 1, language 3');
+  assert.equal(chips.filter(c => !c.hasAttribute('data-je-overflow')).length, 5, 'two rows, room for "+N"');
+  assert.equal(bottom().lastElementChild.textContent, '+3');
+  assert.equal(bottom().lastElementChild.title.split(', ').length, 3);
+  // A wider card (the window grew) gets its full labels back.
+  h.layout.refreshPresentation(host);
+  withLayout(h, { card: 400 }, () => h.layout.flushFit());
+  assert.deepEqual(labels(), ['4K', 'Dolby Vision', 'HEVC', 'ATMOS 7.1']);
+  assert.equal(bottom().querySelectorAll('[data-je-overflow]').length, 1, 'only the unneeded "+N" chip is hidden');
+  assert.ok(bottom().lastElementChild.hasAttribute('data-je-overflow'));
+});

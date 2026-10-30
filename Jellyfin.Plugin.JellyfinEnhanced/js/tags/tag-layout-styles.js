@@ -87,6 +87,8 @@
             ${INDICATORS}[data-je-layout="bands"] > .je-tag-slot[data-je-slot="top"] {
                 padding-right: calc(10px + ${INDICATOR_OFFSET});
             }
+            /* At most two rows; the fitting pass hides the rest behind "+N", and
+               cards under 160px wide get compact labels. */
             ${host('bands')}[data-je-slot="bottom"] {
                 bottom: 0; left: 0; right: 0;
                 padding: 16px 6px 6px;

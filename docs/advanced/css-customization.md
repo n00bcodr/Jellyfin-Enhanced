@@ -233,7 +233,7 @@ The normal poster structure places `.je-tag-host` inside `.cardScalable`, before
 
 Group containers keep their classes and chip markup in every layout and carry `data-je-group`. In flowing slots (the bottom band, the caption and the hover scrim) containers use `display: contents`, so their chips wrap together in one row. The `hover` slot fades in on `.card:hover` and `.card:focus-within`.
 
-What does not fit is hidden whole, never cut: once a card is laid out, chips that would wrap past the caption strip's two rows get `data-je-overflow` (lowest priority first) and the strip ends with a `.je-tag-more` chip reading `+N`, whose `title` lists them. A summary pill too wide for its card hides its lowest-priority `.je-tag-pill-fact` (and the separator before it) the same way. `[data-je-overflow]` is `display: none !important`.
+What does not fit is hidden whole, never cut: once a card is laid out, chips that would wrap past the two rows of the caption strip, the bottom band or the hover scrim get `data-je-overflow` (lowest priority first) and the slot ends with a `.je-tag-more` chip reading `+N`, whose `title` lists them. A summary pill too wide for its card hides its lowest-priority `.je-tag-pill-fact` (and the separator before it) the same way. `[data-je-overflow]` is `display: none !important`.
 
 | Tag container | Position property | Factory corner |
 | --- | --- | --- |
