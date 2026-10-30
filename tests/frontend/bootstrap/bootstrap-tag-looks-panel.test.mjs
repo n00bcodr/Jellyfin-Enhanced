@@ -16,7 +16,7 @@ const SERIES = 'cccccccccccccccccccccccccccccccc';
  */
 function setup(t, { settings = {}, genresFail = false, html = '', tagData = id => ({ Id: id, Type: 'Movie', Genres: ['Drama'] }), realSave = false } = {}) {
   const writes = [], toasts = [], requests = [], reinit = [];
-  const io = { saveStatus: 200 };
+  const io = { saveStatus: 200, user: 'user-a', epoch: 0 };
   const h = createHarness({
     html: '<select id="tagLayoutSelect"><option value="corners">corners</option><option value="bands">bands</option></select><div id="jeTagLooksMount"></div>' + html,
     JE: {
@@ -24,9 +24,10 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
       pluginConfig: {},
       t: (key, params) => params ? `${key}:${Object.values(params).join('|')}` : key,
       ...(realSave ? {} : { saveUserSettings: (file, doc) => { writes.push(plain(doc)); return Promise.resolve(); } }),
-      session: { onUserChange() {} },
+      session: { onUserChange() {}, getEpoch: () => io.epoch, getUserId: () => io.user },
     },
     apiClient: {
+      getCurrentUserId: () => io.user,
       getUrl: (path, query) => `http://jellyfin.test/${path}${query ? `?${new URLSearchParams(query)}` : ''}`,
       ajax: async ({ url, data }) => {
         requests.push(url);
@@ -338,4 +339,25 @@ test('a save that fails with HTTP 500 resolves false, restores the locks and rul
   await h.settle(); await h.settle();
   assert.deepEqual(h.writes.at(-1).TagLookRules ?? h.writes.at(-1).tagLookRules, []);
   assert.equal(h.rows().length, 2);
+});
+
+for (const switchedBack of [false, true]) test(`a detail lock drops facts and saves nothing after a session change (back=${switchedBack})`, async t => {
+  const answer = deferred();
+  const h = setup(t, { html: detailPage(), tagData: () => answer.promise });
+  h.JE.pluginConfig.TagCacheServerMode = false;
+  const page = h.document.getElementById('itemDetailPage');
+  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
+  h.click(page.querySelector('.je-tag-look-lock-btn'));
+  await h.settle();
+  h.io.user = switchedBack ? 'user-a' : 'user-b';
+  h.io.epoch += switchedBack ? 2 : 1;
+  h.JE.currentSettings = { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true };
+  answer.resolve({ Id: MOVIE, Type: 'Movie', Genres: ['private'] });
+  await h.settle(); await h.settle();
+  assert.equal(h.writes.length, 0, 'no lock saved for the incoming session');
+  assert.equal(h.JE.currentSettings.tagLayoutLocks, undefined);
+  assert.equal(h.toasts.length, 0, 'no stale-session toast');
+  // A fresh request must still reach the API: the old response was not remembered.
+  await h.JE.tagPipeline.itemLookFacts(MOVIE);
+  assert.equal(h.requests.filter(u => u.includes('/tag-data/')).length, 2);
 });

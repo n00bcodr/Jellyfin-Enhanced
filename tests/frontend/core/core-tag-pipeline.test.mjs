@@ -47,3 +47,15 @@ test('tag pipeline drains the cards queued while a cancelled batch was in flight
 test('tag pipeline skips hidden/admin/nonmedia cards without transport',t=>{
  const h=setup(t,`<div id="pluginsPage">${card}</div>${card.replace('class="card"','class="card je-hidden"')}${card.replace('data-type="Movie"','data-type="Person"')}`);h.scan();h.fetch();assert.equal(h.calls.length,0);assert.equal(h.rendered.length,0);
 });
+
+test('individual fallback drops facts immediately when the user changed during /Items', async t => {
+ const h=setup(t); const item=deferred();
+ h.window.ApiClient.getItem=()=>item.promise;
+ h.scan();h.fetch();h.response.reject(new Error('tag-data unavailable'));await settle();
+ h.changes.get('tag-pipeline')({userId:'b'});
+ item.resolve({Id:'aabb',Type:'Movie',Genres:['private']});await settle();
+ assert.equal(h.rendered.length,0);
+ let fetched=false;h.window.ApiClient.ajax=async()=>{fetched=true;return {Items:[]};};
+ await h.JE.tagPipeline.itemLookFacts('aabb');
+ assert.equal(fetched,true,'old facts were never remembered');
+});

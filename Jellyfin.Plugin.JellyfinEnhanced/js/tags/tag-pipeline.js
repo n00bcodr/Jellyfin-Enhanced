@@ -1089,6 +1089,7 @@
         const known = serverCache?.get(itemId) || lookFactsMap().get(itemId);
         if (known) return known;
         const userId = ApiClient.getCurrentUserId();
+        const epoch = JE.session?.getEpoch?.();
         const response = await ApiClient.ajax({
             type: 'POST',
             url: ApiClient.getUrl(`/JellyfinEnhanced/tag-data/${userId}`),
@@ -1096,6 +1097,7 @@
             contentType: 'application/json',
             dataType: 'json'
         });
+        if (userId !== ApiClient.getCurrentUserId() || epoch !== JE.session?.getEpoch?.()) return null;
         const item = (response?.Items || []).find((i) => String(i?.Id ?? '').replace(/-/g, '').toLowerCase() === itemId) || null;
         if (item) rememberLookFacts(itemId, item);
         return item;
@@ -1401,6 +1403,10 @@
     async function processBatch(batch, generation) {
         const userId = ApiClient.getCurrentUserId();
         if (!userId) return;
+        const epoch = JE.session?.getEpoch?.();
+        /** @returns {boolean} This batch still belongs to the active navigation and session. */
+        const isCurrent = () => generation === batchGeneration
+            && userId === ApiClient.getCurrentUserId() && epoch === JE.session?.getEpoch?.();
 
         // Use arrays per ID to handle duplicate items (same movie in multiple rows)
         const elMap = new Map();
@@ -1430,7 +1436,7 @@
             const items = response?.Items || [];
 
             // Abort if navigation happened while we were waiting for the API response
-            if (generation !== batchGeneration) return;
+            if (!isCurrent()) return;
 
             // Build parent series lookup for rating fallback
             const parentSeriesNeeded = new Set();
@@ -1456,6 +1462,7 @@
                 if (!parentSeriesMap.has(normalizedId)) {
                     try {
                         const parent = await getParentSeries(userId, seriesId);
+                        if (!isCurrent()) return;
                         if (parent) parentSeriesMap.set(normalizedId, parent);
                     } catch {}
                 }
@@ -1479,7 +1486,7 @@
                 // Re-check per render: first-episode/parent-series awaits can
                 // span a navigation OR a user switch (clearProcessed bumps the
                 // generation) — stale data must not be rendered or persisted.
-                if (generation !== batchGeneration) return;
+                if (!isCurrent()) return;
                 const itemId = item.Id.toString().replace(/-/g, '').toLowerCase();
                 const batchEntries = elMap.get(itemId);
                 if (!batchEntries || batchEntries.length === 0) return;
@@ -1556,7 +1563,7 @@
                         renderedSinceYield = 0;
                         stackPendingHosts();
                         await idleYield();
-                        if (generation !== batchGeneration) return; // navigation or user switch while yielded
+                        if (!isCurrent()) return; // navigation or user switch while yielded
                     }
                 }
             }
@@ -1567,20 +1574,22 @@
                 await Promise.all(pendingFirstEps);
             }
         } catch (err) {
+            if (!isCurrent()) return;
             console.warn(`${logPrefix} Batch fetch failed, falling back to individual fetches:`, err);
             // Fallback: process items individually
             for (const { el, renderTarget: queuedRenderTarget, itemId, cardId } of batch) {
-                if (generation !== batchGeneration) break; // navigation or user switch
+                if (!isCurrent()) break; // navigation or user switch
                 try {
                     const item = JE.helpers?.getItemCached
                         ? await JE.helpers.getItemCached(itemId, { userId })
                         : await ApiClient.getItem(userId, itemId);
+                    if (!isCurrent()) return;
                     if (!item || !MEDIA_TYPES.has(item.Type)) continue;
                     rememberLookFacts(itemId, item);
 
                     const firstEpisode = (item.Type === 'Series' || item.Type === 'Season')
                         ? await getFirstEpisode(userId, item.Id) : null;
-                    if (generation !== batchGeneration) break; // switched during the awaits above
+                    if (!isCurrent()) break; // switched during the awaits above
                     let renderTarget = queuedRenderTarget;
                     if (!renderTarget.isConnected) {
                         if (!el.isConnected) continue; // card itself is gone

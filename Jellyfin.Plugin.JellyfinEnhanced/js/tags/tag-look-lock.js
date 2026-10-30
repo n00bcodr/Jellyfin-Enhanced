@@ -105,6 +105,10 @@
         const id = JE.core.tagLook.normalizeId(button.getAttribute('data-je-item-id') || '');
         const itemType = button.getAttribute('data-je-item-type') || '';
         if (!id) return;
+        const epoch = JE.session?.getEpoch?.();
+        const userId = ApiClient.getCurrentUserId();
+        /** @returns {boolean} The toggle still belongs to its originating session. */
+        const isCurrent = () => epoch === JE.session?.getEpoch?.() && userId === ApiClient.getCurrentUserId();
         button.disabled = true;
         renderBusy(button);
         const wasLocked = isLocked(id);
@@ -112,13 +116,17 @@
         try {
             if (wasLocked) {
                 saved = await JE.core.tagLook.unlockItems([id]);
+                if (!isCurrent()) return;
                 if (saved) JE.toast?.(JE.t('tag_look_unlocked_toast'));
             } else {
                 // The look the item's cards have now (rule or default; a
                 // season/episode of a locked series inherits the series'
                 // lock), decided only once the item data is known.
-                const conf = JE.core.tagLayout.resolveLayout(await itemFacts(id, itemType));
+                const facts = await itemFacts(id, itemType);
+                if (!isCurrent()) return;
+                const conf = JE.core.tagLayout.resolveLayout(facts);
                 saved = await JE.core.tagLook.lockItem(id, { layout: conf.layout, density: conf.density, slots: conf.slots });
+                if (!isCurrent()) return;
                 if (saved) {
                     JE.toast?.(JE.t('tag_look_locked_toast', { look: JE.t('tag_looks_outcome', {
                         layout: JE.t(`tag_looks_layout_${conf.layout}`),
@@ -127,9 +135,10 @@
                 }
             }
         } catch (err) {
+            if (!isCurrent()) return;
             console.warn(`${logPrefix} lock toggle failed:`, err);
         } finally {
-            if (!saved) JE.toast?.(JE.t('tag_look_error_toast'));
+            if (isCurrent() && !saved) JE.toast?.(JE.t('tag_look_error_toast'));
             button.removeAttribute('aria-busy');
             button.disabled = false;
             const locked = isLocked(id);
