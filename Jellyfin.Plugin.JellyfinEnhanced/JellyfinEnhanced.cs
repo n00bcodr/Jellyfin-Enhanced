@@ -283,6 +283,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                     statusTagsConfig.StatusTagsNewReleaseDays = Math.Clamp(statusTagsConfig.StatusTagsNewReleaseDays, 1, 365);
                 }
 
+                // Custom tag rules: unknown match types dropped, values and labels trimmed,
+                // repeated rules collapsed, at most 20 (a save can come from anywhere).
+                if (configuration is PluginConfiguration customTagsConfig)
+                {
+                    customTagsConfig.CustomTagRules = CustomTagRuleSet.Normalize(customTagsConfig.CustomTagRules);
+                }
+
                 // Tag Styles: only a valid document is stored (normalised to version 2); anything
                 // else keeps the current one, since a save can come from anywhere (API, restored backup).
                 if (configuration is PluginConfiguration stylesConfig
@@ -314,6 +321,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             {
                 Services.TagCacheService.Instance?.QueueServerModeTransition();
             }
+
+            // Custom tag rules that match differently re-match the cache in the background.
+            Services.TagCacheService.Instance?.QueueCustomTagRefreshIfStale();
 
             // Removing an MDBList key must also retire previously cached source scores.
             if (sourceRatingsWereConfigured != Services.TagCacheService.SourceRatingsConfigured)

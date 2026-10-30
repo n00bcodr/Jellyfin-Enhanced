@@ -318,7 +318,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A schema mismatch discards the stale cache so it can be rebuilt.
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
-        private const int CurrentCacheSchemaVersion = 16;
+        // v17 adds CustomTags (the Custom tag rules an item matches).
+        internal const int CurrentCacheSchemaVersion = 17;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -640,6 +641,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void BuildFullCacheBody(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
         {
             WarmSourceRatings(cancellationToken);
+            var customTagsFingerprint = PrepareCustomTagsForBuild();
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var languageCacheAtStart = LanguageCacheCounters();
@@ -794,6 +796,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _cacheReleased = false;
                     _cache = newCache;
+                    _customTagsFingerprint = customTagsFingerprint;
                     Interlocked.Increment(ref _version);
                     Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     Interlocked.Exchange(ref _maxLastUpdated, newMaxLastUpdated);
@@ -953,6 +956,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 rebuilt++;
                 progress?.Report(idsToRebuild.Count == 0 ? 50 : (double)rebuilt / idsToRebuild.Count * 80);
             }
+
+            // Collection membership changes the monitor did not see (Custom tags).
+            changed |= ReconcileCustomTags(cancellationToken);
 
             var currentIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
@@ -1251,7 +1257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var batch = _pending.Drain();
                     using (BeginInPlaceWrites())
                     {
+                        var seriesCustomTags = CustomTagsOfSeries(batch);
                         var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
+                        changed |= ApplyCustomTagFollowUps(batch, seriesCustomTags);
                         // Any library change may alter who can see an item (added,
                         // removed, moved, re-rated, re-tagged) even when its tag entry
                         // is unchanged: access sets computed before it are stale.
@@ -2252,6 +2260,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             _cacheReleased = false;
                             _cache = loaded;
+                            _customTagsFingerprint = data.CustomTagsFingerprint ?? string.Empty;
                             Interlocked.Exchange(ref _version, data.Version);
                             Interlocked.Exchange(ref _lastModified, data.LastModified);
                             Interlocked.Exchange(ref _maxLastUpdated, loadedMaxLastUpdated);
@@ -2280,6 +2289,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             .Select(e => e.PremiereDate).Min();
                     }
                     RefreshDueStatusContainers();
+                    // A snapshot written under other Custom tag rules is re-matched in the background.
+                    QueueCustomTagRefreshIfStale();
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
@@ -2347,6 +2358,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Version = Interlocked.Read(ref _version),
                         LastModified = Interlocked.Read(ref _lastModified),
                         LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
+                        CustomTagsFingerprint = _customTagsFingerprint,
                         Items = new Dictionary<string, TagCacheEntry>(_cache)
                     };
 
@@ -2620,6 +2632,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
                 entry.Ratings = GetSourceRatings(series ?? item);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
+                entry.CustomTags = CustomTagsFor(item, series);
 
                 if (isContainer)
                 {
@@ -3655,6 +3668,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public long Version { get; set; }
             public long LastModified { get; set; }
             public long LastReconciledUtcTicks { get; set; }
+            // The Custom tag rules (match fingerprint) the entries' CustomTags follow.
+            public string? CustomTagsFingerprint { get; set; }
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
         }
     }

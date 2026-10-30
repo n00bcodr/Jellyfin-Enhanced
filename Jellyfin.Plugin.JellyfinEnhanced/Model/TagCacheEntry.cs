@@ -145,6 +145,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public string? LibraryId { get; set; }
 
+        /// <summary>
+        /// Custom tag group: the ids of the administrator's rules the item matches
+        /// (<c>tag:&lt;name&gt;</c> or <c>collection:&lt;name&gt;</c>, see
+        /// <see cref="Configuration.CustomTagRuleSet.RuleId"/>), in rule order. Tags are the
+        /// item's own plus, for a Season/Episode, its Series'; collections are the
+        /// collections holding the item (or its Series). Null when no rule matches.
+        /// </summary>
+        public string[]? CustomTags { get; set; }
+
         // Shallow copy required by per-user mutators (spoiler tag-strip): the
         // TagCacheService stores ONE shared instance per item across ALL users,
         // so mutating in place would leak one user's strip into every other user's
@@ -202,7 +211,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && TagQualitySummary.ContentEquals(a.QualitySummary, b.QualitySummary)
                 && SequencesEqual(a.QualityEpisodeIds, b.QualityEpisodeIds)
                 && a.SeriesId == b.SeriesId
-                && a.LibraryId == b.LibraryId;
+                && a.LibraryId == b.LibraryId
+                && SequencesEqual(a.CustomTags, b.CustomTags);
         }
 
         /// <summary>
@@ -277,6 +287,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             LastUpdated = LastUpdated,
             SeriesId = SeriesId,
             LibraryId = LibraryId,
+            CustomTags = CustomTags,
         };
     }
 

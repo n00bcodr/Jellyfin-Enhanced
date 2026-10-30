@@ -53,9 +53,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The user's effective <c>useNativePosterTags</c> (on unless the user switched it off).</summary>
         public bool UseNativePosterTags { get; private init; }
 
-        /// <summary>True when at least one of the five card tag groups is on and not set to "off" in the corners layout.</summary>
+        /// <summary>True when at least one of the card tag groups is on and not set to "off" in the corners layout.</summary>
         public bool AnyGroupEnabled => Shows(PosterTagGroup.Quality) || Shows(PosterTagGroup.Genre) || Shows(PosterTagGroup.Language)
-            || Shows(PosterTagGroup.Rating) || Shows(PosterTagGroup.AgeRating);
+            || Shows(PosterTagGroup.Rating) || Shows(PosterTagGroup.AgeRating) || Shows(PosterTagGroup.Custom);
 
         /// <summary>
         /// Stable lowercase hex hash (16 characters) over every rendering-relevant effective value,
@@ -81,6 +81,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Effective <c>ageRatingTagsEnabled</c>.</summary>
         public bool AgeRatingTagsEnabled { get; private init; }
+
+        /// <summary>Effective <c>customTagsEnabled</c>.</summary>
+        public bool CustomTagsEnabled { get; private init; }
+
+        /// <summary>The administrator's Custom tag rules (labels and icons by rule id).</summary>
+        public CustomTagMatcher CustomTagRules { get; private init; } = new(null);
 
         /// <summary>
         /// Groups the user set to "off" in their corners layout profile: the web's corners layout
@@ -121,6 +127,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Most age rating chips shown (0 = unlimited; there is only ever one).</summary>
         public int AgeRatingCap { get; private init; } = 1;
 
+        /// <summary>Most Custom chips shown (0 = unlimited; default 3).</summary>
+        public int CustomCap { get; private init; } = 3;
+
         /// <summary>
         /// Quality position string as the web resolves it: the user's corners profile slot when it
         /// names a corner, else the position setting (user, else admin, else "top-left").
@@ -138,6 +147,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Age rating position string (default "bottom-right").</summary>
         public string AgeRatingTagsPosition { get; private init; } = "bottom-right";
+
+        /// <summary>Custom tags position string (default "top-left").</summary>
+        public string CustomTagsPosition { get; private init; } = "top-left";
 
         /// <summary>Effective <c>showResolutionTag</c>.</summary>
         public bool ShowResolutionTag { get; private init; } = true;
@@ -264,7 +276,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             || (Shows(PosterTagGroup.Genre) && IsTopRight(GenreTagsPosition))
             || (Shows(PosterTagGroup.Rating) && IsTopRight(RatingTagsPosition))
             || (Shows(PosterTagGroup.AgeRating) && IsTopRight(AgeRatingTagsPosition))
-            || (Shows(PosterTagGroup.Language) && IsTopRight(LanguageTagsPosition));
+            || (Shows(PosterTagGroup.Language) && IsTopRight(LanguageTagsPosition))
+            || (Shows(PosterTagGroup.Custom) && IsTopRight(CustomTagsPosition));
 
         /// <summary>Whether the user-review chip can appear: reviews, posters chip and a shown rating group.</summary>
         public bool UserReviewChipEnabled => ShowUserReviews && ShowUserRatingOnPosters && Shows(PosterTagGroup.Rating);
@@ -372,11 +385,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsEnabled = user.LanguageTagsEnabled,
                 RatingTagsEnabled = user.RatingTagsEnabled,
                 AgeRatingTagsEnabled = user.AgeRatingTagsEnabled,
+                CustomTagsEnabled = user.CustomTagsEnabled,
+                CustomTagRules = CustomTagMatcher.For(config.CustomTagRules),
                 QualityTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Quality) ?? Position(user.QualityTagsPosition, config.QualityTagsPosition, "top-left"),
                 GenreTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Genre) ?? Position(user.GenreTagsPosition, config.GenreTagsPosition, "top-right"),
                 LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
                 RatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Rating) ?? Position(user.RatingTagsPosition, config.RatingTagsPosition, "bottom-right"),
                 AgeRatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.AgeRating) ?? Position(user.AgeRatingTagsPosition, config.AgeRatingTagsPosition, "bottom-right"),
+                CustomTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Custom) ?? Position(user.CustomTagsPosition, config.CustomTagsPosition, "top-left"),
                 OffGroups = layout.Off,
                 GroupOrder = layout.Order,
                 QualityCap = layout.Cap("quality"),
@@ -388,6 +404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageCountBadge = LanguageTagDisplay.NormalizeCountBadge(user.LanguageTagsCountBadge),
                 RatingCap = layout.Cap("rating"),
                 AgeRatingCap = layout.Cap("ageRating"),
+                CustomCap = layout.Cap("custom"),
                 ShowResolutionTag = user.ShowResolutionTag,
                 ShowSourceTag = user.ShowSourceTag,
                 ShowEditionTag = user.ShowEditionTag ?? config.ShowEditionTag,
@@ -462,6 +479,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreTagsEnabled,
             PosterTagGroup.Rating => RatingTagsEnabled,
             PosterTagGroup.AgeRating => AgeRatingTagsEnabled,
+            PosterTagGroup.Custom => CustomTagsEnabled,
             _ => LanguageTagsEnabled,
         };
 
@@ -474,6 +492,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreCap,
             PosterTagGroup.Rating => RatingCap,
             PosterTagGroup.AgeRating => AgeRatingCap,
+            PosterTagGroup.Custom => CustomCap,
             _ => LanguageCap,
         };
 
@@ -486,6 +505,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => GenreTagsPosition,
             PosterTagGroup.Rating => RatingTagsPosition,
             PosterTagGroup.AgeRating => AgeRatingTagsPosition,
+            PosterTagGroup.Custom => CustomTagsPosition,
             _ => LanguageTagsPosition,
         };
 
@@ -541,6 +561,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             PosterTagGroup.Genre => "genre",
             PosterTagGroup.Rating => "rating",
             PosterTagGroup.AgeRating => "ageRating",
+            PosterTagGroup.Custom => "custom",
             _ => "language",
         };
 
@@ -614,6 +635,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 "genre" => 3,
                 "language" => 3,
                 "ageRating" => 1,
+                "custom" => 3,
                 _ => 0,
             };
 
@@ -623,6 +645,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 "genre" => caps?.Genre,
                 "language" => caps?.Language,
                 "rating" => caps?.Rating,
+                "custom" => caps?.Custom,
                 _ => caps?.AgeRating,
             };
         }
@@ -684,6 +707,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(config.RatingTagsMinScore),
                 RatingTagsColorByScore = config.RatingTagsColorByScore,
                 AgeRatingTagsPosition = config.AgeRatingTagsPosition,
+                CustomTagsEnabled = config.CustomTagsEnabled,
+                CustomTagsPosition = config.CustomTagsPosition,
             };
             TagLayoutRules.ApplyDefaults(defaults, config);
             LanguageTagDisplay.ApplyDefaults(defaults, config);
@@ -703,7 +728,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ["language.enabled"] = Bool(LanguageTagsEnabled),
                 ["rating.enabled"] = Bool(RatingTagsEnabled),
                 ["ageRating.enabled"] = Bool(AgeRatingTagsEnabled),
-                ["order"] = GroupOrder is null ? string.Empty : string.Join(",", GroupOrder),
+                // The Custom group joins the order (and every other value) only while it is shown,
+                // so posters drawn before it existed keep their cache keys.
+                ["order"] = GroupOrder is null ? string.Empty : string.Join(",", GroupOrder.Where(g => g != PosterTagGroup.Custom || Shows(PosterTagGroup.Custom))),
             };
 
             // A group set to "off" draws nothing, so (like a disabled group) its other values stay out.
@@ -777,6 +804,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 values["ageRating.position"] = AgeRatingTagsPosition;
                 values["ageRating.cap"] = Int(AgeRatingCap);
+            }
+
+            if (Shows(PosterTagGroup.Custom))
+            {
+                values["custom.enabled"] = "1";
+                values["custom.position"] = CustomTagsPosition;
+                values["custom.cap"] = Int(CustomCap);
+                values["custom.rules"] = string.Join("\n", CustomTagRules.Rules.Select(r => CustomTagRuleSet.RuleId(r) + "=" + r.Label + "|" + r.Icon));
             }
 
             if (!Styles.IsEmpty)

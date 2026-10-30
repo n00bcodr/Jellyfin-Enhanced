@@ -114,7 +114,7 @@ public class TagCacheSubtitleLanguagesTests
     }
 
     [Fact]
-    public void SchemaFifteenSnapshotsAreDiscardedAndSixteenIsKept()
+    public void OlderSnapshotsAreDiscardedAndTheCurrentSchemaIsKept()
     {
         using var f = new ApiPluginFixture();
         f.Plugin.Configuration.TagCacheServerMode = true;
@@ -124,15 +124,15 @@ public class TagCacheSubtitleLanguagesTests
         var library = new Mock<ILibraryManager>();
         TagCacheService Create() => new(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
 
-        // A v15 cache has no subtitle languages at all: it must rebuild, not serve empty chips.
-        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 15, Version = 7, LastModified = 200, Items = items }));
+        // A v16 cache has no Custom tag matches (and a v15 one no subtitle languages): it must rebuild.
+        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 16, Version = 7, LastModified = 200, Items = items }));
         using (var old = Create())
         {
             old.LoadFromDisk();
             Assert.Equal(0, old.Count);
         }
 
-        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 16, Version = 7, LastModified = 200, Items = items }));
+        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = TagCacheService.CurrentCacheSchemaVersion, Version = 7, LastModified = 200, Items = items }));
         using var current = Create();
         current.LoadFromDisk();
         Assert.Equal(1, current.Count);

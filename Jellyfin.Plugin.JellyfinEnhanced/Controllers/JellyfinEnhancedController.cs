@@ -1259,10 +1259,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 g => g,
                 g => TagStyleCatalog.Labels(g).Select(l => new { key = l.Key, name = l.Name }).ToList(),
                 StringComparer.Ordinal);
+            // Custom labels are the administrator's (the editor reads them from the rules table):
+            // every custom chip takes the "custom:*" palette colours.
             var palettes = TagStyleKeys.Presets.ToDictionary(
                 p => p,
                 p => TagStyleKeys.Groups
                     .SelectMany(g => TagStyleCatalog.Labels(g).Select(l => (Key: g + ":" + l.Key, Colors: TagStylePalettes.Concrete(p, g, l.Key))))
+                    .Append((Key: TagStyleKeys.Custom + ":" + TagStyleKeys.AnyLabel, Colors: TagStylePalettes.Concrete(p, TagStyleKeys.Custom, TagStyleKeys.AnyLabel)))
                     .ToDictionary(e => e.Key, e => Web(e.Colors), StringComparer.Ordinal),
                 StringComparer.Ordinal);
             return new JsonResult(new
@@ -3849,6 +3852,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RatingTagsEnabled,
                 config.AgeRatingTagsEnabled,
                 config.StatusTagsEnabled,
+                config.CustomTagsEnabled,
                 config.PeopleTagsEnabled,
                 config.DisableAllShortcuts,
                 config.DefaultSubtitleStyle,
@@ -3887,6 +3891,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LanguageTagsCountBadge = LanguageTagDisplay.NormalizeCountBadge(config.LanguageTagsCountBadge),
                 config.AgeRatingTagsPosition,
                 config.StatusTagsPosition,
+                // Custom tag group: starting corner and the administrator's rules (normalized).
+                config.CustomTagsPosition,
+                CustomTagRules = CustomTagRuleSet.Normalize(config.CustomTagRules),
                 config.StatusTagsJustAdded,
                 config.StatusTagsNewRelease,
                 config.StatusTagsTrending,
@@ -5368,6 +5375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                         AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
                         StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
+                        CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
                         PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         TagsHideOnHover = defaultConfig.TagsHideOnHover,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
@@ -5390,6 +5398,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                         AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                         StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                        CustomTagsPosition = defaultConfig.CustomTagsPosition,
                         StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                         StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
                         StatusTagsTrending = defaultConfig.StatusTagsTrending,
@@ -8402,6 +8411,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                 AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
                 StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
+                CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
                 PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                 TagsHideOnHover = defaultConfig.TagsHideOnHover,
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
@@ -8424,6 +8434,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                 AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                 StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                CustomTagsPosition = defaultConfig.CustomTagsPosition,
                 StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                 StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
                 StatusTagsTrending = defaultConfig.StatusTagsTrending,
@@ -8927,6 +8938,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // it (Seasons/Episodes take their Series'), memoized per series.
             var seriesLibraryMemo = new Dictionary<Guid, string?>();
             string? TagDataLibraryId(BaseItem tagItem) => Services.ItemLibraryResolver.Resolve(_libraryManager, tagItem, null, seriesLibraryMemo);
+            // Custom tag rule ids, as the server tag cache stores them (Spoiler Guard does
+            // not strip them: they are the administrator's labels, not plot facts).
+            var customSeriesMemo = new Dictionary<Guid, BaseItem?>();
+            string[]? TagDataCustomTags(BaseItem tagItem) => _tagCacheService.GetCustomTags(tagItem, customSeriesMemo);
             string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
             {
                 if (!seriesOnly && !string.IsNullOrWhiteSpace(tagItem.OfficialRating))
@@ -9118,6 +9133,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spEp),
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spEp),
+                        CustomTags = TagDataCustomTags(spEp),
                         // Suppress the parent-series rating fallback only when the
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
@@ -9164,6 +9180,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeries),
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
                         LibraryId = TagDataLibraryId(spSeries),
+                        CustomTags = TagDataCustomTags(spSeries),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9237,6 +9254,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spMovie),
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
                         LibraryId = TagDataLibraryId(spMovie),
+                        CustomTags = TagDataCustomTags(spMovie),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9281,6 +9299,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeason),
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spSeason),
+                        CustomTags = TagDataCustomTags(spSeason),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9381,6 +9400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Ratings = _tagCacheService.GetSourceRatings(item),
                     OfficialRating = ResolveTagDataOfficialRating(item),
                     LibraryId = TagDataLibraryId(item),
+                    CustomTags = TagDataCustomTags(item),
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,

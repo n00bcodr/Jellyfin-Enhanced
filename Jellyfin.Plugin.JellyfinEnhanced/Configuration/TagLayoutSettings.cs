@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// </summary>
     public class TagLayoutGroupSlot
     {
-        /// <summary>Group id: quality, genre, language, rating, ageRating or status.</summary>
+        /// <summary>Group id: quality, genre, language, rating, ageRating, status or custom.</summary>
         public string Group { get; set; } = string.Empty;
 
         /// <summary>Slot id valid for the profile's layout, or "off".</summary>
@@ -51,6 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int? Rating { get; set; }
         public int? AgeRating { get; set; }
         public int? Status { get; set; }
+        public int? Custom { get; set; }
     }
 
     /// <summary>
@@ -68,7 +69,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public const int MaxCap = 10;
 
         /// <summary>Group ids in the default priority order.</summary>
-        public static readonly IReadOnlyList<string> DefaultGroupOrder = new[] { "status", "quality", "rating", "ageRating", "language", "genre" };
+        public static readonly IReadOnlyList<string> DefaultGroupOrder = new[] { "status", "quality", "rating", "ageRating", "language", "genre", "custom" };
 
         /// <summary>Valid slots per layout ("off" is valid everywhere).</summary>
         public static readonly IReadOnlyDictionary<string, string[]> LayoutSlots = new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -174,9 +175,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 Rating = Clamp(caps.Rating),
                 AgeRating = Clamp(caps.AgeRating),
                 Status = Clamp(caps.Status),
+                Custom = Clamp(caps.Custom),
             };
             return result.Quality == null && result.Genre == null && result.Language == null
-                && result.Rating == null && result.AgeRating == null && result.Status == null
+                && result.Rating == null && result.AgeRating == null && result.Status == null && result.Custom == null
                 ? null
                 : result;
         }

@@ -32,6 +32,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Fixed size of the user-review <c>person_heart</c> icon (<c>font-size: 14px !important</c>).</summary>
         public const float UserReviewIconSize = 14f;
 
+        /// <summary>customtags.js: the container's gap between Custom chips (px).</summary>
+        public const float CustomGap = 3f;
+
+        /// <summary>customtags.js: the icon's font size (em of the chip font).</summary>
+        public const float CustomIconScale = 1.2f;
+
+        /// <summary>customtags.js: the gap between icon and label (em of the chip font).</summary>
+        public const float CustomIconGapEm = 0.3f;
+
+        /// <summary>customtags.js: the chip's line height.</summary>
+        public const float CustomLineHeight = 1.15f;
+
         /// <summary>Synthesised small caps: lowercase letters drawn as capitals at this fraction of the font size (rounded).</summary>
         public const float SmallCapsScale = 0.7f;
 

@@ -28,9 +28,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
     /// <summary>
     /// Decides which tags the web would draw on a card, from JE's tag-cache entry and the user's
-    /// effective settings: a pure, allocation-light port of the five card tag groups
+    /// effective settings: a pure, allocation-light port of the card tag groups
     /// (js/tags/qualitytags.js, genretags.js, ratingtags.js + userreviewtags.js, ageratingtags.js,
-    /// languagetags.js + js/core/media-language.js) and of the pipeline's ordering and top-right
+    /// customtags.js, languagetags.js + js/core/media-language.js) and of the pipeline's ordering and top-right
     /// indicator offset (js/tags/tag-pipeline.js, js/core/tag-renderer-base.js). Thread-safe, no I/O.
     /// </summary>
     /// <remarks>
@@ -64,9 +64,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (!settings.AnyGroupEnabled) return null;
 
             // DOM order of the tag containers = paint and stack order. Renderers run in registration
-            // order (quality, genre, rating, age rating, language), except that quality registers
-            // late when it waits for the Jellyfin audio preference.
-            var groups = new List<PosterTagGroupLayout>(5);
+            // order (quality, genre, rating, age rating, custom, language), except that quality
+            // registers late when it waits for the Jellyfin audio preference.
+            var groups = new List<PosterTagGroupLayout>(6);
             PosterTagGroupLayout? reviewOnly = null;
 
             PosterTagGroupLayout? quality = settings.Shows(PosterTagGroup.Quality) ? ResolveQuality(entry, settings) : null;
@@ -103,6 +103,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (settings.Shows(PosterTagGroup.AgeRating) && AgeRatingRules.Resolve(entry.OfficialRating) is { } age)
             {
                 groups.Add(Group(PosterTagGroup.AgeRating, settings, new List<PosterTag>(1) { age }));
+            }
+
+            if (settings.Shows(PosterTagGroup.Custom) && ResolveCustom(entry, settings) is { } custom)
+            {
+                groups.Add(Group(PosterTagGroup.Custom, settings, custom));
             }
 
             if (settings.Shows(PosterTagGroup.Language) && LanguageFlagRules.ResolveGroup(entry, settings) is { } languages)
@@ -160,6 +165,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var list = new List<PosterTag>(tags.Count);
             list.AddRange(tags);
             return Group(PosterTagGroup.Quality, settings, list);
+        }
+
+        /// <summary>
+        /// customtags.js rulesFor: the rules the entry matched, in the server's (rule table) order,
+        /// skipping ids no rule has any more; null when none is left.
+        /// </summary>
+        private static List<PosterTag>? ResolveCustom(TagCacheEntry entry, PosterTagSettings settings)
+        {
+            if (entry.CustomTags is not { Length: > 0 } ids) return null;
+            List<PosterTag>? tags = null;
+            foreach (var id in ids)
+            {
+                if (settings.CustomTagRules.Find(id) is not { } rule) continue;
+                tags ??= new List<PosterTag>(ids.Length);
+                if (tags.Exists(t => ((CustomTag)t).RuleId == id)) continue;
+                tags.Add(new CustomTag(rule.Label, rule.Icon, id));
+            }
+
+            return tags;
         }
 
         /// <summary>
