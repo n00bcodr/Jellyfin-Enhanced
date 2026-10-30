@@ -166,7 +166,7 @@ const synthetic = {
 // Aggregation facts deliberately disagree with representative streams; native and web must use the policy.
 for (const type of ['Series', 'Season']) {
     const facts = (best, latest = best, agree = true) => ({ Best: best, Latest: latest, Values: [best], AllAgree: agree });
-    const data = { Type: type, Source: 'WEB', Edition: 'Criterion', Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92 },
+    const data = { Type: type, Source: 'WEB', Edition: 'Criterion', AudioLanguages: ['eng', 'jpn'], SubtitleLanguages: ['fra', 'eng'], Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92 },
         StreamData: sd([video(), audio()]), QualitySummary: { EpisodeCount: 2,
         Categories: { resolution: facts('4K', '720p', false), dynamicRange: facts('Dolby Vision', null, false), videoCodec: facts('AV1'), audioInfo: facts('ATMOS 7.1', 'DTS 5.1', false) },
         AudioByLanguage: { de: facts('DTS 5.1') }, LatestExtras: ['IMAX', 'REMUX', 'edition:Extended'] } };
@@ -239,6 +239,7 @@ for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed']) {
 synth('aggregate-admin-default', { QualityTagsEnabled: true }, { SeriesQualityAggregation: 'best' });
 for (const policy of ['latest', 'mixed']) {
     synth('tier1-combined-' + policy, { QualityTagsEnabled: true, RatingTagsEnabled: true,
+        LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes',
         SeriesQualityAggregation: policy, RatingTagsSources: ['imdb', 'tmdb', 'rtCritic'] });
 }
 synth('positions-mirror', {
