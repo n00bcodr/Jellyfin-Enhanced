@@ -166,6 +166,7 @@
 
     /**
      * @typedef {Object} StatusData
+     * @property {number} [fetchedAt] - Original /tag-data fetch time, retained by cached snapshots.
      * @property {string|null} type - Jellyfin item type.
      * @property {string|null} tmdb - The item's TMDB id (trending).
      * @property {number|null} created - DateCreated (ms).
@@ -672,6 +673,7 @@
         if (!entry || typeof entry !== 'object' || entry.v !== CACHE_ENTRY_VERSION) return null;
         if (typeof entry.timestamp !== 'number' || Date.now() - entry.timestamp > CACHE_FRESH_MS) return null;
         return {
+            fetchedAt: entry.timestamp,
             type: entry.t ?? null,
             tmdb: entry.m ?? null,
             created: entry.c ?? null,
@@ -700,7 +702,7 @@
      * @returns {void}
      */
     function setCachedEntry(ctx, itemId, data) {
-        const entry = { v: CACHE_ENTRY_VERSION, t: data.type, timestamp: Date.now() };
+        const entry = { v: CACHE_ENTRY_VERSION, t: data.type, timestamp: data.fetchedAt ?? Date.now() };
         if (data.tmdb) entry.m = data.tmdb;
         if (data.created !== null) entry.c = data.created;
         if (data.premiere !== null) entry.p = data.premiere;
@@ -1309,7 +1311,7 @@
                 if (el.closest('.je-hidden')) return;
 
                 JE.tagPipeline?.rememberItemFacts?.(item);
-                const data = fromItem(item);
+                const data = { ...fromItem(item), fetchedAt: Date.now() };
                 // A Spoiler Guard strip stub (no ProviderIds) is only cached when
                 // it carries the TMDB id, so a full item's id is never lost to it.
                 if (item.ProviderIds || data.tmdb || (data.type !== 'Movie' && data.type !== 'Series')) {
@@ -1323,6 +1325,23 @@
                 if (el.closest('.je-hidden')) return true;
                 const cached = getCachedEntry(ctx, itemId);
                 if (!cached) return false;
+                if ((cached.type === 'Series' || cached.type === 'Season') && JE.tagPipeline?.rememberItemFacts
+                    && !JE.tagPipeline.peekItemFacts(itemId)) {
+                    // Restore the filtered projection with its original age, never the redraw time.
+                    JE.tagPipeline.rememberItemFacts({
+                        Type: cached.type, SeriesId: cached.seriesId, SeasonNumber: cached.season,
+                        Status: cached.status, LatestEpisodeAdded: cached.latest, LatestEpisodeAired: cached.latestAired,
+                        LatestEpisodeIndex: cached.latestIndex ? {
+                            Season: cached.latestIndex.s, Episode: cached.latestIndex.e, IsLast: cached.latestIndex.isLast,
+                        } : null,
+                        SeasonPremiere: cached.seasonPremiere ? { Season: cached.seasonPremiere.s, Aired: cached.seasonPremiere.aired } : null,
+                        SeasonAddedSpan: cached.addedSpan ? {
+                            First: cached.addedSpan.first, Last: cached.addedSpan.last, Count: cached.addedSpan.count,
+                        } : null,
+                    }, itemId, cached.fetchedAt);
+                    // Misses join the pipeline's existing batch instead of renewing stale facts.
+                    if (!JE.tagPipeline.peekItemFacts(itemId)) return false;
+                }
                 renderData(ctx, el, cached, itemId);
                 // A cached "no badge" is still a cache hit — nothing to fetch.
                 return true;

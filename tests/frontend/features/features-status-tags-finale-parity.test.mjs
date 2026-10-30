@@ -59,7 +59,7 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
   await delay(0);
   while (idle.length) idle.shift()({ timeRemaining: () => 50 });
   await delay(240);
-  return Object.assign(h, { calls, changes, idle, key(id) { return h.document.querySelector(`[data-id="${id}"] .status-tag`)?.dataset.jeStatus ?? null; },
+  return Object.assign(h, { calls, changes, idle, items, key(id) { return h.document.querySelector(`[data-id="${id}"] .status-tag`)?.dataset.jeStatus ?? null; },
     switchUser() { epoch++; for (const fn of changes.values()) fn({ userId: 'user-b' }); } });
 }
 
@@ -152,4 +152,39 @@ test('live recomputation refreshes the series snapshot from authoritative parent
   h.JE.tagPipeline.rememberItemFacts({ Id: SERIES, Type: 'Series' });
   h.window.dispatchEvent(new h.window.Event('focus'));
   assert.equal(h.key(SERIES), null);
+});
+
+
+test('a series hot-cache redraw fetches expired facts in the existing card batch', async t => {
+  const h = await setup(t, { facts: {} });
+  const batches = () => h.calls.filter(c => c.url.includes('/tag-data/'));
+  assert.equal(batches().length, 1);
+  h.window.Date.now = () => NOW + 5 * 60 * 1000;
+  h.JE.reinitializeStatusTags();
+  while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+  await delay(200);
+  assert.equal(batches().length, 1, 'a fresh snapshot needs no request and retains its age');
+  h.window.Date.now = () => NOW + 11 * 60 * 1000;
+  h.items.set(SERIES, { ...aggregate, LatestEpisodeIndex: { Season: 1, Episode: 11 } });
+  h.JE.reinitializeStatusTags();
+  while (h.idle.length) h.idle.shift()({ timeRemaining: () => 50 });
+  assert.equal(h.JE.tagPipeline.peekItemFacts(SERIES), null, 'the old snapshot cannot renew expired facts');
+  await delay(200);
+  assert.equal(batches().length, 2, 'expiry queues one normal /tag-data batch without a schedule lookup');
+  assert.deepEqual(JSON.parse(batches()[1].data), [SERIES], 'fresh episode snapshots need no refetch');
+  assert.equal(h.JE.tagPipeline.peekItemFacts(SERIES).LatestEpisodeIndex.Episode, 11);
+});
+
+
+test('a cached projection retains its original fetch timestamp when restoring parent facts', async t => {
+  const h = await setup(t, { cards: [] });
+  const pipeline = h.JE.tagPipeline;
+  h.window.Date.now = () => NOW + 5 * 60 * 1000;
+  pipeline.rememberItemFacts(aggregate, SERIES, NOW);
+  assert.equal(pipeline.peekItemFacts(SERIES).LatestEpisodeIndex.Episode, 10);
+  pipeline.rememberItemFacts({ ...aggregate, LatestEpisodeIndex: { Season: 1, Episode: 11 } }, SERIES, NOW - 1000);
+  assert.equal(pipeline.peekItemFacts(SERIES).LatestEpisodeIndex.Episode, 10, 'older cached facts cannot replace newer facts');
+  h.window.Date.now = () => NOW + 11 * 60 * 1000;
+  pipeline.rememberItemFacts(aggregate, SERIES, NOW);
+  assert.equal(pipeline.peekItemFacts(SERIES), null, 'restoring the snapshot never extends the fetch TTL');
 });

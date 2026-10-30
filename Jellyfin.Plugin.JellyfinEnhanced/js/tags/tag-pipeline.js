@@ -84,7 +84,7 @@
     const firstEpisodeCache = new Map(); // seriesId → Promise<item|null>
     // Caller-filtered Series/Season facts from /tag-data, shared with server-cache readers.
     const seasonFactIds = new Map(); // seriesId:season → normalized season id
-    const itemFacts = new Map(); // normalized id → { entry, expires }
+    const itemFacts = new Map(); // normalized id → { entry, fetchedAt, expires }
     const ITEM_FACTS_TTL_MS = 10 * 60 * 1000;
     const parentSeriesCache = new Map(); // seriesId → Promise<item|null>
     let fetchTimer = null;
@@ -101,13 +101,17 @@
      * Retain only caller-filtered container projections, including stripped facts.
      * @param {Object} entry - A server entry or /tag-data item.
      * @param {string} id - Its item id.
+     * @param {number} [fetchedAt] - Original fetch time; cached redraws retain it.
      * @returns {void}
      */
-    function rememberItemFacts(entry, id = entry.Id) {
+    function rememberItemFacts(entry, id = entry.Id, fetchedAt = Date.now()) {
         if (!id || (entry.Type !== 'Series' && entry.Type !== 'Season')) return;
-        if (itemFacts.size >= MEMORY_SOFT_CAP) { itemFacts.clear(); seasonFactIds.clear(); }
         const itemId = String(id).replace(/-/g, '').toLowerCase();
-        itemFacts.set(itemId, { entry, expires: Date.now() + ITEM_FACTS_TTL_MS });
+        // A redraw cannot revive an expired fetch or replace newer shared facts.
+        if (!Number.isFinite(fetchedAt) || fetchedAt + ITEM_FACTS_TTL_MS <= Date.now()
+            || (itemFacts.get(itemId)?.fetchedAt ?? -Infinity) > fetchedAt) return;
+        if (itemFacts.size >= MEMORY_SOFT_CAP) { itemFacts.clear(); seasonFactIds.clear(); }
+        itemFacts.set(itemId, { entry, fetchedAt, expires: fetchedAt + ITEM_FACTS_TTL_MS });
         if (entry.Type === 'Season' && entry.SeriesId) {
             const seriesId = String(entry.SeriesId).replace(/-/g, '').toLowerCase();
             seasonFactIds.set(`${seriesId}:${entry.SeasonNumber ?? entry.IndexNumber}`, itemId);
