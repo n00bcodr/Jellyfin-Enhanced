@@ -1095,6 +1095,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/EpisodeIdentity.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/Acquire/Requests/FutureSeasonCharges.cs",
       "category": "Services"
     },
@@ -2856,6 +2860,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/nativedetails/native-details.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/jellyseerr/nativedetails/native-recovery.js",
       "category": "js"
     },
     {
@@ -12083,7 +12091,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 784,
+    "files": 786,
     "routes": 317,
     "configuration_properties": 672,
     "storage_references": 107,

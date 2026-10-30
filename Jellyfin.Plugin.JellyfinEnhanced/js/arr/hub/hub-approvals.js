@@ -225,6 +225,8 @@
         seerr_whole_series_only: 'arr_approvals_stuck_whole_series',
         seerr_user_unlinked: 'arr_approvals_stuck_seerr_account',
         no_4k_instance: 'arr_approvals_stuck_no_4k',
+        // F83: an episode asked by TMDB's numbering that has no Sonarr episode with its TVDB id (never matched by name).
+        episode_identity_unresolved: 'arr_approvals_stuck_episode_identity',
         // Phase 4b: held by the household's rules or a group pool after it was queued, and administrator Seerr options.
         household_rule: 'arr_rules_stuck_household_rule',
         rule_review: 'arr_rules_stuck_rule_review',

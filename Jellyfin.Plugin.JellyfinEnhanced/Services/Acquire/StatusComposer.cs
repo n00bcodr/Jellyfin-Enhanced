@@ -1554,7 +1554,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
             {
                 if (copy.Mask.Hides(season, n)) continue;
                 var have = Have(files, season, n);
-                var row = files.FirstOrDefault(e => new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
+                // The episode's row is the item that plays it: while Jellyfin still lists the missing (virtual) episode a file
+                // replaced, both stand for it, and the page keeps the playable one.
+                var row = have ?? files.FirstOrDefault(e => new EpisodeRange(e.Episode, e.EpisodeEnd).Contains(n));
                 var arr = copy.Episodes?.Find(season, n);
                 CopyState state;
                 if (have != null)
@@ -2362,6 +2364,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                             ? new CopyState(StatusStage.None, StatusReasonCode.ServiceDown)
                             : new CopyState(StatusStage.NotHere, StatusReasonCode.NotInArr);
         }
+        /// <summary>The neutral held flag a non-administrator gets for a request the administrators were told is held (F83).</summary>
+        internal const string HeldForAdmins = "told";
+
         private static CopyState ApplyRequest(CopyState state, RequestFacts? request, ComposeContext? c = null, TitleFacts? facts = null, bool? admin = null)
         {
             if (request == null) return state;
@@ -2377,8 +2382,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire
                 if (request.Pending)
                 {
                     // An administrator is the one it waits for: held back at sending, it says why (not "waiting for you").
-                    return (admin ?? c?.Viewer.IsAdmin) == true && request.HeldReason is { } held
-                        ? new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Attention: true, Since: request.AskedAt, Params: Params(("held", held)))
+                    if ((admin ?? c?.Viewer.IsAdmin) == true && request.HeldReason is { } held)
+                        return new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Attention: true, Since: request.AskedAt, Params: Params(("held", held)));
+                    // F83: an episode that couldn't be matched to Sonarr's by id is held and the administrators were told: everyone
+                    // else sees it held (a neutral flag, never why), not waiting for an OK.
+                    return request.HeldReason == Requests.EpisodeIdentity.Unresolved
+                        ? new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Since: request.AskedAt, Params: Params(("held", HeldForAdmins)))
                         : new CopyState(StatusStage.Asked, StatusReasonCode.AwaitingApproval, Since: request.AskedAt);
                 }
                 if (request.ApprovedAt is DateTime approved)

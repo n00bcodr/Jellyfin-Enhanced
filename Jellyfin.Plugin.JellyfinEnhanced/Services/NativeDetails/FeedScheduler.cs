@@ -48,6 +48,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
             }
         }
 
+        /// <summary>Reads holding one of the <see cref="Concurrency"/> slots.</summary>
+        internal int Running
+        {
+            get
+            {
+                lock (_lock) return _running;
+            }
+        }
+
         /// <summary>Viewers with a read outstanding (an entry lives only while its count is above zero).</summary>
         internal int ViewersTracked
         {

@@ -478,6 +478,18 @@ test('a stuck card says why in plain words; the reason code is only in an admini
   assert.equal(m.page().querySelector('details.je-approval-admin'), null, 'no Details for managers');
 });
 
+test('F83: a request held because its episode can\'t be matched to Sonarr\'s by id says so to an administrator, neutrally to a manager', async t => {
+  const items = [card(1, { stuck: true, reason: 'episode_identity_unresolved', admin: { reason: 'episode_identity_unresolved', jobs: [] } })];
+  const h = setupHub(t, { hash: '#/requests?tab=approvals', me: { role: 'admin' }, routes: (m, path) => (path === '/acquire/requests/approvals' ? approvals(items) : null) });
+  h.JE.initializeArrStatus();
+  await until(() => h.page().querySelectorAll('.je-approval').length === 1);
+  assert.match(h.page().querySelector('.je-approval-chip-stuck').textContent, /Stuck · the episode couldn't be matched by its id$/);
+  const m = setupHub(t, { hash: '#/requests?tab=approvals', me: { role: 'manager', contact: 'Jake' }, routes: (x, path) => (path === '/acquire/requests/approvals' ? approvals([card(1, { stuck: true, reason: 'episode_identity_unresolved' })]) : null) });
+  m.JE.initializeArrStatus();
+  await until(() => m.page().querySelectorAll('.je-approval').length === 1);
+  assert.match(m.page().querySelector('.je-approval-chip-stuck').textContent, /Stuck · needs a look$/);
+});
+
 test('phase 4b holds of administrator Seerr choices say why to an administrator (rule and allowance holds have their own chips)', async t => {
   const reasons = {
     seerr_options_changed: "Stuck · Seerr doesn't match the server choice",

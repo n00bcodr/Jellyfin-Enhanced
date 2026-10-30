@@ -229,7 +229,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     try
                     {
                         // Only the request exactly as it was checked: one changed meanwhile is judged again next time.
-                        if (await ArrivedAsync(want, cancellationToken).ConfigureAwait(false) && _ledger.Fulfil(want.Id, _now(), want))
+                        // (A request switched to Sonarr's numbers by this check is judged, and fulfilled, as switched: EI-R3-8.)
+                        var (arrived, checkedWant) = await ArrivedAsync(want, cancellationToken).ConfigureAwait(false);
+                        if (arrived && _ledger.Fulfil(want.Id, _now(), checkedWant))
                         {
                             done++;
                             _feed.Bump(new[] { want.Input.Key, ArrTitleKey.UserRequests(want.UserId), ArrTitleKey.RequestsState });
@@ -268,16 +270,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// full read: fulfilled is final, so a season that reads Ready only because Sonarr couldn't be read (one episode
         /// here, the rest unknown) waits for the next look.
         /// </summary>
-        private async Task<bool> ArrivedAsync(RequestWant want, CancellationToken cancellationToken)
+        private async Task<(bool Arrived, RequestWant Checked)> ArrivedAsync(RequestWant want, CancellationToken cancellationToken)
         {
-            if (TitleKey.Parse(want.Input.Key) is not { } key || _view.Viewer(want.UserId) is not { } viewer) return false;
+            if (TitleKey.Parse(want.Input.Key) is not { } key || _view.Viewer(want.UserId) is not { } viewer) return (false, want);
+            // F83: an ask still in TMDB's numbering has no Sonarr or library episode yet (its id match renumbers it once it
+            // goes out): it is never fulfilled by an episode that merely has the same number.
+            if (want.Input.Numbering == EpisodeIdentity.Tmdb)
+            {
+                // A request with no send of its own to switch it (one joining another's sent episode, or one whose job ended
+                // since) takes the id matches already kept: its change is published, and it is judged as it is now.
+                var changed = _ledger.SettleIdentity(want, _now());
+                if (changed.Count == 0) return (false, want);
+                _feed.Bump(changed.Select(ArrTitleKey.UserRequests).Append(want.Input.Key).Append(ArrTitleKey.RequestsState).ToArray());
+                if (_ledger.Find(want.Id) is not { } switched || switched.Input.Numbering == EpisodeIdentity.Tmdb) return (false, want);
+                want = switched;
+            }
             var title = key.ToString();
             var scope = LedgerRequestFacts.ScopeOf(new[] { want }, want.UserId, () => _ledger.Dispatches(title));
             var composed = await _status.ComposeForAsync(viewer, new[] { key }, new Dictionary<TitleKey, ArrStatusService.RequestScope> { [key] = scope }, cancellationToken, loadEpisodes: true).ConfigureAwait(false);
             // The requester again, right before it is marked: someone removed, or whose access changed while the check
             // ran, is judged again next time (as they are then).
-            return composed.Count > 0 && composed[0].Status.Stage == StatusStage.Ready && !composed[0].Guessed
-                && _view.Viewer(want.UserId) is { } still && string.Equals(still.PolicyRevision, viewer.PolicyRevision, StringComparison.Ordinal);
+            return (composed.Count > 0 && composed[0].Status.Stage == StatusStage.Ready && !composed[0].Guessed
+                && _view.Viewer(want.UserId) is { } still && string.Equals(still.PolicyRevision, viewer.PolicyRevision, StringComparison.Ordinal), want);
         }
     }
 }

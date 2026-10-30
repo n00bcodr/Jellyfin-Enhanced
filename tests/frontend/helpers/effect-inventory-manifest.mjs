@@ -484,17 +484,26 @@ export const SITES = {
     '(module) state collapsed': [1, 'module', 'ui'],
   },
   'arr/status/status-episodes.js': {
-    'addArrivals state pendingRows': [2, 'module', 'ui'],
-    'addArrivals state rowsByEpisode': [1, 'module', 'ui'],
+    // F102: what an open season learnt (its id history, the playable items' answers, refusals, reads in flight) lives
+    // on the season owner in `state` (not module bindings) and goes with it: another season or page, leaving it, a
+    // user switch, the person's access moving.
+    // SRD-3: the polite live region that names the episode a moved focus landed on (visually hidden, not a surface).
+    'announce state liveRegion': [1, 'module', 'ui'],
+    'announce surface insert body': [1, 'module', 'render: a visually hidden polite live region for the season rows, no foreground surface'],
+    // F105b: a rowless arrival read dropped while its season owner, route and viewer stay asks again.
+    'addArrivals state closure again': [2, 'module', 'ui'],
     'apply state closure firstRow': [1, 'module', 'ui'],
-    'apply state rowsByEpisode': [1, 'module', 'ui'],
+    'apply state closure pointed': [1, 'module', 'ui'],
+    'apply state reapplying': [2, 'module', 'ui'],
     'clear state extension': [1, 'module', 'ui'],
-    'clear state pendingRows': [1, 'module', 'ui'],
-    'clear state rowsByEpisode': [1, 'module', 'ui'],
     'clear state state': [1, 'module', 'ui'],
     'extend state extension': [1, 'module', 'ui'],
+    // A row the viewer was on that goes (its episode's other row stays): focus moves to that episode's row, announced.
+    // F105b: an item read whose answer was dropped while its season owner, route and viewer stay asks again.
+    'read state closure again': [2, 'module', 'ui'],
+    'reconcile feedback announce': [1, 'module', 'effect'],
+    'reconcile focus focus': [2, 'module', 'effect'],
     'render state observer': [1, 'module', 'ui'],
-    'render state rowsByEpisode': [1, 'module', 'ui'],
     'render state state': [1, 'module', 'ui'],
   },
   'core/access-revision.js': {
@@ -876,10 +885,36 @@ export const SITES = {
   },
   'jellyseerr/moreinfo/more-info-modal-seasons.js': {
   },
+  'jellyseerr/nativedetails/native-recovery.js': {
+    // One page's recovery: its asks, places and marks, ended (ended = true) when the page or its policy ends.
+    'pump state closure active': [2, 'module', 'ui'],
+    'ask state closure marks': [1, 'module', 'ui'],
+    'load state closure marks': [1, 'module', 'ui'],
+    'dispose state closure ended': [1, 'module', 'registry'],
+    // One recovery phase bounded by its deadline and the page (bounded): settled once, its cancel run once.
+    'stop state closure done': [1, 'module', 'ui'],
+    'bounded state closure cancel': [1, 'module', 'ui'],
+    'bounded state closure done': [1, 'module', 'ui'],
+    // A list re-read's retry timer, cleared with its deadline when it settles or its page ends (release).
+    'release state closure retry': [1, 'module', 'ui'],
+    'next state closure retry': [2, 'module', 'ui'],
+    // A list re-read's own bookkeeping; every answer is published only while its page still holds (live(page)).
+    'next state closure attempts': [1, 'module', 'ui'],
+    'next state closure answer': [2, 'module', 'ui'],
+  },
   'jellyseerr/nativedetails/native-details.js': {
     'adaptListPage navigation history.back': [1, 'press', 'sync'],
     'artPolicyMoved state artGeneration': [1, 'module', 'lifecycle: moves on with the person\'s access / presentation policy and session; it only ends kept artwork'],
     'artPolicyMoved state artwork': [1, 'module', 'ui'],
+    'artPolicyMoved state earlyFailures': [1, 'module', 'lifecycle: absent-art recovery bookkeeping (failed loads waiting for their page state); bounded, dropped on navigation, a user change and a policy move'],
+    // The page's artwork recovery (native-recovery.js): failures reported before the page state, handed to it once.
+    'artRecovery state earlyFailures': [1, 'module', 'lifecycle: absent-art recovery bookkeeping (failed loads waiting for their page state); bounded, dropped on navigation, a user change and a policy move'],
+    'artFailed state earlyFailures': [2, 'module', 'lifecycle: absent-art recovery bookkeeping (failed loads waiting for their page state); bounded, dropped on navigation, a user change and a policy move'],
+    // A recovered image is kept like any image this page loaded under the policy that holds now (see keepImages).
+    'onShown state artwork': [1, 'module', 'ui'],
+    // The backdrop slot recovery drew (only the page's own artwork), taken away when the page or its policy ends.
+    'show state closure drawn': [1, 'module', 'effect'],
+    'clear state closure drawn': [1, 'module', 'ui'],
     'backThenModal navigation history.back': [1, 'press', 'sync'],
     'backThenModal state pendingModal': [2, 'module', 'cache'],
     'cancelPendingModal state pendingModal': [1, 'module', 'cache'],
@@ -911,6 +946,13 @@ export const SITES = {
     'refuse navigation history.back': [1, 'press', 'sync'],
     'showOpen navigation go': [1, 'press', 'sync'],
     'start reload scheduleFullReload': [1, 'press', 'callee'],
+    // List re-reads' end hooks (each ends its read only when its page no longer holds), removed when the read ends.
+    'watch state childEnds': [2, 'module', 'registry'],
+    // The visit shown now (its route generation and start), for the backdrop watchdog: moves with semantic navigation.
+    'noteVisit state visitGeneration': [1, 'module', 'ui'],
+    'noteVisit state visitStartedAt': [1, 'module', 'ui'],
+    'start state visitGeneration': [1, 'module', 'ui'],
+    'start state earlyFailures': [2, 'module', 'lifecycle: absent-art recovery bookkeeping (failed loads waiting for their page state); bounded, dropped on navigation, a user change and a policy move'],
     'start state artGeneration': [2, 'module', 'lifecycle: moves on with the person\'s access / presentation policy and session; it only ends kept artwork'],
     'start state started': [1, 'module', 'ui'],
   },

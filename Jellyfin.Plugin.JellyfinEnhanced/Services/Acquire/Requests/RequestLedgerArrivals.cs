@@ -59,14 +59,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 // Something may already be written upstream (or Seerr was already processing it): not this path.
                 if (LinkedScope(c, t, want) != null || Scalar(c, t, "SELECT id FROM jobs WHERE want_id=$id AND (state IN ('sending','maybe_sent','succeeded') OR json_extract(outcome,'$.certainty') IN ('Unknown','Succeeded')) LIMIT 1", ("$id", wantId)) != null)
                     return false;
-                foreach (var job in Jobs(c, t, "want_id=$id AND state IN ('queued','retry','parked') AND " + KnownUnsent, ("$id", wantId)))
-                    Supersede(c, t, job.Id, "fulfilled");
                 Exec(c, t, "UPDATE reservations SET state='refunded' WHERE want_id=$id AND state='held'", ("$id", wantId));
             }
             else if (want.Status is not ("sent" or "stale"))
             {
                 return false;
             }
+            // A fulfilled request has no live job: one never sent (held, queued) is cancelled and its charge given back
+            // (F83, EI-R4-1); work whose send is uncertain stays as it is.
+            foreach (var job in Jobs(c, t, "want_id=$id AND state IN ('queued','retry','parked') AND " + KnownUnsent, ("$id", wantId)))
+                Supersede(c, t, job.Id, "fulfilled");
             Exec(c, t, "UPDATE wants SET status='fulfilled',reason='ready',updated_at=$at WHERE id=$id", ("$at", Ms(now)), ("$id", wantId));
             Record(c, t, wantId, null, null, "fulfilled", "accepted", "ready", want.Input.Key, now);
             return true;

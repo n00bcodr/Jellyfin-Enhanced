@@ -48,20 +48,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         private readonly ArrStateStore _store;
         private readonly TitleAliases? _aliases;
         private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+        private readonly Func<int, int, int, CancellationToken, Task<EpisodeExternalId>>? _externalId;
 
         /// <summary>Creates the executor (DI).</summary>
-        public DirectArrBackend(ArrClientFactory clients, ArrStateStore store, TitleAliases aliases)
-            : this(clients, store, aliases, null)
+        public DirectArrBackend(ArrClientFactory clients, ArrStateStore store, TitleAliases aliases, TmdbResponseCache tmdb)
+            : this(clients, store, aliases, null, (series, season, episode, ct) => EpisodeIdentity.TmdbAsync(tmdb, series, season, episode, ct))
         {
         }
 
-        /// <summary>Creates the executor with an explicit delay (tests).</summary>
-        internal DirectArrBackend(ArrClientFactory clients, ArrStateStore store, TitleAliases? aliases, Func<TimeSpan, CancellationToken, Task>? delay)
+        /// <summary>
+        /// Creates the executor with an explicit delay and TMDB episode-id reader (tests). Without a reader a TMDB-numbered ask
+        /// can't be matched to Sonarr's episodes and is held (<see cref="EpisodeIdentity.Unresolved"/>).
+        /// </summary>
+        internal DirectArrBackend(ArrClientFactory clients, ArrStateStore store, TitleAliases? aliases, Func<TimeSpan, CancellationToken, Task>? delay,
+            Func<int, int, int, CancellationToken, Task<EpisodeExternalId>>? externalId = null)
         {
             _clients = clients;
             _store = store;
             _aliases = aliases;
             _delay = delay ?? ((t, ct) => Task.Delay(t, ct));
+            _externalId = externalId;
         }
 
         /// <inheritdoc />
@@ -86,7 +92,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             var run = new Run(job, instance, client, key, finalGuard, admission, ct);
             ChoiceNames(run, _store.PeekSystem(instance.Id));
             var result = key.IsMovie ? await MovieAsync(run).ConfigureAwait(false) : await SeriesAsync(run).ConfigureAwait(false);
-            return result with { AddChoiceDetails = run.AddChoiceDetailsFacts };
+            return result with
+            {
+                AddChoiceDetails = run.AddChoiceDetailsFacts,
+                Renumbered = run.RenumberedFacts is { Count: > 0 } renumbered ? renumbered.ToArray() : null,
+                Identity = run.IdentityFacts is { Count: > 0 } identity ? new Dictionary<int, RequestEpisode>(identity) : null,
+            };
         }
 
         /// <inheritdoc />
@@ -105,20 +116,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
             if (!client.Ok && client.Error!.Message == ArrClientFactory.ConnectionChanged)
                 return BackendResults.Maybe(job.WantId, "The instance this request was sent to has changed since; check it there.", "instance_changed");
             if (!client.Ok) return BackendResults.Maybe(job.WantId, "The instance can't be read right now.", "service_down");
-            var verify = await VerifyAsync(client.Value!, job.Input, key, ct).ConfigureAwait(false);
-            if (verify.Matched == null) return BackendResults.Maybe(job.WantId, verify.Message, "service_down");
+            var verify = await VerifyCoreAsync(client.Value!, job.Input, key, ct).ConfigureAwait(false);
+            // A TMDB-numbered job whose episodes can't be told by id now (F83: TMDB unread, no TVDB id, or none in Sonarr's list):
+            // the same bound as a send (EpisodeIdentity.MayWait), then held for a person; part of it is upstream, so its
+            // certainty stays unknown (no cancel or refund).
+            if (verify.IdentityFailed)
+            {
+                if (verify.IdentityPermanent || !EpisodeIdentity.MayWait(job))
+                    return BackendResults.HoldAfterWrite(job.WantId, EpisodeIdentity.Unresolved, $"{verify.Message} Held for a look: an episode is never matched by its name or number ({Which(job.Input.Episodes)}, {instance.Name}).") with { Identity = verify.Identity };
+                return BackendResults.Held(job.WantId, true, EpisodeIdentity.Pending, verify.Message + " Checked again shortly.", EpisodeIdentity.PendingWait) with { Identity = verify.Identity };
+            }
+            if (verify.Matched == null) return BackendResults.Maybe(job.WantId, verify.Message, "service_down") with { Identity = verify.Identity };
             // The title isn't there: nothing of this request is, so sending again is safe (every step reads before it writes).
             if (!verify.Present) return BackendResults.NotThere(verify.Message);
             // The title is there: the add or part of the monitoring landed, and whether the search started can't be
             // read back. The next attempt completes it with a fresh, guarded send that writes only what is missing.
             return BackendResults.Resume(job.WantId, verify.Matched == true
                 ? $"{instance.Name} has the change; the search is sent again to be sure."
-                : $"{instance.Name} has part of the change ({verify.Message}); the rest is sent on the next attempt.");
+                : $"{instance.Name} has part of the change ({verify.Message}); the rest is sent on the next attempt.") with { Identity = verify.Identity };
         }
 
         private sealed record Run(RequestJob Job, ArrConnection Instance, ArrClient Client, TitleKey Key, Func<string?> Guard, ISendAdmission? Admission, CancellationToken Ct)
         {
             public Dictionary<string, string> AddChoiceDetails = new();
+            /// <summary>A TMDB-numbered ask's episodes matched to Sonarr's by id in this attempt (empty: none were).</summary>
+            public List<EpisodeRenumbering> Renumbered = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<List<EpisodeRenumbering>> RenumberedFactsOwner = new(prepared: true);
+            public List<EpisodeRenumbering> RenumberedFacts => RenumberedFactsOwner.Read(ref Renumbered, () => new());
+            /// <summary>Where the target's Sonarr numbers each TVDB episode of the series, as this attempt read its list (empty: not read).</summary>
+            public Dictionary<int, RequestEpisode> Identity = new();
+            private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<int, RequestEpisode>> IdentityFactsOwner = new(prepared: true);
+            public Dictionary<int, RequestEpisode> IdentityFacts => IdentityFactsOwner.Read(ref Identity, () => new());
             private readonly global::Jellyfin.Plugin.JellyfinEnhanced.Helpers.UserCacheRegistry.State<Dictionary<string, string>> AddChoiceDetailsFactsOwner = new(prepared: true);
             public Dictionary<string, string> AddChoiceDetailsFacts => AddChoiceDetailsFactsOwner.Read(ref AddChoiceDetails, () => new());
         }
@@ -440,10 +468,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     lookupRow = row;
                 }
             }
+            // A TMDB-numbered ask (made while no Sonarr held the series, F83): each episode's TVDB id as TMDB lists it, read
+            // before anything is written, so an episode TMDB can't place on TVDB holds the request without adding the series.
+            Dictionary<RequestEpisode, int>? tvdbIds = null;
+            if (input.Scope == "episodes" && input.Numbering == EpisodeIdentity.Tmdb)
+            {
+                var ids = await TvdbIdsAsync(key, series ?? lookupRow, input, ct).ConfigureAwait(false);
+                if (ids.Unread)
+                {
+                    // TMDB isn't set up or refuses the key: asking again won't help. Otherwise TMDB is waited for like Sonarr's
+                    // list (once, then held; never past the attempt bound).
+                    if (ids.Permanent) return Unresolved(run, false, $"TMDB can't be asked (no key, or it refuses it), so {Which(input.Episodes)} can't be matched to {instance.Name}'s episodes.");
+                    if (!EpisodeIdentity.MayWait(job)) return Unresolved(run, false, $"TMDB still couldn't be read to match {Which(input.Episodes)} to {instance.Name}'s episodes.");
+                    return BackendResults.Held(job.WantId, job.Uncertain, EpisodeIdentity.Pending, "TMDB couldn't be read to match the asked episodes to Sonarr's; checked again shortly.", EpisodeIdentity.PendingWait);
+                }
+                if (ids.Ids == null) return Unresolved(run, false, $"There is no TMDB id to match {Which(input.Episodes)} to {instance.Name}'s episodes by.");
+                if (ids.None.Length > 0) return Unresolved(run, false, $"TMDB lists no TVDB id for {Which(ids.None)}, so {instance.Name}'s episode can't be told by id.");
+                tvdbIds = ids.Ids;
+            }
             // Every season asked for must exist in the arr's season list (a next season not announced yet can't be monitored).
+            // A TMDB-numbered ask's seasons are TMDB's: its episodes are found by id wherever Sonarr numbers them.
             var known = SeasonNumbers(series ?? lookupRow!.Value);
             var wantedSeasons = input.Scope == "episodes" ? input.Episodes.Select(e => e.Season).Distinct().ToArray() : input.Seasons;
-            var missing = wantedSeasons.Where(s => !known.Contains(s)).ToArray();
+            var missing = tvdbIds != null ? Array.Empty<int>() : wantedSeasons.Where(s => !known.Contains(s)).ToArray();
             if (missing.Length > 0)
             {
                 // Not announced there yet: nothing is sent and the ask waits, checked again every few hours (never held for a
@@ -554,10 +601,41 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 }
             }
             // ...and exactly the requested episodes (every episode of a requested season, or the single episodes).
-            var episodes = await EpisodesAsync(client, seriesId, input, merged, ct).ConfigureAwait(false);
+            var episodes = await EpisodesAsync(client, seriesId, input, merged, ct, tvdbIds == null ? null : rows => EpisodeIdentity.Match(input.Episodes, tvdbIds, rows).Unmatched.Length == 0).ConfigureAwait(false);
             if (episodes.Error != null) return wrote ? BackendResults.Maybe(job.WantId, $"{instance.Name}'s episode list couldn't be read after the change.") : ReadFailure(instance, episodes.Error);
+            // Where Sonarr numbers each TVDB episode now: the kept id matches are checked against it with the outcome (F83).
+            foreach (var (tvdb, now) in EpisodeIdentity.Snapshot(episodes.Rows)) run.IdentityFacts[tvdb] = now;
             var targets = episodes.Rows.Where(e => InScope(input, Int(e, "seasonNumber") ?? -1, Int(e, "episodeNumber") ?? -1)).ToList();
-            if (input.Scope == "episodes")
+            // What the read-back checks: the asked episodes in Sonarr's numbers.
+            var asked = input;
+            if (tvdbIds != null)
+            {
+                // Exactly the Sonarr episodes with the asked episodes' TVDB ids, whatever Sonarr numbers them (never by position or name).
+                var (matched, unmatched) = EpisodeIdentity.Match(input.Episodes, tvdbIds, episodes.Rows);
+                if (unmatched.Length > 0)
+                {
+                    // Sonarr's list may still be catching up (a series just added or refreshed): it is waited for once, a short
+                    // while (an existing series is refreshed first so the next read has TVDB's current episodes); then held.
+                    if (EpisodeIdentity.MayWait(job))
+                    {
+                        if (!wrote)
+                        {
+                            if (Gate(run, false) is { } refused) return refused;
+                            var unmatchedSeries = seriesId;
+                            var (_, stopped) = await WriteAsync<JsonElement>(run, false, HttpMethod.Post, "command", new JsonObject { ["name"] = "RefreshSeries", ["seriesId"] = unmatchedSeries }).ConfigureAwait(false);
+                            if (stopped != null) return stopped;
+                        }
+                        return BackendResults.Held(job.WantId, wrote || job.Uncertain, EpisodeIdentity.Pending, $"{instance.Name} doesn't list {Which(unmatched)} by its TVDB id yet; checked again shortly.", EpisodeIdentity.PendingWait);
+                    }
+                    return Unresolved(run, wrote, $"{instance.Name} has no episode with the TVDB id TMDB lists for {Which(unmatched)}.");
+                }
+                var renumbering = EpisodeIdentity.Renumbering(matched);
+                run.RenumberedFacts.Clear();
+                run.RenumberedFacts.AddRange(renumbering);
+                targets = matched.Select(m => m.Row).ToList();
+                asked = EpisodeIdentity.Renumber(input, renumbering)!;
+            }
+            else if (input.Scope == "episodes")
             {
                 var absent = input.Episodes.Where(ask => !targets.Any(e => Int(e, "seasonNumber") == ask.Season && Int(e, "episodeNumber") == ask.Episode)).ToArray();
                 if (absent.Length > 0)
@@ -611,7 +689,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                     if (!search.Ok) return SearchFailure(run, before, search.Error!);
                 }
             }
-            return await ConfirmAsync(run, merged).ConfigureAwait(false);
+            return await ConfirmAsync(run, merged, asked).ConfigureAwait(false);
+        }
+
+        /// <summary>A request held for an administrator because an asked episode can't be matched to Sonarr's by id.</summary>
+        private static RequestBackendResult Unresolved(Run run, bool wrote, string message)
+        {
+            message += " Held for a look: an episode is never matched by its name or number.";
+            return wrote || run.Job.Uncertain ? BackendResults.HoldAfterWrite(run.Job.WantId, EpisodeIdentity.Unresolved, message) : BackendResults.Hold(EpisodeIdentity.Unresolved, message);
+        }
+
+        private static string Which(IEnumerable<RequestEpisode> episodes) => string.Join(", ", episodes.Select(a => $"S{a.Season:00}E{a.Episode:00}"));
+
+        /// <summary>
+        /// The TVDB ids TMDB lists for a TMDB-numbered ask's episodes. <c>Unread</c>: TMDB couldn't be asked (nothing concluded);
+        /// <c>Ids</c> null: no TMDB series id is known for the title; <c>None</c>: the episodes TMDB lists no TVDB id for.
+        /// </summary>
+        private async Task<(Dictionary<RequestEpisode, int>? Ids, RequestEpisode[] None, bool Unread, bool Permanent)> TvdbIdsAsync(TitleKey key, JsonElement? row, MutationInput input, CancellationToken ct)
+        {
+            if (_externalId == null || EpisodeIdentity.TmdbSeries(key, _aliases, row) is not int series) return (null, Array.Empty<RequestEpisode>(), false, false);
+            var ids = new Dictionary<RequestEpisode, int>();
+            var none = new List<RequestEpisode>();
+            foreach (var ask in input.Episodes)
+            {
+                var id = await _externalId(series, ask.Season, ask.Episode, ct).ConfigureAwait(false);
+                if (!id.Read) return (null, Array.Empty<RequestEpisode>(), true, id.Permanent);
+                if (id.TvdbId is int tvdb) ids[ask] = tvdb;
+                else none.Add(ask);
+            }
+            return (ids, none.ToArray(), false, false);
         }
 
         // The library entry for a series key: by TVDB id (from the key or a lookup row), else none.
@@ -638,7 +744,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         // The series' episodes. A series just added gets its episode list a moment later: wait for the
         // requested episodes (bounded), so single episodes can be monitored in the same pass.
-        private async Task<(List<JsonElement> Rows, ArrError? Error)> EpisodesAsync(ArrClient client, int seriesId, MutationInput input, bool existed, CancellationToken ct)
+        // A TMDB-numbered ask waits for its episodes' TVDB ids (<paramref name="matched"/>) instead of their numbers.
+        private async Task<(List<JsonElement> Rows, ArrError? Error)> EpisodesAsync(ArrClient client, int seriesId, MutationInput input, bool existed, CancellationToken ct, Func<List<JsonElement>, bool>? matched = null)
         {
             // One read a second, for at most EpisodeWait.
             for (var waited = 0; ; waited++)
@@ -646,7 +753,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
                 var read = await client.GetAsync<List<JsonElement>>("episode", Query("seriesId", seriesId), ArrCallClass.Read, ct).ConfigureAwait(false);
                 if (!read.Ok) return (new List<JsonElement>(), read.Error);
                 var rows = read.Value!;
-                var complete = input.Scope != "episodes"
+                var complete = matched != null ? matched(rows)
+                    : input.Scope != "episodes"
                     ? existed || input.Seasons.All(s => rows.Any(e => Int(e, "seasonNumber") == s))
                     : input.Episodes.All(ask => rows.Any(e => Int(e, "seasonNumber") == ask.Season && Int(e, "episodeNumber") == ask.Episode));
                 if (complete || waited >= EpisodeWait.TotalSeconds) return (rows, null);
@@ -659,9 +767,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
 
         // ---------------- read-back ----------------
 
-        private async Task<RequestBackendResult> ConfirmAsync(Run run, bool merged)
+        // sent: what went out, in Sonarr's numbers (a TMDB-numbered ask as it was matched), else the job's own input.
+        private async Task<RequestBackendResult> ConfirmAsync(Run run, bool merged, MutationInput? sent = null)
         {
-            var verify = await VerifyAsync(run.Client, run.Job.Input, run.Key, run.Ct).ConfigureAwait(false);
+            var verify = await VerifyAsync(run.Client, sent ?? run.Job.Input, run.Key, run.Ct).ConfigureAwait(false);
             if (verify.Matched != true)
                 return BackendResults.Maybe(run.Job.WantId, $"{run.Instance.Name} took the change, but a fresh read doesn't show it yet: {verify.Message}");
             Refresh(run.Instance, verify.ArrId, run.Key.IsMovie);
@@ -679,36 +788,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Requests
         /// </summary>
         internal async Task<(bool? Matched, string Message, int? ArrId, bool Present)> VerifyAsync(ArrClient client, MutationInput input, TitleKey key, CancellationToken ct)
         {
+            var v = await VerifyCoreAsync(client, input, key, ct).ConfigureAwait(false);
+            return (v.Matched, v.Message, v.ArrId, v.Present);
+        }
+
+        /// <summary>
+        /// <see cref="VerifyAsync"/>, and what it read about episode identity (F83): where Sonarr numbers each TVDB episode now
+        /// (<c>Identity</c>, when the episode list was read) and, for a TMDB-numbered input, whether TMDB couldn't be read
+        /// (<c>IdentityUnread</c>; <c>IdentityPermanent</c>: no key, or TMDB refuses it).
+        /// </summary>
+        // IdentityFailed: a TMDB-numbered input whose episodes couldn't be told by id now (TMDB unread, no TVDB id at TMDB, or no
+        // Sonarr episode with it); IdentityPermanent: asking again won't help (no key, refused key, or TMDB lists no TVDB id).
+        private readonly record struct Verified(bool? Matched, string Message, int? ArrId, bool Present, IReadOnlyDictionary<int, RequestEpisode>? Identity = null, bool IdentityFailed = false, bool IdentityPermanent = false);
+
+        private async Task<Verified> VerifyCoreAsync(ArrClient client, MutationInput input, TitleKey key, CancellationToken ct)
+        {
             if (key.IsMovie)
             {
                 var movie = await FindMovieAsync(client, key, ct).ConfigureAwait(false);
-                if (movie.Error != null) return (null, movie.Error.Message, null, false);
-                if (movie.Movie is not { } m) return (false, "The movie isn't in the library.", null, false);
-                return Bool(m, "monitored") == true ? (true, string.Empty, Int(m, "id"), true) : (false, "The movie isn't monitored.", Int(m, "id"), true);
+                if (movie.Error != null) return new(null, movie.Error.Message, null, false);
+                if (movie.Movie is not { } m) return new(false, "The movie isn't in the library.", null, false);
+                return Bool(m, "monitored") == true ? new(true, string.Empty, Int(m, "id"), true) : new(false, "The movie isn't monitored.", Int(m, "id"), true);
             }
             var found = await FindSeriesAsync(client, key, ct).ConfigureAwait(false);
-            if (found.Error != null) return (null, found.Error.Message, null, false);
-            if (found.Series is not { } s) return (false, "The series isn't in the library.", null, false);
+            if (found.Error != null) return new(null, found.Error.Message, null, false);
+            if (found.Series is not { } s) return new(false, "The series isn't in the library.", null, false);
             var id = Int(s, "id") ?? 0;
-            if (Bool(s, "monitored") != true) return (false, "The series isn't monitored.", id, true);
+            if (Bool(s, "monitored") != true) return new(false, "The series isn't monitored.", id, true);
             if (input.Scope == "future" && !string.Equals(Str(s, "monitorNewItems"), "all", StringComparison.OrdinalIgnoreCase))
-                return (false, "New seasons aren't monitored.", id, true);
+                return new(false, "New seasons aren't monitored.", id, true);
             if (input.Scope != "episodes")
             {
                 var flags = SeasonFlags(s);
                 var off = input.Seasons.Where(n => flags.GetValueOrDefault(n) != true).ToArray();
-                if (off.Length > 0) return (false, $"Season {string.Join(", ", off)} isn't monitored.", id, true);
+                if (off.Length > 0) return new(false, $"Season {string.Join(", ", off)} isn't monitored.", id, true);
             }
             var episodes = await client.GetAsync<List<JsonElement>>("episode", Query("seriesId", id), ArrCallClass.Read, ct).ConfigureAwait(false);
-            if (!episodes.Ok) return (null, episodes.Error!.Message, id, true);
+            if (!episodes.Ok) return new(null, episodes.Error!.Message, id, true);
+            var identity = EpisodeIdentity.Snapshot(episodes.Value!) is { Count: > 0 } read ? read : null;
             var rows = episodes.Value!.Where(e => InScope(input, Int(e, "seasonNumber") ?? -1, Int(e, "episodeNumber") ?? -1)).ToList();
-            if (input.Scope == "episodes")
+            if (input.Scope == "episodes" && input.Numbering == EpisodeIdentity.Tmdb)
+            {
+                // Still TMDB-numbered (read back before its renumbering was recorded): its episodes are Sonarr's by TVDB id.
+                var ids = await TvdbIdsAsync(key, s, input, ct).ConfigureAwait(false);
+                if (ids.Unread) return new(null, "TMDB couldn't be read to match the episodes.", id, true, identity, true, ids.Permanent);
+                if (ids.Ids == null || ids.None.Length > 0) return new(false, "Some requested episodes can't be matched to Sonarr's by id.", id, true, identity, true, true);
+                var (matched, unmatched) = EpisodeIdentity.Match(input.Episodes, ids.Ids, episodes.Value!);
+                if (unmatched.Length > 0) return new(false, "Some requested episodes aren't listed by their TVDB id yet.", id, true, identity, true);
+                rows = matched.Select(m => m.Row).ToList();
+            }
+            else if (input.Scope == "episodes")
             {
                 var absent = input.Episodes.Where(ask => !rows.Any(e => Int(e, "seasonNumber") == ask.Season && Int(e, "episodeNumber") == ask.Episode)).ToArray();
-                if (absent.Length > 0) return (false, "Some requested episodes aren't listed yet.", id, true);
+                if (absent.Length > 0) return new(false, "Some requested episodes aren't listed yet.", id, true, identity);
             }
             var unmonitored = rows.Count(e => Bool(e, "monitored") != true);
-            return unmonitored > 0 ? (false, $"{unmonitored} requested episode(s) aren't monitored.", id, true) : (true, string.Empty, id, true);
+            return unmonitored > 0 ? new(false, $"{unmonitored} requested episode(s) aren't monitored.", id, true, identity) : new(true, string.Empty, id, true, identity);
         }
 
         // Status: the title's library entry, its queue and (series) episodes are re-read soon, so the change reaches the feed.

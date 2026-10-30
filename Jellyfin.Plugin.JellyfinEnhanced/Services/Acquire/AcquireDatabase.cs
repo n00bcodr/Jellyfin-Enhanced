@@ -833,6 +833,8 @@ UPDATE reservations SET episode_count=COALESCE((SELECT CASE WHEN json_extract(ow
                 // The add-settings registry's migration of held jobs: its preimage is the one original copy taken above
                 // (NeedsRepairBackup classifies it from the original rows), never a copy of an earlier repair's result.
                 Requests.TitleChoiceRegistry.Ensure(connection);
+                // F83: the id matches of TMDB-numbered episode requests (additive; no schema step of its own).
+                Requests.RequestLedger.EnsureEpisodeIdentities(connection);
                 _version = UserVersion(connection);
             }
             TrySetOwnerOnly(_path);

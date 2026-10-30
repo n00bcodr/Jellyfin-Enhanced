@@ -590,7 +590,7 @@ Follow every request through to **Ready to watch**, on the title's own page and 
 | **Tell me, and admin essentials (phase 2)** | Off | [Admin tools](#admin-tools-phase-2) and [notifications](#notifications-phase-2). |
 | **Ask for it (durable requests, phase 3)** | Off | [Request controls](#asking-for-titles) on Jellyfin's own pages, approvals, the household, and requests sent through Seerr or by Jellyfin Enhanced itself. |
 
-When episodes arrive together, their availability updates on the season page in place. Any needed Jellyfin redraw is combined into one per page view and waits until you finish tapping or scrolling; later arrivals keep the existing rows and links. When the title is ready and nothing else is on its way, the download rings and open journey disappear.
+When episodes arrive together, their availability updates on the season page in place. Any needed Jellyfin redraw is combined into one per page view and waits until you finish tapping or scrolling; later arrivals keep the existing rows and links, and an arriving episode replaces its missing row instead of appearing twice. When the title is ready and nothing else is on its way, the download rings and open journey disappear.
 
 ### Where things have got to
 
@@ -643,6 +643,8 @@ again for you as you are now (if you were removed or keep changing, the Requests
       A copy in another library is a separate item, and the page stays on the one it shows. A season or series page you come back to
       catches up on episodes that arrived while you were elsewhere, and while a season pack arrives file by file it is
       redrawn once things settle (at most 30 seconds after the first arrival).
+      An open season page shows each arriving episode once, in its place: the missing episode's row becomes the
+      playable one (its title, overview and still), also when Jellyfin briefly lists both or redraws its list meanwhile.
     - **Posters**: a small badge while something downloads, is almost ready or takes longer than usual.
     - **Seerr's more-info window**: the same pill and journey for titles that aren't in the library yet, e.g.
       "Downloading · 42%" with "Asked by someone in your household → OK'd → Downloading".
@@ -1366,7 +1368,25 @@ way to the status pill while the pill shows.
     on Sonarr's episodes, so there is nothing to match up and nothing to guess. TMDB's numbers are used only while no Sonarr
     you can ask through has the series (or Seerr takes requests), and the sheet says so. Episodes picked by TMDB's numbers
     are checked again when you press **Request**: if a Sonarr has taken the series in meanwhile, nothing is sent, the
-    season shows Sonarr's numbers and you pick again. Single episodes are held, with the
+    season shows Sonarr's numbers and you pick again. An ask made by TMDB's numbers is never sent by its number: once the
+    series is in the Sonarr it goes to (added for the ask, or already there when it goes out), each episode is matched by
+    its ids only (TMDB's TVDB id for that episode, then the Sonarr episode with that TVDB id), whatever Sonarr numbers it,
+    and exactly that episode is monitored and searched. Once a send is confirmed, each request whose episodes are all
+    matched shows Sonarr's numbers (on its own: a request sharing some of its episodes never waits for another), and every
+    later read of that Sonarr checks the matches by TVDB id again, so a request follows Sonarr when it renumbers. If Sonarr
+    stops listing a matched episode's TVDB id, the request goes back to TMDB's numbers and is matched again by a fresh send;
+    an empty episode list from Sonarr changes nothing. Titles are never compared. An episode that can't be matched that way (TMDB lists no TVDB id for it, or Sonarr has no episode with
+    it even after a refresh and a short wait) is held instead of sent: the request shows as held, administrators see
+    "Stuck · the episode couldn't be matched by its id" on its approval card and "Stuck · needs a look in Requests" on the
+    title, and they get a Needs attention alert ("… is held: it couldn't be matched to Sonarr's episodes, so it wasn't searched
+    for"), while the asker sees it as held ("Stuck · {contact} has been told"). Whole-season asks are unaffected. A
+    held episode is never counted as arrived because another episode with the same number did.
+
+    ![Pick episodes while no Sonarr has the series: TMDB's numbers, matched to Sonarr's own episodes before anything is sent](../images/arr-episode-numbering-sheet.png)
+
+    ![An administrator's approval card for a request held because its episode couldn't be matched by id](../images/arr-episode-identity-held.png)
+
+    Single episodes are held, with the
     whole season still askable, whenever that can't be established: *Couldn't check* when Sonarr or the season couldn't be
     read just now (also when a later read of an open page fails: what was read before isn't trusted until a read succeeds),
     or a season can't be found (**Try again** in the sheet); *Numbered differently* where TMDB's episode
@@ -1427,6 +1447,19 @@ Every view reads it again, so a page you come back to is checked again, and a Hi
 change while it loads makes it ask once more. The page's artwork is loaded once: a poster or card isn't fetched a
 second time as it appears, or again when it is scrolled out of view and back. New artwork (another grant, a changed
 setting) is a new address or a new page and loads anew.
+
+Something the server can't give right now doesn't stay missing until you leave the page. An image that is busy (the
+person's eight places or the server's image queue are full), that TMDB couldn't send, or whose access can't be settled
+at that moment (the person's policy or the library changing while it is checked) is answered as temporary (503 with
+`Retry-After`), and the page asks for it again itself: after the wait the server named, backing off, at most three at
+once, and for about a minute at most. It appears as soon as it loads, usually within a few seconds of the server being
+free again. A season's episode list (and a series' seasons) that can't be read right now works the same way: the list
+stays pending, never an empty season, and is drawn when a later read answers. An image that is refused or that TMDB
+doesn't have (404) isn't asked for again, so a missing poster stays a placeholder. An image whose address was made
+before your access changed (a sign-out, a new parental limit) is read once more under your current access, and is
+shown only if that still allows it. Leaving the page, signing out or an access change stops all of this at once;
+nothing from the old page is drawn afterwards. Whether a library title or a refused one, nothing is shown that
+wouldn't be shown on a fresh visit.
 
 The routes behind these pages are in the [API reference](../advanced/api.md#native-details-pages).
 

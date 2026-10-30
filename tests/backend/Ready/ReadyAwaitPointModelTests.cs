@@ -511,7 +511,7 @@ public class ReadyAwaitPointModelTests
         Kind = outcome,
         Title = Keys[0],
         Target = w => w.Rig.Kid,
-        Points = new[] { new Point("meta:kid#1", "DeliverRequestNoticesCoreAsync:_titleMeta#2"), new Point("prepare:kid#1", "DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#2") },
+        Points = new[] { new Point("meta:kid#1", "DeliverRequestNoticesCoreAsync:_titleMeta#3"), new Point("prepare:kid#1", "DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#3") },
         Setup = async () =>
         {
             var w = await ReadyProvenanceAndWaitsTests.JeWorld();
@@ -560,6 +560,37 @@ public class ReadyAwaitPointModelTests
         Run = (w, ctx) => w.Service.DeliverRequestNoticesAsync(w.Rig.Arr.Now, default),
         Next = (w, ctx) => w.Service.DeliverRequestNoticesAsync(w.Rig.Arr.Now, default),
         Units = ctx => new[] { new Unit("ask", 4, false, true, (w, c) => Told(w, w.Rig.Admin, NotifyKind.Approval)) },
+    };
+
+    // F83: a request held because its episode can't be matched to Sonarr's by id tells the administrators (an attention alert):
+    // their view of the title prepared and its name read for each of them, then the final gate after the last await.
+    private static AlertPath HeldJe() => new()
+    {
+        Name = "held-je",
+        Kind = NotifyKind.Attention,
+        Title = Keys[0],
+        Target = w => w.Rig.Admin,
+        Points = new[]
+        {
+            new Point("prepare:jake#1", "DeliverRequestNoticesAsync:PrepareVisibilityAsync#2"), new Point("meta:jake#1", "DeliverRequestNoticesAsync:_titleMeta#2"),
+            new Point("prepare:sam#1", "DeliverRequestNoticesAsync:PrepareVisibilityAsync#2"), new Point("meta:sam#1", "DeliverRequestNoticesAsync:_titleMeta#2"),
+        },
+        Setup = async () =>
+        {
+            var w = await ReadyProvenanceAndWaitsTests.JeWorld();
+            Admins(w);
+            var id = await w.Ask(w.Rig.Kid, Keys[0], "kid-0");
+            await w.Decide(id, NotifyKind.Approved);
+            await w.Service.DeliverRequestNoticesAsync(w.Rig.Arr.Now, default);
+            // Its send is held: the episode couldn't be matched by id (nothing went out).
+            var job = w.Ledger!.ForWant(id).Single(j => j.State == "queued");
+            Assert.True(w.Ledger.Claim(job, w.Rig.Db.Generation, w.Rig.Arr.Now));
+            Assert.True(w.Ledger.Complete(job, w.Rig.Db.Generation, BackendResults.Hold(EpisodeIdentity.Unresolved, "Held"), w.Rig.Arr.Now));
+            return (w, new Ctx());
+        },
+        Run = (w, ctx) => w.Service.DeliverRequestNoticesAsync(w.Rig.Arr.Now, default),
+        Next = (w, ctx) => w.Service.DeliverRequestNoticesAsync(w.Rig.Arr.Now, default),
+        Units = ctx => new[] { new Unit("held", 4, false, true, (w, c) => Told(w, w.Rig.Admin, NotifyKind.Attention)) },
     };
 
     private static AlertPath AskSeerr() => new()
@@ -745,7 +776,7 @@ public class ReadyAwaitPointModelTests
     internal static readonly AlertPath[] Paths =
     {
         Single(NotifyKind.Declined), Single(NotifyKind.Approved), Summary(), Fallback(), WaitRetry(), Notice(NotifyKind.Declined), Notice(NotifyKind.Approved),
-        AskJe(), AskSeerr(), DeclineSeerr(), Remind(), Ready(), Episodes(), Native(),
+        AskJe(), HeldJe(), AskSeerr(), DeclineSeerr(), Remind(), Ready(), Episodes(), Native(),
     };
 
     public static IEnumerable<object[]> Cells()
@@ -833,8 +864,10 @@ public class ReadyAwaitPointModelTests
         ["PrepareAskVisibilityAsync:PrepareVisibilityAsync#2"] = "point",
         ["DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#1"] = "point",
         ["DeliverRequestNoticesCoreAsync:_titleMeta#1"] = "point",
-        ["DeliverRequestNoticesCoreAsync:_titleMeta#2"] = "point",
         ["DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#2"] = "point",
+        ["DeliverRequestNoticesCoreAsync:_titleMeta#2"] = "point",
+        ["DeliverRequestNoticesCoreAsync:_titleMeta#3"] = "point",
+        ["DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#3"] = "point",
         ["RetryAlertWaitsCoreAsync:PrepareVisibilityAsync"] = "point",
         ["PrepareLaterAsync:PrepareVisibilityAsync"] = "excluded: a preparation for the bell's next read; nothing is decided or written after it in that function",
         ["EvaluateCoreAsync:EvaluateMovieAsync"] = "composite",

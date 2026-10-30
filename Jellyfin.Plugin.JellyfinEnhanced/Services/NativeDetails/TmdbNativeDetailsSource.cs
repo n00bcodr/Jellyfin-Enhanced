@@ -30,6 +30,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(15);
         private static readonly TimeSpan FailureTtl = TimeSpan.FromSeconds(30);
 
+        /// <summary>
+        /// How long an answer TMDB couldn't give (an outage, not a "no such title") is kept: long enough to absorb a page's
+        /// burst of identical reads, short enough that a page asking again after its Retry-After gets a fresh read once TMDB
+        /// is back (a page recovers within its budget instead of waiting out <see cref="FailureTtl"/>).
+        /// </summary>
+        private static readonly TimeSpan OutageTtl = TimeSpan.FromSeconds(3);
+
         private readonly TmdbResponseCache _tmdb;
         private readonly Func<TitleKey, IReadOnlyList<TitleKey>>? _aliases;
         private readonly Logger _logger;
@@ -343,7 +350,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         private bool TryCached(string path, out SourceAnswer value)
         {
             value = default;
-            if (!_cacheFacts.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : FailureTtl)) return false;
+            if (!_cacheFacts.TryGetValue(path, out var hit) || DateTime.UtcNow - hit.At >= (hit.Value.Data.HasValue ? Ttl : hit.Value.NotFound ? FailureTtl : OutageTtl)) return false;
             value = hit.Value;
             return true;
         }

@@ -268,31 +268,63 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         public Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, CancellationToken ct)
             => FetchAsync(path, size, ViewerMetadataAdmission.EffectiveViewer ?? Guid.Empty, ct);
 
-        /// <summary>Fetches public bytes under a separate, bounded image owner; privacy remains the facade's responsibility.</summary>
+        /// <summary><see cref="ReadAsync"/>'s bytes, or null whatever the reason (temporary or not).</summary>
         /// <param name="path">A safe TMDB path.</param>
         /// <param name="size">A supported width.</param>
         /// <param name="viewer">The validated grant's viewer.</param>
         /// <param name="ct">Cancels this wait, not the shared operation.</param>
-        /// <returns>Bytes, or null for bounded admission/queue refusal and upstream failure.</returns>
+        /// <returns>Bytes, or null.</returns>
         public async Task<(byte[] Bytes, string ContentType)?> FetchAsync(string path, string size, Guid viewer, CancellationToken ct)
+            => (await ReadAsync(path, size, viewer, ct).ConfigureAwait(false)).Image;
+
+        /// <summary>
+        /// Fetches public bytes under a separate, bounded image owner; privacy remains the facade's responsibility. The
+        /// outcome tells admission pressure (the viewer's eight places, the server's 48, the queue's wait) and an upstream
+        /// outage, which are temporary, from a file TMDB doesn't have, which is not (<see cref="ArtworkRead.Retryable"/>).
+        /// </summary>
+        /// <param name="path">A safe TMDB path.</param>
+        /// <param name="size">A supported width.</param>
+        /// <param name="viewer">The validated grant's viewer.</param>
+        /// <param name="ct">Cancels this wait, not the shared operation.</param>
+        /// <returns>The read.</returns>
+        public async Task<ArtworkRead> ReadAsync(string path, string size, Guid viewer, CancellationToken ct)
         {
-            if (!IsSafeTmdbPath(path) || !Widths.Any(w => size == "w" + w.ToString(CultureInfo.InvariantCulture))) return null;
+            if (!IsSafeTmdbPath(path) || !Widths.Any(w => size == "w" + w.ToString(CultureInfo.InvariantCulture))) return Note(ArtworkRead.Not(ArtworkOutcome.NotFound));
             var key = size + path;
             if (_bytes.TryGetValue(key, out var memory) && _now() - memory.At < CacheTtl)
             {
                 // Shown while the server-side cache was off (or before it was switched on): saved now, once.
                 if (!memory.OnDisk && _disk != null) await PersistAsync(key, memory).ConfigureAwait(false);
-                return (memory.Bytes, memory.ContentType);
+                return Note(ArtworkRead.Of((memory.Bytes, memory.ContentType)));
             }
             // Taken before the fetch: a Clear while it runs keeps its result off the disk.
             var generation = _disk?.Generation ?? 0;
             // Read before admission: a disk hit takes no admission place and makes no upstream request.
-            if (await FromDiskAsync(key, ct).ConfigureAwait(false) is { } disk) return disk;
-            return await _images.Read(key, viewer,
+            if (await FromDiskAsync(key, ct).ConfigureAwait(false) is { } disk) return Note(ArtworkRead.Of(disk));
+            return Note(await _images.Read(key, viewer,
                 () => _bytes.TryGetValue(key, out var hit) && _now() - hit.At < CacheTtl
                     ? ((byte[] Bytes, string ContentType)?)(hit.Bytes, hit.ContentType) : null,
-                () => FetchUpstreamAsync(key: key, size: size, path: path, generation: generation), ct).ConfigureAwait(false);
+                () => FetchUpstreamAsync(key: key, size: size, path: path, generation: generation), ct).ConfigureAwait(false));
         }
+
+        /// <summary>
+        /// Counts an image read's outcome (<see cref="Outcomes"/>): which refusal answered (the viewer's or the server's
+        /// admission bound, the queue's wait, TMDB's not-found, an upstream outage, a moved policy) is told apart without
+        /// any viewer, title or path in it.
+        /// </summary>
+        /// <param name="read">The read.</param>
+        /// <returns>The same read.</returns>
+        internal ArtworkRead Note(ArtworkRead read)
+        {
+            Interlocked.Increment(ref _outcomes[(int)read.Outcome]);
+            return read;
+        }
+
+        /// <summary>Image reads by outcome since start (non-secret diagnostics; tests and the proof's measurements).</summary>
+        public IReadOnlyDictionary<ArtworkOutcome, long> Outcomes
+            => Enum.GetValues<ArtworkOutcome>().ToDictionary(o => o, o => Interlocked.Read(ref _outcomes[(int)o]));
+
+        private readonly long[] _outcomes = new long[Enum.GetValues<ArtworkOutcome>().Length];
 
         /// <summary>An image from the server-side cache, kept in the byte cache too; null when it isn't there (or is off).</summary>
         private async Task<(byte[] Bytes, string ContentType)?> FromDiskAsync(string key, CancellationToken ct)
@@ -336,24 +368,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
         /// <summary>Admitted image operations, including queued work (tests).</summary>
         internal int InFlightCount => _images.Count;
 
-        private async Task<(byte[] Bytes, string ContentType)?> FetchUpstreamAsync(string key, string size, string path, long generation)
+        private async Task<ArtworkRead> FetchUpstreamAsync(string key, string size, string path, long generation)
         {
             try
             {
                 Interlocked.Increment(ref _upstreamFetches);
                 using var timeout = new CancellationTokenSource(FetchTimeout);
                 using var response = await TmdbTransport.GetAsync(_http, "https://image.tmdb.org/t/p/" + size + path, MetadataAdmission.Required, timeout.Token).ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode) return null;
+                // TMDB's own "no such file" is permanent; any other failure (5xx, 429, a proxy's error) may pass.
+                if (response.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Gone) return ArtworkRead.Not(ArtworkOutcome.NotFound);
+                if (!response.IsSuccessStatusCode) return ArtworkRead.Not(ArtworkOutcome.Unavailable);
                 var type = response.Content.Headers.ContentType?.MediaType ?? string.Empty;
-                if (!IsImageType(type)) return null;
-                if (response.Content.Headers.ContentLength > MaxImageBytes) return null;
+                if (!IsImageType(type)) return ArtworkRead.Not(ArtworkOutcome.NotFound);
+                if (response.Content.Headers.ContentLength > MaxImageBytes) return ArtworkRead.Not(ArtworkOutcome.NotFound);
                 await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
                 using var buffer = new System.IO.MemoryStream();
                 var chunk = new byte[81920];
                 int read;
                 while ((read = await stream.ReadAsync(chunk, timeout.Token).ConfigureAwait(false)) > 0)
                 {
-                    if (buffer.Length + read > MaxImageBytes) return null;
+                    if (buffer.Length + read > MaxImageBytes) return ArtworkRead.Not(ArtworkOutcome.NotFound);
                     buffer.Write(chunk, 0, read);
                 }
 
@@ -367,11 +401,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.NativeDetails
                     _bytes.TryUpdate(key, stored with { OnDisk = true }, stored);
                 }
 
-                return (bytes, type);
+                return ArtworkRead.Of((bytes, type));
             }
             catch (Exception)
             {
-                return null;
+                // A timeout or a dropped connection: TMDB may answer next time.
+                return ArtworkRead.Not(ArtworkOutcome.Unavailable);
             }
         }
 

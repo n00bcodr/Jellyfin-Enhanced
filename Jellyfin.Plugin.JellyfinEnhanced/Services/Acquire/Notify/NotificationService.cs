@@ -748,6 +748,62 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.Acquire.Notify
                     told += created.Count;
                     continue;
                 }
+                // A request held at sending because an asked episode can't be matched to Sonarr's by id (F83) tells the
+                // administrators once (a Needs attention alert: it waits for them, not for the asker), each told the title's
+                // name as they see it; only those who can see the title. Held again later (after an OK) is told again.
+                if (n.Kind == "dispatch" && key != null && want.Status == "pending" && want.Reason == EpisodeIdentity.Unresolved
+                    && _now() - n.At <= ArrivalFreshFor && _users.Admins().Where(a => _users.IsActive(a)).ToList() is { Count: > 0 } admins)
+                {
+                    // Prepare: every administrator's view of the title and its name, all awaited before any of them is decided.
+                    var names = new Dictionary<Guid, HubTitleMeta?>();
+                    foreach (var admin in admins)
+                    {
+                        if (_policy != null) await _policy.PrepareVisibilityAsync(admin, want.Input, cancellationToken).ConfigureAwait(false);
+                        names[admin] = _titleMeta != null && ActiveViewer(admin) is { } adminViewer
+                            ? (await _titleMeta(new[] { key.ToString() }, adminViewer, cancellationToken).ConfigureAwait(false)).GetValueOrDefault(key.ToString())
+                            : null;
+                    }
+
+                    // Then the final gate for each administrator after the last await: the request still held for this reason,
+                    // and an administrator who may see its title, as they are now.
+                    if (_store.Generation != generation || !_ledger.Database.Available) break;
+                    var held = _ledger.Find(want.Id) ?? want;
+                    var finals = new List<NotifyFinal>();
+                    if (held.Status == "pending" && held.Reason == EpisodeIdentity.Unresolved)
+                    {
+                        var current = _users.Admins();
+                        foreach (var admin in admins)
+                        {
+                            if (!current.Contains(admin) || !_users.IsActive(admin) || (_policy != null && !_policy.Evaluate(admin, held.Input, held.TargetKey).Visible)) continue;
+                            var heldParams = TitleParams(key.Title, null);
+                            if (names[admin] is { } heldMeta)
+                            {
+                                if (!string.IsNullOrEmpty(heldMeta.Title)) heldParams["title"] = heldMeta.Title!.Length > 200 ? heldMeta.Title[..200] : heldMeta.Title;
+                                if (heldMeta.Year is > 1800) heldParams["year"] = heldMeta.Year.Value.ToString(CultureInfo.InvariantCulture);
+                            }
+                            heldParams["code"] = EpisodeIdentity.Unresolved;
+                            if (ScopeLabel(held.Input) is { } heldScope) heldParams["scope"] = heldScope;
+                            heldParams["user"] = _users.Name(held.UserId) ?? string.Empty;
+                            var verdict = _dispatcher.Final(Alert(admin, NotifyKind.Attention, "identity|" + held.Id + "|" + n.At.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture), key.Title.ToString(), null, heldParams, n.At));
+                            switch (verdict.Effect)
+                            {
+                                case NotifyEffect.Leave:
+                                case NotifyEffect.Postpone:
+                                    // Switched off, or something to wait for: the notice is left (with the rest) for a later round.
+                                    return told;
+                                case NotifyEffect.Suppress:
+                                    break;
+                                case NotifyEffect.Act:
+                                    finals.Add(verdict);
+                                    break;
+                            }
+                        }
+                    }
+                    var alerted = _store.InTransaction(generation, tx => tx.TakeRequestNotice(n.Id) ? finals.Where(f => Add(tx, f) != null).ToList() : new List<NotifyFinal>(), new List<NotifyFinal>()).Result;
+                    foreach (var f in alerted) Announce(f);
+                    told += alerted.Count;
+                    continue;
+                }
                 // Not an alert to the requester (an ask told only to administrators, an auto-OK'd request, their own OK).
                 if (kind == null || key == null || (kind == NotifyKind.Approved && n.Approver == want.UserId))
                 {

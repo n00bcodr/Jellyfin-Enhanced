@@ -1426,6 +1426,37 @@ public class IntegrationArrStatusTests
         Assert.Equal(new[] { int.MaxValue }, new EpisodeRange(int.MaxValue, int.MaxValue).Numbers(EpisodeRange.MaxSyntheticEpisodes));
     }
 
+    [Fact]
+    public void ReadyEpisodeNamesItsPlayableItemWhileJellyfinStillListsItsMissingTwin()
+    {
+        // F102: a season read between a file's arrival and Jellyfin's removal of the missing (virtual) episode lists both
+        // items for the episode. Its row is the playable one, whichever Jellyfin lists first; a range file covers its tail.
+        var copy = new ArrCopyFacts(Sonarr) { Series = new ArrSeriesEntry { Id = 1, TvdbId = 100, Title = "Show" } };
+        var missing = Guid.NewGuid();
+        var playable = Guid.NewGuid();
+        var range = Guid.NewGuid();
+        var later = Guid.NewGuid();
+        var jf = new[]
+        {
+            new JfEpisode { ItemId = missing, Season = 1, Episode = 1, Virtual = true },
+            new JfEpisode { ItemId = playable, Season = 1, Episode = 1 },
+            new JfEpisode { ItemId = Guid.NewGuid(), Season = 1, Episode = 3, Virtual = true },
+            new JfEpisode { ItemId = range, Season = 1, Episode = 2, EpisodeEnd = 3 },
+            new JfEpisode { ItemId = later, Season = 1, Episode = 4, Virtual = true },
+        };
+        var states = StatusComposer.EpisodeStates(copy.Through(HiddenParts.None), 1, jf, Ctx());
+        Assert.Equal(playable, Assert.Single(states, s => s.Episode == 1).Row!.ItemId);
+        Assert.Equal(range, Assert.Single(states, s => s.Episode == 3).Row!.ItemId);
+        // An episode only Jellyfin's missing item stands for keeps it as its row.
+        Assert.Equal(later, Assert.Single(states, s => s.Episode == 4).Row!.ItemId);
+        var facts = new TitleFacts(ShowKey);
+        facts.Copies.Add(copy);
+        var status = StatusComposer.Season(facts, new JfItemRef { ItemId = Guid.NewGuid(), Kind = "season", Season = 1, Key = ShowKey.WithSeason(1) }, jf, Ctx(), detail: true);
+        var first = Assert.Single(status.Episodes!, e => e.Episode == 1);
+        Assert.Equal(StatusStage.Ready, first.Stage);
+        Assert.Equal(playable.ToString("N"), first.ItemId);
+    }
+
     [Theory]
     [InlineData(int.MaxValue)]
     [InlineData(100000)]

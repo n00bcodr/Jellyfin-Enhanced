@@ -1,0 +1,379 @@
+// F102: a season page open while an episode arrives shows the episode once. Jellyfin replaces a missing (virtual)
+// episode with a playable item under another id, can draw both for a moment, and does not tell the page the missing
+// one went (its LibraryChanged filters pathless items out). Production status modules on the mock host's native list.
+const { test: base, expect } = require('@playwright/test');
+const { installArrRoutes, ITEM } = require('./arr-fixtures.cjs');
+
+const id = n => String(n).padStart(32, '0');
+const VIRTUAL_ONE = id(1), MISSING_TWO = id(2), LATER = id(3), PLAYABLE_ONE = id(501);
+
+const test = base.extend({
+  arr: async ({ page, baseURL }, use) => {
+    const errors = [];
+    const held = { gate: null, status: 200, hits: 0 };
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => {
+      if (message.type() !== 'error') return;
+      // The browser's own line for a playable-item read a test answers with an error on purpose.
+      if (held.status !== 200 && /Failed to load resource/.test(message.text()) && (message.location()?.url || '').includes(PLAYABLE_ONE)) return;
+      errors.push(message.text());
+    });
+    const arr = await installArrRoutes(page, { origin: baseURL });
+    // Jellyfin's item reads as the viewer: the season (its series) and the playable episode.
+    arr.items = held;
+    await page.route(/\/Users\/[0-9a-f]{32}\/Items\/[0-9a-f]{32}$/, async route => {
+      const itemId = new URL(route.request().url()).pathname.split('/').at(-1);
+      if (itemId === PLAYABLE_ONE) held.hits++;
+      if (itemId === PLAYABLE_ONE && held.gate) await held.gate;
+      if (itemId === PLAYABLE_ONE && held.status !== 200) return route.fulfill({ status: held.status, json: {} });
+      if (itemId === PLAYABLE_ONE) return route.fulfill({ json: { Id: PLAYABLE_ONE, Type: 'Episode', Name: 'The Real One', Overview: 'Overview of the playable episode', SeriesId: id(800), IndexNumber: 1 } });
+      return route.fulfill({ json: { Id: itemId, Type: 'Season', Name: 'Season 1', SeriesId: id(800) } });
+    });
+    await use(arr);
+    arr.check();
+    expect(errors, 'unexpected browser errors').toEqual([]);
+  }
+});
+
+/** A season status: E1 and E2 have Jellyfin's missing rows, E3 plays; E1 can be ready under its playable item. */
+function seasonStatus(one = null) {
+  const ep = (n, itemId, stage) => ({ key: `tv:tvdb:9:s1:e${n}`, season: 1, episode: n, itemId, row: true, stage,
+    reason: { code: stage === 'ready' ? 'ready' : stage === 'almostReady' ? 'importing' : 'downloading' }, progress: stage === 'downloading' ? { percent: 40 } : null });
+  return { key: 'tv:tvdb:9:s1', itemId: ITEM, kind: 'season', stage: 'downloading', reason: { code: 'downloading' }, progress: { percent: 40 },
+    summary: { aired: 3, ready: one ? 2 : 1, downloading: 1, almostReady: one ? 0 : 1, missing: 0 },
+    episodes: [one ? ep(1, one, 'ready') : ep(1, VIRTUAL_ONE, 'almostReady'), ep(2, MISSING_TWO, 'downloading'), ep(3, LATER, 'ready')] };
+}
+
+/** Jellyfin-web's legacy list rows: virtual E1 (TMDB rating and overview, "Missing"), missing E2, playable E3. */
+async function drawList(page, { physical = false } = {}) {
+  await page.evaluate(({ physical, ids }) => {
+    const row = (itemId, n, { missing = false, name = `Episode ${n}`, overview = `TMDB overview ${n}`, heart = false } = {}) =>
+      `<div class="listItem listItem-largeImage listItem-withContentWrapper" data-type="Episode" data-id="${itemId}" data-action="link">`
+      + `<div class="listItem-content"><div class="listItemImage listItemImage-large itemAction" data-action="link"></div><div class="listItemBody itemAction">`
+      + `<div class="listItemBodyText"><bdi>${n}. ${name}</bdi></div><div class="secondary listItemMediaInfo listItemBodyText">`
+      + (missing ? '<div class="mediaInfoItem starRatingContainer">7.9</div><div class="missingIndicator">Missing</div>' : '<div class="mediaInfoItem">45m</div>')
+      + `</div></div>${heart ? `<button is="emby-ratingbutton" class="listItemButton paper-icon-button-light itemAction" data-id="${itemId}" title="Favorite">♥</button>` : ''}`
+      + `<button is="paper-icon-button-light" class="listItemButton paper-icon-button-light itemAction" data-action="menu" title="More">⋮</button></div>`
+      + `<div class="listItem-bottomoverview secondary"><bdi>${overview}</bdi></div></div>`;
+    document.querySelector('#childrenContent .itemsContainer').innerHTML = [
+      row(ids.virtualOne, 1, { missing: true }),
+      ...(physical ? [row(ids.playableOne, 1, { name: 'The Real One', overview: 'Overview of the playable episode', heart: true })] : []),
+      row(ids.missingTwo, 2, { missing: true }),
+      row(ids.later, 3, { overview: 'Overview 3' })].join('');
+  }, { physical, ids: { virtualOne: VIRTUAL_ONE, playableOne: PLAYABLE_ONE, missingTwo: MISSING_TWO, later: LATER } });
+}
+
+/** Opens the phone-width season page on a status. */
+async function open(page, arr, status) {
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [status] };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/arr?view=season#/details?id=${ITEM}`);
+  await expect(page.locator('body')).toHaveAttribute('data-arr-ready', 'true');
+}
+
+/** The status read again (the change feed's job), with a new answer. */
+async function answer(page, arr, status) {
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [status] };
+  await page.evaluate(() => JellyfinEnhanced.internals.arrStatusDetails.update(true));
+}
+
+/** E1's row exactly as Jellyfin drew it (its missing item, mark, title and overview). */
+async function expectMissingOne(page) {
+  const first = page.locator('#childrenContent .itemsContainer > .listItem').first();
+  await expect(first).toHaveAttribute('data-id', VIRTUAL_ONE);
+  await expect(first.locator('.missingIndicator')).toHaveCount(1);
+  await expect(first.locator('.listItemBodyText bdi').first()).toHaveText('1. Episode 1');
+  await expect(first.locator('.listItem-bottomoverview')).toHaveText('TMDB overview 1');
+  await expect(page.locator(`#childrenContent [data-id="${PLAYABLE_ONE}"]`)).toHaveCount(0);
+}
+
+/**
+ * Gives the mock host JE's access revision (core/access-revision.js is not part of the fixture): its public surface,
+ * with the person's access as `window.__access`; the status is read again under it.
+ */
+async function withAccess(page, arr, status, value = 'rev-a') {
+  await page.evaluate(value => {
+    window.__access = value;
+    JellyfinEnhanced.core.revision = { access: () => window.__access, document: () => null, current: () => null, noteResponse: () => {}, noteRevision: () => {}, probe: async () => window.__access };
+  }, value);
+  await answer(page, arr, status);
+}
+
+/** Moves the person's access revision as core/access-revision.js does (the value, then the event). */
+async function moveAccess(page, next) {
+  await page.evaluate(next => {
+    window.__access = next;
+    document.dispatchEvent(new CustomEvent('je-access-revision', { detail: { revision: next } }));
+  }, next);
+}
+
+/** Exactly one E1 row, the playable item's, at E1's place before E2; no missing E1 left. */
+async function expectOneEpisodeOne(page, { nativeControls }) {
+  const rows = page.locator('#childrenContent .itemsContainer > .listItem');
+  await expect.poll(() => rows.evaluateAll(list => list.map(row => row.dataset.id))).toEqual([PLAYABLE_ONE, MISSING_TWO, LATER]);
+  const first = rows.first();
+  await expect(first.locator('.missingIndicator')).toHaveCount(0);
+  await expect(first.locator('.listItemBodyText bdi').first()).toHaveText('1. The Real One');
+  await expect(first.locator('.listItem-bottomoverview')).toHaveText('Overview of the playable episode');
+  await expect(page.locator('#childrenContent')).not.toContainText('TMDB overview 1');
+  if (nativeControls) await expect(first.locator('button[is="emby-ratingbutton"]')).toBeVisible();
+  await expect(rows.nth(1).locator('.missingIndicator')).toHaveCount(1);
+  const scroll = await page.evaluate(() => [document.scrollingElement.scrollWidth, document.scrollingElement.clientWidth]);
+  expect(scroll[0], 'no horizontal overflow on a phone').toBeLessThanOrEqual(scroll[1]);
+}
+
+test('F102: the host redraws its list, then E1 arrives under a new id: one E1 row at its place', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  // The host replaces its list (a native redraw): JE's earlier row references are gone.
+  await drawList(page);
+  // The redrawn missing row is bound again (its chip is back) before the arrival is read.
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: false });
+});
+
+test('F102: the host draws E1\'s missing row beside its playable one, before and after the arrival is read', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  // Jellyfin's one redraw lists both items for E1 (its cleanup of the missing one not done yet).
+  await drawList(page, { physical: true });
+  await expectOneEpisodeOne(page, { nativeControls: true });
+  const heart = page.locator('#childrenContent .itemsContainer > .listItem').first().locator('button[is="emby-ratingbutton"]');
+  await heart.focus();
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect(heart).toBeFocused();
+  await expectOneEpisodeOne(page, { nativeControls: true });
+});
+
+test('F102: a season Jellyfin first drew with both E1 items converges once its missing E1 is gone', async ({ page, arr }) => {
+  await page.addInitScript(({ ids }) => {
+    // Jellyfin's season list as the viewer: E1's missing item is gone, its playable item is listed.
+    window.__episodes = [];
+    const define = () => {
+      if (!window.ApiClient) return setTimeout(define, 5);
+      window.ApiClient.getJSON = async url => {
+        const u = new URL(url);
+        window.__episodes.push([u.pathname.split('/')[2], u.searchParams.get('seasonId')]);
+        return { Items: [[ids.playableOne, 1, 'FileSystem'], [ids.missingTwo, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
+          .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 1, SeasonId: ids.season, LocationType })) };
+      };
+    };
+    define();
+  }, { ids: { playableOne: PLAYABLE_ONE, missingTwo: MISSING_TWO, later: LATER, season: ITEM } });
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [seasonStatus(PLAYABLE_ONE)] };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/arr?view=season#/details?id=${ITEM}`);
+  await expect(page.locator('body')).toHaveAttribute('data-arr-ready', 'true');
+  await drawList(page, { physical: true });
+  await expect.poll(() => page.locator('#childrenContent .itemsContainer > .listItem').evaluateAll(list => list.map(row => row.dataset.id))).toEqual([PLAYABLE_ONE, MISSING_TWO, LATER]);
+  await expect(page.locator('#childrenContent .itemsContainer > .listItem').first().locator('button[is="emby-ratingbutton"]')).toBeVisible();
+  expect(await page.evaluate(() => window.__episodes)).toEqual([[id(800), ITEM]]);
+});
+
+test('SRD-1: Jellyfin redraws its list while the playable item is read: the row still gets the playable item\'s title and overview', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  let release;
+  arr.items.gate = new Promise(resolve => { release = resolve; });
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect.poll(() => arr.items.hits).toBe(1);
+  // The row is pointed at the playable item only with its answer: until then it stays as Jellyfin drew it.
+  await expectMissingOne(page);
+  await drawList(page);
+  await expectMissingOne(page);
+  release();
+  await expectOneEpisodeOne(page, { nativeControls: false });
+  expect(arr.items.hits).toBe(1);
+});
+
+test('SRD-2: the viewer losing access mid-arrival sees E1 stay missing, never the playable item', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect(page.locator('#childrenContent .itemsContainer > .listItem').first().locator('.listItemBodyText bdi')).toHaveText('1. The Real One');
+  // Their library access goes: Jellyfin refuses the item and their status names E1's missing item again.
+  arr.items.status = 403;
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [seasonStatus()] };
+  await page.evaluate(() => document.dispatchEvent(new CustomEvent('je-access-revision')));
+  const first = page.locator('#childrenContent .itemsContainer > .listItem').first();
+  await expect(first).toHaveAttribute('data-id', VIRTUAL_ONE);
+  await expect(first.locator('.missingIndicator')).toHaveCount(1);
+  await expect(first.locator('.listItemBodyText bdi')).toHaveText('1. Episode 1');
+  // Jellyfin redraws its list before the status is read again: the old Ready answer points nothing.
+  await drawList(page);
+  await expect(first).toHaveAttribute('data-id', VIRTUAL_ONE);
+  await expect(first.locator('.missingIndicator')).toHaveCount(1);
+  await expect(page.locator(`#childrenContent [data-id="${PLAYABLE_ONE}"]`)).toHaveCount(0);
+  await expect(page.locator('#childrenContent')).not.toContainText('The Real One');
+});
+
+test('SRD-3: keyboard focus on the missing row that goes lands on the same control of the row that stays, announced', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  // Jellyfin drew both items for E1 while E1 was still downloading.
+  await drawList(page, { physical: true });
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await page.locator(`[data-id="${VIRTUAL_ONE}"] button[data-action="menu"]`).focus();
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: true });
+  await expect(page.locator(`[data-id="${PLAYABLE_ONE}"] button[data-action="menu"]`)).toBeFocused();
+  await expect(page.locator('.je-arr-episodes-live')).toHaveText('Episode 1 is ready to play');
+});
+
+test('SRD-R2-1: a failing read of the playable item (500) leaves E1 exactly as drawn; the next status read tries once more', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  arr.items.status = 500;
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect.poll(() => arr.items.hits).toBe(1);
+  await expectMissingOne(page);
+  await drawList(page);
+  await expectMissingOne(page);
+  expect(arr.items.hits).toBe(1);
+  arr.items.status = 200;
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: false });
+  expect(arr.items.hits).toBe(2);
+});
+
+test('SRD-R2-2: a playable-item read from before the person\'s access moved is not used, and the new read is not held up by it', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await withAccess(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  let release;
+  arr.items.gate = new Promise(resolve => { release = resolve; });
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect.poll(() => arr.items.hits).toBe(1);
+  await moveAccess(page, 'rev-b');
+  // The viewer's season list under the new access names E1's missing item.
+  await page.evaluate(ids => {
+    window.ApiClient.getJSON = async () => ({ Items: [[ids.v, 1, 'Virtual'], [ids.two, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
+      .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 1, SeasonId: ids.season, LocationType })) });
+  }, { v: VIRTUAL_ONE, two: MISSING_TWO, later: LATER, season: ITEM });
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect.poll(() => arr.items.hits).toBe(2);
+  await expectMissingOne(page);
+  release();
+  await expectOneEpisodeOne(page, { nativeControls: false });
+});
+
+test('SRD-R2-3: a status read before the person\'s access moved, answering after it, points nothing', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await withAccess(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  const held = arr.hold(`GET /acquire/status/item/${ITEM}`);
+  try {
+    arr.data.status = { contact: 'Dad', lookingHours: 24, items: [seasonStatus(PLAYABLE_ONE)] };
+    const reading = page.evaluate(() => JellyfinEnhanced.internals.arrStatusDetails.update(true));
+    await held.requested;
+    // Their access moves while it is read (the revision only; its event comes with the next answer).
+    await page.evaluate(() => { window.__access = 'rev-b'; });
+    held.release();
+    await reading;
+  } finally { held.release(); }
+  await expect.poll(() => page.evaluate(() => JellyfinEnhanced.internals.arrStatusEpisodes.current()?.status?.episodes?.[0]?.stage)).toBe('ready');
+  await drawList(page);
+  await expectMissingOne(page);
+  expect(arr.items.hits).toBe(0);
+  // Read again under the access as it is now: E1 is pointed at its playable item.
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: false });
+});
+
+test('SRD-R2-4: leaving the season drops what the visit learnt; coming back reads the playable item again', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: false });
+  expect(arr.items.hits).toBe(1);
+  await page.evaluate(() => { location.hash = '#/home'; });
+  await expect.poll(() => page.evaluate(() => JellyfinEnhanced.internals.arrStatusEpisodes.current())).toBe(null);
+  // What JE did to the page went with the visit.
+  await expectMissingOne(page);
+  // Back on the season, its first status already Ready: the viewer's season list says which row is E1's missing item.
+  await page.evaluate(ids => {
+    window.ApiClient.getJSON = async () => ({ Items: [[ids.v, 1, 'Virtual'], [ids.two, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
+      .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 1, SeasonId: ids.season, LocationType })) });
+  }, { v: VIRTUAL_ONE, two: MISSING_TWO, later: LATER, season: ITEM });
+  await page.evaluate(item => { location.hash = `#/details?id=${item}`; }, ITEM);
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: false });
+  expect(arr.items.hits).toBe(2);
+});
+
+test('SRD-R3-1: the person\'s access moves as E1 arrives and the viewer\'s season list fails: one E1 row, pointed once the list answers', async ({ page, arr }) => {
+  await open(page, arr, seasonStatus());
+  await withAccess(page, arr, seasonStatus());
+  await drawList(page);
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await page.evaluate(ids => {
+    window.__listReads = 0;
+    window.ApiClient.getJSON = async () => {
+      window.__listReads++;
+      if (window.__listReads === 1) throw Object.assign(new Error('HTTP 500'), { status: 500 });
+      return { Items: [[ids.v, 1, 'Virtual'], [ids.two, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
+        .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 1, SeasonId: ids.season, LocationType })) };
+    };
+  }, { v: VIRTUAL_ONE, two: MISSING_TWO, later: LATER, season: ITEM });
+  // Their access moves; the status read again under it names E1 playable.
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [seasonStatus(PLAYABLE_ONE)] };
+  await moveAccess(page, 'rev-b');
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expect.poll(() => page.evaluate(() => window.__listReads)).toBe(1);
+  // Not identified (the list failed): nothing guessed, no row added.
+  await expectMissingOne(page);
+  await expect(page.locator('#childrenContent .itemsContainer > .listItem')).toHaveCount(3);
+  // The next status read asks for the list again: E1's missing row is identified and pointed in place.
+  await answer(page, arr, seasonStatus(PLAYABLE_ONE));
+  await expectOneEpisodeOne(page, { nativeControls: false });
+  expect(await page.evaluate(() => window.__listReads)).toBe(2);
+});
+
+test('SRD-R4-1: a specials season (titles without numbers) and a failing season list: three specials keep three rows, never four', async ({ page, arr }) => {
+  const special = playable => {
+    const s = seasonStatus(playable);
+    s.key = 'tv:tvdb:9:s0';
+    s.episodes.forEach(ep => { ep.season = 0; ep.key = `tv:tvdb:9:s0:e${ep.episode}`; });
+    return s;
+  };
+  await open(page, arr, special());
+  await withAccess(page, arr, special());
+  await drawList(page);
+  // Jellyfin draws specials with their names (no "N." number), in air-date order.
+  await page.evaluate(() => {
+    const list = document.querySelector('#childrenContent .itemsContainer');
+    [...list.children].forEach((row, n) => { row.querySelector('.listItemBodyText bdi').textContent = ['Christmas Special', 'Behind the scenes', 'Pilot (unaired)'][n]; });
+    list.prepend(list.children[2]);
+  });
+  await expect(page.locator(`[data-id="${VIRTUAL_ONE}"] .je-arr-chip`)).toHaveCount(1);
+  await page.evaluate(ids => {
+    window.__listReads = 0;
+    window.ApiClient.getJSON = async () => {
+      window.__listReads++;
+      if (window.__listReads === 1) throw Object.assign(new Error('HTTP 500'), { status: 500 });
+      return { Items: [[ids.v, 1, 'Virtual'], [ids.two, 2, 'Virtual'], [ids.later, 3, 'FileSystem']]
+        .map(([Id, IndexNumber, LocationType]) => ({ Id, IndexNumber, ParentIndexNumber: 0, SeasonId: ids.season, LocationType })) };
+    };
+  }, { v: VIRTUAL_ONE, two: MISSING_TWO, later: LATER, season: ITEM });
+  arr.data.status = { contact: 'Dad', lookingHours: 24, items: [special(PLAYABLE_ONE)] };
+  await moveAccess(page, 'rev-b');
+  await answer(page, arr, special(PLAYABLE_ONE));
+  await expect.poll(() => page.evaluate(() => window.__listReads)).toBe(1);
+  const rows = page.locator('#childrenContent .itemsContainer > .listItem');
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator(`#childrenContent [data-id="${PLAYABLE_ONE}"]`)).toHaveCount(0);
+  // The list answers with the next status read: the special's own missing row is pointed in place.
+  await answer(page, arr, special(PLAYABLE_ONE));
+  await expect(page.locator(`#childrenContent [data-id="${PLAYABLE_ONE}"]`)).toHaveCount(1);
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator(`#childrenContent [data-id="${VIRTUAL_ONE}"]`)).toHaveCount(0);
+});

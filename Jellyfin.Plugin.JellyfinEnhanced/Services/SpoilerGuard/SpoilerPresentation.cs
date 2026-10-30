@@ -48,6 +48,20 @@ public sealed class SpoilerPresentation(UserConfigurationManager config, ILibrar
         catch (Exception) { return new SpoilerPresentationContext(new(), plugin, unavailable: true).StateRevision; }
     }
 
+    /// <summary>
+    /// <see cref="Load"/> read afresh: the request's earlier snapshot of this viewer is dropped first (a decision that must
+    /// use the viewer's Spoiler Guard state as it is now, not as the request first read it). The new read is the request's
+    /// snapshot from then on.
+    /// </summary>
+    /// <param name="viewer">The viewer.</param>
+    /// <param name="http">The request.</param>
+    /// <returns>The viewer's presentation now.</returns>
+    public SpoilerPresentationContext LoadFresh(Guid viewer, HttpContext http)
+    {
+        http.Items.Remove("__JE_SPOILER_PRESENTATION_" + viewer.ToString("N"));
+        return Load(viewer, http);
+    }
+
     /// <summary>Loads strictly once per request. Unknown policy suppresses sensitive presentation.</summary>
     public SpoilerPresentationContext Load(Guid viewer, HttpContext? http = null)
     {

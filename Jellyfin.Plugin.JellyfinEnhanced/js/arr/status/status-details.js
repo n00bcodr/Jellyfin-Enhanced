@@ -333,7 +333,11 @@
      * @returns {void}
      */
     function stop(keepArrival) {
-        if (!keepArrival) JE.internals?.arrStatusArrival?.drop?.();
+        if (!keepArrival) {
+            JE.internals?.arrStatusArrival?.drop?.();
+            // Leaving the page (or its context): what the season rows learnt goes with it.
+            JE.internals?.arrStatusEpisodes?.clear?.();
+        }
         if (!current) return;
         current.controller.abort();
         if (current.retryTimer) clearTimeout(current.retryTimer);
