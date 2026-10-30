@@ -46,6 +46,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Optional slot overrides for the rule's layout; null uses the user's profile for it.</summary>
         public List<TagLayoutGroupSlot>? Slots { get; set; }
+
+        /// <summary>Optional per-shape looks over the rule's look (landscape cards, list rows); null = the rule's look on every shape.</summary>
+        public TagShapeOverrides? Shapes { get; set; }
     }
 
     /// <summary>
@@ -64,6 +67,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>The slot of each group at lock time; null uses the user's current profile.</summary>
         public List<TagLayoutGroupSlot>? Slots { get; set; }
+
+        /// <summary>Optional per-shape looks over the locked look (landscape cards, list rows); null = the locked look on every shape.</summary>
+        public TagShapeOverrides? Shapes { get; set; }
 
         /// <summary>When the item was locked, Unix milliseconds (the oldest locks go first past the limit).</summary>
         public long LockedAt { get; set; }
@@ -199,6 +205,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     Density = density,
                     ColourPreset = NormalizePreset(rule.ColourPreset),
                     Slots = TagLayoutRules.NormalizeProfile(layout, rule.Slots == null ? null : new TagLayoutProfile { Groups = rule.Slots })?.Groups,
+                    Shapes = TagShapeRules.NormalizeDefaults(rule.Shapes),
                 });
             }
 
@@ -228,6 +235,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     Density = density,
                     ColourPreset = NormalizePreset(value.ColourPreset),
                     Slots = TagLayoutRules.NormalizeProfile(layout, value.Slots == null ? null : new TagLayoutProfile { Groups = value.Slots })?.Groups,
+                    Shapes = TagShapeRules.NormalizeDefaults(value.Shapes),
                     LockedAt = Math.Max(0, value.LockedAt),
                 };
                 if (!byId.TryGetValue(id, out var existing) || existing.LockedAt < normalized.LockedAt)
