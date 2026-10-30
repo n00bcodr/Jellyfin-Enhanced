@@ -1,6 +1,6 @@
 /**
  * @file Settings panel size: a resize grip in the bottom-right corner, grab
- * zones on the right and bottom edges, and Default / Large / Fill presets in
+ * zone on the bottom edge, and Default / Large / Fill presets in
  * the header (with Reset size once a dragged size is in use).
  *
  * The chosen size is kept per user in localStorage (JE_panelSize_<userId>)
@@ -129,12 +129,11 @@
     };
 
     /**
-     * The grip and the two edge grab zones, placed last in the panel.
+     * The grip and the bottom edge grab zone, placed last in the panel.
      * @returns {string} HTML appended after the panel footer.
      */
     internal.buildPanelResizeHandlesHtml = function() {
-        return '<div class="je-panel-edge je-panel-edge--x" data-je-resize="x" aria-hidden="true" hidden></div>'
-            + '<div class="je-panel-edge je-panel-edge--y" data-je-resize="y" aria-hidden="true" hidden></div>'
+        return '<div class="je-panel-edge je-panel-edge--y" data-je-resize="y" aria-hidden="true" hidden></div>'
             + `<button type="button" class="je-panel-grip" data-je-resize="both" aria-label="${escapeHtml(JE.t('panel_size_grip'))}" title="${escapeHtml(JE.t('panel_size_grip_hint'))}" aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight" hidden>`
             + '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M15 5 5 15M15 9.5 9.5 15M15 13.5 13.5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>'
             + '</button>';
@@ -151,14 +150,12 @@
         #jellyfin-enhanced-panel .je-panel-size-reset { margin-left: 4px; border: 1px dashed rgba(255,255,255,0.35); }
         #jellyfin-enhanced-panel .je-panel-size-btn:focus-visible, #jellyfin-enhanced-panel .je-panel-grip:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
         #jellyfin-enhanced-panel .je-panel-edge { position: absolute; z-index: 5; touch-action: none; }
-        #jellyfin-enhanced-panel .je-panel-edge--x { top: 0; right: 0; bottom: 24px; width: 5px; cursor: ew-resize; }
         #jellyfin-enhanced-panel .je-panel-edge--y { left: 0; right: 24px; bottom: 0; height: 5px; cursor: ns-resize; }
         #jellyfin-enhanced-panel .je-panel-grip { position: absolute; z-index: 6; right: 4px; bottom: 4px; width: 16px; height: 16px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: rgba(255,255,255,0.55); cursor: nwse-resize; touch-action: none; display: flex; }
         #jellyfin-enhanced-panel .je-panel-grip:hover, #jellyfin-enhanced-panel.je-panel-resizing .je-panel-grip { color: #fff; }
         #jellyfin-enhanced-panel :is(.je-panel-edge, .je-panel-grip)[hidden] { display: none; }
         #jellyfin-enhanced-panel.je-panel-resizing, #jellyfin-enhanced-panel.je-panel-resizing * { user-select: none; -webkit-user-select: none; }
         #jellyfin-enhanced-panel.je-panel-resizing[data-je-resize-axis="both"] * { cursor: nwse-resize !important; }
-        #jellyfin-enhanced-panel.je-panel-resizing[data-je-resize-axis="x"] * { cursor: ew-resize !important; }
         #jellyfin-enhanced-panel.je-panel-resizing[data-je-resize-axis="y"] * { cursor: ns-resize !important; }
     `;
 

@@ -134,7 +134,7 @@ test('desktop: the size group, presets and grip show; nothing stored means the b
   assert.equal(h.reset().hidden, true, 'Reset size only once a dragged size is stored');
   assert.equal(h.grip().hidden, false);
   assert.equal(h.grip().getAttribute('aria-label'), 'panel_size_grip');
-  assert.equal(h.edge('x').hidden, false);
+  assert.equal(h.edge('x'), null, 'no resize zone over the scrollbar');
   assert.equal(h.edge('y').hidden, false);
   assert.equal(h.panel().style.width, 'min(1040px, 94vw)');
   assert.equal(h.panel().style.height, 'min(720px, 90vh)');
@@ -242,7 +242,7 @@ test('a drag stays inside the bounds and each edge changes only its own dimensio
   assert.deepEqual(h.size(), [1352, 852], 'never past the window minus 24px a side');
   h.drag(h.grip(), -2000, -2000);
   assert.deepEqual(h.size(), [720, 480], 'never under 720×480');
-  h.drag(h.edge('x'), 100, 300);
+  h.drag(h.grip(), 100, 0);
   assert.deepEqual(h.size(), [920, 480]);
   h.drag(h.edge('y'), 300, 100);
   assert.deepEqual(h.size(), [920, 680]);
@@ -310,7 +310,7 @@ test('below 900px the controls and grip are hidden and the built-in size applies
   await h.open();
   assert.equal(h.$('.je-panel-size').hidden, true);
   assert.equal(h.grip().hidden, true);
-  assert.equal(h.edge('x').hidden, true);
+  assert.equal(h.edge('x'), null);
   assert.equal(h.edge('y').hidden, true);
   assert.equal(h.panel().style.width, 'min(1040px, 94vw)');
   h.pointer(h.grip(), 'pointerdown', 10, 10);
@@ -488,4 +488,17 @@ for (const notify of [true, false]) test(`identity switch closes the old panel w
   assert.equal(h.stored(), '{"preset":"large"}');
   await h.open();
   assert.deepEqual(h.pressed(), ['fill'], 'incoming identity reads its own choice');
+});
+
+
+test('scrollbar pointer input cannot start a resize at Fill', async t => {
+  const h = setup(t);
+  await h.open();
+  h.preset('fill').click();
+  const scroller = h.$('.je-panel-main');
+  const rect = h.panel().getBoundingClientRect();
+  const down = h.pointer(scroller, 'pointerdown', rect.right - 2, rect.top + 100);
+  assert.equal(down.defaultPrevented, false);
+  assert.equal(h.panel().classList.contains('je-panel-resizing'), false);
+  assert.equal(h.$('[data-je-resize="x"]'), null);
 });
