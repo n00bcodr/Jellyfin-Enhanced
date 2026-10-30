@@ -18,13 +18,13 @@ internal static class SeriesQualityAggregation
     {
         public Detected(TagStreamData streams)
         {
-            Labels = QualityTagRules.Detect(streams, null);
+            Labels = QualityTagRules.DetectNonAudio(streams);
             SingleAudioLanguage = streams.Streams?.Where(stream => stream?.Type == "Audio").Select(stream => stream.Language).Distinct(StringComparer.OrdinalIgnoreCase).Take(2).Count() <= 1;
             var videos = streams.Streams?.Where(stream => stream?.Type == "Video").ToList();
             if (videos is not { Count: > 1 }) return;
             // Media versions are already flattened in StreamData. Each category
             // can select a different version without opening any media again.
-            var candidates = videos.SelectMany(video => QualityTagRules.Detect(new TagStreamData { Streams = new() { video } }, null)).ToList();
+            var candidates = videos.SelectMany(video => QualityTagRules.DetectNonAudio(new TagStreamData { Streams = new() { video } })).ToList();
             foreach (var key in new[] { QualityTagRules.Resolution, QualityTagRules.DynamicRange, QualityTagRules.VideoCodec })
             {
                 Labels.RemoveAll(label => QualityTagRules.CategoryOf(label) == key);

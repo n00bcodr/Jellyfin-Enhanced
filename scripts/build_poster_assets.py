@@ -47,6 +47,7 @@ records the ones that produced the committed files):
 
 Usage:
   python3 scripts/build_poster_assets.py            regenerate everything
+  python3 scripts/build_poster_assets.py --quality-only  regenerate only quality colours and their manifest records
   python3 scripts/build_poster_assets.py --check    fast CI check: in-repo inputs still
                                                      match the committed outputs, and
                                                      every output matches manifest.json.
@@ -554,6 +555,19 @@ def build(out: Path, cache: Path, tmp: Path) -> None:
     print(f"{out}: {len(manifest['outputs'])} files, {total} bytes (flags {len(codes) + 1} = {flags} bytes)")
 
 
+def build_quality(out: Path) -> None:
+    """Regenerate quality colours without changing unrelated generated assets or their provenance."""
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    name = "quality-colours.json"
+    data = to_json(quality_colours()).encode("utf-8")
+    write(out / name, data.decode("utf-8"))
+    manifest["inputs"][str(IN_REPO["qualitytags"].relative_to(REPO))] = sha256(IN_REPO["qualitytags"].read_bytes())
+    manifest["outputs"][name] = {"bytes": len(data), "sha256": sha256(data)}
+    write(manifest_path, json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    print(f"{out / name}: regenerated quality colours and manifest records")
+
+
 # ── Check ────────────────────────────────────────────────────────────────────
 
 def check(out: Path, full: bool, cache: Path, keep_tmp: bool) -> int:
@@ -622,10 +636,16 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--cache", type=Path,
                     default=Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "jellyfin-enhanced" / "poster-assets")
+    ap.add_argument("--quality-only", action="store_true", help="regenerate only quality colours and their manifest records")
     ap.add_argument("--check", action="store_true", help="verify instead of writing")
     ap.add_argument("--full", action="store_true", help="with --check: regenerate everything and compare bytes")
     ap.add_argument("--keep-tmp", action="store_true")
     a = ap.parse_args()
+    if a.quality_only:
+        if a.check or a.full:
+            ap.error("--quality-only cannot be combined with --check or --full")
+        build_quality(a.out)
+        return 0
     if a.full and not a.check:
         ap.error("--full requires --check")
     if a.check:

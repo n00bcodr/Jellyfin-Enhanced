@@ -100,3 +100,31 @@ test('batch cache retains summary facts so changing policy never refetches episo
   assert.ok([...h.document.querySelectorAll('.quality-overlay-label')].some(chip => chip.textContent === '4K'));
   assert.ok(h.document.querySelector('.mixed'));
 });
+
+for (const [category, setting] of [['resolution', 'showResolutionTag'], ['dynamicRange', 'showDynamicRangeTag'],
+  ['videoCodec', 'showVideoCodecTag'], ['audioInfo', 'showAudioInfoTag']]) {
+  for (const path of ['server', 'batch']) test(`${path} cached Mixed follows ${setting} off and on with the same facts after reinitialization`, t => {
+    const h = setup(t, 'mixed');
+    const data = entry(); data.Id = 'retained';
+    Object.entries(data.QualitySummary.Categories).forEach(([key, facts]) => { facts.AllAgree = key !== category; });
+    const clear = () => {
+      h.JE.core.tagLayout.clearCard(h.card);
+      delete h.document.querySelector('.card').dataset.jeQualityTagged;
+    };
+    const labels = () => [...h.document.querySelectorAll('.quality-overlay-label')].map(chip => chip.textContent);
+    const render = () => {
+      clear();
+      if (path === 'server') return h.render(data, data.Id);
+      assert.equal(h.renderers.get('quality').renderFromCache(h.card, data.Id), true, 'retained batch facts avoid fetching');
+      return labels();
+    };
+    if (path === 'batch') h.renderers.get('quality').render(h.card, data, { firstEpisode: { MediaStreams: [{ Type: 'Video', Height: 480 }] } });
+    assert.ok(render().includes('Mixed'));
+    h.JE.currentSettings[setting] = false;
+    h.JE.reinitializeQualityTags();
+    assert.ok(!render().includes('Mixed'), 'only differing category is disabled');
+    h.JE.currentSettings[setting] = true;
+    h.JE.reinitializeQualityTags();
+    assert.ok(render().includes('Mixed'), 're-enabling the differing category restores Mixed');
+  });
+}

@@ -830,6 +830,14 @@
     }
 
     /**
+     * Fingerprint the effective category switches used to decide whether Mixed is present.
+     * @returns {string} Stable key for computed labels retained across reinitialization.
+     */
+    function aggregationCategoriesKey() {
+        return CATEGORIES.map(cat => readBool(cat.settingKey, true) ? '1' : '0').join('');
+    }
+
+    /**
      * Reapply a policy to retained batch facts. A policy change must not fetch
      * episodes again while the language preference and cache lifetime still match.
      * @param {Object|null} cached - A computed local/hot cache record.
@@ -837,7 +845,7 @@
      */
     function qualitiesFromCache(cached) {
         if (!cached || !matchesAudioPreference(cached)) return null;
-        if (cached.aggregationPolicy === aggregationPolicy() || (cached.type && !['Series', 'Season'].includes(cached.type))) return cached.qualities;
+        if ((cached.aggregationPolicy === aggregationPolicy() && cached.aggregationCategories === aggregationCategoriesKey()) || (cached.type && !['Series', 'Season'].includes(cached.type))) return cached.qualities;
         if (!cached.qualitySummary) return null;
         return aggregateQualities({ Type: cached.type, QualitySummary: cached.qualitySummary }, cached.representativeQualities || []);
     }
@@ -1107,7 +1115,7 @@
                 if (qualities.length > 0 || item.QualitySummary) {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 1, timestamp: Date.now(), audioLang, aggregationPolicy: aggregationPolicy() };
+                        namingVersion: 1, timestamp: Date.now(), audioLang, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1134,7 +1142,7 @@
                 if (isAudioPreferencePending()) return;
                 // Check local computed cache first (avoids re-running quality detection)
                 const cached = serverQualityCache.get(itemId);
-                if (cached && cached.entry === entry && matchesAudioPreference(cached) && cached.aggregationPolicy === aggregationPolicy()) {
+                if (cached && cached.entry === entry && matchesAudioPreference(cached) && cached.aggregationPolicy === aggregationPolicy() && cached.aggregationCategories === aggregationCategoriesKey()) {
                     if (cached.qualities.length > 0) insertOverlay(ctx, el, cached.qualities);
                     return;
                 }
@@ -1142,7 +1150,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, Source: entry.Source, Edition: entry.Edition });
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, qualities, entry, namingVersion: 1, aggregationPolicy: aggregationPolicy() });
+                serverQualityCache.set(itemId, { audioLang, qualities, entry, namingVersion: 1, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

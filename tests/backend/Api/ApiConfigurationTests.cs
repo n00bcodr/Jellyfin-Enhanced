@@ -12,6 +12,30 @@ namespace JE.Tests;
 [Collection("Plugin singleton")]
 public class ApiConfigurationTests
 {
+    [Theory]
+    [InlineData("mixed", "mixed")]
+    [InlineData("latest", "latest")]
+    [InlineData("unknown", "representative")]
+    public void NewUserSettingsSeedNormalizedAggregationOnceAndPreserveLaterChoices(string configured, string expected)
+    {
+        using var fixture = new ApiPluginFixture();
+        fixture.Plugin.Configuration.SeriesQualityAggregation = configured;
+        var userId = Guid.NewGuid().ToString("N");
+        var controller = ApiAssetTests.Controller(fixture.Core, fixture.Core.Manager, Mock.Of<IUserManager>());
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", userId)], "test"));
+        var first = Assert.IsType<OkObjectResult>(controller.GetUserSettingsSettings(userId));
+        using var seeded = JsonDocument.Parse(JsonSerializer.Serialize(first.Value));
+        Assert.Equal(expected, seeded.RootElement.GetProperty("SeriesQualityAggregation").GetString());
+        var saved = fixture.Core.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(userId, "settings.json");
+        Assert.Equal(expected, saved.SeriesQualityAggregation);
+        saved.SeriesQualityAggregation = "shared";
+        fixture.Core.Manager.SaveUserConfiguration(userId, "settings.json", saved);
+        fixture.Plugin.Configuration.SeriesQualityAggregation = "best";
+        var second = Assert.IsType<OkObjectResult>(controller.GetUserSettingsSettings(userId));
+        using var retained = JsonDocument.Parse(JsonSerializer.Serialize(second.Value));
+        Assert.Equal("shared", retained.RootElement.GetProperty("SeriesQualityAggregation").GetString());
+    }
+
     /// <summary>
     /// Fills every secret-like string setting (*ApiKey, *API_KEY, *Secret, *Token, *Password) and each
     /// Sonarr/Radarr instance key with a "SECRET_" sentinel. Neither config payload may contain any of
