@@ -629,58 +629,83 @@ If a custom web wrapper shows tags twice, add its name as shown under **Dashboar
 
 ## Tag Styles and CSS
 
-Use Tag Styles to change supported tag colors without writing CSS. The server editor can apply colors to web overlays, native poster images, or both.
+Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, then adjust a whole group of tags or a single tag. The same colours reach the web overlays and the posters drawn for native apps.
 
 **How to use:**
 
 1. Open **Display** → **Media Tags** and turn on **Enable Tag Styles**.
-2. Choose **Apply Tag Styles To**.
-3. Click a tag to edit its colors and opacity (0–100%), or choose a preset and click **Apply Preset**.
-4. Click **Save Settings** and refresh clients as needed.
+2. Under **Apply to**, choose **Web**, **Native posters** or **Both**.
+3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set.
+4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**), then **Whole group** or one tag.
+5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an opacity of 40–100%. Watch the contrast badge and the preview.
+6. Click **Save Settings**. Refresh web clients to see the change; native posters redraw the next time they load.
 
-Use **Reset This Tag** to restore a tag's defaults, or **Reset All Tag Styles** to remove all overrides.
-
-<figure class="je-video">
-  <video autoplay loop muted playsinline controls preload="metadata" aria-label="Selecting a tag style preset and editing its colors">
-    <source src="../../images/admin/tag-styles.mp4" type="video/mp4">
-  </video>
-  <figcaption>Apply a preset, edit a tag's color and opacity, then reset the styles.</figcaption>
-</figure>
+![Picking a preset, colouring the Quality group and checking contrast in the Tag Styles editor](../images/admin/tag-styles.gif)
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Enable Tag Styles** | Off | Enables saved color overrides; disabling it preserves edits |
-| **Apply Tag Styles To** | **Both (Jellyfin Web and poster images)** | Alternatives: **Jellyfin Web only** or **Poster images only (apps without web overlays)** |
-| **Preset** | **Default colours** | Selects **Glass**, **Outline**, **Dark**, **Light**, or **Default colours** for **Apply Preset** |
-| **Apply to** | **All tags** | Applies a preset or bulk colors to all editable groups, or **This tab only** |
-| **Colours** | Background `#000000` at 60%; Border `#ffffff` at 50%; Text `#ffffff` at 100%; application boxes unchecked | Selects bulk colors and opacity; check the fields to include, then use **Apply Colours** |
+| **Enable Tag Styles** | Off | Turns the colours on. Turning it off keeps your edits |
+| **Apply to** | **Both** | **Web** recolours the overlays in Jellyfin Web; **Native posters** recolours the tags drawn into posters for apps such as Android TV (needs **Enable Native Poster Tags (Experimental)**) |
+| **Preset** | **Default** | The colours every tag starts from (see below) |
+| **Let users pick their own preset** | Off | Adds a **Tag Colours** choice to each user's **UI Settings**. Your group and tag colours stay on top of the preset a user picks |
+| **Reset all colours** | | Clears every group and tag colour and returns to the **Default** preset (saved when you click **Save Settings**) |
 
-| Editor tab | Editable fields |
+### Presets
+
+Each preset sets a background, border and text colour for every kind of tag. Each preset tile previews a 4K, a rating and a PG-13 tag in its colours.
+
+| Preset | Look |
 |---|---|
-| **Quality** | **Background**, **Border**, **Text** |
-| **Age ratings** | **Background**, **Border**, **Text** |
-| **Rating chips** | **Background**, **Text and star** |
-| **Genre** | **Background**, **Border**, **Icon** |
+| **Default** | The built-in colours. Nothing changes and custom CSS keeps working as before |
+| **Glass** | Light translucent chips with a soft white border; white text, gold community scores and trending ranks, red critic scores |
+| **Outline** | Dark translucent chips; the border and text take each tag's tint: blue resolution, orange dynamic range and IMAX/3D, green audio, grey codec and source, gold community score, red critic score, the board colour for age ratings. Genre, status and language get a white border |
+| **Dark** | Near-black chips without a border; white text with gold and red scores |
+| **Light** | Near-white chips without a border; dark text, darker gold and red scores, age ratings in their board colour |
+| **Mono** | Neutral dark grey chips with light grey text and a faint border |
 
-Saved overrides start empty. The bulk color pickers do not apply themselves automatically. Language flags and People Tags are not editor tabs.
+### Groups and single tags
 
-??? info "Stored style configuration"
-    The saved fields are `TagStylesEnabled`, `TagStyleTarget` (`both`, `web`, or `native`), `TagStylePreset` (`default` initially), `TagStyleApplyScope` (`all` or `tab`), and `TagStyleOverrides` (an empty string initially). Applying bulk colors sets the preset value to `custom`.
+The editor shows every tag of the selected group in its current colours, so you can see the result before changing anything. A dot marks a group or tag you changed.
 
-!!! note "Check the style scope"
-    **Apply to** returns to its saved value after you switch editor tabs, select a tag, or apply a preset or bulk colors. Select **This tab only** immediately before each application if you want to limit changes to the current tab.
+| Tab | Tags you can edit one by one | Notes |
+|---|---|---|
+| **Quality** | Every quality label (4K, HDR10, ATMOS, HEVC…) | Combined labels such as ATMOS 7.1 follow their base label |
+| **Age** | One chip per age rating colour board, shown with a sample rating | Hover a chip to see every rating it covers |
+| **Rating** | **Community**, **Critic**, **User review** | Rating chips have no border of their own: a border colour draws a thin inner ring |
+| **Genre** | **Genre** | **Text** colours the genre icon |
+| **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending** | Web only: native posters do not show Status Tags. A Trending text colour also recolours the rank |
+| **Language** | **Flag** | Flags are images, so only the border ring applies. Partial dubs keep their dashed outline |
 
-Styles change colors, not size, shape, position, or visibility. For web layout, sizing, hiding, and more detailed styling, see [CSS Customization](../advanced/css-customization.md).
+A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
+
+### Contrast check
+
+The badge under the colour rows rates the text against the background, both shown over a dark poster:
+
+| Badge | Contrast | Meaning |
+|---|---|---|
+| **AA** (green) | 4.5:1 or more | Easy to read |
+| **AA large only** (amber) | 3:1 to 4.5:1 | Readable for large or bold text only |
+| **Low contrast** (red) | under 3:1 | Hard to read |
+
+With **Whole group** selected, the badge shows the tag that reads worst. Translucent presets also depend on the artwork behind them, so check the preview.
+
+### User presets
+
+With **Let users pick their own preset** on, users choose **Tag Colours** under **UI Settings** (see [Enhanced settings](enhanced-settings.md)). **Server default** follows your preset; any other choice replaces only the preset, never your group or tag colours. The web applies it right away, and native posters for that user follow the next time they load.
+
+Styles change colours, not size, shape, position or visibility. For web layout, sizing, hiding and more detailed styling, see [CSS Customization](../advanced/css-customization.md).
 
 !!! note "Style requirements"
-    Native colors require **Enable Native Poster Tags (Experimental)**. Enable the tag feature and supply metadata first: CSS cannot create missing tags or restyle pixels already drawn into an image.
+    Native colours need **Enable Native Poster Tags (Experimental)**. Enable the tag feature and supply metadata first: CSS cannot create missing tags or restyle pixels already drawn into an image.
+
+??? info "Stored style configuration"
+    The saved fields are `TagStylesEnabled`, `TagStyleTarget` (`both`, `web` or `native`), `TagStylePreset` (`default`, `glass`, `outline`, `dark`, `light` or `mono`), `TagStylesAllowUserPreset`, and `TagStyleOverrides`: an empty string, or a version 2 document `{"v":2,"preset":…,"groups":{…},"labels":{…}}` holding only the colours you set. Settings saved before this editor (version 1, with colours per quality label, age board, rating chip and genre) still load and are converted on the next save; a preset saved as `custom` reads as **Default**. `TagStyleApplyScope` is no longer used. Each user's choice is `TagStylePreset` in their settings (`null` follows the admin). Saving checks the document: anything that is not a colour, an unknown group or tag, or a document over 32 KB keeps the current styles. See the [API reference](../advanced/api.md#style-and-native-preview-contracts) for the full format.
 
 ??? info "Web CSS behavior"
-    On the web, critic-chip styling also reaches user-review chips because they share that chip class.
-
-    Saved Tag Styles use stronger important color rules than simple CSS recipes, but sufficiently specific important custom CSS can override them. Prefer the corner controls to transforms that can disrupt shared-corner stacking. Genre-name styling requires **Hide Tags on Hover** off. Hiding a displayed flag with CSS does not make a fourth flag appear.
+    Saved Tag Styles use stronger important colour rules than simple CSS recipes, but sufficiently specific important custom CSS can override them. Status chips carry `data-je-status` (`added`, `newMovie`, `newSeries`, `newEpisode`, `trending`) if you want to target one kind yourself. Prefer the corner controls to transforms that can disrupt shared-corner stacking. Genre-name styling requires **Hide Tags on Hover** off. Hiding a displayed flag with CSS does not make a fourth flag appear.
 
 ??? info "Style API routes"
-    The effective web color overrides are available through authenticated `GET /JellyfinEnhanced/tag-styles` (empty when disabled or targeting native only). The shipped defaults catalog is administrator-only `GET /JellyfinEnhanced/tag-styles/catalog`.
+    The effective web colours are available through authenticated `GET /JellyfinEnhanced/tag-styles` (empty when disabled or targeting native posters only; optional `preset` for a user's own preset). The shipped defaults and preset palettes are administrator-only `GET /JellyfinEnhanced/tag-styles/catalog`.
 
 Other integrations have separate badge systems: see [Seerr](../seerr/seerr-features.md) for request/availability/provider badges and [*arr](../arr/arr-features.md) for service status and synchronized tag links. Those are configured independently of these poster groups.

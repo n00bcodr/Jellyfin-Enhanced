@@ -250,6 +250,7 @@ Tag toggles, corners, category ordering, rating scopes, hover behavior, and the 
 | --- | --- | --- |
 | **Tag Layout** | **Corners** | Chooses where poster tags appear: corners, top and bottom bands, a caption below the poster, a summary pill, or a minimal set. |
 | **Label Density** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
+| **Tag Colours** | **Server default** | Shown only when the administrator turns on **Let users pick their own preset** in Tag Styles. Picks your own colour preset (**Default**, **Glass**, **Outline**, **Dark**, **Light** or **Mono**); colours the administrator changed for a group or a single tag stay on top. Applies right away on the web; posters drawn for native apps follow the next time they load. |
 
 See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference.
 

@@ -320,20 +320,20 @@ Administrator settings under **\*arr** → **Shoko**:
 | `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. |
 | `tag-pipeline.js` | Restores/downloads the bulk server cache, applies `?since=` deltas and scans cards in idle slices. |
 | `tag-layout-styles.js` | The one stylesheet for every tag layout, keyed off `.je-tag-host[data-je-layout]` and `.je-tag-slot[data-je-slot]`. |
-| `tag-styles.js` | Retrieves validated color overrides and injects web CSS; paired with server `Services/PosterTags/TagStyles.cs`. |
+| `tag-styles.js` | Retrieves the resolved Tag Styles (with the user's own preset when allowed) and injects web CSS for every chip group; paired with server `Services/PosterTags/TagStyles.cs`. |
 
 See [Tag Styles and CSS](../enhanced/tags.md#tag-styles-and-css) and [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for controls and defaults. Tag Styles change colors, not size, shape or position. Administrator controls under **Display** map to these properties:
 
 | Setting | Property |
 |---|---|
 | **Enable Tag Styles** | `TagStylesEnabled` |
-| **Apply Tag Styles To** | `TagStyleTarget` |
+| **Apply to** | `TagStyleTarget` |
 | **Preset** | `TagStylePreset` |
-| **Apply to** | `TagStyleApplyScope` |
+| **Let users pick their own preset** | `TagStylesAllowUserPreset` |
 | **Enable Native Poster Tags (Experimental)** | `NativePosterTagsEnabled` |
 | **Additional Excluded Clients** | `NativePosterTagsWebClientNames` |
 
-The editor stores `TagStyleOverrides=""` until overrides are saved. Native rendering uses the same validated styles.
+The editor stores `TagStyleOverrides=""` until a group or tag colour is saved, then a version 2 document of presets, groups and labels (`TagStyleApplyScope` is retired). Native rendering uses the same validated styles and preset palettes.
 
 ### Other web components
 
@@ -484,7 +484,8 @@ Per-user setting in the Enhanced panel:
 | `PosterTagImageFilter.cs` | Primary response composition. Registered before the blur filter, so its response processing runs after blur and draws on the protected result. Rendering failure passes through the underlying image response. |
 | `PosterTagVariantToken.cs` | Signed `-jet` variants bound to user, item, settings, pixel version, flags and data hash. |
 | `CompositeImageCache.cs` | Byte-bounded memory LRU and disk cache under Jellyfin's cache path, in-flight coalescing and bounded render concurrency. |
-| `TagStyles.cs` | Validated shared color overrides for web CSS and native drawing. |
+| `TagStyles.cs` | The versioned Tag Styles document (preset, group and label overrides): strict save validation, version 1 reading, per-chip resolution and the web model; plus the shipped colour catalog. |
+| `TagStylePalettes.cs` | Group, label and preset ids, the six preset palettes and built-in colours shared by web CSS, the config page and native drawing, and the WCAG contrast check. |
 | `Resolution/` | `AgeRatingRules.cs`, `GenreIcons.cs`, `JsText.cs`, `LanguageFlagRules.cs`, `LanguageNames.cs`, `QualityTagRules.cs`, `RatingRules.cs`, `ResolutionData.g.cs`. |
 | `Rendering/` | `PosterTagAssets.cs`, `PosterTagCss.cs`, `PosterTagImageScaler.cs`, `PosterTagPlan.cs`, `PosterTagRenderer.cs`, `PosterTagText.cs`, `PosterTagTileCache.cs`: embedded assets, layout, scaling, text shaping, drawing and reusable tile caching. |
 
