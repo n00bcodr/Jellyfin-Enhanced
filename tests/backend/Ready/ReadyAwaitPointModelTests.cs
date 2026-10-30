@@ -572,8 +572,8 @@ public class ReadyAwaitPointModelTests
         Target = w => w.Rig.Admin,
         Points = new[]
         {
-            new Point("prepare:jake#1", "DeliverRequestNoticesAsync:PrepareVisibilityAsync#2"), new Point("meta:jake#1", "DeliverRequestNoticesAsync:_titleMeta#2"),
-            new Point("prepare:sam#1", "DeliverRequestNoticesAsync:PrepareVisibilityAsync#2"), new Point("meta:sam#1", "DeliverRequestNoticesAsync:_titleMeta#2"),
+            new Point("prepare:jake#1", "DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#2"), new Point("meta:jake#1", "DeliverRequestNoticesCoreAsync:_titleMeta#2"),
+            new Point("prepare:sam#1", "DeliverRequestNoticesCoreAsync:PrepareVisibilityAsync#2"), new Point("meta:sam#1", "DeliverRequestNoticesCoreAsync:_titleMeta#2"),
         },
         Setup = async () =>
         {
