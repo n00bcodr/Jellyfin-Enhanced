@@ -2975,6 +2975,7 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
+        "RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)",
         "Produces(\"application/json\")"
       ]
     },
