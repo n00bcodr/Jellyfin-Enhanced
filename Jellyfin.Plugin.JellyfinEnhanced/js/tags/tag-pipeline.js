@@ -2009,21 +2009,16 @@
         lookupItemFacts,
         peekSeasonFacts,
         /**
-         * Peek at an already loaded, caller-filtered entry without fetching.
-         * Consumers must treat the shared entry as read-only; a memory miss is null.
-         * @param {string} id - Normalized item id.
-         * @returns {Object|null}
-         */
-        peekServerEntry(id) { return serverCache?.get(id) || null; },
-        /** @param {string} name - Renderer name (e.g. 'quality'). */
-        getRenderer(name) { return renderers.get(name); },
-        /**
-         * The server tag-cache entry already in memory for an item, without
-         * fetching (the tag look lock reads an item's library and genres).
+         * The caller-filtered server tag-cache entry already in memory for an
+         * item, without fetching (the status renderer reads parent facts, the
+         * tag look lock reads an item's library and genres). The shared entry
+         * is read-only; a memory miss is null.
          * @param {string} itemId - Normalised item id.
          * @returns {object|null}
          */
         peekServerEntry(itemId) { return serverCache?.get(itemId) || null; },
+        /** @param {string} name - Renderer name (e.g. 'quality'). */
+        getRenderer(name) { return renderers.get(name); },
         /** The item data an item's cards are matched on by tag look rules (server entry, remembered, else fetched). */
         itemLookFacts,
         /**
