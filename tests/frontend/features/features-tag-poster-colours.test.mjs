@@ -504,6 +504,43 @@ test('a card arriving while its artwork is being decoded is coloured by that dec
   assert.equal(h.P.stats().sampled, 1);
 });
 
+test('a card recycled while its sample waits for a decode slot: nothing stored under the old artwork, the card takes the new colour', async t => {
+  const ids = Array.from({ length: 5 }, (_, i) => (i + 1).toString(16).padStart(32, '0'));
+  const art = Object.fromEntries(ids.map(id => [img(id), solid([200, 30, 30])]));
+  art[img(ID2)] = solid([30, 60, 200]);
+  const puts = [];
+  const store = { available: () => true, getPosterColours: async () => new Map(), putPosterColours: async (scope, algorithm, colours) => { puts.push(...colours); } };
+  const h = setup(t, { html: ids.map(id => card(id)).join(''), art, store });
+  const realTimeout = h.window.setTimeout;
+  h.window.setTimeout = (fn, ms, ...rest) => realTimeout(fn, ms === PERSIST_MS ? 0 : ms, ...rest);
+  // A bitmap is a copy of the image as it is when the decode starts.
+  const launched = [];
+  const pending = [];
+  h.window.createImageBitmap = (source) => {
+    const url = source.src;
+    launched.push(url);
+    return new Promise((resolve) => { pending.push(() => resolve({ url, close() {} })); });
+  };
+  h.P.setActive(true);
+  await h.settle();
+  assert.equal(pending.length, 4, 'every decode slot is taken; the fifth card waits');
+  // The fifth card is recycled for another item before its decode starts.
+  const fifth = h.document.querySelector(`[data-id="${ids[4]}"]`);
+  fifth.setAttribute('data-id', ID2);
+  fifth.querySelector('img').src = img(ID2);
+  await h.settle();
+  while (pending.length) {
+    pending.shift()();
+    await h.settle();
+  }
+  assert.equal(launched.filter(url => url === img(ID2)).length, 1, 'the new artwork is decoded once, for its own key');
+  assert.equal(puts.some(([key]) => key === `${ids[4]}:primary:0:t1`), false, 'nothing stored under the old artwork');
+  assert.deepEqual(plain(puts.find(([key]) => key === `${ID2}:primary:0:t1`)), [`${ID2}:primary:0:t1`, [30, 60, 200]]);
+  assert.equal(h.box(ID2).dataset.jePosterKey, `${ID2}:primary:0:t1`);
+  assert.equal(h.box(ID2).style.getPropertyValue('--je-tag-bg'), h.P.css(h.P.normalise([30, 60, 200]).background));
+  assert.equal(h.P.stats().remembered, 5, 'four red artworks and the blue one');
+});
+
 test('without createImageBitmap, 200 cards are drawn one per idle period, never once its time runs low', async t => {
   const ids = Array.from({ length: 200 }, (_, i) => i.toString(16).padStart(32, '0'));
   const art = Object.fromEntries(ids.map((id, i) => [img(id), solid([200, 30 + (i % 50), 30])]));

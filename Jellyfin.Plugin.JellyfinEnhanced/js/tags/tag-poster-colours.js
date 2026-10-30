@@ -207,8 +207,9 @@
     const queue = new Set();
     let sliceScheduled = false;
     /**
-     * A sample: its artwork, the cards showing it, and the generation and
-     * store scope it was started for.
+     * A sample: its artwork (key and URL, which name the item and the image
+     * tag), the card image it was queued from, the cards showing it, and the
+     * generation and store scope it was started for.
      * @typedef {{key: string, url: string, img: HTMLImageElement|null, hosts: Set<HTMLElement>, gen: number, scope: string}} Job
      */
     /**
@@ -591,6 +592,13 @@
             }
             if (!more()) return;
             toSample.delete(key);
+            // The card's image shows other artwork by now (recycled while the
+            // job waited for a slot): never decode it under this key. The job
+            // is dropped and its cards are read again.
+            if (moved(job)) {
+                job.hosts.forEach((host) => track(host));
+                continue;
+            }
             sampling.set(key, job);
             decode(job).then((decoded) => {
                 if (sampling.get(key) !== job || job.gen !== generation) {
