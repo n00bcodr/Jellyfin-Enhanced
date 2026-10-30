@@ -51,8 +51,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// episode under its containers without re-querying them; set whenever
         /// the episode's own entry was built in the pass (or the full build
         /// hydrated it for its containers).
+        /// <see cref="Subtitles"/> is the episode's subtitle languages (empty,
+        /// never null, for an episode without usable streams: it adds nothing
+        /// to the union).
         /// </summary>
-        private readonly record struct EpisodeScan(string[]? Languages, TagStreamData? StreamData, EpisodePlacement? Placement = null);
+        private readonly record struct EpisodeScan(string[]? Languages, TagStreamData? StreamData, EpisodePlacement? Placement = null, string[]? Subtitles = null);
 
         /// <summary>
         /// The fields of an episode its parents' entries read: where it sits in
@@ -311,8 +314,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // LatestEpisodeAired/Index, SeasonPremiere, SeasonAddedSpan,
         // StatusEpisodeIds) and an Episode's own PremiereDate.
         // v13 combines both field sets; v11 and v12 snapshots must rebuild.
+        // v14 adds SubtitleLanguages (Series/Season: the union over their episodes).
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 13;
+        private const int CurrentCacheSchemaVersion = 14;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2568,7 +2572,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 if (isContainer)
                 {
-                    var (firstEp, languages, partialLanguages, latestEpisodeAdded, latestEpisodeId, statusFacts) = ScanContainerEpisodes(item, episodeScans);
+                    var (firstEp, languages, partialLanguages, latestEpisodeAdded, latestEpisodeId, statusFacts, subtitleLanguages) = ScanContainerEpisodes(item, episodeScans);
                     entry.LatestEpisodeAdded = latestEpisodeAdded;
                     entry.LatestEpisodeId = latestEpisodeAdded == null ? null : latestEpisodeId;
                     statusFacts?.ApplyTo(entry);
@@ -2589,12 +2593,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         }
                         else if (firstEp.Item != null)
                         {
-                            var (streams, sources, _) = ExtractMediaData(firstEp.Item);
+                            var (streams, sources, _, _) = ExtractMediaData(firstEp.Item);
                             entry.StreamData = BuildStreamData(firstEp.Item, streams, sources);
                         }
 
                         entry.AudioLanguages = languages;
                         entry.PartialAudioLanguages = partialLanguages;
+                        entry.SubtitleLanguages = subtitleLanguages;
                     }
 
                     if (kind == BaseItemKind.Season && entry.CommunityRating == null)
@@ -2628,19 +2633,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // A BoxSet has no media streams of its own; derive its language
                     // tags from the union of its manually-linked movie members instead.
-                    entry.AudioLanguages = GetCollectionLanguages(item);
+                    (entry.AudioLanguages, entry.SubtitleLanguages) = GetCollectionLanguages(item);
                 }
                 else
                 {
-                    var (streams, sources, languages) = ExtractMediaData(item);
+                    var (streams, sources, languages, subtitles) = ExtractMediaData(item);
                     entry.StreamData = BuildStreamData(item, streams, sources);
                     entry.AudioLanguages = languages;
+                    entry.SubtitleLanguages = subtitles;
 
                     if (kind == BaseItemKind.Episode && episodeScans != null && item is MediaBrowser.Controller.Entities.TV.Episode scanned)
                     {
-                        // Same "has streams" rule as ExtractAudioLanguages: the
+                        // Same "has streams" rule as ExtractEpisodeLanguages: the
                         // stream list only ever holds audio/video streams.
-                        episodeScans[item.Id] = new EpisodeScan(streams.Count > 0 ? languages : null, entry.StreamData, EpisodePlacement.Of(scanned));
+                        episodeScans[item.Id] = new EpisodeScan(streams.Count > 0 ? languages : null, entry.StreamData, EpisodePlacement.Of(scanned), subtitles);
                     }
 
                     if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
@@ -2803,11 +2809,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             };
         }
 
-        private (List<TagMediaStream>, List<TagMediaSource>, string[]) ExtractMediaData(BaseItem item)
+        private (List<TagMediaStream>, List<TagMediaSource>, string[], string[]) ExtractMediaData(BaseItem item)
         {
             var streams = new List<TagMediaStream>();
             var sources = new List<TagMediaSource>();
             var languages = new HashSet<string>();
+            var subtitles = new HashSet<string>();
 
             try
             {
@@ -2836,6 +2843,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         var s = resolved.Stream;
                         var effectiveLanguage = resolved.Language;
+
+                        // Subtitle tracks only feed SubtitleLanguages: one entry per
+                        // language however many forced / SDH tracks carry it.
+                        if (s.Type == MediaStreamType.Subtitle)
+                        {
+                            if (NormalizeAudioLanguage(effectiveLanguage) is { } subtitle) subtitles.Add(subtitle);
+                            continue;
+                        }
 
                         if (s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
                             continue;
@@ -2875,14 +2890,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"[TagCache] Failed to extract media data for {item.Id}: {ex.Message}");
             }
 
-            return (streams, sources, languages.ToArray());
+            return (streams, sources, languages.ToArray(), subtitles.ToArray());
         }
 
         /// <summary>
         /// Lower-cases a stream language for the tag cache, or returns null when
         /// the track carries no usable language (empty, "und", "root").
         /// </summary>
-        private static string? NormalizeAudioLanguage(string? language)
+        private static string? NormalizeAudioLanguage(string? language) => NormalizeStreamLanguage(language);
+
+        /// <summary>
+        /// Lower-cases an audio or subtitle stream language as the tag cache and
+        /// the tag-data batch store it, or returns null when the track carries no
+        /// usable language (empty, "und", "root").
+        /// </summary>
+        internal static string? NormalizeStreamLanguage(string? language)
         {
             if (string.IsNullOrEmpty(language)) return null;
             var lang = language.ToLowerInvariant();
@@ -2891,19 +2913,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Audio languages of one episode, or null when it has no audio/video
-        /// streams at all (unprobed file, disc stub). Same normalization as
+        /// streams at all (unprobed file, disc stub), and its subtitle languages
+        /// (empty in that case). Same normalization as
         /// <see cref="ExtractMediaData"/>, without building the stream/source
         /// lists the container scan doesn't need.
         /// </summary>
-        private string[]? ExtractAudioLanguages(BaseItem item)
+        private (string[]? Audio, string[] Subtitles) ExtractEpisodeLanguages(BaseItem item)
         {
             var hasStreams = false;
             var languages = new HashSet<string>();
+            var subtitles = new HashSet<string>();
             foreach (var source in item.GetMediaSources(false))
             {
                 foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path, _languageCache))
                 {
                     var type = resolved.Stream.Type;
+                    if (type == MediaStreamType.Subtitle)
+                    {
+                        if (NormalizeAudioLanguage(resolved.Language) is { } subtitle) subtitles.Add(subtitle);
+                        continue;
+                    }
+
                     if (type != MediaStreamType.Video && type != MediaStreamType.Audio) continue;
 
                     hasStreams = true;
@@ -2914,7 +2944,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            return hasStreams ? languages.ToArray() : null;
+            return hasStreams ? (languages.ToArray(), subtitles.ToArray()) : (null, Array.Empty<string>());
         }
 
         /// <summary>
@@ -2946,7 +2976,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// containers); both walks feed the same per-episode step in the same
         /// order, so they produce the same entry.
         /// </summary>
-        private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial, long? LatestAdded, string? LatestEpisodeId, StatusTagsEpisodeFacts? StatusFacts) ScanContainerEpisodes(
+        private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial, long? LatestAdded, string? LatestEpisodeId, StatusTagsEpisodeFacts? StatusFacts, string[] Subtitles) ScanContainerEpisodes(
             BaseItem container,
             EpisodeScanMemo? episodeScans)
         {
@@ -2974,6 +3004,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Union keeps insertion order (deterministic for a stable library), so
             // the order-sensitive ContentEquals compare stays no-op on re-saves.
             var union = new HashSet<string>();
+            // Subtitle languages: a plain union over the episodes with streams
+            // (same insertion-order rule), with no partial list.
+            var subtitleUnion = new HashSet<string>();
             // Distinct per-episode identity sets: a series has a handful of
             // track layouts however many episodes it has, so these stay tiny.
             var regularSets = new Dictionary<string, string[]>(StringComparer.Ordinal);
@@ -2982,9 +3015,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             // One episode's contribution, in scan order; the result is the
             // "usable streams" answer the representative pick needs.
-            bool Accumulate(int? parentIndexNumber, string[]? languages)
+            bool Accumulate(int? parentIndexNumber, string[]? languages, string[]? subtitles)
             {
                 if (languages == null) return false; // no streams: not a tag source
+                if (subtitles != null) subtitleUnion.UnionWith(subtitles);
                 if (languages.Length == 0) return true; // streams but untagged audio: neutral
 
                 union.UnionWith(languages);
@@ -3012,7 +3046,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             NoteAdded(episode.Id, episode.DateCreated);
                             statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber);
-                            return Accumulate(episode.ParentIndexNumber, episode.Languages);
+                            return Accumulate(episode.ParentIndexNumber, episode.Languages, episode.Subtitles);
                         });
                     firstEp = first == null ? null : new RepresentativeEpisode(first.Genres, first.StreamData, first.Item);
                 }
@@ -3023,9 +3057,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         NoteAdded(episode.Id, episode.DateCreated);
                         statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber);
                         string[]? languages;
+                        string[]? subtitles;
                         if (episodeScans != null && episodeScans.TryGetValue(episode.Id, out var scan))
                         {
                             languages = scan.Languages;
+                            subtitles = scan.Subtitles;
                         }
                         else if (episodeScans?.Pending != null
                             && !episodeScans.Pending.Contains(episode.Id)
@@ -3035,15 +3071,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             // Same "has streams" rule as the episode's own build: its
                             // stream list only ever holds audio/video streams.
                             languages = cached.StreamData?.Streams?.Count > 0 ? cached.AudioLanguages ?? Array.Empty<string>() : null;
-                            episodeScans[episode.Id] = new EpisodeScan(languages, cached.StreamData);
+                            subtitles = cached.SubtitleLanguages;
+                            episodeScans[episode.Id] = new EpisodeScan(languages, cached.StreamData, null, subtitles);
                         }
                         else
                         {
-                            languages = ExtractAudioLanguages(episode);
-                            if (episodeScans != null) episodeScans[episode.Id] = new EpisodeScan(languages, null);
+                            (languages, subtitles) = ExtractEpisodeLanguages(episode);
+                            if (episodeScans != null) episodeScans[episode.Id] = new EpisodeScan(languages, null, null, subtitles);
                         }
 
-                        return Accumulate(episode.ParentIndexNumber, languages);
+                        return Accumulate(episode.ParentIndexNumber, languages, subtitles);
                     }, stopAtFirstRegular: false);
 
                     // Stream data the pass already built for this episode (its own
@@ -3079,12 +3116,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         return !counted.All(set => Covers(set, identity, separateDubs));
                     })
                     .ToArray();
-                return (firstEp, union.ToArray(), partial.Length > 0 ? partial : null, ToUnixMilliseconds(latestAdded), latestAdded == null ? null : latestId.ToString("N"), statusFacts);
+                return (firstEp, union.ToArray(), partial.Length > 0 ? partial : null, ToUnixMilliseconds(latestAdded), latestAdded == null ? null : latestId.ToString("N"), statusFacts, subtitleUnion.ToArray());
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[TagCache] Failed to scan episodes for {container.Id}: {ex.Message}");
-                return (null, Array.Empty<string>(), null, null, null, null);
+                return (null, Array.Empty<string>(), null, null, null, null, Array.Empty<string>());
             }
         }
 
@@ -3092,7 +3129,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// What a container's scan callback reads from one of its episodes, in
         /// the full build (see <see cref="ReadIndexedEpisode"/>).
         /// </summary>
-        private sealed record IndexedEpisode(Guid Id, int? ParentIndexNumber, string[]? Languages, string[] Genres, TagStreamData? StreamData, BaseItem? Item, DateTime DateCreated, DateTime? PremiereDate, int? IndexNumber);
+        private sealed record IndexedEpisode(Guid Id, int? ParentIndexNumber, string[]? Languages, string[] Genres, TagStreamData? StreamData, BaseItem? Item, DateTime DateCreated, DateTime? PremiereDate, int? IndexNumber, string[]? Subtitles);
 
         /// <summary>
         /// One indexed episode as the scan callback in
@@ -3108,14 +3145,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             index.Late.TryGetValue(id, out var late);
             if (episodeScans.TryGetValue(id, out var scan) && scan.Placement is { } placement)
             {
-                return new IndexedEpisode(id, placement.ParentIndexNumber, scan.Languages, placement.Genres, scan.StreamData, late, placement.DateCreated, placement.PremiereDate, placement.IndexNumber);
+                return new IndexedEpisode(id, placement.ParentIndexNumber, scan.Languages, placement.Genres, scan.StreamData, late, placement.DateCreated, placement.PremiereDate, placement.IndexNumber, scan.Subtitles);
             }
 
             // The index only lists episodes that have a placement or a Late item.
             var episode = late ?? throw new InvalidOperationException($"Episode {id} is missing from the container index");
-            var languages = ExtractAudioLanguages(episode);
-            episodeScans[id] = new EpisodeScan(languages, null, EpisodePlacement.Of(episode));
-            return new IndexedEpisode(id, episode.ParentIndexNumber, languages, episode.Genres, null, episode, episode.DateCreated, episode.PremiereDate, episode.IndexNumber);
+            var (languages, subtitles) = ExtractEpisodeLanguages(episode);
+            episodeScans[id] = new EpisodeScan(languages, null, EpisodePlacement.Of(episode), subtitles);
+            return new IndexedEpisode(id, episode.ParentIndexNumber, languages, episode.Genres, null, episode, episode.DateCreated, episode.PremiereDate, episode.IndexNumber, subtitles);
         }
 
         /// <summary>
@@ -3440,26 +3477,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// Union of audio languages across a BoxSet's linked movie and series members.
+        /// Union of audio languages, and of subtitle languages, across a BoxSet's
+        /// linked movie and series members.
         /// LinkedChildren is a manual join (not a parent pointer), so this is
         /// resolved live rather than tracked incrementally per member; membership
         /// edits already re-enqueue the BoxSet itself (see TagCacheMonitor), and a
         /// member's own file changes are picked up by the next reconciliation.
         /// </summary>
-        private string[] GetCollectionLanguages(BaseItem collection)
+        private (string[] Audio, string[] Subtitles) GetCollectionLanguages(BaseItem collection)
         {
             try
             {
-                if (collection is not Folder folder) return Array.Empty<string>();
+                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>());
 
                 var languages = new HashSet<string>();
+                var subtitles = new HashSet<string>();
                 foreach (var member in folder.GetLinkedChildren())
                 {
                     var memberKind = member.GetBaseItemKind();
                     if (memberKind == BaseItemKind.Movie)
                     {
-                        var (_, _, memberLanguages) = ExtractMediaData(member);
+                        var (_, _, memberLanguages, memberSubtitles) = ExtractMediaData(member);
                         foreach (var lang in memberLanguages) languages.Add(lang);
+                        foreach (var lang in memberSubtitles) subtitles.Add(lang);
                     }
                     else if (memberKind == BaseItemKind.Series)
                     {
@@ -3469,6 +3509,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             && seriesEntry.AudioLanguages != null)
                         {
                             foreach (var lang in seriesEntry.AudioLanguages) languages.Add(lang);
+                            foreach (var lang in seriesEntry.SubtitleLanguages ?? Array.Empty<string>()) subtitles.Add(lang);
                             continue;
                         }
 
@@ -3481,17 +3522,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         });
                         foreach (var episode in episodes)
                         {
-                            foreach (var lang in ExtractAudioLanguages(episode) ?? Array.Empty<string>()) languages.Add(lang);
+                            var (episodeLanguages, episodeSubtitles) = ExtractEpisodeLanguages(episode);
+                            foreach (var lang in episodeLanguages ?? Array.Empty<string>()) languages.Add(lang);
+                            foreach (var lang in episodeSubtitles) subtitles.Add(lang);
                         }
                     }
                 }
 
-                return languages.ToArray();
+                return (languages.ToArray(), subtitles.ToArray());
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[TagCache] Failed to get collection languages for {collection.Id}: {ex.Message}");
-                return Array.Empty<string>();
+                return (Array.Empty<string>(), Array.Empty<string>());
             }
         }
 

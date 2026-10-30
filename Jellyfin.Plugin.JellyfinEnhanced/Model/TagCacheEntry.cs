@@ -33,6 +33,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// every episode ("full-series" language). Null for every other item type.
         /// </summary>
         public string[]? PartialAudioLanguages { get; set; }
+
+        // ── Subtitle languages (schema v14) ─────────────────────────────────
+        /// <summary>
+        /// Subtitle languages (embedded and external tracks), lower-cased, one
+        /// per language however many forced / SDH tracks carry it. Series/Season:
+        /// the union across their episodes, like <see cref="AudioLanguages"/>
+        /// (no partial list). BoxSet: the union of its members. Spoiler Guard's
+        /// tag strip drops it together with <see cref="AudioLanguages"/>.
+        /// </summary>
+        public string[]? SubtitleLanguages { get; set; }
+
         public TagStreamData? StreamData { get; set; }
         /// <summary>
         /// When the item was added to the library (Jellyfin's DateCreated), in Unix
@@ -155,6 +166,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && a.OfficialRating == b.OfficialRating
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
+                && SequencesEqual(a.SubtitleLanguages, b.SubtitleLanguages)
                 && TagStreamData.ContentEquals(a.StreamData, b.StreamData)
                 && a.DateCreated == b.DateCreated
                 && a.PremiereDate == b.PremiereDate
@@ -222,6 +234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             OfficialRating = OfficialRating,
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,
+            SubtitleLanguages = SubtitleLanguages,
             StreamData = StreamData,
             DateCreated = DateCreated,
             PremiereDate = PremiereDate,

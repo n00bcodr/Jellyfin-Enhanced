@@ -228,7 +228,7 @@ public class CoreTagLookSettingsTests
             Assert.Equal(0, old.Count);
         }
 
-        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 13, Version = 7, LastModified = 200, Items = items }));
+        File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = 14, Version = 7, LastModified = 200, Items = items }));
         using var current = Create();
         current.LoadFromDisk();
         Assert.Equal(1, current.Count);
