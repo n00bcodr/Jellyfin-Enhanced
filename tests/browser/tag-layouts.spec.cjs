@@ -15,7 +15,7 @@ test('Bands keeps milestone and age chips inside the card without overlap', asyn
       tagPipeline: { renderers: {}, registerRenderer(name, renderer) { this.renderers[name] = renderer; }, clearProcessed() {}, scheduleScan() {} },
     };
   }, english);
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/ageratingtags.js', 'tags/statustags.js']) {
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/ageratingtags.js', 'tags/status-vocabulary.js', 'tags/statustags.js']) {
     await page.addScriptTag({ path: path.join(root, 'js', file) });
   }
   await page.evaluate(() => {

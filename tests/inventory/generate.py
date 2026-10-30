@@ -67,7 +67,7 @@ def inventory():
                                          'following_attributes': re.findall(r'\[([^\n]+)\]', attributes)})
         if category == 'Configuration' and path.suffix == '.cs':
             classes = list(re.finditer(r'\bclass\s+(\w+)', text))
-            for match in re.finditer(r'\bpublic\s+([\w<>?,.\[\] ]+?)\s+(\w+)\s*\{\s*get\s*;\s*(?:set|init)\s*;\s*\}(?:\s*=\s*([^;]+);)?', text):
+            for match in re.finditer(r'\bpublic\s+([\w<>?,.\[\] ]+?)\s+(\w+)\s*\{\s*get\s*(?:;|=>[^;{}]+;)\s*(?:set|init)\s*(?:;|=>[^;{}]+;)\s*\}(?:\s*=\s*([^;]+);)?', text):
                 preceding = [item for item in classes if item.start() < match.start()]
                 constructor = re.search(r'^\s*' + re.escape(match[2]) + r'\s*=\s*([^;\n]+);', text, re.M)
                 result['configuration_properties'].append({'class': preceding[-1][1] if preceding else None,

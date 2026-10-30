@@ -228,5 +228,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         AgeRating,
         Flag,
         LanguageChip,
+        Status,
+        Overflow,
     }
 }

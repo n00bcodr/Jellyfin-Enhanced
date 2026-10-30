@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     /// </summary>
     internal sealed class PosterTagPlan
     {
-        public PosterTagPlan(int imageWidth, int imageHeight, PosterTagCss css, IReadOnlyList<PlannedGroup> groups)
+        public PosterTagPlan(int imageWidth, int imageHeight, PosterTagCss css, IReadOnlyList<PlannedGroup> groups, IReadOnlyList<PlannedBand>? bands = null)
         {
             ImageWidth = imageWidth;
             ImageHeight = imageHeight;
@@ -19,7 +19,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             Scale = imageWidth / css.CardWidth;
             CardHeight = imageHeight / Scale;
             Groups = groups;
+            Bands = bands ?? Array.Empty<PlannedBand>();
         }
+
+        public IReadOnlyList<PlannedBand> Bands { get; }
 
         public int ImageWidth { get; }
 
@@ -37,6 +40,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Groups in paint order (later groups paint over earlier ones).</summary>
         public IReadOnlyList<PlannedGroup> Groups { get; }
     }
+
+    internal sealed record PlannedBand(bool Top, float Y, float Height);
 
     /// <summary>One tag container: its box after corner stacking, whether it clips (overflow: hidden), and its tags.</summary>
     internal sealed class PlannedGroup
@@ -167,6 +172,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
             }
 
+            if (layout.Bands)
+            {
+                var (bandGroups, bands) = PlaceBands(groups, css, cardHeight, layout.TopRightOffset);
+                return new PosterTagPlan(imageWidth, imageHeight, css, bandGroups, bands);
+            }
             Place(groups, css, cardHeight, layout.TopRightOffset);
             PlaceCentres(groups, css, cardHeight);
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
@@ -181,11 +191,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             {
                 var item = tag switch
                 {
+                    OverflowTag more => MeasureOverflow(more.Count, css),
                     QualityTag q when group.Group == PosterTagGroup.Quality => MeasureQuality(q, css, keepEnd, styles),
                     GenreTag g when group.Group == PosterTagGroup.Genre => MeasureGenre(g, css, styles),
                     RatingTag r when group.Group == PosterTagGroup.Rating => MeasureRating(r, css, keepEnd, styles),
                     AwardTag a when group.Group == PosterTagGroup.Awards => MeasureAward(a, css, keepEnd, styles),
                     AgeRatingTag a when group.Group == PosterTagGroup.AgeRating => MeasureAge(a, css, keepEnd, styles),
+                    StatusTag status when group.Group == PosterTagGroup.Status => MeasureStatus(status, css, styles),
                     LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css, styles),
                     _ => null,
                 };
@@ -222,12 +234,178 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             float maxHeight = PosterTagCss.Lu(0.9f * cardHeight);
             float maxWidth = PosterTagCss.Lu(css.CardWidth - (2 * PosterTagCss.CornerInset));
             bool hasMaxHeight = group.Group is PosterTagGroup.Quality or PosterTagGroup.Genre or PosterTagGroup.Language;
-            bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating;
+            bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating or PosterTagGroup.Status;
             float width = hasMaxWidth ? Math.Min(contentWidth, maxWidth) : contentWidth;
             float height = hasMaxHeight ? Math.Min(contentHeight, maxHeight) : contentHeight;
             bool clips = group.Group is PosterTagGroup.Quality or PosterTagGroup.Language;
 
             return new PlannedGroup(group.Group, group.Corner, width, height, gap, clips, items);
+        }
+
+        /// <summary>The web chipsThatFit skip-and-continue policy, with +N space reserved on the final row.</summary>
+        internal static bool[] BandChipsThatFit(IReadOnlyList<float> widths, float available, float gap, int maxRows, float moreWidth)
+        {
+            static bool Fits(float need, float room) => need <= room + 0.01f;
+            int rows = 0;
+            float x = 0;
+            foreach (var width in widths)
+            {
+                if (rows == 0 || !Fits(x + gap + width, available)) { rows++; x = width; }
+                else x += gap + width;
+            }
+            if (rows <= maxRows && widths.All(w => Fits(w, available))) return widths.Select(_ => true).ToArray();
+            float Room(int row) => row == maxRows ? available - gap - moreWidth : available;
+            int current = 1;
+            x = 0;
+            return widths.Select(width =>
+            {
+                if (Fits(x == 0 ? width : x + gap + width, Room(current)))
+                {
+                    x = x == 0 ? width : x + gap + width;
+                    return true;
+                }
+                if (current < maxRows && x > 0 && Fits(width, Room(current + 1)))
+                {
+                    current++;
+                    x = width;
+                    return true;
+                }
+                return false;
+            }).ToArray();
+        }
+
+        /// <summary>Fit whole bottom-band chips in two rows, retrying one row when height requires it.</summary>
+        internal static List<PlannedItem> FitBandChips(IReadOnlyList<PlannedItem> items, float width, float maxHeight, float gap, Func<int, PlannedItem> overflow)
+        {
+            for (int rows = 2; rows >= 1; rows--)
+            {
+                // Web prepareFit measures +<total count> before selecting chips.
+                // Keep that reservation even when the actual omitted count is shorter.
+                var reserved = overflow(items.Count).Width;
+                var fit = BandChipsThatFit(items.Select(i => i.Width).ToArray(), width, gap, rows, reserved);
+                var shown = items.Where((_, i) => fit[i]).ToList();
+                var hidden = items.Count - shown.Count;
+                if (hidden > 0) shown.Add(overflow(hidden));
+                float x = 0, y = 0, rowHeight = 0;
+                foreach (var chip in shown)
+                {
+                    if (x > 0 && x + chip.Width > width + 0.01f) { y += rowHeight + gap; x = rowHeight = 0; }
+                    chip.X = 6 + x;
+                    chip.Y = y;
+                    x += chip.Width + gap;
+                    rowHeight = Math.Max(rowHeight, chip.Height);
+                }
+                if (shown.All(i => i.Width <= width + 0.01f) && y + rowHeight <= maxHeight + 0.01f) return shown;
+            }
+            return new List<PlannedItem>();
+        }
+
+        /// <summary>Static band rows keep priority order, reserve indicator room, and count every omitted chip as +N.</summary>
+        private (List<PlannedGroup> Groups, List<PlannedBand> Bands) PlaceBands(List<PlannedGroup> source, PosterTagCss css, float cardHeight, bool indicator)
+        {
+            var groups = new List<PlannedGroup>();
+            var bands = new List<PlannedBand>();
+            float gap = PosterTagCss.Lu(3 * css.Scale * css.Gap);
+            foreach (var top in new[] { true, false })
+            {
+                var members = source.Where(g => g.IsTop == top).ToList();
+                var items = members.SelectMany(g => g.Items).ToList();
+                if (items.Count == 0) continue;
+                var width = Math.Max(0, css.CardWidth - 12 - (top && indicator ? 4 + css.IndicatorOffset : 0));
+                var maxHeight = Math.Max(0, (cardHeight * 0.4f) - 6);
+                // Lay out a prefix, whole chips only, over at most two rows.
+                bool Fit(IReadOnlyList<PlannedItem> chips, out float height)
+                {
+                    float x = 0, y = 0, rowHeight = 0;
+                    int row = 0;
+                    foreach (var chip in chips)
+                    {
+                        if (chip.Width > width) { height = 0; return false; }
+                        if (x > 0 && x + chip.Width > width)
+                        {
+                            y += rowHeight + gap; x = rowHeight = 0; row++;
+                        }
+                        if (row >= 2 || y + chip.Height > maxHeight) { height = 0; return false; }
+                        chip.X = 6 + x; chip.Y = y;
+                        x += chip.Width + gap;
+                        rowHeight = Math.Max(rowHeight, chip.Height);
+                    }
+                    height = y + rowHeight;
+                    return true;
+                }
+
+                List<PlannedItem> shown;
+                if (!top)
+                {
+                    shown = FitBandChips(items, width, maxHeight, gap, count => MeasureOverflow(count, css));
+                }
+                else
+                {
+                    shown = new List<PlannedItem>();
+                    foreach (var item in items)
+                    {
+                        shown.Add(item);
+                        if (!Fit(shown, out _)) { shown.RemoveAt(shown.Count - 1); break; }
+                    }
+                    if (shown.Count < items.Count)
+                    {
+                        while (true)
+                        {
+                            int hidden = items.Count - shown.Count;
+                            var more = MeasureOverflow(hidden, css);
+                            var trial = shown.Append(more).ToList();
+                            if (Fit(trial, out _)) { shown = trial; break; }
+                            if (shown.Count == 0) break;
+                            shown.RemoveAt(shown.Count - 1);
+                        }
+                    }
+                }
+                if (shown.Count == 0 || !Fit(shown, out var height)) continue;
+                if (top)
+                {
+                    // First group's chips stay left, later groups align to the right of each row.
+                    var first = members[0].Items.ToHashSet();
+                    foreach (var row in shown.GroupBy(i => i.Y))
+                    {
+                        var trailing = row.Where(i => !first.Contains(i)).ToList();
+                        if (trailing.Count == 0) continue;
+                        float shift = 6 + width - (trailing[^1].X + trailing[^1].Width);
+                        foreach (var item in trailing) item.X += shift;
+                    }
+                }
+                float y = top ? 6 : cardHeight - 6 - height;
+                foreach (var item in shown) item.Y += y;
+                var band = new PlannedGroup(members[0].Group, top ? PosterTagCorner.TopLeft : PosterTagCorner.BottomLeft,
+                    width, height, gap, false, shown) { X = 6, Y = y, NaturalY = y };
+                groups.Add(band);
+                bands.Add(new PlannedBand(top, top ? 0 : Math.Max(0, y - 16), Math.Min(cardHeight, height + 22)));
+            }
+            return (groups, bands);
+        }
+
+        /// <summary>Measure the web's size-scaled .je-tag-more, without Status letter spacing or padding.</summary>
+        private PlannedItem MeasureOverflow(int count, PosterTagCss css)
+        {
+            var text = "+" + count.ToString(CultureInfo.InvariantCulture);
+            // TextTypeface is the embedded Noto Sans Bold (font-weight: 700).
+            var layout = _text.Layout(text, css.OverflowFontSize, smallCaps: false, letterSpacing: 0);
+            float width = PosterTagCss.LuCeil(layout.Width) + 2 * PosterTagCss.Lu(css.OverflowPaddingH) + 2;
+            float height = css.OverflowLineHeight + 2 * PosterTagCss.Lu(css.OverflowPaddingV) + 2;
+            // Its own tile kind separates these overflow metrics/colours from every Status tile.
+            return new PlannedItem(PosterTagTileKind.Overflow, new OverflowTag(count), text, string.Empty, width, height) { TextLayout = layout };
+        }
+
+        /// <summary>Localized status chips use the same dimensions and label-specific Tag Styles as the web.</summary>
+        private PlannedItem MeasureStatus(StatusTag tag, PosterTagCss css, TagStyleSet styles)
+        {
+            var text = ClampText(tag.Text, false);
+            float fontSize = css.ChipFontSize;
+            var layout = _text.Layout(text, fontSize, smallCaps: false, letterSpacing: 0.01f * fontSize);
+            float width = PosterTagCss.LuCeil(layout.Width) + 2 * PosterTagCss.Lu(Math.Clamp(css.CardWidth * 0.05f, 5, 10) * css.Scale) + 2;
+            float height = PosterTagCss.Lu(fontSize * 1.15f) + 2 * PosterTagCss.Lu(css.ChipPaddingV) + 2;
+            var colors = styles.Resolve(TagStyleKeys.Status, tag.StyleKey);
+            // Identity includes the status family as well as all effective colours and text.
+            return new PlannedItem(PosterTagTileKind.Status, tag, text, tag.StyleKey + "\n" + colors.Encode(), width, height) { TextLayout = layout };
         }
 
         private static void Place(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, bool topRightOffset)
@@ -367,7 +545,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         private PlannedItem MeasureQuality(QualityTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)
         {
-            var label = ClampText(tag.Label, keepEnd);
+            var label = ClampText(tag.DisplayText ?? tag.Label, keepEnd);
             var layout = _text.Layout(label, css.QualityFontSize, smallCaps: true, letterSpacing: 0f);
             float width = PosterTagCss.LuCeil(layout.Width) + (2 * PosterTagCss.Lu(css.QualityPaddingH)) + 2f;
             float height = PosterTagCss.Lu(1.2f * css.QualityFontSize) + (2 * PosterTagCss.Lu(css.QualityPaddingV)) + 2f;

@@ -52,6 +52,7 @@
      * @returns {Promise<void>}
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
+        const isCurrentSettings = settings === JE.currentSettings;
         const throwOnError = options?.throwOnError === true;
         /** Finish failure handling before releasing this document's save queue. */
         const handleError = async e => {
@@ -70,13 +71,20 @@
 
             /** Build a document only after earlier saves and rollbacks have finished. */
             const serialize = () => {
+                // Capture browser date context at this save's turn, after queued changes/rollbacks.
+                let source = settings;
+                if (fileName === 'settings.json' && isCurrentSettings && settings.statusTagsEnabled
+                    && typeof JE.getStatusDateContext === 'function') {
+                    const context = JE.getStatusDateContext();
+                    source = { ...settings, nativePosterDateLocale: context.locale, nativePosterTimeZone: context.timeZone };
+                }
                 // Convert data back to PascalCase for server C# deserialization
-                let dataToSave = settings;
+                let dataToSave = source;
                 // currentSettings carries the resolved native-poster value (on). Leave it
                 // unset on disk until the user explicitly switches it in the panel.
-                if (fileName === 'settings.json' && settings === JE.currentSettings
+                if (fileName === 'settings.json' && isCurrentSettings
                     && JE.userConfig?.settings?.useNativePosterTags == null) {
-                    dataToSave = { ...settings, useNativePosterTags: null };
+                    dataToSave = { ...source, useNativePosterTags: null };
                 }
                 if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
                     dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);

@@ -1685,6 +1685,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return filtered;
         }
 
+        /// <summary>Native status uses exactly the web payload's per-user episode visibility policy.</summary>
+        public TagCacheEntry FilterStatusForUser(TagCacheEntry entry, JUser user)
+            => entry.LatestEpisodeId == null && entry.StatusEpisodeIds == null ? entry
+                : WithoutHiddenLatestEpisode(entry, ResolveUserAccess(user).Ids);
+
         /// <summary>Apply episode visibility through the same access set used by filterRevision. Shared entries remain immutable.</summary>
         public TagCacheEntry FilterQualityForUser(TagCacheEntry entry, JUser user, BaseItem? container = null)
         {

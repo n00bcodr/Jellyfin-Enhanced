@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     public sealed class PosterTagRenderer : IDisposable
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
-        public const string Version = "5";
+        public const string Version = "6";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;
@@ -370,6 +370,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             public void Draw(SKCanvas canvas, PosterTagPlan plan)
             {
                 float s = plan.Scale;
+                foreach (var band in plan.Bands)
+                {
+                    var box = SKRect.Create(0, band.Y * s, plan.ImageWidth, band.Height * s);
+                    var dark = new SKColor(0, 0, 0, CssColor.AlphaByte(band.Top ? 0.62f : 0.68f));
+                    using var shader = SKShader.CreateLinearGradient(new SKPoint(0, box.Top), new SKPoint(0, box.Bottom),
+                        band.Top ? new[] { dark, SKColors.Transparent } : new[] { SKColors.Transparent, dark }, null, SKShaderTileMode.Clamp);
+                    using var paint = new SKPaint { Shader = shader };
+                    canvas.DrawRect(box, paint);
+                }
                 foreach (var group in plan.Groups)
                 {
                     // Blink pixel-snaps the container's own position; boxes inside it snap from there. Corner stacking is
@@ -436,7 +445,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     return;
                 }
 
-                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, (item.Tag as QualityTag)?.Category ?? string.Empty, plan.Css.Scale, plan.Css.Gap);
+                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, item.Tag is QualityTag q ? q.Category + (q.DisplayText == null ? string.Empty : "|" + q.Label) : string.Empty, plan.Css.Scale, plan.Css.Gap);
                 var state = (Engine: this, Plan: plan, Item: item, Box: box, Margin: margin, PhaseX: phaseX / 16f, PhaseY: phaseY / 16f, Crop: crop);
                 using var lease = Tiles.Rent(key, state, static st => st.Engine.RenderTile(st.Plan, st.Item, st.Box, st.Margin, st.PhaseX, st.PhaseY, st.Crop));
                 if (lease.Image is not { } tile)
@@ -486,6 +495,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
                 switch (item.Kind)
                 {
+                    case PosterTagTileKind.Overflow:
+                        PaintOverflow(canvas, plan, item, local, border, space);
+                        break;
+                    case PosterTagTileKind.Status:
+                        PaintStatus(canvas, plan, item, local, border, space);
+                        break;
                     case PosterTagTileKind.Quality:
                         PaintQuality(canvas, plan, item, local, border, space);
                         break;
@@ -513,12 +528,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 return surface.Snapshot();
             }
 
+            /// <summary>.je-tag-more has size-scaled text/padding, fixed colours and no box or text shadow.</summary>
+            private void PaintOverflow(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
+            {
+                using var shape = new SKRoundRect(local, PosterTagCss.OverflowRadius);
+                PaintBox(canvas, shape, new SKColor(0, 0, 0, CssColor.AlphaByte(0.72f)),
+                    new SKColor(255, 255, 255, CssColor.AlphaByte(0.22f)), border, default);
+                float x = 1 + PosterTagCss.Lu(plan.Css.OverflowPaddingH);
+                float top = 1 + PosterTagCss.Lu(plan.Css.OverflowPaddingV);
+                // The anonymous flex text box floors its leading before align-items: center.
+                float baseline = MathF.Floor(Assets.TextMetrics.BaselineOffset(plan.Css.OverflowFontSize, plan.Css.OverflowLineHeight));
+                DrawText(canvas, item.TextLayout!, x, top + baseline,
+                    SKColors.White, null, space);
+            }
+
+            /// <summary>Static status chip: the family colours participate in the tile key; no viewport backdrop filter.</summary>
+            private void PaintStatus(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
+            {
+                var colors = TagColors.Decode(item.Style[(item.Style.IndexOf('\n') + 1)..]);
+                using var shape = new SKRoundRect(local, Math.Clamp(plan.CardWidth * 0.03f, 4, 6));
+                PaintBox(canvas, shape, colors.Background ?? new SKColor(15, 15, 15, CssColor.AlphaByte(0.72f)),
+                    colors.Border ?? new SKColor(255, 255, 255, CssColor.AlphaByte(0.18f)), border, ChipShadow);
+                float x = 1 + PosterTagCss.Lu(Math.Clamp(plan.CardWidth * 0.05f, 5, 10) * plan.Css.Scale);
+                float fontSize = plan.Css.ChipFontSize;
+                float top = 1 + PosterTagCss.Lu(plan.Css.ChipPaddingV);
+                DrawText(canvas, item.TextLayout!, x, top + Assets.TextMetrics.BaselineOffset(fontSize, PosterTagCss.Lu(fontSize * 1.15f)),
+                    colors.Text ?? (item.Tag is StatusTag { StyleKey: "trending" } ? new SKColor(255, 209, 102) : SKColors.White), null, space);
+            }
+
             private void PaintQuality(SKCanvas canvas, PosterTagPlan plan, PlannedItem item, SKRect local, float border, TileSpace space)
             {
                 var css = plan.Css;
                 var (background, text) = item.Tag is QualityTag { Category: "edition" }
                     ? (new SKColor(106, 27, 154, 242), SKColors.White)
-                    : QualityColours(item.Text);
+                    : QualityColours((item.Tag as QualityTag)?.Label ?? item.Text);
                 var edge = QualityBorder;
                 if (item.Style.Length > 0)
                 {

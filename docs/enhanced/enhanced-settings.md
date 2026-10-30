@@ -278,7 +278,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | **Tag size** | **Default (100%)** | **Smaller (85%)**, **Default (100%)**, **Larger (115%)** or **Largest (130%)**; scales text, icons, flags and padding on web and native posters. |
     | **Gap** | **Default** | **Tight** (75%), **Default** (100%) or **Roomy** (150%) spacing between tags. Shape overrides can inherit or set their own size and gap. |
     | **Hide Tags on Hover** | Off | Fades poster tags while you hover a card. |
-    | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags into posters for native apps. |
+    | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags, including Status, into posters for native apps. Corners and Bands are supported; Caption, Summary and Minimal use Corners. Bands follows its profile, limits and density. |
     | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
     | **Show Audio Languages** | On | Audio language links on item details. |
 
@@ -288,7 +288,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | --- | --- | --- |
     | Move up / move down | Status, quality, rating, age rating, language, genre | Sets the priority order. Higher groups win when space is short. |
     | Group switch | Off | Turns the group's tags on or off. |
-    | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corners offers a 3×3 grid with four corners, top/bottom centre, left/right centre and centre. These picks also set the position Native Poster Tags use. |
+    | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corners offers a 3×3 grid with four corners, top/bottom centre, left/right centre and centre. Native Poster Tags use these picks for Corners and Bands. |
     | **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
     | **Include** | Categories on; low-quality sources off | Quality: resolution, source, HDR, special format, video format, sound and edition, their stack order and the sound language. Edition defaults on after sound; **Include low-quality sources (CAM, TS, TC, SCR)** defaults off. Source/edition naming is resolved on the server. Language: **Audio** and **Subtitles** (CC marker), **Style: Flags / Codes** and **Audio count badge: Off / Badge only / Badge and flags**. Rating: ordered source checkboxes with move buttons, **Minimum score**, **Colour by score** and where to show ratings. Status: the **Badges** button opens **Status badges**. |
     | Language **Style** / **Audio count badge** | Flags / Off | Codes show uppercase language codes with full-name tooltips. Dual means two audio languages, Multi three or more. The badge and included audio/subtitle chips share the language limit, audio first. |
@@ -305,7 +305,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | **Just Added** / **New releases** / **Trending** / **Schedule** / **Milestones** | On | Which badge families the Status group may show. A poster shows one badge at a time. |
     | **Series status** | Off | Returning / Ended / Cancelled. |
 
-    The administrator's two time windows show beside **Just Added** and **New releases**; administrators also get a link to change them. Turn the Status group itself on in **Groups**.
+    The administrator's two time windows show beside **Just Added** and **New releases**; administrators also get a link to change them. Turn the Status group itself on in **Groups**. Native posters follow these family switches and time windows too; their trending badge requires a TMDB key. A personal web save remembers the date locale and timezone used for native relative dates. Invalid or oversized context values are dropped, retaining the display-language/server-timezone fallback.
 
 === "Rules & locks"
 

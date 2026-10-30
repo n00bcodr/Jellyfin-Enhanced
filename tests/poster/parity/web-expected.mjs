@@ -142,7 +142,12 @@ class Element {
         }
         return null;
     }
-    querySelectorAll() { return []; }
+    querySelectorAll(selector) {
+        const out = [];
+        const visit = el => { for (const child of el.children) { if (selector.split(',').some(sel => child._matches(sel.trim()))) out.push(child); visit(child); } };
+        visit(this);
+        return out;
+    }
     addEventListener() {}
     removeEventListener() {}
     getBoundingClientRect() { return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 }; }
@@ -297,10 +302,10 @@ async function runProfile(profile) {
 
     // plugin.js Stage 4 + Stage 6 (tag-related initializers, same order and conditions).
     JE.currentSettings = JE.loadSettings();
-    // Native posters draw the corners layout whatever the web layout is (with
-    // the corners profile, order and caps), so the oracle is the web's
-    // corners view of the same settings.
-    JE.currentSettings.tagLayout = 'corners';
+    // Bands is composited natively; title/hover layouts retain the Corners profile.
+    const nativeBands = Number(JE.currentSettings.tagLayoutSettingsVersion) >= 1 && JE.currentSettings.tagLayout === 'bands';
+    JE.currentSettings.tagLayout = nativeBands ? 'bands' : 'corners';
+    if (!nativeBands) JE.currentSettings.tagLabelDensity = 'full';
     JE.core.tagLayout.invalidateSettings();
     const order = new Map();
     const realRegister = JE.tagPipeline.registerRenderer;
@@ -357,7 +362,7 @@ async function runProfile(profile) {
                 const group = CONTAINERS[d.element.className.split(' ')[0]];
                 const offset = (host.dataset.jeIndicatorGap === '1' && offsetSlots.has(d.slot))
                     || (d.element.dataset.jeIndicatorGap === '1' && legacyOffsetSlots.has(d.slot));
-                return { g: group, c: cornerOf(d.element.dataset.jeCorner || ''), o: indicator && offset, t: readTags(group, d.element) };
+                return { g: group, c: nativeBands ? (d.slot === 'top' ? 'TopLeft' : 'BottomLeft') : cornerOf(d.element.dataset.jeCorner || ''), o: indicator && !nativeBands && offset, t: readTags(group, d.element) };
             })
             .filter((g) => g.t.length > 0);
     }
@@ -366,6 +371,7 @@ async function runProfile(profile) {
     const SLOT_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
     const groupOf = { qualityTagsPosition: 'quality', genreTagsPosition: 'genre', languageTagsPosition: 'language', ratingTagsPosition: 'rating', ageRatingTagsPosition: 'ageRating' };
     const ownCorner = (u) => {
+        if (nativeBands) return layoutConf.slots[groupOf[u]] === 'top' ? 'top-left' : layoutConf.slots[groupOf[u]] === 'bottom' ? 'bottom-left' : undefined;
         const groups = s.tagLayouts?.corners?.groups ?? s.tagLayouts?.Corners?.Groups;
         // Array items keep their PascalCase keys (toCamelCase does not recurse into arrays).
         const entry = Array.isArray(groups) ? groups.find((g) => JE.core.tagLayout.normalizeGroup(g?.group ?? g?.Group) === groupOf[u]) : null;
@@ -373,7 +379,7 @@ async function runProfile(profile) {
         return SLOT_POS[slot] || null;
     };
     const pos = (u, p, f) => ownCorner(u) || JE.core.tagRenderer.resolvePosition(u, p, f).pos;
-    const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language', 'awards'].filter((g) => layoutConf.profiles.corners[g] === 'off');
+    const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language', 'awards', 'status'].filter((g) => layoutConf.slots[g] === 'off');
     const readInt = (k, d) => (Number.isFinite(s[k]) ? s[k] : d);
     const scope = (u, p) => (typeof s[u] === 'boolean' ? s[u] : (typeof pluginConfig[p] === 'boolean' ? pluginConfig[p] : true));
     const settings = {
@@ -416,7 +422,7 @@ async function runProfile(profile) {
         ratingTagsSources: JE.ratingSources.normalizeSources(s.ratingTagsSources)?.join(',') ?? null,
         ratingTagsMinScore: JE.ratingSources.settings().minimum,
         ratingTagsColorByScore: JE.ratingSources.settings().color,
-        layoutOrder: layoutConf.order ? layoutConf.order.filter((g) => g !== 'status').join(',') : null,
+        layoutOrder: layoutConf.order ? layoutConf.order.join(',') : null,
         layoutOff: offGroups.join(','),
         layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating', 'awards'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),
     };

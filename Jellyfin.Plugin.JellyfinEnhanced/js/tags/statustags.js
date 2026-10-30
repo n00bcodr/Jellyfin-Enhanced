@@ -47,7 +47,8 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Status Tags:';
     const containerClass = 'status-overlay-container';
     const tagClass = 'status-tag';
-    const DAY_MS = 24 * 60 * 60 * 1000;
+    const vocabulary = JE.statusVocabulary;
+    const DAY_MS = vocabulary.thresholds.dayMs;
     // A cached entry's dates (a series' latest episode above all) can move, so
     // the persistent cache only answers for this long before a re-fetch.
     const CACHE_FRESH_MS = 60 * 60 * 1000;
@@ -69,24 +70,16 @@
     // Schedule badge windows: "Airs {date}" up to a week ahead; "Returns {date}"
     // when the next episode is more than two weeks after the last one and at
     // most a month ahead.
-    const AIRS_WITHIN_DAYS = 7;
-    const WEEKDAY_WITHIN_DAYS = 5;
-    const RETURN_GAP_DAYS = 14;
-    const RETURNS_WITHIN_DAYS = 30;
+    const AIRS_WITHIN_DAYS = vocabulary.thresholds.airsWithinDays;
+    const WEEKDAY_WITHIN_DAYS = vocabulary.thresholds.weekdayWithinDays;
+    const RETURN_GAP_DAYS = vocabulary.thresholds.returnGapDays;
+    const RETURNS_WITHIN_DAYS = vocabulary.thresholds.returnsWithinDays;
     // Placeholder for the rank inside the translated trending label, so the
     // number can sit in its own span whatever the locale's word order.
     const RANK_TOKEN = '\u0001';
     /** Shorter label for compact density, per badge key (the layout controller swaps it in). */
-    const COMPACT_LABEL_KEYS = {
-        season_premiere: 'status_tag_compact_premiere',
-        season_finale: 'status_tag_compact_finale',
-        series_finale: 'status_tag_compact_finale',
-        complete_season: 'status_tag_compact_complete',
-        airing_today: 'status_tag_compact_today',
-        coming_soon: 'status_tag_compact_soon',
-        just_added: 'status_tag_compact_added',
-        new_episode: 'status_tag_compact_new_episode',
-    };
+    const COMPACT_LABEL_KEYS = Object.fromEntries(Object.entries(vocabulary.badges)
+        .filter(([, badge]) => badge.compact).map(([key, badge]) => [key, badge.compact]));
     // TMDB series statuses that mean no more episodes.
     const TMDB_ENDED = new Set(['Ended', 'Canceled']);
 
@@ -259,7 +252,7 @@
      */
     function windowMs(pluginKey, fallback) {
         const raw = parseInt(JE.pluginConfig?.[pluginKey], 10);
-        const days = Number.isFinite(raw) ? Math.min(365, Math.max(1, raw)) : fallback;
+        const days = Number.isFinite(raw) ? Math.min(vocabulary.thresholds.maxWindowDays, Math.max(vocabulary.thresholds.minWindowDays, raw)) : fallback;
         return days * DAY_MS;
     }
 
@@ -429,6 +422,14 @@
         return undefined;
     }
 
+    /** Remember the web user's date context for static native posters on a personal save.
+     * @returns {{locale: string, timeZone: string}}
+     */
+    JE.getStatusDateContext = function() {
+        const options = new Intl.DateTimeFormat(dateLocale()).resolvedOptions();
+        return { locale: options.locale, timeZone: options.timeZone };
+    };
+
     /**
      * The {date} of "Airs {date}" / "Returns {date}": "Tomorrow", a weekday
      * name up to WEEKDAY_WITHIN_DAYS days ahead, else a short date ("Oct 4"),
@@ -497,7 +498,8 @@
      * @returns {{kind: string, key: string, label: string, compact?: string}}
      */
     function makeBadge(kind, key, params) {
-        const badge = { kind, key, label: label(`status_tag_${key}`, params) };
+        const definition = vocabulary.badges[key];
+        const badge = { kind: definition.kind, key, label: label(definition.label, params) };
         if (COMPACT_LABEL_KEYS[key]) badge.compact = label(COMPACT_LABEL_KEYS[key]);
         return badge;
     }
@@ -543,8 +545,8 @@
         }
         const now = Date.now();
         const today = localDay(now);
-        const justAddedMs = windowMs('StatusTagsJustAddedDays', 7);
-        const newReleaseMs = windowMs('StatusTagsNewReleaseDays', 30);
+        const justAddedMs = windowMs('StatusTagsJustAddedDays', vocabulary.thresholds.justAddedDays);
+        const newReleaseMs = windowMs('StatusTagsNewReleaseDays', vocabulary.thresholds.newReleaseDays);
         const showNew = isScopeEnabled(BADGE_SCOPES.newRelease);
         const showAdded = isScopeEnabled(BADGE_SCOPES.justAdded);
         const showSchedule = isScopeEnabled(BADGE_SCOPES.schedule);
@@ -575,7 +577,7 @@
             const rank = trendingRank(data);
             if (rank !== null) {
                 const key = trending.data?.source === 'seerr-week' ? 'trending_week' : 'trending_today';
-                return { kind: 'trending', key, label: label(`status_tag_${key}`, { rank: RANK_TOKEN }), rank };
+                return { kind: 'trending', key, label: label(vocabulary.badges[key].label, { rank: RANK_TOKEN }), rank };
             }
         }
         switch (data.type) {
@@ -747,8 +749,7 @@
         const tag = document.createElement('div');
         tag.className = `${tagClass} ${tagClass}--${badge.kind}`;
         // Preserve the existing Tag Styles selectors; new vocabulary uses its badge key.
-        const status = { just_added: 'added', new_movie: 'newMovie', new_series: 'newSeries',
-            new_episode: 'newEpisode', trending_today: 'trending', trending_week: 'trending' }[badge.key] || badge.key;
+        const status = vocabulary.badges[badge.key].style;
         tag.dataset.jeStatus = status;
         // The layout controller shows this instead in compact density.
         if (badge.compact) tag.dataset.jeCompact = badge.compact;

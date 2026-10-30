@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         AgeRating,
         Language,
         Awards,
+        Status,
     }
 
     /// <summary>Rating chip source.</summary>
@@ -52,7 +53,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <paramref name="Label"/> is the exact text the web shows; <paramref name="Category"/> is the web's
     /// quality category key (resolution, source, dynamicRange, specialFormat, videoCodec, audioInfo).
     /// </summary>
-    public sealed record QualityTag(string Label, string Category) : PosterTag;
+    public sealed record QualityTag(string Label, string Category, string? DisplayText = null) : PosterTag;
 
     /// <summary>A genre chip. <paramref name="Icon"/> is the Material Symbols glyph name the web uses.</summary>
     public sealed record GenreTag(string Genre, string Icon) : PosterTag;
@@ -91,6 +92,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
     /// <summary>One chart/certification/winner chip, with a stable bundled logo id.</summary>
     public sealed record AwardTag(string Id, string Text) : PosterTag;
+    /// <summary>One localized status chip, styled with the web vocabulary's stable label key.</summary>
+    public sealed record StatusTag(string Key, string Text, string StyleKey) : PosterTag;
+
+    /// <summary>Renderer-generated omission count; uses the dedicated .je-tag-more style.</summary>
+    internal sealed record OverflowTag(int Count) : PosterTag;
 
     /// <summary>The tags of one group and where they go.</summary>
     public sealed record PosterTagGroupLayout(PosterTagGroup Group, PosterTagCorner Corner, IReadOnlyList<PosterTag> Tags);
@@ -100,7 +106,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <paramref name="TopRightOffset"/> mirrors the web rule that pushes top-right tags down when the card shows a
     /// played or unplayed-count indicator. <paramref name="Landscape"/> selects the landscape logical card width.
     /// </summary>
-    public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape, TagStyleSet? Styles = null)
+    public sealed record PosterTagLayout(IReadOnlyList<PosterTagGroupLayout> Groups, bool TopRightOffset, bool Landscape, TagStyleSet? Styles = null, bool Bands = false)
     {
         /// <summary>Validated size setting applied to the renderer's logical CSS metrics.</summary>
         public string TagScale { get; init; } = "default";

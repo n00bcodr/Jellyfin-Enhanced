@@ -64,7 +64,7 @@ public class PosterLayoutTests
     [Fact]
     public void Corners_profile_slot_wins_over_the_position_setting()
     {
-        var settings = Settings("{" + AllOn + ",qualityTagsPosition:'top-left',tagLayout:'bands',tagLayoutSettingsVersion:1,tagLayouts:{corners:{groups:[{group:'quality',slot:'br'}]},bands:{groups:[{group:'quality',slot:'top'}]}}}");
+        var settings = Settings("{" + AllOn + ",qualityTagsPosition:'top-left',tagLayout:'caption',tagLayoutSettingsVersion:1,tagLayouts:{corners:{groups:[{group:'quality',slot:'br'}]},bands:{groups:[{group:'quality',slot:'top'}]}}}");
         var layout = PosterTagResolver.Resolve(Entry(), settings, Context(), false)!;
         Assert.Equal(PosterTagCorner.BottomRight, GroupOf(layout, PosterTagGroup.Quality).Corner);
         Assert.Equal("bottom-right", settings.QualityTagsPosition);

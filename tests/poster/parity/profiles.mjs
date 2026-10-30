@@ -396,5 +396,20 @@ synth('awards-all', { AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagG
 synth('awards-cap', { AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Awards: 2 }, AwardsTagsPosition: 'bottom-right' }, { AwardsTagsEnabled: true });
 synth('awards-disabled', { AwardsTagsEnabled: true }, { AwardsTagsEnabled: false });
 synth('awards-combined', { ...allOn, AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupOrder: ['awards', 'quality', 'rating'] }, { AwardsTagsEnabled: true, AwardsTagsCertifiedFresh: false });
+// Native Bands now follows its active profile, density, order and limits.
+synth('native-bands-full', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' });
+synth('native-bands-compact', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' });
+synth('native-bands-custom', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagGroupOrder: ['language', 'quality', 'genre'], TagGroupCaps: { Quality: 2 },
+    TagLayouts: { Bands: { Groups: [{ Group: 'language', Slot: 'top' }, { Group: 'quality', Slot: 'top' }, { Group: 'rating', Slot: 'off' }, { Group: 'genre', Slot: 'bottom' }] } } });
+synth('native-bands-admin', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' }, { TagLayouts: { Bands: { Groups: [{ Group: 'quality', Slot: 'top' }, { Group: 'language', Slot: 'off' }] } } });
+
+// Integrated Awards use active Bands slots with non-default native size/gap.
+for (const [scale, gap] of [['smaller', 'tight'], ['largest', 'roomy']]) {
+    synth(`native-bands-integrated-${scale}`, { ...allOn, AwardsTagsEnabled: true,
+        TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagScale: scale, TagGap: gap,
+        TagGroupOrder: ['status', 'awards', 'quality', 'rating', 'language'],
+        TagLayouts: { Bands: { Groups: [{ Group: 'awards', Slot: 'top' }] } } }, { AwardsTagsEnabled: true });
+}
+
 writeFileSync(join(dataDir, 'profiles.json'), JSON.stringify(profiles, null, 1));
 console.log(`${profiles.length} profiles (${users.length} real users), ${Object.keys(syntheticEntries).length} synthetic entries, ${Object.keys(syntheticReviews).length} synthetic review keys`);

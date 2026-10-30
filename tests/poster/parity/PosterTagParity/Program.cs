@@ -15,6 +15,8 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using Newtonsoft.Json.Linq;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
 var mode = args.Length > 0 ? args[0] : "resolve";
 var dataDir = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
@@ -63,6 +65,8 @@ switch (mode)
     case "resolve":
         ResolveAll();
         break;
+    case "status":
+        return CheckStatus();
     case "names":
         return CheckNames();
     case "casing":
@@ -290,7 +294,7 @@ void ResolveAll()
                     {
                         g = group.Group.ToString(),
                         c = group.Corner.ToString(),
-                        o = layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
+                        o = !layout.Bands && layout.TopRightOffset && group.Corner == PosterTagCorner.TopRight,
                         t = group.Tags.Select(Describe).ToList(),
                     });
                 }
@@ -382,12 +386,13 @@ static string LayoutId(PosterTagGroup group) => group switch
     PosterTagGroup.Rating => "rating",
     PosterTagGroup.AgeRating => "ageRating",
     PosterTagGroup.Awards => "awards",
+    PosterTagGroup.Status => "status",
     _ => "language",
 };
 
 static string Describe(PosterTag tag) => tag switch
 {
-    QualityTag q => $"{q.Label}|{q.Category}",
+    QualityTag q => $"{q.DisplayText ?? q.Label}|{q.Category}",
     GenreTag g => $"{g.Genre}|{g.Icon}",
     LanguageTag l when l.CountBadge is not null => $"badge|{l.CountBadge}",
     LanguageTag l when l.Code is not null => $"code|{l.Code}|{l.Language}|{(l.Partial ? "true" : "false")}|{(l.Subtitle ? "true" : "false")}",
@@ -443,6 +448,46 @@ int CheckCasing()
     return mismatches.Count == 0 ? 0 : 1;
 
     static string Hex(string s) => string.Join(' ', s.EnumerateRunes().Select(r => r.Value.ToString("X4", CultureInfo.InvariantCulture)));
+}
+
+// Fixed-clock status fixtures use the same raw entries and remote facts as the real web renderer.
+int CheckStatus()
+{
+    var rows = ReadNode("status-fixtures.json").AsArray();
+    var failures = new List<string>();
+    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+    foreach (var node in rows)
+    {
+        var row = node!.AsObject();
+        var config = new PluginConfiguration { StatusTagsEnabled = true, TMDB_API_KEY = "fixture" };
+        if (row["plugin"] is JsonObject overrides)
+            foreach (var (key, value) in overrides)
+            {
+                var prop = typeof(PluginConfiguration).GetProperty(key)!;
+                prop.SetValue(config, value!.Deserialize(prop.PropertyType));
+            }
+        var user = row["settings"]?.Deserialize<JellyfinEnhancedUserSettings>(options) ?? new();
+        if (row["settings"]?["StatusTagsEnabled"] == null) user.StatusTagsEnabled = true;
+        user.NativePosterDateLocale = row["locale"]?.GetValue<string>() ?? "en-US";
+        user.NativePosterTimeZone = row["zone"]?.GetValue<string>() ?? "UTC";
+        var settings = PosterTagSettings.FromUserSettings(user, config);
+        var entry = row["entry"]!.Deserialize<TagCacheEntry>(options)!;
+        SeriesSchedule? schedule = null;
+        if (row["schedule"] is JsonObject facts)
+            schedule = new(facts["status"]?.GetValue<string>(), facts["lastAired"]?.Deserialize<SeriesEpisodeRef>(options), facts["nextAired"]?.Deserialize<SeriesEpisodeRef>(options),
+                LastRegularAired: facts["lastRegularAired"]?.Deserialize<SeriesEpisodeRef>(options));
+        var context = new PosterStatusContext(DateTimeOffset.FromUnixTimeMilliseconds(row["now"]!.GetValue<long>()), schedule,
+            row["rank"]?.GetValue<int>(), row["parent"]?.Deserialize<TagCacheEntry>(options));
+        var badge = StatusRules.Resolve(entry, settings, context);
+        var expected = row["expected"];
+        if (badge?.Key != expected?["key"]?.GetValue<string>() || badge?.Text != expected?["text"]?.GetValue<string>())
+            failures.Add($"{row["name"]}: expected {expected}, native {badge}");
+        var layout = PosterTagResolver.Resolve(entry, settings, new(entry.Type ?? "", false, null, null, null, context), false);
+        if (badge != layout?.Groups.SelectMany(g => g.Tags).OfType<StatusTag>().SingleOrDefault()) failures.Add($"{row["name"]}: resolver lost status");
+    }
+    foreach (var failure in failures) Console.WriteLine(failure);
+    Console.WriteLine($"Status native/web parity: {rows.Count} fixtures, {failures.Count} differences");
+    return failures.Count == 0 ? 0 : 1;
 }
 
 internal sealed record UserDataFixture(bool Played, int? UnplayedItemCount, double? PlayedPercentage);

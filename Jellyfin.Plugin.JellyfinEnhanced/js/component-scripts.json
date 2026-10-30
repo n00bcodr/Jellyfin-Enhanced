@@ -206,6 +206,7 @@
     "tags/ratingtags.js",
     "tags/ageratingtags.js",
   "tags/awardstags.js",
+    "tags/status-vocabulary.js",
     "tags/statustags.js",
     "tags/tag-styles.js",
     "tags/userreviewtags.js",

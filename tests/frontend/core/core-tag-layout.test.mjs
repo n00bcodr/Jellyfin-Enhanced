@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { setImmediate as settle } from 'node:timers/promises';
 import { createHarness, deferred, plain } from '../helpers/harness.mjs';
@@ -65,7 +66,7 @@ function setup(t, { html = modernCard(), settings = {}, plugin = {}, reviews = n
   t.after(() => h.close());
   h.window.Date.now = () => Date.UTC(2026, 9, 30);
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js',
-    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/rating-sources.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js', 'tags/userreviewtags.js']) h.load(file);
+    'tags/qualitytags.js', 'tags/genretags.js', 'tags/languagetags.js', 'tags/rating-sources.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/status-vocabulary.js', 'tags/statustags.js', 'tags/userreviewtags.js']) h.load(file);
   const JE = h.JE;
   JE.initializeQualityTags(); JE.initializeGenreTags(); JE.initializeRatingTags(); JE.initializeAgeRatingTags(); JE.initializeStatusTags(); JE.initializeLanguageTags();
   if (reviews || reviewSource) JE.initializeUserReviewTags();
@@ -1257,4 +1258,15 @@ test('legacy sizing retains original responsive expressions while normalized car
   assert.match(mobile, /\.je-tag-host\[data-je-legacy\] :is\(\.layout-mobile \.rating-tag\) \{ font-size: 11px;/);
   h.render();
   assert.equal(h.host().dataset.jeLegacy, '1');
+});
+test('Bands shared native/web width and height fixtures retain later chips after a rejection', t => {
+  const h = setup(t);
+  const fixtures = JSON.parse(readFileSync(new URL('../../fixtures/native-band-fit.json', import.meta.url), 'utf8'));
+  for (const f of fixtures) {
+    const rows = [], more = { row: 0 };
+    const shown = h.layout.chipsThatFit(f.widths, f.available, f.gap, f.maxRows, f.moreWidths?.[String(f.widths.length)] ?? f.moreWidth, rows, more);
+    assert.deepEqual(shown, f.shown, f.name);
+    assert.equal(shown.filter(v => !v).length, f.hidden, f.name);
+    assert.equal(h.layout.rowsHeight(shown, rows, f.heights, 18, f.gap, more.row), f.height, f.name);
+  }
 });

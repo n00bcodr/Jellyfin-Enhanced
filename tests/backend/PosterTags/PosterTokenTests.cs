@@ -19,12 +19,14 @@ public class PosterTokenTests : IDisposable
         Assert.True(service.Verify(current, user, item, "mixed-settings", PosterTagComposer.PixelVersion, out _));
     }
 
-    [Fact]
-    public void TierTwoPixelsRejectTierOneTokens()
+    [Theory]
+    [InlineData("4.1")]
+    [InlineData("5.1")]
+    public void TierTwoPixelsRejectTierOneAndRoundOneTokens(string historicalVersion)
     {
         var service = Tokens();
-        Assert.Equal("5.1", PosterTagComposer.PixelVersion);
-        var old = service.Mint(user, item, "settings", "4.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.Equal("6.1", PosterTagComposer.PixelVersion);
+        var old = service.Mint(user, item, "settings", historicalVersion, PosterTagVariantFlags.None, "abcdef");
         Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
     }
 

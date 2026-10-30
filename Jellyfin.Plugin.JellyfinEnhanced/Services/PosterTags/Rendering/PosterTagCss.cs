@@ -36,6 +36,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Synthesised small caps: lowercase letters drawn as capitals at this fraction of the font size (rounded).</summary>
         public const float SmallCapsScale = 0.7f;
 
+        // .je-tag-more scales with the host's tag scale, independently of responsive chip clamps.
+        public float OverflowFontSize => 11f * Scale;
+        public float OverflowPaddingV => 2f * Scale;
+        public float OverflowPaddingH => 5f * Scale;
+        public const float OverflowRadius = 3f;
+        public float OverflowLineHeight => Lu(OverflowFontSize * 1.15f);
+
         public PosterTagCss(float cardWidth, string tagScale = "default", string tagGap = "default")
         {
             CardWidth = cardWidth;

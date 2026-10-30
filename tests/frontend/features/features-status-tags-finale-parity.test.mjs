@@ -82,7 +82,7 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
   t.after(() => h.close());
   h.window.Date.now = () => NOW;
   if (scanCost) { let elapsed = 0; h.window.performance.now = () => (elapsed += scanCost); }
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'tags/tag-pipeline.js', 'tags/statustags.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'tags/tag-pipeline.js', 'tags/status-vocabulary.js', 'tags/statustags.js']) h.load(file);
   h.JE.initializeStatusTags();
   h.JE.tagPipeline.initialize();
   await flush(500);

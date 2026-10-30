@@ -103,17 +103,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// (unstripped) and the viewer's review chip data; <see cref="PosterTagVariantToken.WeakDataHash"/>
         /// when the cache has no entry (cache off or not yet built). Cheap: no I/O.
         /// </summary>
-        public string GetPinnedDataHash(Guid ownerId, JUser viewer)
-            => GetPinnedSnapshot(ownerId, viewer)?.PinnedHash ?? PosterTagVariantToken.WeakDataHash;
+        public string GetPinnedDataHash(Guid ownerId, JUser viewer, bool includeStatus = false)
+            => GetPinnedSnapshot(ownerId, viewer, includeStatus)?.PinnedHash ?? PosterTagVariantToken.WeakDataHash;
 
         /// <summary>
         /// The live tag data (and the hash a token pins for it) for an image owner as <paramref name="viewer"/>
         /// sees it, or null when the tag cache has no entry (cache off or not yet built). Container quality uses the memoized access set.
         /// </summary>
-        public PosterTagDataSnapshot? GetPinnedSnapshot(Guid ownerId, JUser viewer)
+        public PosterTagDataSnapshot? GetPinnedSnapshot(Guid ownerId, JUser viewer, bool includeStatus = false)
         {
             if (!_tagCache.TryGetEntry(ownerId, out var entry)) return null;
             entry = _tagCache.FilterQualityForUser(entry, viewer);
+            if (includeStatus) entry = _tagCache.FilterStatusForUser(entry, viewer);
             var reviews = _reviews.Get(entry, viewer);
             var hash = DataKey(entry, reviews).Substring(0, 6);
             // Never collide with the "not pinned" value.
@@ -129,7 +130,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <paramref name="snapshot"/> the entry and review data are taken from it (only the Spoiler Guard
         /// strip is applied), so the drawing matches the data a token was validated against.
         /// </summary>
-        public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken)
+        public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken, bool includeStatus = false)
         {
             TagCacheEntry entry;
             if (snapshot != null)
@@ -145,6 +146,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             entry = TagCacheService.ApplySourceRatingAvailability(entry);
             entry = _tagCache.FilterQualityForUser(entry, user, item);
+            if (includeStatus) entry = _tagCache.FilterStatusForUser(entry, user);
             var stripped = false;
             var policy = CreateSpoilerPolicy(httpContext, user);
             if (policy != null)

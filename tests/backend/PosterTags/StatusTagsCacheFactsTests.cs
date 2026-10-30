@@ -76,6 +76,10 @@ public class StatusTagsCacheFactsTests
         {
             var filtered = cache.GetCacheForUser(user, out _, out _, out var revision)[e5.Id.ToString("N")];
             Assert.Null(filtered.EpisodeIndex);
+            var native = cache.FilterStatusForUser(entry, user);
+            Assert.Null(native.EpisodeIndex);
+            Assert.NotNull(entry.EpisodeIndex); // native filtering cannot mutate the shared cache
+            Assert.Null(entry.QualityEpisodeIds); // status visibility cannot depend on quality contributors
             Assert.NotEqual("all", revision);
         }
     }

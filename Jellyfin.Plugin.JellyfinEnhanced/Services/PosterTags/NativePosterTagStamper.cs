@@ -24,7 +24,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             Settings = settings;
             Marker = marker;
             SpoilerState = spoilerState;
+            Instant = DateTimeOffset.UtcNow;
         }
+
+        internal DateTimeOffset Instant { get; }
 
         internal JUser User { get; }
 
@@ -171,10 +174,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var token = _tokens.Mint(
                 session.User.Id,
                 ownerId,
-                session.Settings.Digest,
+                session.Settings.DigestAt(session.Instant),
                 PosterTagComposer.PixelVersion,
                 flags,
-                _data.GetPinnedDataHash(ownerId, session.User));
+                _data.GetPinnedDataHash(ownerId, session.User, session.Settings.Shows(PosterTagGroup.Status)));
             var stamped = ImageTagDecoration.WithVariant(tag, token, session.Marker);
             if (dto != null && !ReferenceEquals(stamped, tag)) ReKeyPrimaryBlurhash(dto, tag, stamped);
             return stamped;

@@ -51,6 +51,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/NativePosterDateContext.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs",
       "category": "Configuration"
     },
@@ -451,6 +455,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/NativeStatusRefreshService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/CompositeImageCache.cs",
       "category": "Services"
     },
@@ -492,6 +500,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagSettingsProvider.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagStatusProvider.cs",
       "category": "Services"
     },
     {
@@ -560,6 +572,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/ResolutionData.g.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
       "category": "Services"
     },
     {
@@ -1548,6 +1564,18 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/ratingtags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-short-dates.json",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/status-vocabulary.json",
       "category": "js"
     },
     {
@@ -7662,6 +7690,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "NativePosterDateLocale",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "NativePosterTimeZone",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "DisplayLanguage",
       "type": "string",
       "initializer": "string.Empty",
@@ -7888,6 +7932,38 @@
       "class": "SpoilerBlurUserPrefs",
       "name": "SkipDisableConfirm",
       "type": "bool",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "Series",
+      "type": "Dictionary<string, SpoilerBlurSeriesEntry>",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "Movies",
+      "type": "Dictionary<string, SpoilerBlurMovieEntry>",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "Collections",
+      "type": "Dictionary<string, SpoilerBlurCollectionEntry>",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "UserSpoilerBlur",
+      "name": "PendingTmdb",
+      "type": "Dictionary<string, SpoilerBlurPendingEntry>",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
@@ -8970,9 +9046,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 393,
+    "files": 400,
     "routes": 182,
-    "configuration_properties": 652,
+    "configuration_properties": 658,
     "storage_references": 77,
     "scheduled_tasks": 14,
     "locales": 33

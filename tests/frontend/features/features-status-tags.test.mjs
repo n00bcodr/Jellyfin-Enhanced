@@ -41,6 +41,7 @@ function setup(t, answers) {
   h.window.Date.now = () => now;
   h.load('core/ui-kit.js');
   h.load('core/tag-renderer-base.js');
+  h.load('tags/status-vocabulary.js');
   h.load('tags/statustags.js');
   h.JE.initializeStatusTags();
   const hosts = [...h.document.querySelectorAll('.je-tag-host')];
