@@ -122,6 +122,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public IReadOnlySet<Guid>? Pending { get; init; }
 
             public ContainerEpisodeIndex? ContainerIndex { get; set; }
+
+            /// <summary>Library id per series id (see <see cref="ItemLibraryResolver"/>), shared by a show's seasons and episodes.</summary>
+            public ConcurrentDictionary<Guid, string?> LibraryBySeries { get; } = new();
         }
 
         /// <summary>
@@ -280,8 +283,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // (Series/Season) for the Status Tags badges.
         // v10 adds LatestEpisodeId (the episode LatestEpisodeAdded came from), so the
         // per-user filter can drop a date taken from an episode the user can't see.
+        // v11 adds LibraryId (the item's library; a Season/Episode takes its
+        // Series') for the tag look rules.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 10;
+        private const int CurrentCacheSchemaVersion = 11;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2446,6 +2451,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Parent Series of a Season/Episode, looked up once per item
                 // (both fallbacks below read it).
                 var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
+                entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
 
                 if (isContainer)
                 {

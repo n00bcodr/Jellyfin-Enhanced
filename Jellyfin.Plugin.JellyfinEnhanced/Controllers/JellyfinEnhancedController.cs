@@ -3766,6 +3766,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagGroupOrder = TagLayoutRules.NormalizeOrder(config.TagGroupOrder),
                 TagGroupCaps = TagLayoutRules.NormalizeCaps(config.TagGroupCaps),
                 TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
+                // Tag look rules starting default (normalized; null = none)
+                TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
                 config.ShowRatingInPlayer,
 
                 config.TagsCacheTtlDays,
@@ -5251,6 +5253,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LastOpenedTab = "shortcuts"
                     };
                     TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
+                    TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
                     _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
@@ -5325,6 +5328,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Unknown layouts, groups and slots are normalized away and caps
                 // clamped, so a stale client cannot store an unusable layout.
                 TagLayoutRules.Normalize(userConfiguration);
+                // Rules and locks: invalid entries are dropped one by one (ids
+                // validated, limits applied), never the whole document.
+                TagLookValidation.Normalize(userConfiguration);
 
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
@@ -8253,6 +8259,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LastOpenedTab = "shortcuts"
             };
             TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
+            TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
 
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();
@@ -8716,6 +8723,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // A batch is typically one series' worth of episodes, so the parent
             // lookup is memoized per request rather than repeated per item.
             var seriesRatingMemo = new Dictionary<Guid, string?>();
+            // Library id for the tag look rules, as the server tag cache stores
+            // it (Seasons/Episodes take their Series'), memoized per series.
+            var seriesLibraryMemo = new Dictionary<Guid, string?>();
+            string? TagDataLibraryId(BaseItem tagItem) => Services.ItemLibraryResolver.Resolve(_libraryManager, tagItem, null, seriesLibraryMemo);
             string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
             {
                 if (!seriesOnly && !string.IsNullOrWhiteSpace(tagItem.OfficialRating))
@@ -8892,6 +8903,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
+                        LibraryId = TagDataLibraryId(spEp),
                         // Suppress the parent-series rating fallback only when the
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
@@ -8934,6 +8946,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CommunityRating = spStripRatings ? (float?)null : spSeries.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
+                        LibraryId = TagDataLibraryId(spSeries),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -8998,6 +9011,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CommunityRating = spStripRatings ? (float?)null : spMovie.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spMovie.CriticRating,
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
+                        LibraryId = TagDataLibraryId(spMovie),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9038,6 +9052,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
+                        LibraryId = TagDataLibraryId(spSeason),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9128,6 +9143,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
                     OfficialRating = ResolveTagDataOfficialRating(item),
+                    LibraryId = TagDataLibraryId(item),
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,

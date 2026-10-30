@@ -86,6 +86,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string>? TagGroupOrder { get; set; }
         public TagGroupCaps? TagGroupCaps { get; set; }
         public string TagLabelDensity { get; set; } = "full";
+        // Tag looks by rule and per-item lock (see TagLookValidation). Null
+        // rules inherit the administrator's default rules (normalized
+        // documents only); locks are this user's alone, keyed by item id.
+        public List<TagLookRule>? TagLookRules { get; set; }
+        public Dictionary<string, TagLayoutLock>? TagLayoutLocks { get; set; }
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;

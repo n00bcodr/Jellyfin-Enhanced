@@ -214,6 +214,11 @@
             mergedSettings[key] = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
         }
         mergedSettings.tagGroupOrder = Array.isArray(userSettings.tagGroupOrder) ? userSettings.tagGroupOrder : null;
+        // Tag look rules (null = inherit the admin's default rules) and per-item
+        // locks; core/tag-look.js normalises both when it reads them.
+        mergedSettings.tagLookRules = Array.isArray(userSettings.tagLookRules) ? userSettings.tagLookRules : null;
+        mergedSettings.tagLayoutLocks = userSettings.tagLayoutLocks && typeof userSettings.tagLayoutLocks === 'object'
+            && !Array.isArray(userSettings.tagLayoutLocks) ? userSettings.tagLayoutLocks : null;
 
         mergedSettings.displayLanguage = Object.prototype.hasOwnProperty.call(userSettings, 'displayLanguage')
             && userSettings.displayLanguage !== null && userSettings.displayLanguage !== undefined
