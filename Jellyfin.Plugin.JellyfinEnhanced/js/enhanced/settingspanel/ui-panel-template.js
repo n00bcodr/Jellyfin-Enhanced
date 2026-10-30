@@ -574,11 +574,14 @@
                                             { id: 'statusTagsTrendingToggle',   settingKey: 'statusTagsTrending',   pluginKey: 'StatusTagsTrending',   labelKey: 'panel_settings_ui_status_tags_trending' },
                                             { id: 'statusTagsNewReleaseToggle', settingKey: 'statusTagsNewRelease', pluginKey: 'StatusTagsNewRelease', labelKey: 'panel_settings_ui_status_tags_new_release' },
                                             { id: 'statusTagsJustAddedToggle',  settingKey: 'statusTagsJustAdded',  pluginKey: 'StatusTagsJustAdded',  labelKey: 'panel_settings_ui_status_tags_just_added' },
+                                            { id: 'statusTagsScheduleToggle',   settingKey: 'statusTagsSchedule',   pluginKey: 'StatusTagsSchedule',   labelKey: 'panel_settings_ui_status_tags_schedule' },
+                                            { id: 'statusTagsMilestonesToggle', settingKey: 'statusTagsMilestones', pluginKey: 'StatusTagsMilestones', labelKey: 'panel_settings_ui_status_tags_milestones' },
+                                            { id: 'statusTagsSeriesStatusToggle', settingKey: 'statusTagsSeriesStatus', pluginKey: 'StatusTagsSeriesStatus', labelKey: 'panel_settings_ui_status_tags_series_status', fallback: false },
                                         ].map((c) => {
-                                            // Effective value (user override -> admin default -> on), same as the renderer.
+                                            // Effective value (user override -> admin default -> built-in), same as the renderer.
                                             const u = JE.currentSettings[c.settingKey];
                                             const a = JE.pluginConfig?.[c.pluginKey];
-                                            const on = typeof u === 'boolean' ? u : (typeof a === 'boolean' ? a : true);
+                                            const on = typeof u === 'boolean' ? u : (typeof a === 'boolean' ? a : c.fallback !== false);
                                             return `
                                                 <div class="je-quality-cat-row" data-cat-key="${c.settingKey}">
                                                     <label class="je-quality-cat-label-wrap">

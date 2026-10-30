@@ -394,18 +394,30 @@
                                 </div>
                             </div>
                             <div class="je-setting-description" data-desc-for="statusTagsEnabled">
-                                <div class="fieldDescription">Badge posters with Just Added, New Movie/Series/Episode and daily trending rank, without replacing the poster image. Web client only; Native Poster Tags do not draw them.</div>
+                                <div class="fieldDescription" data-je-status-label="admin_status_tags_description"></div>
                             </div>
                             <details id="statusTagsAdminDetails" class="je-details-section" style="margin-left: 20px;">
                                 <summary>Choose which badges to show</summary>
                                 <div class="je-details-body">
-                                    <div class="fieldDescription je-field-desc-sm">One badge per poster, first match wins: Trending, then New Movie / New Series / New Episode, then Just Added. Users can override the three switches in their personal settings; the day windows apply to everyone.</div>
+                                    <div class="fieldDescription je-field-desc-sm" data-je-status-label="admin_status_tags_priority"></div>
                                     <div class="checkboxContainer"><label><input id="statusTagsTrending" is="emby-checkbox" type="checkbox"/><span>Show Trending rank</span></label></div>
                                     <div class="je-setting-description" data-desc-for="statusTagsTrending">
                                         <div class="fieldDescription">Rank in TMDB's daily trending list (needs the TMDB API key), or Seerr's weekly trending list when no key is set. Turning this off here also stops the server fetching the list.</div>
                                     </div>
                                     <div class="checkboxContainer"><label><input id="statusTagsNewRelease" is="emby-checkbox" type="checkbox"/><span>Show New Movie / New Series / New Episode</span></label></div>
                                     <div class="checkboxContainer"><label><input id="statusTagsJustAdded" is="emby-checkbox" type="checkbox"/><span>Show Just Added</span></label></div>
+                                    <div class="checkboxContainer"><label><input id="statusTagsSchedule" is="emby-checkbox" type="checkbox"/><span data-je-status-label="admin_status_tags_schedule"></span></label></div>
+                                    <div class="je-setting-description" data-desc-for="statusTagsSchedule">
+                                        <div class="fieldDescription" data-je-status-label="admin_status_tags_schedule_description"></div>
+                                    </div>
+                                    <div class="checkboxContainer"><label><input id="statusTagsMilestones" is="emby-checkbox" type="checkbox"/><span data-je-status-label="admin_status_tags_milestones"></span></label></div>
+                                    <div class="je-setting-description" data-desc-for="statusTagsMilestones">
+                                        <div class="fieldDescription" data-je-status-label="admin_status_tags_milestones_description"></div>
+                                    </div>
+                                    <div class="checkboxContainer"><label><input id="statusTagsSeriesStatus" is="emby-checkbox" type="checkbox"/><span data-je-status-label="admin_status_tags_series_status"></span></label></div>
+                                    <div class="je-setting-description" data-desc-for="statusTagsSeriesStatus">
+                                        <div class="fieldDescription" data-je-status-label="admin_status_tags_series_status_description"></div>
+                                    </div>
                                     <div class="inputContainer">
                                         <label class="inputLabel inputLabelUnfocused" for="statusTagsNewReleaseDays">New release window (days)</label>
                                         <input id="statusTagsNewReleaseDays" is="emby-input" type="number" min="1" max="365" value="30"/>
@@ -6471,7 +6483,19 @@
             return { load, serialize, settings };
         })();
 
+        /** Load Status Tags copy from the embedded locale when the dashboard has no JE translator. */
+        async function loadStatusTagLabels() {
+            const en = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/locales/en.json'), dataType: 'json' });
+            const JE = window.JellyfinEnhanced?.t ? window.JellyfinEnhanced : { t: key => en[key] || key };
+            document.querySelectorAll('[data-je-status-label]').forEach(element => {
+                const key = element.dataset.jeStatusLabel;
+                const translated = JE.t(key);
+                element.textContent = translated === key ? en[key] || key : translated;
+            });
+        }
+
         function loadConfig() {
+            loadStatusTagLabels().catch(error => console.warn("[StatusTags] Could not load dashboard labels", error));
             Dashboard.showLoadingMsg();
             checkInstalledPlugins();
             ApiClient.getPluginConfiguration(pluginId).then((config) => {
@@ -6623,6 +6647,9 @@
                 document.querySelector('#statusTagsJustAdded').checked = config.StatusTagsJustAdded !== false;
                 document.querySelector('#statusTagsNewRelease').checked = config.StatusTagsNewRelease !== false;
                 document.querySelector('#statusTagsTrending').checked = config.StatusTagsTrending !== false;
+                document.querySelector('#statusTagsSchedule').checked = config.StatusTagsSchedule !== false;
+                document.querySelector('#statusTagsMilestones').checked = config.StatusTagsMilestones !== false;
+                document.querySelector('#statusTagsSeriesStatus').checked = config.StatusTagsSeriesStatus === true;
                 document.querySelector('#statusTagsJustAddedDays').value = config.StatusTagsJustAddedDays || 7;
                 document.querySelector('#statusTagsNewReleaseDays').value = config.StatusTagsNewReleaseDays || 30;
                 const pChk = document.querySelector('#peopleTagsEnabled');
@@ -7198,6 +7225,9 @@
             config.StatusTagsJustAdded = document.querySelector('#statusTagsJustAdded').checked;
             config.StatusTagsNewRelease = document.querySelector('#statusTagsNewRelease').checked;
             config.StatusTagsTrending = document.querySelector('#statusTagsTrending').checked;
+            config.StatusTagsSchedule = document.querySelector('#statusTagsSchedule').checked;
+            config.StatusTagsMilestones = document.querySelector('#statusTagsMilestones').checked;
+            config.StatusTagsSeriesStatus = document.querySelector('#statusTagsSeriesStatus').checked;
             config.PeopleTagsEnabled = document.querySelector('#peopleTagsEnabled').checked;
             config.DisableTagsOnSearchPage = document.querySelector('#disableTagsOnSearchPage').checked;
             config.TagsHideOnHover = document.querySelector('#tagsHideOnHover').checked;
@@ -8786,7 +8816,7 @@
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition'], noHint: true },
-            { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays'], noHint: true },
+            { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
