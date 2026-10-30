@@ -332,8 +332,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// Batch media lookup: one MDBList request resolves however many ids
         /// are passed in, by TMDB id, in the same shape ParseResponse parses
         /// for the single-item endpoint (every rating source, votes,
-        /// per-source urls, and cross-provider ids). Used by
-        /// MdblistRatingsFetchRunner to warm mdblist-ratings.json for both the
+        /// per-source urls, and cross-provider ids). Reached only through
+        /// GetMediaBatchWithinReserveAsync, which MdblistRatingsFetchRunner and
+        /// the tag-rating warmers use to warm mdblist-ratings.json for both the
         /// item-details display and MdblistRatingsSyncTask's Jellyfin-field
         /// sync to read from.
         ///
@@ -342,7 +343,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// MDBList data, not an error). Returns null on failure (bad key,
         /// network error, quota exhausted).
         /// </summary>
-        public async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken)
+        private async Task<Dictionary<string, MdblistCacheEntry>?> GetMediaBatchAsync(string mediaType, IReadOnlyList<string> tmdbIds, CancellationToken cancellationToken)
         {
             if (tmdbIds == null || tmdbIds.Count == 0) return new Dictionary<string, MdblistCacheEntry>();
 
@@ -429,7 +430,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private readonly SemaphoreSlim _tagRatingsGate = new(1, 1);
 
-        /// <summary>Bounded, serialized request-time enrichment, sharing the existing seven-day cache and quota floor.</summary>
+        // One background batch at a time across the bulk runner and the
+        // incremental warmers, held from the reserve check through the request
+        // and its local quota decrement, so two callers can never both pass
+        // the same "remaining > reserve" check.
+        private readonly SemaphoreSlim _backgroundQuotaGate = new(1, 1);
+
+        /// <summary>
+        /// The only way background callers (MdblistRatingsFetchRunner and
+        /// WarmTagRatingsAsync) reach MDBList's batch endpoint: checks the
+        /// remaining quota against the caller's reserve (never below
+        /// SafetyMargin) and sends the batch under one shared gate. Unknown
+        /// account status sends nothing.
+        /// </summary>
+        public async Task<MdblistReservedBatch> GetMediaBatchWithinReserveAsync(string mediaType, IReadOnlyList<string> tmdbIds, int reserve, CancellationToken cancellationToken)
+        {
+            await _backgroundQuotaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false) == null)
+                {
+                    return new MdblistReservedBatch(MdblistReservedBatchStatus.QuotaUnknown, null, null);
+                }
+
+                // Read under the status lock: the cached status is decremented in place after each request.
+                var remaining = RemainingQuota();
+                if (remaining == null) return new MdblistReservedBatch(MdblistReservedBatchStatus.QuotaUnknown, null, null);
+                if (remaining.Value <= Math.Max(SafetyMargin, reserve))
+                {
+                    return new MdblistReservedBatch(MdblistReservedBatchStatus.ReserveReached, remaining, null);
+                }
+
+                var results = await GetMediaBatchAsync(mediaType, tmdbIds, cancellationToken).ConfigureAwait(false);
+                return new MdblistReservedBatch(results == null ? MdblistReservedBatchStatus.Failed : MdblistReservedBatchStatus.Sent, RemainingQuota(), results);
+            }
+            finally { _backgroundQuotaGate.Release(); }
+        }
+
+        /// <summary>Bounded, serialized request-time enrichment, sharing the existing seven-day cache and the background quota reserve.</summary>
         public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin)
         {
             if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
@@ -441,13 +479,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     foreach (var chunk in group.Chunk(150))
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        // Unknown quota stops background work, as the bulk runner does; titles stay NeedsFetch.
-                        var status = await GetAccountStatusAsync(cancellationToken).ConfigureAwait(false);
-                        if (status == null || status.RateLimitRemaining <= Math.Max(SafetyMargin, reserve)) return;
                         var ids = chunk.Select(t => t.Id).ToArray();
-                        var results = await GetMediaBatchAsync(group.Key, ids, cancellationToken).ConfigureAwait(false);
+                        var batch = await GetMediaBatchWithinReserveAsync(group.Key, ids, reserve, cancellationToken).ConfigureAwait(false);
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (results == null)
+                        // Unknown quota stops background work, as the bulk runner does; titles stay NeedsFetch.
+                        if (batch.Status is MdblistReservedBatchStatus.ReserveReached or MdblistReservedBatchStatus.QuotaUnknown) return;
+                        if (batch.Status == MdblistReservedBatchStatus.Failed)
                         {
                             // Match single-title failures: short retry TTL, never a confirmed negative.
                             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -455,7 +492,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             ScheduleDebouncedSave();
                             return;
                         }
-                        MergeMediaBatchIntoCache(group.Key, ids, results);
+                        MergeMediaBatchIntoCache(group.Key, ids, batch.Results!);
                         await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
                     }
                 }

@@ -163,6 +163,48 @@ public class RatingSourceTests
         }
     }
 
+    [Fact]
+    public async Task OverlappingBulkAndIncrementalBatchesNeverCrossTheReserve()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.MdblistApiKey = "fixture-key";
+        config.MdblistRatingsEnabled = true;
+        config.MdblistRatingsFetchEnabled = true;
+        config.MdblistFetchReserve = 400;
+        var firstBatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":401}");
+            if (Interlocked.Increment(ref batches) == 1)
+            {
+                firstBatch.SetResult();
+                await release.Task.WaitAsync(token);
+            }
+            return IntegrationTransport.Response("[]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new BaseItem[] { new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "1" } } });
+        var bulk = new Jellyfin.Plugin.JellyfinEnhanced.ScheduledTasks.MdblistRatingsFetchTask(library.Object, service, f.Core.Logger).ExecuteAsync(new Progress<double>(), default);
+        var incremental = service.WarmTagRatingsAsync(new[] { ("movie", "2") }, default, 400);
+        int overlapping;
+        try
+        {
+            await firstBatch.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Give the other caller time to pass a stale "401 > 400" check and send its own batch.
+            await Task.Delay(300);
+            overlapping = Volatile.Read(ref batches);
+        }
+        finally { release.TrySetResult(); }
+        await Task.WhenAll(bulk, incremental).WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, overlapping);
+        Assert.Equal(1, batches);
+        Assert.Equal(400, service.RemainingQuota());
+        Assert.True(service.NeedsFetch("movie", "1") != service.NeedsFetch("movie", "2"));
+    }
+
     [Theory]
     [InlineData(503)]
     [InlineData(429)]
