@@ -301,10 +301,13 @@ async function runProfile(profile) {
 
     // Corner slots that earn the indicator offset, from the real layout CSS:
     // the whole slot on a host the controller marks data-je-indicator-gap, or
-    // (settings saved before layouts) the containers it marks there.
+    // (settings saved before layouts) the containers it marks there. That
+    // rule must reach every marked container wherever it sits in the stack
+    // (no :first-child or other position filter after the marker), as each
+    // one set to exactly top-right cleared the indicator before layouts.
     const layoutCss = JE.core.tagLayout.buildStyles();
     const offsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-indicator-gap\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\]/g)].map((m) => m[1]));
-    const legacyOffsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\] > \[data-je-indicator-gap\]/g)].map((m) => m[1]));
+    const legacyOffsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\] > \[data-je-indicator-gap\](?=\s*[,{])/g)].map((m) => m[1]));
 
     const hosts = [];
     for (const [id, entry] of Object.entries(entries)) {
