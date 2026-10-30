@@ -31,6 +31,7 @@ function setup(t, { html = card(MOVIE), settings = {}, plugin = {}, withLook = t
   const renderers = new Map();
   const writes = [];
   const toasts = [];
+  const userChange = [];
   let renderCalls = 0;
   const h = createHarness({
     html,
@@ -42,7 +43,7 @@ function setup(t, { html = card(MOVIE), settings = {}, plugin = {}, withLook = t
       pluginConfig: { TagCacheServerMode: true, ...plugin },
       t: (key, params) => params ? `${key}:${JSON.stringify(params)}` : key,
       cdn: { flagSvg: code => `http://jellyfin.test/flags/${code}.svg` },
-      session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange: (name, fn) => userChange.push(fn) },
       _cacheManager: { register() {}, markDirty() {} },
       saveUserSettings: (file, doc) => { writes.push(plain(doc)); return Promise.resolve(); },
       tagPipeline: {
@@ -64,6 +65,8 @@ function setup(t, { html = card(MOVIE), settings = {}, plugin = {}, withLook = t
   const hostOf = id => h.document.querySelector(`[data-id="${id}"] .je-tag-host`);
   return Object.assign(h, {
     layout, look: JE.core.tagLook, writes, toasts, hostOf,
+    /** Run the session's user-change handlers (a user switch). */
+    switchUser() { for (const fn of userChange) fn(); },
     get renderCalls() { return renderCalls; },
     /** Render an entry into a card the way the pipeline's server-cache path does. */
     render(id = MOVIE, e = entry()) {
@@ -278,4 +281,21 @@ test('the card identity is the item the card shows, not the artwork it borrows',
   // The pipeline resolved the series artwork id; the data is still the episode card's.
   assert.equal(h.layout.setCardContext(host, entry({ Type: 'Episode', LibraryId: KIDS_LIB }), SERIES, EPISODE), true);
   assert.equal(h.layout.resolveLayout(host).layout, 'bands');
+});
+
+test('a user switch forgets every card\'s item data, also on hosts without a controller', async t => {
+  const html = card(MOVIE) + card(OTHER);
+  const h = setup(t, { html, settings: { tagLookRules: [rule([{ field: 'library', value: KIDS_LIB }], 'bands')] } });
+  h.render(MOVIE, entry({ LibraryId: KIDS_LIB }));
+  // OTHER has data but no groups yet (its tags are a fetch away): no controller.
+  h.layout.setCardContext(h.hostOf(OTHER), entry({ LibraryId: KIDS_LIB }), OTHER);
+  assert.equal(h.layout.resolveLayout(h.hostOf(MOVIE)).layout, 'bands');
+  assert.equal(h.layout.resolveLayout(h.hostOf(OTHER)).layout, 'bands');
+
+  h.switchUser();
+  assert.ok(h.hostOf(MOVIE) && h.hostOf(OTHER), 'the hosts stay in the page');
+  assert.equal(h.layout.resolveLayout(h.hostOf(MOVIE)).layout, 'corners', 'the outgoing user\'s facts are gone');
+  assert.equal(h.layout.resolveLayout(h.hostOf(OTHER)).layout, 'corners');
+  await h.settle();
+  assert.equal(h.hostOf(OTHER).dataset.jeLayout, undefined);
 });

@@ -372,7 +372,7 @@
     /** @type {WeakMap<HTMLElement, CardController>} host → controller */
     const controllers = new WeakMap();
     /** @type {WeakMap<HTMLElement, Object>} render target / host → what the card's item data says (setCardContext) */
-    const cardData = new WeakMap();
+    let cardData = new WeakMap();
     let outletSeq = 0;
     let stylesInjected = false;
 
@@ -1144,10 +1144,12 @@
 
     // A user switch: forget the outgoing user's settings and every fact their
     // cards hold (they may be spoiler-stripped differently for the incoming
-    // user); the pipeline re-renders the cards, and je:user-data-loaded
-    // re-applies the incoming user's layout.
+    // user), including the item data kept for hosts without a controller;
+    // the pipeline re-renders the cards, and je:user-data-loaded re-applies
+    // the incoming user's layout.
     JE.session?.onUserChange?.('tag-layout', () => {
         invalidateSettings();
+        cardData = new WeakMap();
         clearAll();
     });
 
