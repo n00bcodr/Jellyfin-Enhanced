@@ -56,6 +56,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly object _collectionsLock = new();
 
         /// <summary>
+        /// True from a snapshot load until a collection pass has reconciled the cached collection
+        /// matches: the snapshot does not record which collections they came from, so until then
+        /// a removal may have been one of them and the earlier members count as unknown. A read
+        /// of the membership in between (an on-demand entry, a rebuild in the same batch) installs
+        /// <see cref="_collections"/> but leaves this set.
+        /// </summary>
+        private volatile bool _collectionMatchesUnreconciled;
+
+        /// <summary>What a flush needs from before its batch is applied (see <see cref="ApplyCustomTagFollowUps"/>).</summary>
+        /// <param name="SeriesBefore">CustomTags of the batch's Series entries, by cache key.</param>
+        /// <param name="CollectionTouched">A batch item was a collection: a known rule collection, a cached BoxSet, or a removal while matches are unreconciled.</param>
+        private sealed record CustomTagBatchState(IReadOnlyDictionary<string, string[]?> SeriesBefore, bool CollectionTouched);
+
+        /// <summary>
         /// The match fingerprint (<see cref="CustomTagRuleSet.MatchFingerprint"/>) the cache's
         /// CustomTags were computed under; persisted with the snapshot.
         /// </summary>
@@ -256,15 +270,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Re-read the collections and return the items whose collections changed (added to,
-        /// removed from or renamed collections, or another collection of the same name). Before
-        /// the first read (a snapshot just loaded) the earlier members are unknown: every cached
-        /// entry with a collection match counts as changed too. Callers hold the rebuild lock.
+        /// removed from or renamed collections, or another collection of the same name). While
+        /// the cached matches are unreconciled (a snapshot just loaded, see
+        /// <see cref="_collectionMatchesUnreconciled"/>) the earlier members are unknown, even if
+        /// something has read the membership since: every cached entry with a collection match
+        /// counts as changed too, and <paramref name="wasUnknown"/> tells the caller to mark the
+        /// matches reconciled once it has patched them. Callers hold the rebuild lock.
         /// </summary>
-        private HashSet<Guid> RefreshCollectionMembership()
+        private HashSet<Guid> RefreshCollectionMembership(out bool wasUnknown)
         {
             var matcher = CurrentCustomTagMatcher();
-            var unknown = _collections == null;
-            var before = _collections ?? CollectionMembership.Empty;
+            var unknown = wasUnknown = _collectionMatchesUnreconciled || _collections == null;
+            var before = unknown ? CollectionMembership.Empty : _collections!;
             CollectionMembership after;
             lock (_collectionsLock)
             {
@@ -313,41 +330,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// matches changed patches its Seasons and Episodes.
         /// </summary>
         /// <param name="batch">The drained batch.</param>
-        /// <param name="seriesBefore">CustomTags of the batch's Series entries before the batch, by cache key.</param>
+        /// <param name="before">What <see cref="CaptureCustomTagsBefore"/> recorded before the batch was applied.</param>
         /// <returns>True when an entry changed.</returns>
-        private bool ApplyCustomTagFollowUps(IReadOnlyList<(Guid Id, bool Removed)> batch, IReadOnlyDictionary<string, string[]?> seriesBefore)
+        private bool ApplyCustomTagFollowUps(IReadOnlyList<(Guid Id, bool Removed)> batch, CustomTagBatchState before)
         {
             var matcher = CurrentCustomTagMatcher();
             if (matcher.IsEmpty) return false;
             var roots = new HashSet<Guid>();
-            // Collections not read yet (a snapshot just loaded): any removal may have been one of them.
-            var current = _collections;
-            var known = (current ?? CollectionMembership.Empty).CollectionIds;
-            var collectionChanged = matcher.HasCollectionRules && batch.Any(change => known.Contains(change.Id)
-                || (change.Removed && current == null)
-                || (_cache.TryGetValue(change.Id.ToString("N"), out var entry) && entry.Type == nameof(BaseItemKind.BoxSet)));
-            if (collectionChanged) roots.UnionWith(RefreshCollectionMembership());
-            foreach (var (key, before) in seriesBefore)
+            // Read before the batch, and again now: the batch's rebuilds may have read the
+            // membership (a collection added by this batch is only known now).
+            var collectionChanged = matcher.HasCollectionRules && (before.CollectionTouched || IsCollectionChange(batch));
+            var wasUnknown = false;
+            if (collectionChanged) roots.UnionWith(RefreshCollectionMembership(out wasUnknown));
+            foreach (var (key, series) in before.SeriesBefore)
             {
                 var after = _cache.TryGetValue(key, out var entry) ? entry.CustomTags : null;
-                if (!SameIds(before, after) && Guid.TryParse(key, out var id)) roots.Add(id);
+                if (!SameIds(series, after) && Guid.TryParse(key, out var id)) roots.Add(id);
             }
 
-            return roots.Count > 0 && PatchCustomTags(roots, includeRoots: collectionChanged, touchCollectionMatches: collectionChanged, CancellationToken.None);
+            var changed = roots.Count > 0 && PatchCustomTags(roots, includeRoots: collectionChanged, touchCollectionMatches: collectionChanged, CancellationToken.None);
+            if (wasUnknown && !ShouldAbortCacheWork) _collectionMatchesUnreconciled = false;
+            return changed;
         }
 
-        /// <summary>The CustomTags of the batch's Series entries, to compare after the batch (see <see cref="ApplyCustomTagFollowUps"/>).</summary>
-        private Dictionary<string, string[]?> CustomTagsOfSeries(IReadOnlyList<(Guid Id, bool Removed)> batch)
+        /// <summary>
+        /// Whether a batch touches a collection: a rule collection the membership knows, a cached
+        /// BoxSet, or (while the cached matches are unreconciled) any removal, which may have
+        /// been a collection nothing has read yet.
+        /// </summary>
+        private bool IsCollectionChange(IReadOnlyList<(Guid Id, bool Removed)> batch)
         {
-            var result = new Dictionary<string, string[]?>(StringComparer.Ordinal);
-            if (CurrentCustomTagMatcher().IsEmpty) return result;
+            var known = (_collections ?? CollectionMembership.Empty).CollectionIds;
+            var unreconciled = _collectionMatchesUnreconciled || _collections == null;
+            return batch.Any(change => known.Contains(change.Id)
+                || (change.Removed && unreconciled)
+                || (_cache.TryGetValue(change.Id.ToString("N"), out var entry) && entry.Type == nameof(BaseItemKind.BoxSet)));
+        }
+
+        /// <summary>
+        /// Before a batch is applied (rebuild lock held): the CustomTags of its Series entries, to
+        /// compare afterwards, and whether it touches a collection, judged before the batch can
+        /// remove a BoxSet entry or read the membership (see <see cref="ApplyCustomTagFollowUps"/>).
+        /// </summary>
+        private CustomTagBatchState CaptureCustomTagsBefore(IReadOnlyList<(Guid Id, bool Removed)> batch)
+        {
+            var series = new Dictionary<string, string[]?>(StringComparer.Ordinal);
+            var matcher = CurrentCustomTagMatcher();
+            if (matcher.IsEmpty) return new CustomTagBatchState(series, false);
             foreach (var (id, removed) in batch)
             {
                 var key = id.ToString("N");
-                if (!removed && _cache.TryGetValue(key, out var entry) && entry.Type == nameof(BaseItemKind.Series)) result[key] = entry.CustomTags;
+                if (!removed && _cache.TryGetValue(key, out var entry) && entry.Type == nameof(BaseItemKind.Series)) series[key] = entry.CustomTags;
             }
 
-            return result;
+            return new CustomTagBatchState(series, matcher.HasCollectionRules && IsCollectionChange(batch));
         }
 
         /// <summary>After a reconcile's rebuilds (rebuild lock held): re-read the collections and patch what changed.</summary>
@@ -355,8 +391,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var matcher = CurrentCustomTagMatcher();
             if (!matcher.HasCollectionRules && (_collections?.ByItem.Count ?? 0) == 0) return false;
-            var changed = RefreshCollectionMembership();
-            return changed.Count > 0 && PatchCustomTags(changed, includeRoots: true, touchCollectionMatches: true, cancellationToken);
+            var changed = RefreshCollectionMembership(out var wasUnknown);
+            var patched = changed.Count > 0 && PatchCustomTags(changed, includeRoots: true, touchCollectionMatches: true, cancellationToken);
+            if (wasUnknown && !ShouldAbortCacheWork && !cancellationToken.IsCancellationRequested) _collectionMatchesUnreconciled = false;
+            return patched;
         }
 
         /// <summary>
@@ -475,6 +513,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             PatchCustomTagsOf(ids, touchCollectionMatches: false, CancellationToken.None);
             if (ShouldAbortCacheWork) return;
             _customTagsFingerprint = fingerprint;
+            // Every entry was matched against a fresh read.
+            _collectionMatchesUnreconciled = false;
             ScheduleDebouncedSave();
             _logger.Info($"[TagCache] Custom tag rules re-matched over {ids.Count} entries in {sw.Elapsed.TotalSeconds:F1}s");
         }

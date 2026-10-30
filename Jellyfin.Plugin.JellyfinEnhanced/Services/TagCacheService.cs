@@ -797,6 +797,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     _cacheReleased = false;
                     _cache = newCache;
                     _customTagsFingerprint = customTagsFingerprint;
+                    _collectionMatchesUnreconciled = false;
                     Interlocked.Increment(ref _version);
                     Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     Interlocked.Exchange(ref _maxLastUpdated, newMaxLastUpdated);
@@ -1257,9 +1258,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var batch = _pending.Drain();
                     using (BeginInPlaceWrites())
                     {
-                        var seriesCustomTags = CustomTagsOfSeries(batch);
+                        var customTagsBefore = CaptureCustomTagsBefore(batch);
                         var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
-                        changed |= ApplyCustomTagFollowUps(batch, seriesCustomTags);
+                        changed |= ApplyCustomTagFollowUps(batch, customTagsBefore);
                         // Any library change may alter who can see an item (added,
                         // removed, moved, re-rated, re-tagged) even when its tag entry
                         // is unchanged: access sets computed before it are stale.
@@ -2265,6 +2266,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             _cacheReleased = false;
                             _cache = loaded;
                             _customTagsFingerprint = data.CustomTagsFingerprint ?? string.Empty;
+                            // Which collections its matches came from is not in the snapshot.
+                            _collectionMatchesUnreconciled = true;
                             Interlocked.Exchange(ref _version, data.Version);
                             Interlocked.Exchange(ref _lastModified, data.LastModified);
                             Interlocked.Exchange(ref _maxLastUpdated, loadedMaxLastUpdated);

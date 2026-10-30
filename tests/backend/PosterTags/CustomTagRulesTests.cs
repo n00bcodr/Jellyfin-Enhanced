@@ -400,33 +400,48 @@ public class CustomTagRulesTests
             Assert.Equal(Id("tag", "signed"), doc.RootElement.GetProperty("CustomTagsFingerprint").GetString());
         }
 
-        // A collection a rule names, removed right after a snapshot load (before anything read the
-        // collections), still clears its members' matches.
+        // A collection a rule names, removed right after a snapshot load, still clears its members'
+        // matches: with nothing else in between, after an on-demand entry read the (already changed)
+        // membership, and with an unrelated rebuild in the same batch. A read before the collection
+        // pass must not make the snapshot's matches count as reconciled.
         f.Plugin.Configuration.CustomTagRules = CustomTagRuleSet.Normalize(new[] { Rule("tag", "signed", "Signed copy"), Rule("collection", "Box", "Box") });
         var boxed = new Movie { Id = Guid.NewGuid(), Name = "Boxed" };
+        var other = new Movie { Id = Guid.NewGuid(), Name = "Other" };
         var box = new BoxSet { Id = Guid.NewGuid(), Name = "Box", LinkedChildren = [new LinkedChild { ItemId = boxed.Id }] };
-        library.Items.AddRange(new BaseItem[] { boxed, box });
+        var unreconciled = typeof(TagCacheService).GetField("_collectionMatchesUnreconciled", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var previous = BaseItem.LibraryManager;
         BaseItem.LibraryManager = library.Mock.Object;
         try
         {
-            using (var built = Create())
+            foreach (var variant in new[] { "alone", "on-demand read", "same batch" })
             {
-                built.BuildFullCache(null, CancellationToken.None);
-                Assert.Equal(new[] { Id("collection", "box") }, TagsOf(built, boxed));
-            }
+                library.Items.AddRange(new BaseItem[] { boxed, other, box });
+                using (var built = Create())
+                {
+                    built.BuildFullCache(null, CancellationToken.None);
+                    Assert.Equal(new[] { Id("collection", "box") }, TagsOf(built, boxed));
+                }
 
-            using var loaded = Create();
-            loaded.LoadFromDisk();
-            library.Items.Remove(box);
-            loaded.EnqueueRemoval(box.Id);
-            Flush(loaded);
-            Assert.Null(TagsOf(loaded, boxed));
+                using var loaded = Create();
+                loaded.LoadFromDisk();
+                Assert.True((bool)unreconciled.GetValue(loaded)!);
+                library.Items.Remove(box);
+                if (variant == "on-demand read") Assert.Null(loaded.BuildEntryOnDemand(other)!.CustomTags);
+                if (variant == "same batch") loaded.EnqueueUpdate(other.Id);
+                loaded.EnqueueRemoval(box.Id);
+                Flush(loaded);
+                Assert.True(TagsOf(loaded, boxed) == null, variant);
+                Assert.False((bool)unreconciled.GetValue(loaded)!, variant);
+                library.Items.Remove(boxed);
+                library.Items.Remove(other);
+            }
         }
         finally
         {
             BaseItem.LibraryManager = previous;
             library.Items.Remove(boxed);
+            library.Items.Remove(other);
+            library.Items.Remove(box);
         }
 
         // Loaded under other rules, the snapshot is re-matched in the background.
