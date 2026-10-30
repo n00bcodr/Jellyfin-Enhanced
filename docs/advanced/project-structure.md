@@ -644,6 +644,8 @@ python3 scripts/build_poster_assets.py --check
 python3 scripts/build_poster_assets.py --check --full
 ```
 
+`python3 scripts/build_poster_assets.py --quality-only` regenerates the quality colour table and its manifest records without changing unrelated assets.
+
 The fast check uses only the Python standard library to verify repository inputs and output checksums. The full check regenerates into a temporary directory and compares bytes, requiring the complete toolchain.
 
 ### Regression tests and inventory

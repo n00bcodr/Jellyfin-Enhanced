@@ -8,6 +8,21 @@ namespace JE.Tests;
 
 public class TagStyleTests
 {
+    [Fact]
+    public void QualityCatalogMatchesEveryShippedNativeColourWithoutDuplicates()
+    {
+        using var assets = PosterTagAssets.Load();
+        Assert.Equal(assets.QualityColours.Count, TagStyleCatalog.Quality.Count);
+        foreach (var (label, background, text) in TagStyleCatalog.Quality)
+        {
+            Assert.True(assets.QualityColours.TryGetValue(label, out var colours), label);
+            Assert.Equal(CssColor.Parse(background, SKColors.Transparent), colours.Background);
+            Assert.Equal(CssColor.Parse(text, SKColors.White), colours.Text);
+        }
+        Assert.Equal(new SKColor(0x54, 0x6e, 0x7a), assets.QualityColours["Mixed"].Background);
+        Assert.Equal(SKColors.White, assets.QualityColours["Mixed"].Text);
+    }
+
     // Version 1, as the old editor saved it: per-section maps, "color" for the text.
     private const string V1 = "{\"quality\":{\"4K\":{\"background\":\"#ff0000\",\"color\":\"rgba(0,0,255,0.5)\"},\"X\":{\"background\":\"url(x)\"}},\"age\":{\"13\":{\"border\":\"#00ff00\"}},\"rating\":{\"community\":{\"background\":\"#123456\"}}}";
 
