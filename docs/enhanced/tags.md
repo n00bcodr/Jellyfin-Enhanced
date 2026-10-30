@@ -3,7 +3,7 @@
 See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), set their order and limits, and change their colors. People Tags add age and birthplace information to cast cards.
 
 ![Library posters with quality, genre, language and rating tags](../images/tags/library-tags.webp)
-*The optional tag groups are enabled for this example; all seven groups start off.*
+*The optional tag groups are enabled for this example; all eight groups start off.*
 
 ## Set up your tags
 
@@ -169,9 +169,9 @@ The limit applies after each group's own filtering (quality categories, language
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
 | Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
-| **Tag Groups** order | Status, quality, rating, age rating, language, genre | Priority order of the groups |
-| **Show up to** | Genre 3, language 3, age rating 1, status 1, quality and rating all | The same limits as before layouts existed |
-| **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
+| **Tag Groups** order | Status, quality, rating, age rating, language, genre, custom | Priority order of the groups |
+| **Show up to** | Genre 3, language 3, age rating 1, status 1, custom 3, quality and rating all | The same limits as before layouts existed |
+| **Position** — Quality / Genre / Language / Rating / Age Rating / Status / Custom Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** / **Top Left** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
@@ -657,6 +657,36 @@ For series cards on screen, and parent series of season/episode cards, the brows
 
     Style `.status-tag` or its `--trending`, `--new`, `--added`, `--schedule`, `--milestone`, `--status` modifiers. Each chip has `data-je-status`: existing styles keep `added`, `newMovie`, `newSeries`, `newEpisode` and `trending`; new badges use keys such as `new_season`; the number inside a trending chip is `.status-tag-rank`.
 
+## Custom Tags
+
+Custom Tags turn your own Jellyfin metadata into poster chips. The administrator writes rules: items that carry a Jellyfin tag (for example `4K Remaster`) or belong to a collection (for example `Criterion`) get a chip with the rule's label and, optionally, an icon. Tags are the ones in each item's metadata (**Edit metadata** → **Tags**, or imported keywords).
+
+![Custom chips under the quality tags: Comic (with an icon) for movies tagged "based on comic", Criterion for a collection, each in its Tag Styles colour](../images/custom-tags-posters.png)
+
+**How to use — administrators:**
+
+1. Open **Display** → **Media Tags** → **Custom tag rules**.
+2. Click **Add rule**. Choose **Tag** or **Collection**, then type the name: suggestions list the library's tags or collections. Enter the chip's **Label** and pick an **Icon** if you want one.
+3. Click **Save Settings**. Colour each label under **Tag Styles** → **Custom**.
+4. **Enable Custom Tags** and its **Position** set the starting values for users, like the other groups.
+
+![The Custom tag rules table: match type, tag or collection name, label, icon and a remove button per rule](../images/custom-tags-rules.png)
+
+**How to use — personal preferences:** turn on the **Custom** group on the **Groups** tab of **Media Tags** and choose its position and limit, like any other group.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Admin: **Enable Custom Tags** / personal: **Custom** switch | Off | Shows a chip for each rule an item matches |
+| Admin: **Custom tag rules** | None | Up to 20 rules: **Match** (**Tag** or **Collection**), the tag or collection name, a **Label** of up to 24 characters and an optional **Icon** from the genre icon set |
+| **Show up to** | 3 | Chips beyond the limit are left out, as for other groups |
+
+Names match exactly but ignore case and extra spaces. Chips follow the rule order in the table; a rule whose name matches nothing simply shows no chip. Seasons and episodes take their series' tags and collections as well as their own. Hovering a chip names the tag or collection it came from. Spoiler Guard does not hide custom chips: they are your labels, not plot details. The server checks the rules when you save: it drops incomplete rows and unknown match types, trims names and labels, shortens long labels and merges rows that name the same tag or collection.
+
+??? info "When chips update"
+    The [server tag cache](#server-side-tag-cache) records which rules each item matches. Editing an item's tags, adding items to or removing them from a collection, renaming or deleting a collection, or changing a series' tags updates its chips (and its seasons' and episodes') within seconds. Saving rules that match something new re-checks the whole cache in the background, without reading media files; changing only a label, icon or colour takes effect at once. The nightly reconcile and a full rebuild catch anything else.
+
+    With the server tag cache off, chips come from each card's batched tag data and match **tags only**: collection membership needs the cache. Browsers remember an item's chips only while the rules stay the same.
+
 ## People Tags
 
 People Tags add age and birthplace facts to cast and guest-cast cards on item detail pages. They support rectangular and round portraits.
@@ -825,7 +855,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
     The master switch alone does not produce visible tags: each user's applicable groups start off.
 
 ??? info "Supported groups and preferences"
-    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, and age-classification. People Tags are not a native group.
+    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, community/critic rating, user-review, age-classification and custom tags (text chips with their icon). People Tags are not a native group.
 
     It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the administrator's language-priority policy. Native posters always draw the Corners layout, whatever web layout the user picked: the Corners positions, groups hidden there, the group order (an order you set; otherwise the original stacking order) and the **Show up to** limits apply. All nine Corners anchors are supported, including centred rows and side columns. Labels stay full; compact density is web only. Status Tags are web only.
 
@@ -880,7 +910,7 @@ Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, t
 1. Open **Display** → **Media Tags** and turn on **Enable Tag Styles**.
 2. Under **Apply to**, choose **Web**, **Native posters** or **Both**.
 3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set.
-4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**), then **Whole group** or one tag.
+4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**, **Custom**), then **Whole group** or one tag.
 5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an opacity of 40–100%. Watch the contrast badge and the preview.
 6. Click **Save Settings**. Refresh web clients to see the change; native posters redraw the next time they load.
 
@@ -919,6 +949,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Genre** | **Genre** | **Text** colours the genre icon |
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending** | Web only: native posters do not show Status Tags. A Trending text colour also recolours the rank |
 | **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
+| **Custom** | Each label of the **Custom tag rules** | The labels follow the rules table as you edit it; rules that share a label share its colours. The icon takes the text colour |
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
 

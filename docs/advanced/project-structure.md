@@ -72,6 +72,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── UserConfiguration.cs
 │   ├── TagShapeSettings.cs         # Per-shape layout/density/slot/cap validation and defaults
 │   ├── TagLookSettings.cs
+│   ├── CustomTagRuleSet.cs        # Custom tag rules: model, validation and the matcher
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
 │   ├── configPage.css
@@ -150,6 +151,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | `Configuration/UserConfiguration.cs` | Per-user document models, including settings, shortcuts, bookmarks, Elsewhere, Hidden Content and Spoiler Guard. |
 | `Configuration/LanguageTagDisplaySettings.cs` | Language display enums, save normalization and admin defaults for new-user seeding and reset-all. |
 | `Configuration/TagLookSettings.cs` | Tag look rules and per-item locks: models and validation (`TagLookValidation`) for `settings.json` and the administrator's default rules. |
+| `Configuration/CustomTagRuleSet.cs` | Custom tag rules (`CustomTagRule`): save-time normalisation (`CustomTagRuleSet`), rule ids, the icon list, and the matcher (`CustomTagMatcher`) the tag cache, `tag-data` and native posters share. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
 | `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; serializes per-user saves to the server in order. It does not store user settings in localStorage. |
@@ -319,6 +321,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `genretags.js`, `languagetags.js`, `qualitytags.js` | Genre badges, language flags/codes, CC subtitle chips and Dual/Multi badges (shared with the hub preview), and quality tags such as resolution, dynamic range and audio format, plus server-derived source and edition categories. |
 | `ratingtags.js`, `rating-sources.js` | Ordered Community/Critic and MDBList source chips, bundled SVG logos, native formats, minimum score and score colours. The source helper also drives the hub preview. |
 | `ageratingtags.js` | Color-coded parental/age ratings, sharing the Colored Ratings color table. |
+| `customtags.js` | Custom Tags: one chip per administrator rule the item matched (label, optional genre-set icon, a tooltip naming the tag or collection), from the cache entry's or `tag-data`'s `CustomTags`; Tag Styles hooks `data-je-custom`. |
 | `statustags.js` | Status Tags: first-match badge per card for added/release dates, season milestones, schedules, trending and optional series status. Batches visible series through `status-tags/series`, guards stale card/user answers and supplies compact labels and `data-je-status` styling hooks. |
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
 | `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating group through the layout controller. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
@@ -435,6 +438,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `TagCacheService.cs`, `TagCacheMonitor.cs` | Builds/persists schema 17 tag data, maintains it from library events and filters episode-derived facts using contributor IDs and `filterRevision`. |
 | `StatusTagsSeriesService.cs` | Authenticated caller-filtered series schedule endpoint support: six-hour TMDB cache, four concurrent lookups, 35 starts per ten seconds, season episode-type enrichment. No per-user storage. |
 | `StatusTagsEpisodeFacts.cs` | Shared episode aggregation for cache and user-filtered batch fallback: aired episode indexes, episode-one season premiere and season added span. |
+| `TagCacheCustomTags.cs` | Custom tags in the tag cache: the rules each entry matches (`CustomTags`) from item and series tags and a pass over the collections a rule names; patches members after collection changes, series children after series changes, and re-matches the cache when the rules change. |
 | `ItemLibraryResolver.cs` | The library an item is in (seasons and episodes: their series'), stored as `LibraryId` in tag-cache entries and `tag-data` items for tag look rules. |
 | `TagCachePendingChanges.cs`, `TagCacheResponseBody.cs` | Coalesces pending item changes; assembles bulk response bytes and hashes the viewer's final body for its ETag. |
 | `HiddenContentResponseFilter.cs` | Filters supported Jellyfin item lists and Home Screen Sections responses using the viewer's hidden-content scopes. |
