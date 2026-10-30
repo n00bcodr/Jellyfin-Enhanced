@@ -329,6 +329,11 @@
         return store.values.size > 0 || !!store.saving || !!store.timer;
     }
 
+    /** @returns {Set<string>} The fields a reload must not replace: queued, on their way, failed or refused. */
+    function protectedFields() {
+        return new Set(store.values.keys());
+    }
+
     /** @param {*} value @returns {*} A deep copy (JSON values only). */
     const copy = (value) => (value === undefined ? null : JSON.parse(JSON.stringify(value)));
 
@@ -366,7 +371,9 @@
             return Promise.resolve(!store.conflicts.size);
         }
         const host = store.host;
-        for (const key of sent.keys()) store.values.delete(key);
+        // The values are snapshotted here and stay in the store until the
+        // server took them: a reload meanwhile keeps them, and an edit made
+        // meanwhile is the next save's.
         const changes = Object.fromEntries(sent);
         const expected = {};
         for (const key of sent.keys()) if (store.base.has(key)) expected[key] = store.base.get(key);
@@ -376,17 +383,20 @@
             try {
                 const result = await host.patch(changes, expected);
                 const stored = result && result.values && typeof result.values === 'object' ? result.values : changes;
-                for (const key of sent.keys()) {
-                    const value = key in stored ? stored[key] : changes[key];
-                    // Edited again meanwhile: the next save expects what this one stored.
-                    if (store.values.has(key)) store.base.set(key, copy(value));
-                    else store.base.delete(key);
+                for (const [key, value] of sent) {
+                    const saved = key in stored ? stored[key] : changes[key];
+                    if (store.values.has(key) && store.values.get(key) !== value) {
+                        // Edited again meanwhile: the next save expects what this one stored.
+                        store.base.set(key, copy(saved));
+                    } else {
+                        store.values.delete(key);
+                        store.base.delete(key);
+                    }
                 }
                 store.failed = [];
                 notify({ type: 'saved', values: Object.fromEntries(Array.from(sent.keys()).map((key) => [key, key in stored ? stored[key] : changes[key]])) });
                 return true;
             } catch (err) {
-                for (const [key, value] of sent) if (!store.values.has(key)) store.values.set(key, value);
                 const conflicts = await conflictsOf(err);
                 if (conflicts && Object.keys(conflicts).length) {
                     for (const [key, theirs] of Object.entries(conflicts)) store.conflicts.set(key, theirs);
@@ -908,7 +918,8 @@
          * @param {Object} fresh
          */
         function reload(fresh) {
-            for (const key of Object.keys(fresh)) if (!store.values.has(key)) config[key] = fresh[key];
+            const keep = protectedFields();
+            for (const key of Object.keys(fresh)) if (!keep.has(key)) config[key] = fresh[key];
             for (const s of sections) s.load?.(ctx, bodyOf(s));
             refresh();
         }

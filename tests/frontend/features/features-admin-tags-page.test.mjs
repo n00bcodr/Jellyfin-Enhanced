@@ -368,6 +368,38 @@ test('a cache summary that answers after the page was torn down starts no pollin
   assert.equal(summaries, 1);
 });
 
+test('the page shown again while a save is on its way keeps the value being saved, and a later edit saves after it', async t => {
+  const server = structuredClone(BASE);
+  const gate = deferred();
+  let held = true;
+  const h = boot(t, {
+    server,
+    patch: async (body) => { if (held) { held = false; await gate.promise; } return serverPatch(server, body); },
+  });
+  h.document.body.innerHTML = TWO_PAGES;
+  const page = h.document.querySelector('.page');
+  const ctx = await h.A.activate(page);
+  h.cleanup.push(() => ctx.dispose());
+  h.change(page.querySelector('#tagsHideOnHover'), true);
+  const saved = ctx.flush();
+  await h.settle();
+  assert.equal(h.patches.length, 1, 'the save is on its way');
+  // viewshow on the same view: a reload with the server's (old) configuration.
+  assert.equal(await h.A.activate(page), ctx);
+  assert.equal(ctx.config.TagsHideOnHover, true, 'the value being saved is not replaced');
+  assert.equal(page.querySelector('#tagsHideOnHover').checked, true);
+  // An edit made meanwhile belongs to the next save.
+  h.change(page.querySelector('#disableTagsOnSearchPage'), true);
+  gate.resolve();
+  assert.equal(await saved, true);
+  await ctx.flush();
+  assert.deepEqual(h.patches.map((p) => p.Changes), [{ TagsHideOnHover: true }, { DisableTagsOnSearchPage: true }]);
+  assert.equal(server.TagsHideOnHover, true);
+  assert.equal(server.DisableTagsOnSearchPage, true);
+  assert.equal(page.querySelector('#jeTaSaved').dataset.state, 'saved');
+  assert.equal(ctx.pending(), false);
+});
+
 test('tabs follow the WAI pattern and deep links open a tab and a group', async t => {
   const h = setup(t, { url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=groups&group=rating' });
   assert.equal(h.root.dataset.tab, 'groups');
