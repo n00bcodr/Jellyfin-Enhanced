@@ -127,3 +127,12 @@ print(json.dumps(module.quality_colours()))
   assert.ok(generated.labels["Director's Cut"]);
   assert.equal(generated.labels['s Cut'], undefined);
 });
+
+test('the tag cache service documentation names the current schema', () => {
+  const service = readFileSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheService.cs', import.meta.url), 'utf8');
+  const docs = readFileSync(new URL('../../../docs/advanced/project-structure.md', import.meta.url), 'utf8');
+  const schema = service.match(/CurrentCacheSchemaVersion = (\d+);/)[1];
+  const row = docs.split('\n').find(line => line.startsWith('| `TagCacheService.cs`, `TagCacheMonitor.cs` |'));
+  assert.ok(row, 'the service has a documented row');
+  assert.match(row, new RegExp(`schema ${schema}\\b`));
+});

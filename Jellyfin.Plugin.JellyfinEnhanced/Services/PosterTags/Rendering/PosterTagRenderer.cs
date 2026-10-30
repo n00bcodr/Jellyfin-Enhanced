@@ -18,7 +18,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     public sealed class PosterTagRenderer : IDisposable
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
-        public const string Version = "2";
+        public const string Version = "3";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;
@@ -435,7 +435,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     return;
                 }
 
-                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop);
+                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, (item.Tag as QualityTag)?.Category ?? string.Empty);
                 var state = (Engine: this, Plan: plan, Item: item, Box: box, Margin: margin, PhaseX: phaseX / 16f, PhaseY: phaseY / 16f, Crop: crop);
                 using var lease = Tiles.Rent(key, state, static st => st.Engine.RenderTile(st.Plan, st.Item, st.Box, st.Margin, st.PhaseX, st.PhaseY, st.Crop));
                 if (lease.Image is not { } tile)

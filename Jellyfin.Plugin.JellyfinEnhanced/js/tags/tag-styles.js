@@ -75,7 +75,8 @@
         }
         const P = scope ? `${scope} ` : '';
         const quality = styles.quality || {};
-        const Q = `${P}.quality-overlay-container.quality-overlay-container .quality-overlay-label`;
+        // Beat category rules (including editions) regardless of reinjection order.
+        const Q = `${P}.quality-overlay-container.quality-overlay-container.quality-overlay-container .quality-overlay-label`;
         // The "*" rule covers labels outside the catalog; per-label rules win on specificity.
         if (quality['*']) push(rules, Q, `${decl('background', quality['*'].background)}${decl('color', quality['*'].color)}${decl('border-color', quality['*'].border)}`);
         for (const [label, c] of Object.entries(quality)) {
