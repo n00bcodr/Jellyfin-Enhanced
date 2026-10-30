@@ -1209,18 +1209,21 @@
     // ── Fitting ────────────────────────────────────────────────────────
     // What fits on a card depends on its rendered size, which only the
     // browser knows. After cards are presented, one pass after the next
-    // paint measures every card queued by then — reads and writes in
-    // separate phases, so a page of cards costs two layouts, not one per
-    // card — and hides what does not fit, never half a chip or fact:
+    // paint measures every card queued by then — reads and writes batched
+    // across the page to avoid a layout per card — and hides what does not
+    // fit, never half a chip or fact:
     //   - the summary pill's lowest-priority facts;
     //   - in the caption strip, the bottom band and the hover reveal, chips
     //     past their two rows (fewer when the reveal's share of the card
     //     height has room for less), lowest priority first, behind a "+N"
     //     chip whose title names them;
-    // and it switches bands on cards narrower than NARROW_CARD_PX to compact
-    // labels. Corners cards are left alone, except one saved before layouts
-    // with a container set to exactly top-right below another container: how
-    // far that one moves to clear Jellyfin's indicator depends on the height
+    //   - centre anchors' whole chips, in at most two rows or one side column,
+    //     within budgets measured between occupied corners and Jellyfin
+    //     overlays, with omitted chips counted in "+N".
+    // It also switches bands on cards narrower than NARROW_CARD_PX to compact
+    // labels. The four original corner stacks keep their geometry, except a
+    // card saved before layouts with an exact top-right container below
+    // another container: the indicator offset depends on the measured height
     // of the containers above it (indicatorGapsToMeasure).
 
     /**
