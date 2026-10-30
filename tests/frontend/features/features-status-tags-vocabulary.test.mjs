@@ -17,12 +17,20 @@ const card = id => `<div class="card" data-id="${id}"><div class="cardBox"><div 
  * layout controller), a fixed clock, and a /status-tags/series endpoint that
  * answers from `series` (TMDB facts per series id) and records each request.
  */
-function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout = false, failSeries = false } = {}) {
+function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout = false, failSeries = false, autoIntersect = true } = {}) {
   const renderers = new Map();
   const seriesCalls = [];
   const userChange = new Map();
+  const observers = [];
+  class Observer {
+    constructor(callback) { this.callback = callback; this.targets = new Set(); observers.push(this); }
+    observe(target) { this.targets.add(target); if (autoIntersect) queueMicrotask(() => this.callback([{ target, isIntersecting: true }])); }
+    unobserve(target) { this.targets.delete(target); }
+    disconnect() { this.targets.clear(); }
+  }
   const h = createHarness({
     html: Array.from({ length: cards }, (_, i) => card(`c${i}`)).join(''),
+    globals: { IntersectionObserver: Observer },
     JE: {
       currentSettings: { statusTagsEnabled: true, statusTagsTrending: false, ...settings },
       pluginConfig: { StatusTagsEnabled: true, TmdbEnabled: true, TagCacheServerMode: true, ...plugin },
@@ -38,6 +46,7 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
         const ids = new URLSearchParams(url.split('?')[1]).get('ids').split(',');
         seriesCalls.push(ids);
         if (failSeries) throw new Error('down');
+        if (typeof series === 'function') return series(ids, seriesCalls.length);
         return Object.fromEntries(ids.filter(id => series[id]).map(id => [id, series[id]]));
       }
     }
@@ -54,7 +63,8 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
   const hosts = [...h.document.querySelectorAll('.je-tag-host')];
   const renderer = renderers.get('status');
   return Object.assign(h, {
-    hosts, seriesCalls, userChange, renderer,
+    hosts, seriesCalls, userChange, renderer, observers,
+    intersect(host, isIntersecting = true) { observers.forEach(o => o.callback([{ target: host, isIntersecting }])); },
     /** Render a server tag-cache entry into a card the way the pipeline does. */
     show(entry, host = hosts[0], id = 'item1') {
       delete host.closest('.card').dataset.jeStatusTagged;
@@ -289,9 +299,11 @@ test('a failed series lookup keeps the library badge and is retried after 5 minu
 
 test('a schedule answer does not redraw a card whose record went stale, nor one from before a user switch', async t => {
   const answer = facts({ nextAired: { date: '2026-10-30', season: 1, episode: 2 } });
-  const h = setup(t, { series: { [SERIES]: answer } });
+  const h = setup(t, { series: () => {
+    h.renderer.onServerCacheRefresh([SERIES]);
+    return { [SERIES]: answer };
+  } });
   h.show(show(), h.hosts[0], SERIES);
-  h.renderer.onServerCacheRefresh([SERIES]);
   await h.flush();
   assert.equal(h.badge(), null, 'replaced by a delta: left for the pipeline to render again');
   h.show(show(), h.hosts[0], SERIES);
@@ -362,3 +374,26 @@ test('cache replacement guards compare dashed and compact item ids equally', asy
   await h.flush();
   assert.equal(h.badge(), null);
 });
+
+
+test('one schedule observer gates offscreen, detached and recycled cards, including queued dispatch', async t => {
+  const h = setup(t, { cards: 4, autoIntersect: false });
+  const ids = Array.from({ length: 4 }, (_, i) => String(i + 1).repeat(32));
+  ids.forEach((id, i) => h.show(show(), h.hosts[i], id));
+  await h.flush();
+  assert.deepEqual(h.seriesCalls, [], 'offscreen cards produce no schedule request');
+  assert.equal(h.observers.length, 1, 'one observer shared by all cards');
+  h.intersect(h.hosts[0]);
+  h.intersect(h.hosts[1]);
+  h.intersect(h.hosts[1], false);
+  h.hosts[2].remove();
+  h.intersect(h.hosts[2]);
+  h.hosts[3].closest('.card').dataset.id = 'recycled';
+  h.intersect(h.hosts[3]);
+  await h.flush();
+  assert.deepEqual(h.seriesCalls, [[ids[0]]], 'only a connected, visible, current identity is dispatched');
+  h.intersect(h.hosts[1]);
+  await h.flush();
+  assert.deepEqual(h.seriesCalls.at(-1), [ids[1]], 'scrolling into view dispatches the deferred lookup');
+});
+

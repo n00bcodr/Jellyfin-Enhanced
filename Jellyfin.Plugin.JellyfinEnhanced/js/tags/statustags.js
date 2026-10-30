@@ -118,6 +118,10 @@
     let seriesTimer = null;
     /** @type {number} bumped on a user switch: answers for the previous user are dropped */
     let seriesEpoch = 0;
+    /** @type {IntersectionObserver|null} One observer for all schedule-reading cards. */
+    let seriesObserver = null;
+    /** @type {WeakSet<HTMLElement>} Cards currently intersecting the viewport. */
+    const intersectingCards = new WeakSet();
 
     /**
      * Every drawn card whose badge live data can change (a Movie/Series with
@@ -733,13 +737,51 @@
         // Cheap when fresh; refreshes a list that expired during a long session.
         ensureTrending(ctx);
         const readsSeries = wantsSeriesFacts(data);
-        if (readsSeries) requestSeries(ctx, /** @type {string} */ (data.seriesId));
         const badge = pickBadge(data);
         if (readsSeries || (data.tmdb && (data.type === 'Movie' || data.type === 'Series'))) {
             liveCards.set(el, { domId: el.closest('[data-id]')?.getAttribute('data-id'), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
             el.dataset[LIVE_ATTR] = '1';
         }
+        if (readsSeries) observeSeriesCard(ctx, el);
         applyStatusTag(ctx, el, badge);
+    }
+
+    /**
+     * Observe schedule readers through one viewport observer, retaining identity guards.
+     * @param {Object} ctx @param {HTMLElement} el
+     * @returns {void}
+     */
+    function observeSeriesCard(ctx, el) {
+        if (!seriesObserver && typeof IntersectionObserver !== 'undefined') {
+            seriesObserver = new IntersectionObserver(entries => {
+                for (const { target, isIntersecting } of entries) {
+                    const host = /** @type {HTMLElement} */ (target);
+                    if (isIntersecting) intersectingCards.add(host);
+                    else intersectingCards.delete(host);
+                    const card = liveCards.get(host);
+                    if (isIntersecting && eligibleSeriesCard(host, card)) requestSeries(ctx, card.data.seriesId);
+                    if (!host.isConnected) seriesObserver.unobserve(host);
+                }
+            });
+        }
+        seriesObserver?.observe(el);
+        const card = liveCards.get(el);
+        if (eligibleSeriesCard(el, card)) requestSeries(ctx, card.data.seriesId);
+    }
+
+    /** @param {HTMLElement} el @param {Object|undefined} card @returns {boolean} */
+    function eligibleSeriesCard(el, card) {
+        return el.isConnected && intersectingCards.has(el) && card && isCurrentRecord(card)
+            && card.domId === el.closest('[data-id]')?.getAttribute('data-id')
+            && !el.closest('.je-hidden') && wantsSeriesFacts(card.data);
+    }
+
+    /** @param {string} id @returns {boolean} Whether any current visible card still needs this id. */
+    function hasVisibleSeries(id) {
+        return [...document.querySelectorAll(LIVE_SELECTOR)].some(el => {
+            const card = liveCards.get(el);
+            return card?.data.seriesId === id && eligibleSeriesCard(el, card);
+        });
     }
 
     /**
@@ -930,7 +972,13 @@
         seriesQueue.clear();
         let changed = false;
         for (let i = 0; i < ids.length; i += SERIES_BATCH) {
-            const batch = ids.slice(i, i + SERIES_BATCH);
+            const batch = ids.slice(i, i + SERIES_BATCH).filter(id => {
+                if (hasVisibleSeries(id)) return true;
+                const known = seriesInfo.get(id);
+                if (known) known.loading = false;
+                return false;
+            });
+            if (batch.length === 0) continue;
             for (const id of batch) {
                 const known = seriesInfo.get(id);
                 seriesInfo.set(id, { facts: known?.facts ?? null, expires: known?.expires ?? 0, loading: true });
