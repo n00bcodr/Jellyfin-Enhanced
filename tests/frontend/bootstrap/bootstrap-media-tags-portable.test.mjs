@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createHarness } from '../helpers/harness.mjs';
 
 // Media Tags import, export and presets in the settings panel hub
@@ -23,9 +24,9 @@ const CINEPHILE = { v: 1, kind: 'je-media-tags-preset', id: 'cinephile', name: '
  * The panel with the hub, over a server that stores settings.json (PascalCase)
  * and answers the media-tags endpoints.
  * @param {import('node:test').TestContext} t
- * @param {{stored?: object, mine?: object[], offered?: object[], preview?: (doc: object) => object}} [options]
+ * @param {{stored?: object, plugin?: object, mine?: object[], offered?: object[], preview?: (doc: object) => object}} [options]
  */
-function setup(t, { stored = {}, mine = [], offered = [], preview } = {}) {
+function setup(t, { stored = {}, plugin = {}, mine = [], offered = [], preview } = {}) {
   const requests = [];
   const server = {
     settings: { TagLayoutSettingsVersion: 1, QualityTagsEnabled: true, RatingTagsEnabled: true, StatusTagsEnabled: true, TagLayout: 'corners', ...stored },
@@ -49,7 +50,7 @@ function setup(t, { stored = {}, mine = [], offered = [], preview } = {}) {
   const h = createHarness({
     html: otherToggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button>',
     JE: {
-      pluginConfig: { HelpPanelAutocloseDelay: 60000 },
+      pluginConfig: { HelpPanelAutocloseDelay: 60000, ...plugin },
       userConfig: { settings: convert(c => c.toLowerCase())(server.settings), shortcuts: { Shortcuts: [] } },
       currentSettings: {},
       t: (key, params) => (params ? `${key}:${Object.values(params).join('|')}` : key),
@@ -299,4 +300,130 @@ test('import preset adds a shared preset to your list and reports what it droppe
   assert.ok(h.dialog().textContent.includes('tag_presets_saved:Shared'));
   assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-skip .je-pt-field'), el => el.textContent), ['Foo']);
   assert.equal(h.dialog().querySelector('.je-pt-summary[data-je-summary]'), null);
+});
+
+const pluginRoot = new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/', import.meta.url);
+
+/**
+ * The nullable personal fields a user document carries: Helpers/MediaTagsPortable.cs
+ * UserFields that JellyfinEnhancedUserSettings declares nullable (null = follow the
+ * server). Read from the sources so a new nullable field is covered here too.
+ * @returns {string[]}
+ */
+function nullablePortableFields() {
+  const portable = readFileSync(new URL('Helpers/MediaTagsPortable.cs', pluginRoot), 'utf8');
+  const fields = [...portable.match(/UserFields = new\[\]\s*\{([\s\S]*?)\};/)[1].matchAll(/"(\w+)"/g)].map(m => m[1]);
+  const config = readFileSync(new URL('Configuration/UserConfiguration.cs', pluginRoot), 'utf8');
+  const start = config.indexOf('class JellyfinEnhancedUserSettings');
+  const body = config.slice(start, config.indexOf('\n    public class ', start));
+  const nullable = new Set([...body.matchAll(/public\s+[\w<>[\], ]+\?\s+(\w+)\s*\{/g)].map(m => m[1]));
+  return fields.filter(f => nullable.has(f));
+}
+
+/** An explicit value for every nullable portable field, unlike the administrator's below. */
+const EXPLICIT = {
+  UseNativePosterTags: false,
+  ShowEditionTag: false, EditionTagOrder: 1, ShowLowQualitySourceTag: true,
+  ResolutionTagOrder: 7, SourceTagOrder: 6, DynamicRangeTagOrder: 5, SpecialFormatTagOrder: 4, VideoCodecTagOrder: 3, AudioInfoTagOrder: 2,
+  SeriesQualityAggregation: 'mixed',
+  RatingTagsSources: ['community'],
+  LanguageTagsPriority: ['ja', 'en'], LanguageTagsPriorityStrict: true,
+  TagLayouts: { Summary: { Groups: [{ Group: 'language', Slot: 'pill' }] } }, TagGroupOrder: ['genre', 'quality'], TagGroupCaps: { Genre: 2 },
+  TagScale: 'larger', TagGap: 'roomy', TagEdgeSpacing: 'tight', TagStylePreset: 'poster',
+  TagShapeOverrides: { Landscape: { Layout: 'bands', Density: 'compact' } },
+};
+
+/** Administrator values the inherited fields resolve to (none the built-in fallback). */
+const ADMIN = {
+  ShowEditionTag: true, EditionTagOrder: 3, ShowLowQualitySourceTag: false,
+  ResolutionTagOrder: 2, SourceTagOrder: 1, DynamicRangeTagOrder: 4, SpecialFormatTagOrder: 5, VideoCodecTagOrder: 7, AudioInfoTagOrder: 6,
+  SeriesQualityAggregation: 'best', LanguageTagsPriority: 'fr', LanguageTagsPriorityStrict: true, TagScale: 'smaller', TagGap: 'tight',
+};
+
+/** Import a document through the hub's dialog and apply it. */
+async function importAndApply(h, settings) {
+  h.click(h.$('[data-tp="import"]'));
+  await h.settle();
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-user', settings }));
+  h.click(h.action('next'));
+  await h.settle();
+  h.click(h.action('apply'));
+  await h.settle(12);
+}
+
+test('Undo of an import over an inherited aggregation leaves it inherited after the panel reopens and saves', async t => {
+  const h = setup(t, { stored: { SeriesQualityAggregation: null, TagGap: null }, plugin: { SeriesQualityAggregation: 'best' } });
+  await h.open();
+  assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'best', 'shown as the administrator\'s');
+  await importAndApply(h, { SeriesQualityAggregation: 'mixed', TagGap: 'roomy' });
+  assert.equal(h.server.settings.SeriesQualityAggregation, 'mixed');
+  assert.equal(h.server.settings.TagGap, 'roomy');
+
+  h.click(h.$('[data-tp-undo] button'));
+  // The reopened panel opens the Media Tags pane, which saves the whole document.
+  await h.settle(16);
+  assert.equal(h.server.settings.SeriesQualityAggregation, null, 'inherited again, not pinned to "best"');
+  assert.equal(h.server.settings.TagGap, null);
+  assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'best', 'still shown resolved');
+
+  // Any later save keeps it inherited; the administrator's next choice applies.
+  h.JE.currentSettings.tagsHideOnHover = true;
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  assert.equal(h.server.settings.TagsHideOnHover, true);
+  assert.equal(h.server.settings.SeriesQualityAggregation, null);
+
+  // The next import reads it as the server default.
+  h.click(h.$('[data-tp="import"]'));
+  await h.settle();
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-user', settings: { SeriesQualityAggregation: 'mixed' } }));
+  h.click(h.action('next'));
+  await h.settle();
+  assert.equal(h.dialog().querySelector('.je-pt-from').textContent, 'tag_portable_value_inherit');
+});
+
+test('every nullable personal field stays inherited through opening, an import, Undo, reopening and later saves', async t => {
+  const fields = nullablePortableFields();
+  assert.deepEqual(fields.slice().sort(), Object.keys(EXPLICIT).sort(), 'EXPLICIT names every nullable field of a user document');
+  const stored = Object.fromEntries(fields.map(f => [f, null]));
+  const h = setup(t, { stored, plugin: ADMIN });
+  await h.open();
+  const unset = () => fields.filter(f => h.server.settings[f] !== null && h.server.settings[f] !== undefined);
+
+  // Ordinary saves (a pane switch, another setting) never pin today's defaults.
+  h.click(h.$('.je-panel-nav-items .tab-button'));
+  h.JE.currentSettings.tagsHideOnHover = true;
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  assert.equal(h.server.settings.TagsHideOnHover, true, 'the document was saved');
+  assert.deepEqual(unset(), [], 'nothing pinned by an ordinary save');
+
+  await importAndApply(h, EXPLICIT);
+  for (const field of fields) assert.deepEqual(h.server.settings[field], EXPLICIT[field], `${field} imported`);
+
+  h.click(h.$('[data-tp-undo] button'));
+  await h.settle(16);
+  assert.deepEqual(unset(), [], 'Undo restores inheritance for every nullable field');
+
+  // Reopen once more and save again: still inherited.
+  h.$('#closeSettingsPanel').click();
+  await h.open();
+  h.click(h.$('.je-panel-nav-items .tab-button'));
+  h.JE.currentSettings.tagsHideOnHover = false;
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  assert.equal(h.server.settings.TagsHideOnHover, false);
+  assert.deepEqual(unset(), []);
+  // Shown as the administrator's choices meanwhile.
+  assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'best');
+  assert.equal(h.JE.currentSettings.resolutionTagOrder, 2);
+  assert.equal(h.JE.currentSettings.showLowQualitySourceTag, false);
+});
+
+test('an import of the administrator\'s own value is kept as the user\'s choice', async t => {
+  const h = setup(t, { stored: { SeriesQualityAggregation: null, ResolutionTagOrder: null }, plugin: { SeriesQualityAggregation: 'best', ResolutionTagOrder: 2 } });
+  await h.open();
+  await importAndApply(h, { SeriesQualityAggregation: 'best', ResolutionTagOrder: 2 });
+  assert.equal(h.server.settings.SeriesQualityAggregation, 'best', 'explicit even though it equals the default');
+  assert.equal(h.server.settings.ResolutionTagOrder, 2);
+  h.JE.currentSettings.tagsHideOnHover = true;
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  assert.equal(h.server.settings.SeriesQualityAggregation, 'best');
 });

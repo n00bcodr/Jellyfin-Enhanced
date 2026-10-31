@@ -36,6 +36,75 @@
     const _saveChain = {};
 
     /**
+     * Nullable personal settings the server resolves as user ?? administrator
+     * (Services/PosterTags/PosterTagSettings.cs) that loadSettings shows
+     * resolved. Every other nullable personal field is kept null in
+     * currentSettings by loadSettings itself.
+     */
+    const INHERITED_KEYS = [
+        'showEditionTag', 'editionTagOrder', 'showLowQualitySourceTag',
+        'resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder',
+        'videoCodecTagOrder', 'audioInfoTagOrder', 'seriesQualityAggregation'
+    ];
+    // Per loaded settings object: the value each INHERITED_KEYS field shows when
+    // it is not set, and which fields are not set. A field that is not set and
+    // still shows that value is saved as null, so a save never pins today's
+    // administrator default; any other value is the user's choice.
+    const _inheritance = new WeakMap();
+
+    /**
+     * Whether a field of a loaded settings object follows the administrator
+     * (saved as null) rather than holding the user's own choice.
+     * @param {object} settings A document from loadSettings (JE.currentSettings).
+     * @param {string} key camelCase settings key.
+     * @returns {boolean}
+     */
+    JE.isSettingInherited = (settings, key) => {
+        const state = _inheritance.get(settings);
+        return !!state && state.inherited.has(key) && settings[key] === state.defaults[key];
+    };
+
+    /**
+     * Make a field follow the administrator again (shown resolved, saved as
+     * null) or mark it as the user's own choice (saved as it is, even when it
+     * equals the default).
+     * @param {object} settings A document from loadSettings (JE.currentSettings).
+     * @param {string} key camelCase settings key.
+     * @param {boolean} inherit
+     * @returns {boolean} Whether the field is one loadSettings resolves (false: the caller stores null itself).
+     */
+    JE.setSettingInherited = (settings, key, inherit) => {
+        const state = _inheritance.get(settings);
+        if (!state || !INHERITED_KEYS.includes(key)) return false;
+        if (inherit) {
+            state.inherited.add(key);
+            settings[key] = state.defaults[key];
+        } else {
+            state.inherited.delete(key);
+        }
+        return true;
+    };
+
+    /**
+     * The document as saved: inherited fields that still show their resolved
+     * default go back to null.
+     * @param {object} settings
+     * @param {object} source The object being serialized (settings or a copy of it).
+     * @returns {object}
+     */
+    const withInheritance = (settings, source) => {
+        const state = _inheritance.get(settings);
+        if (!state) return source;
+        let out = source;
+        for (const key of state.inherited) {
+            if (source[key] !== state.defaults[key]) continue;
+            if (out === source) out = { ...source };
+            out[key] = null;
+        }
+        return out;
+    };
+
+    /**
      * Saves user settings to the server.
      * Skips the POST if the data is identical to the last value saved this session
      * (prevents redundant writes). The first save per session for a given file is
@@ -86,6 +155,7 @@
                     && JE.userConfig?.settings?.useNativePosterTags == null) {
                     dataToSave = { ...source, useNativePosterTags: null };
                 }
+                if (fileName === 'settings.json') dataToSave = withInheritance(settings, dataToSave);
                 if ((fileName === 'bookmark.json' || fileName === 'settings.json') && typeof window.JellyfinEnhanced?.toPascalCase === 'function') {
                     dataToSave = window.JellyfinEnhanced.toPascalCase(dataToSave);
                 }
@@ -291,6 +361,17 @@
         mergedSettings.languageTagsStyle = String(mergedSettings.languageTagsStyle).trim().toLowerCase() === 'codes' ? 'codes' : 'flags';
         const languageBadge = String(mergedSettings.languageTagsCountBadge).trim().toLowerCase();
         mergedSettings.languageTagsCountBadge = ['only', 'both'].includes(languageBadge) ? languageBadge : 'off';
+
+        // Fields that follow the administrator while unset: shown resolved,
+        // saved as null until the user picks another value (see saveUserSettings).
+        const defaults = {};
+        const inherited = new Set();
+        for (const key of INHERITED_KEYS) {
+            const fallback = getPluginDefault(key);
+            defaults[key] = fallback !== undefined ? fallback : hardcodedDefaults[key];
+            if (userSettings[key] === null || userSettings[key] === undefined) inherited.add(key);
+        }
+        _inheritance.set(mergedSettings, { defaults, inherited });
         return mergedSettings;
     };
 

@@ -478,12 +478,12 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `ShowSpecialFormatTag` | Boolean | `true` |
 | `ShowVideoCodecTag` | Boolean | `true` |
 | `ShowAudioInfoTag` | Boolean | `true` |
-| `ResolutionTagOrder` | Nullable integer | `null` |
-| `SourceTagOrder` | Nullable integer | `null` |
-| `DynamicRangeTagOrder` | Nullable integer | `null` |
-| `SpecialFormatTagOrder` | Nullable integer | `null` |
-| `VideoCodecTagOrder` | Nullable integer | `null` |
-| `AudioInfoTagOrder` | Nullable integer | `null` |
+| `ResolutionTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `SourceTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `DynamicRangeTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `SpecialFormatTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `VideoCodecTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `AudioInfoTagOrder` | Nullable integer (inherits the admin default) | `null` |
 | `GenreTagsEnabled` | Boolean | `false` |
 | `LanguageTagsEnabled` | Boolean | `false` |
 | `RatingTagsEnabled` | Boolean | `false` |
@@ -538,6 +538,8 @@ The table below gives the `UserSettings` **model defaults** used when properties
 `Shapes` on rules and locks uses the same `{Landscape,List}` map as `TagShapeOverrides`; it layers over that rule's or lock's look, independently of the user's shape overrides. Resolution is lock → first matching rule → shape override → default. POST also accepts a shape slot map such as `{"quality":"bottom","status":"top"}`; stored responses use arrays, matching `TagLayouts` and preserving group ids across key-case conversion. `Layout`/`Density` null inherits, and null caps inherit per group. A shape that changes layout uses the profile of the new layout. Portrait and square cards always use the default shape; Native Poster Tags ignore these objects.
 
 `TagScale` and `TagGap` are presentation-only settings, normalized case-insensitively on save. An unknown global value becomes `default`; null inherits the administrator's validated choice, then `default`. Version-0 documents always render at default size/gap. Promotion writes explicit `default` values so changing another layout setting does not adopt new administrator sizing. New-user seeding and reset-all copy the administrator's values. A shape's optional `TagScale`/`TagGap` uses the same choices, with unknown values normalized to null (inherit). Shape fields also round-trip inside rule/lock `Shapes`. Native posters use global size/gap in their rendering metrics and settings digest, with shape overrides still web-only. These fields do not change `TagCacheEntry` or its schema.
+
+The web client keeps these nullable fields null while they inherit: the settings panel shows the administrator's current value for `ShowEditionTag`, `ShowLowQualitySourceTag`, the seven `*TagOrder` fields and `SeriesQualityAggregation`, and saves `null` for each one the user has not changed, so a save, an import or its **Undo** never pins today's administrator default. A changed value, an imported value (even one equal to the default) and a reorder of the quality categories (all seven orders) are saved as the user's own.
 
 ### Media Tags import, export and presets
 

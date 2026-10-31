@@ -316,11 +316,14 @@
 
                 // Normalize order values to 1..N from visual position so any
                 // pre-existing duplicates (e.g. admin set two rows to the same
-                // value via XML) self-heal on the next user reorder.
+                // value via XML) self-heal on the next user reorder. The whole
+                // order is the user's now (none of it follows the admin's).
                 const allRows = qualitySubGroup.querySelectorAll('.je-quality-cat-row');
                 allRows.forEach((r, idx) => {
                     const orderKey = r.dataset.orderKey;
-                    if (orderKey) JE.currentSettings[orderKey] = idx + 1;
+                    if (!orderKey) return;
+                    JE.setSettingInherited?.(JE.currentSettings, orderKey, false);
+                    JE.currentSettings[orderKey] = idx + 1;
                 });
                 JE.saveUserSettings('settings.json', JE.currentSettings);
 

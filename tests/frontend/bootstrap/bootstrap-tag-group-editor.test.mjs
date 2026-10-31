@@ -336,6 +336,21 @@ test('source and edition settings inherit defaults, save, reorder and reset thro
   assert.equal(h.saved().editionTagOrder, 1);
 });
 
+test('inherited quality settings save as null until changed; a reorder makes the whole order the user\'s', async t => {
+  const h = setup(t, { plugin: { SeriesQualityAggregation: 'best', ShowEditionTag: false, SourceTagOrder: 2 }, stored: { qualityTagsEnabled: true } });
+  const orders = ['resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder', 'editionTagOrder'];
+  await h.change(h.$('#showLowQualitySourceTagToggle'), true);
+  assert.equal(h.saved().showLowQualitySourceTag, true, 'a changed field is the user\'s');
+  for (const key of ['seriesQualityAggregation', 'showEditionTag', ...orders]) assert.equal(h.saved()[key], null, `${key} follows the administrator`);
+  assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'best', 'shown as the administrator\'s');
+  await h.click(h.$('[data-cat-key="showSourceTag"]').querySelector('.je-cat-up'));
+  assert.deepEqual(orders.map(key => h.saved()[key]), [2, 1, 3, 4, 5, 6, 7]);
+  // Toggled back to the administrator's value: inherited again.
+  await h.change(h.$('#showLowQualitySourceTagToggle'), false);
+  assert.equal(h.saved().showLowQualitySourceTag, null);
+  assert.equal(h.saved().seriesQualityAggregation, null);
+});
+
 test('rating source order, minimum and colour persist through the real hub and preview', async t => {
   const h = setup(t, { stored: { ratingTagsEnabled: true, ratingTagsSources: ['imdb', 'tmdb', 'rtCritic'], tagLayoutSettingsVersion: 1 } });
   const box = h.row('rating');

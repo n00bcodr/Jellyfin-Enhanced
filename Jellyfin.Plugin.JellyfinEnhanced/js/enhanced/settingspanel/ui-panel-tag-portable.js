@@ -400,18 +400,21 @@
     /**
      * Write changed fields into the user's document and save it through the
      * normal settings save (which normalises them once more), then follow the
-     * new group switches on the page.
+     * new group switches on the page. A null value keeps (or makes) the field
+     * follow the administrator: it is saved as null, never as today's default.
      * @param {Array<{field: string, to: *}>} changes
      * @returns {Promise<void>} Rejects when the save failed (nothing is kept then).
      */
     async function writeChanges(changes) {
         const settings = JE.currentSettings;
         const before = {};
+        const inheritedBefore = {};
         const wasOn = Object.fromEntries(GROUP_SWITCHES.map((g) => [g.key, !!settings[g.key]]));
         const nativeBefore = JE.userConfig?.settings?.useNativePosterTags;
         for (const change of changes) {
             const key = clientKey(change.field);
             before[key] = settings[key];
+            inheritedBefore[key] = JE.isSettingInherited?.(settings, key) === true;
             const value = toClient(change.to);
             if (key === 'useNativePosterTags') {
                 // Saved as chosen (null stays "not chosen", which is on).
@@ -419,12 +422,18 @@
                 JE.userConfig.settings = JE.userConfig.settings || {};
                 JE.userConfig.settings.useNativePosterTags = value;
                 settings.useNativePosterTags = value !== false;
+            } else if (JE.setSettingInherited?.(settings, key, value === null)) {
+                // Shown resolved, saved as null while inherited (config.js).
+                if (value !== null) settings[key] = value;
             } else settings[key] = value;
         }
         try {
             await JE.saveUserSettings('settings.json', settings, { throwOnError: true });
         } catch (err) {
             Object.assign(settings, before);
+            for (const [key, inherited] of Object.entries(inheritedBefore)) {
+                if (JE.setSettingInherited?.(settings, key, inherited)) settings[key] = before[key];
+            }
             if (JE.userConfig?.settings && 'useNativePosterTags' in before) JE.userConfig.settings.useNativePosterTags = nativeBefore;
             throw err;
         }
