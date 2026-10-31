@@ -71,6 +71,7 @@
         'sections/colours.js',
         'sections/badges.js',
         'sections/server.js',
+        'sections/portable.js',
     ];
 
     /** The tabs, in order. */

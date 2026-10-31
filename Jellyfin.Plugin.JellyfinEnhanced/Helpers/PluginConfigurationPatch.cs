@@ -18,8 +18,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
     /// </summary>
     public static class PluginConfigurationPatch
     {
-        /// <summary>The largest request body the patch endpoint reads (the page sends a few fields at a time).</summary>
-        public const int MaxRequestBytes = 64 * 1024;
+        /// <summary>
+        /// The largest request body the patch endpoint reads. The page usually sends a few fields at a time; an
+        /// imported settings document (<see cref="MediaTagsPortable"/>) sends every field it changes in one patch,
+        /// with the values read before, so the import is written or refused as a whole.
+        /// </summary>
+        public const int MaxRequestBytes = 256 * 1024;
 
         private static readonly MethodInfo MemberwiseCloneMethod = typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
@@ -70,20 +74,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             var values = new Dictionary<string, object?>(StringComparer.Ordinal);
             foreach (var (key, property) in properties)
             {
-                object? value;
-                try
+                if (!TryRead(property, changes[key], out var normalized, out var problem))
                 {
-                    value = changes[key].Deserialize(property.PropertyType, options);
-                }
-                catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException)
-                {
-                    return new Result { Error = $"Invalid value for '{key}'." };
-                }
-
-                // The field's own contract (ranges, known values, document normalisation, length).
-                if (!MediaTagsPageFields.TryNormalize(key, value, out var normalized, out var problem))
-                {
-                    return new Result { Error = $"Invalid value for '{key}': {problem}." };
+                    return new Result { Error = problem == null ? $"Invalid value for '{key}'." : $"Invalid value for '{key}': {problem}." };
                 }
 
                 values[key] = normalized;
@@ -125,6 +118,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
             return new Result { Values = stored };
         }
+
+        /// <summary>
+        /// Reads one field's value in the configuration API's JSON shape and checks it against the field's contract
+        /// (<see cref="MediaTagsPageFields.TryNormalize"/>): the same reading the patch applies to every changed field.
+        /// </summary>
+        /// <param name="property">The PluginConfiguration property.</param>
+        /// <param name="value">The value as JSON.</param>
+        /// <param name="normalized">The value to store.</param>
+        /// <param name="error">Why the value was refused; null when it is not the property's type.</param>
+        /// <returns>True when the value is accepted.</returns>
+        public static bool TryRead(PropertyInfo property, JsonElement value, out object? normalized, out string? error)
+        {
+            normalized = null;
+            error = null;
+            object? read;
+            try
+            {
+                read = value.Deserialize(property.PropertyType, JsonDefaults.Options);
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException)
+            {
+                return false;
+            }
+
+            // The field's own contract (ranges, known values, document normalisation, length).
+            return MediaTagsPageFields.TryNormalize(property.Name, read, out normalized, out error);
+        }
+
+        /// <summary>A value as the configuration API's JSON (the shape the patch compares and returns).</summary>
+        /// <param name="value">The value.</param>
+        /// <param name="type">Its declared type.</param>
+        /// <returns>The JSON node.</returns>
+        public static JsonNode? ToJson(object? value, Type type) => ToNode(value, type, JsonDefaults.Options);
 
         // Round-trips through text so values compare by their JSON, whatever node type produced them.
         private static JsonNode? ToNode(object? value, Type type, JsonSerializerOptions options)

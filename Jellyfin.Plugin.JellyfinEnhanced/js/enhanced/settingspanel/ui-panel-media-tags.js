@@ -2,7 +2,8 @@
  * @file The Media Tags hub: the settings panel section that gathers every
  * poster tag control behind one tab strip, with a live preview beside it.
  *
- *   Layout         layout tiles, label density and the quick switches
+ *   Layout         layout tiles, label density, the quick switches, and
+ *                  presets with import and export (ui-panel-tag-portable.js)
  *   Groups         the group editor (ui-panel-tag-editor.js)
  *   Status badges  the status badge families and the admin's time windows
  *   Rules & locks  the tag look rules and locked items (ui-panel-tag-looks.js)
@@ -274,7 +275,8 @@
                     ${switchRow('peopleTagsToggle', !!JE.currentSettings.peopleTagsEnabled, 'panel_settings_ui_people_tags', 'panel_settings_ui_people_tags_desc')}
                     ${switchRow('showAudioLanguagesToggle', !!JE.currentSettings.showAudioLanguages, 'panel_settings_ui_audio_languages', 'panel_settings_ui_audio_languages_desc')}
                 </div>
-            </section>`;
+            </section>
+            ${internal.buildTagPortableHtml?.() || ''}`;
     }
 
     /**
@@ -852,6 +854,10 @@
             if (target.closest('.je-tge-expand, .je-tge-move')) syncFocusOfPreview();
             if (target.closest('button, input, [role="tab"]')) preview?.refresh();
         });
+
+        // ── Presets, import and export (ui-panel-tag-portable.js) ──
+        const stopPortable = internal.wireTagPortable?.(hub, ctx, { announce });
+        if (typeof stopPortable === 'function') cleanups.push(stopPortable);
 
         // ── Phone strip ──
         stripToggle?.addEventListener('click', () => {

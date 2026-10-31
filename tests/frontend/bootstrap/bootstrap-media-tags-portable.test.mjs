@@ -1,0 +1,302 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHarness } from '../helpers/harness.mjs';
+
+// Media Tags import, export and presets in the settings panel hub
+// (settingspanel/ui-panel-tag-portable.js): the real panel host, hub and
+// settings save path over a mocked server that answers the portable
+// endpoints the way Helpers/MediaTagsPortable.cs does.
+
+const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
+  'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
+  'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
+
+/** plugin.js's key converters (object keys, arrays as they are). */
+const convert = (first) => function walk(obj) {
+  if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  return Object.fromEntries(Object.entries(obj).map(([k, v]) => [first(k.charAt(0)) + k.slice(1), walk(v)]));
+};
+
+const CINEPHILE = { v: 1, kind: 'je-media-tags-preset', id: 'cinephile', name: 'Cinephile', description: 'English text', settings: { TagLayout: 'corners', AwardsTagsEnabled: true } };
+
+/**
+ * The panel with the hub, over a server that stores settings.json (PascalCase)
+ * and answers the media-tags endpoints.
+ * @param {import('node:test').TestContext} t
+ * @param {{stored?: object, mine?: object[], offered?: object[], preview?: (doc: object) => object}} [options]
+ */
+function setup(t, { stored = {}, mine = [], offered = [], preview } = {}) {
+  const requests = [];
+  const server = {
+    settings: { TagLayoutSettingsVersion: 1, QualityTagsEnabled: true, RatingTagsEnabled: true, StatusTagsEnabled: true, TagLayout: 'corners', ...stored },
+    mine: structuredClone(mine),
+  };
+  /** What the server's preview answers: each posted field changes from the stored value; Foo is unknown. */
+  const defaultPreview = (doc) => {
+    const changes = [];
+    const skipped = [];
+    const imported = {};
+    for (const [field, to] of Object.entries(doc.settings || {})) {
+      if (field === 'Foo') { skipped.push({ field, reason: 'unknown', detail: null }); continue; }
+      imported[field] = to;
+      const from = server.settings[field] ?? null;
+      if (JSON.stringify(from) !== JSON.stringify(to)) changes.push({ field, from, to });
+    }
+    return { kind: doc.kind, v: 1, name: doc.name ?? null, description: doc.description ?? null, imported, changes, skipped };
+  };
+  const copies = [];
+  const clicks = [];
+  const h = createHarness({
+    html: otherToggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button>',
+    JE: {
+      pluginConfig: { HelpPanelAutocloseDelay: 60000 },
+      userConfig: { settings: convert(c => c.toLowerCase())(server.settings), shortcuts: { Shortcuts: [] } },
+      currentSettings: {},
+      t: (key, params) => (params ? `${key}:${Object.values(params).join('|')}` : key),
+      toast() {}, keyListener() {}, initializeShortcuts() {}, state: { activeShortcuts: {} }, pauseScreenInstance: {},
+      themer: { getThemeVariables: () => ({ panelBg: '#000', secondaryBg: '#111', primaryAccent: '#0af', altAccent: '#222', blur: '0px', textColor: '#fff', logo: '' }) },
+    },
+    apiClient: {
+      getUrl: (path) => `http://jellyfin.test/${path.replace(/^\//, '')}`,
+      ajax: async (request) => {
+        const url = new URL(request.url);
+        const path = url.pathname;
+        const body = request.data ? JSON.parse(request.data) : null;
+        requests.push({ type: request.type, path, body });
+        if (path.endsWith('/settings.json')) {
+          if (request.type === 'POST') { server.settings = body; return { success: true }; }
+          return structuredClone(server.settings);
+        }
+        if (path.endsWith('/media-tags/export')) return { v: 1, kind: 'je-media-tags-user', settings: { TagLayout: server.settings.TagLayout, QualityTagsEnabled: server.settings.QualityTagsEnabled } };
+        if (path.endsWith('/media-tags/preview')) {
+          const answer = (preview || defaultPreview)(body);
+          if (answer.error) throw { status: 400, json: async () => answer };
+          return answer;
+        }
+        if (path.endsWith('/media-tags/presets') && request.type === 'GET') return { max: 10, builtIn: [CINEPHILE], offered, mine: structuredClone(server.mine) };
+        if (path.endsWith('/media-tags/presets') && request.type === 'POST') {
+          if (server.mine.length >= 10) throw { status: 400, json: async () => ({ error: 'full', max: 10 }) };
+          const preset = { v: 1, kind: 'je-media-tags-preset', id: `p${server.mine.length + 1}`, name: body.name.trim(), description: body.description || '', settings: body.settings };
+          server.mine.push(preset);
+          return { preset, skipped: body.settings.Foo !== undefined ? [{ field: 'Foo', reason: 'unknown', detail: null }] : [] };
+        }
+        if (request.type === 'DELETE' && path.includes('/media-tags/presets/')) {
+          server.mine = server.mine.filter(p => p.id !== decodeURIComponent(path.split('/').pop()));
+          return { success: true };
+        }
+        if (path.endsWith('/tag-styles')) return {};
+        return null;
+      },
+    },
+    globals: { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) },
+  });
+  t.after(() => h.close());
+  h.window.Element.prototype.getClientRects = function () { return [{ width: 1, height: 1 }]; };
+  h.window.Element.prototype.scrollIntoView = function () {};
+  Object.defineProperty(h.window.navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { copies.push(text); } } });
+  h.window.URL.createObjectURL = () => 'blob:je-test';
+  h.window.URL.revokeObjectURL = () => {};
+  h.window.HTMLAnchorElement.prototype.click = function () { clicks.push(this.download); };
+  h.JE.toCamelCase = convert(c => c.toLowerCase());
+  h.JE.toPascalCase = convert(c => c.toUpperCase());
+  for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js']) h.load(file);
+  h.JE.currentSettings = h.JE.loadSettings();
+  h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
+  for (const file of ['ui-panel-settings.js', 'ui-panel-tag-editor.js', 'ui-panel-tag-looks.js', 'ui-panel-tag-preview.js', 'ui-panel-tag-portable.js', 'ui-panel-media-tags.js']) h.load(`enhanced/settingspanel/${file}`);
+  const ui = h.JE.internals.enhancedUi;
+  ui.buildPanelHtml = ctx => '<div class="panel-header"><div id="jePanelTitle">JE</div><button id="closeSettingsPanel">x</button></div>'
+    + '<div class="je-panel-dock"><select id="jePanelSection"></select></div><div class="je-panel-body"><nav class="je-panel-nav"><input id="jePanelSearch" type="search"><ul id="jePanelSearchResults" hidden></ul><div class="je-panel-nav-items"></div></nav>'
+    + `<div class="je-panel-main"><button id="jePanelBack"></button>${ui.buildMediaTagsHubHtml(ctx)}</div></div>`;
+  for (const name of ['wireShortcutEditor', 'wireHiddenContentListeners', 'wireLanguageControls']) ui[name] = () => {};
+  h.load('enhanced/settingspanel/ui-panel.js');
+  const settle = async (n = 4) => { for (let i = 0; i < n; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
+  const $ = selector => h.document.querySelector(selector);
+  const click = (el) => { assert.ok(el, 'control exists'); el.dispatchEvent(new h.window.MouseEvent('click', { bubbles: true, cancelable: true })); };
+  const dialog = () => $('.je-pt-dialog');
+  const action = (name) => dialog()?.querySelector(`[data-pt-action="${name}"]`);
+  const paste = (text) => {
+    const area = dialog().querySelector('[data-pt-paste]');
+    area.value = text;
+    area.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  };
+  return {
+    ...h, server, requests, copies, clicks, settle, $, click, dialog, action, paste,
+    async open() { await h.JE.showEnhancedPanel(); await settle(); },
+    key(el, key) { el.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); },
+    status: () => dialog()?.querySelector('.je-pt-status').textContent,
+    names: (source) => Array.from(h.document.querySelectorAll(`[data-tp-source="${source}"] .je-mth-tp-name`), el => el.textContent),
+  };
+}
+
+test('the Layout tab lists built-in, offered and own presets and the import and export actions', async t => {
+  const h = setup(t, { mine: [{ id: 'p1', name: 'Mine', description: 'Saved here', settings: { TagGap: 'tight' } }], offered: [{ id: 'family', name: 'Family', description: '', settings: { TagScale: 'larger' } }] });
+  await h.open();
+  const layout = h.$('#jeMthPanel-layout');
+  assert.ok(layout.querySelector('#jeMthPresets') && layout.querySelector('#jeMthPortable'), 'both cards are on the Layout tab');
+  // Built-ins are translated by id; offered and own presets show their own names.
+  assert.deepEqual(h.names('builtIn'), ['tag_presets_builtin_cinephile']);
+  assert.deepEqual(h.names('offered'), ['Family']);
+  assert.deepEqual(h.names('mine'), ['Mine']);
+  assert.match(h.$('[data-tp-source="mine"] .je-mth-tp-count').textContent, /tag_presets_mine_count:1\|10/);
+  assert.equal(h.$('[data-tp-source="builtIn"] [data-tp="delete"]'), null, 'only your own presets can be deleted');
+  assert.ok(h.$('[data-tp-source="mine"] [data-tp="delete"]'));
+  assert.equal(h.$('[data-tp-source="builtIn"] [data-tp="apply"]').getAttribute('aria-label'), 'tag_presets_apply_named:tag_presets_builtin_cinephile');
+  // The settings search finds the new controls too.
+  const labels = h.JE.internals.enhancedUi.mediaTagsHub.searchIndex().map(e => e.label);
+  for (const label of ['tag_portable_export', 'tag_portable_import', 'tag_presets_save', 'tag_presets_import']) assert.ok(labels.includes(label), label);
+});
+
+test('export shows the server document, downloads it and copies it; Escape closes only the dialog', async t => {
+  const h = setup(t);
+  await h.open();
+  const button = h.$('[data-tp="export"]');
+  button.focus();
+  h.click(button);
+  await h.settle();
+  const dialog = h.dialog();
+  assert.equal(dialog.getAttribute('role'), 'dialog');
+  assert.equal(dialog.getAttribute('aria-modal'), 'true');
+  assert.ok(h.$('#jellyfin-enhanced-panel').contains(dialog), 'drawn inside the panel');
+  const text = dialog.querySelector('textarea').value;
+  assert.deepEqual(JSON.parse(text), { v: 1, kind: 'je-media-tags-user', settings: { TagLayout: 'corners', QualityTagsEnabled: true } });
+  assert.ok(h.requests.some(r => r.path.endsWith('/media-tags/export')));
+  h.click(h.action('download'));
+  assert.match(h.clicks[0], /^jellyfin-media-tags-\d{4}-\d{2}-\d{2}\.json$/);
+  h.click(h.action('copy'));
+  await h.settle();
+  assert.equal(h.copies[0], text);
+  assert.equal(h.status(), 'tag_portable_copied');
+  h.key(dialog, 'Escape');
+  assert.equal(h.dialog(), null, 'the dialog closed');
+  assert.ok(h.$('#jellyfin-enhanced-panel'), 'the panel stayed open');
+  assert.equal(h.document.activeElement, button, 'focus went back to Export');
+});
+
+test('import checks the document on the server, shows changes and skipped fields, applies after a confirmation and undoes', async t => {
+  const h = setup(t);
+  await h.open();
+  h.click(h.$('[data-tp="import"]'));
+  await h.settle();
+  // Not JSON: refused here, nothing sent.
+  h.paste('{nope');
+  h.click(h.action('next'));
+  assert.equal(h.status(), 'tag_portable_error_not_json');
+  assert.ok(!h.requests.some(r => r.path.endsWith('/preview')));
+
+  const document = { v: 1, kind: 'je-media-tags-user', settings: { TagLayout: 'bands', TagGroupCaps: { Genre: 2 }, QualityTagsEnabled: true, Foo: 1 } };
+  h.paste(JSON.stringify(document));
+  h.click(h.action('next'));
+  await h.settle();
+  assert.deepEqual(h.requests.find(r => r.path.endsWith('/preview')).body, document, 'the document goes to the server as it is');
+  const changed = Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), el => el.textContent);
+  assert.deepEqual(changed, ['Tag Layout', 'Tag Group Caps']);
+  assert.equal(h.dialog().querySelector('.je-pt-summary').textContent, 'tag_portable_changes_count:2');
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-skip .je-pt-field'), el => el.textContent), ['Foo']);
+  assert.equal(h.dialog().querySelector('.je-pt-skip .je-pt-reason').textContent.trim(), 'tag_portable_skip_unknown');
+  assert.equal(h.server.settings.TagLayout, 'corners', 'nothing saved before Apply');
+
+  h.click(h.action('apply'));
+  await h.settle(8);
+  // Saved through the normal settings save, only the changed fields different.
+  assert.equal(h.server.settings.TagLayout, 'bands');
+  assert.deepEqual(h.server.settings.TagGroupCaps, { Genre: 2 });
+  assert.equal(h.server.settings.QualityTagsEnabled, true);
+  assert.equal(h.server.settings.Foo, undefined, 'skipped fields are never applied');
+  // The panel opened again on the new settings, with Undo.
+  assert.equal(h.dialog(), null);
+  assert.equal(h.JE.currentSettings.tagLayout, 'bands');
+  const undo = h.$('[data-tp-undo]');
+  assert.equal(undo.hidden, false);
+  assert.match(undo.textContent, /tag_portable_applied:2/);
+  assert.equal(h.document.activeElement, undo.querySelector('button'), 'focus is on Undo');
+  assert.ok(h.$('input[name="jeTagLayout"][value="bands"]').checked, 'the layout tiles read the imported layout');
+
+  h.click(undo.querySelector('button'));
+  await h.settle(8);
+  assert.equal(h.server.settings.TagLayout, 'corners');
+  assert.equal(h.server.settings.TagGroupCaps, null);
+  assert.equal(h.$('[data-tp-undo]').hidden, true, 'Undo is offered once');
+});
+
+test('a document the server refuses as a whole says why and applies nothing', async t => {
+  const h = setup(t, { preview: () => ({ error: 'newer' }) });
+  await h.open();
+  h.click(h.$('[data-tp="import"]'));
+  await h.settle();
+  h.paste(JSON.stringify({ v: 9, kind: 'je-media-tags-user', settings: { TagLayout: 'bands' } }));
+  h.click(h.action('next'));
+  await h.settle();
+  assert.equal(h.status(), 'tag_portable_error_newer');
+  assert.equal(h.action('apply'), null);
+  assert.ok(!h.requests.some(r => r.type === 'POST' && r.path.endsWith('/settings.json')));
+});
+
+test('applying a preset previews it first; Share copies it under its shown name', async t => {
+  const h = setup(t);
+  await h.open();
+  h.click(h.$('[data-tp-source="builtIn"] [data-tp="apply"]'));
+  await h.settle();
+  const posted = h.requests.find(r => r.path.endsWith('/preview')).body;
+  assert.deepEqual(posted, { v: 1, kind: 'je-media-tags-preset', name: 'tag_presets_builtin_cinephile', description: 'tag_presets_builtin_cinephile_desc', settings: CINEPHILE.settings });
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), el => el.textContent), ['Awards Tags Enabled']);
+  h.click(h.action('cancel'));
+  assert.equal(h.dialog(), null);
+  assert.notEqual(h.server.settings.AwardsTagsEnabled, true, 'cancelled: nothing applied');
+
+  h.click(h.$('[data-tp-source="builtIn"] [data-tp="share"]'));
+  await h.settle();
+  const shared = JSON.parse(h.copies.at(-1));
+  assert.equal(shared.kind, 'je-media-tags-preset');
+  assert.equal(shared.name, 'tag_presets_builtin_cinephile');
+  assert.equal(shared.id, undefined, 'a shared preset carries no server id');
+});
+
+test('save as preset needs a name, stores the export and lists it; delete removes it; a full list stops saving', async t => {
+  const h = setup(t);
+  await h.open();
+  h.click(h.$('[data-tp="save-preset"]'));
+  h.click(h.action('save'));
+  await h.settle();
+  assert.equal(h.status(), 'tag_portable_error_name');
+  h.dialog().querySelector('#jePtName').value = '  Evening ';
+  h.dialog().querySelector('#jePtDesc').value = 'Dim and quiet';
+  h.click(h.action('save'));
+  await h.settle(8);
+  const saved = h.requests.find(r => r.type === 'POST' && r.path.endsWith('/media-tags/presets')).body;
+  assert.deepEqual(saved, { v: 1, kind: 'je-media-tags-preset', name: 'Evening', description: 'Dim and quiet', settings: { TagLayout: 'corners', QualityTagsEnabled: true } });
+  assert.equal(h.dialog(), null);
+  assert.deepEqual(h.names('mine'), ['Evening']);
+
+  h.click(h.$('[data-tp-source="mine"] [data-tp="delete"]'));
+  await h.settle(6);
+  assert.ok(h.requests.some(r => r.type === 'DELETE' && r.path.endsWith('/media-tags/presets/p1')));
+  assert.deepEqual(h.names('mine'), []);
+  assert.ok(h.$('[data-tp-source="mine"]').textContent.includes('tag_presets_none_yet'));
+
+  // Ten presets: Save and Import are off.
+  h.server.mine = Array.from({ length: 10 }, (_, i) => ({ id: `x${i}`, name: `P${i}`, description: '', settings: { TagGap: 'tight' } }));
+  h.JE.internals.enhancedUi.mediaTagsHub.dispose();
+  h.$('#closeSettingsPanel').click();
+  await h.open();
+  assert.equal(h.$('[data-tp="save-preset"]').disabled, true);
+  assert.equal(h.$('[data-tp="import-preset"]').disabled, true);
+  assert.match(h.$('[data-tp="save-preset"]').title, /tag_presets_full:10/);
+});
+
+test('import preset adds a shared preset to your list and reports what it dropped', async t => {
+  const h = setup(t);
+  await h.open();
+  h.click(h.$('[data-tp="import-preset"]'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-preset', settings: { TagScale: 'larger' } }));
+  h.click(h.action('next'));
+  await h.settle();
+  assert.equal(h.status(), 'tag_portable_error_name', 'a preset needs a name');
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-preset', name: 'Shared', settings: { TagScale: 'larger', Foo: 1 } }));
+  h.click(h.action('next'));
+  await h.settle(8);
+  assert.deepEqual(h.names('mine'), ['Shared']);
+  // Something was dropped: the dialog stays to say what.
+  assert.ok(h.dialog().textContent.includes('tag_presets_saved:Shared'));
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-skip .je-pt-field'), el => el.textContent), ['Foo']);
+  assert.equal(h.dialog().querySelector('.je-pt-summary[data-je-summary]'), null);
+});

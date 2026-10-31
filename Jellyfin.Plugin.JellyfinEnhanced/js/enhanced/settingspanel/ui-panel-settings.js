@@ -53,6 +53,8 @@
         document.querySelectorAll(`.${containerClass}`).forEach(el => el.remove());
         restackTagCorners();
     };
+    // An imported Media Tags document turns groups off the same way (ui-panel-tag-portable.js).
+    internal.removeTagGroup = removeTagGroup;
 
     /**
      * @param {Iterable<object>} entries - Server tag-cache entries.

@@ -5571,30 +5571,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return BadRequest(new { success = false, message = "Missing settings document." });
             }
 
-            if (!LanguageTagPriority.TryNormalize(userConfiguration.LanguageTagsPriority, out var languagePriority))
+            // The same normalisation a settings import is checked with (MediaTagsPortable.PreviewUser).
+            if (!MediaTagsPortable.TryNormalizeUser(userConfiguration, out var invalid))
             {
-                return BadRequest(new { success = false, message = "Language priorities require at most 12 ISO 639-1/639-2 language codes." });
+                return BadRequest(new { success = false, message = invalid });
             }
-            userConfiguration.LanguageTagsPriority = languagePriority;
 
             try
             {
-                // Unknown layouts, groups and slots are normalized away and caps
-                // clamped, so a stale client cannot store an unusable layout.
-                RatingSourceSettings.Normalize(userConfiguration);
-                TagLayoutRules.Normalize(userConfiguration);
-                if (userConfiguration.SeriesQualityAggregation != null)
-                    userConfiguration.SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(userConfiguration.SeriesQualityAggregation);
-                // Unknown language tag styles / badge modes fall back to flags / off.
-                LanguageTagDisplay.Normalize(userConfiguration);
-                // An unknown Tag Styles preset follows the admin's instead.
-                userConfiguration.TagStylePreset = TagStyleKeys.KnownPreset(userConfiguration.TagStylePreset);
-                // Rules and locks: invalid entries are dropped one by one (ids
-                // validated, limits applied), never the whole document.
-                TagLookValidation.Normalize(userConfiguration);
-                // Per-shape looks: unknown layouts and slots dropped, caps clamped.
-                TagShapeRules.Normalize(userConfiguration);
-
                 // Diff against the existing config so the log shows what actually changed
                 var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
                 var changes = new System.Collections.Generic.List<string>();
@@ -5638,6 +5622,164 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
             }
         }
+
+        /// <summary>
+        /// The user's Media Tags settings as a portable document (<see cref="MediaTagsPortable.ExportUser"/>):
+        /// <c>{"v":1,"kind":"je-media-tags-user","settings":{…}}</c>, the fields of <see cref="MediaTagsPortable.UserFields"/>.
+        /// </summary>
+        /// <param name="userId">The user (the caller, or any user for an administrator).</param>
+        /// <returns>The document.</returns>
+        [HttpGet("user-settings/{userId}/media-tags/export")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public IActionResult ExportUserMediaTags(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            var settings = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            return Ok(MediaTagsPortable.ExportUser(settings));
+        }
+
+        /// <summary>
+        /// What importing a Media Tags document (a user export or a preset) would change, checked field by field with
+        /// the settings save path's validators (<see cref="MediaTagsPortable.PreviewUser"/>). Nothing is saved: the
+        /// client applies the changed fields through <c>POST user-settings/{userId}/settings.json</c>.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="document">The document.</param>
+        /// <returns>200 <c>{kind, v, name, description, imported, changes, skipped}</c>; 400 <c>{error}</c> for a document refused as a whole.</returns>
+        [HttpPost("user-settings/{userId}/media-tags/preview")]
+        [Authorize]
+        [RequestSizeLimit(MediaTagsPortable.MaxDocumentBytes)]
+        [Produces("application/json")]
+        public IActionResult PreviewUserMediaTags(string userId, [FromBody] JsonElement document)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            var current = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            var preview = MediaTagsPortable.PreviewUser(document, current);
+            return preview.Error != null ? BadRequest(new { error = preview.Error }) : Ok(PreviewBody(preview));
+        }
+
+        /// <summary>
+        /// The presets a user can apply: the built-in ones, those the administrator offers and the user's own
+        /// (<see cref="MediaTagsPortable.UserPresetsFile"/>, at most <see cref="MediaTagsPortable.MaxUserPresets"/>).
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <returns><c>{max, builtIn, offered, mine}</c>, each a list of preset documents.</returns>
+        [HttpGet("user-settings/{userId}/media-tags/presets")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public IActionResult GetMediaTagsPresets(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            var store = _userConfigurationManager.GetUserConfiguration<MediaTagsPortable.UserPresetStore>(authorizedUserId, MediaTagsPortable.UserPresetsFile);
+            return Ok(new
+            {
+                max = MediaTagsPortable.MaxUserPresets,
+                builtIn = MediaTagsPortable.BuiltInPresets,
+                offered = MediaTagsPortable.OfferedPresets(JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration()),
+                mine = (store.Presets ?? new List<MediaTagsPortable.StoredPreset>()).Select(MediaTagsPortable.ToDocument),
+            });
+        }
+
+        /// <summary>
+        /// Saves a preset to the user's own list: a preset document, or a user export with a <c>name</c>. Unknown and
+        /// invalid settings are dropped and reported; the preset gets a new id.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="document">The preset.</param>
+        /// <returns>200 <c>{preset, skipped}</c>; 400 <c>{error}</c> (a document error, <c>name</c>, <c>description</c>, <c>empty</c>, or <c>full</c> with <c>max</c>).</returns>
+        [HttpPost("user-settings/{userId}/media-tags/presets")]
+        [Authorize]
+        [RequestSizeLimit(MediaTagsPortable.MaxDocumentBytes)]
+        [Produces("application/json")]
+        public IActionResult SaveMediaTagsPreset(string userId, [FromBody] JsonElement document)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (!MediaTagsPortable.TryReadPreset(document, null, out var preset, out var skipped, out var error))
+            {
+                return BadRequest(new { error });
+            }
+
+            var stored = new MediaTagsPortable.StoredPreset
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Name = (string?)preset["name"] ?? string.Empty,
+                Description = (string?)preset["description"] ?? string.Empty,
+                Settings = preset["settings"]!.ToJsonString(),
+            };
+            var full = false;
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<MediaTagsPortable.UserPresetStore>(authorizedUserId, MediaTagsPortable.UserPresetsFile, store =>
+                {
+                    store.Presets ??= new List<MediaTagsPortable.StoredPreset>();
+                    if (store.Presets.Count >= MediaTagsPortable.MaxUserPresets)
+                    {
+                        full = true;
+                        return 0;
+                    }
+
+                    store.Presets.Add(stored);
+                    return 1;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save a Media Tags preset for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { error = "save" });
+            }
+
+            if (full) return BadRequest(new { error = "full", max = MediaTagsPortable.MaxUserPresets });
+            return Ok(new { preset = MediaTagsPortable.ToDocument(stored), skipped = SkipBody(skipped) });
+        }
+
+        /// <summary>Deletes one of the user's own presets.</summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="presetId">The preset's id.</param>
+        /// <returns>200, or 404 when the user has no such preset.</returns>
+        [HttpDelete("user-settings/{userId}/media-tags/presets/{presetId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DeleteMediaTagsPreset(string userId, string presetId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            int removed;
+            try
+            {
+                removed = _userConfigurationManager.RmwUserConfiguration<MediaTagsPortable.UserPresetStore>(authorizedUserId, MediaTagsPortable.UserPresetsFile, store =>
+                    store.Presets?.RemoveAll(p => string.Equals(p.Id, presetId, StringComparison.Ordinal)) ?? 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to delete a Media Tags preset for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { error = "save" });
+            }
+
+            return removed > 0 ? Ok(new { success = true }) : NotFound(new { error = "missing" });
+        }
+
+        /// <summary>An import preview as the endpoints answer it.</summary>
+        private static object PreviewBody(MediaTagsPortable.Preview preview) => new
+        {
+            kind = preview.Kind,
+            v = preview.V,
+            name = preview.Name,
+            description = preview.Description,
+            imported = preview.Imported,
+            changes = preview.Changes.Select(c => new { field = c.Field, from = c.From, to = c.To }),
+            skipped = SkipBody(preview.Skipped),
+        };
+
+        /// <summary>Skipped fields as the endpoints answer them.</summary>
+        private static object SkipBody(IEnumerable<MediaTagsPortable.Skip> skipped)
+            => skipped.Select(s => new { field = s.Field, reason = s.Reason, detail = s.Detail }).ToList();
 
         [HttpPost("user-settings/{userId}/shortcuts.json")]
         [Authorize]
@@ -8709,6 +8851,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             if (result.Error != null) return BadRequest(new { error = result.Error });
             if (result.Conflicts.Count > 0) return Conflict(new { conflicts = result.Conflicts });
             return Ok(new { values = result.Values });
+        }
+
+        /// <summary>
+        /// The server-wide Media Tags settings as a portable document (<see cref="MediaTagsPortable.ExportAdmin"/>):
+        /// every field the Media Tags page writes except signals and secrets (API keys and the custom rule key are
+        /// never part of it). Admin only.
+        /// </summary>
+        /// <returns>The document.</returns>
+        [HttpGet("admin/media-tags/export")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public IActionResult ExportAdminMediaTags()
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null) return StatusCode(503);
+            return Ok(MediaTagsPortable.ExportAdmin(plugin.Configuration, MediaTagsPageFields.Allowed));
+        }
+
+        /// <summary>
+        /// What importing a server-wide Media Tags document would change: each field read and checked as the field
+        /// patch reads it; unknown, secret and invalid fields are reported and skipped. Nothing is written: the page
+        /// applies the changes through <c>POST admin/configuration</c> with the values it read as expected. Admin only.
+        /// </summary>
+        /// <param name="document">The document.</param>
+        /// <returns>200 <c>{kind, v, imported, changes, skipped}</c>; 400 <c>{error}</c> for a document refused as a whole.</returns>
+        [HttpPost("admin/media-tags/preview")]
+        [Authorize]
+        [RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)]
+        [Produces("application/json")]
+        public IActionResult PreviewAdminMediaTags([FromBody] JsonElement document)
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null) return StatusCode(503);
+            var preview = MediaTagsPortable.PreviewAdmin(document, plugin.Configuration, MediaTagsPageFields.Allowed);
+            return preview.Error != null ? BadRequest(new { error = preview.Error }) : Ok(PreviewBody(preview));
         }
 
         /// <summary>The body of <see cref="PatchConfiguration"/>.</summary>

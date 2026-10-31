@@ -65,6 +65,11 @@
       <EmbeddedResource Include="Assets\PosterTags\*.json;Assets\PosterTags\THIRD_PARTY_NOTICES.md" Exclude="Assets\PosterTags\manifest.json" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.PosterTags.%(Filename)%(Extension)" WithCulture="false" />
     </ItemGroup>
 
+    <!-- Built-in Media Tags presets (Helpers/MediaTagsPortable.cs reads them in file name order). -->
+    <ItemGroup>
+      <EmbeddedResource Include="Assets\TagPresets\*.json" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.TagPresets.%(Filename)%(Extension)" WithCulture="false" />
+    </ItemGroup>
+
     <ItemGroup>
       <!-- tests/poster/rendering (parity/perf harness, not shipped) drives the renderer's internal layout API. -->
       <InternalsVisibleTo Include="PosterTagsHarness" />
