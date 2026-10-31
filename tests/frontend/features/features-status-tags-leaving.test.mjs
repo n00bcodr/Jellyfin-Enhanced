@@ -522,6 +522,39 @@ test('direct play: a visible card is asked about in an idle slice, with this bro
   assert.equal(h.chip(h.hosts[2]), null, 'direct play shows nothing');
 });
 
+for (const [how, resetBy] of [
+  ['a direct reset', (h) => h.JE.tagDirectPlay.reset()],
+  ['reinitialising Status tags', (h) => h.JE.reinitializeStatusTags()],
+  ['the user-change hook', (h) => h.userChange.get('direct-play')()],
+]) {
+  test(`direct play: a card off screen through ${how} is watched again when drawn again for the same item`, async t => {
+    const h = setup(t, { cards: 3, settings: { statusTagsDirectPlay: true }, autoIntersect: false });
+    // Tracked but outside the observer's margin: never intersected, so not in the visible set.
+    h.show(movie(), h.hosts[0], 'm0');
+    // A second card that was on screen and then scrolled away again.
+    h.show(movie(), h.hosts[1], 'm1');
+    h.intersect(h.hosts[1]);
+    h.intersect(h.hosts[1], false);
+    await h.slice();
+    assert.equal(h.observers.at(-1).targets.has(h.hosts[0]), true, 'watched before the reset');
+    resetBy(h);
+    assert.equal(h.observers.at(-1).targets.size, 0, 'the old observer is disconnected');
+    // Drawn again for the same host and item (settings changed, the card stayed).
+    h.show(movie(), h.hosts[0], 'm0');
+    h.show(movie(), h.hosts[1], 'm1');
+    const io = h.observers.at(-1);
+    assert.equal(io.targets.has(h.hosts[0]), true, 'the off-screen card is registered with the new observer');
+    assert.equal(io.targets.has(h.hosts[1]), true, 'so is the card that had scrolled away');
+    // Scrolled into view: looked up and badged.
+    h.intersect(h.hosts[0]);
+    h.intersect(h.hosts[1]);
+    await h.slice(); await h.slice();
+    assert.deepEqual(h.requests.map(r => r.id).sort(), ['m0', 'm1'], 'both are asked about once on screen');
+    assert.equal(h.badge(h.hosts[0]), 'Transcode');
+    assert.equal(h.badge(h.hosts[1]), 'Transcode');
+  });
+}
+
 test('direct play: only cards on screen, two requests at a time, a few launches per slice, and only while idle time lasts', async t => {
   const h = setup(t, { cards: 12, settings: { statusTagsDirectPlay: true }, hold: true, autoIntersect: false });
   h.hosts.forEach((host, i) => h.show(movie(), host, `m${i}`));

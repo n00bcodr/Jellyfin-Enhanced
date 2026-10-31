@@ -112,8 +112,13 @@
      * @type {Set<Object>}
      */
     const network = new Set();
-    /** @type {WeakMap<HTMLElement, {id: string, onResult: Function}>} tracked cards */
-    const tracked = new WeakMap();
+    /**
+     * @type {WeakMap<HTMLElement, {id: string, onResult: Function}>} tracked cards.
+     * Replaced wholesale by reset(): a card off screen at that moment is not in
+     * `visible`, so only a fresh map guarantees its next track() registers it
+     * with the new observer instead of taking the same-item shortcut.
+     */
+    let tracked = new WeakMap();
     /** @type {Set<HTMLElement>} tracked cards currently on screen */
     const visible = new Set();
     /** @type {Map<string, number>} answers waiting to be persisted (memory key → saved time), by scope */
@@ -1165,6 +1170,7 @@
         generation++;
         for (const card of [...visible]) untrack(card);
         visible.clear();
+        tracked = new WeakMap();
         queue.clear();
         inFlight.clear();
         pendingNotify.clear();
