@@ -341,7 +341,10 @@
                     const next = look.itemOverridesWith(stored, id, null);
                     if (next === undefined) return;
                     ctx.set('TagLookItemOverrides', next);
-                    ctx.snack(JE.t('admin_tags_item_looks_removed', { name }), () => ctx.set('TagLookItemOverrides', stored));
+                    const removed = look.itemOverridesToWire(new Map([[id, look.normalizeItemOverrides(stored).get(id)]]));
+                    ctx.snack(JE.t('admin_tags_item_looks_removed', { name }), () => {
+                        if (ctx.isCurrent()) ctx.set('TagLookItemOverrides', look.restoreItemOverrides(ctx.config.TagLookItemOverrides, removed));
+                    });
                     /** @type {HTMLElement|null} */ (body.querySelector('[data-item] [data-act="remove"]') || body.querySelector('[data-item-looks-empty]'))?.focus?.();
                 } else if (button.dataset.act === 'edit') {
                     JE.tagItemEditor?.open(id, {

@@ -672,12 +672,18 @@
     }
 
     /**
-     * Restore locks exactly as they were (the item editor's Undo).
+     * Restore only locks removed by this operation (the item editor's Undo).
+     * Newer entries win: restore an absent id only, without replacing current
+     * locks or evicting an intervening addition when the map is full.
      * @param {Object<string, Object>|null} wire - A tagLayoutLocks value.
      * @returns {Promise<boolean>}
      */
     function restoreLocks(wire) {
-        return persist('tagLayoutLocks', locksToWire(normalizeLocks(wire)));
+        const locks = normalizeLocks(JE.currentSettings.tagLayoutLocks);
+        for (const [id, lock] of normalizeLocks(wire)) {
+            if (!locks.has(id) && locks.size < MAX_LOCKS) locks.set(id, lock);
+        }
+        return persist('tagLayoutLocks', locksToWire(locks));
     }
 
     /**
@@ -736,6 +742,21 @@
     }
 
     /**
+     * Merge removed item looks into the latest list for Undo. As for personal
+     * locks, a newer entry wins and unrelated edits/removals stay as they are.
+     * @param {*} raw - The latest list.
+     * @param {*} removed - Only the removed entries.
+     * @returns {Array<Object>|null}
+     */
+    function restoreItemOverrides(raw, removed) {
+        const looks = normalizeItemOverrides(raw);
+        for (const [id, entry] of normalizeItemOverrides(removed)) {
+            if (!looks.has(id) && looks.size < MAX_ITEM_OVERRIDES) looks.set(id, entry);
+        }
+        return itemOverridesToWire(looks);
+    }
+
+    /**
      * Change one server-wide item look (administrators only): set it to a
      * look, or remove it (look null). Reads the stored list fresh, writes it
      * through the Media Tags field patch with that list as the expected value
@@ -743,7 +764,7 @@
      * JE.pluginConfig and re-presents the cards.
      * @param {string} itemId
      * @param {ItemLook|null} look
-     * @param {{api?: {get: () => Promise<Object>, patch: (changes: Object, expected: Object) => Promise<Object>}}} [options] - Host hooks (tests).
+     * @param {{restoreOnly?: boolean, api?: {get: () => Promise<Object>, patch: (changes: Object, expected: Object) => Promise<Object>}}} [options] - Host hooks (tests).
      * @returns {Promise<boolean>} Whether it was saved.
      */
     async function saveItemOverride(itemId, look, options = {}) {
@@ -766,6 +787,8 @@
                 const config = await api.get();
                 if (!isCurrent()) return false;
                 const before = config?.TagLookItemOverrides ?? null;
+                // Undo never replaces a newer entry on the same target.
+                if (options.restoreOnly && normalizeItemOverrides(before).has(id)) return true;
                 const next = itemOverridesWith(before, id, look);
                 if (next === undefined) return false;
                 if (!isCurrent()) return false;
@@ -813,6 +836,7 @@
         editLocks,
         restoreLocks,
         saveItemOverride,
+        restoreItemOverrides,
         itemOverridesWith,
         itemOverridesToWire,
     };

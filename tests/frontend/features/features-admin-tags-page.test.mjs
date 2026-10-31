@@ -1434,3 +1434,21 @@ test('Rules: server-wide item looks are listed with titles; Remove saves and can
   await h.save();
   assert.deepEqual(plain(h.server.TagLookItemOverrides.map((o) => [o.ItemId, o.Layout])), [[SERIES, 'summary']]);
 });
+
+for (const editedTarget of [false, true]) test(`Rules: remove Undo preserves intervening additions, edits and removals (target edited: ${editedTarget})`, async t => {
+  const MOVIE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', SERIES = 'cccccccccccccccccccccccccccccccc', EPISODE = 'dddddddddddddddddddddddddddddddd', OTHER = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  const entry = (id, layout = 'bands') => ({ ItemId: id, Layout: layout, Density: 'full', LockedAt: 1 });
+  const h = setup(t, { config: { TagLookItemOverrides: [entry(MOVIE), entry(SERIES), entry(OTHER)] } });
+  await h.settle();
+  h.$(`[data-item="${MOVIE}"] [data-act="remove"]`).click();
+  await h.save();
+  h.ctx.set('TagLookItemOverrides', [entry(SERIES, 'summary'), entry(EPISODE, 'minimal'), ...(editedTarget ? [entry(MOVIE, 'caption')] : [])]);
+  await h.save();
+  h.$('.je-ta-snack .je-ta-button').click();
+  await h.save();
+  const looks = new Map(h.server.TagLookItemOverrides.map(e => [e.ItemId, e.Layout]));
+  assert.equal(looks.get(MOVIE), editedTarget ? 'caption' : 'bands');
+  assert.equal(looks.get(SERIES), 'summary');
+  assert.equal(looks.get(EPISODE), 'minimal');
+  assert.equal(looks.has(OTHER), false);
+});

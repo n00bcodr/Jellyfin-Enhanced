@@ -495,3 +495,35 @@ for (const everyone of [false, true]) test(`Undo belongs to its originating sess
   await h.settle();
   assert.equal(h.writes.length + h.patches.length, count);
 });
+
+for (const changedTarget of [false, true]) test(`personal Undo merges only removed entries, preserving intervening changes (target edited: ${changedTarget})`, async t => {
+  const old = { layout: 'bands', density: 'full', lockedAt: 1 };
+  const removed = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const h = setup(t, { settings: { tagLayoutLocks: { [MOVIE]: old, [SERIES]: old, [removed]: old } } });
+  await h.open(MOVIE);
+  h.change(h.$('[data-tie-keep]'), false);
+  h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  await h.JE.core.tagLook.editLocks({ [SERIES]: { layout: 'minimal' }, [EPISODE]: { layout: 'summary' }, ...(changedTarget ? { [MOVIE]: { layout: 'caption' } } : {}) }, [removed]);
+  h.click(h.$('.je-tie-toast button'));
+  await h.settle();
+  const locks = h.JE.core.tagLook.read().locks;
+  assert.equal(locks.get(MOVIE).layout, changedTarget ? 'caption' : 'bands');
+  assert.equal(locks.get(SERIES).layout, 'minimal');
+  assert.equal(locks.get(EPISODE).layout, 'summary');
+  assert.equal(locks.has(removed), false);
+});
+
+test('server-wide Undo preserves a newer look saved on its removed target', async t => {
+  const entry = { ItemId: MOVIE, Layout: 'bands', LockedAt: 1 };
+  const h = setup(t, { admin: true, plugin: { TagLookItemOverrides: [entry] } });
+  h.io.config.TagLookItemOverrides = [entry];
+  await h.open(MOVIE);
+  h.change(h.$('[data-tie-everyone]'), false);
+  h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  h.io.config.TagLookItemOverrides = [{ ItemId: MOVIE, Layout: 'caption', LockedAt: 10 }];
+  h.click(h.$('.je-tie-toast button'));
+  await h.settle();
+  assert.equal(h.io.config.TagLookItemOverrides[0].Layout, 'caption');
+});

@@ -683,7 +683,8 @@
             try {
                 // Personal lock: one save for the whole change (the series lock
                 // replaces a season's or episode's own lock).
-                const locksBefore = JE.currentSettings?.tagLayoutLocks ? JSON.parse(JSON.stringify(JE.currentSettings.tagLayoutLocks)) : null;
+                const removedIds = [targetId, ...(own ? [id] : [])];
+                const locksBefore = Object.fromEntries(removedIds.filter((key) => JE.currentSettings?.tagLayoutLocks?.[key]).map((key) => [key, JSON.parse(JSON.stringify(JE.currentSettings.tagLayoutLocks[key]))]));
                 const hadLock = !!keptAt(targetId) || (targetId !== id && !!own);
                 if (keep) {
                     const remove = targetId !== id && own ? [id] : [];
@@ -709,7 +710,7 @@
                         const ok = await look.saveItemOverride(targetId, null);
                         if (!isCurrent()) return;
                         results.push(ok);
-                        if (ok) showUndo(JE.t('tag_item_editor_everyone_removed', { name: label }), () => { look.saveItemOverride(targetId, previous); }, options.host);
+                        if (ok) showUndo(JE.t('tag_item_editor_everyone_removed', { name: label }), () => { look.saveItemOverride(targetId, previous, { restoreOnly: true }); }, options.host);
                     }
                 }
             } catch (err) {

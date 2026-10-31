@@ -319,7 +319,7 @@ Any movie, series, season, episode, collection or video can have its own look. O
 
 1. Pick a **Layout** and **Label Density**. Under **Groups**, switch groups on or off, choose where each one goes (the nine anchors on Corners, the layout's places otherwise) and how many tags it shows (**Show up to**). **Size and spacing** changes tag size, gap and edge spacing for this item only.
 2. For a series, season or episode, choose **Apply to**: **This series and its seasons and episodes** keeps one look on the series that its seasons and episodes share; **This episode only** (or **This series poster only**) keeps it to the one card.
-3. Turn on **Keep this look for this item** and click **Save**. Nothing is kept while it is off: the item follows your rules and default. Turning it off on a kept item and saving releases it; the message offers **Undo**.
+3. Turn on **Keep this look for this item** and click **Save**. Nothing is kept while it is off: the item follows your rules and default. Turning it off on a kept item and saving releases it; the message offers **Undo**. Undo restores only the released looks, keeps unrelated changes made since, and keeps a newer look on the same item.
 4. Administrators also see **For everyone (server-wide)**: the look becomes the item's look for every user, unless they keep their own. The Media Tags settings page lists these looks on its **Rules** tab.
 
 On a phone the editor fills the screen, with the poster beside the item's name at the top and **Save** always in reach:
