@@ -1051,21 +1051,32 @@
         if (pendingNotify.size || (queue.size && network.size < MAX_IN_FLIGHT)) scheduleSlice();
     }
 
-    /** @returns {Record<string, string>} Jellyfin's auth headers (JE's shared ones when loaded). */
-    function authHeaders() {
-        const shared = JE.core?.api?.authHeaders;
-        if (typeof shared === 'function') return shared();
-        const token = ApiClient.accessToken?.() || '';
-        return { Authorization: `MediaBrowser Token="${token}"`, 'X-Emby-Token': token, Accept: 'application/json' };
+    /**
+     * The headers of a JSON POST as ApiClient sends it: its own Authorization
+     * (setRequestHeaders: client, device, device id, version and token, so
+     * the server sees the request from this browser's session and device),
+     * or the same composed from its accessors where it has no such method.
+     * @returns {Record<string, string>}
+     */
+    function requestHeaders() {
+        const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+        if (typeof ApiClient.setRequestHeaders === 'function') {
+            ApiClient.setRequestHeaders(headers);
+            if (headers.Authorization) return headers;
+        }
+        const fields = [['Client', ApiClient.appName?.()], ['Device', ApiClient.deviceName?.()], ['DeviceId', ApiClient.deviceId?.()], ['Version', ApiClient.appVersion?.()], ['Token', ApiClient.accessToken?.()]]
+            .filter(([, value]) => value).map(([name, value]) => `${name}="${value}"`);
+        if (fields.length) headers.Authorization = `MediaBrowser ${fields.join(', ')}`;
+        return headers;
     }
 
     /**
      * POST one PlaybackInfo request with a deadline. ApiClient.ajax takes no
      * abort signal and sets no timeout on a POST, so this is fetch with
-     * Jellyfin's auth headers and an AbortController. Past DEADLINE_MS the
-     * request (or the read of its answer) is aborted and this rejects at
-     * once, so the slot frees even if the request never settles; an answer
-     * arriving after that is ignored.
+     * ApiClient's own headers (requestHeaders) and an AbortController. Past
+     * DEADLINE_MS the request (or the read of its answer) is aborted and this
+     * rejects at once, so the slot frees even if the request never settles;
+     * an answer arriving after that is ignored.
      * @param {string} url
      * @param {string} body - JSON.
      * @returns {Promise<*>} The PlaybackInfoResponse; rejects on failure (`timedOut` set when the deadline passed).
@@ -1080,7 +1091,7 @@
             }, DEADLINE_MS);
         });
         const work = (async () => {
-            const response = await fetch(url, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body, signal: controller.signal });
+            const response = await fetch(url, { method: 'POST', headers: requestHeaders(), body, signal: controller.signal });
             if (!response.ok) throw new Error(`PlaybackInfo answered ${response.status}`);
             return response.json();
         })();

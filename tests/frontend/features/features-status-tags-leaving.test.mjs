@@ -39,7 +39,7 @@ const DEADLINE_MS = 15000;
  * run when a test calls slice(); IntersectionObserver entries only when it
  * calls intersect() (or, with autoIntersect, on observe).
  */
-function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'transcode', hold = false, honourAbort = true, autoIntersect = true, store = null } = {}) {
+function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'transcode', hold = false, honourAbort = true, autoIntersect = true, store = null, apiClient = {} } = {}) {
   const renderers = new Map();
   const userChange = new Map();
   const requests = [];
@@ -72,6 +72,7 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
         assert.ok(request.url.includes('status-tags/trending'), `unexpected ApiClient request ${request.url}`);
         return { source: null, movies: {}, series: {} };
       },
+      ...apiClient,
     },
     fetch: async (url, init) => {
       const id = /Items\/([^/]+)\/PlaybackInfo/.exec(url)?.[1];
@@ -634,6 +635,54 @@ test('direct play: a reset (renderer teardown, user switch) keeps the requests s
   assert.equal(h.network.peak, 2, 'never more than two requests on the network');
   assert.equal(dp.stats().inFlight, 0);
 });
+
+/**
+ * jellyfin-apiclient's identity and its setRequestHeaders, as Jellyfin 12.1's
+ * bundle has them (node_modules.jellyfin-apiclient.bundle.js).
+ */
+function realApiClient({ withSetRequestHeaders = true } = {}) {
+  const api = {
+    _appName: 'Jellyfin Web', _appVersion: '12.1.0', _deviceName: 'Chrome', _deviceId: 'TW96aWxsYS81LjAgdGVzdA11',
+    _serverInfo: { AccessToken: 'session-token' },
+    serverInfo() { return this._serverInfo; },
+    accessToken() { return this._serverInfo.AccessToken; },
+    appName() { return this._appName; },
+    appVersion() { return this._appVersion; },
+    deviceName() { return this._deviceName; },
+    deviceId() { return this._deviceId; },
+  };
+  if (withSetRequestHeaders) {
+    api.setRequestHeaders = function setRequestHeaders(headers) {
+      const values = [];
+      const accessToken = this.serverInfo().AccessToken;
+      if (this._appName) values.push(`Client="${this._appName}"`);
+      if (this._deviceName) values.push(`Device="${this._deviceName}"`);
+      if (this._deviceId) values.push(`DeviceId="${this._deviceId}"`);
+      if (this._appVersion) values.push(`Version="${this._appVersion}"`);
+      if (accessToken) values.push(`Token="${accessToken}"`);
+      if (values.length) headers.Authorization = `MediaBrowser ${values.join(', ')}`;
+    };
+  }
+  return api;
+}
+
+for (const withSetRequestHeaders of [true, false]) {
+  test(`direct play: a PlaybackInfo request carries ApiClient's own authorization, client and device (${withSetRequestHeaders ? 'setRequestHeaders' : 'composed from its accessors'})`, async t => {
+    const h = setup(t, { settings: { statusTagsDirectPlay: true }, apiClient: realApiClient({ withSetRequestHeaders }) });
+    h.show(movie(), h.hosts[0], 'm1');
+    await h.slice(); await h.slice();
+    assert.equal(h.requests.length, 1);
+    const { headers } = h.requests[0];
+    const expected = {};
+    realApiClient().setRequestHeaders.call(h.window.ApiClient, expected);
+    assert.equal(headers.Authorization, expected.Authorization, "the same Authorization ApiClient sends for this client");
+    assert.equal(headers.Authorization, 'MediaBrowser Client="Jellyfin Web", Device="Chrome", DeviceId="TW96aWxsYS81LjAgdGVzdA11", Version="12.1.0", Token="session-token"');
+    assert.deepEqual(Object.keys(headers).sort(), ['Accept', 'Authorization', 'Content-Type']);
+    assert.equal(headers['Content-Type'], 'application/json');
+    assert.equal(headers.Accept, 'application/json');
+    assert.equal(h.badge(h.hosts[0]), 'Transcode');
+  });
+}
 
 test('direct play: a request that never settles is aborted at its deadline and frees its slot, also across a reset and a user switch', async t => {
   const h = setup(t, { cards: 6, settings: { statusTagsDirectPlay: true }, hold: true });
