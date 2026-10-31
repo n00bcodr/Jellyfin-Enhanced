@@ -695,3 +695,22 @@ test('a legacy document promoted by the Edge Spacing pills keeps everything else
   assert.equal(saved.tagLayout, 'corners');
   assert.equal(saved.tagGroupCaps.genre, 3, 'the built-in caps are pinned, not the admin\'s');
 });
+
+
+test('Scenes-only hub preview shows the movie post-credits badge and removes it when disabled', async t => {
+  const h = setup(t, { plugin: { StatusTagsEnabled: true, StatusTagsScenes: true }, stored: {
+    statusTagsEnabled: true, statusTagsScenes: true, statusTagsTrending: false, statusTagsNewRelease: false,
+    statusTagsJustAdded: false, statusTagsSchedule: false, statusTagsMilestones: false, statusTagsSeriesStatus: false,
+  } });
+  h.JE.t = key => en[key] || key;
+  await h.open();
+  const movie = () => h.$('.je-mtp-sample[data-sample="movie"] .status-tag');
+  assert.equal(movie()?.textContent, 'Post-credits');
+  assert.equal(h.document.querySelectorAll('.je-mtp-sample .status-tag').length, 1, 'only the movie has a Scenes fact');
+  await h.change(h.$('#statusTagsScenesToggle'), false);
+  assert.equal(movie(), null);
+  await h.change(h.$('#statusTagsScenesToggle'), true);
+  assert.equal(movie()?.textContent, 'Post-credits');
+  await h.change(h.$('#statusTagsJustAddedToggle'), true);
+  assert.equal(movie()?.textContent, en.status_tag_just_added, 'higher-priority families still win');
+});

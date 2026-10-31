@@ -1304,3 +1304,33 @@ for (const action of ['#jeTaApplyAll', '#rebuildTagCacheBtn']) {
     assert.equal(h.ctx.isCurrent(), false);
   });
 }
+
+
+test('Scenes-only admin preview follows saved server defaults without changing personal settings', async t => {
+  const h = setup(t, { config: { StatusTagsEnabled: true, StatusTagsScenes: true, StatusTagsTrending: false,
+    StatusTagsNewRelease: false, StatusTagsJustAdded: false, StatusTagsSchedule: false,
+    StatusTagsMilestones: false, StatusTagsSeriesStatus: false } });
+  const own = h.JE.currentSettings;
+  const english = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
+  h.JE.t = key => english[key] || key;
+  h.load('enhanced/settingspanel/ui-panel-tag-preview.js');
+  await h.settle();
+  // A returning view mounts the shared preview through the real admin page lifecycle.
+  h.ctx.dispose();
+  const ctx = h.A.createPage(h.root, h.server);
+  h.cleanup.push(() => ctx.dispose());
+  await h.settle();
+  const movie = () => h.$('[data-sample="movie"] .status-tag');
+  assert.equal(movie()?.textContent, 'Post-credits');
+  assert.equal(h.JE.currentSettings, own);
+  h.change(h.$('#statusTagsScenes'), false);
+  await ctx.flush();
+  await h.settle();
+  assert.equal(h.server.StatusTagsScenes, false);
+  assert.equal(movie(), null);
+  h.change(h.$('#statusTagsScenes'), true);
+  await ctx.flush();
+  await h.settle();
+  assert.equal(movie()?.textContent, 'Post-credits');
+  assert.equal(h.JE.currentSettings, own);
+});

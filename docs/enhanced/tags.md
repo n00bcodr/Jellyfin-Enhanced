@@ -727,7 +727,7 @@ With **Compact** density, Season Premiere becomes **Premiere**; Season Finale an
 ![Native poster with runtime, aspect ratio, frame rate, SDH subtitles and a Post-credits badge](../images/tags/technical-chips-native.webp)
 *Administrator native-poster preview using cached Jellyfin streams and TMDB keywords; not a physical-client capture.*
 
-On **Media Tags → Status badges**, **Scenes** enables **Post-credits** and **Mid-credits** for movies. It starts off for both administrators and users. An administrator must enable the family on the Media Tags admin page’s **Status badges** tab and configure the existing TMDB key. Then users can enable Scenes for their account.
+On **Media Tags → Status badges**, **Scenes** enables **Post-credits** and **Mid-credits** for movies. It starts off for both administrators and users. An administrator must enable the family on the Media Tags admin page’s **Status badges** tab and configure the existing TMDB key. Then users can enable Scenes for their account. The movie in both the personal and admin live previews carries a Post-credits sample, shown when Scenes is enabled and no higher-priority family is selected.
 
 TMDB’s exact `aftercreditsstinger` and `duringcreditsstinger` keywords supply the facts. The server resolves them daily through its shared response cache and keeps the result in the tag cache; no browser or native poster request contacts TMDB per card. A failed lookup omits an unknown marker and keeps previously confirmed facts for later retry. No keyword is not a guarantee that a movie has no extra scene. Scenes follows the usual one-badge priority, after Just Added; Post-credits wins when both keywords exist. Native posters and the batch fallback use the same facts and switches.
 

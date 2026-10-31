@@ -62,12 +62,12 @@
         {
             key: 'movie', type: 'Movie', shape: 'poster', titleKey: 'panel_media_tags_preview_title_movie',
             id: 'a11ce0000000000000000000000000a1',
-            facts: { Genres: ['Science Fiction', 'Thriller'], OfficialRating: 'PG-13' },
+            facts: { Genres: ['Science Fiction', 'Thriller'], OfficialRating: 'PG-13', Scenes: { PostCredits: true, MidCredits: false } },
             quality: { showResolutionTag: ['4K', '4K', 'resolution'], showDynamicRangeTag: ['Dolby Vision', 'Dolby Vision', 'video-codec'], showSpecialFormatTag: ['IMAX', 'IMAX', 'video-codec'], showVideoCodecTag: ['HEVC', 'HEVC', 'video-format'], showAudioInfoTag: ['ATMOS 7.1', 'ATMOS', 'audio-codec'] },
             rating: { critic: '92%', community: '8.1' },
             age: 'PG-13', flags: ['fr', 'jp', 'de'], genres: [['Science Fiction', 'science'], ['Thriller', 'psychology']],
             logos: [{ kind: 'provider', name: 'Streamflix', svg: LOGOS.provider }],
-            status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added']],
+            status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added'], ['statusTagsScenes', 'scenes', 'status_tag_post_credits']],
             custom: 2,
         },
         {
