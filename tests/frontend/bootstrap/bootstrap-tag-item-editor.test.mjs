@@ -27,7 +27,7 @@ const detailPage = '<div id="itemDetailPage" class="page"><div class="detailButt
  */
 function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagData = (id) => ({ Id: id, Type: ITEMS[id]?.Type || 'Movie', LibraryId: KIDS, Genres: [] }), url } = {}) {
   const writes = [], toasts = [], requests = [], patches = [];
-  const io = { saveStatus: 200, user: 'user-a', epoch: 0, config: { TagLookItemOverrides: null }, conflict: 0 };
+  const io = { saveStatus: 200, user: 'user-a', server: 'server-a', epoch: 0, config: { TagLookItemOverrides: null }, conflict: 0 };
   const userChange = [];
   const h = createHarness({
     html: html + '<div id="sheets"></div>',
@@ -37,15 +37,16 @@ function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagDat
       pluginConfig: { ...plugin },
       t: (key, params) => params ? `${key}:${Object.values(params).join('|')}` : key,
       escapeHtml: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
-      saveUserSettings: (file, doc) => io.saveStatus === 200 ? (writes.push(plain(doc)), Promise.resolve()) : Promise.reject(Object.assign(new Error('Internal Server Error'), { status: io.saveStatus })),
+      saveUserSettings: (file, doc) => io.save ? io.save(doc) : io.saveStatus === 200 ? (writes.push(plain(doc)), Promise.resolve()) : Promise.reject(Object.assign(new Error('Internal Server Error'), { status: io.saveStatus })),
       session: { onUserChange: (name, fn) => userChange.push(fn), getEpoch: () => io.epoch, getUserId: () => io.user },
     },
     apiClient: {
       getCurrentUserId: () => io.user,
+      serverId: () => io.server,
       getUrl: (path, query) => `http://jellyfin.test/${path.replace(/^\//, '')}${query ? `?${new URLSearchParams(query)}` : ''}`,
       getItem: async (userId, id) => { requests.push(`item:${id}`); return ITEMS[id] ? { ...ITEMS[id] } : null; },
       getCurrentUser: async () => ({ Policy: { IsAdministrator: admin } }),
-      getPluginConfiguration: async () => structuredClone(io.config),
+      getPluginConfiguration: async () => io.get ? io.get() : structuredClone(io.config),
       getScaledImageUrl: (id) => `http://jellyfin.test/Items/${id}/Images/Primary`,
       ajax: async ({ url: target, data }) => {
         requests.push(target);
@@ -54,6 +55,7 @@ function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagDat
         if (u.pathname.endsWith('/JellyfinEnhanced/admin/configuration')) {
           const body = JSON.parse(data);
           patches.push(body);
+          if (io.patch) return io.patch(body);
           if (io.conflict-- > 0) throw Object.assign(new Error('Conflict'), { status: 409 });
           io.config = { ...io.config, ...body.Changes };
           return { values: body.Changes };
@@ -434,4 +436,62 @@ test('focus goes back to the redrawn control when the opener was replaced meanwh
   h.click(h.$('[data-tie-close]'));
   assert.equal(h.document.activeElement, h.$('[data-je-focus-key="edit-x"]'));
   assert.notEqual(h.document.activeElement, opener);
+});
+
+for (const phase of ['get', 'patch']) for (const identity of ['user', 'server', 'epoch']) {
+  test(`item-look save abandons a ${identity} switch during ${phase}`, async t => {
+    const h = setup(t, { admin: true });
+    const answer = deferred();
+    h.io[phase] = () => answer.promise;
+    await h.open(MOVIE);
+    h.change(h.$('[data-tie-everyone]'), true);
+    h.click(h.$('[data-tie-save]'));
+    await h.settle();
+    const patches = h.patches.length;
+    if (identity === 'epoch') h.io.epoch++;
+    else h.io[identity] += '-next';
+    h.JE.pluginConfig = { incoming: true };
+    answer.resolve(phase === 'get' ? { TagLookItemOverrides: null } : { values: { TagLookItemOverrides: [{ ItemId: MOVIE, Layout: 'bands' }] } });
+    await h.settle();
+    assert.equal(h.patches.length, patches, 'no PATCH or retry with incoming credentials');
+    assert.deepEqual(plain(h.JE.pluginConfig), { incoming: true }, 'incoming config stays intact');
+    assert.deepEqual(h.toasts, [], 'stale saves are silent');
+  });
+}
+
+test('a stale failed personal save cannot roll back incoming settings', async t => {
+  const h = setup(t);
+  const answer = deferred();
+  h.io.save = () => answer.promise;
+  await h.open(MOVIE);
+  h.change(h.$('[data-tie-keep]'), true);
+  h.click(h.$('[data-tie-save]'));
+  const pendingLocks = h.JE.currentSettings.tagLayoutLocks;
+  h.io.epoch++;
+  h.JE.currentSettings = { tagLayoutLocks: pendingLocks, incoming: true };
+  answer.reject(new Error('old request failed'));
+  await h.settle();
+  assert.equal(h.JE.currentSettings.tagLayoutLocks, pendingLocks);
+  assert.deepEqual(h.toasts, []);
+});
+
+for (const everyone of [false, true]) test(`Undo belongs to its originating session (${everyone ? 'server' : 'personal'})`, async t => {
+  const entry = { layout: 'bands', density: 'full', lockedAt: 1 };
+  const h = setup(t, { admin: everyone, settings: { tagLayoutLocks: everyone ? null : { [MOVIE]: entry } }, plugin: { TagLookItemOverrides: everyone ? [{ ItemId: MOVIE, ...entry }] : null } });
+  h.io.config.TagLookItemOverrides = h.JE.pluginConfig.TagLookItemOverrides;
+  await h.open(MOVIE);
+  h.change(h.$(everyone ? '[data-tie-everyone]' : '[data-tie-keep]'), false);
+  h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  const undo = h.$('.je-tie-toast button');
+  assert.ok(undo);
+  const count = h.writes.length + h.patches.length;
+  // The reset hook fires BEFORE the host replaces its credentials.
+  h.io.epoch++;
+  h.switchUser();
+  assert.equal(h.$('.je-tie-toast'), null, 'outstanding Undo removed synchronously');
+  h.io.user = 'incoming';
+  h.click(undo); // Even a retained reference is inert.
+  await h.settle();
+  assert.equal(h.writes.length + h.patches.length, count);
 });

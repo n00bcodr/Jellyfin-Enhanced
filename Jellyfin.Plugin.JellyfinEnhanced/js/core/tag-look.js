@@ -505,6 +505,26 @@
     }
 
     /**
+     * Capture the operation's user, server and epoch. Read the live client as
+     * well as the epoch: server changes may precede the session reconcile.
+     * Never reconcile in a reset hook, which runs before credentials change.
+     * @returns {() => boolean} Whether this operation still owns the session.
+     */
+    function captureSession() {
+        /** @returns {string} The live client's identity. */
+        const identity = () => {
+            try {
+                if (typeof ApiClient === 'undefined' || !ApiClient) return '|';
+                const server = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || ApiClient._serverInfo?.Id;
+                return `${server || ''}|${ApiClient.getCurrentUserId?.() || ''}`;
+            } catch { return '|'; }
+        };
+        const owner = identity();
+        const epoch = JE.session?.getEpoch?.();
+        return () => owner === identity() && epoch === JE.session?.getEpoch?.();
+    }
+
+    /**
      * Apply a change to the rules or locks, re-present the cards and save the
      * settings document. When the save fails the previous value is put back
      * (unless a later change replaced it meanwhile) and the cards re-presented
@@ -514,15 +534,20 @@
      * @returns {Promise<boolean>} Whether the change was saved.
      */
     function persist(key, value) {
-        const previous = JE.currentSettings[key];
-        JE.currentSettings[key] = value;
+        const isCurrent = captureSession();
+        const settings = JE.currentSettings;
+        const previous = settings[key];
+        if (!isCurrent()) return Promise.resolve(false);
+        settings[key] = value;
         represent();
+        if (!isCurrent()) return Promise.resolve(false);
         if (typeof JE.saveUserSettings !== 'function') return Promise.resolve(true);
-        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true })))
-            .then(() => true, (err) => {
+        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', settings, { throwOnError: true })))
+            .then(() => isCurrent(), (err) => {
+                if (!isCurrent()) return false;
                 console.warn('🪼 Jellyfin Enhanced [TagLook]: saving the tag looks failed:', err);
-                if (JE.currentSettings[key] === value) {
-                    JE.currentSettings[key] = previous;
+                if (JE.currentSettings === settings && settings[key] === value) {
+                    settings[key] = previous;
                     represent();
                 }
                 return false;
@@ -722,6 +747,7 @@
      * @returns {Promise<boolean>} Whether it was saved.
      */
     async function saveItemOverride(itemId, look, options = {}) {
+        const isCurrent = captureSession();
         const id = normalizeId(itemId);
         if (!id) return false;
         const api = options.api || {
@@ -736,16 +762,21 @@
         };
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
+                if (!isCurrent()) return false;
                 const config = await api.get();
+                if (!isCurrent()) return false;
                 const before = config?.TagLookItemOverrides ?? null;
                 const next = itemOverridesWith(before, id, look);
                 if (next === undefined) return false;
+                if (!isCurrent()) return false;
                 const result = await api.patch({ TagLookItemOverrides: next }, { TagLookItemOverrides: before });
+                if (!isCurrent()) return false;
                 const stored = result?.values?.TagLookItemOverrides ?? result?.Values?.TagLookItemOverrides ?? next;
                 if (JE.pluginConfig) JE.pluginConfig.TagLookItemOverrides = stored;
                 represent();
                 return true;
             } catch (err) {
+                if (!isCurrent()) return false;
                 if (err?.status === 409 && attempt === 0) continue;
                 console.warn('🪼 Jellyfin Enhanced [TagLook]: saving the item look for everyone failed:', err);
                 return false;
@@ -755,6 +786,7 @@
     }
 
     JE.core.tagLook = {
+        captureSession,
         FIELDS: FIELDS.slice(),
         TYPES: TYPES.slice(),
         MAX_RULES,

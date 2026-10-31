@@ -251,6 +251,7 @@
      * @param {HTMLElement} [host] - Where it goes (the settings panel keeps the page behind inert).
      */
     function showUndo(message, undo, host) {
+        const isCurrent = lookApi().captureSession();
         document.querySelectorAll('.je-tie-toast').forEach((el) => el.remove());
         const toast = document.createElement('div');
         toast.className = 'je-tie-toast';
@@ -264,7 +265,7 @@
         button.addEventListener('click', () => {
             clearTimeout(timer);
             toast.remove();
-            undo();
+            if (isCurrent()) undo();
         });
         toast.append(text, button);
         (host && host.isConnected ? host : document.body).appendChild(toast);
@@ -359,10 +360,7 @@
         if (!L || !look || !id) return false;
         const serverMode = options.mode === 'server';
         const opener = options.opener || /** @type {HTMLElement|null} */ (document.activeElement);
-        const epoch = JE.session?.getEpoch?.();
-        const userId = ApiClient.getCurrentUserId();
-        /** @returns {boolean} Still the session the editor was opened in. */
-        const isCurrent = () => epoch === JE.session?.getEpoch?.() && userId === ApiClient.getCurrentUserId();
+        const isCurrent = look.captureSession();
 
         const [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
         if (!isCurrent()) return false;
@@ -670,7 +668,7 @@
 
         const saveButton = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-save]'));
         saveButton.addEventListener('click', async () => {
-            if (saveButton.disabled) return;
+            if (saveButton.disabled || !isCurrent()) return;
             const targetId = targetOf();
             const chosen = lookOf(draft, scopeField());
             if (serverMode) {
@@ -715,6 +713,7 @@
                     }
                 }
             } catch (err) {
+                if (!isCurrent()) return;
                 console.warn(`${logPrefix} saving the item look failed:`, err);
                 results.push(false);
             }
@@ -742,7 +741,10 @@
     }
 
     // A user switch closes the editor: its drafts belong to the outgoing user.
-    JE.session?.onUserChange?.('tag-item-editor', () => close());
+    JE.session?.onUserChange?.('tag-item-editor', () => {
+        close();
+        document.querySelectorAll('.je-tie-toast').forEach((el) => el.remove());
+    });
 
     JE.tagItemEditor = {
         open,
