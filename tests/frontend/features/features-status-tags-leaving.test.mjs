@@ -295,6 +295,8 @@ test('direct play: the capabilities the review found missing or wrong follow jel
   assert.ok(!capturedBrowser(t, noMkv).JE.tagDirectPlay.profile().DirectPlayProfiles.some(d => d.Container === 'mkv'));
 });
 
+const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
+
 test('direct play: a native shell builds its profile with the ported builder, also when it answers later', async t => {
   const [defaults] = WEB_PROFILE.cases;
   const h = capturedBrowser(t, defaults);
@@ -306,6 +308,13 @@ test('direct play: a native shell builds its profile with the ported builder, al
   assert.equal(typeof handed.builder, 'function');
   assert.equal(h.JE.tagDirectPlay.profile().Name, 'shell');
   assert.deepEqual(plain(h.JE.tagDirectPlay.profile().SubtitleProfiles), defaults.profile.SubtitleProfiles);
+  // Its generation and inputs still hold: it stays in use, and the shell is not asked again.
+  const hash = h.JE.tagDirectPlay.profileHash();
+  handed = null;
+  await nextTask();
+  assert.equal(h.JE.tagDirectPlay.profile().Name, 'shell');
+  assert.equal(h.JE.tagDirectPlay.profileHash(), hash);
+  assert.equal(handed, null);
 });
 
 /** Write one fixture case's local settings for a user (null: remove them). */
@@ -317,7 +326,6 @@ function writeSettings(h, kase, user, remove = false) {
   }
 }
 
-const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
 
 test('direct play: the profile and its hash follow the signed-in user and the playback settings changed in this page', async t => {
   const [defaults, settings, burnIn] = WEB_PROFILE.cases;
@@ -385,6 +393,67 @@ test('direct play: a native shell answer for an earlier build never replaces the
   answers[0](); // the first user's late answer
   await nextTask();
   assert.equal(dp.profile().Name, 'shell-u2');
+});
+
+test('direct play: a native answer pending across a user switch is dropped, and the next user gets their own build', async t => {
+  const [defaults, settings] = WEB_PROFILE.cases;
+  let user = 'u1';
+  const hooks = new Map();
+  const h = capturedBrowser(t, defaults, { apiClient: { getCurrentUserId: () => user }, session: { getUserId: () => user, onUserChange: (name, fn) => hooks.set(name, fn) } });
+  for (const [key, value] of Object.entries(settings.settings)) if (key.startsWith('USER-')) h.window.localStorage.setItem(key.replace(/^USER-/, 'u2-'), value);
+  const asked = [];
+  h.window.NativeShell = { AppHost: { getDeviceProfile: (builder) => { const answer = { ...builder(defaults.options), Name: `shell-${user}` }; return new Promise(resolve => asked.push({ user, answer, resolve: () => resolve(answer) })); } } };
+  const dp = h.JE.tagDirectPlay;
+  dp.track(h.document.createElement('div'), 'm1', () => {}); // registers the session hook (and builds)
+  dp.profile();
+  assert.equal(asked.length, 1);
+  // The switch completes, then the old user's answer arrives before anything asks for a profile.
+  hooks.get('direct-play')();
+  user = 'u2';
+  asked[0].resolve();
+  await nextTask();
+  assert.notEqual(dp.profile().Name, 'shell-u1', "the old user's answer is never used");
+  assert.equal(asked.length, 2, 'built again for the new user');
+  assert.equal(asked[1].user, 'u2');
+  asked[1].resolve();
+  await nextTask();
+  assert.equal(dp.profile().Name, 'shell-u2');
+  assert.deepEqual(plain(dp.profile()), plain(asked[1].answer));
+  assert.ok(dp.profile().TranscodingProfiles.some(p => p.Type === 'Video' && p.MaxAudioChannels === '2'), "built from the new user's settings");
+  // And when the hook runs before the new id is in place, the answer built for the old id is dropped too.
+  hooks.get('direct-play')();
+  dp.profile();
+  assert.equal(asked.length, 3);
+  assert.equal(asked[2].user, 'u2');
+  user = 'u1';
+  asked[2].resolve();
+  await nextTask();
+  assert.notEqual(dp.profile().Name, 'shell-u2');
+  assert.equal(asked.length, 4);
+  assert.equal(asked[3].user, 'u1');
+});
+
+test('direct play: a setting changed while a native answer is pending drops that answer and builds again', async t => {
+  const [defaults] = WEB_PROFILE.cases;
+  const h = capturedBrowser(t, defaults);
+  const asked = [];
+  h.window.NativeShell = { AppHost: { getDeviceProfile: (builder) => { const answer = builder(defaults.options); return new Promise(resolve => asked.push(() => resolve(answer))); } } };
+  const dp = h.JE.tagDirectPlay;
+  dp.setProfile(null);
+  dp.profile();
+  assert.equal(asked.length, 1);
+  // No lookup in between notices the change: the answer itself is checked against the live settings.
+  h.window.localStorage.setItem('subtitleburnin', 'all');
+  asked[0]();
+  await nextTask();
+  const fresh = plain(dp.webProfile(defaults.options));
+  assert.deepEqual(fresh.SubtitleProfiles, []);
+  assert.deepEqual(plain(dp.profile()), fresh, 'the old answer (with subtitle profiles) is not used');
+  assert.equal(asked.length, 2, 'the shell is asked again with the new settings');
+  asked[1]();
+  await nextTask();
+  assert.deepEqual(plain(dp.profile()), fresh);
+  assert.equal(asked.length, 2);
 });
 
 test('direct play: a playback setting changed in this page asks again with the new profile', async t => {

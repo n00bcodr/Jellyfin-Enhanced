@@ -128,14 +128,18 @@
     /** @type {Object|null} */
     let override = null;
     /**
-     * The built profile, the settings its build read and their values with the
-     * user's id (a change rebuilds it).
+     * The built profile, the settings its build read and the values it read
+     * them with, with the user's id (a change rebuilds it).
      * @type {{profile: Object, hash: string, reads: string[], settings: string}|null}
      */
     let built = null;
-    /** Counts builds: a native shell's late answer applies only to its own build. */
+    /**
+     * The profile generation: each build starts one, and a user change or a
+     * changed setting ends it at once (rebuild). A native shell's late answer
+     * applies only to the generation it was asked in.
+     */
     let builds = 0;
-    /** @type {Set<string>|null} Setting names read while a build runs. */
+    /** @type {Map<string, string|null>|null} Setting names and values read while a build runs. */
     let reading = null;
     /** The settings were compared in this task already (see settingsChanged). */
     let settingsChecked = false;
@@ -203,10 +207,16 @@
         return b;
     }
 
+    /** @param {string} name @returns {string|null} A local setting's value now (not recorded). */
+    function storedSetting(name) {
+        try { return localStorage.getItem(name); } catch { return null; }
+    }
+
     /** @param {string} name @returns {string|null} A jellyfin-web app setting (localStorage, unprefixed). */
     function appSetting(name) {
-        reading?.add(name);
-        try { return localStorage.getItem(name); } catch { return null; }
+        const value = storedSetting(name);
+        if (reading && !reading.has(name)) reading.set(name, value);
+        return value;
     }
 
     /** @returns {string} The signed-in user's id, as jellyfin-web prefixes its per-user settings. */
@@ -221,18 +231,26 @@
     }
 
     /**
-     * The user and the values of the settings a build read, as one string.
-     * @param {string[]} names
+     * A user and setting values as one string (a build's inputs).
+     * @param {string} user
+     * @param {Map<string, string|null>} values
+     * @returns {string}
+     */
+    function inputsOf(user, values) {
+        let text = user;
+        for (const [name, value] of values) text += `\n${name}=${value}`;
+        return text;
+    }
+
+    /**
+     * The same for the signed-in user and these settings' values now.
+     * @param {Iterable<string>} names
      * @returns {string}
      */
     function settingsOf(names) {
-        let text = currentUser();
-        for (const name of names) {
-            let value;
-            try { value = localStorage.getItem(name); } catch { value = null; }
-            text += `\n${name}=${value}`;
-        }
-        return text;
+        const values = new Map();
+        for (const name of names) values.set(name, storedSetting(name));
+        return inputsOf(currentUser(), values);
     }
 
     /** jellyfin-web's toBoolean: only "true"/"false" count. */
@@ -686,23 +704,23 @@
      * shell's own (window.NativeShell.AppHost.getDeviceProfile, handed the
      * ported builder; it may answer later, and lookups wait for it), else the
      * ported browser profile; then the host's width and codec settings. The
-     * settings read on the way are recorded with their values (settingsOf).
+     * user and the settings read on the way are recorded with the values read
+     * (inputsOf). A late answer applies only while its generation is current
+     * and those inputs still hold; otherwise the profile is built again.
      * @returns {{profile: Object, hash: string, reads: string[], settings: string}}
      */
     function build() {
         const b = browserFlags();
         const own = ++builds;
-        const reads = new Set();
+        const user = currentUser();
+        const reads = new Map();
         const record = (fn) => {
             const outer = reading;
             reading = reads;
             try { return fn(); } finally { reading = outer; }
         };
         const builder = (options) => record(() => webProfile(options || {}, b));
-        const finish = (profile) => {
-            const names = [...reads];
-            return { profile, hash: hashOf(profile), reads: names, settings: settingsOf(names) };
-        };
+        const finish = (profile) => ({ profile, hash: hashOf(profile), reads: [...reads.keys()], settings: inputsOf(user, reads) });
         let profile = null;
         try {
             const shell = typeof window !== 'undefined' ? window.NativeShell?.AppHost : null;
@@ -710,9 +728,12 @@
             const native = typeof shell?.getDeviceProfile === 'function' ? shell.getDeviceProfile(builder, version) : null;
             if (native && typeof native.then === 'function') {
                 const pending = Promise.resolve(native).then((answer) => {
-                    // A later build (the user or a setting changed) has replaced this one.
+                    // The user or a setting changed since: that ended this generation (rebuild).
                     if (!isProfile(answer) || own !== builds) return;
-                    built = finish(record(() => withHostSettings(JSON.parse(JSON.stringify(answer)), b)));
+                    const profile = record(() => withHostSettings(JSON.parse(JSON.stringify(answer)), b));
+                    // A change no lookup has noticed yet: the answer was built from old inputs.
+                    if (settingsOf(reads.keys()) !== inputsOf(user, reads)) { rebuild(); return; }
+                    built = finish(profile);
                     primed = null;
                 }, () => { /* keep the browser profile */ }).finally(() => {
                     if (nativePending === pending) nativePending = null;
@@ -738,11 +759,15 @@
     }
 
     /**
-     * Drop the built profile so the next lookup builds it again, with the
-     * answers in memory under the hash in use (persisted answers stay keyed by
-     * their hash and are simply not read under the new one).
+     * End the profile generation and drop the built profile so the next
+     * lookup builds it again (a native answer still on its way is ignored and
+     * no longer holds lookups back), with the answers in memory under the hash
+     * in use (persisted answers stay keyed by their hash and are simply not
+     * read under the new one).
      */
     function rebuild() {
+        builds++;
+        nativePending = null;
         const hash = rated?.value.hash;
         if (hash) for (const key of [...memory.keys()]) if (key.startsWith(`${hash}|`)) memory.delete(key);
         built = null;
@@ -992,7 +1017,9 @@
             ? () => deadline.timeRemaining()
             : () => SLICE_BUDGET_MS - (performance.now() - started);
         const late = !deadline || !!deadline.didTimeout;
-        // The shell's own profile first (its settling schedules the next slice).
+        // The shell's own profile first (its settling schedules the next slice),
+        // built again now if the user or a setting changed.
+        current();
         if (nativePending) return;
         // Stored answers first: a request never goes out for an item the store already knows.
         prime();
