@@ -83,4 +83,4 @@ The old main form contains only the Media Tags summary card. Its legacy section 
 | Groups → Language | The pre-existing priority string, strict policy and regional merging fields remain here. Personal priority arrays and native date context remain user settings. |
 | Status badges | Existing family switches and day windows, plus the TMDB dependency note; no user-only date-context field is added to the patch allowlist. |
 
-All nine poster groups share the layout editor and preview. Page-wide Tag Styles, including Poster variables, skip scoped previews. The page seeds size/gap/edge and new-group defaults without changing the signed-in user's document. Cache schema remains 18; resolver, renderer and pixel versions are unchanged.
+All nine poster groups share the layout editor and preview. Page-wide Tag Styles, including Poster variables, skip scoped previews. The page seeds size/gap/edge and new-group defaults without changing the signed-in user's document. The current cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`) and the resolver, renderer and pixel versions are unchanged by the admin page.
