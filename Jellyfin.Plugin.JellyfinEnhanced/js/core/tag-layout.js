@@ -2050,6 +2050,8 @@
     function prepareFit(ctrl) {
         for (const root of [ctrl.host, ctrl.outlet]) {
             root?.querySelectorAll('[data-je-overflow]').forEach((el) => el.removeAttribute('data-je-overflow'));
+            // Restore the intrinsic markup before any measurements.
+            root?.querySelectorAll('.je-tag-fit-text').forEach((text) => text.replaceWith(...text.childNodes));
             root?.querySelectorAll('[data-je-fit-width]').forEach((el) => {
                 el.removeAttribute('data-je-fit-width');
                 el.style.removeProperty('--je-chip-fit-width');
@@ -2266,6 +2268,30 @@
     }
 
     /**
+     * Give anonymous text a shrinking flex child on fitted display copies.
+     * Existing label spans keep their markup; icons and the chip's own flex
+     * layout retain exactly the height measured by measureFit. Writes only.
+     * @param {HTMLElement} first - The chip, or its transparent poster link.
+     */
+    function prepareFitText(first) {
+        const chip = first.matches('.awards-link, .language-link') ? first.firstElementChild : first;
+        if (!chip) return;
+        if (chip.matches('.status-tag, .quality-overlay-label, .age-rating-tag, .je-logo-text')) {
+            const text = document.createElement('span');
+            text.className = 'je-tag-fit-text';
+            text.append(...chip.childNodes);
+            chip.append(text);
+        } else if (chip.matches('.language-chip')) {
+            for (const node of Array.from(chip.childNodes)) {
+                if (node.nodeType !== 3) continue;
+                const text = document.createElement('span');
+                text.className = 'je-tag-fit-text';
+                node.replaceWith(text); text.append(node);
+            }
+        }
+    }
+
+    /**
      * Apply a card's measurements (writes only).
      * @param {CardController} ctrl
      * @param {FitPlan} plan
@@ -2274,15 +2300,7 @@
         for (const row of plan.rows) {
             if (row.width !== undefined) row.slot.style.setProperty('--je-anchor-width', `${row.width}px`);
             if (row.firstWidth !== undefined) {
-                // Linked code chips have anonymous flex text; give that text
-                // a shrinking box without altering the master or its icons.
-                const language = row.chips[0].querySelector('.language-chip');
-                if (language) for (const node of Array.from(language.childNodes)) {
-                    if (node.nodeType !== 3) continue;
-                    const text = document.createElement('span');
-                    text.className = 'je-tag-fit-text';
-                    node.replaceWith(text); text.append(node);
-                }
+                prepareFitText(row.chips[0]);
                 row.chips[0].setAttribute('data-je-fit-width', '');
                 row.chips[0].style.setProperty('--je-chip-fit-width', `${row.firstWidth}px`);
             }

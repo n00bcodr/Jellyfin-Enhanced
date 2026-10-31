@@ -173,8 +173,14 @@
             }
             ${host('corners')} > [data-je-group] > [data-je-fit-width] {
                 max-width: var(--je-chip-fit-width); min-width: 0;
+                overflow: visible;
+            }
+            /* Truncate only the shrinking label, retaining flex height and
+               icon alignment as measured before the constraint was applied. */
+            ${host('corners')} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text, .rating-text),
+            ${host('corners')} [data-je-fit-width].awards-tag > span:last-child {
+                display: block; min-width: 0;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-                display: block;
             }
 
             /* A link is transparent to chip sizing and paint: clip the label,

@@ -84,3 +84,80 @@ test('linked production Language code ellipsizes inside the constrained chip',as
   });
   expect(r.linked).toBe(true);expect(r.width).toBeLessThanOrEqual(r.budget+.02);expect(r.ellipsis).toBe('ellipsis');expect(r.overflow).toBe(true);
 });
+
+/** Compare an intrinsic production chip with the same chip after a real fit pass. */
+async function chipGeometry(page, kind, linked, styled, actual = false) {
+  return page.evaluate(async ({kind,linked,styled,actual})=>{
+    const JE=JellyfinEnhanced,L=JE.core.tagLayout,h=document.querySelector('.je-tag-host');
+    const image=document.querySelector('.cardImageContainer');if(linked)image.setAttribute('href','#/details?id=0123456789abcdef0123456789abcdef');else image.removeAttribute('href');
+    const group=kind==='logoText'||kind==='logoImage'?'logos':kind==='languageFlag'?'language':kind;
+    if(actual){const width=kind==='rating'||kind==='status'?80:kind==='language'?40:kind==='quality'?80:180;for(const c of document.querySelectorAll('.cardBox,.cardScalable'))c.style.width=width+'px';}
+    Object.assign(JE.currentSettings,{statusTagsEnabled:true,statusTagsJustAddedDays:30,languageTagsShowSubtitles:true,languageTagsStyle:'codes',showResolutionTag:false,showDynamicRangeTag:true,
+      tagLayouts:{corners:{groups:[{group,slot:'ml'}]}}});L.invalidateSettings();
+    document.getElementById('geometry-colours')?.remove();
+    if(styled){const style=document.createElement('style');style.id='geometry-colours';style.textContent=JE.tagStyles.buildCss({preset:'outline'});document.head.append(style);}
+    const render=(name,data)=>JE.tagPipeline[name].renderFromServerCache(h,data,'0123456789abcdef0123456789abcdef');
+    if(kind==='custom'){
+      const w=document.createElement('div');w.className='custom-overlay-container';w.append(JE.customTags.buildChip({id:'test',icon:'theaters',label:'A long custom label here'}));L.commitGroup(h,group,w);
+    }else if(kind==='rating'){
+      const w=document.createElement('div');w.className='rating-overlay-container';w.append(JE.ratingSources.chip({id:'imdb',value:8.1,text:'8.1'}));L.commitGroup(h,group,w);
+    }else if(kind==='awards') render('awards',{Awards:{CertifiedFresh:true}});
+    else if(kind==='genre') render('genre',{Genres:['Science Fiction']});
+    else if(kind==='status') render('status',{Type:'Movie',DateCreated:new Date().toISOString()});
+    else if(kind==='quality') render('quality',{StreamData:{Streams:[{Type:'Video',Width:3840,Height:2160,VideoRangeType:'DOVIWithHDR10'}]}});
+    else if(kind==='language'||kind==='languageFlag') {
+      if(kind==='languageFlag')JE.currentSettings.languageTagsStyle='flags';
+      L.commitGroup(h,group,JE.core.languageTags.buildGroup({subtitles:[{code:'en',name:'English',sdh:true}]},3,()=> 'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="24"/>')));
+    }
+    else{
+      const w=document.createElement('div');w.className='logo-overlay-container';
+      const src=kind==='logoImage'?'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="72" height="18"/>'):undefined;
+      w.append(JE.logoTags.buildChip({kind:'studio',name:'WarnerBrosPictures',logo:null},src));L.commitGroup(h,group,w);
+    }
+    await document.fonts.load('16px "JE Material Symbols Outlined"','theaters');await document.fonts.ready;
+    await Promise.all([...h.querySelectorAll('img')].map(i=>i.decode().catch(()=>{})));
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
+    const selector={custom:'.custom-tag',rating:'.rating-tag',awards:'.awards-tag',genre:'.genre-tag',status:'.status-tag',quality:'.quality-overlay-label',language:'.language-chip',languageFlag:'.language-chip',logoText:'.je-logo-chip',logoImage:'.je-logo-chip'}[kind];
+    let chip=h.querySelector(selector);const fit=chip.closest('a')||chip;
+    // Capture the intrinsic box measured by measureFit, before its writes.
+    fit.removeAttribute('data-je-fit-width');fit.style.removeProperty('--je-chip-fit-width');
+    const geometry=()=>{
+      chip=h.querySelector(selector);const b=chip.getBoundingClientRect(),s=getComputedStyle(chip),i=chip.querySelector('.custom-tag-icon,.je-rating-source-logo,.awards-tag-logo,.je-msym-outlined,.language-flag,.language-cc,.je-logo-img'),ib=i?.getBoundingClientRect(),ring=getComputedStyle(chip,'::after');
+      return {height:b.height,display:s.display,width:b.width,icon:ib?{width:ib.width,height:ib.height,centre:ib.y+ib.height/2-b.y}:null,
+        clip:s.clipPath,left:s.borderLeftColor,right:s.borderRightColor,tl:s.borderTopLeftRadius,tr:s.borderTopRightRadius,ringLeft:ring.borderLeftWidth,ringRight:ring.borderRightWidth};
+    };
+    const before=geometry();
+    // Re-run the real planner where it fits, plus exercise the 88px CSS
+    // constraint on naturally small icon/code chips without enlarging them.
+    if(actual){
+      const opposite=group==='status'?'awards':'status';
+      JE.currentSettings.tagLayouts.corners.groups.push({group:opposite,slot:'mr'});L.invalidateSettings();L.refreshPresentation(h);
+      render(opposite,opposite==='status'?{Type:'Movie',DateCreated:new Date().toISOString()}:{Awards:{CertifiedFresh:true}});
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
+    }else{fit.setAttribute('data-je-fit-width','');fit.style.setProperty('--je-chip-fit-width',kind==='rating'?'38px':'88px');}
+    const after=geometry();
+    return {before,after,html:chip.outerHTML+JSON.stringify([...chip.querySelectorAll('.je-tag-fit-text,.custom-tag-text,.rating-text,span:last-child')].map(t=>({text:t.textContent,w:t.clientWidth,sw:t.scrollWidth,ellipsis:getComputedStyle(t).textOverflow,min:getComputedStyle(t).minWidth}))),constrained:!!chip.closest('[data-je-fit-width]'),textEllipsis:[...chip.querySelectorAll('.je-tag-fit-text,.custom-tag-text,.rating-text,.awards-tag > span:last-child')].some(t=>getComputedStyle(t).textOverflow==='ellipsis'&&t.scrollWidth>t.clientWidth)};
+  },{kind,linked,styled,actual});
+}
+
+for(const kind of ['custom','rating','status','quality','genre','language','languageFlag','awards','logoText','logoImage']){
+  test(`production ${kind} keeps its flex height, icon alignment and Flush paint when constrained`,async ({page})=>{
+    await setup(page);
+    for(const file of ['core/media-language.js','tags/languagetags.js','tags/customtags.js','tags/rating-sources.js','tags/ratingtags.js','tags/qualitytags.js','tags/genretags.js','tags/logotags.js'])await page.addScriptTag({path:path.join(root,file)});
+    await page.evaluate(()=>{const JE=JellyfinEnhanced;JE.initializeLanguageTags();JE.initializeCustomTags();JE.initializeRatingTags();JE.initializeQualityTags();JE.initializeGenreTags();JE.initializeLogoTags();});
+    for(const linked of kind==='language'||kind==='languageFlag'||kind==='awards'?[false,true]:[true]) for(const styled of [false,true]){
+      // Each sample starts from fresh production markup and stylesheet state.
+      const r=await chipGeometry(page,kind,linked,styled);
+      expect(r.after.height,r.html).toBeCloseTo(r.before.height,3);expect(r.after.display).toBe(r.before.display);
+      expect(r.after.icon,r.html).toEqual(r.before.icon);
+      for(const key of ['clip','left','right','tl','tr','ringLeft','ringRight'])expect(r.after[key],key).toBe(r.before[key]);
+      await page.evaluate(()=>{const L=JellyfinEnhanced.core.tagLayout,h=document.querySelector('.je-tag-host');for(const g of ['custom','rating','status','quality','genre','language','awards','logos'])L.removeGroup(h,g);});
+      if(!['genre','languageFlag','logoImage'].includes(kind)){
+        const fitted=await chipGeometry(page,kind,linked,styled,true);
+        expect(fitted.constrained,fitted.html).toBe(true);expect(fitted.after.height,fitted.html).toBeCloseTo(fitted.before.height,3);
+        expect(fitted.after.icon).toEqual(fitted.before.icon);expect(fitted.textEllipsis,fitted.html).toBe(true);
+      }
+      await page.evaluate(()=>{const L=JellyfinEnhanced.core.tagLayout,h=document.querySelector('.je-tag-host');for(const g of ['custom','rating','status','quality','genre','language','awards','logos'])L.removeGroup(h,g);});
+    }
+  });
+}

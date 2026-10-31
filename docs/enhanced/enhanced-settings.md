@@ -833,3 +833,5 @@ In Compact quality labels, AC-3 is **DD 5.1** and E-AC-3 is **DD+ 5.1**; Full sh
 Series and season quality policies preserve version-0 audio labels in Highest and All modes, including preferred-language summaries. Editing an unrelated preference leaves the audio vocabulary unchanged.
 
 In the Corners tag layout, left-centre and right-centre groups use the available poster width, sharing it when both sides are occupied. The first chip remains visible even on a narrow poster; long labels use an ellipsis, and `+N` counts later chips.
+
+When a first chip needs an ellipsis in Corners, only its text shrinks: Custom icons, rating logos and the chip’s height and inward Flush borders stay in place. Awards and Language poster links use the same constraint on their inner chip.

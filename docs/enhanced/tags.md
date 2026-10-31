@@ -144,7 +144,7 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
     ![Movie posters with quality dots and a corner score; the hovered poster shows every tag](../images/tags/tag-layout-minimal.webp)
 
-At left centre or right centre, a group can use the poster's width when the opposite side is empty. With groups on both sides, each keeps half the available width with a gap between them. The first chip at every anchor stays visible; a label too wide for its space is shortened with an ellipsis. A `+N` chip counts only later chips that do not fit.
+At left centre or right centre, a group can use the poster's width when the opposite side is empty. With groups on both sides, each keeps half the available width with a gap between them. The first chip at every anchor stays visible; a label too wide for its space is shortened with an ellipsis. The chip keeps its height and icon alignment while its text shortens, including linked Awards and Language chips. A `+N` chip counts only later chips that do not fit.
 
 #### Tag size and spacing
 
