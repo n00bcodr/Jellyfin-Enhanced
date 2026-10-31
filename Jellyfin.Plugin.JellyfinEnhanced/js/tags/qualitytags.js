@@ -791,7 +791,12 @@
                 if (!allValues(category)) continue;
                 for (const label of qualities) if (categorize(label) === category) qualities.delete(label);
                 let values = distinct.filter(value => value.Category === (category === 'audio' ? 'audioInfo' : category));
-                if (category === 'audio') values = selectAudioStreamsForLanguage(values, resolvePreferredAudioLanguage());
+                if (category === 'audio' && resolvePreferredAudioLanguage()) {
+                    // The raw tracks already chose the language tier above, including
+                    // unlabelled tracks. No labels in that tier means no sound chip.
+                    const languages = new Set(audioStreams.map(stream => stream.Language || null));
+                    values = values.filter(value => languages.has(value.Language || null));
+                }
                 for (const value of values) qualities.add(value.Label);
             }
         }

@@ -52,6 +52,7 @@ test('All uses cached distinct sets and exact-language tiers rather than recompu
   const h = setup(t);
   Object.assign(h.JE.currentSettings, all, { qualityTagsPreferredAudioLanguage: 'en-US' });
   const data = movie();
+  data.StreamData.Streams.push({ Type: 'Audio', Language: 'en-US', DisplayTitle: 'ATMOS 7.1', Channels: 8 });
   data.StreamData.DistinctQualities = [
     { Category: 'audioInfo', Label: 'DTS 5.1', Language: 'eng' },
     { Category: 'audioInfo', Label: 'ATMOS 7.1', Language: 'en-US' },
@@ -62,6 +63,46 @@ test('All uses cached distinct sets and exact-language tiers rather than recompu
   h.JE.currentSettings.qualityTagsPreferredAudioLanguage = 'en-GB';
   assert.deepEqual(h.render(data).slice(-1), ['DTS 5.1']);
 });
+
+
+test('Sound All without a preference retains cached facts when raw audio tracks are absent', t => {
+  const h = setup(t);
+  Object.assign(h.JE.currentSettings, { qualityAudioDisplayMode: 'all' });
+  const entry = { Type: 'Movie', StreamData: { Streams: [{ Type: 'Video', Height: 1080, Codec: 'h264' }],
+    DistinctQualities: [{ Category: 'audioInfo', Label: 'ATMOS 7.1', Language: 'deu' }] } };
+  assert.deepEqual(h.render(entry), ['1080p', 'H264', 'ATMOS 7.1']);
+});
+
+for (const [name, language, preferred, labelledLanguage, expected] of [
+  ['preferred unlabelled English over German Atmos', 'eng', 'eng', 'deu', []],
+  ['no preference includes German Atmos', 'eng', 'none', 'deu', ['ATMOS 7.1']],
+  ['absent preferred language falls back', 'eng', 'fra', 'deu', ['ATMOS 7.1']],
+  ['exact unlabelled region over labelled base', 'en-US', 'en-US', 'eng', []],
+  ['unlabelled base for unavailable region', 'eng', 'en-AU', 'deu', []],
+  ['absent exact region uses labelled base', 'deu', 'en-AU', 'eng', ['ATMOS 7.1']],
+  ['only unlabelled tracks with preference', 'eng', 'eng', null, []],
+  ['only unlabelled tracks without preference', 'eng', 'none', null, []],
+]) {
+  test(`Sound All selects raw language tier: ${name}; cached and batch agree`, t => {
+    const h = setup(t);
+    Object.assign(h.JE.currentSettings, { qualityAudioDisplayMode: 'all', qualityTagsPreferredAudioLanguage: preferred });
+    const raw = [{ Type: 'Video', Height: 1080, Codec: 'h264' },
+      { Type: 'Audio', Language: language, Codec: 'aac', Channels: 2 }];
+    if (labelledLanguage) raw.push({ Type: 'Audio', Language: labelledLanguage, DisplayTitle: 'ATMOS 7.1', Channels: 8 });
+    const entry = { Type: 'Movie', StreamData: { Streams: raw, Sources: [], DistinctQualities: [
+      { Category: 'videoCodec', Label: 'H264' }, { Category: 'dynamicRange', Label: 'SDR' },
+      ...(labelledLanguage ? [{ Category: 'audioInfo', Label: 'ATMOS 7.1', Language: labelledLanguage }] : []),
+    ] } };
+    const labels = ['1080p', 'H264', ...expected];
+    assert.deepEqual(h.render(entry), labels, 'server-cached distinct facts');
+    delete entry.StreamData.DistinctQualities;
+    assert.deepEqual(h.render(entry), labels, 'uncached stream facts');
+    h.JE.core.tagLayout.clearCard(h.card);
+    delete h.document.querySelector('.card').dataset.jeQualityTagged;
+    h.renderers.get('quality').render(h.card, { Id: 'batch-language', Type: 'Movie', MediaStreams: raw, MediaSources: [] });
+    assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), labels, 'batch fallback');
+  });
+}
 
 for (const [threshold, present] of [['off', true], ['720p', true], ['1080p', true], ['4k', false], ['invalid', true]]) {
   test(`minimum ${threshold} filters inclusively before caps`, t => {

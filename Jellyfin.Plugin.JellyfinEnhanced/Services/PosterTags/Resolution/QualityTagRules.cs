@@ -149,9 +149,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var candidates = values.Where(value => value.Category == category).ToList();
             if (category == AudioInfo && !string.IsNullOrEmpty(preferred))
             {
-                var exact = candidates.FindAll(value => LanguageFlagRules.MatchesLanguage(value.Language, preferred, true));
-                var loose = candidates.FindAll(value => LanguageFlagRules.MatchesLanguage(value.Language, preferred, false));
-                candidates = exact.Count > 0 ? exact : loose.Count > 0 ? loose : candidates;
+                // Availability includes tracks with no displayable label. Once a tier is
+                // selected, an empty label set must not fall back to another language.
+                var tracks = data?.Streams?.FindAll(stream => stream?.Type == "Audio") ?? new List<TagMediaStream>();
+                var languages = SelectAudioStreamsForLanguage(tracks, preferred).Select(stream => stream.Language).ToHashSet(StringComparer.Ordinal);
+                candidates = candidates.FindAll(value => languages.Contains(value.Language));
             }
             return candidates.Select(value => value.Label).Distinct(StringComparer.Ordinal)
                 .OrderBy(label => AggregationRank(label, category)).ThenBy(label => label, StringComparer.Ordinal).ToList();

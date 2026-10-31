@@ -51,6 +51,46 @@ public class QualityDisplayTests
         Assert.Same(streams, entry.Clone().StreamData);
     }
 
+    [Theory]
+    [InlineData("eng", "eng", "deu", false)]
+    [InlineData("eng", "none", "deu", true)]
+    [InlineData("eng", "fra", "deu", true)]
+    [InlineData("en-US", "en-US", "eng", false)]
+    [InlineData("eng", "en-AU", "deu", false)]
+    [InlineData("deu", "en-AU", "eng", true)]
+    [InlineData("eng", "eng", null, false)]
+    [InlineData("eng", "none", null, false)]
+    public void SoundAllSelectsRawLanguageTierBeforeLabelsForNativeAndEverySummaryPolicy(
+        string language, string preferred, string? labelledLanguage, bool hasAtmos)
+    {
+        var data = new TagStreamData { Streams = [new() { Type = "Video", Height = 1080, Codec = "h264" },
+            new() { Type = "Audio", Language = language, Codec = "aac", Channels = 2 }] };
+        if (labelledLanguage != null) data.Streams.Add(new() { Type = "Audio", Language = labelledLanguage, DisplayTitle = "ATMOS 7.1", Channels = 8 });
+        var expected = hasAtmos ? new[] { "ATMOS 7.1" } : Array.Empty<string>();
+        var effective = preferred == "none" ? null : preferred;
+        foreach (var cached in new[] { false, true })
+        {
+            data.DistinctQualities = cached ? QualityTagRules.DetectDistinct(data.Streams) : null;
+            Assert.Equal(expected, QualityTagRules.DistinctValues(data, "audioInfo", effective));
+            var summary = SeriesQualityAggregation.Build([new("first", 1, data), new("last", 2, data)], 100);
+            var audio = SeriesQualityAggregation.EffectiveCategories(summary, effective).Single(pair => pair.Key == "audioInfo").Value;
+            Assert.Equal(expected, audio.All);
+            Assert.Equal(expected, audio.Shared);
+            Assert.Equal(expected, audio.LatestAll);
+            Assert.True(audio.AllSetsAgree);
+            foreach (var policy in new[] { "representative", "latest", "best", "shared", "mixed" })
+            {
+                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true,
+                    QualityAudioDisplayMode = "all", QualityTagsPreferredAudioLanguage = preferred, SeriesQualityAggregation = policy }, new(), null);
+                foreach (var type in new[] { "Movie", "Series", "Season" })
+                {
+                    var entry = new TagCacheEntry { Type = type, StreamData = data, QualitySummary = summary };
+                    Assert.Equal(new[] { "1080p", "H264" }.Concat(expected), Labels(entry, settings));
+                }
+            }
+        }
+    }
+
     [Fact]
     public void NativeAllOrderingDedupeThresholdsHideSdrAndCapsMatchWeb()
     {

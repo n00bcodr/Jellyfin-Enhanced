@@ -367,6 +367,8 @@ Under **Groups → Quality**, below the categories, choose a separate **Sound di
 | **Minimum resolution to show** | Off | Off / 720p / 1080p / 4K; hide resolution chips below the selected bucket |
 | **Hide SDR** | Off | Suppresses SDR in All HDR mode; Highest only retains its existing omission of SDR |
 
+Sound chooses the preferred language's tracks before extracting labels, including tracks with no displayable sound label. For example, English AAC stereo plus German Atmos shows no sound chip with English preferred; it does not fall back to German. Exact-region matches take priority over base-language matches. Only an absent language falls back to all available tracks; with no preference, all tracks are eligible.
+
 Each personal control also offers **Server default**, which follows future administrator changes. Administrators set starting values under **Media Tags → Groups → Quality**. New accounts and **Apply defaults to all users** copy those defaults. Existing preferences keep their appearance until a mode or default changes; editing these controls does not migrate a legacy layout.
 
 The resolution threshold is inclusive: **1080p** keeps 1080p and higher; **4K** hides the 1080p chips in a mostly 1080p library while keeping 4K and 8K standouts. Other quality categories remain eligible. Category switches and order apply first, then the Quality group's **Show up to** limit. Compact density shortens every additional chip as usual. Chips omitted by layout fitting count toward **+N**; chips intentionally removed by category filtering, thresholds or the group limit do not.
