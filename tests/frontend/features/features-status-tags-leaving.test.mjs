@@ -67,7 +67,7 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
         const id = /Items\/([^/]+)\/PlaybackInfo/.exec(request.url)?.[1];
         assert.ok(id, `unexpected request ${request.url}`);
         assert.equal(request.type, 'POST');
-        requests.push({ id, body: JSON.parse(request.data) });
+        requests.push({ id, body: JSON.parse(request.data), url: request.url });
         if (hold) await new Promise(resolve => pending.push(resolve));
         const kind = answer(id);
         if (kind instanceof Error) throw kind;
@@ -179,15 +179,96 @@ test('direct play: classify reads the first source, reasons from the answer or t
     assert.equal(dp.describe(fromUrl, 'Transcode'), 'Transcode: bitrate, subtitles');
     assert.equal(dp.describe({ ...fromUrl, reasons: ['SomethingNew'] }, 'Transcode'), 'Transcode: other');
     assert.equal(dp.classify({ MediaSources: [] }), null);
-    // The browser profile: containers and codecs from canPlayType, an HLS fallback, a stable hash.
+    // The profile has jellyfin-web's shape and a stable hash (its contents: the fixture test below).
     const profile = dp.profile();
-    assert.ok(profile.DirectPlayProfiles.some(p => p.Container === 'mp4,m4v'));
-    assert.equal(profile.TranscodingProfiles[0].Protocol, 'hls');
+    assert.ok(Array.isArray(profile.DirectPlayProfiles) && Array.isArray(profile.CodecProfiles) && Array.isArray(profile.SubtitleProfiles));
+    assert.equal(profile.MaxStaticBitrate, 100000000);
     assert.match(dp.profileHash(), /^[0-9a-f]{8}$/);
+    assert.equal(dp.profileHash(), dp.profileHash());
     dp.setProfile({ DirectPlayProfiles: [] });
     assert.notEqual(dp.profileHash(), null);
     assert.deepEqual(dp.profile(), { DirectPlayProfiles: [] });
   } finally { h.close(); }
+});
+
+/** A value from the page's realm as a plain one (deepEqual compares prototypes). */
+const plain = value => JSON.parse(JSON.stringify(value));
+const WEB_PROFILE = JSON.parse(readFileSync(new URL('../../fixtures/direct-play-web-12.1-chromium.json', import.meta.url), 'utf8'));
+
+/**
+ * The module in a browser that answers like the one the fixture was
+ * captured in: its user agent, canPlayType answers (per element type),
+ * speaker count, MediaSource and text tracks, and the case's local settings.
+ */
+function capturedBrowser(t, kase, { userAgent = WEB_PROFILE.userAgent, apiClient = {} } = {}) {
+  const h = createHarness({
+    JE: { t: translate, session: { getUserId: () => 'u1' } },
+    apiClient: { getCurrentUserId: () => 'u1', getSavedEndpointInfo: () => ({}), ...apiClient },
+    globals: {
+      MediaSource: function MediaSource() {},
+      AudioContext: class { constructor() { this.destination = { maxChannelCount: WEB_PROFILE.env.speakers }; } close() { return Promise.resolve(); } },
+    },
+  });
+  t.after(() => h.close());
+  Object.defineProperty(h.window.navigator, 'userAgent', { value: userAgent, configurable: true });
+  const { HTMLMediaElement, HTMLAudioElement } = h.window;
+  HTMLMediaElement.prototype.canPlayType = function canPlayType(type) { return kase.canPlayType[`${this instanceof HTMLAudioElement ? 'audio' : 'video'}|${type}`] ?? ''; };
+  Object.defineProperty(HTMLMediaElement.prototype, 'textTracks', { get: () => (WEB_PROFILE.env.textTracks ? [] : undefined), configurable: true });
+  h.window.HTMLCanvasElement.prototype.getContext = () => ({}); // Chromium draws 2D (PGS rendering needs it)
+  Object.defineProperty(HTMLMediaElement.prototype, 'audioTracks', { get: () => (WEB_PROFILE.env.audioTracks ? [] : undefined), configurable: true });
+  for (const [key, value] of Object.entries(kase.settings)) h.window.localStorage.setItem(key.replace(/^USER-/, 'u1-'), value);
+  h.load('tags/tag-direct-play.js');
+  return h;
+}
+
+for (const kase of WEB_PROFILE.cases) {
+  test(`direct play: the profile is jellyfin-web 12.1's own (captured in Chromium): ${kase.name}`, t => {
+    const dp = capturedBrowser(t, kase).JE.tagDirectPlay;
+    assert.deepEqual(plain(dp.webProfile(kase.options)), kase.profile);
+    // In use: the app host's options for a video and its (here unset) width/codec settings.
+    assert.deepEqual(plain(dp.profile()), kase.profile);
+    assert.equal(dp.bitrate(), kase.bitrate);
+  });
+}
+
+test('direct play: the capabilities the review found missing or wrong follow jellyfin-web 12.1', t => {
+  const [defaults, settings] = WEB_PROFILE.cases;
+  const p = plain(capturedBrowser(t, defaults).JE.tagDirectPlay.profile());
+  const codec = name => p.CodecProfiles.find(c => c.Type === 'Video' && c.Codec === name).Conditions;
+  const value = (conditions, property) => conditions.find(c => c.Property === property)?.Value;
+  // HDR: desktop Chrome tone-maps, so HDR10/HDR10+/HLG direct play on an SDR screen too; H.264 stays SDR.
+  for (const name of ['hevc', 'vp9', 'av1']) assert.equal(value(codec(name), 'VideoRangeType'), 'SDR|HDR10|HDR10Plus|HLG');
+  assert.equal(value(codec('h264'), 'VideoRangeType'), 'SDR');
+  // Interlaced H.264/HEVC is not direct play in a browser; levels are bounded.
+  for (const name of ['h264', 'hevc']) assert.deepEqual(codec(name).find(c => c.Property === 'IsInterlaced'), { Condition: 'NotEquals', Property: 'IsInterlaced', Value: 'true', IsRequired: false });
+  assert.ok(value(codec('hevc'), 'VideoLevel') && value(codec('av1'), 'VideoLevel'));
+  // Subtitles: VTT, ASS and SSA; PGS only when the user turns its rendering on.
+  assert.deepEqual(p.SubtitleProfiles.map(s => s.Format), ['vtt', 'ass', 'ssa']);
+  const pgs = capturedBrowser(t, settings).JE.tagDirectPlay.profile();
+  assert.ok(pgs.SubtitleProfiles.some(s => s.Format === 'pgssub'));
+  // MOV with H.264, MP2 audio in video, the static ceiling.
+  assert.equal(p.DirectPlayProfiles.find(d => d.Container === 'mov')?.VideoCodec, 'h264');
+  assert.ok(p.DirectPlayProfiles.find(d => d.Container === 'mp4,m4v').AudioCodec.split(',').includes('mp2'));
+  assert.equal(p.MaxStaticBitrate, 100000000);
+  // Matroska follows the browser rules, not "any Chromium": Firefox never gets it, nor does a Chromium without the canPlayType answer.
+  assert.ok(p.DirectPlayProfiles.some(d => d.Container === 'mkv'));
+  const firefox = capturedBrowser(t, defaults, { userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0' }).JE.tagDirectPlay.profile();
+  assert.ok(!firefox.DirectPlayProfiles.some(d => d.Container === 'mkv'));
+  const noMkv = { ...defaults, canPlayType: Object.fromEntries(Object.entries(defaults.canPlayType).filter(([k]) => !/matroska|mkv/.test(k))) };
+  assert.ok(!capturedBrowser(t, noMkv).JE.tagDirectPlay.profile().DirectPlayProfiles.some(d => d.Container === 'mkv'));
+});
+
+test('direct play: a native shell builds its profile with the ported builder, also when it answers later', async t => {
+  const [defaults] = WEB_PROFILE.cases;
+  const h = capturedBrowser(t, defaults);
+  let handed = null;
+  h.window.NativeShell = { AppHost: { getDeviceProfile: (builder, version) => { handed = { builder, version }; return Promise.resolve({ ...builder({ enableMkvProgressive: false }), Name: 'shell' }); } } };
+  h.JE.tagDirectPlay.setProfile(null);
+  assert.notEqual(h.JE.tagDirectPlay.profile().Name, 'shell', 'the browser profile until the shell answers');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(typeof handed.builder, 'function');
+  assert.equal(h.JE.tagDirectPlay.profile().Name, 'shell');
+  assert.deepEqual(plain(h.JE.tagDirectPlay.profile().SubtitleProfiles), defaults.profile.SubtitleProfiles);
 });
 
 test('direct play: off by default and for non-playable or otherwise badged cards, no request goes out', async t => {
@@ -218,6 +299,14 @@ test('direct play: a visible card is asked about in an idle slice, with this bro
   assert.equal(body.EnableDirectPlay, true);
   assert.equal(body.AutoOpenLiveStream, false);
   assert.deepEqual(body.DeviceProfile, JSON.parse(JSON.stringify(h.JE.tagDirectPlay.profile())));
+  // The user's saved quality for this network is what is asked with, and is part of the answer's key.
+  assert.equal(body.MaxStreamingBitrate, h.JE.tagDirectPlay.bitrate());
+  assert.match(h.requests[0].url, new RegExp(`MaxStreamingBitrate=${body.MaxStreamingBitrate}`));
+  const hash = h.JE.tagDirectPlay.profileHash();
+  h.window.localStorage.setItem('maxbitrate-Video-undefined', '4000000');
+  assert.equal(h.JE.tagDirectPlay.bitrate(), 4000000);
+  assert.notEqual(h.JE.tagDirectPlay.profileHash(), hash);
+  h.window.localStorage.removeItem('maxbitrate-Video-undefined');
   await h.slice();
   assert.equal(h.badge(h.hosts[0]), 'Transcode');
   assert.equal(h.chip(h.hosts[0]).title, 'Transcode: video codec hevc, audio codec dts');
