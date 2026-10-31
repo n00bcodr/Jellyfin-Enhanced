@@ -47,7 +47,7 @@
      * @returns {string}
      */
     function ring(border) {
-        return border && COLOUR.test(border) ? `outline: 1px solid ${border} !important; outline-offset: -1px !important;` : '';
+        return border && COLOUR.test(border) ? `outline: 1px solid ${border} !important; outline-offset: -1px !important; --je-tag-ring-color: ${border} !important; outline-color: var(--je-tag-ring-outline, ${border}) !important;` : '';
     }
 
     /**
@@ -99,7 +99,7 @@
         const M = `${P}[data-je-poster-colour]`;
         const fill = 'background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important;';
         const edge = 'border-color: var(--je-tag-border) !important;';
-        const ringed = 'outline: 1px solid var(--je-tag-border) !important; outline-offset: -1px !important;';
+        const ringed = 'outline: 1px solid var(--je-tag-border) !important; outline-offset: -1px !important; --je-tag-ring-color: var(--je-tag-border) !important; outline-color: var(--je-tag-ring-outline, var(--je-tag-border)) !important;';
         return [
             // (0,4,0): over the quality module's !important label rules, level with the "*" override.
             `${M} .quality-overlay-container.quality-overlay-container .quality-overlay-label { ${fill} ${edge} }`,

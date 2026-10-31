@@ -1,4 +1,5 @@
 using System.Xml.Serialization;
+using SkiaSharp;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering;
@@ -67,6 +68,32 @@ public class PosterEdgeSpacingTests
             {
                 if (corner == PosterTagCorner.TopCenter) Assert.Equal(0, item.Y);
                 else Assert.Equal(270, item.Y + item.Height, 3);
+            }
+        }
+    }
+
+    [Fact]
+    public void StyledRatingAndAwardsPaintOnlyInwardInnerRingPixelsAtEveryAnchor()
+    {
+        using var renderer = new PosterTagRenderer();
+        using var source = new SKBitmap(720, 1080);
+        source.Erase(SKColors.Black);
+        var styles = TagStyleSet.Parse("""{"v":2,"groups":{"rating":{"background":"#000000","border":"#ff0000"},"awards":{"background":"#000000","border":"#ff0000"}}}""", "default");
+        foreach (var anchor in Anchors)
+        foreach (var group in new[] { PosterTagGroup.Rating, PosterTagGroup.Awards })
+        {
+            PosterTag tag = group == PosterTagGroup.Rating ? new RatingTag(PosterRatingSource.Community, "8.1", false) : new AwardTag("oscar", "Oscar");
+            var layout = new PosterTagLayout([new(group, anchor, [tag])], false, false, styles) { EdgeInset = 0 };
+            var plan = renderer.Plan(720, 1080, layout);
+            var chip = Assert.Single(Assert.Single(plan.Groups).Items);
+            using var drawn = renderer.Render(source, layout)!;
+            float x = chip.X * 4, y = chip.Y * 4, w = chip.Width * 4, h = chip.Height * 4;
+            var points = new[] { (x + 1, y + h / 2), (x + w / 2, y + 1), (x + w - 2, y + h / 2), (x + w / 2, y + h - 2) };
+            var sides = new[] { FlushEdges.Left, FlushEdges.Top, FlushEdges.Right, FlushEdges.Bottom };
+            for (var i = 0; i < points.Length; i++)
+            {
+                var c = drawn.GetPixel((int)points[i].Item1, (int)points[i].Item2);
+                Assert.Equal(!chip.FlushEdges.HasFlag(sides[i]), c.Red > 200 && c.Green < 60);
             }
         }
     }
