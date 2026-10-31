@@ -29,9 +29,12 @@
 // lasts) with at most MAX_IN_FLIGHT requests at once, and answers are
 // applied in one pass per slice. Answers are kept per item and profile hash
 // for a day, in memory and in the tag cache store (IndexedDB, per server and
-// user, capped); a failed lookup is retried after RETRY_MS. A user switch
-// (or any reset) drops every answer in flight; their requests keep their
-// slots until they settle, so a reset never raises the two-request cap.
+// user, capped); a failed lookup is retried after RETRY_MS. Each request
+// has a deadline (DEADLINE_MS, the answer's body included): past it the
+// request is aborted, its slot frees once the abort settles it, and the item
+// counts as failed. A user switch (or any reset) drops every answer in
+// flight; their requests keep their slots until they settle or are aborted,
+// so a reset never raises the two-request cap.
 //
 // Public surface: JE.tagDirectPlay { track, untrack, peek, describe,
 // profile, profileHash, bitrate, webProfile, setProfile, reset, stats,
@@ -44,6 +47,8 @@
     const TTL_MS = 24 * 60 * 60 * 1000;
     /** How soon a failed lookup is asked again (ms). */
     const RETRY_MS = 10 * 60 * 1000;
+    /** How long a PlaybackInfo request may take, answer read included, before it is aborted (ms). */
+    const DEADLINE_MS = 15 * 1000;
     /** Requests started per idle slice, and in flight at once. */
     const SLICE_LAUNCHES = 4;
     const MAX_IN_FLIGHT = 2;
@@ -101,8 +106,9 @@
     const inFlight = new Map();
     /**
      * Every request still on the network, this session's or an earlier one's:
-     * a reset forgets lookups but cannot cancel ApiClient requests, so their
-     * slots stay taken until they settle (MAX_IN_FLIGHT counts these).
+     * a reset forgets lookups but leaves their requests running, so their
+     * slots stay taken until they settle or their deadline aborts them
+     * (MAX_IN_FLIGHT counts these).
      * @type {Set<Object>}
      */
     const network = new Set();
@@ -142,7 +148,7 @@
     let primedKey = '';
     let primedSettled = false;
     let sessionHooked = false;
-    const counters = { slices: 0, launched: 0, answered: 0, failed: 0, fromMemory: 0, maxSliceMs: 0 };
+    const counters = { slices: 0, launched: 0, answered: 0, failed: 0, timedOut: 0, fromMemory: 0, maxSliceMs: 0 };
 
     /** @returns {string} `${serverId}:${userId}`, the tag cache store's scope. */
     function scope() {
@@ -1018,11 +1024,48 @@
         if (pendingNotify.size || (queue.size && network.size < MAX_IN_FLIGHT)) scheduleSlice();
     }
 
+    /** @returns {Record<string, string>} Jellyfin's auth headers (JE's shared ones when loaded). */
+    function authHeaders() {
+        const shared = JE.core?.api?.authHeaders;
+        if (typeof shared === 'function') return shared();
+        const token = ApiClient.accessToken?.() || '';
+        return { Authorization: `MediaBrowser Token="${token}"`, 'X-Emby-Token': token, Accept: 'application/json' };
+    }
+
+    /**
+     * POST one PlaybackInfo request with a deadline. ApiClient.ajax takes no
+     * abort signal and sets no timeout on a POST, so this is fetch with
+     * Jellyfin's auth headers and an AbortController. Past DEADLINE_MS the
+     * request (or the read of its answer) is aborted and this rejects at
+     * once, so the slot frees even if the request never settles; an answer
+     * arriving after that is ignored.
+     * @param {string} url
+     * @param {string} body - JSON.
+     * @returns {Promise<*>} The PlaybackInfoResponse; rejects on failure (`timedOut` set when the deadline passed).
+     */
+    function askPlaybackInfo(url, body) {
+        const controller = new AbortController();
+        let timer = 0;
+        const deadline = new Promise((resolve, reject) => {
+            timer = setTimeout(() => {
+                controller.abort();
+                reject(Object.assign(new Error('PlaybackInfo timed out'), { timedOut: true }));
+            }, DEADLINE_MS);
+        });
+        const work = (async () => {
+            const response = await fetch(url, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body, signal: controller.signal });
+            if (!response.ok) throw new Error(`PlaybackInfo answered ${response.status}`);
+            return response.json();
+        })();
+        work.catch(() => { /* settled after the deadline: ignored */ });
+        return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+    }
+
     /**
      * Ask Jellyfin about one item (in a slice); the answer is applied by the
      * next slice. An answer for an earlier session is dropped, but its
-     * request holds a slot until it settles, and its end never touches a
-     * later session's lookup of the same item.
+     * request holds a slot until it settles (or its deadline aborts it), and
+     * its end never touches a later session's lookup of the same item.
      * @param {string} key
      * @param {{id: string, cards: Set<HTMLElement>}} job
      */
@@ -1037,18 +1080,17 @@
         counters.launched++;
         let value;
         try {
-            const info = await ApiClient.ajax({
-                type: 'POST',
-                url: ApiClient.getUrl(`Items/${encodeURIComponent(job.id)}/PlaybackInfo`, { UserId: userId, StartTimeTicks: 0, IsPlayback: false, AutoOpenLiveStream: false, MaxStreamingBitrate: bitrate }),
-                data: JSON.stringify({ UserId: userId, DeviceProfile: profile, MaxStreamingBitrate: bitrate, EnableDirectPlay: true, EnableDirectStream: true, EnableTranscoding: true, AllowVideoStreamCopy: true, AllowAudioStreamCopy: true, IsPlayback: false, AutoOpenLiveStream: false }),
-                contentType: 'application/json',
-                dataType: 'json',
-            });
+            const info = await askPlaybackInfo(
+                ApiClient.getUrl(`Items/${encodeURIComponent(job.id)}/PlaybackInfo`, { UserId: userId, StartTimeTicks: 0, IsPlayback: false, AutoOpenLiveStream: false, MaxStreamingBitrate: bitrate }),
+                JSON.stringify({ UserId: userId, DeviceProfile: profile, MaxStreamingBitrate: bitrate, EnableDirectPlay: true, EnableDirectStream: true, EnableTranscoding: true, AllowVideoStreamCopy: true, AllowAudioStreamCopy: true, IsPlayback: false, AutoOpenLiveStream: false }),
+            );
             value = { r: classify(info), t: Date.now() };
             counters.answered++;
         } catch (e) {
+            // A failure, a stalled request included, is asked again after RETRY_MS.
             value = { r: null, t: Date.now() };
             counters.failed++;
+            if (e?.timedOut) counters.timedOut++;
         } finally {
             network.delete(request);
             if (gen === generation && inFlight.get(key) === job) inFlight.delete(key);
@@ -1077,7 +1119,7 @@
     /**
      * Forget every card and in-flight answer (a user switch, a renderer
      * teardown). Answers stay; requests still on the network keep their slots
-     * until they settle.
+     * until they settle or their deadline aborts them.
      */
     function reset() {
         generation++;

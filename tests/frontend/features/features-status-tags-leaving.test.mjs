@@ -27,14 +27,19 @@ function playback(kind) {
   return { MediaSources: [{ SupportsDirectPlay: false, SupportsDirectStream: false, Container: 'mkv', TranscodeReasons: ['VideoCodecNotSupported', 'AudioCodecNotSupported'], MediaStreams: streams, DefaultAudioStreamIndex: 1 }] };
 }
 
+/** The direct-play request deadline (tag-direct-play.js DEADLINE_MS). */
+const DEADLINE_MS = 15000;
+
 /**
  * Status Tags with the direct-play module. PlaybackInfo answers come from
  * `answer(id)` (a kind for playback(), or a function throwing), each request
- * is recorded, and may be held until released. Idle slices only run when a
- * test calls slice(); IntersectionObserver entries only when it calls
- * intersect() (or, with autoIntersect, on observe).
+ * (a fetch) is recorded, and may be held until released; a held request is
+ * aborted by its signal like a real fetch, unless `honourAbort` is false.
+ * Request deadlines only pass when a test calls expire(). Idle slices only
+ * run when a test calls slice(); IntersectionObserver entries only when it
+ * calls intersect() (or, with autoIntersect, on observe).
  */
-function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'transcode', hold = false, autoIntersect = true, store = null } = {}) {
+function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'transcode', hold = false, honourAbort = true, autoIntersect = true, store = null } = {}) {
   const renderers = new Map();
   const userChange = new Map();
   const requests = [];
@@ -64,23 +69,46 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
       getUrl: (path, params) => (params ? `${path}?${new URLSearchParams(params)}` : path),
       getCurrentUserId: () => 'user-a',
       ajax: async (request) => {
-        if (request.url.includes('status-tags/trending')) return { source: null, movies: {}, series: {} };
-        const id = /Items\/([^/]+)\/PlaybackInfo/.exec(request.url)?.[1];
-        assert.ok(id, `unexpected request ${request.url}`);
-        assert.equal(request.type, 'POST');
-        requests.push({ id, body: JSON.parse(request.data), url: request.url });
-        network.open++;
-        network.peak = Math.max(network.peak, network.open);
-        try {
-          if (hold) await new Promise(resolve => pending.push(resolve));
-          const kind = answer(id);
-          if (kind instanceof Error) throw kind;
-          return playback(kind);
-        } finally { network.open--; }
+        assert.ok(request.url.includes('status-tags/trending'), `unexpected ApiClient request ${request.url}`);
+        return { source: null, movies: {}, series: {} };
       },
+    },
+    fetch: async (url, init) => {
+      const id = /Items\/([^/]+)\/PlaybackInfo/.exec(url)?.[1];
+      assert.ok(id, `unexpected request ${url}`);
+      assert.equal(init.method, 'POST');
+      requests.push({ id, body: JSON.parse(init.body), url, headers: init.headers, signal: init.signal });
+      network.open++;
+      network.peak = Math.max(network.peak, network.open);
+      try {
+        if (hold) {
+          await new Promise((resolve, reject) => {
+            pending.push(resolve);
+            if (honourAbort) init.signal.addEventListener('abort', () => reject(new h.window.DOMException('The operation was aborted.', 'AbortError')), { once: true });
+          });
+        }
+        const kind = answer(id);
+        if (kind instanceof Error) throw kind;
+        return { ok: true, status: 200, json: async () => playback(kind) };
+      } finally { network.open--; }
     },
   });
   t.after(() => h.close());
+  // Request deadlines pass by hand (expire()); every other timer is real.
+  const deadlines = [];
+  const realSetTimeout = h.window.setTimeout.bind(h.window);
+  const realClearTimeout = h.window.clearTimeout.bind(h.window);
+  h.window.setTimeout = (fn, ms, ...rest) => {
+    if (ms !== DEADLINE_MS) return realSetTimeout(fn, ms, ...rest);
+    const timer = { fn };
+    deadlines.push(timer);
+    return timer;
+  };
+  h.window.clearTimeout = (timer) => {
+    const at = deadlines.indexOf(timer);
+    if (at >= 0) deadlines.splice(at, 1);
+    else realClearTimeout(timer);
+  };
   let now = NOW;
   h.window.Date.now = () => now;
   h.document.documentElement.setAttribute('lang', 'en-US');
@@ -90,7 +118,7 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
   const renderer = renderers.get('status');
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
   return Object.assign(h, {
-    hosts, requests, idle, observers, userChange, renderer, network,
+    hosts, requests, idle, observers, userChange, renderer, network, deadlines,
     setNow(ms) { now = ms; },
     show(entry, host = hosts[0], id = 'item1') {
       delete host.closest('.card').dataset.jeStatusTagged;
@@ -111,6 +139,8 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
     async release() { pending.splice(0).forEach(r => r()); await settle(); await settle(); },
     /** Answer the oldest held request. */
     async releaseOne() { pending.shift()?.(); await settle(); await settle(); },
+    /** Let every pending request deadline pass. */
+    async expire() { deadlines.splice(0).forEach(timer => timer.fn()); await settle(); await settle(); },
     settle,
   });
 }
@@ -534,6 +564,68 @@ test('direct play: a reset (renderer teardown, user switch) keeps the requests s
   assert.equal(h.badge(h.hosts[4]), 'Transcode', 'the joining card gets the answer too');
   assert.equal(h.network.peak, 2, 'never more than two requests on the network');
   assert.equal(dp.stats().inFlight, 0);
+});
+
+test('direct play: a request that never settles is aborted at its deadline and frees its slot, also across a reset and a user switch', async t => {
+  const h = setup(t, { cards: 6, settings: { statusTagsDirectPlay: true }, hold: true });
+  const dp = h.JE.tagDirectPlay;
+  h.show(movie(), h.hosts[0], 's1');
+  h.show(movie(), h.hosts[1], 's2');
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['s1', 's2']);
+  assert.equal(h.requests[0].headers.Authorization, 'MediaBrowser Token="test-token"');
+  assert.ok(h.requests.every(r => !r.signal.aborted));
+  assert.equal(h.deadlines.length, 2, 'each request has a deadline');
+  // Neither ever answers. A reset and a user switch keep their slots; the new session waits.
+  dp.reset();
+  h.userChange.get('direct-play')();
+  h.show(movie(), h.hosts[2], 'n1');
+  h.show(movie(), h.hosts[3], 'n2');
+  h.show(movie(), h.hosts[4], 'n3');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2);
+  // The deadline aborts both: two slots free, two new requests (never more than two on the network).
+  await h.expire();
+  assert.ok(h.requests.slice(0, 2).every(r => r.signal.aborted));
+  assert.equal(dp.stats().inFlight, 0);
+  assert.equal(dp.stats().timedOut, 2);
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['s1', 's2', 'n1', 'n2']);
+  assert.equal(h.network.peak, 2);
+  // Answered ones clear their deadline; the third goes next.
+  await h.release(); await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['s1', 's2', 'n1', 'n2', 'n3']);
+  assert.equal(h.deadlines.length, 1);
+  await h.release(); await h.slice(); await h.slice();
+  for (const host of h.hosts.slice(2, 5)) assert.equal(h.badge(host), 'Transcode');
+  assert.equal(h.network.peak, 2);
+  assert.equal(dp.stats().inFlight, 0);
+});
+
+test('direct play: a stalled item counts as failed and is asked again only after the retry delay; an answer after the deadline is ignored', async t => {
+  // A fetch that ignores the abort and answers late (the slot must not wait for it).
+  const h = setup(t, { cards: 3, settings: { statusTagsDirectPlay: true }, hold: true, honourAbort: false, answer: () => 'remux' });
+  const dp = h.JE.tagDirectPlay;
+  h.show(movie(), h.hosts[0], 'st');
+  await h.slice();
+  await h.expire();
+  assert.ok(h.requests[0].signal.aborted);
+  assert.equal(dp.stats().inFlight, 0, 'the slot frees at the deadline');
+  await h.release(); // the late answer
+  await h.slice();
+  assert.equal(dp.peek('st'), null, 'a late answer is never used');
+  assert.equal(h.chip(h.hosts[0]), null);
+  assert.equal(dp.stats().failed, 1);
+  assert.equal(dp.stats().answered, 0);
+  h.show(movie(), h.hosts[0], 'st');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 1, 'not asked again before the retry delay');
+  h.setNow(NOW + 10 * 60 * 1000 + 1);
+  h.show(movie(), h.hosts[0], 'st');
+  await h.slice();
+  await h.release(); await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.badge(h.hosts[0]), "Won't direct play");
 });
 
 test('direct play: stored answers are restored before any request, and new ones are written per scope and profile', async t => {
