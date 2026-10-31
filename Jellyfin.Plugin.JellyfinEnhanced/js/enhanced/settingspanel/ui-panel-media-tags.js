@@ -57,19 +57,23 @@
         { nameKey: 'panel_media_tags_server_native', descKey: 'panel_media_tags_server_native_desc', tab: 'server' },
     ];
 
-    /** Built-in colours of the three chips a preset tile shows, for parts a preset leaves alone. */
+    /** Built-in colours of the chips a preset tile shows, for parts a preset leaves alone. */
     const CHIP_DEFAULTS = {
         quality: { background: 'rgba(189, 5, 232, 0.95)', color: '#ffffff', border: 'transparent' },
         status: { background: 'rgba(15, 15, 15, 0.72)', color: '#ffffff', border: 'rgba(255, 255, 255, 0.18)' },
         rating: { background: 'rgba(0, 0, 0, 0.85)', color: '#ffc107', border: 'transparent' },
+        genre: { background: 'rgba(10, 10, 10, 0.8)', color: '#E0E0E0', border: 'rgba(255, 255, 255, 0.2)' },
     };
+
+    /** The genre a preset tile shows when the administrator coloured none of their own. */
+    const GENRE_SAMPLE = 'drama';
 
     /**
      * The Poster preset's tile: each chip in the colours a different artwork
      * gives it (a red, a blue and a teal poster), through the same
      * normalisation as the cards (tags/tag-poster-colours.js).
      */
-    const POSTER_SAMPLE_ART = { quality: [178, 34, 34], status: [30, 60, 140], rating: [20, 120, 130] };
+    const POSTER_SAMPLE_ART = { quality: [178, 34, 34], status: [30, 60, 140], rating: [20, 120, 130], genre: [96, 40, 128] };
 
     const escapeHtml = (value) => JE.escapeHtml(String(value));
     /** @param {string} key @param {Object} [params] @returns {string} Translated and escaped. */
@@ -351,7 +355,7 @@
                 <label class="je-mth-preset">
                     <input type="radio" name="jeTagPreset" value="${value}" ${mine === value ? 'checked' : ''}>
                     <span class="je-mth-preset-chips" data-preset="${value || 'server'}" aria-hidden="true">
-                        <span class="je-mth-chip" data-chip="quality">4K</span><span class="je-mth-chip" data-chip="status">${tx('status_tag_compact_added')}</span><span class="je-mth-chip" data-chip="rating">★ 8.1</span>
+                        <span class="je-mth-chip" data-chip="quality">4K</span><span class="je-mth-chip" data-chip="status">${tx('status_tag_compact_added')}</span><span class="je-mth-chip" data-chip="rating">★ 8.1</span><span class="je-mth-chip je-mth-chip-genre" data-chip="genre" data-je-genre="${GENRE_SAMPLE}"><i class="je-mth-chip-glyph">${escapeHtml(JE.genreTags?.iconFor(GENRE_SAMPLE) || 'theater_comedy')}</i></span>
                     </span>
                     <span class="je-mth-preset-name" data-je-label>${escapeHtml(name)}</span>
                 </label>`;
@@ -555,8 +559,11 @@
         #jellyfin-enhanced-panel .je-mth-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 6px; }
         #jellyfin-enhanced-panel .je-mth-preset { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.25); cursor: pointer; }
         #jellyfin-enhanced-panel .je-mth-preset:has(input:checked) { border: 2px solid var(--je-mth-accent); padding: 9px; }
-        #jellyfin-enhanced-panel .je-mth-preset-chips { display: flex; flex-wrap: nowrap; gap: 3px; min-height: 22px; padding: 6px 5px; border-radius: 4px; background: linear-gradient(135deg, #39424f, #1b1f26); overflow: hidden; }
+        #jellyfin-enhanced-panel .je-mth-preset-chips { display: flex; flex-wrap: wrap; gap: 3px; min-height: 22px; padding: 6px 5px; border-radius: 4px; background: linear-gradient(135deg, #39424f, #1b1f26); overflow: hidden; }
         #jellyfin-enhanced-panel .je-mth-chip { display: inline-flex; align-items: center; padding: 2px 4px; border-radius: 4px; border: 1px solid transparent; font-size: 10px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+        /* The genre circle sits at the right, as on a poster; in a narrow tile it takes a row of its own. */
+        #jellyfin-enhanced-panel .je-mth-chip-genre { justify-content: center; flex-shrink: 0; width: 18px; height: 18px; margin-left: auto; padding: 0; border-radius: 50%; box-sizing: border-box; }
+        #jellyfin-enhanced-panel .je-mth-chip-glyph { font-family: 'JE Material Symbols Outlined'; font-style: normal; font-weight: normal; font-size: 12px; line-height: 1; letter-spacing: normal; text-transform: none; direction: ltr; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; }
         #jellyfin-enhanced-panel .je-mth-preset-name { font-size: 13px; font-weight: 600; }
         #jellyfin-enhanced-panel .je-mth-admin { background: rgba(255,183,77,0.05); border-color: rgba(255,183,77,0.25); }
         #jellyfin-enhanced-panel .je-mth-pointers { list-style: none; margin: 0; padding: 0; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
@@ -886,11 +893,21 @@
                 ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('JellyfinEnhanced/tag-styles', preset && preset !== 'server' ? { preset } : undefined), dataType: 'json' })
                     .then((styles) => {
                         if (disposed || !box.isConnected) return;
+                        // Genre: the first genre the administrator coloured, else the sample one.
+                        const genres = styles?.genre && typeof styles.genre === 'object' ? styles.genre : {};
+                        const genre = Object.keys(genres).find((key) => key !== '*' && genres[key]) || GENRE_SAMPLE;
                         const pick = {
                             quality: styles?.quality?.['4K'] || styles?.quality?.['*'],
                             status: styles?.status?.added,
                             rating: styles?.rating?.community,
+                            genre: genres[genre] || genres['*'],
                         };
+                        const glyph = box.querySelector('[data-chip="genre"]');
+                        if (glyph && genre !== GENRE_SAMPLE) {
+                            /** @type {HTMLElement} */ (glyph).dataset.jeGenre = genre;
+                            const icon = glyph.querySelector('.je-mth-chip-glyph');
+                            if (icon) icon.textContent = JE.genreTags?.iconFor(genre) || 'theaters';
+                        }
                         const sampled = styles?.preset === 'poster' ? JE.tagPosterColours : null;
                         box.querySelectorAll('[data-chip]').forEach((chip) => {
                             const kind = /** @type {HTMLElement} */ (chip).dataset.chip || 'quality';

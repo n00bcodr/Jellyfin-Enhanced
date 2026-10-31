@@ -347,6 +347,20 @@
 .je-tag-admin .je-ts-target-all { padding: 4px 10px; border-color: rgba(255, 255, 255, 0.25); }
 .je-tag-admin .je-ts-target.active { border-color: #fff; background: rgba(0, 0, 0, 0.45); box-shadow: 0 0 0 2px var(--je-ta-accent); }
 .je-tag-admin .je-ts-target.changed::after { content: ""; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--je-ta-accent); }
+.je-tag-admin .je-ts-target[hidden] { display: none; }
+/* Genre: one icon tile per genre, with its name where there is room; a filter box above. */
+.je-tag-admin .je-ts-target-filter { width: min(100%, 22em); min-height: 34px; padding: 4px 9px; border: 1px solid var(--je-ta-border-strong); border-radius: 6px; background: var(--je-ta-input); color: var(--je-ta-text); font: inherit; font-size: 13px; box-sizing: border-box; }
+.je-tag-admin .je-ts-targets-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); align-content: start; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+.je-tag-admin .je-ts-targets-tiles .je-ts-target { gap: 8px; min-width: 0; }
+.je-tag-admin .je-ts-targets-tiles .je-ts-target-all { justify-content: center; }
+.je-tag-admin .je-ts-target-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+@media (max-width: 640px) {
+    .je-tag-admin .je-ts-targets-tiles { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+    .je-tag-admin .je-ts-targets-tiles .je-ts-target { justify-content: center; }
+    .je-tag-admin .je-ts-targets-tiles .je-ts-target-all { grid-column: 1 / -1; }
+    .je-tag-admin .je-ts-target-name { display: none; }
+}
+.je-tag-admin .je-ts-genre-glyph { font-family: 'JE Material Symbols Outlined'; font-style: normal; font-weight: normal; font-size: 16px; line-height: 1; letter-spacing: normal; text-transform: none; white-space: nowrap; direction: ltr; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; color: inherit; }
 .je-tag-admin .je-ts-note { font-size: 12.5px; color: var(--je-ta-muted); }
 .je-tag-admin .je-ts-note:empty { display: none; }
 .je-tag-admin .je-ts-chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; box-sizing: border-box; pointer-events: none; }
@@ -356,7 +370,6 @@
 .je-tag-admin .je-ts-rate .je-ts-rate-icon { font-size: 14px; color: inherit; }
 .je-tag-admin .je-ts-tomato { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #fa320a; }
 .je-tag-admin .je-ts-genre { justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
-.je-tag-admin .je-ts-genre .material-icons { font-size: 16px; color: inherit; }
 .je-tag-admin .je-ts-status { font-size: 13px; font-weight: 600; line-height: 1.15; padding: 4px 10px; border-radius: 6px; border: 1px solid transparent; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 .je-tag-admin .je-ts-flag { width: 28px; height: 21px; border-radius: 2px; object-fit: cover; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 .je-tag-admin .je-ts-rows { display: flex; flex-direction: column; gap: 8px; }

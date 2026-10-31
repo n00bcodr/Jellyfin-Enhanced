@@ -39,7 +39,7 @@ const catalog = {
     quality: [{ key: '4K', name: '4K' }, { key: 'HEVC', name: 'HEVC' }],
     ageRating: [{ key: '9', name: 'PG-13' }, { key: '7', name: 'R' }],
     rating: [{ key: 'community', name: 'Community' }, { key: 'critic', name: 'Critic' }, { key: 'userReview', name: 'User review' }],
-    genre: [{ key: 'genre', name: 'Genre' }],
+    genre: [{ key: 'horror', name: 'Horror' }, { key: 'comedy', name: 'Comedy' }, { key: 'animation', name: 'Animation' }, { key: 'drama', name: 'Drama' }, { key: 'other', name: 'Other' }],
     status: [{ key: 'added', name: 'Just Added' }, { key: 'newEpisode', name: 'New Episode' }, { key: 'trending', name: 'Trending' }],
     language: [{ key: 'flag', name: 'Flag' }]
   },
@@ -49,7 +49,7 @@ const catalog = {
       'quality:HEVC': pal('rgba(33, 150, 243, 0.902)', 'rgba(255, 255, 255, 0.149)', 'rgba(255, 255, 255, 1)'),
       'rating:community': pal('rgba(0, 0, 0, 0.851)', 'rgba(0, 0, 0, 0)', 'rgba(255, 193, 7, 1)'),
       'ageRating:9': pal('rgba(230, 81, 0, 1)', 'rgba(255, 152, 0, 1)', 'rgba(255, 255, 255, 1)'),
-      'genre:genre': pal('rgba(10, 10, 10, 0.8)', 'rgba(255, 255, 255, 0.2)', 'rgba(224, 224, 224, 1)'),
+      ...Object.fromEntries(['horror', 'comedy', 'animation', 'drama', 'other'].map(k => [`genre:${k}`, pal('rgba(10, 10, 10, 0.8)', 'rgba(255, 255, 255, 0.2)', 'rgba(224, 224, 224, 1)')])),
       'language:flag': pal('rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0)', 'rgba(255, 255, 255, 1)')
     },
     glass: {
@@ -59,7 +59,8 @@ const catalog = {
       'ageRating:9': pal('rgba(255, 255, 255, 0.161)', 'rgba(255, 255, 255, 0.349)', 'rgba(255, 255, 255, 1)'),
       'language:flag': pal('rgba(0, 0, 0, 0)', 'rgba(255, 255, 255, 0.349)', 'rgba(255, 255, 255, 1)')
     }
-  }
+  },
+  genreIcons: { horror: 'skull', comedy: 'mood', animation: 'animation', drama: 'theater_comedy', other: 'theaters' }
 };
 
 // New source labels use the server's native-unit sample formats.
@@ -134,9 +135,10 @@ test('a version 1 document migrates to the colours it drew and saves as version 
       // values that are not colours are dropped, and rating chips never drew a border.
       'quality:4K': { background: 'rgba(255, 0, 0, 1)', border: 'rgba(255, 255, 255, 0.149)', text: 'rgba(0, 0, 255, 1)' },
       'ageRating:9': { background: 'rgba(230, 81, 0, 1)', border: 'rgba(0, 255, 0, 1)', text: 'rgba(255, 255, 255, 1)' },
-      'rating:community': { background: 'rgba(0, 0, 0, 0.5)', text: 'rgba(255, 193, 7, 1)' },
-      'genre:genre': { background: 'rgba(17, 17, 17, 1)', border: 'rgba(255, 255, 255, 0.2)', text: 'rgba(224, 224, 224, 1)' }
-    }
+      'rating:community': { background: 'rgba(0, 0, 0, 0.5)', text: 'rgba(255, 193, 7, 1)' }
+    },
+    // Version 1 coloured every genre chip alike: the genre group, under each genre's own colours.
+    groups: { genre: { background: 'rgba(17, 17, 17, 1)', border: 'rgba(255, 255, 255, 0.2)', text: 'rgba(224, 224, 224, 1)' } }
   });
   assert.equal(h.editor.settings().preset, 'default', 'the saved preset name recolours nothing');
   assert.equal(h.$('.je-ts-preset[data-preset="default"]').getAttribute('aria-checked'), 'true');

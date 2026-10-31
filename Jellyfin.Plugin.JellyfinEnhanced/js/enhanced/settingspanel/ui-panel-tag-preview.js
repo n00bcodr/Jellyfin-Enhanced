@@ -198,6 +198,9 @@
                 for (const [name, icon] of sample.genres) {
                     const chip = add('genre-tag');
                     chip.title = name;
+                    // The genre's Tag Styles label, as genretags.js marks its chips.
+                    const label = JE.genreTags?.labelFor(name);
+                    if (label) chip.dataset.jeGenre = label;
                     const glyph = document.createElement('span');
                     glyph.className = 'je-msym-outlined';
                     glyph.textContent = icon;

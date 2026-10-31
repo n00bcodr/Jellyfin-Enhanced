@@ -1456,6 +1456,8 @@
     "admin_tags_colours_reset": "Reset all colours",
     "admin_tags_colours_reset_confirm": "Every group and label colour goes back to the Default preset.",
     "admin_tags_colours_reset_done": "All colours reset",
+    "admin_tags_colours_genre_note": "Each genre has its own colours (spellings and translations of a genre share them); Text colours the icon. Genres without an icon of their own use Other.",
+    "admin_tags_colours_genre_filter": "Find a genre",
     "admin_tags_badges_families": "Badge families",
     "admin_tags_badges_off": "Status tags are off for new users, so none of these show.",
     "admin_tags_badges_turn_on": "Turn Status on",

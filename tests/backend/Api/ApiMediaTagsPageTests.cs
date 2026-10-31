@@ -292,6 +292,7 @@ public class ApiMediaTagsPageTests
     [InlineData("TagGroupOrder", "[\"quality\",\"cast\"]", "must name distinct groups")]
     [InlineData("TagCacheExcludedLibraryIds", "\"movies,shows\"", "must be library ids")]
     [InlineData("TagStyleOverrides", "\"{not json\"", "document is not valid JSON")]
+    [InlineData("TagStyleOverrides", "\"{\\\"v\\\":2,\\\"labels\\\":{\\\"genre:sci-fi\\\":{\\\"text\\\":\\\"#ffffff\\\"}}}\"", "unknown label 'genre:sci-fi'")]
     [InlineData("TagLookRules", "[{\"Layout\":\"nowhere\",\"When\":[]}]", "every rule needs")]
     // Numbers outside their range.
     [InlineData("TagsCacheTtlDays", "-2147483648", "must be between 1 and 365")]

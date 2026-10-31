@@ -369,6 +369,45 @@ public class ApiMediaTagsPortableTests
     }
 
     [Fact]
+    public void GenreLabelColoursSurviveAnAdminExportAndImport()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _, _) = Signed(f, admin: true);
+        // Three genres in different colours and Other, as tests/fixtures/genre-styles.json stores them.
+        const string styles = "{\"v\":2,\"preset\":\"default\",\"groups\":{\"genre\":{\"border\":\"rgba(255, 255, 255, 0.6)\"}},\"labels\":{\"genre:animation\":{\"background\":\"rgba(30, 136, 229, 1)\"},\"genre:comedy\":{\"background\":\"rgba(255, 209, 102, 1)\",\"text\":\"rgba(17, 17, 17, 1)\"},\"genre:horror\":{\"background\":\"rgba(198, 40, 40, 1)\"},\"genre:other\":{\"background\":\"rgba(84, 110, 122, 1)\"}}}";
+        Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest { Changes = new Dictionary<string, JsonElement> { ["TagStyleOverrides"] = Json(JsonSerializer.Serialize(styles)) } }));
+        Assert.Equal(styles, f.Plugin.Configuration.TagStyleOverrides);
+        var exported = Body(controller.ExportAdminMediaTags());
+        Assert.Equal(styles, (string?)exported["settings"]!["TagStyleOverrides"]);
+
+        // Cleared, then the export brings every genre colour back through the page's patch.
+        f.Plugin.Configuration.TagStyleOverrides = string.Empty;
+        var preview = Body(controller.PreviewAdminMediaTags(Json(exported)));
+        Assert.Empty(preview["skipped"]!.AsArray());
+        var change = Assert.Single(preview["changes"]!.AsArray());
+        Assert.Equal("TagStyleOverrides", (string?)change!["field"]);
+        Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest
+        {
+            Changes = new Dictionary<string, JsonElement> { ["TagStyleOverrides"] = Json(change["to"]!.ToJsonString()) },
+            Expected = new Dictionary<string, JsonElement> { ["TagStyleOverrides"] = Json(change["from"]!.ToJsonString()) },
+        }));
+        Assert.Equal(styles, f.Plugin.Configuration.TagStyleOverrides);
+        var set = Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.TagStyleSet.Parse(f.Plugin.Configuration.TagStyleOverrides);
+        Assert.Equal("rgba(198, 40, 40, 1)", set.Resolve("genre", "horror").Background);
+        Assert.Equal("rgba(17, 17, 17, 1)", set.Resolve("genre", "comedy").Text);
+        Assert.Equal("rgba(84, 110, 122, 1)", set.Resolve("genre", "other").Background);
+        Assert.Equal("rgba(255, 255, 255, 0.6)", set.Resolve("genre", "drama").Border);
+        Assert.True(JsonNode.DeepEquals(exported, Body(controller.ExportAdminMediaTags())));
+
+        // An export naming a genre label this version does not know is skipped as a whole value.
+        var unknown = exported.DeepClone();
+        unknown["settings"]!["TagStyleOverrides"] = "{\"v\":2,\"labels\":{\"genre:sci-fi\":{\"text\":\"#ffffff\"}}}";
+        f.Plugin.Configuration.TagStyleOverrides = string.Empty;
+        var refused = Body(controller.PreviewAdminMediaTags(Json(unknown)));
+        Assert.Equal("invalid", (string?)Assert.Single(refused["skipped"]!.AsArray())!["reason"]);
+    }
+
+    [Fact]
     public void AStoredConfigurationExportsAndImportsWithoutLosses()
     {
         using var f = new ApiPluginFixture();

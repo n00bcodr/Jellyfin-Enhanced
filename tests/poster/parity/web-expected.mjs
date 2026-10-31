@@ -266,7 +266,8 @@ function readTags(group, container) {
                 break;
             case 'Genre': {
                 const icon = child.querySelector('.je-msym-outlined');
-                tags.push(`${child.title}|${icon ? icon.textContent : ''}`);
+                // name|glyph|Tag Styles label (the canonical genre the chip is coloured by).
+                tags.push(`${child.title}|${icon ? icon.textContent : ''}|${child.dataset.jeGenre ?? ''}`);
                 break;
             }
             case 'Rating': {

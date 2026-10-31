@@ -1,0 +1,174 @@
+{
+  "_about": "Per-genre Tag Styles: one stored document, the web model the server hands out for it (genre), and per drawn genre its label, glyph and the colours web chips and native posters draw (label, then group, then the built-in colour). Read by tests/backend/PosterTags/GenreStyleTests.cs, tests/frontend/features/features-genre-styles.test.mjs and tests/browser/genre-styles.spec.cjs.",
+  "document": {
+    "v": 2,
+    "preset": "default",
+    "groups": {
+      "genre": {
+        "border": "rgba(255, 255, 255, 0.6)"
+      }
+    },
+    "labels": {
+      "genre:horror": {
+        "background": "rgba(198, 40, 40, 1)",
+        "text": "rgba(255, 255, 255, 1)"
+      },
+      "genre:comedy": {
+        "background": "rgba(255, 209, 102, 1)",
+        "text": "rgba(17, 17, 17, 1)"
+      },
+      "genre:animation": {
+        "background": "rgba(30, 136, 229, 1)",
+        "border": "rgba(144, 202, 249, 1)",
+        "text": "rgba(255, 255, 255, 1)"
+      },
+      "genre:other": {
+        "background": "rgba(84, 110, 122, 1)"
+      }
+    }
+  },
+  "web": {
+    "*": {
+      "background": null,
+      "border": "rgba(255, 255, 255, 0.6)",
+      "color": null
+    },
+    "animation": {
+      "background": "rgba(30, 136, 229, 1)",
+      "border": "rgba(144, 202, 249, 1)",
+      "color": "rgba(255, 255, 255, 1)"
+    },
+    "comedy": {
+      "background": "rgba(255, 209, 102, 1)",
+      "border": "rgba(255, 255, 255, 0.6)",
+      "color": "rgba(17, 17, 17, 1)"
+    },
+    "horror": {
+      "background": "rgba(198, 40, 40, 1)",
+      "border": "rgba(255, 255, 255, 0.6)",
+      "color": "rgba(255, 255, 255, 1)"
+    },
+    "other": {
+      "background": "rgba(84, 110, 122, 1)",
+      "border": "rgba(255, 255, 255, 0.6)",
+      "color": null
+    }
+  },
+  "builtin": {
+    "background": "rgba(10, 10, 10, 0.8)",
+    "border": "rgba(255, 255, 255, 0.2)",
+    "text": "rgba(224, 224, 224, 1)"
+  },
+  "cases": [
+    {
+      "genre": "Horror",
+      "label": "horror",
+      "icon": "skull",
+      "drawn": {
+        "background": "rgba(198, 40, 40, 1)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(255, 255, 255, 1)"
+      }
+    },
+    {
+      "genre": "Terror",
+      "label": "horror",
+      "icon": "skull",
+      "drawn": {
+        "background": "rgba(198, 40, 40, 1)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(255, 255, 255, 1)"
+      }
+    },
+    {
+      "genre": "Comédie",
+      "label": "comedy",
+      "icon": "mood",
+      "drawn": {
+        "background": "rgba(255, 209, 102, 1)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(17, 17, 17, 1)"
+      }
+    },
+    {
+      "genre": "COMEDY",
+      "label": "comedy",
+      "icon": "mood",
+      "drawn": {
+        "background": "rgba(255, 209, 102, 1)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(17, 17, 17, 1)"
+      }
+    },
+    {
+      "genre": "Animation",
+      "label": "animation",
+      "icon": "animation",
+      "drawn": {
+        "background": "rgba(30, 136, 229, 1)",
+        "border": "rgba(144, 202, 249, 1)",
+        "text": "rgba(255, 255, 255, 1)"
+      }
+    },
+    {
+      "genre": "Мультфильм",
+      "label": "animation",
+      "icon": "animation",
+      "drawn": {
+        "background": "rgba(30, 136, 229, 1)",
+        "border": "rgba(144, 202, 249, 1)",
+        "text": "rgba(255, 255, 255, 1)"
+      }
+    },
+    {
+      "genre": "Sci-Fi",
+      "label": "science fiction",
+      "icon": "science",
+      "drawn": {
+        "background": "rgba(10, 10, 10, 0.8)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(224, 224, 224, 1)"
+      }
+    },
+    {
+      "genre": "Science Fiction",
+      "label": "science fiction",
+      "icon": "science",
+      "drawn": {
+        "background": "rgba(10, 10, 10, 0.8)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(224, 224, 224, 1)"
+      }
+    },
+    {
+      "genre": "Unknown Genre",
+      "label": "other",
+      "icon": "theaters",
+      "drawn": {
+        "background": "rgba(84, 110, 122, 1)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(224, 224, 224, 1)"
+      }
+    },
+    {
+      "genre": "Default",
+      "label": "other",
+      "icon": "theaters",
+      "drawn": {
+        "background": "rgba(84, 110, 122, 1)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(224, 224, 224, 1)"
+      }
+    },
+    {
+      "genre": "constructor",
+      "label": "other",
+      "icon": "function Object() { [native code] }",
+      "drawn": {
+        "background": "rgba(84, 110, 122, 1)",
+        "border": "rgba(255, 255, 255, 0.6)",
+        "text": "rgba(224, 224, 224, 1)"
+      }
+    }
+  ]
+}

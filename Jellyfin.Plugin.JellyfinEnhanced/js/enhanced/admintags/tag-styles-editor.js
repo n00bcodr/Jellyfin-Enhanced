@@ -18,6 +18,7 @@
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
                 <div class="je-ts-section-label" id="tagStyleTargetsLabel"></div>
+                <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
                 <div id="tagStyleTargets" class="je-ts-targets" role="radiogroup" aria-labelledby="tagStyleTargetsLabel"></div>
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
                 <div id="tagStyleRows" class="je-ts-rows"></div>
@@ -51,7 +52,7 @@
         const OPACITIES = [40, 60, 80, 100];
         const POSTER_NOTE = 'Poster: each tag takes its background from the artwork it sits on (white or black text, whichever reads better). Colours set here stay on top; Default falls back to the artwork. The preview shows a red poster.';
         const NOTES = {
-            genre: 'Text colours the genre icon.',
+            genre: 'admin_tags_colours_genre_note',
             status: 'Status badges use the same colours on web cards and native posters.',
             language: 'Flags are images, so only the border ring can be coloured. Partial dubs keep their dashed outline.',
             logos: 'Colours the pill behind a logo, or the name chip a logo without an image shows (Text colours the name).',
@@ -61,11 +62,20 @@
         const RATING_SAMPLES = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'] };
         const STATUS_SAMPLES = { added: 'Just Added', newMovie: 'New Movie', newSeries: 'New Series', newEpisode: 'New Episode', trending: '#3 Today' };
         const ALL = '*';
+        // The one genre label documents held before each genre had its own.
+        const LEGACY_GENRE = 'genre:genre';
+        // Groups whose labels are icon tiles with their names, and how many labels bring a filter box.
+        const TILE_GROUPS = ['genre'];
+        const FILTER_MIN = 12;
+        // Preview samples: a few genres in their own colours.
+        const GENRE_SAMPLES = { movie: ['horror', 'comedy'], episode: ['animation'] };
 
         let cat = null;
         let state = { preset: 'default', groups: {}, labels: {} };
         let current = 'quality';
         let target = ALL;
+        // The label filter's text (tile groups with many labels); cleared on a group change.
+        let filter = '';
         let canvas = null;
         // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
         let legacy = null;
@@ -184,6 +194,27 @@
             if (text !== undefined) n.textContent = text;
             return n;
         }
+
+        /**
+         * A translated string (the key itself where no translator is loaded).
+         * @param {string} key
+         * @returns {string}
+         */
+        const tr = (key) => (typeof JE.t === 'function' ? JE.t(key) : key);
+
+        /**
+         * A genre label's glyph (the catalog's; the default glyph when it has none).
+         * @param {string} l - Genre label key.
+         * @returns {string}
+         */
+        const genreIcon = (l) => (cat && cat.genreIcons && cat.genreIcons[l]) || 'theaters';
+
+        /**
+         * A genre chip's glyph element, in the bundled symbols font the genre tags use.
+         * @param {string} l - Genre label key.
+         * @returns {HTMLElement}
+         */
+        const genreGlyph = (l) => el('i', 'je-ts-genre-glyph', genreIcon(l));
 
         // Custom labels are the rules table's, unsaved edits included.
         const labelsOf = (g) => (g === 'custom'
@@ -321,7 +352,7 @@
                 n.dataset.jeAward = label.key;
             } else if (g === 'genre') {
                 n = el('span', 'je-ts-chip je-ts-genre genre-tag');
-                n.appendChild(el('i', 'material-icons', 'theaters'));
+                n.appendChild(genreGlyph(label.key));
             } else if (g === 'status') {
                 n = el('span', 'je-ts-chip je-ts-status status-tag', STATUS_SAMPLES[label.key] || label.name);
             } else if (g === 'logos') {
@@ -386,8 +417,22 @@
                 b.setAttribute('role', 'tab');
                 b.setAttribute('aria-selected', String(g.key === current));
                 b.dataset.group = g.key;
-                b.addEventListener('click', () => { current = g.key; target = ALL; renderTabs(); renderGroup(); });
+                b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; renderTabs(); renderGroup(); });
                 tabs.appendChild(b);
+            });
+        }
+
+        /**
+         * Shows the label tiles whose name holds the filter text; Whole group and the
+         * label being edited always stay.
+         * @returns {void}
+         */
+        function applyFilter() {
+            const needle = filter.trim().toLocaleLowerCase();
+            root.querySelectorAll('#tagStyleTargets .je-ts-target').forEach((cell) => {
+                const label = cell.dataset.label;
+                const name = (cell.getAttribute('aria-label') || '').toLocaleLowerCase();
+                cell.hidden = !!needle && label !== ALL && label !== target && !name.includes(needle);
             });
         }
 
@@ -395,6 +440,16 @@
         function renderTargets() {
             const box = root.querySelector('#tagStyleTargets');
             box.textContent = '';
+            const tiles = TILE_GROUPS.includes(current);
+            box.classList.toggle('je-ts-targets-tiles', tiles);
+            const search = root.querySelector('#tagStyleTargetFilter');
+            if (search) {
+                search.hidden = !tiles || labelsOf(current).length <= FILTER_MIN;
+                search.placeholder = tr('admin_tags_colours_genre_filter');
+                search.setAttribute('aria-label', tr('admin_tags_colours_genre_filter'));
+                search.value = search.hidden ? '' : filter;
+                search.oninput = () => { filter = search.value; applyFilter(); };
+            }
             const all = radio('je-ts-target je-ts-target-all' + (state.groups[current] ? ' changed' : ''), target === ALL, () => { target = ALL; renderGroup(); });
             all.textContent = 'Whole group';
             all.dataset.label = ALL;
@@ -408,8 +463,11 @@
                     : label.name;
                 cell.setAttribute('aria-label', current === 'ageRating' ? label.name + ' board' : label.name);
                 cell.appendChild(chip(current, label, effective(current, label.key)));
+                // Tiles carry their name too (shown where there is room; the tooltip always has it).
+                if (tiles) cell.appendChild(el('span', 'je-ts-target-name', label.name));
                 box.appendChild(cell);
             });
+            applyFilter();
         }
 
         /** @returns {void} */
@@ -544,7 +602,8 @@
         /** @returns {void} */
         function renderGroup() {
             renderTargets();
-            root.querySelector('#tagStyleGroupNote').textContent = [state.preset === 'poster' && current !== 'language' ? POSTER_NOTE : '', NOTES[current] || ''].filter(Boolean).join(' ');
+            const note = current === 'genre' ? tr(NOTES.genre) : NOTES[current] || '';
+            root.querySelector('#tagStyleGroupNote').textContent = [state.preset === 'poster' && current !== 'language' ? POSTER_NOTE : '', note].filter(Boolean).join(' ');
             renderRows();
             renderContrast();
         }
@@ -567,7 +626,7 @@
                     { ratings: ((cat.age.find((a) => a.id === l.key) || {}).ratings || []).slice() },
                     web(effective('ageRating', l.key)))),
                 rating: map('rating'),
-                genre: web(effective('genre', 'genre')),
+                genre: map('genre'),
                 status: map('status'),
                 awards: map('awards'),
                 custom: Object.assign({ '*': web(effective('custom', ALL)) }, map('custom')),
@@ -615,7 +674,9 @@
                 n.dataset.jeAward = label.key;
             } else if (g === 'genre') {
                 n = el('div', 'genre-tag je-ts-chip je-ts-genre');
-                n.appendChild(el('i', 'material-icons', 'theaters'));
+                n.dataset.jeGenre = label.key;
+                n.title = label.name;
+                n.appendChild(genreGlyph(label.key));
             } else if (g === 'status') {
                 n = el('div', 'status-tag status-tag--' + label.key + ' je-ts-chip je-ts-status');
                 n.dataset.jeStatus = label.key;
@@ -699,13 +760,13 @@
             const custom = labelsOf('custom').slice(0, 2).map((l) => ['custom', l.key]);
             box.appendChild(card('je-ts-card-movie', 'Movie', {
                 tl: [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']].concat(custom),
-                tr: [['status', 'trending'], ['genre', 'genre']],
+                tr: [['status', 'trending']].concat(GENRE_SAMPLES.movie.map((l) => ['genre', l])),
                 bl: [['language', 'flag']],
                 br: [['rating', 'critic'], ['rating', 'community'], ['ageRating', 'PG-13']]
             }, !generate));
             box.appendChild(card('je-ts-card-episode', 'Episode', {
                 tl: [['quality', '1080p'], ['quality', 'HEVC']],
-                tr: [['status', 'newEpisode']],
+                tr: [['status', 'newEpisode']].concat(GENRE_SAMPLES.episode.map((l) => ['genre', l])),
                 bl: [['language', 'flag']],
                 br: [['rating', 'userReview'], ['ageRating', 'R']]
             }, !generate));
@@ -752,21 +813,23 @@
                 Object.keys(entries).forEach((l) => {
                     const o = entries[l];
                     // Of the rating chips version 1 only styled community and critic.
-                    if (!labelsOf(g).some((x) => x.key === l) || (g === 'rating' && l === 'userReview') || !o || typeof o !== 'object') return;
+                    if ((section !== 'genre' && !labelsOf(g).some((x) => x.key === l)) || !labelsOf(g).length || (g === 'rating' && l === 'userReview') || !o || typeof o !== 'object') return;
                     const stored = {};
                     [['background', 'background'], ['border', 'border'], ['text', 'color']].forEach(([f, k]) => {
                         const c = (g !== 'rating' || f !== 'border') && typeof o[k] === 'string' ? parseColour(o[k]) : null;
                         if (c) stored[f] = toCss(c);
                     });
                     if (!Object.keys(stored).length) return;
-                    const builtin = palette('default', g, l);
+                    const builtin = palette('default', g, section === 'genre' ? labelsOf(g)[0].key : l);
                     const out = {};
                     fieldsOf(g).forEach(([f]) => {
                         if (g === 'rating' && f === 'border') return;
                         const v = stored[f] || builtin[f];
                         if (v) out[f] = v;
                     });
-                    state.labels[labelKey(g, l)] = out;
+                    // Version 1 coloured every genre chip alike: that is the genre group now.
+                    if (section === 'genre') state.groups.genre = out;
+                    else state.labels[labelKey(g, l)] = out;
                 });
             });
         }
@@ -792,8 +855,10 @@
          */
         function load(json, preset) {
             state = { preset: PRESET_TITLES[preset] ? preset : 'default', groups: {}, labels: {} };
-            current = 'quality';
-            target = ALL;
+            // The group and label being edited stay when the page loads the stored document again
+            // (after a save the server normalised, or the page shown again).
+            if (!GROUPS.some((g) => g.key === current)) current = 'quality';
+            if (target !== ALL && !labelsOf(current).some((l) => l.key === target)) target = ALL;
             legacy = null;
             migrated = null;
             try {
@@ -801,6 +866,14 @@
                 if (p && p.v === 2) {
                     Object.keys(p.groups || {}).forEach((g) => { const c = readColours(p.groups[g], 'text'); if (c) state.groups[g] = c; });
                     Object.keys(p.labels || {}).forEach((k) => { const c = readColours(p.labels[k], 'text'); if (c) state.labels[k] = c; });
+                    // The one genre label older documents held coloured every genre: fold it onto the
+                    // group, as the server reads it; the fold alone is no unsaved change.
+                    const legacyGenre = state.labels[LEGACY_GENRE];
+                    if (legacyGenre) {
+                        delete state.labels[LEGACY_GENRE];
+                        state.groups.genre = Object.assign({}, state.groups.genre, legacyGenre);
+                        migrated = { from: json + '|' + state.preset, to: serialize() + '|' + state.preset };
+                    }
                 } else if (p && typeof p === 'object' && !Array.isArray(p) && Object.keys(p).length) {
                     state.preset = 'default';
                     if (cat) migrateLoaded(json, p); else legacy = { json, doc: p };
@@ -830,13 +903,30 @@
             return migrated && now === migrated.to ? migrated.from : now;
         }
 
+        /**
+         * Entries in the order the server stores them (TagStyleSet.Serialize: keys in ordinal order, fields
+         * background, border, text), so a save comes back unchanged instead of reading as a server-side
+         * normalisation, which redraws the page (and this editor) from the stored value.
+         * @param {Object} map - Group or label key → colours.
+         * @returns {Object}
+         */
+        function canonical(map) {
+            const out = {};
+            Object.keys(map).sort().forEach((key) => {
+                const c = {};
+                FIELDS.forEach(([f]) => { if (map[key][f]) c[f] = map[key][f]; });
+                out[key] = c;
+            });
+            return out;
+        }
+
         /** @returns {string} The stored document, or '' when nothing is overridden. */
         function serialize() {
             if (legacy) return legacy.json;
             if (!Object.keys(state.groups).length && !Object.keys(state.labels).length) return '';
             const out = { v: 2, preset: state.preset };
-            if (Object.keys(state.groups).length) out.groups = state.groups;
-            if (Object.keys(state.labels).length) out.labels = state.labels;
+            if (Object.keys(state.groups).length) out.groups = canonical(state.groups);
+            if (Object.keys(state.labels).length) out.labels = canonical(state.labels);
             return JSON.stringify(out);
         }
 
