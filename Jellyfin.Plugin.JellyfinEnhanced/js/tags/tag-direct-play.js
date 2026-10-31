@@ -16,7 +16,10 @@
 // native shell's (window.NativeShell.AppHost) own profile wins, built with
 // the ported builder as jellyfin-web hands it its own. Requests ask with the
 // user's saved video quality for this network (the measured or chosen
-// bitrate), which is part of the cache key. JE.tagDirectPlay.setProfile()
+// bitrate), which is part of the cache key. The profile is rebuilt when the
+// user or any setting it read changes (checked at most once per task), so a
+// user switch or a playback setting changed in this page asks with the new
+// one; answers stay keyed by profile hash. JE.tagDirectPlay.setProfile()
 // replaces the profile, for tests.
 //
 // Lookups are lazy and budgeted like the Poster sampler
@@ -118,8 +121,18 @@
     let retryTimer = 0;
     /** @type {Object|null} */
     let override = null;
-    /** @type {{profile: Object, hash: string}|null} */
+    /**
+     * The built profile, the settings its build read and their values with the
+     * user's id (a change rebuilds it).
+     * @type {{profile: Object, hash: string, reads: string[], settings: string}|null}
+     */
     let built = null;
+    /** Counts builds: a native shell's late answer applies only to its own build. */
+    let builds = 0;
+    /** @type {Set<string>|null} Setting names read while a build runs. */
+    let reading = null;
+    /** The settings were compared in this task already (see settingsChanged). */
+    let settingsChecked = false;
     /** @type {{base: Object, bitrate: number, value: {profile: Object, bitrate: number, hash: string}}|null} */
     let rated = null;
     /** @type {Promise<void>|null} A native shell's profile still on its way. */
@@ -186,13 +199,34 @@
 
     /** @param {string} name @returns {string|null} A jellyfin-web app setting (localStorage, unprefixed). */
     function appSetting(name) {
+        reading?.add(name);
         try { return localStorage.getItem(name); } catch { return null; }
+    }
+
+    /** @returns {string} The signed-in user's id, as jellyfin-web prefixes its per-user settings. */
+    function currentUser() {
+        return (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId?.()) || JE.session?.getUserId?.() || '';
     }
 
     /** @param {string} name @returns {string|null} A jellyfin-web per-user local setting (`${userId}-${name}`). */
     function userSetting(name) {
-        const user = (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId?.()) || JE.session?.getUserId?.() || '';
+        const user = currentUser();
         return user ? appSetting(`${user}-${name}`) : null;
+    }
+
+    /**
+     * The user and the values of the settings a build read, as one string.
+     * @param {string[]} names
+     * @returns {string}
+     */
+    function settingsOf(names) {
+        let text = currentUser();
+        for (const name of names) {
+            let value;
+            try { value = localStorage.getItem(name); } catch { value = null; }
+            text += `\n${name}=${value}`;
+        }
+        return text;
     }
 
     /** jellyfin-web's toBoolean: only "true"/"false" count. */
@@ -645,12 +679,24 @@
      * Build the profile once, as jellyfin-web's app host does: a native
      * shell's own (window.NativeShell.AppHost.getDeviceProfile, handed the
      * ported builder; it may answer later, and lookups wait for it), else the
-     * ported browser profile; then the host's width and codec settings.
-     * @returns {{profile: Object, hash: string}}
+     * ported browser profile; then the host's width and codec settings. The
+     * settings read on the way are recorded with their values (settingsOf).
+     * @returns {{profile: Object, hash: string, reads: string[], settings: string}}
      */
     function build() {
         const b = browserFlags();
-        const builder = (options) => webProfile(options || {}, b);
+        const own = ++builds;
+        const reads = new Set();
+        const record = (fn) => {
+            const outer = reading;
+            reading = reads;
+            try { return fn(); } finally { reading = outer; }
+        };
+        const builder = (options) => record(() => webProfile(options || {}, b));
+        const finish = (profile) => {
+            const names = [...reads];
+            return { profile, hash: hashOf(profile), reads: names, settings: settingsOf(names) };
+        };
         let profile = null;
         try {
             const shell = typeof window !== 'undefined' ? window.NativeShell?.AppHost : null;
@@ -658,9 +704,9 @@
             const native = typeof shell?.getDeviceProfile === 'function' ? shell.getDeviceProfile(builder, version) : null;
             if (native && typeof native.then === 'function') {
                 const pending = Promise.resolve(native).then((answer) => {
-                    if (!isProfile(answer)) return;
-                    const own = withHostSettings(JSON.parse(JSON.stringify(answer)), b);
-                    built = { profile: own, hash: hashOf(own) };
+                    // A later build (the user or a setting changed) has replaced this one.
+                    if (!isProfile(answer) || own !== builds) return;
+                    built = finish(record(() => withHostSettings(JSON.parse(JSON.stringify(answer)), b)));
                     primed = null;
                 }, () => { /* keep the browser profile */ }).finally(() => {
                     if (nativePending === pending) nativePending = null;
@@ -669,9 +715,34 @@
                 nativePending = pending;
             } else if (isProfile(native)) profile = JSON.parse(JSON.stringify(native));
         } catch { /* fall back to the browser profile */ }
-        profile = withHostSettings(profile || builder(baseOptions(b)), b);
-        built = { profile, hash: hashOf(profile) };
+        built = finish(record(() => withHostSettings(profile || webProfile(baseOptions(b), b), b)));
         return built;
+    }
+
+    /**
+     * Whether the user or a setting the built profile read has changed since
+     * it was built (compared once per task: cards ask for the profile often).
+     * @returns {boolean}
+     */
+    function settingsChanged() {
+        if (!built || settingsChecked) return false;
+        settingsChecked = true;
+        queueMicrotask(() => { settingsChecked = false; });
+        return settingsOf(built.reads) !== built.settings;
+    }
+
+    /**
+     * Drop the built profile so the next lookup builds it again, with the
+     * answers in memory under the hash in use (persisted answers stay keyed by
+     * their hash and are simply not read under the new one).
+     */
+    function rebuild() {
+        const hash = rated?.value.hash;
+        if (hash) for (const key of [...memory.keys()]) if (key.startsWith(`${hash}|`)) memory.delete(key);
+        built = null;
+        rated = null;
+        primed = null;
+        primedKey = '';
     }
 
     /**
@@ -680,6 +751,7 @@
      * @returns {{profile: Object, bitrate: number, hash: string}}
      */
     function current() {
+        if (!override && settingsChanged()) rebuild();
         const base = override || built || build();
         const bitrate = userBitrate(base.profile);
         if (!rated || rated.base !== base || rated.bitrate !== bitrate) {
@@ -1028,8 +1100,9 @@
             reset();
             memory.clear();
             unsaved.clear();
-            primed = null;
-            primedKey = '';
+            // The next user's profile: built again once their id is in place
+            // (the hook may run before it is; the build records the user).
+            rebuild();
         });
     }
 

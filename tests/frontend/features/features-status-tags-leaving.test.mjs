@@ -207,9 +207,9 @@ const WEB_PROFILE = JSON.parse(readFileSync(new URL('../../fixtures/direct-play-
  * captured in: its user agent, canPlayType answers (per element type),
  * speaker count, MediaSource and text tracks, and the case's local settings.
  */
-function capturedBrowser(t, kase, { userAgent = WEB_PROFILE.userAgent, apiClient = {} } = {}) {
+function capturedBrowser(t, kase, { userAgent = WEB_PROFILE.userAgent, apiClient = {}, session = {} } = {}) {
   const h = createHarness({
-    JE: { t: translate, session: { getUserId: () => 'u1' } },
+    JE: { t: translate, session: { getUserId: () => 'u1', ...session } },
     apiClient: { getCurrentUserId: () => 'u1', getSavedEndpointInfo: () => ({}), ...apiClient },
     globals: {
       MediaSource: function MediaSource() {},
@@ -276,6 +276,104 @@ test('direct play: a native shell builds its profile with the ported builder, al
   assert.equal(typeof handed.builder, 'function');
   assert.equal(h.JE.tagDirectPlay.profile().Name, 'shell');
   assert.deepEqual(plain(h.JE.tagDirectPlay.profile().SubtitleProfiles), defaults.profile.SubtitleProfiles);
+});
+
+/** Write one fixture case's local settings for a user (null: remove them). */
+function writeSettings(h, kase, user, remove = false) {
+  for (const [key, value] of Object.entries(kase.settings)) {
+    const name = key.replace(/^USER-/, `${user}-`);
+    if (remove) h.window.localStorage.removeItem(name);
+    else h.window.localStorage.setItem(name, value);
+  }
+}
+
+const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
+
+test('direct play: the profile and its hash follow the signed-in user and the playback settings changed in this page', async t => {
+  const [defaults, settings, burnIn] = WEB_PROFILE.cases;
+  let user = 'u1';
+  const hooks = new Map();
+  const h = capturedBrowser(t, defaults, { apiClient: { getCurrentUserId: () => user }, session: { getUserId: () => user, onUserChange: (name, fn) => hooks.set(name, fn) } });
+  const dp = h.JE.tagDirectPlay;
+  const host = h.document.createElement('div');
+  h.document.body.append(host);
+  dp.track(host, 'm1', () => {}); // registers the session hook
+  const a = { profile: plain(dp.profile()), hash: dp.profileHash() };
+  assert.deepEqual(a.profile, defaults.profile);
+
+  // User B keeps other per-user settings (2 channels, TS-HLS, short segments).
+  // The hook runs before B's id is in place; the profile follows once it is.
+  for (const [key, value] of Object.entries(settings.settings)) if (key.startsWith('USER-')) h.window.localStorage.setItem(key.replace(/^USER-/, 'u2-'), value);
+  hooks.get('direct-play')();
+  assert.deepEqual(plain(dp.profile()), a.profile, 'still user A until the switch completes');
+  user = 'u2';
+  await nextTask();
+  const b = { profile: plain(dp.profile()), hash: dp.profileHash() };
+  assert.notEqual(b.hash, a.hash);
+  assert.notDeepEqual(b.profile, a.profile);
+  assert.deepEqual(b.profile, plain(dp.webProfile(defaults.options)), "B's profile is built from B's settings");
+  assert.ok(b.profile.TranscodingProfiles.some(p => p.Type === 'Video' && p.MaxAudioChannels === '2' && p.Container === 'ts'));
+  assert.ok(b.profile.TranscodingProfiles.some(p => p.SegmentLength === 1));
+
+  // B changes global playback settings mid-session: the next task's profile is jellyfin-web's own for them.
+  writeSettings(h, settings, 'u2');
+  assert.deepEqual(plain(dp.profile()), b.profile, 'the settings are compared once per task (the bitrate on every call)');
+  await nextTask();
+  assert.deepEqual(plain(dp.profile()), settings.profile);
+  assert.equal(dp.bitrate(), settings.bitrate);
+  writeSettings(h, settings, 'u2', true);
+  writeSettings(h, burnIn, 'u2');
+  await nextTask();
+  assert.deepEqual(plain(dp.profile()), burnIn.profile, 'burn-in, remux and VBR settings rebuild too');
+  assert.equal(dp.bitrate(), burnIn.bitrate);
+
+  // Back to A with the same settings as before: the same profile and hash (A's stored answers apply again).
+  writeSettings(h, burnIn, 'u2', true);
+  hooks.get('direct-play')();
+  user = 'u1';
+  await nextTask();
+  assert.deepEqual(plain(dp.profile()), a.profile);
+  assert.equal(dp.profileHash(), a.hash);
+});
+
+test('direct play: a native shell answer for an earlier build never replaces the current profile', async t => {
+  const [defaults] = WEB_PROFILE.cases;
+  let user = 'u1';
+  const h = capturedBrowser(t, defaults, { apiClient: { getCurrentUserId: () => user }, session: { getUserId: () => user } });
+  const answers = [];
+  h.window.NativeShell = { AppHost: { getDeviceProfile: (builder) => { const who = user; return new Promise(resolve => answers.push(() => resolve({ ...builder({}), Name: `shell-${who}` }))); } } };
+  const dp = h.JE.tagDirectPlay;
+  dp.setProfile(null);
+  dp.profile();
+  user = 'u2';
+  await nextTask();
+  dp.profile();
+  assert.equal(answers.length, 2, 'built again for the next user');
+  answers[1]();
+  await nextTask();
+  assert.equal(dp.profile().Name, 'shell-u2');
+  answers[0](); // the first user's late answer
+  await nextTask();
+  assert.equal(dp.profile().Name, 'shell-u2');
+});
+
+test('direct play: a playback setting changed in this page asks again with the new profile', async t => {
+  const h = setup(t, { settings: { statusTagsDirectPlay: true } });
+  const dp = h.JE.tagDirectPlay;
+  h.show(movie(), h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  assert.ok(dp.peek('m1'));
+  const before = dp.profileHash();
+  h.window.localStorage.setItem('subtitleburnin', 'all');
+  await h.settle();
+  assert.notEqual(dp.profileHash(), before);
+  assert.equal(dp.peek('m1'), null, 'the answer was for the previous profile');
+  h.show(movie(), h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2);
+  assert.notDeepEqual(h.requests[1].body.DeviceProfile, h.requests[0].body.DeviceProfile);
+  assert.deepEqual(h.requests[1].body.DeviceProfile, plain(dp.profile()));
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
 });
 
 test('direct play: off by default and for non-playable or otherwise badged cards, no request goes out', async t => {
