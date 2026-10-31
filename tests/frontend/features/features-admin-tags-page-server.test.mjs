@@ -584,5 +584,3 @@ test('a destructive action confirmed after the administrator changed does not ru
   await rebuilding;
   assert.equal(h.posts.filter(p => p.endsWith('/tag-cache/rebuild')).length, 0, 'no rebuild is started for a signed-out session');
 });
-
-

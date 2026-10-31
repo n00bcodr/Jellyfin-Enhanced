@@ -268,4 +268,3 @@ test('editing Genre cap carries stored single-chip limits through the admin layo
   await h.save();
   assert.deepEqual(plain(h.server.TagGroupCaps), { Status: 9, AgeRating: 0, Genre: 3 });
 });
-

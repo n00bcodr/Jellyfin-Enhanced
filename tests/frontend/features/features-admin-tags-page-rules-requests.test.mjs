@@ -152,5 +152,3 @@ for (const result of ['failure', 'success', 'conflict-mine', 'conflict-theirs'])
   assert.ok(h.patches.every(p => Array.isArray(p.Changes.TagLookItemOverrides)), 'edits fold into the unacknowledged replacement');
   assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
 });
-
-

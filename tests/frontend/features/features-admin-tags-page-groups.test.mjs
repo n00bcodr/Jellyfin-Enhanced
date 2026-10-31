@@ -93,5 +93,3 @@ test('every declared field reads its configuration field and saves the new value
   assert.equal(h.server.LanguageTagsPriority, 'changed', 'text is trimmed');
   assert.equal(h.server.DevMode, false, 'fields the page does not own keep the server value');
 });
-
-

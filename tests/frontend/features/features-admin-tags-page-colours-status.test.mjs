@@ -263,5 +263,3 @@ test('Scenes-only admin preview follows saved server defaults without changing p
   assert.equal(movie()?.textContent, 'Post-credits');
   assert.equal(h.JE.currentSettings, own);
 });
-
-

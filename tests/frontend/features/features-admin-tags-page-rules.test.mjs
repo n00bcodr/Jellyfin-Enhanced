@@ -146,4 +146,3 @@ for (const move of [false, true]) test(`Rules Edit through the real item editor 
   assert.equal(original.isConnected, false, 'ctx.set redrew the list');
   assert.equal(h.document.activeElement, h.$(`[data-item="${move ? SERIES : ITEM}"] [data-act="edit"]`), 'replacement target Edit owns focus even after the save response redraw');
 });
-
