@@ -338,3 +338,23 @@ test('persisted current naming labels are still invalidated by a legacy-version 
   Object.assign(h.JE.currentSettings, { tagLayoutSettingsVersion: 1, tagLabelDensity: 'full' });
   assert.equal(renderer.renderFromCache(h.card, 'saved'), false);
 });
+
+const audioAliases = JSON.parse(readFileSync(new URL('../../fixtures/audio-alias-labels.json', import.meta.url)));
+for (const row of audioAliases) for (const density of ['full', 'compact']) {
+  test(`TRaSH stream alias ${row.alias} (${row.format}) → ${density}`, t => {
+    const h = setup(t, 'representative', density);
+    const variants = row.stream ? [row.stream] : [
+      { DisplayTitle: row.alias }, { Codec: row.alias }, { Profile: row.alias },
+      { Codec: row.codec, DisplayTitle: row.alias }, { Codec: row.codec, Profile: row.alias },
+    ];
+    for (const fields of variants) for (const mode of ['highest', 'all']) {
+      h.JE.currentSettings.qualityAudioDisplayMode = mode;
+      const track = { Type: 'Audio', Channels: 6, ...fields };
+      const entry = { Type: 'Movie', StreamData: { Streams: [track] } };
+      assert.deepEqual(h.render(entry), [row[density]], JSON.stringify({ fields, mode }));
+      h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged;
+      h.renderers.get('quality').render(h.card, { Id: 'batch-alias', Type: 'Movie', MediaStreams: [track] });
+      assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(e => e.textContent), [row[density]], 'batch ' + JSON.stringify({ fields, mode }));
+    }
+  });
+}

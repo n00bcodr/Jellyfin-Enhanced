@@ -215,6 +215,12 @@ for (const type of ['Series', 'Season']) {
 }
 
 
+// Alias rows share Full/Compact expectations with both consumer suites.
+for (const [index, row] of JSON.parse(readFileSync(join(here, '../../fixtures/audio-alias-labels.json'), 'utf8')).entries()) {
+    synthetic[`audio-alias-title-${index}`] = movie({ StreamData: sd([row.stream || { Type: 'Audio', Channels: 6, DisplayTitle: row.alias }]) });
+    synthetic[`audio-alias-profile-${index}`] = movie({ StreamData: sd([row.stream || { Type: 'Audio', Channels: 6, Codec: row.codec, Profile: row.alias }]) });
+}
+
 // Shared audio regression summaries have independent version-0/current facts.
 for (const row of JSON.parse(readFileSync(join(here, '../../fixtures/audio-aggregation.json'), 'utf8')))
     for (const type of ['Series', 'Season']) synthetic[`audio-aggregate-${row.name}-${type}`] = { ...row.entry, Type: type };

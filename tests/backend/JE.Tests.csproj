@@ -17,6 +17,7 @@
     <EmbeddedResource Include="../fixtures/native-status-dates.json" LogicalName="NativeStatusDates.json" />
     <EmbeddedResource Include="../fixtures/audio-legacy-documents.json" LogicalName="AudioLegacyDocuments.json" />
     <EmbeddedResource Include="../fixtures/audio-aggregation.json" LogicalName="AudioAggregation.json" />
+    <EmbeddedResource Include="../fixtures/audio-alias-labels.json" LogicalName="AudioAliasLabels.json" />
     <EmbeddedResource Include="../fixtures/audio-stream-labels.json" LogicalName="AudioStreamLabels.json" />
     <EmbeddedResource Include="../fixtures/technical-quality.json" LogicalName="TechnicalQuality.json" />
     <EmbeddedResource Include="../fixtures/source-edition-names.json" LogicalName="SourceEditionNames.json" />

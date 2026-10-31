@@ -225,14 +225,14 @@ The limit applies after each group's own filtering (quality categories, language
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
-Compact quality vocabulary is shared by web and native rendering. The canonical Full label remains the colour identity; normalized layouts now detect AC-3 and DTS-HD explicitly.
+Compact quality vocabulary is shared by web and native rendering. The canonical Full label remains the colour identity; normalized layouts detect AC-3 and DTS-HD explicitly. Audio aliases follow the [TRaSH-Guides Audio Formats](https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats) vocabulary, adapted from release names to stream titles, codecs and profiles: Atmos and Plus forms win before plain DD, and DTS-HD before DTS. E-AC-3, EAC3, DDP, DD+ and Dolby Digital Plus share the DD+ identity.
 
 | Full label (optional channel suffix) | Compact |
 |---|---|
 | Dolby Digital / Dolby Digital+ | DD / DD+ (keeps channels, for example DD+ 5.1) |
 | DTS-HD MA / DTS-HD HRA | DTS-HD (keeps channels) |
-| TRUEHD / ATMOS / DTS-X / DTS | Keeps the canonical codec name; drops channels |
-| AAC / FLAC / Opus | Channel-only fallback: 5.1 or 7.1; stereo has no sound chip |
+| TRUEHD / ATMOS / DTS-X / DTS (including DTS-ES) | Keeps the canonical codec name; drops channels |
+| AAC / FLAC / PCM / Opus / MP3 | Channel-only fallback: 5.1 or 7.1; stereo has no sound chip |
 | Dolby Vision / HDR10+ / BluRay | DV / HDR+ / BD |
 
 Other emitted video codec labels (AV1, HEVC, H265, VP9, H264, VP8, XVID, DIVX, WMV, MPEG2, MPEG4, MJPEG, THEORA) are already short and remain unchanged.
@@ -505,7 +505,7 @@ The server stores policy-independent summaries with both legacy and current soun
 
     **Sound:** JE takes the first recognized candidate display title, then checks technical metadata if no title matched. It detects channels separately. It does not rank every track by richness, despite the **No preference (best track overall)** option wording. Standalone channel fallback produces `5.1` or `7.1`; `2.0` can be appended to a recognized codec.
 
-    A sound-language preference tries language plus region, then the base language, then all tracks if no match exists. For example, selecting a German AC3 5.1 dub can replace an English Atmos badge with `5.1`; the detector does not emit `AC3` as a codec label. These choices change the badge, not the audio selected for playback.
+    A sound-language preference tries language plus region, then the base language, then all tracks if no match exists. For example, selecting a German AC3 5.1 dub replaces an English Atmos badge with `Dolby Digital 5.1` (`DD 5.1` in Compact); a version-0 account keeps its earlier `5.1` label. The detector does not emit `AC3` as a codec label. These choices change the badge, not the audio selected for playback.
 
 ## Genre Tags
 

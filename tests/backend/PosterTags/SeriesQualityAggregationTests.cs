@@ -197,11 +197,11 @@ public class SeriesQualityAggregationTests
             foreach (var type in new[] { "Series", "Season" })
             foreach (var density in expected.GetProperty("legacy").GetBoolean() ? new string?[] { null, "full", "compact" } : new[] { "full" })
             {
-                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLabelDensity = density,
+                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLabelDensity = density ?? "full",
                     TagLayoutSettingsVersion = expected.GetProperty("legacy").GetBoolean() ? 0 : 1,
-                    SeriesQualityAggregation = expected.GetProperty("policy").GetString(),
+                    SeriesQualityAggregation = expected.GetProperty("policy").GetString()!,
                     QualityAudioDisplayMode = expected.GetProperty("mode").GetString(),
-                    QualityTagsPreferredAudioLanguage = expected.GetProperty("preferred").GetString() }, new(), null);
+                    QualityTagsPreferredAudioLanguage = expected.GetProperty("preferred").GetString()! }, new(), null);
                 var entry = new TagCacheEntry { Type = type, StreamData = episodes[0].Streams, QualitySummary = summary };
                 var labels = PosterTagResolver.Resolve(entry, settings, new(type, false, null, null, null), false)?
                     .Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.DisplayText ?? tag.Label) ?? [];

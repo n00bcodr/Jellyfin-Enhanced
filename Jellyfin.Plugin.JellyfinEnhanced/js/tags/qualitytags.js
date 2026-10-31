@@ -486,6 +486,51 @@
     }
 
     // --- CORE LOGIC ---
+    // Reference: Radarr/Sonarr audio custom formats, TRaSH-Guides Audio Formats:
+    // https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats
+    // Stream aliases use the established chip vocabulary: both Atmos families → ATMOS,
+    // DTS-ES → DTS; FLAC/PCM/AAC/Opus/MP3 keep the channel-only fallback.
+    // HRA precedes generic DTS-HD; Plus/Atmos precede plain DD. Boundaries reject suffixes.
+    const AUDIO_ALIASES = [
+        [/(?:^|[^a-z0-9_])(?:atmos|ddpa)(?![a-z_])/, 'ATMOS'],
+        [/(?:^|[^a-z0-9_])true[ .-]?hd(?![a-z_])/, 'TRUEHD'],
+        [/(?:^|[^a-z0-9_])dts[-_.: ]?x7?(?![a-z_])(?![-_. ]?26[456])/, 'DTS-X'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:hra?|hi|high[ -]?resolution)(?![a-z_])/, 'DTS-HD HRA'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?(?:ma|hd(?:[-_. ]?ma)?|xll|master[ -]?audio)(?![a-z_])/, 'DTS-HD MA'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?es(?![a-z_])/, 'DTS'],
+        [/(?:^|[^a-z0-9_])dts(?![a-z_])/, 'DTS'],
+        [/(?:^|[^a-z0-9_])(?:ddp(?:lus)?|dd\+|e[-_. ]?ac-?3|dolby\s*digital(?:\s*plus|\s*\+))(?![a-z_])/, 'Dolby Digital+'],
+        [/(?:^|[^a-z0-9_])(?:dd(?!\s*\+)|dolby\s*digital(?!\s*(?:plus|\+)))(?![a-z_])|(?:^|[^a-z0-9_-])ac-?3(?![a-z_])/, 'Dolby Digital'],
+    ];
+
+    /**
+     * Match the most specific stream alias before its carrier codec.
+     * @param {string} text Display title or technical metadata.
+     * @returns {string|null} Canonical sound chip identity, before channels.
+     */
+    function audioCodecFromText(text) {
+        const value = String(text || '').toLowerCase();
+        return AUDIO_ALIASES.find(([pattern]) => pattern.test(value))?.[1] || null;
+    }
+
+    /**
+     * Keep first-recognized-title priority, enriching its carrier from the same track's
+     * profile; only use metadata-only tracks when no display title identifies a codec.
+     * @param {Object[]} streams Eligible audio tracks.
+     * @returns {string|null} Current codec label; legacy detection remains independent.
+     */
+    function detectCurrentAudioCodec(streams) {
+        for (const stream of streams) {
+            const title = audioCodecFromText(stream.DisplayTitle);
+            if (title) return audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title;
+        }
+        for (const stream of streams) {
+            const label = audioCodecFromText([stream.Codec, stream.Profile].filter(Boolean).join(' '));
+            if (label) return label;
+        }
+        return null;
+    }
+
     /**
      * Analyzes media stream and source information to determine quality tags.
      * @param {Array} mediaStreams - The MediaStreams array from the Jellyfin item.
@@ -759,80 +804,70 @@
         // Version-0 documents retain the detector they already used.
         const legacyAudio = legacyFullAudio();
         // --- AUDIO LOGIC ---
-        let audioTag = null;
-
-        for (let i = 0; i < audioStreams.length; i++) {
-            const stream = audioStreams[i];
-
-            // Priority 1: DisplayTitle Scan
-            const displayTitle = stream.DisplayTitle || '';
-
-            const atmosRegex = /atmos/i;
-            const truehd = /truehd/i;
-            const dtsxRegex = legacyAudio ? /dts-x/i : /dts[-:]x/i;
-            const dtsRegex = /\bdts\b/i;
-            const ddpRegex = /dolby\s*digital\+/i;
-
-            const atmosMatch = displayTitle.match(atmosRegex);
-            const truehdMatch = displayTitle.match(truehd);
-            const dtsxMatch = displayTitle.match(dtsxRegex);
-            const dtsMatch = displayTitle.match(dtsRegex);
-            const ddpMatch = displayTitle.match(ddpRegex);
-
-            if (atmosMatch) {
-                audioTag = 'ATMOS';
-                break; // Stop all further audio checks
-            } else if (truehdMatch) {
-                audioTag = 'TRUEHD';
-                break;
-            } else if (dtsxMatch) {
-                audioTag = 'DTS-X';
-                break;
-            } else if (!legacyAudio && /dts[- ]hd/i.test(displayTitle)) {
-                audioTag = /hra|high resolution/i.test(displayTitle) ? 'DTS-HD HRA' : 'DTS-HD MA';
-                break;
-            } else if (dtsMatch) {
-                audioTag = 'DTS';
-                break;
-            } else if (ddpMatch) {
-                audioTag = 'Dolby Digital+';
-                break;
-            } else if (!legacyAudio && /dolby\s*digital|\bac-?3\b/i.test(displayTitle)) {
-                audioTag = 'Dolby Digital';
-                break;
-            }
-        }
-
-        if (!audioTag) {
-
-            // Priority 2: Technical Metadata Fallback
+        let audioTag = legacyAudio ? null : detectCurrentAudioCodec(audioStreams);
+        if (legacyAudio) {
             for (let i = 0; i < audioStreams.length; i++) {
                 const stream = audioStreams[i];
-                const codec = (stream.Codec || '').toLowerCase();
-                const profile = (stream.Profile || '').toLowerCase();
 
-                if (codec.includes('truehd') || profile.includes('truehd')) {
-                    if (codec.includes('atmos') || profile.includes('atmos')) {
-                        audioTag = 'ATMOS';
-                    } else {
-                        audioTag = 'TRUEHD';
-                    }
+                // Priority 1: DisplayTitle Scan
+                const displayTitle = stream.DisplayTitle || '';
+
+                const atmosRegex = /atmos/i;
+                const truehd = /truehd/i;
+                const dtsxRegex = /dts-x/i;
+                const dtsRegex = /\bdts\b/i;
+                const ddpRegex = /dolby\s*digital\+/i;
+
+                const atmosMatch = displayTitle.match(atmosRegex);
+                const truehdMatch = displayTitle.match(truehd);
+                const dtsxMatch = displayTitle.match(dtsxRegex);
+                const dtsMatch = displayTitle.match(dtsRegex);
+                const ddpMatch = displayTitle.match(ddpRegex);
+
+                if (atmosMatch) {
+                    audioTag = 'ATMOS';
+                    break; // Stop all further audio checks
+                } else if (truehdMatch) {
+                    audioTag = 'TRUEHD';
                     break;
-                } else if (codec.includes('dts')) {
-                    if (codec.includes('x') || profile.includes('x')) {
-                        audioTag = 'DTS-X';
-                    } else if (!legacyAudio && /dts[- ]hd|master audio|high resolution/.test(codec + ' ' + profile)) {
-                        audioTag = /hra|high resolution/.test(codec + ' ' + profile) ? 'DTS-HD HRA' : 'DTS-HD MA';
-                    } else {
-                        audioTag = 'DTS';
-                    }
+                } else if (dtsxMatch) {
+                    audioTag = 'DTS-X';
                     break;
-                } else if (legacyAudio ? codec.includes('eac3') || codec.includes('ddp') : /e-?ac-?3|ddp/.test(codec) || /dolby\s*digital\+/.test(profile)) {
+                } else if (dtsMatch) {
+                    audioTag = 'DTS';
+                    break;
+                } else if (ddpMatch) {
                     audioTag = 'Dolby Digital+';
                     break;
-                } else if (!legacyAudio && (/^ac-?3$/.test(codec) || /dolby\s*digital/.test(profile))) {
-                    audioTag = 'Dolby Digital';
-                    break;
+                }
+            }
+
+            if (!audioTag) {
+
+                // Priority 2: Technical Metadata Fallback
+                for (let i = 0; i < audioStreams.length; i++) {
+                    const stream = audioStreams[i];
+                    const codec = (stream.Codec || '').toLowerCase();
+                    const profile = (stream.Profile || '').toLowerCase();
+
+                    if (codec.includes('truehd') || profile.includes('truehd')) {
+                        if (codec.includes('atmos') || profile.includes('atmos')) {
+                            audioTag = 'ATMOS';
+                        } else {
+                            audioTag = 'TRUEHD';
+                        }
+                        break;
+                    } else if (codec.includes('dts')) {
+                        if (codec.includes('x') || profile.includes('x')) {
+                            audioTag = 'DTS-X';
+                        } else {
+                            audioTag = 'DTS';
+                        }
+                        break;
+                    } else if (codec.includes('eac3') || codec.includes('ddp')) {
+                        audioTag = 'Dolby Digital+';
+                        break;
+                    }
                 }
             }
         }

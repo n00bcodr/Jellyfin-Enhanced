@@ -550,19 +550,57 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return null;
         }
 
+        // Reference: Radarr/Sonarr audio custom formats, TRaSH-Guides Audio Formats:
+        // https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats
+        // Adapted to stream fields and existing chips: Atmos families → ATMOS, DTS-ES → DTS;
+        // FLAC/PCM/AAC/Opus/MP3 keep channel-only fallback. Same precedence as qualitytags.js.
+        private static readonly (Regex Pattern, string Label)[] AudioAliases =
+        {
+            (new(@"(?:^|[^a-z0-9_])(?:atmos|ddpa)(?![a-z_])", Options), "ATMOS"),
+            (new(@"(?:^|[^a-z0-9_])true[ .-]?hd(?![a-z_])", Options), "TRUEHD"),
+            (new(@"(?:^|[^a-z0-9_])dts[-_.: ]?x7?(?![a-z_])(?![-_. ]?26[456])", Options), "DTS-X"),
+            (new(@"(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:hra?|hi|high[ -]?resolution)(?![a-z_])", Options), "DTS-HD HRA"),
+            (new(@"(?:^|[^a-z0-9_])dts[-_. ]?(?:ma|hd(?:[-_. ]?ma)?|xll|master[ -]?audio)(?![a-z_])", Options), "DTS-HD MA"),
+            (new(@"(?:^|[^a-z0-9_])dts[-_. ]?es(?![a-z_])", Options), "DTS"),
+            (new(@"(?:^|[^a-z0-9_])dts(?![a-z_])", Options), "DTS"),
+            (new(@"(?:^|[^a-z0-9_])(?:ddp(?:lus)?|dd\+|e[-_. ]?ac-?3|dolby" + JsSpace + @"*digital(?:" + JsSpace + @"*plus|" + JsSpace + @"*\+))(?![a-z_])", Options), "Dolby Digital+"),
+            (new(@"(?:^|[^a-z0-9_])(?:dd(?!" + JsSpace + @"*\+)|dolby" + JsSpace + @"*digital(?!" + JsSpace + @"*(?:plus|\+)))(?![a-z_])|(?:^|[^a-z0-9_-])ac-?3(?![a-z_])", Options), "Dolby Digital"),
+        };
+
+        private static string? AudioCodecFromText(string? text)
+        {
+            var value = JsText.ToLower(text ?? string.Empty);
+            foreach (var (pattern, label) in AudioAliases) if (pattern.IsMatch(value)) return label;
+            return null;
+        }
+
+        private static string? DetectCurrentAudioCodec(List<TagMediaStream> streams)
+        {
+            foreach (var stream in streams)
+            {
+                var title = AudioCodecFromText(stream.DisplayTitle);
+                if (title != null) return AudioCodecFromText(stream.DisplayTitle + " " + stream.Codec + " " + stream.Profile) ?? title;
+            }
+            foreach (var stream in streams)
+            {
+                var label = AudioCodecFromText(stream.Codec + " " + stream.Profile);
+                if (label != null) return label;
+            }
+            return null;
+        }
+
         private static string? DetectAudioCodec(List<TagMediaStream> audioStreams, bool legacyAudio = false)
         {
+            if (!legacyAudio) return DetectCurrentAudioCodec(audioStreams);
             // Priority 1: the first stream whose display title names a codec.
             foreach (var stream in audioStreams)
             {
                 var title = JsText.AsciiLower(stream.DisplayTitle);
                 if (title.Contains("atmos", StringComparison.Ordinal)) return "ATMOS";
                 if (title.Contains("truehd", StringComparison.Ordinal)) return "TRUEHD";
-                if (title.Contains("dts-x", StringComparison.Ordinal) || !legacyAudio && title.Contains("dts:x", StringComparison.Ordinal)) return "DTS-X";
-                if (!legacyAudio && Regex.IsMatch(title, "dts[- ]hd", Options)) return Regex.IsMatch(title, "hra|high resolution", Options) ? "DTS-HD HRA" : "DTS-HD MA";
+                if (title.Contains("dts-x", StringComparison.Ordinal)) return "DTS-X";
                 if (DtsRegex.IsMatch(title)) return "DTS";
                 if (DolbyDigitalPlusRegex.IsMatch(title)) return "Dolby Digital+";
-                if (!legacyAudio && Regex.IsMatch(title, "dolby" + JsSpace + "*digital|" + WordStart + "ac-?3" + WordEnd, Options)) return "Dolby Digital";
             }
 
             // Priority 2: codec / profile metadata.
@@ -578,13 +616,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 if (codec.Contains("dts", StringComparison.Ordinal))
                 {
                     if (codec.Contains('x', StringComparison.Ordinal) || profile.Contains('x', StringComparison.Ordinal)) return "DTS-X";
-                    if (!legacyAudio && Regex.IsMatch(codec + " " + profile, "dts[- ]hd|master audio|high resolution", Options))
-                        return Regex.IsMatch(codec + " " + profile, "hra|high resolution", Options) ? "DTS-HD HRA" : "DTS-HD MA";
                     return "DTS";
                 }
 
-                if (legacyAudio ? codec.Contains("eac3", StringComparison.Ordinal) || codec.Contains("ddp", StringComparison.Ordinal) : Regex.IsMatch(codec, "e-?ac-?3|ddp", Options) || DolbyDigitalPlusRegex.IsMatch(profile)) return "Dolby Digital+";
-                if (!legacyAudio && (Regex.IsMatch(codec, "^ac-?3$", Options) || Regex.IsMatch(profile, "dolby" + JsSpace + "*digital", Options))) return "Dolby Digital";
+                if (codec.Contains("eac3", StringComparison.Ordinal) || codec.Contains("ddp", StringComparison.Ordinal)) return "Dolby Digital+";
             }
 
             return null;

@@ -69,7 +69,7 @@ public class QualityDisplayTests
     [InlineData("compact")]
     public void VersionTransitionChangesTheNativeVariantEvenWhenBothLayoutsHaveFullLabels(string? density)
     {
-        var document = new JellyfinEnhancedUserSettings { QualityTagsEnabled = true, TagLabelDensity = density };
+        var document = new JellyfinEnhancedUserSettings { QualityTagsEnabled = true, TagLabelDensity = density ?? "full" };
         var legacy = PosterTagSettings.FromUserSettings(document, new(), null);
         document.TagLayoutSettingsVersion = 1; document.TagLabelDensity = "full";
         var current = PosterTagSettings.FromUserSettings(document, new(), null);
@@ -102,6 +102,35 @@ public class QualityDisplayTests
             {
                 data.DistinctQualities = cached ? QualityTagRules.DetectDistinct(data.Streams) : null;
                 Assert.Equal(new[] { row.GetProperty(density).GetString()! }, Labels(new() { Type = "Movie", StreamData = data }, settings));
+            }
+        }
+    }
+
+    [Fact]
+    public void TrashAudioAliasesHaveTheSamePrecedenceAcrossTitleCodecAndProfile()
+    {
+        using var fixture = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioAliasLabels.json")!;
+        using var cases = JsonDocument.Parse(fixture);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        foreach (var density in new[] { "full", "compact" })
+        foreach (var mode in new[] { "highest", "all" })
+        {
+            var alias = row.GetProperty("alias").GetString(); var codec = row.GetProperty("codec").GetString();
+            foreach (var track in row.TryGetProperty("stream", out var custom) ? new[] { JsonSerializer.Deserialize<TagMediaStream>(custom)! } : new TagMediaStream[] {
+                new() { Type = "Audio", Channels = 6, DisplayTitle = alias },
+                new() { Type = "Audio", Channels = 6, Codec = alias },
+                new() { Type = "Audio", Channels = 6, Profile = alias },
+                new() { Type = "Audio", Channels = 6, Codec = codec, DisplayTitle = alias },
+                new() { Type = "Audio", Channels = 6, Codec = codec, Profile = alias } })
+            {
+                var data = new TagStreamData { Streams = [track] };
+                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLayoutSettingsVersion = 1,
+                    TagLayout = "bands", TagLabelDensity = density, QualityAudioDisplayMode = mode }, new(), null);
+                foreach (var cached in new[] { false, true })
+                {
+                    data.DistinctQualities = cached ? QualityTagRules.DetectDistinct(data.Streams) : null;
+                    Assert.Equal(new[] { row.GetProperty(density).GetString() }, Labels(new() { Type = "Movie", StreamData = data }, settings));
+                }
             }
         }
     }
