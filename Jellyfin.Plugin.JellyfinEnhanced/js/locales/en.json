@@ -172,7 +172,7 @@
     "panel_settings_ui_status_tags_milestones": "New Season / Premiere / Finale / Complete Season",
     "panel_settings_ui_status_tags_series_status": "Returning / Ended / Cancelled",
     "admin_status_tags_description": "Badge posters with what is new, trending, airing next or a season milestone, without replacing the poster image. Web client only; Native Poster Tags do not draw them.",
-    "admin_status_tags_priority": "One badge per poster, first match wins (the order per card type is in the documentation). Users can override the six switches in their personal settings; the day windows apply to everyone.",
+    "admin_status_tags_priority": "One badge per poster, first match wins (the order per card type is in the documentation). Users can override the family switches in their personal settings; the day windows apply to everyone.",
     "admin_status_tags_schedule": "Show Airing Today / Airs / Returns / Coming Soon",
     "admin_status_tags_schedule_description": "When a series’ next episode airs (needs the TMDB API key), and Coming Soon for movies and series that have not premiered yet.",
     "admin_status_tags_milestones": "Show New Season / Premiere / Finale / Complete Season",
