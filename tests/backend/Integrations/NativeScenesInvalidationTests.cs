@@ -102,6 +102,116 @@ public class NativeScenesInvalidationTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScenesDisabledRetainsZeroProjectionsAfterManyReadsAndTenThousandNativeBuilds(bool statusEnabled)
+    {
+        using var h = new Harness(false);
+        h.Fixture.Plugin.Configuration.StatusTagsEnabled = statusEnabled;
+        h.Fixture.Plugin.Configuration.StatusTagsScenes = false;
+        for (var i = 0; i < 20_000; i++) Assert.Null(h.Cache.GetScenes(NewMovie()));
+        Assert.Equal(0, h.ReadProjectionCount);
+        for (var i = 0; i < 10_000; i++) Assert.Null((await h.BuildAsync(NewMovie())).Scenes);
+        Assert.Equal(0, h.ReadProjectionCount);
+        Assert.InRange(h.Memo.Count, 1, 4096);
+        Assert.Equal(0, h.Transport.Calls);
+    }
+
+    [Fact]
+    public async Task EnabledScenesBaselinesStayWithLiveSnapshotsAcrossTenThousandBuildsAndItemDeletion()
+    {
+        using var h = new Harness(false);
+        await h.SeedAsync();
+        for (var i = 0; i < 20_000; i++) Assert.Equal(new TagScenes(true, false), h.Cache.GetScenes(NewMovie()));
+        Assert.Equal(0, h.ReadProjectionCount);
+        for (var i = 0; i < 10_000; i++)
+        {
+            Assert.Equal(new TagScenes(true, false), (await h.BuildAsync(NewMovie())).Scenes);
+            Assert.InRange(h.Memo.Count, 1, 4096);
+            Assert.True(h.ReadProjectionCount <= h.Memo.Count);
+        }
+        Assert.False(h.Memo.Contains(h.A.Id)); // its baseline went out with the oldest quarter
+        Assert.Equal(0, h.ReadProjectionCount); // no separate read-history retention
+        var last = NewMovie();
+        await h.BuildAsync(last);
+        Assert.True(h.Memo.Contains(last.Id));
+        h.Library.Raise(x => x.ItemRemoved += null, h.Library.Object, new ItemChangeEventArgs { Item = last });
+        Assert.False(h.Memo.Contains(last.Id));
+        Assert.Equal(0, h.ReadProjectionCount);
+        await h.RefreshAsync(last);
+        Assert.Empty(h.Publications); // a deleted snapshot is no longer a dependent
+    }
+
+    [Fact]
+    public async Task RefreshAfterEvictionRebuildsChangedTitleAndInvalidatesItsReplacementSnapshot()
+    {
+        using var h = new Harness(false);
+        await h.SeedAsync();
+        for (var i = 0; i < 4096; i++) await h.BuildAsync(NewMovie());
+        Assert.False(h.Memo.Contains(h.A.Id));
+        h.Changed = true;
+        h.Clock.Now = h.Clock.Now.AddDays(1);
+        await h.RefreshAsync(h.A);
+        Assert.Equal(new TagScenes(false, true), (await h.BuildAsync(h.A)).Scenes);
+        h.Publications.Clear();
+        h.Changed = false;
+        h.Clock.Now = h.Clock.Now.AddDays(1);
+        await h.RefreshAsync(h.A);
+        Assert.Contains(h.A.Id, Assert.Single(h.Publications));
+        Assert.False(h.Memo.Contains(h.A.Id));
+        Assert.Equal(new TagScenes(true, false), (await h.BuildAsync(h.A)).Scenes);
+    }
+
+    [Fact]
+    public async Task ColdEnabledSnapshotInvalidatesWhenUnknownScenesBecomeConfirmed()
+    {
+        using var h = new Harness(false);
+        h.Cache.ScenesRefreshDelay = TimeSpan.FromHours(1);
+        Assert.Null((await h.BuildAsync(h.A)).Scenes);
+        Assert.True(h.Memo.Contains(h.A.Id));
+        await h.WarmAsync();
+        // Publish directly: the deliberately parked read queue must not block this assertion.
+        typeof(TagCacheService).GetMethod("RefreshScenes", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(h.Cache, null);
+        Assert.Contains(h.A.Id, Assert.Single(h.Publications));
+        Assert.False(h.Memo.Contains(h.A.Id));
+        Assert.Equal(new TagScenes(true, false), (await h.BuildAsync(h.A)).Scenes);
+    }
+
+    [Fact]
+    public async Task RefreshDuringNativeBuildDoesNotPublishAnUntrackedStaleScenesSnapshot()
+    {
+        using var h = new Harness(false);
+        await h.WarmAsync();
+        using var started = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        h.A.ReadSources = () =>
+        {
+            started.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+        };
+        var build = h.BuildAsync(h.A);
+        try
+        {
+            Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+            h.Changed = true;
+            h.Clock.Now = h.Clock.Now.AddDays(1);
+            await h.RefreshAsync(h.A);
+            Assert.Empty(h.Publications); // no live memo existed when the refresh ran
+        }
+        finally { release.Set(); }
+        Assert.Equal(new TagScenes(true, false), (await build).Scenes);
+        Assert.False(h.Memo.Contains(h.A.Id));
+        h.A.ReadSources = null;
+        Assert.Equal(new TagScenes(false, true), (await h.BuildAsync(h.A)).Scenes);
+        Assert.True(h.Memo.Contains(h.A.Id));
+    }
+
+    private static Movie NewMovie() => new()
+    {
+        Id = Guid.NewGuid(), Name = "Synthetic", ProviderIds = new(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = "7" }
+    };
+
     private sealed class Clock : TimeProvider
     {
         internal DateTimeOffset Now = DateTimeOffset.Parse("2026-10-30T12:00:00Z");
@@ -111,7 +221,12 @@ public class NativeScenesInvalidationTests
     // GetBaseItemKind uses the class name; no actual file/stream access is needed.
     private sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
     {
-        public override List<MediaBrowser.Model.Dto.MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => [];
+        internal Action? ReadSources;
+        public override List<MediaBrowser.Model.Dto.MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
+        {
+            ReadSources?.Invoke();
+            return [];
+        }
     }
 
     private sealed class Harness : IDisposable
@@ -121,6 +236,7 @@ public class NativeScenesInvalidationTests
         internal readonly Movie A = new() { Id = Guid.NewGuid(), Name = "A", ProviderIds = new(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = "7" } };
         internal readonly Movie B = new() { Id = Guid.NewGuid(), Name = "B", ProviderIds = new(StringComparer.OrdinalIgnoreCase) { ["Tmdb"] = "8" } };
         internal readonly Guid SeasonId = Guid.NewGuid(), EpisodeId = Guid.NewGuid(), OtherEpisodeId = Guid.NewGuid();
+        internal readonly Mock<ILibraryManager> Library = new();
         internal readonly TagCacheService Cache;
         internal readonly PosterTagDataProvider Native;
         internal readonly IntegrationTransport Transport;
@@ -132,6 +248,11 @@ public class NativeScenesInvalidationTests
         internal IDictionary Memo => (IDictionary)Field(Native, "_memo");
         internal System.Collections.Concurrent.ConcurrentDictionary<string, TagCacheEntry> Entries =>
             (System.Collections.Concurrent.ConcurrentDictionary<string, TagCacheEntry>)Field(Cache, "_cache");
+        // Count any separate per-read baseline map as well as checking the actual memo.
+        // A removed map contributes zero; this also detects the historical retention regression.
+        internal int ReadProjectionCount => typeof(TagCacheService)
+            .GetField("_scenesProjections", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(Cache) is IDictionary projections
+                ? projections.Count : 0;
         private long Generation => (long)Field(Native, "_memoGeneration");
         private long _generation, _version;
 
@@ -149,7 +270,7 @@ public class NativeScenesInvalidationTests
                     : "{\"keywords\":[{\"name\":\"aftercreditsstinger\"}]}")));
             _responses = new TmdbResponseCache(Transport, Clock);
             _scenes = new StatusTagsScenesService(_responses, Fixture.Core.Logger, Clock) { RequestInterval = TimeSpan.Zero };
-            var library = new Mock<ILibraryManager>();
+            var library = Library;
             library.Setup(x => x.GetItemById(A.Id)).Returns(A);
             library.Setup(x => x.GetItemById(B.Id)).Returns(B);
             library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([A, B]);
@@ -159,9 +280,11 @@ public class NativeScenesInvalidationTests
             Cache.ScenesRefreshed += ids => Publications.Add(ids.Order().ToArray());
         }
 
+        internal Task WarmAsync() => _scenes.WarmAsync("key", ["7", "8"], default);
+
         internal async Task SeedAsync()
         {
-            await _scenes.WarmAsync("key", ["7", "8"], default);
+            await WarmAsync();
             var a = await BuildAsync(A);
             var b = await BuildAsync(B);
             if (_bulkCache)

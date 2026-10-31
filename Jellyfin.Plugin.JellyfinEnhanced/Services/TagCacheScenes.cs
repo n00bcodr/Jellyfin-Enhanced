@@ -16,24 +16,20 @@ public partial class TagCacheService
     private readonly CancellationTokenSource _scenesLifetime = new();
     private readonly ConcurrentDictionary<string, byte> _pendingScenes = new(StringComparer.Ordinal);
     private bool _scenesQueued;
-    private sealed record ScenesProjection(string? TmdbId, TagScenes? Facts);
-    // Includes native on-demand reads when there is no published server cache.
-    private readonly ConcurrentDictionary<Guid, ScenesProjection> _scenesProjections = new();
 
     /// <summary>Gather card reads before one background pass.</summary>
     internal TimeSpan ScenesRefreshDelay { get; set; } = TimeSpan.FromSeconds(2);
     internal int PendingScenesRefreshes => _pendingScenes.Count;
     internal Task ScenesWorkQueue { get { lock (_scenesLock) return _scenesWork; } }
     internal event Action<IReadOnlyCollection<Guid>>? ScenesRefreshed;
+    // Native providers compare their live snapshots; reads retain no per-title history here.
+    internal event Action<ISet<Guid>>? CollectNativeScenesChanges;
 
     /// <summary>Movie-only, cache-only facts for web batch and native resolution.</summary>
     public TagScenes? GetScenes(BaseItem item)
     {
         if (item is not Movie) return null;
         var scenes = ReadScenes(item);
-        var tmdbId = TmdbIdOf(item);
-        _scenesProjections.AddOrUpdate(item.Id, new ScenesProjection(tmdbId, scenes),
-            (_, old) => old.TmdbId == tmdbId ? old : new(tmdbId, scenes));
         QueueScenesRefresh(new[] { item });
         return scenes;
     }
@@ -41,7 +37,7 @@ public partial class TagCacheService
     /// <summary>Read the current projection without queuing work or replacing its publication baseline.</summary>
     private TagScenes? ReadScenes(BaseItem item) => item is Movie ? ReadScenes(item.Id, TmdbIdOf(item)) : null;
 
-    private TagScenes? ReadScenes(Guid movieId, string? id)
+    internal TagScenes? ReadScenes(Guid movieId, string? id)
     {
         var config = JellyfinEnhanced.Instance?.Configuration;
         if (config?.StatusTagsEnabled != true || !config.StatusTagsScenes || string.IsNullOrWhiteSpace(config.TMDB_API_KEY)) return null;
@@ -143,13 +139,7 @@ public partial class TagCacheService
     {
         using var writes = BeginInPlaceWrites();
         var changedOwners = new HashSet<Guid>();
-        foreach (var pair in _scenesProjections)
-        {
-            var scenes = ReadScenes(pair.Key, pair.Value.TmdbId);
-            if (scenes == pair.Value.Facts) continue;
-            _scenesProjections[pair.Key] = pair.Value with { Facts = scenes };
-            changedOwners.Add(pair.Key);
-        }
+        CollectNativeScenesChanges?.Invoke(changedOwners);
 
         bool changed = false;
         foreach (var pair in _cache)

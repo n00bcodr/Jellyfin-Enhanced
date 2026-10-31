@@ -98,6 +98,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemRemoved += OnItemChanged;
             _tagCache.LogosWarmed += OnOwnerFactsChanged;
             _tagCache.ScenesRefreshed += OnOwnerFactsChanged;
+            _tagCache.CollectNativeScenesChanges += CollectScenesChanges;
         }
 
         /// <summary>
@@ -172,6 +173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemRemoved -= OnItemChanged;
             _tagCache.LogosWarmed -= OnOwnerFactsChanged;
             _tagCache.ScenesRefreshed -= OnOwnerFactsChanged;
+            _tagCache.CollectNativeScenesChanges -= CollectScenesChanges;
         }
 
         /// <summary>SHA-256 (hex) of an entry's content, ignoring its build timestamp. Memoized per instance.</summary>
@@ -255,7 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 var entry = await Task.Run(() => _tagCache.BuildEntryOnDemand(item)).ConfigureAwait(false);
                 lock (_memoLock)
                 {
-                    if (generation == _memoGeneration)
+                    // A refresh may finish before this build has a live snapshot to compare.
+                    // Unknown (null) facts must also be rechecked before publication.
+                    if (generation == _memoGeneration && ScenesAreCurrent(item.Id, entry))
                     {
                         if (_memo.Count >= MaxMemoEntries) TrimMemo();
                         _memo[item.Id] = new MemoEntry(entry, DateTime.UtcNow);
@@ -272,6 +276,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             finally
             {
                 _buildSlots.Release();
+            }
+        }
+
+        // The memo entry itself is the baseline. Trimming, item events and rebuilds
+        // therefore retire it without retaining a second, whole-history title map.
+        private bool ScenesAreCurrent(Guid id, TagCacheEntry? entry)
+            => entry?.Type != "Movie" || entry.Scenes == _tagCache.ReadScenes(id, entry.TmdbId);
+
+        private void CollectScenesChanges(ISet<Guid> changedOwners)
+        {
+            lock (_memoLock)
+            {
+                foreach (var pair in _memo)
+                    if (!ScenesAreCurrent(pair.Key, pair.Value.Entry)) changedOwners.Add(pair.Key);
             }
         }
 
