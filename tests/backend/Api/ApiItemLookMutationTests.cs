@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -130,4 +131,51 @@ public class ApiItemLookMutationTests(ITestOutputHelper output)
         Assert.Equal(HttpStatusCode.OK, replace.StatusCode);
         await app.StopAsync();
     }
+    [Theory]
+    [InlineData("queued-add")]
+    [InlineData("queued-edit")]
+    [InlineData("queued-remove")]
+    [InlineData("queued-undo")]
+    public async Task ProductionPageSavesThroughRealHttpValidator(string scenario)
+    {
+        using var fixture = new ApiPluginFixture();
+        var first = Largest(1); first.LockedAt = 1;
+        fixture.Plugin.Configuration.TagLookItemOverrides = new() { first };
+        if (scenario == "queued-edit") { var second = Largest(2); second.LockedAt = 2; fixture.Plugin.Configuration.TagLookItemOverrides.Add(second); }
+        var builder = WebApplication.CreateBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");
+        builder.Services.AddAuthentication("test").AddScheme<AuthenticationSchemeOptions, Authentication>("test", _ => { });
+        builder.Services.AddAuthorization();
+        builder.Services.AddControllers().AddApplicationPart(typeof(JellyfinEnhancedController).Assembly);
+        builder.Services.AddSingleton<IControllerActivator>(new Activator(fixture.Core));
+        await using var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.MapControllers();
+        app.MapGet("/test/configuration", () => Results.Json(fixture.Plugin.Configuration, Jellyfin.Extensions.Json.JsonDefaults.Options));
+        await app.StartAsync();
+        try
+        {
+            var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+            var root = new DirectoryInfo(AppContext.BaseDirectory);
+            while (root != null && !File.Exists(Path.Combine(root.FullName, "tests/frontend/helpers/item-look-page-http.mjs"))) root = root.Parent;
+            Assert.NotNull(root);
+            var start = new System.Diagnostics.ProcessStartInfo("node") { WorkingDirectory = root.FullName, RedirectStandardOutput = true, RedirectStandardError = true };
+            start.ArgumentList.Add("tests/frontend/helpers/item-look-page-http.mjs");
+            start.ArgumentList.Add(address);
+            start.ArgumentList.Add(scenario);
+            using var process = System.Diagnostics.Process.Start(start)!;
+            var stdout = process.StandardOutput.ReadToEndAsync();
+            var stderr = process.StandardError.ReadToEndAsync();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+            try { await process.WaitForExitAsync(timeout.Token); }
+            catch (OperationCanceledException) { process.Kill(entireProcessTree: true); throw; }
+            var log = await stdout + await stderr;
+            output.WriteLine(log);
+            Assert.True(process.ExitCode == 0, log);
+        }
+        finally { await app.StopAsync(); }
+    }
+
 }

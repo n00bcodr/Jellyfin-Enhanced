@@ -346,6 +346,10 @@
         views: new Set(),
         /** @type {string|null} the server and administrator the edits belong to */
         owner: null,
+        /** Per-id intent, captured at the edit boundary and retained across responses. */
+        itemEdits: new Map(),
+        itemMode: null,
+        itemFlight: null,
         /** bumped by resetSession: requests from before it are ignored when they answer */
         generation: 0,
     };
@@ -378,6 +382,9 @@
         store.saving = null;
         store.values.clear();
         store.base.clear();
+        store.itemEdits.clear();
+        store.itemMode = null;
+        store.itemFlight = null;
         store.conflicts.clear();
         store.failed = [];
         store.host = null;
@@ -457,6 +464,25 @@
     /** @param {*} a @param {*} b @returns {boolean} Whether two JSON values are equal (null and missing alike). */
     const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+    /** Apply only the user's pending item operations to a fresh server list. @param {*} raw @returns {*} */
+    function rebaseItemEdits(raw) {
+        const looks = JE.core.tagLook.normalizeItemOverrides(raw);
+        for (const [id, edit] of store.itemEdits) {
+            if (edit.value) looks.set(id, JE.core.tagLook.normalizeItemOverrides([edit.value]).get(id));
+            else looks.delete(id);
+        }
+        return JE.core.tagLook.itemOverridesToWire(looks);
+    }
+
+    /** Serialize the captured per-entry intent, without diffing a later server snapshot. @param {Map} edits @returns {Object} */
+    function itemEditsMutation(edits) {
+        return {
+            Set: Array.from(edits.values()).filter(e => e.value).map(e => e.value),
+            Remove: Array.from(edits).filter(([, e]) => !e.value).map(([id]) => id),
+            Expected: Object.fromEntries(Array.from(edits, ([id, e]) => [id, e.expected])),
+        };
+    }
+
     /**
      * The fields another administrator changed: the server's 409 body.
      * @param {*} err - The rejected request (a fetch Response from ApiClient.ajax).
@@ -498,7 +524,14 @@
         // meanwhile is the next save's.
         const changes = Object.fromEntries(sent);
         const expected = {};
+        const itemKey = 'TagLookItemOverrides';
+        const itemEdits = sent.has(itemKey) && store.itemMode === 'entries' ? new Map(store.itemEdits) : null;
         for (const key of sent.keys()) if (store.base.has(key) && !sections.some(s => s.fields?.some(f => f.key === key && f.secret))) expected[key] = store.base.get(key);
+        if (sent.has(itemKey)) {
+            changes[itemKey] = itemEdits ? itemEditsMutation(itemEdits) : JE.core.tagLook.itemOverrideMutation(expected[itemKey], changes[itemKey]);
+            delete expected[itemKey];
+            store.itemFlight = { value: sent.get(itemKey), edits: itemEdits };
+        }
         setStoreState('saving');
         let refused = false;
         const saving = (async () => {
@@ -512,9 +545,21 @@
                     if (store.values.has(key) && store.values.get(key) !== value) {
                         // Edited again meanwhile: the next save expects what this one stored.
                         store.base.set(key, copy(saved));
+                        if (key === itemKey && store.itemMode === 'entries') {
+                            const savedEntries = new Map((saved || []).map(e => [e.ItemId, e]));
+                            for (const [id, edit] of itemEdits || []) {
+                                const pending = store.itemEdits.get(id);
+                                if (pending === edit) store.itemEdits.delete(id);
+                                // Advance only our own acknowledged operation; remote entries
+                                // keep the Expected stamp captured when the user acted.
+                                else if (pending) store.itemEdits.set(id, { ...pending, expected: copy(savedEntries.get(id)) });
+                            }
+                            store.values.set(key, rebaseItemEdits(saved));
+                        }
                     } else {
                         store.values.delete(key);
                         store.base.delete(key);
+                        if (key === itemKey) { store.itemEdits.clear(); store.itemMode = null; }
                     }
                 }
                 store.failed = [];
@@ -532,7 +577,7 @@
                 }
                 return false;
             } finally {
-                if (mark.generation === store.generation) store.saving = null;
+                if (mark.generation === store.generation) { store.saving = null; store.itemFlight = null; }
             }
         })();
         store.saving = saving;
@@ -557,10 +602,18 @@
         const theirs = Object.fromEntries(store.conflicts);
         store.conflicts.clear();
         for (const [key, value] of Object.entries(theirs)) {
-            if (mine) store.base.set(key, copy(value));
+            if (mine) {
+                store.base.set(key, copy(value));
+                if (key === 'TagLookItemOverrides' && store.itemMode === 'entries') {
+                    const entries = new Map((value || []).map(e => [e.ItemId, e]));
+                    for (const [id, edit] of store.itemEdits) store.itemEdits.set(id, { ...edit, expected: copy(entries.get(id)) });
+                    store.values.set(key, rebaseItemEdits(value));
+                }
+            }
             else {
                 store.values.delete(key);
                 store.base.delete(key);
+                if (key === 'TagLookItemOverrides') { store.itemEdits.clear(); store.itemMode = null; }
             }
         }
         if (!mine) notify({ type: 'saved', values: theirs, theirs: true });
@@ -610,11 +663,7 @@
             patch: (changes, expected) => ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl('/JellyfinEnhanced/admin/configuration'),
-                data: JSON.stringify({
-                    Changes: 'TagLookItemOverrides' in changes && JE.core.tagLook
-                        ? { ...changes, TagLookItemOverrides: JE.core.tagLook.itemOverrideMutation(expected.TagLookItemOverrides, changes.TagLookItemOverrides) } : changes,
-                    Expected: Object.fromEntries(Object.entries(expected).filter(([key]) => key !== 'TagLookItemOverrides')),
-                }),
+                data: JSON.stringify({ Changes: changes, Expected: expected }),
                 contentType: 'application/json',
                 dataType: 'json',
             }),
@@ -725,9 +774,10 @@
             let moved = false;
             if (event.type === 'saved' && event.values) {
                 for (const [key, value] of Object.entries(event.values)) {
-                    if (store.values.has(key) || sameValue(config[key], value)) continue;
+                    const shown = store.values.has(key) && key === 'TagLookItemOverrides' ? store.values.get(key) : value;
+                    if ((store.values.has(key) && key !== 'TagLookItemOverrides') || sameValue(config[key], shown)) continue;
                     // The server stored something else (it normalised the value, or theirs was taken).
-                    config[key] = copy(value);
+                    config[key] = copy(shown);
                     moved = true;
                 }
             }
@@ -745,7 +795,7 @@
         /**
          * Write configuration fields, save them and redraw what depends on them.
          * @param {Object<string, *>} values - Field → value.
-         * @param {{redraw?: boolean}} [opts] - redraw: false leaves the controls alone.
+         * @param {{redraw?: boolean, itemEdit?: boolean}} [opts] - itemEdit captures per-entry intent; otherwise this is a replacement.
          */
         function setMany(values, opts = {}) {
             // A late callback of a page that is gone must not save anything.
@@ -763,6 +813,22 @@
                 if (!store.values.has(key) && sameValue(config[key], value)) continue;
                 // What the server should still hold when this edit is saved.
                 if (!store.values.has(key) && !store.base.has(key)) store.base.set(key, copy(config[key]));
+                if (key === 'TagLookItemOverrides') {
+                    const replacing = store.itemMode === 'replace' && store.values.get(key) !== store.itemFlight?.value;
+                    if (opts.itemEdit && !replacing) {
+                        const delta = JE.core.tagLook.itemOverrideMutation(config[key], value);
+                        const sets = new Map(delta.Set.map(e => [e.ItemId, e]));
+                        for (const id of Object.keys(delta.Expected)) {
+                            const previous = store.itemEdits.get(id);
+                            const inFlight = previous && store.itemFlight?.edits?.get(id) === previous;
+                            store.itemEdits.set(id, { value: copy(sets.get(id)), expected: previous && !inFlight ? previous.expected : copy(delta.Expected[id]) });
+                        }
+                        store.itemMode = 'entries';
+                    } else {
+                        store.itemEdits.clear();
+                        store.itemMode = 'replace';
+                    }
+                }
                 config[key] = value;
                 store.values.set(key, value);
                 edited = true;
@@ -1114,7 +1180,7 @@
         const ctx = {
             root, config, t: JE.t, tx, esc,
             /** @param {string} key @param {*} value */
-            set: (key, value) => setMany({ [key]: value }),
+            set: (key, value) => setMany({ [key]: value }, { itemEdit: true }),
             isCurrent: () => !disposed && sameSession(contextMark),
             setMany, flush, refresh, reload, openTab, setGroupOpen, confirm: confirmAction, snack, announce, dispose,
             pageUrl, mainPageUrl,

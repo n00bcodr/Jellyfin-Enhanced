@@ -1484,3 +1484,63 @@ for (const move of [false, true]) test(`Rules Edit through the real item editor 
   assert.equal(original.isConnected, false, 'ctx.set redrew the list');
   assert.equal(h.document.activeElement, h.$(`[data-item="${move ? SERIES : ITEM}"] [data-act="edit"]`), 'replacement target Edit owns focus even after the save response redraw');
 });
+
+for (const remote of ['add', 'edit']) test(`Rules queued edits retain an unrelated concurrent ${remote}`, async t => {
+  const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002';
+  const entry = (ItemId, Layout) => ({ ItemId, Layout, Density: 'full', LockedAt: 1 });
+  const gate = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [entry(A, 'bands'), ...(remote === 'edit' ? [entry(B, 'caption')] : [])] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        h.server.TagLookItemOverrides = [...h.server.TagLookItemOverrides.filter(e => e.ItemId !== B), entry(B, 'minimal')];
+      }
+      return serverPatch(h.server, body);
+    },
+  });
+  await h.settle();
+  const edit = () => h.$(`[data-item="${A}"] [data-act="edit"]`).click();
+  let onSave;
+  h.JE.tagItemEditor = { open: (_, options) => { onSave = options.onSave; } };
+  edit(); onSave({ layout: 'summary', density: 'full' }, A);
+  const saving = h.ctx.flush();
+  edit(); onSave({ layout: 'corners', density: 'compact' }, A);
+  gate.resolve();
+  assert.equal(await saving, true);
+  const second = h.patches[1].Changes.TagLookItemOverrides;
+  assert.deepEqual(second.Remove, [], 'no remote entry was removed by the queued edit');
+  assert.deepEqual(second.Set.map(e => e.ItemId), [A]);
+  assert.equal(h.server.TagLookItemOverrides.find(e => e.ItemId === B)?.Layout, 'minimal');
+  assert.equal(h.ctx.config.TagLookItemOverrides.find(e => e.ItemId === B)?.Layout, 'minimal', 'response is rebased into the view');
+});
+
+for (const undo of [false, true]) test(`Rules Remove during a pending save preserves remote entries (Undo: ${undo})`, async t => {
+  const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002';
+  const gate = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [{ ItemId: A, Layout: 'bands', Density: 'full', LockedAt: 1 }] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        h.server.TagLookItemOverrides.push({ ItemId: B, Layout: 'minimal', Density: 'full', LockedAt: 2 });
+      }
+      return serverPatch(h.server, body);
+    },
+  });
+  await h.settle();
+  let onSave;
+  h.JE.tagItemEditor = { open: (_, options) => { onSave = options.onSave; } };
+  h.$(`[data-item="${A}"] [data-act="edit"]`).click();
+  onSave({ layout: 'summary', density: 'full' }, A);
+  const saving = h.ctx.flush();
+  h.$(`[data-item="${A}"] [data-act="remove"]`).click();
+  if (undo) h.$('.je-ta-snack .je-ta-button').click();
+  gate.resolve();
+  assert.equal(await saving, true);
+  assert.ok(h.server.TagLookItemOverrides.some(e => e.ItemId === B));
+  assert.equal(h.server.TagLookItemOverrides.some(e => e.ItemId === A), undo);
+  assert.ok(h.patches.every(p => !p.Changes.TagLookItemOverrides.Remove.includes(B)));
+});
