@@ -52,6 +52,22 @@ public class QualityDisplayTests
     }
 
     [Theory]
+    [InlineData("Dolby Digital", "DD")]
+    [InlineData("Dolby Digital 5.1", "DD 5.1")]
+    [InlineData("Dolby Digital+", "DD+")]
+    [InlineData("Dolby Digital+ 5.1", "DD+ 5.1")]
+    [InlineData("Dolby Digital+ 7.1", "DD+ 7.1")]
+    [InlineData("DTS-HD MA 5.1", "DTS-HD 5.1")]
+    [InlineData("DTS-HD HRA 7.1", "DTS-HD 7.1")]
+    [InlineData("Dolby TrueHD 7.1", "TrueHD 7.1")]
+    [InlineData("Dolby Atmos 7.1", "Atmos 7.1")]
+    [InlineData("DTS:X 7.1", "DTS:X 7.1")]
+    [InlineData("ATMOS 7.1", "ATMOS")]
+    [InlineData("MPEG2", "MPEG2")]
+    public void CompactLabelsKeepCodecIdentityAndChannels(string full, string compact)
+        => Assert.Equal(compact, QualityTagRules.CompactLabel(full));
+
+    [Theory]
     [InlineData("eng", "eng", "deu", false)]
     [InlineData("eng", "none", "deu", true)]
     [InlineData("eng", "fra", "deu", true)]

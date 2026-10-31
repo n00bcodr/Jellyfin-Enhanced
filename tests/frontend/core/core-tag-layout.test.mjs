@@ -298,7 +298,7 @@ test('compact density shortens quality labels and drops the critic chip; caps cu
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLabelDensity: 'compact' } });
   const host = h.render(audio('English - Dolby Digital+ 5.1', 'eac3'));
   const labels = () => Array.from(host.querySelectorAll('.quality-overlay-label'), l => l.textContent);
-  assert.deepEqual(labels(), ['4K', 'HDR+', 'HEVC', '5.1']);
+  assert.deepEqual(labels(), ['4K', 'HDR+', 'HEVC', 'DD+ 5.1']);
   assert.equal(host.querySelector('.rating-tag-critic'), null);
   assert.ok(host.querySelector('.rating-tag-tmdb'));
   assert.equal(h.layout.compactQualityLabel('Dolby Vision'), 'DV');
@@ -1269,4 +1269,18 @@ test('Bands shared native/web width and height fixtures retain later chips after
     assert.equal(shown.filter(v => !v).length, f.hidden, f.name);
     assert.equal(h.layout.rowsHeight(shown, rows, f.heights, 18, f.gap, more.row), f.height, f.name);
   }
+});
+
+// Literal expectations intentionally independent of the generated compact table.
+test('compact codec vocabulary retains DD channels and audits long aliases', t => {
+  const h = setup(t);
+  for (const [full, compact] of [
+    ['Dolby Digital', 'DD'], ['Dolby Digital 5.1', 'DD 5.1'],
+    ['Dolby Digital+', 'DD+'], ['Dolby Digital+ 5.1', 'DD+ 5.1'],
+    ['Dolby Digital+ 7.1', 'DD+ 7.1'], ['DTS-HD MA 5.1', 'DTS-HD 5.1'],
+    ['DTS-HD HRA 7.1', 'DTS-HD 7.1'], ['Dolby TrueHD 7.1', 'TrueHD 7.1'],
+    ['Dolby Atmos 7.1', 'Atmos 7.1'], ['DTS:X 7.1', 'DTS:X 7.1'],
+    ['Dolby Vision', 'DV'], ['HDR10+', 'HDR+'], ['BluRay', 'BD'],
+    ['MPEG2', 'MPEG2'], ['THEORA', 'THEORA'], ['ATMOS 7.1', 'ATMOS'],
+  ]) assert.equal(h.layout.compactQualityLabel(full), compact, full);
 });

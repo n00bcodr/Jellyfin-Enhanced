@@ -231,11 +231,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The web's compact quality labels, retaining the full label for colour identity.</summary>
         private static string CompactQuality(string label)
         {
-            var exact = label switch { "Dolby Vision" => "DV", "HDR10+" => "HDR+", "Dolby Digital+" => "DD+", "BluRay" => "BD",
+            var exact = label switch {
                 "Director's Cut" => "DC", "Extended" => "Ext", "Unrated" => "Unr", "Remastered" => "Rem", "Criterion" => "CC", "Special Edition" => "Special", "Mixed" => "±", _ => null };
-            if (exact != null) return exact;
-            var audio = Regex.Match(label, @"^(ATMOS|DTS-X|TRUEHD|DTS|Dolby Digital\+) (\d+\.\d+)$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
-            return audio.Success ? audio.Groups[audio.Groups[1].Value == "Dolby Digital+" ? 2 : 1].Value : label;
+            return exact ?? QualityTagRules.CompactLabel(label);
         }
 
         private static int IndexOf(IReadOnlyList<PosterTagGroup> order, PosterTagGroup group)

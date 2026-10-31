@@ -784,3 +784,5 @@ The layout, settings hub, Tag Styles and native resolver/plan/renderer use the s
 Per-genre Tag Styles labels come from `js/tags/genre-icons.json` (see above). `tests/fixtures/genre-styles.json` holds one Tag Styles document and, per genre, the label, glyph and colours web chips and native posters draw; `tests/backend/PosterTags/GenreStyleTests.cs`, `tests/frontend/features/features-genre-styles.test.mjs` and `tests/browser/genre-styles.spec.cjs` read it, and the offline poster parity compares each genre chip's label too.
 
 The technical aspect-ratio tolerance table in `TechnicalQualityRules.cs` also generates the web table inside `js/tags/qualitytags.js` through `scripts/generate_technical_ratios.py` (`--check` verifies it). The shared `tests/fixtures/technical-quality.json` exercises full and compact native/web output and tolerance boundaries.
+
+Compact quality labels use `js/tags/quality-compact.json`, projected into the web layout table and `Services/PosterTags/Resolution/QualityCompactLabels.g.cs` by `scripts/generate_quality_compact.py`. Run its `--check` mode after editing the source.

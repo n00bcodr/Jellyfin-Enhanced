@@ -1,0 +1,16 @@
+{
+  "Dolby Vision": ["DV", true],
+  "HDR10+": ["HDR+", true],
+  "BluRay": ["BD", true],
+  "Dolby Digital": ["DD", true],
+  "Dolby Digital+": ["DD+", true],
+  "DTS-HD MA": ["DTS-HD", true],
+  "DTS-HD HRA": ["DTS-HD", true],
+  "Dolby TrueHD": ["TrueHD", true],
+  "Dolby Atmos": ["Atmos", true],
+  "DTS:X": ["DTS:X", true],
+  "ATMOS": ["ATMOS", false],
+  "DTS-X": ["DTS-X", false],
+  "TRUEHD": ["TRUEHD", false],
+  "DTS": ["DTS", false]
+}

@@ -21,6 +21,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
     /// </summary>
     internal static class QualityTagRules
     {
+        /// <summary>Shared compact vocabulary, retaining the full label for colour identity.</summary>
+        internal static string CompactLabel(string label)
+        {
+            var audio = Regex.Match(label, @"^(.*) (\d+\.\d+)$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
+            var key = audio.Success ? audio.Groups[1].Value : label;
+            return QualityCompactLabels.Labels.TryGetValue(key, out var value)
+                ? value.Text + (audio.Success && value.KeepChannels ? " " + audio.Groups[2].Value : string.Empty)
+                : label;
+        }
+
         /// <summary>Model category keys, in default stack order.</summary>
         public const string Resolution = "resolution";
 

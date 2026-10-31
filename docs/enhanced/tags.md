@@ -218,7 +218,21 @@ The limit applies after each group's own filtering (quality categories, language
 | Setting | Default | What it does |
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
-| Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
+| Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital 5.1` → `DD 5.1`, `Dolby Digital+ 5.1` → `DD+ 5.1`) and hides the critic score when a community score is shown |
+
+Compact quality vocabulary is shared by web and native rendering. Full labels and colour identities stay unchanged.
+
+| Full label (optional channel suffix) | Compact |
+|---|---|
+| Dolby Digital / Dolby Digital+ | DD / DD+ (keeps channels, for example DD+ 5.1) |
+| DTS-HD MA / DTS-HD HRA | DTS-HD (keeps channels) |
+| Dolby TrueHD / Dolby Atmos | TrueHD / Atmos (keeps channels) |
+| DTS:X | DTS:X (keeps channels) |
+| Dolby Vision / HDR10+ / BluRay | DV / HDR+ / BD |
+| ATMOS / DTS-X / TRUEHD / DTS | Same short codec name; existing compact channel suppression |
+
+Other emitted video codec labels (AV1, HEVC, H265, VP9, H264, VP8, XVID, DIVX, WMV, MPEG2, MPEG4, MJPEG, THEORA) are already short and remain unchanged.
+
 | **Tag Groups** order | Status, quality, rating, age rating, language, genre, awards, logos, custom | Priority order of the groups |
 | **Show up to** | Genre 3, language 3, age rating 1, status 1, awards 2, custom 3, quality, rating and logos all | The same limits as before layouts existed; logos are limited by the administrator's **Logos per title** |
 | **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |

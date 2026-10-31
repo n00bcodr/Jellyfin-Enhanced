@@ -631,6 +631,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/QualityCompactLabels.g.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/QualityTagRules.cs",
       "category": "Services"
     },
@@ -1748,6 +1752,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/peopletags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/quality-compact.json",
       "category": "js"
     },
     {
@@ -9851,7 +9859,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 451,
+    "files": 453,
     "routes": 194,
     "configuration_properties": 713,
     "storage_references": 85,
