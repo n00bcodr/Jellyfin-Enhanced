@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
@@ -455,5 +456,42 @@ public class ApiMediaTagsPortableTests
         Assert.Empty(preview["skipped"]!.AsArray());
         Assert.Empty(preview["changes"]!.AsArray());
         Assert.Equal(count, Body(controller.GetMediaTagsPresets(user.ToString("N")))["offered"]!.AsArray().Count);
+    }
+
+    [Fact]
+    public void EveryCredentialFieldIsReportedAsASecret()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, user, signIn) = Signed(f);
+        var id = user.ToString("N");
+        // Every configuration property named like a credential (keys, tokens, passwords, secrets), and the
+        // Sonarr/Radarr instance lists that carry each instance's API key.
+        var credential = new Regex("(Key|KEY|Token|Password|Secret|Instances)$");
+        var fields = typeof(PluginConfiguration).GetProperties().Concat(typeof(JellyfinEnhancedUserSettings).GetProperties())
+            .Select(p => p.Name).Where(n => credential.IsMatch(n)).Distinct().OrderBy(n => n, StringComparer.Ordinal).ToList();
+        Assert.Contains("TMDB_API_KEY", fields);
+        Assert.Equal(fields, MediaTagsPortable.Secrets.OrderBy(n => n, StringComparer.Ordinal));
+        foreach (var field in fields) Assert.True(MediaTagsPortable.IsSecret(field), field);
+        // Other spellings of a credential, from a hand-edited or newer document.
+        foreach (var field in new[] { "tmdb_api_key", "Other-Api-Key", "AuthToken", "AdminPassword", "ClientSecretValue" })
+            Assert.True(MediaTagsPortable.IsSecret(field), field);
+        // No page field is one: they all export.
+        Assert.DoesNotContain(MediaTagsPageFields.Allowed, MediaTagsPortable.IsSecret);
+
+        // Both previews report every one as a secret, never as unknown, and read none of them.
+        var settings = new JsonObject { ["TagGap"] = "roomy" };
+        foreach (var field in fields) settings[field] = "x";
+        f.Core.Manager.SaveUserConfiguration(id, "settings.json", new JellyfinEnhancedUserSettings { TagLayoutSettingsVersion = 1 });
+        var userPreview = Body(controller.PreviewUserMediaTags(id, Json(new JsonObject { ["v"] = 1, ["kind"] = "je-media-tags-user", ["settings"] = settings.DeepClone() })));
+        signIn(true);
+        var adminPreview = Body(controller.PreviewAdminMediaTags(Json(new JsonObject { ["v"] = 1, ["kind"] = "je-media-tags-admin", ["settings"] = settings.DeepClone() })));
+        foreach (var preview in new[] { userPreview, adminPreview })
+        {
+            var skipped = preview["skipped"]!.AsArray().ToDictionary(s => (string)s!["field"]!, s => (string)s!["reason"]!);
+            foreach (var field in fields) Assert.Equal("secret", skipped[field]);
+            Assert.DoesNotContain(fields, field => preview["imported"]!.AsObject().ContainsKey(field));
+        }
+
+        Assert.Equal(new[] { "TagGap" }, userPreview["imported"]!.AsObject().Select(p => p.Key));
     }
 }

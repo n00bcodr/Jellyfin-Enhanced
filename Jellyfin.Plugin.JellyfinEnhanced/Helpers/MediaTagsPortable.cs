@@ -103,8 +103,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <summary>Page fields that are actions, not settings: never exported or imported.</summary>
         public static readonly IReadOnlySet<string> AdminSignals = new HashSet<string>(StringComparer.Ordinal) { "ClearLocalStorageTimestamp" };
 
-        /// <summary>Secrets the Media Tags features use. They are not page fields; an import naming one reports it.</summary>
-        public static readonly IReadOnlySet<string> Secrets = new HashSet<string>(StringComparer.Ordinal) { "CustomTagRuleKey", "MdblistApiKey" };
+        /// <summary>
+        /// Every credential field of <see cref="PluginConfiguration"/>, spelled as declared: API keys, the custom
+        /// rule key, the analytics secret and the Sonarr/Radarr instance lists (each instance carries its API key).
+        /// None is a page field; an import naming one reports it as a secret and never reads it.
+        /// </summary>
+        public static readonly IReadOnlySet<string> Secrets = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "TMDB_API_KEY", "MdblistApiKey", "DoesTheDogDieApiKey", "ReviewTranslationApiKey", "JellyseerrApiKey",
+            "ShokoApiKey", "SonarrApiKey", "RadarrApiKey", "SonarrInstances", "RadarrInstances", "CustomTagRuleKey",
+            "AnalyticsInstallSecret",
+        };
 
         private static readonly Regex PresetIdRegex = new Regex("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.Compiled);
 
@@ -532,15 +541,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             return new Preview { Kind = header.Kind, V = header.V, Imported = imported, Changes = changes, Skipped = skipped };
         }
 
-        /// <summary>Whether a field is a secret: the known ones, and any API key, token, password or secret.</summary>
+        /// <summary>
+        /// Whether a field is a secret: one of <see cref="Secrets"/>, or any other API key, token, password or secret
+        /// in any case and with or without separators (<c>TMDB_API_KEY</c>, <c>api-key</c>, <c>AuthToken</c>).
+        /// </summary>
         /// <param name="field">The field name.</param>
         /// <returns>True for a secret.</returns>
         public static bool IsSecret(string field)
-            => Secrets.Contains(field)
-                || field.EndsWith("ApiKey", StringComparison.OrdinalIgnoreCase)
-                || field.EndsWith("Token", StringComparison.OrdinalIgnoreCase)
-                || field.Contains("Password", StringComparison.OrdinalIgnoreCase)
-                || field.Contains("Secret", StringComparison.OrdinalIgnoreCase);
+        {
+            if (Secrets.Contains(field)) return true;
+            var name = field.Replace("_", string.Empty, StringComparison.Ordinal).Replace("-", string.Empty, StringComparison.Ordinal);
+            return name.EndsWith("ApiKey", StringComparison.OrdinalIgnoreCase)
+                || name.EndsWith("Token", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Password", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Secret", StringComparison.OrdinalIgnoreCase);
+        }
 
         // ── Helpers ────────────────────────────────────────────────────────
 
