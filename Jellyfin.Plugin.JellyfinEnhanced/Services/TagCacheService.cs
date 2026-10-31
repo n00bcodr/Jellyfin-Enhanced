@@ -589,6 +589,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private int _fullBuildsRunning;
 
         /// <summary>
+        /// Whether a full build (scheduled, reconcile of an empty cache or manual)
+        /// is running or a manual rebuild is queued, for the admin page's cache summary.
+        /// </summary>
+        public bool IsRebuilding => Volatile.Read(ref _fullBuildsRunning) != 0 || Volatile.Read(ref _manualRebuildInProgress) != 0;
+
+        /// <summary>
         /// Admin-triggered full rebuild (config page "Rebuild Server Tag Cache"
         /// button). Unlike <see cref="ReconcileCache"/>, this always recomputes
         /// every item regardless of Jellyfin's saved-item timestamps, which is

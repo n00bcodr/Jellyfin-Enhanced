@@ -173,19 +173,20 @@ test('a user with presets allowed gets Colours with eight tiles painted from eac
   assert.equal(h.saved().tagStylePreset, 'glass');
 });
 
-test('an admin gets the Server tab with four configuration page pointers and the colour editor card', async t => {
+test('an admin gets the Server tab with four Media Tags page pointers and the colour editor card', async t => {
   const h = setup(t, { admin: true, plugin: { TagStylesAllowUserPreset: false, StatusTagsJustAddedDays: 14 } });
   await h.open();
   assert.deepEqual(Array.from(h.document.querySelectorAll('[role="tab"]'), tab => tab.dataset.tab), ['layout', 'groups', 'badges', 'rules', 'colours', 'server']);
   assert.equal(h.tab('server').getAttribute('aria-label'), 'panel_media_tags_tab_server_name:panel_media_tags_tab_server');
   const links = Array.from(h.document.querySelectorAll('#jeMthPanel-server a[data-je-config-link]'));
-  assert.deepEqual(links.map(a => new URLSearchParams(a.href.split('?')[1]).get('jeSection')),
-    ['tagLayoutAdminDetails', 'tagStylesEnabled', 'tagCacheServerMode', 'nativePosterTagsEnabled']);
-  for (const a of links) assert.match(a.href, /#\/configurationpage\?name=Jellyfin%20Enhanced&jeSection=/);
+  // The admin settings live on the Media Tags page: each pointer opens its tab.
+  assert.deepEqual(links.map(a => new URLSearchParams(a.href.split('?')[1]).get('tab')),
+    ['layout', 'colours', 'server', 'server']);
+  for (const a of links) assert.match(a.href, /#\/configurationpage\?name=JellyfinEnhancedMediaTags&tab=/);
   assert.match(h.$('#jeMthPanel-colours').textContent, /panel_media_tags_colours_presets_off/, 'admins keep Colours for the editor even with presets off');
-  assert.ok(h.$('#jeMthPanel-colours .je-mth-admin a[data-je-config-link]'));
+  assert.match(h.$('#jeMthPanel-colours .je-mth-admin a[data-je-config-link]').href, /name=JellyfinEnhancedMediaTags&tab=colours$/);
   assert.match(h.$('#jeMthPanel-badges').textContent, /panel_media_tags_badge_window_added:14/, 'the admin\'s windows are shown');
-  assert.ok(h.$('#jeMthPanel-badges a[href*="jeSection=statusTagsAdminDetails"]'), 'and admins can go and change them');
+  assert.ok(h.$('#jeMthPanel-badges a[href$="name=JellyfinEnhancedMediaTags&tab=badges"]'), 'and admins can go and change them');
   // Following a pointer closes the panel (the configuration page replaces the view).
   links[0].addEventListener('click', e => e.preventDefault());
   h.click(links[0]);

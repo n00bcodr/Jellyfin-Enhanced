@@ -264,7 +264,7 @@ Poster tags and **Show Audio Languages** moved to [Media Tags](#media-tags); **U
 
 ### Media Tags
 
-Everything about poster tags for your account: the layout, the tag groups, status badges, rules and locked items, and your colour preset. Each tab does one job; a live preview beside the tabs (a strip under them on a phone) shows the result as you change it. See [The Media Tags section](tags.md#the-media-tags-section) for the preview, the phone layout and search.
+Everything about poster tags for your account: the layout, the tag groups, status badges, rules and locked items, and your colour preset. (Administrators set the server defaults on the separate [Media Tags settings page](tags.md); the **Server** tab here links to it.) Each tab does one job; a live preview beside the tabs (a strip under them on a phone) shows the result as you change it. See [The Media Tags section](tags.md#the-media-tags-section) for the preview, the phone layout and search.
 
 ![Media Tags on its Layout tab with the live preview](../images/tags/media-tags-hub.webp)
 
@@ -325,7 +325,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
 
 === "Server (administrators)"
 
-    Shortcuts to the plugin configuration page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that section. Other users never get this tab.
+    Shortcuts to the Media Tags settings page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that tab. Other users never get this tab.
 
 See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
 
@@ -442,7 +442,7 @@ Use the admin configuration page to turn server features on and set starting pre
 
 ??? info "How it works"
 
-    The tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, and **Docs**. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`.
+    The tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, and **Docs**. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`. Media Tags settings are on their own page, `#/configurationpage?name=JellyfinEnhancedMediaTags` (the **Media Tags** card on **Display**); it saves each change as you make it. See [Tags & badges](tags.md).
 
     Some server effects happen immediately. Page integrations can have additional requirements, described below.
 

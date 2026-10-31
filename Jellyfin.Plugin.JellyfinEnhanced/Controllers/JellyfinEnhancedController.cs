@@ -8657,6 +8657,70 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true, message = "Tag cache rebuild started in the background." });
         }
 
+        /// <summary>
+        /// Server tag cache state for the Media Tags admin page's Overview: whether
+        /// the cache is on, how many items it holds, when it last changed (Unix ms,
+        /// 0 = never) and whether a full build is running. Admin only.
+        /// </summary>
+        [HttpGet("tag-cache/summary")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetTagCacheSummary()
+        {
+            if (!IsAdminUser()) return Forbid();
+
+            var enabled = JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode == true;
+            return Ok(new
+            {
+                enabled,
+                entries = enabled ? _tagCacheService.Count : 0,
+                lastModified = enabled ? _tagCacheService.LastModified : 0,
+                rebuilding = enabled && _tagCacheService.IsRebuilding,
+            });
+        }
+
+        /// <summary>
+        /// Saves a few plugin configuration fields on top of the configuration the server holds now (the Media Tags
+        /// page saves field by field). It reads and writes inside the same critical section as every other save, so
+        /// it never puts back an older value of a field it was not asked to change, even one another save (the main
+        /// configuration page's) wrote while this request was waiting. Only the Media Tags page's own fields
+        /// (<see cref="MediaTagsPageFields"/>) are accepted; every other field stays with the main page's full save.
+        /// A field listed in <c>Expected</c> with the value the caller read before editing it is refused with 409 and
+        /// the server's value when that value has changed since; nothing is written then. Admin only.
+        /// </summary>
+        /// <param name="request">The changed fields and, per field, the value read before the edit.</param>
+        /// <returns>
+        /// 200 with the stored values, 400 for a field the page does not own or a value outside the field's contract
+        /// (<see cref="MediaTagsPageFields.TryNormalize"/>), 409 with the conflicts. A body over 64 KB is refused while
+        /// it is read, before the action runs (Jellyfin's exception middleware answers 500).
+        /// </returns>
+        [HttpPost("admin/configuration")]
+        [Authorize]
+        [RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)]
+        [Produces("application/json")]
+        public IActionResult PatchConfiguration([FromBody] ConfigurationPatchRequest? request)
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null) return StatusCode(503);
+            if (request?.Changes == null || request.Changes.Count == 0) return BadRequest(new { error = "No changes." });
+
+            var result = PluginConfigurationPatch.Apply(plugin, request.Changes, request.Expected, MediaTagsPageFields.Allowed);
+            if (result.Error != null) return BadRequest(new { error = result.Error });
+            if (result.Conflicts.Count > 0) return Conflict(new { conflicts = result.Conflicts });
+            return Ok(new { values = result.Values });
+        }
+
+        /// <summary>The body of <see cref="PatchConfiguration"/>.</summary>
+        public sealed class ConfigurationPatchRequest
+        {
+            /// <summary>Gets or sets the changed fields (PluginConfiguration property name → value).</summary>
+            public Dictionary<string, JsonElement>? Changes { get; set; }
+
+            /// <summary>Gets or sets, per changed field, the value read before it was edited.</summary>
+            public Dictionary<string, JsonElement>? Expected { get; set; }
+        }
+
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [Produces("application/json")]
@@ -8943,10 +9007,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var state = _whatsNewService.GetState();
             if (state == null)
             {
-                return Ok(new { pluginVersion = (string?)null, newSettings = new Dictionary<string, string>() });
+                return Ok(new { pluginVersion = (string?)null, newSettings = new Dictionary<string, string>(), mediaTags = new Dictionary<string, object>() });
             }
 
-            return Ok(new { pluginVersion = state.PluginVersion, newSettings = state.NewSettings });
+            // New settings that live on the Media Tags page: where, so the banner can link there.
+            var locations = _whatsNewService.GetMediaTagsLocations();
+            var mediaTags = state.NewSettings.Keys
+                .Where(locations.ContainsKey)
+                .ToDictionary(id => id, id => (object)new { page = Services.WhatsNewService.MediaTagsPageName, tab = locations[id].Tab, group = locations[id].Group }, StringComparer.Ordinal);
+            return Ok(new { pluginVersion = state.PluginVersion, newSettings = state.NewSettings, mediaTags });
         }
 
         [HttpPost("whats-new/dismiss")]

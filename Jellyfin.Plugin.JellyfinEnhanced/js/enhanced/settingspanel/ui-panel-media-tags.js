@@ -8,7 +8,7 @@
  *   Rules & locks  the tag look rules and locked items (ui-panel-tag-looks.js)
  *   Colours        the user's colour preset (only while the admin allows
  *                  one), and for admins the way to the colour editor
- *   Server         admins only: where the server-wide settings live
+ *   Server         admins only: links to the Media Tags admin page
  *
  * Every control reads and writes the per-user setting it always did; the
  * ids the settings wiring (ui-panel-settings.js) binds are kept. Admin-only
@@ -26,7 +26,8 @@
 
     const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
     const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster'];
-    const CONFIG_PAGE_NAME = 'Jellyfin Enhanced';
+    /** The Media Tags administrator page (Configuration/mediaTagsPage.html). */
+    const ADMIN_PAGE_NAME = 'JellyfinEnhancedMediaTags';
     const TAB_STORE_PREFIX = 'JE_mediaTagsTab:';
 
     /**
@@ -44,12 +45,12 @@
         { key: 'statusTagsSeriesStatus', id: 'statusTagsSeriesStatusToggle', fallback: false, nameKey: 'panel_media_tags_badge_series_status', descKey: 'panel_settings_ui_status_tags_series_status', chip: ['status', 'returning', 'status_tag_returning'] },
     ];
 
-    /** The admin pointers: the configuration page section each one opens. */
+    /** The admin pointers: the Media Tags admin page tab each one opens. */
     const SERVER_LINKS = [
-        { nameKey: 'panel_media_tags_server_defaults', descKey: 'panel_media_tags_server_defaults_desc', section: 'tagLayoutAdminDetails' },
-        { nameKey: 'panel_media_tags_server_colours', descKey: 'panel_media_tags_server_colours_desc', section: 'tagStylesEnabled' },
-        { nameKey: 'panel_media_tags_server_cache', descKey: 'panel_media_tags_server_cache_desc', section: 'tagCacheServerMode' },
-        { nameKey: 'panel_media_tags_server_native', descKey: 'panel_media_tags_server_native_desc', section: 'nativePosterTagsEnabled' },
+        { nameKey: 'panel_media_tags_server_defaults', descKey: 'panel_media_tags_server_defaults_desc', tab: 'layout' },
+        { nameKey: 'panel_media_tags_server_colours', descKey: 'panel_media_tags_server_colours_desc', tab: 'colours' },
+        { nameKey: 'panel_media_tags_server_cache', descKey: 'panel_media_tags_server_cache_desc', tab: 'server' },
+        { nameKey: 'panel_media_tags_server_native', descKey: 'panel_media_tags_server_native_desc', tab: 'server' },
     ];
 
     /** Built-in colours of the three chips a preset tile shows, for parts a preset leaves alone. */
@@ -106,14 +107,14 @@
     }
 
     /**
-     * The plugin configuration page, optionally opened at one section
-     * (configPage.html reads `jeSection` and jumps to it).
-     * @param {string} [section] - Element id on the configuration page.
+     * The Media Tags admin page, optionally opened at one tab (the page
+     * reads `tab`; see js/enhanced/admintags/admin-tags.js).
+     * @param {string} [tab] - Tab id: layout, colours, badges, server, …
      * @returns {string}
      */
-    function configUrl(section) {
+    function configUrl(tab) {
         const base = `${window.location.origin}${window.location.pathname}`;
-        return `${base}#/configurationpage?name=${encodeURIComponent(CONFIG_PAGE_NAME)}${section ? `&jeSection=${encodeURIComponent(section)}` : ''}`;
+        return `${base}#/configurationpage?name=${ADMIN_PAGE_NAME}${tab ? `&tab=${encodeURIComponent(tab)}` : ''}`;
     }
 
     /** @returns {any} The effective layout settings (layout, density, edge spacing), read fresh. */
@@ -309,7 +310,7 @@
                 </div>`;
         }).join('');
         const adminLink = admin ? `
-            <a class="je-mth-link" href="${escapeHtml(configUrl('statusTagsAdminDetails'))}" data-je-config-link>${tx('panel_media_tags_badge_windows_admin')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>` : '';
+            <a class="je-mth-link" href="${escapeHtml(configUrl('badges'))}" data-je-config-link>${tx('panel_media_tags_badge_windows_admin')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>` : '';
         return `
             <section class="je-mth-card" aria-labelledby="jeMthBadgesTitle">
                 <h4 class="je-mth-card-title" id="jeMthBadgesTitle" tabindex="-1">${tx('panel_media_tags_tab_badges')}</h4>
@@ -363,7 +364,7 @@
                         <h4 class="je-mth-card-title" id="jeMthColourEditorTitle">${tx('panel_media_tags_server_colours')} <span class="je-mth-admin-chip">${tx('panel_media_tags_admin_badge')}</span></h4>
                         <p class="je-mth-hint">${tx('panel_media_tags_server_colours_desc')}</p>
                     </div>
-                    <a class="je-mth-button" href="${escapeHtml(configUrl('tagStylesEnabled'))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t('panel_media_tags_server_colours') })}">${tx('panel_media_tags_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+                    <a class="je-mth-button" href="${escapeHtml(configUrl('colours'))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t('panel_media_tags_server_colours') })}">${tx('panel_media_tags_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
                 </div>
             </section>` : '';
         return `
@@ -383,7 +384,7 @@
                     <div class="je-mth-pointer-name" data-je-label>${tx(link.nameKey)}</div>
                     <div class="je-mth-hint">${tx(link.descKey)}</div>
                 </div>
-                <a class="je-mth-button" href="${escapeHtml(configUrl(link.section))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t(link.nameKey) })}">${tx('panel_media_tags_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+                <a class="je-mth-button" href="${escapeHtml(configUrl(link.tab))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t(link.nameKey) })}">${tx('panel_media_tags_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
             </li>`).join('');
         return `
             <section class="je-mth-card je-mth-admin" aria-labelledby="jeMthServerTitle">

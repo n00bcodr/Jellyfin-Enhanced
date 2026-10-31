@@ -1103,6 +1103,8 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | POST | `tag-cache/rebuild` | Administrator | No body → `{success:true,message:"Tag cache rebuild started in the background."}`. |
+| POST | `admin/configuration` | Administrator | `{Changes:{Field:value}, Expected?:{Field:value}}` (PluginConfiguration field names, values as `GET /Plugins/{id}/Configuration` returns them) → `{values:{Field:stored}}`. Writes only these fields on top of the configuration the server holds now, through the normal configuration save and inside its critical section: a full configuration save that lands while the request waits is kept, never put back, and so is the server's own write of a field in place (maintenance toggle clear, translation refresh signal, analytics state), which takes the same lock. A field in `Expected` is the value read before editing it: when the server's value differs from it and from the new value, nothing is written and the answer is `409` `{conflicts:{Field:serverValue}}`. Only the Media Tags page's own fields are accepted (those its section modules declare, `Helpers/MediaTagsPageFields.cs`); any other field, API keys included, is `400` naming it, and nothing is written. Each value is checked with the normalisers the server uses for that field (`TagLayoutRules`, `TagShapeRules`, `LanguageTagDisplay`, `TagLookValidation`, `RatingSourceSettings`, `TagStyleSet`, the anchor positions): an unknown, empty or blank layout, density, position, target, preset or source (none of the server's own values has an empty "inherit"), a number outside its range (day windows and cache lifetime 1–365, order 1–99, minimum score 0–10, caps 0–10), a text over its limit (1024 characters unless the field has its own) or a document the normaliser would drop is `400` `{error:"Invalid value for 'Field': reason."}`; accepted values are stored in their canonical spelling and returned. The body is limited to 64 KB: a larger one is refused while it is read, before anything is checked or written (Jellyfin's exception middleware answers `500` "Request body too large"). Used by the Media Tags settings page. |
+| GET | `tag-cache/summary` | Administrator | No body → `{enabled, entries, lastModified, rebuilding}`: whether the server tag cache is on, how many items it holds, its last change (Unix ms, `0` = never) and whether a full build is running or a manual one is queued. Counts are `0` while the cache is off. Used by the Media Tags settings page's Overview. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor → cache envelope below; ETag/`304`. |
 | POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>],StripRevision}`. |
 | GET | `status-tags/series?ids=…` | Authenticated, user-filtered | Up to 50 series item IDs → `{id:{status,lastAired,nextAired}}`; see below. |
@@ -1113,6 +1115,9 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | GET | `tag-styles` | Authenticated | Effective web override set. |
 | GET | `tag-styles/catalog` | Authenticated | Shipped labels and palettes only; no administrator configuration. |
 | GET | `native-poster-tags/preview/{itemId}` | Administrator | JPEG diagnostic preview; query below. |
+
+The Tier 2 page allowlist also includes `TagScale`, `TagGap`, `TagEdgeSpacing`; `AwardsTagsEnabled`, `AwardsTagsPosition`, `AwardsTagsImdb`, `AwardsTagsCertifiedFresh`, `AwardsTagsOscar`, `AwardsTagsEmmy`, `AwardsTagsLetterboxd`, `AwardsTagsImdbList`, `AwardsTagsLetterboxdList`, `AwardsTagsRefreshHours`; `LogoTagsEnabled`, `LogoTagsPosition`, `LogoTagsMovieMode`, `LogoTagsSeriesMode`, `LogoTagsRegion`, `LogoTagsMaxLogos`; and `CustomTagsEnabled`, `CustomTagsPosition`, `CustomTagRules`. The list fields require a numeric id or owner/slug, cadence is 1–168 hours, logo maximum is 1–2, and an empty logo region follows the server. Custom documents must contain at most 20 complete distinct rules accepted by `CustomTagRuleSet` (valid match, bounded value and label, non-reserved label and known optional icon). Invalid patches are refused as a whole. `CustomTagRuleKey` and `CustomTagRuleSources` are never page fields and return 400. The legacy Tag Styles preset alias `custom` is accepted as `default`; blank presets are refused.
+
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" "$JE_URL/tag-cache/$USER_ID"
@@ -1619,7 +1624,7 @@ Activity merges recent watched/favorited entries with user reviews into library 
 | Method | Path | Access | Contract |
 |---|---|---|---|
 | GET | `activity` | Existing caller | `limit=50`, clamped `1..200` → `{items:[<activity>]}`, `no-store`. |
-| GET | `whats-new` | Administrator | `{pluginVersion,newSettings}`. |
+| GET | `whats-new` | Administrator | `{pluginVersion,newSettings,mediaTags}`. `mediaTags` maps each new setting that lives on the Media Tags page to `{page,tab,group}` (its tab, and its group on Groups, else `null`). |
 | POST | `whats-new/dismiss` | Administrator | No body → empty `200`; acknowledges server-wide state. |
 
 ```bash

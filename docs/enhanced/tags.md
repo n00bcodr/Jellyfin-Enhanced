@@ -17,11 +17,28 @@ You can choose tags for your own account. If you administer the server, you can 
 
 **How to use — admin defaults:**
 
-1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Display** → **Media Tags**.
-2. Choose your settings and click **Save Settings**.
+1. Open **Dashboard** → **Plugins** → **Jellyfin Enhanced**, then on the **Display** tab select **Open Media Tags** on the **Media Tags** card. The page has its own address, `#/configurationpage?name=JellyfinEnhancedMediaTags`, and opens at a tab with `&tab=<id>` (`overview`, `layout`, `groups`, `rules`, `colours`, `badges`, `server`; on Groups add `&group=quality` and so on).
+2. Choose your settings. Each change saves on its own; the chip next to the title says **Saving…**, then **All changes saved**. If a save fails it says **Not saved** with the settings it could not save and **Retry**. Those changes stay waiting while you move between Media Tags tabs and links, and if they still cannot be saved when you leave the page, it offers to take you back. Signing out, or switching to another server, drops changes that were not saved; the next administrator to sign in never sees them, and an answer to that offer given after the switch takes no one back. Only the settings you change are saved, so another administrator's changes elsewhere are kept. If someone else changed the same setting since you opened the page, the chip says **Changed elsewhere** and offers **Keep mine** or **Take theirs**.
 3. Refresh affected web clients to load the changes.
 
-![Media Tags defaults and category controls](../images/admin/media-tags.webp)
+![The Media Tags settings page: tab strip, the Overview cards and the live preview of a new user's cards](../images/media-tags-admin-overview.png)
+
+The **Media Tags** page gathers every server-wide tag setting, laid out like the personal Media Tags settings, with a live preview of the cards a brand-new account would see. The preview uses the saved server Tag Styles (refreshed after each **Colours** change is saved), not the colours your own account uses:
+
+| Tab | What it holds |
+|---|---|
+| **Overview** | Which tag groups new users start with (select one to open it), the default look, the server tag cache (items cached, last change, **Rebuild cache**), Native Poster Tags and tag colours at a glance, and quick links |
+| **Layout defaults** | Default layout, **Label Density**, **Tag size**, **Tag gap** and **Edge spacing**, each group's order, limit and position (nine anchors for Corners, the layout's slots otherwise), **Card shapes** for episode thumbnails and list rows, **Hide tags on hover**, **No tags on the search page**, and **Apply defaults to all users** |
+| **Groups** | One row per group (Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People) with its switch for new users; open a row for its server settings |
+| **Rules** | The default [tag look rules](#rules-and-locked-items): a list, a form to add one, and **Edit as JSON** |
+| **Colours** | The [Tag Styles](#tag-styles-and-css) editor |
+| **Status badges** | The badge families new users start with, the **Just added** and **New release** windows, and whether the TMDB key is set |
+| **Server** | [Server-side tag cache](#server-side-tag-cache), library exclusions, **Rebuild cache**, browser cache options and [Native Poster Tags](#native-poster-tags-experimental) |
+
+![The Groups tab with the Quality group open: categories in stacking order, series quality and the sound tag's language](../images/media-tags-admin-groups.png)
+
+!!! warning "Apply defaults to all users"
+    **Apply defaults to all users** (Layout defaults tab) copies every saved Jellyfin Enhanced default, not only Media Tags, into every user's settings, replacing what they chose. It asks first and cannot be undone. **Reset all colours** and deleting a rule can be undone for a few seconds from the message at the bottom of the page.
 
 Tables below show factory defaults. Rows marked “Admin / personal” give both exact labels for the same preference. Most admin defaults become the starting values for new personal settings. Saved personal values take precedence, so changing a server default does not overwrite a user's choice.
 
@@ -41,7 +58,7 @@ Every personal poster tag setting lives in one section of the panel, **Media Tag
 | **Status badges** | Which [status badges](#status-tags) the Status group may show: **Just Added**, **New releases**, **Trending**, **Schedule**, **Milestones** and **Series status**, each with a sample badge. The two time windows the administrator chose are shown beside Just Added and New releases. **Status position and limit in Groups** goes back to the Status row. |
 | **Rules & locks** | Your [rules and locked items](#rules-and-locked-items) on the left, the **Add a rule** form on the right. |
 | **Colours** | Your [Tag Colours](#tag-styles-and-css) preset, one tile per preset with three sample chips in its real colours. Only shown while the administrator lets users pick a preset. |
-| **Server** | Administrators only: shortcuts to **Server defaults for new users**, the **Tag colours editor**, the **Tag cache** and **Native poster tags** on the plugin configuration page. Other users never get this tab. |
+| **Server** | Administrators only: shortcuts to **Server defaults for new users**, the **Tag colours editor**, the **Tag cache** and **Native poster tags**, each opening its tab of the Media Tags settings page. Other users never get this tab. |
 
 **The live preview** draws four sample cards with the same layout code and tag styles as your library: a movie poster, a series poster, an episode still and a 92px list row. Each says where its look comes from (**Default**, **🔒 Locked**, **Rule N** or a shape look), decided the same way as for real cards: the series stands in for your most recently locked item and the episode for the first enabled rule, so a lock or rule change shows at once. **Resting** / **Hover** switches to what Summary and Minimal reveal on hover. While you edit a group, its chips are outlined and the others dimmed. Overflowing chips show as `+N`, as on real cards.
 
@@ -93,7 +110,7 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 1. In **Media Tags**, on the **Layout** tab, pick a layout tile, a **Label Density** and, for Corners, an **Edge Spacing**. The live preview shows your layout as you change it.
 2. On the **Groups** tab, open a group to choose where it goes in that layout and how many tags it shows. Use the arrow buttons to change the priority order.
 
-**How to use — admin defaults:** under **Display** → **Media Tags**, open **Tag layout defaults**, set the starting layout, density, edge spacing, order, positions and limits, and click **Save Settings**.
+**How to use — admin defaults:** on the Media Tags settings page, open **Layout defaults** and set the starting layout, density, size, gap, edge spacing, order, positions and limits. Changes save as you make them.
 
 | Layout | Where tags go | Default arrangement |
 |---|---|---|
@@ -176,7 +193,7 @@ The episode and list samples in the live preview follow their own shape settings
 
 Shape chip limits run from **1** to **10**, then **All**. From **All**, press **−** to return to **10**; at **1**, **−** is disabled.
 
-Administrators can choose **Same look as posters** or the recommended look for each shape under **Card shape defaults**. This seeds new users and applies when overwriting personal settings. Existing version-0 documents keep their old look until an explicit edit; merely loading or saving unrelated preferences does not enable overrides.
+Administrators can choose **Same look as posters** or the recommended look for each shape under **Layout defaults** → **Card shapes** on the Media Tags settings page. This seeds new users and applies when overwriting personal settings. Existing version-0 documents keep their old look until an explicit edit; merely loading or saving unrelated preferences does not enable overrides.
 
 ![The episode thumbnail layout editor and its live samples](../images/tags/tag-shape-settings.webp)
 
@@ -225,14 +242,14 @@ With **Hide Tags on Hover** off, genre names expand beside their icons on hover.
 
 #### Admin defaults
 
-**Tag layout defaults** sets what new users start with: the layout, density, group order, each group's position per layout and the limits, in the same compact editor. Corner positions are the **Position** selects of each group; switch **Default Tag Layout** to set another layout's positions. A group's row is greyed out while its **Enable** switch is off, like its Position select. The order and limits are only stored once you change them.
+The **Layout defaults** tab of the Media Tags settings page sets what new users start with: the layout, density, group order, each group's position per layout and the limits. In Corners a group's position is one of nine anchors on a small poster (these are the group's old Position settings) or **Hidden**; pick another default layout to set its positions. A group's row is greyed out while it is off for new users. The order and limits are only stored once you change them.
 
-![Tag layout defaults on the configuration page: default layout and density, then one row per group with move buttons, a limit stepper and position pills](../images/tags/tag-layout-admin-defaults.webp)
+![The Layout defaults tab: layout tiles and density, then one row per group with move buttons, a limit stepper and the nine-anchor position grid](../images/media-tags-admin-layout.png)
 
 ??? info "Upgrades, defaults, and limits"
     - Settings saved before layouts existed keep the **Corners** layout, your corner choices, full labels, the original stacking order and limits. Your first change in the layout editor changes only what you changed; everything else carries over. Administrators' new layout defaults never change an existing user's view.
     - The editor shows such settings in the default order; the order is saved the first time you move a group.
-    - New users, and **Apply defaults to all users**, start from the administrator's layout defaults. A group hidden in the Corners layout on the configuration page reaches users the same way; the Position selects apply to everyone who has not picked a corner.
+    - New users, and **Apply defaults to all users**, start from the administrator's layout defaults. A group hidden in the Corners layout on the Media Tags page reaches users the same way; the corner positions apply to everyone who has not picked a corner.
     - **Caption** needs a title block below the image. List rows and other cards without one show the caption groups in the poster's top-left stack instead. The caption strip has room for two rows of chips; lower-priority chips that do not fit are left out whole and counted in a `+N` chip; hovering or focusing the card shows their names at the top of the poster, and screen readers hear them as part of the card's description. Space for it is reserved as soon as a card appears so titles do not jump when the chips arrive.
     - The **Bands** bottom band keeps to two rows (then `+N`), and on cards narrower than 160px both bands use compact labels.
     - The **Summary** pill drops its lowest-priority facts when the card is too narrow for all of them; its tooltip keeps every fact. The hover reveal of **Summary** and **Minimal** always uses compact labels and keeps to two rows at the bottom of the poster (then `+N`), clear of the play button; on short cards such as episode thumbnails it shows only the rows that fit in the bottom 40% of the image. Jellyfin's card buttons stay on top and clickable.
@@ -273,7 +290,7 @@ Each card gets its look from the first of these that applies:
 |---|---|---|
 | Personal: **Rules & locks** | No rules | Ordered rules: when every condition holds, the card uses that rule's layout and density |
 | Personal: **Locked items** | None | Items that keep the look they had when locked; **Unlock all** asks for a second click |
-| Admin: **Default tag look rules** | Empty | Rules (as JSON) that new users and **Apply defaults to all users** start with |
+| Admin: **Rules** tab | Empty | Rules that new users and **Apply defaults to all users** start with: add one condition per rule with the form, or several with **Edit as JSON** |
 
 ??? info "Limits and details"
     - Up to 50 rules, each with up to 5 conditions, and up to 500 locked items; past 500 the oldest lock is released. The server drops an invalid rule or lock (an unknown layout, a malformed id) on its own and keeps the rest.
@@ -297,7 +314,7 @@ Quality badges help you identify a file's picture and sound format before openin
 2. Open the row and select categories under **Include**.
 3. Use **Move up** / **Move down** to change their stacking order.
 
-Administrators configure the same defaults under **Categories and sound language** in **Media Tags**.
+Administrators configure the same defaults on the Media Tags settings page under **Groups** → **Quality**.
 
 ![Resolution, codec and sound tags on movie posters, with quality-category controls](../images/tags/quality-tags.webp)
 
@@ -338,7 +355,7 @@ Administrators configure the same defaults under **Categories and sound language
 
 ### Detection limits
 
-Series and seasons share the **Series and seasons show:** setting in **Media Tags** → **Groups** → **Quality**. The administrator sets its starting default under **Display** → **Media Tags** → **Quality Tags**. Each user can choose:
+Series and seasons share the **Series and seasons show:** setting in **Media Tags** → **Groups** → **Quality**. The administrator sets its starting default on the Media Tags settings page under **Groups** → **Quality** → **Series and season quality**. Each user can choose:
 
 | Policy | What appears |
 |---|---|
@@ -532,7 +549,7 @@ Rating Tags show an ordered selection of Community, Critic, IMDb, TMDb, Rotten T
 2. Under **Include**, tick sources and move them up or down. Set **Minimum score** and **Colour by score** if desired.
 3. Keep or change the item types and home rows under **Choose where to show**.
 
-Administrators set defaults under the same heading in **Media Tags**.
+Administrators set defaults on the Media Tags settings page under **Groups** → **Rating**. MDBList itself (key, quota, fetch task) stays under **Elsewhere & Reviews** → **MDBList Ratings**; the Rating group shows whether it is set up.
 
 ![Ordered rating source controls and the live preview](../images/tags/rating-sources-hub.png)
 
@@ -640,7 +657,7 @@ Status Tags show one translucent badge per card: what is new, trending, airing n
 
 ![Status badges on library cards](../images/tags/status-tags.webp)
 
-**How to use:** Turn on the **Status** group on the **Groups** tab of **Media Tags** and choose its position. Pick the badge families on the **Status badges** tab (the Status row's **Badges** button opens it). Administrators set starting defaults under **Display** → **Media Tags**; each user can override the six group switches.
+**How to use:** Turn on the **Status** group on the **Groups** tab of **Media Tags** and choose its position. Pick the badge families on the **Status badges** tab (the Status row's **Badges** button opens it). Administrators set starting defaults on the **Status badges** tab of the Media Tags settings page; each user can override the six group switches.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -718,7 +735,7 @@ Awards adds **IMDb Top 250**, **Rotten Tomatoes Certified Fresh**, **Oscar winne
 
 **How to use:**
 
-1. An administrator enables **Display → Media Tags → Awards Tags → Enable Awards Tags**, selects ribbons and saves.
+1. An administrator enables **Media Tags settings → Groups → Awards**, then selects the ribbons. Each edit saves automatically.
 2. For chart membership and Certified Fresh, configure the existing server **MDBList API Key**. Without a key these three ribbons are off; Oscar/Emmy use Wikidata without a key.
 3. Run **Refresh Awards Tags** in **Dashboard → Scheduled Tasks → Jellyfin Enhanced**. Its default daily trigger is 04:00. The task also works with Server-Side Tag Cache off.
 4. Each existing user enables **Awards** in **Media Tags → Groups**. New users take the admin default. Set its position, priority and **Show up to** limit like other groups (two by default, or All).
@@ -748,7 +765,7 @@ Logo Tags show where a title streams, or the TV network or studio behind it, as 
 **How to use:**
 
 1. Turn on the **Logos** group on the **Groups** tab of **Media Tags**. Choose its position and **Show up to** like any other group.
-2. Administrators choose what the logo shows under **Display** → **Media Tags** → **Logo choices (all users)**.
+2. Administrators choose what the logo shows under **Media Tags settings** → **Groups** → **Logos**.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -776,9 +793,9 @@ Custom Tags turn your own Jellyfin metadata into poster chips. The administrator
 
 **How to use — administrators:**
 
-1. Open **Display** → **Media Tags** → **Custom tag rules**.
+1. Open **Media Tags settings** → **Groups** → **Custom**.
 2. Click **Add rule**. Choose **Tag** or **Collection**, then type the name: suggestions list the library's tags or collections. Enter the chip's **Label** and pick an **Icon** if you want one.
-3. Click **Save Settings**. Colour each label under **Tag Styles** → **Custom**.
+3. Complete rows save automatically. Colour each label under **Colours** → **Custom**.
 4. **Enable Custom Tags** and its **Position** set the starting values for users, like the other groups.
 
 ![The Custom tag rules table: match type, tag or collection name, label, icon and a remove button per rule](../images/custom-tags-rules.png)
@@ -840,9 +857,9 @@ You can show scores in the web video player's controls and an age-classification
 
 **How to use:**
 
-1. Configure score chips under **Display** → **Media Tags**.
+1. Configure score chips on the Media Tags settings page (**Groups** → **Rating**, which also holds **Show the rating in the video player**).
 2. Configure the playback-start classification badge under **Playback** → **Playback & Tab Switch**.
-3. Click **Save Settings**, then refresh the web client.
+3. Save the playback setting on the main page; Media Tags edits save automatically. Refresh the web client.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -864,13 +881,13 @@ The server cache prepares tags for supported items in included libraries, so eac
 
 **How to use:**
 
-1. Leave **Server-Side Tag Cache** on under **Display** → **Media Tags**. Choose library exclusions if needed.
-2. After changing exclusions, or after a plugin update that changes tag computation, click **Save Settings** and open **Admin** → **Tag Cache**.
-3. Click **Rebuild Server Tag Cache** and confirm the full rebuild.
+1. Leave **Server-side tag cache** on (Media Tags settings page → **Server**). Choose library exclusions if needed.
+2. After changing exclusions, or after a plugin update that changes tag computation, click **Rebuild cache** there (or on the **Overview** tab).
+3. Confirm the full rebuild. The Overview shows **Rebuilding** until it is done.
 4. Check server logs for progress and completion. The existing cache keeps serving while the new one builds in the background.
 
 ![Server tag cache duration and library exclusions](../images/admin/tag-cache.webp)
-*Browser fallback controls appear only with **Server-Side Tag Cache** off.*
+*Browser fallback controls appear only with the server tag cache off.*
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -904,7 +921,7 @@ The retained cache grows with the number of included items. Exclude large librar
 
 ### Browser storage and fallback
 
-Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Browser Storage** and **Clear All Client Caches** in **Media Tags**.
+Turn off **Server-side tag cache** to reveal **Keep a tag cache in each browser** and **Clear all browser caches** on the **Server** tab of the Media Tags settings page (the main configuration page's Overview keeps a quick action for the clear signal).
 
 ![Tag cache settings with the server-side cache turned off](../images/admin/tag-cache-legacy.webp)
 
@@ -958,7 +975,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 **How to use:**
 
 1. Enable suitable tag groups and ensure the items have the required metadata.
-2. Under **Display** → **Media Tags**, turn on **Enable Native Poster Tags (Experimental)** and click **Save Settings**.
+2. On the Media Tags settings page → **Server**, turn on **Native poster tags (experimental)**.
 3. Each user can opt out with **Show Tags in Native Clients (Experimental)** in **Media Tags** → **Layout**.
 4. Reopen the native app's library or restart the app to pick up changed poster addresses.
 
@@ -966,8 +983,8 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 
 | Setting | Default | What it does |
 |---|---|---|
-| Admin: **Enable Native Poster Tags (Experimental)** | Off | Server-wide master switch; off serves original posters and stops native tag composition |
-| Admin: **Additional Excluded Clients** | Empty | Adds web-wrapper client names that should retain original posters; newline- or comma-separated |
+| Admin: **Native poster tags (experimental)** | Off | Server-wide master switch; off serves original posters and stops native tag composition |
+| Admin: **Additional excluded apps** | Empty | Adds web-wrapper client names that should retain original posters; newline- or comma-separated |
 | Personal: **Show Tags in Native Clients (Experimental)** | On while allowed | Shows tags in native clients; hidden while the master switch is off, retaining the saved choice |
 
 ??? info "Stored native preferences"
@@ -989,7 +1006,7 @@ Examples of native clients include Jellyfin for Android TV, Tizen, Swiftfin, Fin
 
 The built-in exclusions are Jellyfin Web, Jellyfin Media Player, Jellium Desktop, Jellyfin Desktop, Jellyfin for WebOS, and Jellyfin for Android (the phone app). These load web overlays and retain original poster images. Jellyfin for Android TV is a different client name and is eligible.
 
-If a custom web wrapper shows tags twice, add its name as shown under **Dashboard** → **Devices** to **Additional Excluded Clients**.
+If a custom web wrapper shows tags twice, add its name as shown under **Dashboard** → **Devices** to **Additional excluded apps**.
 
 ??? info "Client matching and image requests"
     Native tags depend on the app retaining Jellyfin's personalized image tag in its poster request. Requests that omit it, or ask Jellyfin to draw its own watched/progress/unplayed-count indicators into the image, retain original artwork.
@@ -1032,22 +1049,24 @@ Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, t
 
 **How to use:**
 
-1. Open **Display** → **Media Tags** and turn on **Enable Tag Styles**.
+1. Open the **Colours** tab of the Media Tags settings page and turn on **Use these tag colours**.
 2. Under **Apply to**, choose **Web**, **Native posters** or **Both**.
 3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set.
 4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**, **Awards**, **Logos**, **Custom**), then **Whole group** or one tag.
 5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an opacity of 40–100%. Watch the contrast badge and the preview.
-6. Click **Save Settings**. Refresh web clients to see the change; native posters redraw the next time they load.
+6. Each edit saves on its own. Refresh web clients to see the change; native posters redraw the next time they load.
 
 ![Picking a preset, colouring the Quality group and checking contrast in the Tag Styles editor](../images/admin/tag-styles.gif)
 
+![The Colours tab of the Media Tags settings page with the editor on](../images/media-tags-admin-colours.png)
+
 | Setting | Default | What it does |
 |---|---|---|
-| **Enable Tag Styles** | Off | Turns the colours on. Turning it off keeps your edits |
-| **Apply to** | **Both** | **Web** recolours the overlays in Jellyfin Web; **Native posters** recolours the tags drawn into posters for apps such as Android TV (needs **Enable Native Poster Tags (Experimental)**) |
+| **Use these tag colours** | Off | Turns the colours on. Turning it off keeps your edits |
+| **Apply to** | **Both** | **Web** recolours the overlays in Jellyfin Web; **Native posters** recolours the tags drawn into posters for apps such as Android TV (needs **Native poster tags (experimental)**) |
 | **Preset** | **Default** | The colours every tag starts from (see below) |
 | **Let users pick their own preset** | Off | Adds the **Colours** tab to each user's **Media Tags** section. Your group and tag colours stay on top of the preset a user picks |
-| **Reset all colours** | | Clears every group and tag colour and returns to the **Default** preset (saved when you click **Save Settings**) |
+| **Reset all colours** | | Clears every group and tag colour and returns to the **Default** preset after a confirmation; **Undo** in the message brings them back |
 
 ### Presets
 
@@ -1109,7 +1128,7 @@ With **Let users pick their own preset** on, users choose **Tag Colours** on the
 Styles change colours, not size, shape, position or visibility. For web layout, sizing, hiding and more detailed styling, see [CSS Customization](../advanced/css-customization.md).
 
 !!! note "Style requirements"
-    Native colours need **Enable Native Poster Tags (Experimental)**. Enable the tag feature and supply metadata first: CSS cannot create missing tags or restyle pixels already drawn into an image.
+    Native colours need **Native poster tags (experimental)**. Enable the tag feature and supply metadata first: CSS cannot create missing tags or restyle pixels already drawn into an image.
 
 ??? info "Stored style configuration"
     The saved fields are `TagStylesEnabled`, `TagStyleTarget` (`both`, `web` or `native`), `TagStylePreset` (`default`, `glass`, `outline`, `dark`, `light`, `mono` or `poster`), `TagStylesAllowUserPreset`, and `TagStyleOverrides`: an empty string, or a version 2 document `{"v":2,"preset":…,"groups":{…},"labels":{…}}` holding only the colours you set. Settings saved before this editor (version 1, with colours per quality label, age board, rating chip and genre) still load and look exactly as before: each tag you had changed keeps the colours it was drawn with, and the preset becomes **Default**, because the old presets were already baked into those colours. They are converted to version 2 on the next save. `TagStyleApplyScope` is no longer used. Each user's choice is `TagStylePreset` in their settings (`null` follows the admin). Saving checks the document, in either version: anything that is not a colour, an unknown group, tag or field, or a document over 32 KB keeps the current styles. See the [API reference](../advanced/api.md#style-and-native-preview-contracts) for the full format.

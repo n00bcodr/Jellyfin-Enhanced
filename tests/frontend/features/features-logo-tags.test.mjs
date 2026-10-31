@@ -117,8 +117,8 @@ test('Tag Styles colour each kind of logo pill', t => {
   const h = setup(t);
   h.load('tags/tag-styles.js');
   const css = h.JE.tagStyles.buildCss({ logos: { company: { background: 'rgba(1, 2, 3, 1)', color: null, border: null }, text: { color: 'rgba(9, 9, 9, 1)' } } });
-  assert.match(css, /\.logo-overlay-container \.je-logo-chip\[data-je-logo-style="company"\] \{ background-color: rgba\(1, 2, 3, 1\) !important;/);
-  assert.match(css, /\[data-je-logo-style="text"\] \{ color: rgba\(9, 9, 9, 1\) !important;/);
+  assert.match(css.replaceAll(':where(:not([data-je-tag-styles-scope] *))', ''), /\.logo-overlay-container \.je-logo-chip\[data-je-logo-style="company"\] \{ background-color: rgba\(1, 2, 3, 1\) !important;/);
+  assert.match(css.replaceAll(':where(:not([data-je-tag-styles-scope] *))', ''), /\[data-je-logo-style="text"\] \{ color: rgba\(9, 9, 9, 1\) !important;/);
   assert.doesNotMatch(css, /data-je-logo-style="provider"/);
 });
 

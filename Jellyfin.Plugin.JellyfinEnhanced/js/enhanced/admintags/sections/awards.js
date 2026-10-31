@@ -1,0 +1,24 @@
+(function(JE) {
+    'use strict';
+    const A = JE.adminTags;
+    if (!A) return;
+    A.registerSection({
+        id: 'group-awards',
+        tab: 'groups',
+        order: 65,
+        title: 'admin_tags_awards_title', hint: 'admin_tags_awards_desc',
+        group: {
+            id: 'awards', summary: () => JE.t('admin_tags_awards_desc'), sample: () => [['status', 'Awards']] },
+        fields: [
+            { id: 'awardsTagsEnabled', key: 'AwardsTagsEnabled', type: 'enable', label: 'admin_tags_awardsTagsEnabled' },
+            { id: 'awardsTagsImdb', key: 'AwardsTagsImdb', type: 'switch', label: 'admin_tags_awardsTagsImdb' },
+            { id: 'awardsTagsCertifiedFresh', key: 'AwardsTagsCertifiedFresh', type: 'switch', label: 'admin_tags_awardsTagsCertifiedFresh' },
+            { id: 'awardsTagsOscar', key: 'AwardsTagsOscar', type: 'switch', label: 'admin_tags_awardsTagsOscar' },
+            { id: 'awardsTagsEmmy', key: 'AwardsTagsEmmy', type: 'switch', label: 'admin_tags_awardsTagsEmmy' },
+            { id: 'awardsTagsLetterboxd', key: 'AwardsTagsLetterboxd', type: 'switch', label: 'admin_tags_awardsTagsLetterboxd' },
+            { id: 'awardsTagsImdbList', key: 'AwardsTagsImdbList', type: 'text', pattern: '(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_\\-]{1,80}/[a-zA-Z0-9_\\-]{1,160})', label: 'admin_tags_awardsTagsImdbList' },
+            { id: 'awardsTagsLetterboxdList', key: 'AwardsTagsLetterboxdList', type: 'text', pattern: '(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_\\-]{1,80}/[a-zA-Z0-9_\\-]{1,160})', label: 'admin_tags_awardsTagsLetterboxdList' },
+            { id: 'awardsTagsRefreshHours', key: 'AwardsTagsRefreshHours', type: 'number', label: 'admin_tags_awardsTagsRefreshHours', min: 1, max: 168, fallback: 24 },
+        ],
+    });
+})(window.JellyfinEnhanced);

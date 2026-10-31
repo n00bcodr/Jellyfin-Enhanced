@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { createHarness, jsRoot, plain } from '../helpers/harness.mjs';
+import { createHarness, plain } from '../helpers/harness.mjs';
 
 // Per-shape looks: landscape cards (episode thumbnails, backdrop cards) and
 // large list rows can have their own layout, density, slots and caps.
@@ -331,14 +329,13 @@ test('shape looks reject inherited fields and prototype names throughout rules a
   }
 });
 
-test('configPage.html offers the same recommended looks as the layout controller', t => {
+test('the Media Tags admin page offers the same recommended looks as the layout controller', t => {
   const h = setup(t, { html: '' });
-  const page = readFileSync(resolve(jsRoot, '../Configuration/configPage.html'), 'utf8');
-  const literal = /var JE_TAG_SHAPE_RECOMMENDED = (\{[\s\S]*?\n\s*\});/.exec(page)?.[1];
-  assert.ok(literal, 'configPage.html declares JE_TAG_SHAPE_RECOMMENDED');
-  const admin = JSON.parse(literal);
+  h.load('enhanced/admintags/admin-tags.js');
+  h.load('enhanced/admintags/sections/layout.js');
   for (const shape of h.layout.SHAPES) {
-    assert.deepEqual(plain(h.layout.readShapeOverrides(admin)[shape]), plain(h.layout.readShapeOverrides(h.layout.RECOMMENDED_SHAPES)[shape]), shape);
+    const wire = h.JE.adminTags.layoutData.recommendedWire(shape);
+    assert.deepEqual(plain(h.layout.readShapeOverrides({ [shape]: wire })[shape]), plain(h.layout.readShapeOverrides(h.layout.RECOMMENDED_SHAPES)[shape]), shape);
   }
   assert.deepEqual(plain(h.layout.readShapeOverrides(RECOMMENDED)), plain(h.layout.readShapeOverrides(h.layout.RECOMMENDED_SHAPES)), 'the tests\' copy too');
 });

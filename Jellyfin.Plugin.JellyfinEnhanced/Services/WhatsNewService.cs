@@ -12,7 +12,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
     /// Auto-detects newly added config-page settings by diffing the embedded
-    /// configPage.html's control ids against the last ACKNOWLEDGED baseline,
+    /// configPage.html's control ids, plus the ids the Media Tags page's
+    /// section modules declare (js/enhanced/admintags/sections/*.js), against
+    /// the last ACKNOWLEDGED baseline,
     /// powering the config page's "What's New" banner/badges with no
     /// per-release maintenance required.
     ///
@@ -29,10 +31,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     ///     tagged with the version it was first detected in. Rewritten every
     ///     startup; deleted once there's nothing pending.
     /// </summary>
+    /// <summary>Where a setting lives on the Media Tags page: a tab, and on the Groups tab its group.</summary>
+    /// <param name="Tab">The tab id (<c>&amp;tab=</c>).</param>
+    /// <param name="Group">The group id (<c>&amp;group=</c>), or null.</param>
+    public sealed record MediaTagsLocation(string Tab, string? Group);
+
     public class WhatsNewService
     {
         private const string EmbeddedConfigPageResource = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.configPage.html";
         private const string EmbeddedSeedResource = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.whats-new-seed.json";
+
+        // The Media Tags page's section modules (Configuration/mediaTagsPage.html
+        // builds its controls from them): embedded under this resource prefix.
+        private const string MediaTagsSectionPrefix = "Jellyfin.Plugin.JellyfinEnhanced.js.enhanced.admintags.sections.";
+
+        // A section module's one-line field declaration: { id: '<control id>', key: '<Property>', …
+        private static readonly Regex SectionFieldIdRegex = new Regex(
+            "^\\s*\\{ id: '(\\w+)', key: '\\w+'",
+            RegexOptions.Multiline | RegexOptions.Compiled);
+
+        // A section's tab, and its Groups-tab group: `tab: 'layout',` / `group: { id: 'quality', …`.
+        private static readonly Regex SectionTabRegex = new Regex(
+            "^\\s*tab: '(\\w+)'",
+            RegexOptions.Multiline | RegexOptions.Compiled);
+
+        private static readonly Regex SectionGroupRegex = new Regex(
+            "^\\s*group: \\{\\s*id: '(\\w+)'",
+            RegexOptions.Multiline | RegexOptions.Compiled);
+
+        // `const NAME = [ … ];` before the sections, and a section's `fields: NAME`.
+        private static readonly Regex SectionConstantRegex = new Regex(
+            "const (\\w+) = \\[(.*?)\\n\\s*\\];",
+            RegexOptions.Singleline | RegexOptions.Compiled);
+
+        private static readonly Regex SectionFieldsConstantRegex = new Regex(
+            "^\\s*fields: (\\w+),",
+            RegexOptions.Multiline | RegexOptions.Compiled);
+
+        /// <summary>The Media Tags page's name (its <c>#/configurationpage?name=</c>).</summary>
+        public const string MediaTagsPageName = "JellyfinEnhancedMediaTags";
 
         // Matches id="..." anywhere inside an <input>/<select>/<textarea>/<button>
         // tag, regardless of attribute order -- [^>]* is a plain negated
@@ -191,13 +228,94 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             using var reader = new StreamReader(stream);
             var html = reader.ReadToEnd();
 
+            // The Media Tags settings moved off configPage.html keep their old
+            // ids on their own page, declared in its section modules.
+            var sectionIds = ReadSectionModules()
+                .SelectMany(text => SectionFieldIdRegex.Matches(text).Select(m => m.Groups[1].Value))
+                .ToList();
+
             // Distinct + ordered: the same id should never repeat within one
             // page, but dedupe defensively rather than let a duplicate skew
             // the diff.
             return SettingIdRegex.Matches(html)
                 .Select(m => m.Groups[1].Value)
+                .Concat(sectionIds)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Where each setting the Media Tags page declares lives on that page (its tab, and its group on the
+        /// Groups tab), so What's New can link to it: the main configuration page has no control for it.
+        /// </summary>
+        /// <returns>Setting id → location.</returns>
+        public IReadOnlyDictionary<string, MediaTagsLocation> GetMediaTagsLocations()
+        {
+            var locations = new Dictionary<string, MediaTagsLocation>(StringComparer.Ordinal);
+            foreach (var text in ReadSectionModules())
+            {
+                foreach (var (id, location) in ParseSectionModule(text))
+                {
+                    locations.TryAdd(id, location);
+                }
+            }
+
+            return locations;
+        }
+
+        /// <summary>
+        /// The settings one section module declares, with their tab and group: each
+        /// <c>registerSection({ … })</c> names its tab (and, on the Groups tab, its group) before its fields.
+        /// </summary>
+        /// <param name="text">The module's source.</param>
+        /// <returns>Setting id → location, in declaration order.</returns>
+        public static IEnumerable<KeyValuePair<string, MediaTagsLocation>> ParseSectionModule(string text)
+        {
+            var parts = text.Split("registerSection(");
+            // Fields declared in a constant before the sections (`const FAMILY_FIELDS = [ … ];`) belong to the
+            // section whose `fields:` names it; any other declared before the sections, to the first section.
+            var constants = SectionConstantRegex.Matches(parts[0]).ToDictionary(
+                m => m.Groups[1].Value,
+                m => SectionFieldIdRegex.Matches(m.Groups[2].Value).Select(f => f.Groups[1].Value).ToList(),
+                StringComparer.Ordinal);
+            var located = new HashSet<string>(StringComparer.Ordinal);
+            MediaTagsLocation? first = null;
+            foreach (var section in parts.Skip(1))
+            {
+                var tab = SectionTabRegex.Match(section);
+                if (!tab.Success) continue;
+                var group = SectionGroupRegex.Match(section);
+                var location = new MediaTagsLocation(tab.Groups[1].Value, group.Success ? group.Groups[1].Value : null);
+                first ??= location;
+                var named = SectionFieldsConstantRegex.Match(section);
+                var ids = SectionFieldIdRegex.Matches(section).Select(m => m.Groups[1].Value)
+                    .Concat(named.Success && constants.TryGetValue(named.Groups[1].Value, out var shared) ? shared : Enumerable.Empty<string>());
+                foreach (var id in ids)
+                {
+                    if (located.Add(id)) yield return new KeyValuePair<string, MediaTagsLocation>(id, location);
+                }
+            }
+
+            if (first == null) yield break;
+            foreach (Match field in SectionFieldIdRegex.Matches(parts[0]))
+            {
+                if (located.Add(field.Groups[1].Value)) yield return new KeyValuePair<string, MediaTagsLocation>(field.Groups[1].Value, first);
+            }
+        }
+
+        // The Media Tags section modules' sources, in resource-name order.
+        private IEnumerable<string> ReadSectionModules()
+        {
+            var assembly = GetType().Assembly;
+            foreach (var name in assembly.GetManifestResourceNames()
+                .Where(n => n.StartsWith(MediaTagsSectionPrefix, StringComparison.Ordinal) && n.EndsWith(".js", StringComparison.Ordinal))
+                .OrderBy(n => n, StringComparer.Ordinal))
+            {
+                using var stream = assembly.GetManifestResourceStream(name);
+                if (stream == null) continue;
+                using var reader = new StreamReader(stream);
+                yield return reader.ReadToEnd();
+            }
         }
 
         /// <summary>The setting ids from the last real release before this feature existed. See CheckForNewSettings for when this is used.</summary>

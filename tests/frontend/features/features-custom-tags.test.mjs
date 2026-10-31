@@ -322,8 +322,8 @@ test('Tag Styles colour every custom chip and each label', t => {
   const h = setup(t);
   h.load('tags/tag-styles.js');
   const css = h.JE.tagStyles.buildCss({ custom: { '*': { background: 'rgba(1, 2, 3, 1)' }, 'Re"mas\\ter': { color: 'rgba(4, 5, 6, 1)' } } });
-  assert.match(css, /\.custom-overlay-container\.custom-overlay-container \.custom-tag \{ background-color: rgba\(1, 2, 3, 1\) !important; \}/);
-  assert.match(css, /\.custom-tag\[data-je-custom="Re\\"mas\\\\ter"\] \{ color: rgba\(4, 5, 6, 1\) !important; \}/);
+  assert.match(css.replaceAll(':where(:not([data-je-tag-styles-scope] *))', ''), /\.custom-overlay-container\.custom-overlay-container \.custom-tag \{ background-color: rgba\(1, 2, 3, 1\) !important; \}/);
+  assert.match(css.replaceAll(':where(:not([data-je-tag-styles-scope] *))', ''), /\.custom-tag\[data-je-custom="Re\\"mas\\\\ter"\] \{ color: rgba\(4, 5, 6, 1\) !important; \}/);
   assert.equal(h.JE.tagStyles.buildCss({ custom: { Bad: { color: 'red; } body { x' } } }), '', 'only colours reach the sheet');
 });
 
@@ -333,20 +333,18 @@ test('the icon list is the bundled genre icon set, the same on the server and th
   const genreIcons = [...new Set([...map.matchAll(/:\s*'([a-z_]+)'/g)].map(m => m[1]))].sort();
   const list = source => JSON.parse(`[${/ICONS = \[([^\]]+)\]/.exec(source)[1].replace(/'/g, '"')}]`).sort();
   assert.deepEqual(list(readFileSync(`${jsRoot}/tags/customtags.js`, 'utf8')), genreIcons);
-  assert.deepEqual(list(readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8').slice(readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8').indexOf('var customTagRules = (function'))), genreIcons);
+  assert.deepEqual(list(readFileSync(`${jsRoot}/enhanced/admintags/custom-rules-editor.js`, 'utf8')), genreIcons);
   const server = readFileSync(`${jsRoot}/../Configuration/CustomTagRuleSet.cs`, 'utf8');
   const cs = JSON.parse(`[${/Icons = new\[\]\s*\{([^}]+)\}/.exec(server)[1].replace(/,\s*$/, '')}]`).sort();
   assert.deepEqual(cs, genreIcons);
 });
 
 test('the rules table flags punctuation-only labels such as "*" and leaves them out of the save', t => {
-  const page = readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8');
-  const cut = (from, to) => page.slice(page.indexOf(from), page.indexOf(to, page.indexOf(from)) + to.length);
-  const markup = cut('<details id="customTagsAdminDetails"', '</details>');
-  const source = cut('        var customTagRules = (function () {', '        })();');
-  const h = createHarness({ html: markup });
+  const h = createHarness();
   t.after(() => h.close());
-  h.window.eval(`window.__rules = (function () {\n${source}\nreturn customTagRules; })();`);
+  h.JE.adminTags = {}; h.load('enhanced/admintags/custom-rules-editor.js');
+  h.document.body.innerHTML = h.JE.adminTags.CUSTOM_HTML;
+  h.window.__rules = h.JE.adminTags.createCustomTagRules(h.document.body);
   const rules = h.window.__rules;
   rules.load({ CustomTagRules: [
     { Match: 'tag', Value: 'Signed', Label: '*', Icon: null },
@@ -375,11 +373,11 @@ test('the rules table classifies reserved labels by Unicode scalar value, exactl
   // The same cases CustomTagRulesTests checks Normalize, IsValidLabel and Tag Styles against.
   const cases = JSON.parse(readFileSync(new URL('../../fixtures/custom-tag-labels.json', import.meta.url), 'utf8'));
   assert.ok(cases.some(c => [...c.label].length < c.label.length && !c.kept), 'covers supplementary-plane punctuation');
-  const page = readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8');
-  const cut = (from, to) => page.slice(page.indexOf(from), page.indexOf(to, page.indexOf(from)) + to.length);
-  const h = createHarness({ html: cut('<details id="customTagsAdminDetails"', '</details>') });
+  const h = createHarness();
   t.after(() => h.close());
-  h.window.eval(`window.__rules = (function () {\n${cut('        var customTagRules = (function () {', '        })();')}\nreturn customTagRules; })();`);
+  h.JE.adminTags = {}; h.load('enhanced/admintags/custom-rules-editor.js');
+  h.document.body.innerHTML = h.JE.adminTags.CUSTOM_HTML;
+  h.window.__rules = h.JE.adminTags.createCustomTagRules(h.document.body);
   h.window.__rules.load({ CustomTagRules: cases.map((c, i) => ({ Match: 'tag', Value: `Tag ${i}`, Label: c.label, Icon: null })) });
   const flagged = [...h.document.querySelectorAll('.je-ct-label input')].map(el => el.getAttribute('aria-invalid') === 'true');
   const config = {};

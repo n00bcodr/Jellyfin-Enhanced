@@ -99,6 +99,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/mediaTagsPage.html",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/whats-new-seed.json",
       "category": "Configuration"
     },
@@ -192,6 +196,14 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaStreamLanguageResolver.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPageFields.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PluginConfigurationPatch.cs",
       "category": "Helpers"
     },
     {
@@ -896,6 +908,86 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/reviews.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.css",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/admin-tags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/custom-rules-editor.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/agerating.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/awards.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/badges.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/colours.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/custom.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/genre.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/language.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/layout.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/logos.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/overview.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/people.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/quality.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/rating.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/rules.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/server.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/status.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/tag-styles-editor.js",
       "category": "js"
     },
     {
@@ -2987,6 +3079,27 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/tag-cache/summary",
+      "method": "GetTagCacheSummary",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/configuration",
+      "method": "PatchConfiguration",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)",
+        "Produces(\"application/json\")"
       ]
     },
     {
@@ -9281,8 +9394,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 411,
-    "routes": 183,
+    "files": 434,
+    "routes": 185,
     "configuration_properties": 680,
     "storage_references": 79,
     "scheduled_tasks": 14,

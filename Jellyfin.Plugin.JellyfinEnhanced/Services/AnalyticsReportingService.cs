@@ -103,6 +103,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Path.Join(_applicationPaths.PluginsPath, "configurations", "Jellyfin.Plugin.JellyfinEnhanced");
 
         /// <summary>
+        /// Applies <paramref name="change"/> to the CURRENT live configuration and saves it, read, changed and saved
+        /// inside the configuration write lock (the UpdateConfiguration overload taking a builder), so it can't
+        /// interleave with a save or Media Tags patch swapping the object. Without the plugin instance (shutdown,
+        /// tests) it changes <paramref name="snapshot"/> only, unsaved, as before.
+        /// </summary>
+        private static void WriteLive(PluginConfiguration snapshot, Action<PluginConfiguration> change)
+        {
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null)
+            {
+                change(snapshot);
+                return;
+            }
+
+            plugin.UpdateConfiguration(
+                live =>
+                {
+                    change(live);
+                    return live;
+                },
+                fullSave: false);
+        }
+
+        /// <summary>
         /// Registers this install with the backend if it hasn't been already
         /// (idempotent, no-ops once AnalyticsInstallId/AnalyticsInstallSecret
         /// are both set). The server mints BOTH the install id and a
@@ -163,28 +187,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Configuration mid-flight, and SaveConfiguration persists the
                 // live object — writing only to a replaced snapshot would
                 // persist empty credentials while the backend row already
-                // exists. Under AnalyticsCredentialLock so the live-read,
-                // writes, and save can't interleave with UpdateConfiguration's
-                // object swap.
-                lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                // exists. Inside the configuration write lock (WriteLive) so
+                // the live-read, writes, and save can't interleave with
+                // UpdateConfiguration's object swap.
+                try
                 {
-                    var live = JellyfinEnhanced.Instance?.Configuration ?? config;
-                    live.AnalyticsInstallId = installId;
-                    live.AnalyticsInstallSecret = installSecret;
-                    config.AnalyticsInstallId = installId;
-                    config.AnalyticsInstallSecret = installSecret;
-                    try
+                    WriteLive(config, live =>
                     {
-                        JellyfinEnhanced.Instance?.SaveConfiguration();
-                    }
-                    catch (Exception ex)
-                    {
-                        // The backend row EXISTS at this point — a disk failure
-                        // here must not be reported as "Registration failed"
-                        // (the admin would chase the network while the fault is
-                        // local, and a restart would mint a duplicate row).
-                        _logger.Warning($"[Analytics] Registered, but failed to persist credentials to disk: {ex.Message}. A restart before this is fixed will re-register and orphan this registration.");
-                    }
+                        live.AnalyticsInstallId = installId;
+                        live.AnalyticsInstallSecret = installSecret;
+                        config.AnalyticsInstallId = installId;
+                        config.AnalyticsInstallSecret = installSecret;
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // The backend row EXISTS at this point — a disk failure
+                    // here must not be reported as "Registration failed"
+                    // (the admin would chase the network while the fault is
+                    // local, and a restart would mint a duplicate row).
+                    _logger.Warning($"[Analytics] Registered, but failed to persist credentials to disk: {ex.Message}. A restart before this is fixed will re-register and orphan this registration.");
                 }
                 _logger.Info("[Analytics] Registered a new install with the community analytics backend.");
             }
@@ -572,9 +594,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // ForbiddenResetThreshold consecutive 403s before clearing.
                     if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                     {
-                        lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                        WriteLive(config, live403 =>
                         {
-                            var live403 = JellyfinEnhanced.Instance?.Configuration ?? config;
                             live403.AnalyticsForbiddenSinceLastSuccess++;
                             if (live403.AnalyticsForbiddenSinceLastSuccess >= ForbiddenResetThreshold)
                             {
@@ -585,8 +606,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                 config.AnalyticsInstallSecret = string.Empty;
                                 _logger.Warning("[Analytics] Backend rejected our credentials repeatedly; will re-register on the next attempt.");
                             }
-                            JellyfinEnhanced.Instance?.SaveConfiguration();
-                        }
+                        });
                     }
 
                     return;
@@ -600,27 +620,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var newPeriod = UtcToday();
                 _counters.ResetForNewPeriod(newPeriod, snapshot.Counters);
 
-                lock (JellyfinEnhanced.AnalyticsCredentialLock)
+                try
                 {
-                    var live = JellyfinEnhanced.Instance?.Configuration ?? config;
-                    live.AnalyticsForbiddenSinceLastSuccess = 0;
-                    live.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    live.AnalyticsLastPayloadJson = JsonSerializer.Serialize(payload);
-                    live.AnalyticsLastReportedPluginVersion = currentPluginVersion;
-                    live.AnalyticsLastReportedJellyfinTarget = payload.JellyfinTarget;
-                    live.AnalyticsLastReportedJellyfinVersion = payload.JellyfinVersion;
-                    try
+                    WriteLive(config, live =>
                     {
-                        JellyfinEnhanced.Instance?.SaveConfiguration();
-                    }
-                    catch (Exception ex)
-                    {
-                        // The report WAS delivered — a disk failure here must
-                        // not be logged as "Report failed" (the admin would
-                        // chase the network, and the unpersisted
-                        // LastReportedAt means a daily resend until fixed).
-                        _logger.Warning($"[Analytics] Report sent, but failed to persist last-reported state to disk: {ex.Message}");
-                    }
+                        live.AnalyticsForbiddenSinceLastSuccess = 0;
+                        live.AnalyticsLastReportedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        live.AnalyticsLastPayloadJson = JsonSerializer.Serialize(payload);
+                        live.AnalyticsLastReportedPluginVersion = currentPluginVersion;
+                        live.AnalyticsLastReportedJellyfinTarget = payload.JellyfinTarget;
+                        live.AnalyticsLastReportedJellyfinVersion = payload.JellyfinVersion;
+                    });
+                }
+                catch (Exception ex)
+                {
+                    // The report WAS delivered — a disk failure here must
+                    // not be logged as "Report failed" (the admin would
+                    // chase the network, and the unpersisted
+                    // LastReportedAt means a daily resend until fixed).
+                    _logger.Warning($"[Analytics] Report sent, but failed to persist last-reported state to disk: {ex.Message}");
                 }
 
                 _logger.Info("[Analytics] Report sent successfully.");

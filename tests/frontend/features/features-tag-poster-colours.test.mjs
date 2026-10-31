@@ -254,7 +254,8 @@ test('Poster rules come first and sit between the tag modules\' rules and the ad
     genre: { background: 'rgba(4, 4, 4, 1)' },
     status: { trending: { color: 'rgba(5, 5, 5, 1)' } },
   });
-  const rules = css.split('\n').map(line => ({ selector: line.slice(0, line.indexOf(' {')), line }));
+  const unguarded = css.replaceAll(':where(:not([data-je-tag-styles-scope] *))', '');
+  const rules = unguarded.split('\n').map(line => ({ selector: line.slice(0, line.indexOf(' {')), line }));
   const poster = rules.filter(r => r.selector.includes('[data-je-poster-colour]'));
   const overrides = rules.filter(r => !r.selector.includes('[data-je-poster-colour]'));
   assert.ok(rules.indexOf(poster.at(-1)) < rules.indexOf(overrides[0]), 'every Poster rule precedes every override');
@@ -269,8 +270,8 @@ test('Poster rules come first and sit between the tag modules\' rules and the ad
     }
     assert.ok(!le(p, specificity(module)) || needle !== '.quality-overlay-label', `${needle}: Poster beats the module's ${module}`);
   }
-  assert.match(css, /\[data-je-poster-colour\] \.quality-overlay-container\.quality-overlay-container \.quality-overlay-label \{ background: var\(--je-tag-bg\) !important; color: var\(--je-tag-fg\) !important; border-color: var\(--je-tag-border\) !important; \}/);
-  assert.match(css, /\[data-je-poster-colour\] \.je-tag-pill \{ background: var\(--je-tag-bg\);/, 'the summary pill follows the artwork too');
+  assert.match(unguarded, /\[data-je-poster-colour\] \.quality-overlay-container\.quality-overlay-container \.quality-overlay-label \{ background: var\(--je-tag-bg\) !important; color: var\(--je-tag-fg\) !important; border-color: var\(--je-tag-border\) !important; \}/);
+  assert.match(unguarded, /\[data-je-poster-colour\] \.je-tag-pill \{ background: var\(--je-tag-bg\);/, 'the summary pill follows the artwork too');
   assert.doesNotMatch(css, /\[data-je-poster-colour\][^{]*language/, 'flags keep their look');
   // Scoped (the configuration page preview), the Poster rules are limited too.
   assert.ok(buildCss({ preset: 'poster' }, '#tagStylePreview').split('\n').every(line => line.startsWith('#tagStylePreview ')));

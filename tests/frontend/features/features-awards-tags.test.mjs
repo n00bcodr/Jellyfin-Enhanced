@@ -67,8 +67,8 @@ test('a disabled Awards group adds no legacy DOM or caption reservation even whe
 
 
 test('dashboard list-id patterns compile under browser Unicode-sets mode and accept only provider route segments', () => {
-    const html = readFileSync(`${jsRoot}/../Configuration/configPage.html`, 'utf8');
-    const patterns = [...html.matchAll(/id="awardsTags(?:Imdb|Letterboxd)List"[^>]*pattern="([^"]+)"/g)];
+    const source = readFileSync(`${jsRoot}/enhanced/admintags/sections/awards.js`, 'utf8');
+    const patterns = [...source.matchAll(/id: 'awardsTags(?:Imdb|Letterboxd)List'.*?pattern: '([^']+)'/g)].map(m => [m[0], m[1].replaceAll('\\\\', '\\')]);
     assert.equal(patterns.length, 2);
     for (const [, pattern] of patterns) {
         const regex = new RegExp(`^(?:${pattern})$`, 'v');
