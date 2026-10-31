@@ -733,6 +733,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 default: result.Corners = profile; break;
             }
 
+            // Title/hover layouts use native Corners. Overlay only explicit
+            // off-groups there: visible groups retain valid fallback positions.
+            if (layout is "caption" or "summary" or "minimal")
+            {
+                result = WithProfile(result, "corners", slots.Where(g => g.Slot == "off").ToList());
+            }
+
             return result;
         }
 

@@ -299,6 +299,13 @@ synthLooks('item-looks', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'co
 synthLooks('item-looks-bands-default', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact', TagEdgeSpacing: 'tight', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks });
 synthLooks('item-looks-legacy', { ...allOn, GenreTagsPosition: 'bottom-left', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks, TagGroupCaps: { Genre: 5, Language: 1 }, TagScale: 'largest', TagEdgeSpacing: 'flush' });
 
+for (const layout of ['caption', 'summary', 'minimal']) {
+    const slots = [{ Group: 'quality', Slot: 'off' }, { Group: 'genre', Slot: 'off' }, { Group: 'rating', Slot: 'off' }];
+    const look = { Layout: layout, Density: 'compact', Slots: slots, TagScale: 'larger', TagGap: 'roomy', Caps: { Language: 1 }, LockedAt: 8 };
+    synthLooks(`item-look-fallback-${layout}`, { ...allOn, TagLayoutSettingsVersion: 1, TagLayoutLocks: { [LOOK.movieLock]: look } },
+        { TagLookItemOverrides: [{ ItemId: LOOK.movieItemLook, ...look }] });
+}
+
 synth('all-on-defaults', { ...allOn });
 for (const TagScale of ['smaller', 'larger', 'largest']) {
     synth(`tag-scale-${TagScale}`, { ...allOn, TagLayoutSettingsVersion: 1, TagScale });

@@ -198,6 +198,37 @@ public class CoreTagItemLooksTests
         Assert.False(mixed.ForItem(Episode, Series).Bands);
     }
 
+    [Theory]
+    [InlineData("caption", false)]
+    [InlineData("summary", false)]
+    [InlineData("minimal", false)]
+    [InlineData("caption", true)]
+    [InlineData("summary", true)]
+    [InlineData("minimal", true)]
+    public void NativeFallbackItemLooksKeepExplicitOffGroupsAndTheVisibleCornerPositions(string layout, bool personal)
+    {
+        var look = new TagLookItemOverride
+        {
+            ItemId = Movie, Layout = layout, LockedAt = 1,
+            Slots = [new() { Group = "quality", Slot = "off" }, new() { Group = "genre", Slot = "off" }, new() { Group = "rating", Slot = "off" }],
+        };
+        var config = Config(personal ? [] : [look]);
+        var json = NormalizedUser + ",genreTagsEnabled:true,languageTagsEnabled:true,tagLayouts:{corners:{groups:[{group:'language',slot:'bc'}]}}";
+        if (personal) json += $",tagLayoutLocks:{{'{Movie}':" + JsonSerializer.Serialize(look) + "}";
+        var settings = PosterTagSettings.FromSettingsJson(json + "}", config);
+        var item = settings.ForItem(Movie, null);
+        Assert.False(item.Bands);
+        Assert.Equal("bottom-center", item.LanguageTagsPosition);
+        Assert.True(item.Shows(PosterTagGroup.Language));
+        foreach (var group in new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Rating })
+        {
+            Assert.Contains(group, item.OffGroups);
+            Assert.False(item.Shows(group));
+            Assert.True(settings.Shows(group)); // deriving an item never mutates the base profile
+        }
+        Assert.NotEqual(settings.Digest, item.Digest);
+    }
+
     [Fact]
     public void NativeItemLooksOnLegacyDocumentsKeepWhatTheLookDoesNotSet()
     {

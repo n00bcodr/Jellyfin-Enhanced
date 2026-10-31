@@ -361,7 +361,17 @@ async function runProfile(profile) {
         const host = new Element('div');
         host.className = 'je-tag-host';
         // Per-item looks: the item data a lock or item look is found with (its id, its series).
-        if (profile.itemLooks) JE.core.tagLayout.setCardContext(host, { ...entry, Id: id }, id);
+        if (profile.itemLooks) {
+            const L = JE.core.tagLayout;
+            L.setCardContext(host, { ...entry, Id: id }, id);
+            const conf = L.resolveLayout({ ...entry, Id: id, itemId: id, cardType: entry.Type });
+            if (['caption', 'summary', 'minimal'].includes(conf.layout)) {
+                // The native fallback policy: the real resolved item's caps/size/
+                // spacing and explicit off-groups over the user's Corners profile.
+                const off = Object.fromEntries(Object.entries(conf.slots).filter(([, slot]) => slot === 'off'));
+                L.setPreviewLook(host, { ...conf, layout: 'corners', density: 'full', slots: { ...L.normalizeSettings().profiles.corners, ...off } });
+            }
+        }
         for (const [, renderer] of order) {
             if (!renderer.isEnabled()) continue;
             if (renderer.renderFromServerCache) {
@@ -380,7 +390,7 @@ async function runProfile(profile) {
     for (const [id, host] of hosts) {
         const indicator = showsIndicator(userData[id]);
         // An item with a look of its own is laid out (and compared) with that look.
-        const conf = profile.itemLooks ? JE.core.tagLayout.resolveLayout({ ...entries[id], Id: id, itemId: id, cardType: entries[id].Type }) : layoutConf;
+        const conf = profile.itemLooks ? JE.core.tagLayout.resolveLayout(host) : layoutConf;
         const itemBands = profile.itemLooks ? conf.layout === 'bands' : nativeBands;
         const itemRank = (d) => (conf.order ? conf.order.indexOf(d.group) : 0);
         items[id] = JE.core.tagLayout.describe(host)
