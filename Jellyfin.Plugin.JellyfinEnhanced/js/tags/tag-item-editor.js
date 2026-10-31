@@ -338,6 +338,7 @@
     /**
      * @typedef {Object} OpenOptions
      * @property {HTMLElement|null} [opener] - Focus returns here on close.
+     * @property {() => HTMLElement|null} [returnFocus] - Replacement row or list heading after a scope move.
      * @property {HTMLElement} [host] - Where the dialog goes (default the page; the
      *   settings panel, which keeps everything outside it inert, passes itself).
      * @property {Object} [item] - The item, when the caller has it already.
@@ -652,8 +653,8 @@
             if (current?.backdrop === backdrop) current = null;
             // A list redrawn meanwhile (the hub's locked items) has a new button with the opener's focus key.
             const key = opener?.dataset?.jeFocusKey;
-            const back = opener?.isConnected ? opener
-                : (key ? /** @type {HTMLElement|undefined} */ (Array.from(document.querySelectorAll('[data-je-focus-key]')).find((el) => /** @type {HTMLElement} */ (el).dataset.jeFocusKey === key)) : null);
+            const back = options.returnFocus?.() || (opener?.isConnected ? opener
+                : (key ? /** @type {HTMLElement|undefined} */ (Array.from(document.querySelectorAll('[data-je-focus-key]')).find((el) => /** @type {HTMLElement} */ (el).dataset.jeFocusKey === key)) : null));
             back?.focus({ preventScroll: true });
         };
         current = { close: finish, backdrop };

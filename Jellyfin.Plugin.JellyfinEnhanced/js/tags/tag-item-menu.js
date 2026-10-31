@@ -13,7 +13,9 @@
 // (features-remove-home.js does the same for Remove from Continue Watching).
 // A row id the menu does not know makes itemContextMenu reject, and both
 // callers (the detail page's ⋮ and cards' ⋮) catch that, so the sheet simply
-// closes; the row's own click handler opens the editor.
+// closes; the row's own click handler opens the editor. This depends on
+// those callers retaining their rejection handlers; re-check them when
+// updating Jellyfin's private item-menu integration (IE-1).
 //
 // The item is captured when its ⋮ button is pressed (or a card is
 // right-clicked), as that is the only moment the menu's item is known. A row

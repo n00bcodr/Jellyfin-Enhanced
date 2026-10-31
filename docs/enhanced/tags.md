@@ -305,11 +305,11 @@ Each card gets its look from the first of these that applies:
     - Settings saved before layouts existed never pick up the administrator's default rules; rules you add yourself apply.
     - Changing a rule or a lock updates the cards on screen at once, without reloading their tags.
     - Locked cards carry `data-je-locked="1"` on their tag host for [custom CSS](../advanced/css-customization.md); cards with a server-wide item look do not. Nothing else marks them by default.
-    - Server-wide item looks reach every account, including settings saved before layouts existed (which never take the administrator's rules); the item ids are sent only to signed-in users.
+    - Server-wide item looks reach every account, including settings saved before layouts existed (which never take the administrator's rules); clients receive only item and series ids visible through their Jellyfin library and parental access checks; anonymous callers receive none.
 
 ### One item's look
 
-Any movie, series, season, episode, collection or video can have its own look. Open its ⋮ menu, on its page or on its card, and choose **Media Tags**. The editor shows the item's poster with its real tags, in the look you are building:
+Any movie, series, season, episode, collection or video can have its own look. Open its ⋮ menu, on its page or on its card, and choose **Media Tags**. The editor starts from the fully resolved look, including a shape look’s size, gap and limits, so opening it leaves the preview unchanged. It shows the item's poster with its real tags, in the look you are building:
 
 ![The ⋮ menu of a movie with Media Tags under Refresh metadata](../images/tags/item-editor-menu.webp)
 
@@ -338,7 +338,7 @@ On a phone the editor fills the screen, with the poster beside the item's name a
 ??? info "Limits and details"
     - The editor's row is added to Jellyfin's own ⋮ menu with the same markup as its other rows, so it looks and works the same with a mouse, touch or keyboard. It appears only for items that can have poster tags and while at least one tag group is on.
     - The poster in the editor is the item's own artwork with the tags copied from its card on the page, or drawn from the tag cache. Nothing else on the page changes until **Save**.
-    - [Native Poster Tags](#native-poster-tags-experimental) follow locks and server-wide item looks in Corners and Bands, with their size, gap, edge spacing, positions, hidden groups and limits; Caption, Summary and Minimal use your Corners profile there, as for your default look.
+    - [Native Poster Tags](#native-poster-tags-experimental) follow locks and server-wide item looks in Corners and Bands, with their size, gap, edge spacing, positions, hidden groups and limits; Caption, Summary and Minimal use your Corners positions there, with the item look’s hidden groups and limits still applied.
 
 ### Import, export and presets
 

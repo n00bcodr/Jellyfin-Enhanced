@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHarness, plain, deferred } from '../helpers/harness.mjs';
 
@@ -483,7 +484,7 @@ test('a stale failed personal save cannot roll back incoming settings', async t 
   assert.deepEqual(h.toasts, []);
 });
 
-for (const everyone of [false, true]) test(`Undo belongs to its originating session (${everyone ? 'server' : 'personal'})`, async t => {
+for (const everyone of [false, true]) for (const transition of ['hook', 'server']) test(`Undo belongs to its originating session (${everyone ? 'server' : 'personal'}, ${transition})`, async t => {
   const entry = { layout: 'bands', density: 'full', lockedAt: 1 };
   const h = setup(t, { admin: everyone, settings: { tagLayoutLocks: everyone ? null : { [MOVIE]: entry } }, plugin: { TagLookItemOverrides: everyone ? [{ ItemId: MOVIE, ...entry }] : null } });
   h.io.config.TagLookItemOverrides = h.JE.pluginConfig.TagLookItemOverrides;
@@ -495,10 +496,12 @@ for (const everyone of [false, true]) test(`Undo belongs to its originating sess
   assert.ok(undo);
   const count = h.writes.length + h.patches.length;
   // The reset hook fires BEFORE the host replaces its credentials.
-  h.io.epoch++;
-  h.switchUser();
-  assert.equal(h.$('.je-tie-toast'), null, 'outstanding Undo removed synchronously');
-  h.io.user = 'incoming';
+  if (transition === 'hook') {
+    h.io.epoch++;
+    h.switchUser();
+    assert.equal(h.$('.je-tie-toast'), null, 'outstanding Undo removed synchronously');
+    h.io.user = 'incoming';
+  } else h.io.server = 'incoming';
   h.click(undo); // Even a retained reference is inert.
   await h.settle();
   assert.equal(h.writes.length + h.patches.length, count);
@@ -612,4 +615,31 @@ test('500-entry editor operations send only the affected entries', async t => {
     assert.equal(h.io.config.TagLookItemOverrides.length, next ? 500 : 499);
     assert.equal(h.io.config.TagLookItemOverrides.find(e => e.ItemId === entries[0].ItemId).Layout, 'bands');
   }
+});
+
+test('the real Jellyfin two-item bulk sheet cannot reuse a consumed single-item capture (IE-14)', async t => {
+  const h = setup(t, { html: card(MOVIE, 'Movie') });
+  h.click(h.$(`[data-id="${MOVIE}"] [data-action="menu"]`));
+  h.openSheet(['multiSelect', 'share']);
+  await h.frame(); await h.settle();
+  assert.ok(h.row(), 'the preceding real single-item menu has a row');
+  h.$('#sheets').replaceChildren();
+  const bulk = h.document.createElement('div');
+  bulk.className = 'dialog actionSheet';
+  bulk.innerHTML = readFileSync(new URL('./bootstrap-tag-item-menu.bulk-sheet.html', import.meta.url), 'utf8');
+  h.$('#sheets').appendChild(bulk);
+  await h.frame(); await h.settle();
+  await h.JE.tagItemMenu.inject();
+  assert.ok(bulk.querySelector('[data-id="selectall"]'), 'native bulk menu captured from the lab with two items selected');
+  assert.ok(bulk.querySelector('[data-id="groupvideos"]'));
+  assert.equal(bulk.querySelector('[data-id="je-media-tags"]'), null);
+});
+
+test('server-wide Undo at capacity never evicts an intervening addition', async t => {
+  const h = setup(t, { admin: true });
+  h.io.config.TagLookItemOverrides = Array.from({ length: 500 }, (_, i) => ({ ItemId: (i + 1).toString(16).padStart(32, '0'), Layout: 'bands', LockedAt: i + 1 }));
+  const before = plain(h.io.config.TagLookItemOverrides);
+  assert.equal(await h.JE.core.tagLook.saveItemOverride(MOVIE, { layout: 'caption' }, { restoreOnly: true }), true);
+  assert.equal(h.patches.length, 0, 'Undo leaves the newer full list alone');
+  assert.deepEqual(h.io.config.TagLookItemOverrides, before);
 });

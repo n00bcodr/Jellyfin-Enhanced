@@ -2469,7 +2469,9 @@
       "path": "/JellyfinEnhanced/public-config",
       "method": "GetPublicConfig",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
-      "following_attributes": []
+      "following_attributes": [
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)"
+      ]
     },
     {
       "verb": "GET",

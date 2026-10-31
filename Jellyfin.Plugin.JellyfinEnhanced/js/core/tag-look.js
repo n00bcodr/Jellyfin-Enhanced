@@ -810,8 +810,10 @@
                 const config = await api.get();
                 if (!isCurrent()) return false;
                 const before = config?.TagLookItemOverrides ?? null;
-                // Undo never replaces a newer entry on the same target.
-                if (options.restoreOnly && normalizeItemOverrides(before).has(id)) return true;
+                // Undo never replaces a newer target or evicts an intervening
+                // addition when the list has filled during its Undo interval.
+                const current = normalizeItemOverrides(before);
+                if (options.restoreOnly && (current.has(id) || current.size >= MAX_ITEM_OVERRIDES)) return true;
                 let next = before;
                 for (const child of options.remove || []) next = itemOverridesWith(next, child, null);
                 next = itemOverridesWith(next, id, look);

@@ -1458,3 +1458,29 @@ for (const editedTarget of [false, true]) test(`Rules: remove Undo preserves int
   assert.equal(looks.get(EPISODE), 'minimal');
   assert.equal(looks.has(OTHER), false);
 });
+
+for (const move of [false, true]) test(`Rules Edit through the real item editor returns focus after save (move to series: ${move})`, async t => {
+  const ITEM = 'dddddddddddddddddddddddddddddddd', SERIES = 'cccccccccccccccccccccccccccccccc';
+  const h = setup(t, {
+    config: { TagLookItemOverrides: [{ ItemId: ITEM, Layout: 'bands', Density: 'full', LockedAt: 1 }] },
+    apiClient: {
+      getItem: async (_, id) => ({ Id: id, Name: id === SERIES ? 'Series' : 'Episode', Type: id === SERIES ? 'Series' : 'Episode', SeriesId: SERIES }),
+      getJSON: async () => ({ Items: [{ Id: ITEM, Name: 'Episode', Type: 'Episode' }, { Id: SERIES, Name: 'Series', Type: 'Series' }] }),
+    },
+  });
+  h.JE.currentSettings = { tagLayoutSettingsVersion: 1, tagLayout: 'corners', qualityTagsEnabled: true };
+  h.load('tags/tag-item-editor.js');
+  h.ctx.openTab('rules');
+  await h.settle(); await h.settle();
+  const original = h.$(`[data-item="${ITEM}"] [data-act="edit"]`);
+  original.focus(); original.click();
+  await h.settle(); await h.settle();
+  const dialog = h.document.querySelector('.je-tie');
+  assert.ok(dialog, 'real editor opened');
+  if (move) h.change(dialog.querySelector('input[name$="Scope"][value="series"]'), true);
+  dialog.querySelector('[data-tie-save]').click();
+  await h.save(); await h.settle();
+  assert.equal(h.document.querySelector('.je-tie'), null);
+  assert.equal(original.isConnected, false, 'ctx.set redrew the list');
+  assert.equal(h.document.activeElement, h.$(`[data-item="${move ? SERIES : ITEM}"] [data-act="edit"]`), 'replacement target Edit owns focus even after the save response redraw');
+});

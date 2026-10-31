@@ -311,10 +311,10 @@
         const outcome = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${look.layout}`), density: JE.t(`panel_settings_ui_tag_density_${look.density}`) });
         const scope = info?.type === 'Series' ? ` · ${JE.t(look.scope === 'item' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_series')}` : '';
         const label = info?.name || id;
-        return `<li class="je-ta-rule" data-item="${ctx.esc(id)}">
+        return `<li class="je-ta-rule" data-item="${ctx.esc(id)}" data-je-focus-key="admin-item-look-row-${ctx.esc(id)}">
             <span class="je-ta-rule-text"><strong>${ctx.esc(name)}</strong> ${ctx.esc(type)}${ctx.esc(outcome)}${ctx.esc(scope)}</span>
             <span class="je-ta-rule-tools">
-                <button type="button" class="je-ta-button" data-act="edit" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('tag_looks_edit')}</button>
+                <button type="button" class="je-ta-button" data-act="edit" data-je-focus-key="admin-item-look-edit-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('tag_looks_edit')}</button>
                 <button type="button" class="je-ta-icon-btn" data-act="remove" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_remove_named', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
             </span>
         </li>`;
@@ -328,6 +328,8 @@
         hint: 'admin_tags_item_looks_desc',
         writes: ['TagLookItemOverrides'],
         render(ctx, body) {
+            const heading = body.closest('[data-section]')?.querySelector('h3');
+            if (heading) heading.tabIndex = -1;
             body.innerHTML = `<p class="je-ta-off" data-item-looks-empty>${ctx.tx('admin_tags_item_looks_none')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
             body.querySelector('[data-item-looks]')?.addEventListener('click', (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('button[data-act]'));
@@ -347,14 +349,17 @@
                     });
                     /** @type {HTMLElement|null} */ (body.querySelector('[data-item] [data-act="remove"]') || body.querySelector('[data-item-looks-empty]'))?.focus?.();
                 } else if (button.dataset.act === 'edit') {
+                    let focusTarget = id;
                     JE.tagItemEditor?.open(id, {
                         mode: 'server',
                         opener: button,
+                        returnFocus: () => body.querySelector(`[data-item="${focusTarget}"] [data-act="edit"]`) || heading,
                         look: look.normalizeItemOverrides(stored).get(id) || null,
                         onSave: (chosen, target) => {
                             let next = look.itemOverridesWith(ctx.config.TagLookItemOverrides ?? null, id, target === id ? chosen : null);
                             if (next !== undefined && target !== id) next = look.itemOverridesWith(next, target, chosen);
                             if (next === undefined) return;
+                            focusTarget = target;
                             ctx.set('TagLookItemOverrides', next);
                             ctx.announce(JE.t('tag_item_editor_everyone_saved', { name }));
                         },
@@ -367,7 +372,9 @@
             const look = JE.core.tagLook;
             if (!list || !look) return;
             const looks = look.normalizeItemOverrides(ctx.config.TagLookItemOverrides ?? null);
+            const focusKey = list.contains(document.activeElement) ? document.activeElement?.dataset?.jeFocusKey : null;
             list.innerHTML = Array.from(looks.entries()).map(([id, entry]) => itemLookHtml(ctx, id, entry)).join('');
+            if (focusKey) Array.from(list.querySelectorAll('[data-je-focus-key]')).find((el) => el.dataset.jeFocusKey === focusKey)?.focus({ preventScroll: true });
             /** @type {HTMLElement} */ (body.querySelector('[data-item-looks-empty]')).hidden = looks.size > 0;
             loadItemTitles(ctx, Array.from(looks.keys())).then((added) => { if (added && ctx.isCurrent()) this.refresh(ctx, body); });
         },
