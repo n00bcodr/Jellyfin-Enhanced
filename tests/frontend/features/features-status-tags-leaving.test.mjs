@@ -684,6 +684,17 @@ for (const withSetRequestHeaders of [true, false]) {
   });
 }
 
+test('direct play: when ApiClient\'s own header writer sets no Authorization, none is composed from its accessors', async t => {
+  // Signed out: setRequestHeaders writes nothing, as ApiClient.ajax would send the request.
+  const apiClient = realApiClient();
+  apiClient.setRequestHeaders = function setRequestHeaders() {};
+  const h = setup(t, { settings: { statusTagsDirectPlay: true }, apiClient });
+  h.show(movie(), h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 1);
+  assert.deepEqual(Object.keys(h.requests[0].headers).sort(), ['Accept', 'Content-Type'], 'no Authorization is synthesised behind the writer\'s back');
+});
+
 test('direct play: a request that never settles is aborted at its deadline and frees its slot, also across a reset and a user switch', async t => {
   const h = setup(t, { cards: 6, settings: { statusTagsDirectPlay: true }, hold: true });
   const dp = h.JE.tagDirectPlay;

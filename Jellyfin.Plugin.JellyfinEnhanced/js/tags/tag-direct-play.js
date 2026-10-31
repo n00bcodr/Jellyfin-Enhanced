@@ -1061,8 +1061,10 @@
     function requestHeaders() {
         const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
         if (typeof ApiClient.setRequestHeaders === 'function') {
+            // ApiClient's own writer decides: when it sets no Authorization (not signed in),
+            // the request goes without one, as ApiClient.ajax would send it.
             ApiClient.setRequestHeaders(headers);
-            if (headers.Authorization) return headers;
+            return headers;
         }
         const fields = [['Client', ApiClient.appName?.()], ['Device', ApiClient.deviceName?.()], ['DeviceId', ApiClient.deviceId?.()], ['Version', ApiClient.appVersion?.()], ['Token', ApiClient.accessToken?.()]]
             .filter(([, value]) => value).map(([name, value]) => `${name}="${value}"`);
