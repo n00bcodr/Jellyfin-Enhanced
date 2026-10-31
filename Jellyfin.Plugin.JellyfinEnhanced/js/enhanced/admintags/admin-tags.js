@@ -484,15 +484,15 @@
     }
 
     /**
-     * The fields another administrator changed: the server's 409 body.
+     * Read a definitive client rejection, including conflicts, if its body is available.
      * @param {*} err - The rejected request (a fetch Response from ApiClient.ajax).
      * @returns {Promise<Object<string, *>|null>}
      */
-    async function conflictsOf(err) {
-        if (!err || err.status !== 409) return null;
+    async function rejectionOf(err) {
+        if (!err || err.status < 400 || err.status >= 500) return null;
         try {
             const body = typeof err.json === 'function' ? await err.json() : err;
-            return body && typeof body.conflicts === 'object' ? body.conflicts : null;
+            return body && typeof body === 'object' ? body : null;
         } catch {
             return null;
         }
@@ -516,7 +516,7 @@
         if (store.itemMode === 'entries' && !store.conflicts.has('TagLookItemOverrides')) {
             for (const [id, edit] of store.itemEdits) {
                 const delta = JE.core.tagLook.itemOverrideMutation(edit.expected ? [edit.expected] : null, edit.value ? [edit.value] : null);
-                if (!delta.Set.length && !delta.Remove.length) store.itemEdits.delete(id);
+                if (!edit.acknowledge && !delta.Set.length && !delta.Remove.length) store.itemEdits.delete(id);
             }
             if (!store.itemEdits.size) {
                 const value = store.base.get('TagLookItemOverrides') ?? null;
@@ -582,13 +582,19 @@
                 notify({ type: 'saved', values: Object.fromEntries(Array.from(sent.keys()).map((key) => [key, key in stored ? stored[key] : changes[key]])) });
                 return true;
             } catch (err) {
-                const conflicts = await conflictsOf(err);
+                const rejection = await rejectionOf(err);
+                const conflicts = err?.status === 409 ? rejection?.conflicts : null;
+                const unwritten = (conflicts && Object.keys(conflicts).length > 0)
+                    || (typeof rejection?.error === 'string' && rejection.error.includes(itemKey));
                 if (!sameSession(mark)) return false;
-                // A failed in-flight operation did not establish its desired value.
-                // A newer queued edit must retry from that operation's original stamp.
+                // Only a definitive rejection establishes that this request did not write.
+                // Unknown outcomes retain the next intent and require acknowledgement,
+                // even when a subsequent edit cancels its apparent delta.
                 for (const [id, edit] of itemEdits || []) {
                     const pending = store.itemEdits.get(id);
-                    if (pending && pending !== edit) store.itemEdits.set(id, { ...pending, expected: edit.expected });
+                    if (!pending) continue;
+                    if (!unwritten) store.itemEdits.set(id, { ...pending, acknowledge: true });
+                    else if (pending !== edit) store.itemEdits.set(id, { ...pending, expected: edit.expected });
                 }
                 if (conflicts && Object.keys(conflicts).length) {
                     for (const [key, theirs] of Object.entries(conflicts)) store.conflicts.set(key, theirs);
@@ -843,7 +849,7 @@
                         for (const id of Object.keys(delta.Expected)) {
                             const previous = store.itemEdits.get(id);
                             const inFlight = previous && store.itemFlight?.edits?.get(id) === previous;
-                            store.itemEdits.set(id, { value: copy(sets.get(id)), expected: previous && !inFlight ? previous.expected : copy(delta.Expected[id]) });
+                            store.itemEdits.set(id, { value: copy(sets.get(id)), expected: previous && !inFlight ? previous.expected : copy(delta.Expected[id]), acknowledge: !!previous?.acknowledge });
                         }
                         store.itemMode = 'entries';
                     } else {

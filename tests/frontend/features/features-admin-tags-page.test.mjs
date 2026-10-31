@@ -1551,7 +1551,7 @@ test('Rules canceled edit after a failed pending save resolves locally without r
   const gate = deferred();
   const h = setup(t, {
     config: { TagLookItemOverrides: [{ ItemId: A, Layout: 'bands', Density: 'full', LockedAt: 1 }] },
-    patch: async () => { await gate.promise; throw { status: 503 }; },
+    patch: async () => { await gate.promise; throw { status: 400, json: async () => ({ error: 'TagLookItemOverrides: rejected before applying' }) }; },
   });
   h.expectConsoleError('could not save the Media Tags settings');
   await h.settle();
@@ -1562,5 +1562,39 @@ test('Rules canceled edit after a failed pending save resolves locally without r
   assert.equal(await saving, false);
   assert.equal(await h.ctx.flush(), true);
   assert.equal(h.patches.length, 1, 'Retry recognizes the canceled operation');
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
+});
+
+for (const failure of ['lost-response', '503-applied', '503-unapplied', '400-without-field']) test(`Rules Undo after ${failure} requires an acknowledging PATCH`, async t => {
+  const A = '00000000000000000000000000000001';
+  const entry = { ItemId: A, Layout: 'bands', Density: 'full', LockedAt: 1 };
+  const gate = deferred(), retry = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [entry] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        if (failure === 'lost-response' || failure === '503-applied') serverPatch(h.server, body);
+        if (failure === 'lost-response') throw new TypeError('response lost');
+        throw { status: failure === '400-without-field' ? 400 : 503, json: async () => ({ error: 'unavailable' }) };
+      }
+      await retry.promise;
+      return serverPatch(h.server, body);
+    },
+  });
+  h.expectConsoleError('could not save the Media Tags settings');
+  h.$(`[data-item="${A}"] [data-act="remove"]`).click();
+  const saving = h.ctx.flush();
+  h.$('.je-ta-snack .je-ta-button').click();
+  gate.resolve();
+  assert.equal(await saving, false);
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'error');
+  const resaving = h.ctx.flush();
+  assert.equal(h.patches.length, 2, 'Retry sends the retained restore intent');
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saving', 'not saved before acknowledgement');
+  retry.resolve();
+  assert.equal(await resaving, true);
+  assert.deepEqual(plain([...h.JE.core.tagLook.normalizeItemOverrides(h.server.TagLookItemOverrides)]), plain([...h.JE.core.tagLook.normalizeItemOverrides([entry])]));
   assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
 });

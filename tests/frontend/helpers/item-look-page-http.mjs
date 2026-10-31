@@ -24,7 +24,15 @@ const h = createHarness({
       const body = JSON.parse(req.data);
       if (path.endsWith('/admin/configuration')) {
         patches.push(body);
-        if (scenario.startsWith('queued-') && patches.length === 1) await gate.promise;
+        if ((scenario.startsWith('queued-') || scenario.startsWith('failed-undo-')) && patches.length === 1) await gate.promise;
+        if (scenario.startsWith('failed-undo-') && patches.length === 1) {
+          if (scenario.endsWith('lost-response')) {
+            await request(path, body);
+            throw new TypeError('response lost after the HTTP host acknowledged removal');
+          }
+          // Exercise a real, definitive validator rejection without applying the intended removal.
+          return request(path, { Changes: { TagLookItemOverrides: { Set: null, Remove: [], Expected: {} } } });
+        }
       }
       return request(path, body);
     },
@@ -59,6 +67,18 @@ try {
     assert.ok(patches.every(p => !p.Changes.TagLookItemOverrides.Remove.includes(B)));
     if (scenario === 'queued-add' || scenario === 'queued-edit') assert.equal(final.find(e => e.ItemId === A)?.Layout, 'corners');
     else assert.equal(final.some(e => e.ItemId === A), scenario === 'queued-undo');
+  } else if (scenario.startsWith('failed-undo-')) {
+    h.expectConsoleError('could not save the Media Tags settings');
+    const initial = (await get()).TagLookItemOverrides;
+    button(A, 'remove').click();
+    const saving = ctx.flush();
+    undo(); gate.resolve();
+    assert.equal(await saving, false);
+    assert.equal(h.document.querySelector('#jeTaSaved').dataset.state, 'error');
+    if (scenario.endsWith('lost-response')) assert.equal((await get()).TagLookItemOverrides ?? null, null);
+    assert.equal(await ctx.flush(), true);
+    assert.deepEqual((await get()).TagLookItemOverrides, initial);
+    assert.equal(patches.length, scenario.endsWith('lost-response') ? 2 : 1);
   } else if (scenario.startsWith('immediate-undo')) {
     const initial = await get();
     button(A, 'remove').click(); undo();

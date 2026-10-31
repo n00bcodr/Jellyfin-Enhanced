@@ -138,6 +138,8 @@ public class ApiItemLookMutationTests(ITestOutputHelper output)
     [InlineData("queued-undo")]
     [InlineData("immediate-undo")]
     [InlineData("immediate-undo-with-field")]
+    [InlineData("failed-undo-lost-response")]
+    [InlineData("failed-undo-rejected")]
     [InlineData("already-absent")]
     [InlineData("import-replace")]
     public async Task ProductionPageSavesThroughRealHttpValidator(string scenario)
