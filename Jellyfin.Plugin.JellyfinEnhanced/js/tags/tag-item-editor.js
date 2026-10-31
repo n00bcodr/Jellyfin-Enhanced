@@ -389,7 +389,8 @@
             try { facts = await JE.tagPipeline?.itemLookFacts?.(id); } catch { facts = null; }
             if (!isCurrent()) return false;
         }
-        const shape = type === 'Episode' ? 'landscape' : 'portrait';
+        const itemCard = opener?.closest?.('.card') || document.querySelector(`.card[data-id="${id}"]`);
+        const shape = itemCard ? L.shapeOf(itemCard) : (type === 'Episode' ? 'landscape' : 'portrait');
         const context = { ...(facts || {}), Id: id, Type: type, SeriesId: seriesId || facts?.SeriesId, itemId: id, cardType: type, shape };
         const before = L.lookSource(context);
         const base = L.normalizeSettings();
@@ -400,21 +401,32 @@
         const usable = (lock) => lock && (lock !== seriesLock || lock.scope !== 'item');
         const startLock = serverMode ? (options.look ? look.normalizeLock(options.look) : null)
             : (own || (usable(seriesLock) ? seriesLock : null) || ownOverride || (seriesOverride && seriesOverride.scope !== 'item' ? seriesOverride : null));
-        const startLayout = startLock?.layout || conf.layout;
+        // Freeze the fully resolved appearance, including the active shape's
+        // fields on a rule/lock/override. An inheritance marker is safe only
+        // where the unshaped base resolves to the same value.
+        let effective = conf;
+        if (serverMode && startLock) {
+            const sample = document.createElement('div');
+            sample.dataset.jeShape = shape;
+            L.setPreviewLook(sample, startLock);
+            effective = L.resolveLayout(sample);
+            L.setPreviewLook(sample, null);
+        }
+        const startLayout = effective.layout;
         /** @type {Draft} */
         const draft = {
             layout: startLayout,
-            density: startLock?.density || conf.density,
+            density: effective.density,
             slots: {},
-            caps: { ...(startLock?.caps || {}) },
-            tagScale: startLock?.tagScale || null,
-            tagGap: startLock?.tagGap || null,
-            edge: startLock?.edge || null,
+            caps: Object.fromEntries(Object.entries(effective.caps).filter(([group, cap]) => cap !== base.caps[group])),
+            tagScale: effective.tagScale === base.tagScale ? null : effective.tagScale,
+            tagGap: effective.tagGap === base.tagGap ? null : effective.tagGap,
+            edge: effective.edge === base.edge ? null : effective.edge,
         };
         for (const layout of LAYOUTS) draft.slots[layout] = { ...base.profiles[layout] };
         /** @type {Object<string, string>} "layout:group" → the position a group had before it was switched off */
         const lastSlot = {};
-        draft.slots[startLayout] = { ...(startLock ? base.profiles[startLayout] : conf.slots), ...(startLock?.slots || {}) };
+        draft.slots[startLayout] = { ...effective.slots };
 
         /** @type {'item'|'series'} */
         let scope = !hasSeries ? 'item'

@@ -544,3 +544,23 @@ for (const type of ['Season', 'Episode']) test(`For everyone moves a ${type} loo
   h.JE.core.tagLayout.invalidateSettings();
   assert.equal(h.JE.core.tagLayout.resolveLayout({ itemId: EPISODE, SeriesId: SERIES, Type: type }).layout, 'summary');
 });
+
+for (const source of ['shape', 'rule', 'lock', 'override']) test(`opening and locking a ${source}-derived look keeps the effective preview and appearance`, async t => {
+  const shaped = { layout: 'bands', density: 'compact', tagScale: 'largest', tagGap: 'roomy', caps: { quality: 1 }, slots: { genre: 'off', rating: 'top' } };
+  const look = { layout: 'corners', density: 'full', tagScale: 'smaller', edgeSpacing: 'flush', shapes: { landscape: shaped }, lockedAt: 1 };
+  const settings = source === 'shape' ? { tagShapeOverrides: { landscape: shaped } }
+    : source === 'rule' ? { tagLookRules: [{ ...kidsRule, ...look }] }
+    : source === 'lock' ? { tagLayoutLocks: { [EPISODE]: look } } : {};
+  const h = setup(t, { settings, plugin: source === 'override' ? { TagLookItemOverrides: [{ ItemId: EPISODE, ...look }] } : {} });
+  const L = h.JE.core.tagLayout;
+  const context = { Id: EPISODE, itemId: EPISODE, Type: 'Episode', LibraryId: KIDS, SeriesId: SERIES, shape: 'landscape' };
+  const appearance = (c) => plain({ layout: c.layout, density: c.density, slots: c.slots, caps: c.caps, tagScale: c.tagScale, tagGap: c.tagGap, edge: c.edge });
+  const before = appearance(L.resolveLayout(context));
+  await h.open(EPISODE);
+  assert.deepEqual(appearance(L.resolveLayout(h.$('.je-tie-card .je-tag-host'))), before, 'opening does not change the preview');
+  h.change(h.$('[data-tie-keep]'), true);
+  h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  L.invalidateSettings();
+  assert.deepEqual(appearance(L.resolveLayout(context)), before, 'the saved lock has the same effective appearance');
+});
