@@ -1633,7 +1633,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (since.HasValue && alsoInclude == null && since.Value >= generation.MaxLastUpdated
                 && TryGetAccessDigest(access, generation, out var memoizedRevision))
             {
-                accessRevision = memoizedRevision + CollectionAccessSuffix(accessibleSet);
+                accessRevision = memoizedRevision + CollectionAccessSuffix(accessibleSet) + LeavingAccessSuffix(accessibleSet);
                 return new Dictionary<string, TagCacheEntry>();
             }
 
@@ -1656,14 +1656,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                var visible = WithVisibleCustomTags(kvp.Value, Guid.TryParse(kvp.Key, out var itemId) ? itemId : Guid.Empty, accessibleSet);
+                var visible = WithVisibleLeaving(WithVisibleCustomTags(kvp.Value, Guid.TryParse(kvp.Key, out var itemId) ? itemId : Guid.Empty, accessibleSet), accessibleSet);
                 result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(visible, accessibleSet), accessibleSet, generation.Cache));
             }
 
             var keyRevision = FormatAccessRevision(excludedCount, excludedSum);
             // The collection matches' access is part of the revision (not of the memo,
             // which covers the cache keys only).
-            accessRevision = keyRevision + CollectionAccessSuffix(accessibleSet);
+            accessRevision = keyRevision + CollectionAccessSuffix(accessibleSet) + LeavingAccessSuffix(accessibleSet);
             // Only a walk that saw one unchanged state leaves results for other
             // requests: its digest as the memo and, for a whole-cache walk, its
             // result as shareable.
@@ -1969,7 +1969,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             timestamp = generation.Timestamp;
             if (!live || !generation.Quiescent) return false;
 
-            accessRevision = ResolveAccessDigest(access, generation) + CollectionAccessSuffix(access.Ids);
+            accessRevision = ResolveAccessDigest(access, generation) + CollectionAccessSuffix(access.Ids) + LeavingAccessSuffix(access.Ids);
             if (!IsUnchangedSince(generation)) return false;
 
             shareable = true;

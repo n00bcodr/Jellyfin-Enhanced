@@ -24,7 +24,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// Leaving soon facts (Status group): which library items Maintainerr will delete and
     /// when, from its REST API (<c>GET /api/collections</c>, <c>addDate + deleteAfterDays</c>
     /// per item), and which items are in the administrator's leaving collections (existing
-    /// Jellyfin collections by name, no date). Only the refresh (the scheduled task, a
+    /// Jellyfin collections by name, no date). A collection fact keeps which collections
+    /// produced it (<see cref="TagLeaving.Collections"/>) and is only served to a user who
+    /// can access one of them (<see cref="Visible"/>), as collection-matched custom badges
+    /// are; Maintainerr's facts carry no collection and are served to anyone who can see
+    /// the item. Only the refresh (the scheduled task, a
     /// configuration change or the admin page's Refresh) does any work; card and poster
     /// reads are cache-only. A failed Maintainerr request keeps the last good answer and
     /// retries with a growing delay (15 minutes, doubling, at most the refresh interval).
@@ -46,6 +50,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>First retry delay after a failed Maintainerr request.</summary>
         internal static readonly TimeSpan FirstRetry = TimeSpan.FromMinutes(15);
         private const long DayMs = 86_400_000L;
+        /// <summary>The snapshot layout (2: collection facts keep their collections).</summary>
+        private const int SnapshotSchema = 2;
 
         private readonly IHttpClientFactory _http;
         private readonly ILibraryManager? _library;
@@ -78,7 +84,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 if (!File.Exists(_path)) return;
                 var disk = JsonSerializer.Deserialize<Snapshot>(File.ReadAllText(_path));
-                if (disk?.Schema == 1) _snapshot = disk;
+                // An older layout is read again by the next refresh.
+                if (disk?.Schema == SnapshotSchema) _snapshot = disk;
             }
             catch (Exception ex) { _logger.Warning($"[LeavingSoon] Could not read snapshot: {ex.Message}"); }
         }
@@ -158,23 +165,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return Earliest(Earliest(own, season), series);
         }
 
-        /// <summary>The leaving of two that comes first: a dated one before an undated one.</summary>
+        /// <summary>
+        /// The leaving of two that comes first: a dated one before an undated one. Of two
+        /// undated ones, one anyone may see (Maintainerr's) wins; two collection facts join
+        /// their collections, so a user who can access either sees it.
+        /// </summary>
         internal static TagLeaving? Earliest(TagLeaving? a, TagLeaving? b)
         {
             if (a == null) return b;
             if (b == null) return a;
             if (a.DeleteAt is { } x && b.DeleteAt is { } y) return x <= y ? a : b;
-            return a.DeleteAt != null ? a : b;
+            if (a.DeleteAt != null) return a;
+            if (b.DeleteAt != null) return b;
+            if (a.Collections == null) return a;
+            if (b.Collections == null || a.Collections == b.Collections) return b;
+            return new TagLeaving { Collections = JoinIds(a.Collections.Split(',').Concat(b.Collections.Split(','))) };
         }
 
-        /// <summary>A copy of the current item map (N-format id → delete time), for publishing to the cache.</summary>
-        internal IReadOnlyDictionary<string, long?> Items(PluginConfiguration? config)
+        /// <summary>
+        /// A fact as one user may see it: Maintainerr's as it is, a collection fact only while
+        /// <paramref name="access"/> (the user's accessible ids, N format) holds one of its
+        /// collections. The provenance never leaves the server.
+        /// </summary>
+        public static TagLeaving? Visible(TagLeaving? leaving, IReadOnlySet<string> access)
         {
-            if (!Configured(config)) return new Dictionary<string, long?>();
+            if (leaving?.Collections is not { } ids) return leaving;
+            foreach (var id in ids.Split(','))
+            {
+                if (access.Contains(id)) return leaving with { Collections = null };
+            }
+
+            return null;
+        }
+
+        /// <summary>Collection ids (N format) as one sorted, comma-separated value.</summary>
+        private static string JoinIds(IEnumerable<string> ids) => string.Join(",", ids.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+
+        /// <summary>A copy of the current item map (N-format id → facts with their provenance), for publishing to the cache.</summary>
+        internal IReadOnlyDictionary<string, TagLeaving> Items(PluginConfiguration? config)
+        {
+            if (!Configured(config)) return new Dictionary<string, TagLeaving>();
             var signature = Signature(config!);
             lock (_sync)
             {
-                return _snapshot.Signature != signature ? new Dictionary<string, long?>() : Merge(_snapshot);
+                return _snapshot.Signature != signature ? new Dictionary<string, TagLeaving>() : Merge(_snapshot);
+            }
+        }
+
+        /// <summary>The leaving collections found by the last read (N-format ids), for the per-user access revision.</summary>
+        internal IReadOnlyList<string> NamedCollectionIds(PluginConfiguration? config)
+        {
+            if (!Configured(config)) return Array.Empty<string>();
+            var signature = Signature(config!);
+            lock (_sync)
+            {
+                return _snapshot.Signature != signature ? Array.Empty<string>() : _snapshot.NamedCollections;
             }
         }
 
@@ -184,14 +229,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             lock (_sync)
             {
                 var current = config != null && Configured(config) && _snapshot.Signature == Signature(config);
-                var merged = current ? Merge(_snapshot) : new Dictionary<string, long?>();
+                var merged = current ? Merge(_snapshot) : new Dictionary<string, TagLeaving>();
                 return new LeavingSoonStatus
                 {
                     Configured = Configured(config),
                     Maintainerr = config != null && IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl),
                     Collections = config == null ? 0 : CollectionNames(config.LeavingSoonCollections).Count,
                     Items = merged.Count,
-                    Dated = merged.Count(p => p.Value != null),
+                    Dated = merged.Count(p => p.Value.DeleteAt != null),
                     CollectionsFound = current ? _snapshot.CollectionsFound : 0,
                     LastSuccess = current ? _snapshot.LastSuccess : null,
                     LastAttempt = current ? _snapshot.LastAttempt : null,
@@ -249,13 +294,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     try
                     {
-                        (next.Named, next.CollectionsFound) = ReadCollections(names);
+                        (next.Named, next.NamedCollections) = ReadCollections(names);
+                        next.CollectionsFound = next.NamedCollections.Count;
                     }
                     catch (Exception ex)
                     {
                         error ??= "collections could not be read";
                         _logger.Warning($"[LeavingSoon] Reading the leaving collections failed: {ex.Message}");
-                        next.Named = sameSource ? before.Named : new HashSet<string>(StringComparer.Ordinal);
+                        next.Named = sameSource ? before.Named : new Dictionary<string, string>(StringComparer.Ordinal);
+                        next.NamedCollections = sameSource ? before.NamedCollections : new List<string>();
                         next.CollectionsFound = sameSource ? before.CollectionsFound : 0;
                     }
                 }
@@ -277,7 +324,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                 lock (_sync) _snapshot = next;
                 Save();
-                return !SameItems(sameSource ? Merge(before) : new Dictionary<string, long?>(), Merge(next)) || !sameSource;
+                return !SameItems(sameSource ? Merge(before) : new Dictionary<string, TagLeaving>(), Merge(next)) || !sameSource;
             }
             finally
             {
@@ -497,41 +544,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return _tmdbIndex.TryGetValue(type + ":" + tmdb, out var ids) ? ids : Array.Empty<Guid>();
         }
 
-        /// <summary>The members (N-format ids) of the existing collections with these names, and how many collections matched.</summary>
-        private (HashSet<string> Members, int Found) ReadCollections(IReadOnlyList<string> names)
+        /// <summary>
+        /// The members (N-format ids) of the existing collections with these names, each with
+        /// the collections holding it, and the ids of the collections that matched.
+        /// </summary>
+        private (Dictionary<string, string> Members, List<string> Collections) ReadCollections(IReadOnlyList<string> names)
         {
-            var members = new HashSet<string>(StringComparer.Ordinal);
-            if (_library == null) return (members, 0);
+            var members = new Dictionary<string, string>(StringComparer.Ordinal);
+            var collections = new List<string>();
+            if (_library == null) return (members, collections);
             var wanted = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
-            var found = 0;
+            var by = new Dictionary<string, List<string>>(StringComparer.Ordinal);
             foreach (var boxSet in _library.GetItemList(new InternalItemsQuery { IncludeItemTypes = new[] { BaseItemKind.BoxSet }, Recursive = true }))
             {
                 if (boxSet is not Folder folder || boxSet.Name == null || !wanted.Contains(boxSet.Name.Trim())) continue;
-                found++;
+                var collection = boxSet.Id.ToString("N");
+                collections.Add(collection);
                 foreach (var child in folder.GetLinkedChildren())
                 {
-                    if (child != null) members.Add(child.Id.ToString("N"));
+                    if (child == null) continue;
+                    var key = child.Id.ToString("N");
+                    if (!by.TryGetValue(key, out var list)) by[key] = list = new List<string>(1);
+                    list.Add(collection);
                 }
             }
 
-            return (members, found);
+            foreach (var pair in by) members[pair.Key] = JoinIds(pair.Value);
+            return (members, collections);
         }
 
-        /// <summary>Maintainerr's dated answer over the undated collection members.</summary>
-        private static Dictionary<string, long?> Merge(Snapshot snapshot)
+        /// <summary>Maintainerr's answer over the undated collection members (which keep their collections).</summary>
+        private static Dictionary<string, TagLeaving> Merge(Snapshot snapshot)
         {
-            var merged = new Dictionary<string, long?>(snapshot.Api, StringComparer.Ordinal);
-            foreach (var id in snapshot.Named) merged.TryAdd(id, null);
+            var merged = new Dictionary<string, TagLeaving>(StringComparer.Ordinal);
+            foreach (var pair in snapshot.Api) merged[pair.Key] = new TagLeaving { DeleteAt = pair.Value };
+            foreach (var pair in snapshot.Named) merged.TryAdd(pair.Key, new TagLeaving { Collections = pair.Value });
             return merged;
         }
 
         private static TagLeaving? Lookup(Snapshot snapshot, string key)
         {
             if (snapshot.Api.TryGetValue(key, out var at)) return new TagLeaving { DeleteAt = at };
-            return snapshot.Named.Contains(key) ? new TagLeaving() : null;
+            return snapshot.Named.TryGetValue(key, out var collections) ? new TagLeaving { Collections = collections } : null;
         }
 
-        private static bool SameItems(IReadOnlyDictionary<string, long?> a, IReadOnlyDictionary<string, long?> b)
+        private static bool SameItems(IReadOnlyDictionary<string, TagLeaving> a, IReadOnlyDictionary<string, TagLeaving> b)
             => a.Count == b.Count && a.All(p => b.TryGetValue(p.Key, out var v) && v == p.Value);
 
         private void Save()
@@ -552,10 +609,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The persisted answer. Holds a digest of the source, never the URL or key.</summary>
         public sealed class Snapshot
         {
-            public int Schema { get; set; } = 1;
+            public int Schema { get; set; } = SnapshotSchema;
             public string Signature { get; set; } = string.Empty;
             public Dictionary<string, long?> Api { get; set; } = new(StringComparer.Ordinal);
-            public HashSet<string> Named { get; set; } = new(StringComparer.Ordinal);
+            /// <summary>Collection members (N format) → the ids of the leaving collections holding them (sorted, comma-separated).</summary>
+            public Dictionary<string, string> Named { get; set; } = new(StringComparer.Ordinal);
+            /// <summary>The ids (N format) of the leaving collections the last read found.</summary>
+            public List<string> NamedCollections { get; set; } = new();
             public int CollectionsFound { get; set; }
             public long? LastSuccess { get; set; }
             public long? LastAttempt { get; set; }

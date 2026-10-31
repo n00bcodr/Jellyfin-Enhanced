@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
@@ -383,7 +384,7 @@ public sealed class LeavingSoonTests : IDisposable
             var config = Config(names: " leaving soon \nMissing collection, Leaving Soon");
             Assert.Equal(new[] { "leaving soon", "Missing collection" }, LeavingSoonService.CollectionNames(config.LeavingSoonCollections));
             Assert.True(await service.RefreshAsync(config, false, CancellationToken.None));
-            Assert.Equal(new TagLeaving(), service.Get(movie.Id, config));
+            Assert.Equal(new TagLeaving { Collections = box.Id.ToString("N") }, service.Get(movie.Id, config));
             Assert.Null(service.Get(other.Id, config));
             var s = service.Status(config);
             Assert.Equal((2, 1, 1, 0), (s.Collections, s.CollectionsFound, s.Items, s.Dated));
@@ -443,6 +444,103 @@ public sealed class LeavingSoonTests : IDisposable
             Assert.NotNull(stored.Leaving); // the shared entry is never changed in place
         }
         finally { BaseItem.LibraryManager = previous; }
+    }
+
+    [Fact]
+    public async Task Collection_facts_reach_only_users_who_can_access_a_leaving_collection_and_maintainerr_facts_reach_everyone()
+    {
+        using var f = new ApiPluginFixture();
+        var library = new Mock<ILibraryManager>();
+        var series = new Series { Id = Guid.NewGuid(), Name = "Show" };
+        var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+        var episode = new Episode { Id = Guid.NewGuid(), Name = "Pilot", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id, IndexNumber = 1, ParentIndexNumber = 1 };
+        var member = new Movie { Id = Guid.NewGuid(), Name = "Member" };
+        var dated = new Movie { Id = Guid.NewGuid(), Name = "Dated" };
+        var hiddenBox = new BoxSet { Id = Guid.NewGuid(), Name = "Leaving Soon", LinkedChildren = [new LinkedChild { ItemId = member.Id }, new LinkedChild { ItemId = series.Id }, new LinkedChild { ItemId = dated.Id }] };
+        var items = new List<BaseItem> { series, season, episode, member, dated, hiddenBox };
+        var admin = new User("admin", "default", "default") { Id = Guid.NewGuid() };
+        var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var hidden = new HashSet<Guid>();
+        IEnumerable<BaseItem> As(InternalItemsQuery q) => q.User?.Id == viewer.Id ? Select(items, q).Where(i => !hidden.Contains(i.Id)) : Select(items, q);
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => As(q).Select(i => i.Id).ToArray());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => As(q).ToArray());
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => items.SingleOrDefault(i => i.Id == id));
+        library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => items.SingleOrDefault(i => i.Id == id));
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Object;
+        using var server = new MaintainerrFixture();
+        var deleteAt = Added.AddDays(9).ToUnixTimeMilliseconds();
+        server.Answer = r => MaintainerrFixture.Json(r, Collections((true, 9, "movie", new Media[] { new(dated.Id.ToString(), null, "2026-10-25T10:00:00Z") })));
+        try
+        {
+            f.Plugin.Configuration.TagCacheServerMode = true;
+            f.Plugin.Configuration.LeavingSoonMaintainerrUrl = server.Url;
+            f.Plugin.Configuration.LeavingSoonCollections = "Leaving Soon";
+            var service = Service(library.Object);
+            using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger,
+                new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), leavingSoonService: service);
+            cache.BuildFullCache(null, CancellationToken.None);
+            await cache.RefreshLeavingAsync(force: true, CancellationToken.None);
+            string Key(BaseItem i) => i.Id.ToString("N");
+            var box = Key(hiddenBox);
+            Assert.True(cache.TryGetEntry(member.Id, out var shared));
+            Assert.Equal(new TagLeaving { Collections = box }, shared.Leaving); // provenance stays on the server entry
+            Assert.True(cache.TryGetEntry(episode.Id, out var sharedEpisode));
+            Assert.Equal(box, sharedEpisode.Leaving?.Collections); // inherited from the series with it
+
+            // Everyone sees the collection: the facts without their provenance.
+            var before = cache.GetCacheForUser(viewer, out _, out _, out var visibleRevision);
+            Assert.Equal(new TagLeaving(), before[Key(member)].Leaving);
+            var served = JsonSerializer.Serialize(before.Values.Select(e => e.Leaving));
+            Assert.DoesNotContain(box, served);
+            Assert.DoesNotContain("Collections", served);
+
+            // The collection hidden from the viewer (the items stay visible): cache, batch and native
+            // drop the collection facts, Maintainerr's dated fact stays, the revision changes.
+            hidden.Add(hiddenBox.Id);
+            cache.InvalidateUserAccess();
+            var viewed = cache.GetCacheForUser(viewer, out _, out _, out var hiddenRevision);
+            Assert.NotEqual(visibleRevision, hiddenRevision);
+            foreach (var item in new BaseItem[] { member, series, season, episode }) Assert.Null(viewed[Key(item)].Leaving);
+            Assert.Equal(new TagLeaving { DeleteAt = deleteAt }, viewed[Key(dated)].Leaving);
+            var adminView = cache.GetCacheForUser(admin, out _, out _, out var adminRevision);
+            Assert.NotEqual(adminRevision, hiddenRevision);
+            foreach (var item in new BaseItem[] { member, series, season, episode }) Assert.Equal(new TagLeaving(), adminView[Key(item)].Leaving);
+            Assert.Equal(new TagLeaving { Collections = box }, shared.Leaving); // the shared entry is never changed
+            Assert.Null(cache.GetLeavingForUser(member, viewer));
+            Assert.Null(cache.GetLeavingForUser(episode, viewer));
+            Assert.Equal(new TagLeaving { DeleteAt = deleteAt }, cache.GetLeavingForUser(dated, viewer));
+            Assert.Equal(new TagLeaving(), cache.GetLeavingForUser(episode, admin));
+            Assert.Null(cache.FilterLeavingForUser(shared, viewer).Leaving);
+
+            // A delta with nothing new still reports the viewer's current revision.
+            var cursor = viewed.Values.Max(e => e.LastUpdated);
+            cache.GetCacheForUser(viewer, out _, out _, out var deltaRevision, since: cursor);
+            Assert.Equal(hiddenRevision, deltaRevision);
+
+            // Native posters follow the viewer's access too.
+            var resolver = new SpoilerUserResolver(f.Core.Manager, library.Object, f.Core.Logger, null!);
+            using var native = new PosterTagDataProvider(cache, library.Object, new SpoilerTagDataStripper(library.Object, Mock.Of<IUserDataManager>(), resolver), resolver,
+                new PosterTagReviewRatings(f.Core.Manager, new PosterTagUserCache(Mock.Of<IUserManager>()), f.Core.Logger), f.Core.Logger);
+            Assert.Null(native.GetPinnedSnapshot(member.Id, viewer, includeStatus: true)!.Entry.Leaving);
+            Assert.Equal(new TagLeaving(), native.GetPinnedSnapshot(member.Id, admin, includeStatus: true)!.Entry.Leaving);
+            Assert.NotEqual(native.GetPinnedSnapshot(member.Id, admin, true)!.PinnedHash, native.GetPinnedSnapshot(member.Id, viewer, true)!.PinnedHash);
+        }
+        finally { BaseItem.LibraryManager = previous; }
+    }
+
+    [Fact]
+    public void Two_undated_facts_join_their_collections_and_a_maintainerr_one_wins()
+    {
+        var a = new TagLeaving { Collections = "aa" };
+        var b = new TagLeaving { Collections = "bb" };
+        Assert.Equal(new TagLeaving { Collections = "aa,bb" }, LeavingSoonService.Earliest(b, a));
+        Assert.Equal(new TagLeaving(), LeavingSoonService.Earliest(a, new TagLeaving()));
+        Assert.Equal(new TagLeaving { DeleteAt = 3 }, LeavingSoonService.Earliest(a, new TagLeaving { DeleteAt = 3 }));
+        var access = new HashSet<string> { "bb" };
+        Assert.Equal(new TagLeaving(), LeavingSoonService.Visible(new TagLeaving { Collections = "aa,bb" }, access));
+        Assert.Null(LeavingSoonService.Visible(a, access));
+        Assert.Equal(new TagLeaving { DeleteAt = 3 }, LeavingSoonService.Visible(new TagLeaving { DeleteAt = 3 }, access));
     }
 
     private static IEnumerable<BaseItem> Select(List<BaseItem> items, InternalItemsQuery q)

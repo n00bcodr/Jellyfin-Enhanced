@@ -117,6 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             entry = _tagCache.FilterQualityForUser(entry, viewer);
             if (includeStatus) entry = _tagCache.FilterStatusForUser(entry, viewer);
             entry = _tagCache.FilterCustomTagsForUser(entry, ownerId, viewer);
+            entry = _tagCache.FilterLeavingForUser(entry, viewer);
             var reviews = _reviews.Get(entry, viewer);
             var hash = DataKey(entry, reviews).Substring(0, 6);
             // Never collide with the "not pinned" value.
@@ -150,6 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             entry = _tagCache.FilterQualityForUser(entry, user, item);
             if (includeStatus) entry = _tagCache.FilterStatusForUser(entry, user);
             entry = _tagCache.FilterCustomTagsForUser(entry, item.Id, user);
+            entry = _tagCache.FilterLeavingForUser(entry, user);
             var stripped = false;
             var policy = CreateSpoilerPolicy(httpContext, user);
             if (policy != null)

@@ -9,6 +9,14 @@ using MediaBrowser.Controller.Entities.TV;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>Leaving soon projection shared by cache builds, /tag-data and native data reads.</summary>
+    /// <remarks>
+    /// Per user: a fact that only the administrator's leaving collections produced is served
+    /// to a user who can access one of those collections (<see cref="LeavingSoonService.Visible"/>,
+    /// applied by the tag cache projection, /tag-data and native posters), like collection-matched
+    /// custom badges; the leaving collections a user cannot access are part of their
+    /// accessRevision (<see cref="LeavingAccessSuffix"/>). Maintainerr's facts have no
+    /// collection provenance and are served to anyone who can see the item.
+    /// </remarks>
     public partial class TagCacheService
     {
         private readonly LeavingSoonService? _leavingSoonService;
@@ -25,6 +33,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 Season s => _leavingSoonService.Resolve(s.Id, null, s.SeriesId == Guid.Empty ? null : s.SeriesId, config),
                 _ => _leavingSoonService.Get(item.Id, config),
             };
+        }
+
+        /// <summary>An item's Leaving soon facts as <paramref name="user"/> may see them (the /tag-data projection).</summary>
+        public TagLeaving? GetLeavingForUser(BaseItem item, JUser user)
+        {
+            var leaving = GetLeaving(item);
+            return leaving?.Collections == null ? leaving : LeavingSoonService.Visible(leaving, ResolveUserAccess(user).Ids);
+        }
+
+        /// <summary>A cache entry as one user may see its Leaving facts (a clone when they change; the shared entry is untouched).</summary>
+        public TagCacheEntry FilterLeavingForUser(TagCacheEntry entry, JUser user)
+            => entry.Leaving?.Collections == null ? entry : WithVisibleLeaving(entry, ResolveUserAccess(user).Ids);
+
+        private static TagCacheEntry WithVisibleLeaving(TagCacheEntry entry, HashSet<string> access)
+        {
+            if (entry.Leaving?.Collections == null) return entry;
+            var filtered = entry.Clone();
+            filtered.Leaving = LeavingSoonService.Visible(entry.Leaving, access);
+            return filtered;
+        }
+
+        /// <summary>
+        /// The part of a user's accessRevision that covers collection-made Leaving facts: a digest
+        /// of the leaving collections the user cannot access ("" when none), so a stored copy is
+        /// replaced when a collection's access changes even if no cache entry did.
+        /// </summary>
+        private string LeavingAccessSuffix(HashSet<string> access)
+        {
+            if (_leavingSoonService == null) return string.Empty;
+            ulong sum = 0;
+            var count = 0;
+            foreach (var id in _leavingSoonService.NamedCollectionIds(JellyfinEnhanced.Instance?.Configuration))
+            {
+                if (access.Contains(id)) continue;
+                sum = unchecked(sum + StableKeyHash(id));
+                count++;
+            }
+
+            return count == 0 ? string.Empty : ";l" + count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + sum.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         /// <summary>The scheduled refresh (when due) or a forced one; a changed answer is published to the cache.</summary>
@@ -56,8 +103,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void PublishLeaving()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            var items = _leavingSoonService?.Items(config) ?? new Dictionary<string, long?>();
-            TagLeaving? Of(string? key) => key != null && items.TryGetValue(key, out var at) ? new TagLeaving { DeleteAt = at } : null;
+            var items = _leavingSoonService?.Items(config) ?? new Dictionary<string, TagLeaving>();
+            TagLeaving? Of(string? key) => key != null && items.TryGetValue(key, out var leaving) ? leaving : null;
             var seasons = new Dictionary<(string, int), string>();
             foreach (var pair in _cache)
             {
