@@ -72,7 +72,7 @@ public class SeriesQualityAggregationTests
         Assert.Equal("8K", summary.Categories["resolution"].Best); // best is independent of the bounded set
         Assert.False(summary.Categories["resolution"].AllAgree);
         var unknown = SeriesQualityAggregation.Build([Fact(1080, 1), new("unprobed", 2, null)], 100);
-        Assert.Contains(null, unknown.Categories["resolution"].Values);
+        Assert.Contains((string?)null, unknown.Categories["resolution"].Values);
         Assert.False(unknown.Categories["resolution"].AllAgree);
         Assert.Null(unknown.Categories["resolution"].Latest);
         Assert.Null(SeriesQualityAggregation.Build([Fact(2160, 101)], 100).Categories["resolution"].Latest);
