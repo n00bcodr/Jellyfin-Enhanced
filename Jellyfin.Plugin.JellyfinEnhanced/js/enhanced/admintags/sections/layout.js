@@ -120,9 +120,9 @@
     }
 
     /** @param {string} g @param {ReturnType<typeof readState>} state @returns {number} */
-    function capOf(g, state) {
+    function capOf(g, state, config) {
         const meta = editorData()?.GROUP_META[g] || {};
-        if (meta.capFixed) return 1;
+        if (L().singleChipGroup(g, config)) return 1;
         return Number.isFinite(state.caps[g]) ? state.caps[g] : L().DEFAULT_CAPS[g];
     }
 
@@ -140,7 +140,7 @@
         const name = groupName(g);
         const meta = editorData()?.GROUP_META[g] || {};
         const stepCap = editorData()?.stepCap || (() => null);
-        const cap = capOf(g, state);
+        const cap = capOf(g, state, c);
         const slot = slotOf(c, state, state.layout, g);
         const off = c[enabledKey(g)] !== true;
         let slots;
@@ -165,11 +165,11 @@
                 <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="1" aria-label="${ctx.esc(JE.t('admin_tags_move_down', { name }))}" ${index === count - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
             </span>
             <span class="je-ta-lrow-name">${ctx.esc(name)}${off ? `<small>${ctx.tx('admin_tags_group_off_for_new')}</small>` : ''}</span>
-            <span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(JE.t('admin_tags_limit_for', { group: name }))}">${ctx.tx('admin_tags_limit')}
+            ${L().singleChipGroup(g, c) ? '' : `<span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(JE.t('admin_tags_limit_for', { group: name }))}">${ctx.tx('admin_tags_limit')}
                 <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="-1" aria-label="${ctx.esc(JE.t('tag_shapes_fewer', { group: name }))}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">remove</span></button>
                 <output aria-live="polite">${cap === 0 ? ctx.tx('panel_settings_ui_tag_editor_summary_all') : cap}</output>
                 <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="1" aria-label="${ctx.esc(JE.t('tag_shapes_more', { group: name }))}" ${stepCap(cap, 1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">add</span></button>
-            </span>
+            </span>`}
             <span class="je-ta-lrow-slots">${slots}</span>
         </li>`;
     }
@@ -247,7 +247,7 @@
                     keep = `[data-act="move"][data-dir="${button.dataset.dir}"]`;
                     ctx.announce(JE.t('admin_tags_moved', { name: groupName(g), n: to + 1 }));
                 } else if (button.dataset.act === 'cap') {
-                    const next = editorData()?.stepCap(capOf(g, state), Number(button.dataset.dir), editorData().GROUP_META[g] || {});
+                    const next = editorData()?.stepCap(capOf(g, state, ctx.config), Number(button.dataset.dir), editorData().GROUP_META[g] || {});
                     if (next === null || next === undefined) return;
                     state.caps[g] = next;
                     keep = `[data-act="cap"][data-dir="${button.dataset.dir}"]`;

@@ -33,7 +33,107 @@ public class QualityDisplayTests
     }, new(), null);
 
     private static string[] Labels(TagCacheEntry entry, PosterTagSettings settings) => PosterTagResolver.Resolve(entry, settings,
-        new(entry.Type ?? "Movie", false, null, null, null), false)?.Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.Label).ToArray() ?? [];
+        new(entry.Type ?? "Movie", false, null, null, null), false)?.Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.DisplayText ?? tag.Label).ToArray() ?? [];
+
+    [Fact]
+    public void LegacyFullAudioStreamFactsKeepTheirPreviousChips()
+    {
+        using var stream = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioStreamLabels.json")!;
+        using var cases = JsonDocument.Parse(stream);
+        var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true }, new(), null);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        {
+            var track = JsonSerializer.Deserialize<TagMediaStream>(row.GetProperty("stream"))!;
+            Assert.Equal(new[] { row.GetProperty("legacyFull").GetString()! }, Labels(new() { Type = "Movie", StreamData = new() { Streams = [track] } }, settings));
+        }
+    }
+
+    [Fact]
+    public void AudioGateUsesTheLayoutVersionInTheSharedDocuments()
+    {
+        using var fixture = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioLegacyDocuments.json")!;
+        using var cases = JsonDocument.Parse(fixture);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        {
+            var settings = PosterTagSettings.FromSettingsJson(row.GetProperty("settings").GetRawText(), new());
+            Assert.Equal(row.GetProperty("legacy").GetBoolean(), settings.LegacyAudioFacts);
+            Assert.Equal(row.GetProperty("density").GetString() == "compact", settings.CompactBands);
+            Assert.Equal(new[] { row.GetProperty("label").GetString() }, Labels(new() { Type = "Movie", StreamData = new() {
+                Streams = [new() { Type = "Audio", Codec = "ac3", Channels = 6 }] } }, settings));
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("full")]
+    [InlineData("compact")]
+    public void VersionTransitionChangesTheNativeVariantEvenWhenBothLayoutsHaveFullLabels(string? density)
+    {
+        var document = new JellyfinEnhancedUserSettings { QualityTagsEnabled = true, TagLabelDensity = density ?? "full" };
+        var legacy = PosterTagSettings.FromUserSettings(document, new(), null);
+        document.TagLayoutSettingsVersion = 1; document.TagLabelDensity = "full";
+        var current = PosterTagSettings.FromUserSettings(document, new(), null);
+        Assert.NotEqual(legacy.Digest, current.Digest);
+        var directory = Path.Combine(Path.GetTempPath(), "je-audio-token-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(directory, "secret"), _ => { });
+            var user = Guid.NewGuid(); var item = Guid.NewGuid();
+            var token = tokens.Mint(user, item, legacy.Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+            Assert.False(tokens.Verify(token, user, item, current.Digest, "7.1", out _));
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public void AudioStreamFactsReachNativeChipsInBothDensities()
+    {
+        using var stream = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioStreamLabels.json")!;
+        using var cases = JsonDocument.Parse(stream);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        foreach (var density in new[] { "full", "compact" })
+        foreach (var mode in new[] { "highest", "all" })
+        {
+            var track = JsonSerializer.Deserialize<TagMediaStream>(row.GetProperty("stream"))!;
+            var data = new TagStreamData { Streams = [track] };
+            var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true,
+                TagLayoutSettingsVersion = 1, TagLayout = "bands", TagLabelDensity = density, QualityAudioDisplayMode = mode }, new(), null);
+            foreach (var cached in new[] { false, true })
+            {
+                data.DistinctQualities = cached ? QualityTagRules.DetectDistinct(data.Streams) : null;
+                Assert.Equal(new[] { row.GetProperty(density).GetString()! }, Labels(new() { Type = "Movie", StreamData = data }, settings));
+            }
+        }
+    }
+
+    [Fact]
+    public void TrashAudioAliasesHaveTheSamePrecedenceAcrossTitleCodecAndProfile()
+    {
+        using var fixture = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioAliasLabels.json")!;
+        using var cases = JsonDocument.Parse(fixture);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        foreach (var density in new[] { "full", "compact" })
+        foreach (var mode in new[] { "highest", "all" })
+        {
+            var alias = row.GetProperty("alias").GetString(); var codec = row.GetProperty("codec").GetString();
+            foreach (var track in row.TryGetProperty("stream", out var custom) ? new[] { JsonSerializer.Deserialize<TagMediaStream>(custom)! } : new TagMediaStream[] {
+                new() { Type = "Audio", Channels = 6, DisplayTitle = alias },
+                new() { Type = "Audio", Channels = 6, Codec = alias },
+                new() { Type = "Audio", Channels = 6, Profile = alias },
+                new() { Type = "Audio", Channels = 6, Codec = codec, DisplayTitle = alias },
+                new() { Type = "Audio", Channels = 6, Codec = codec, Profile = alias } })
+            {
+                var data = new TagStreamData { Streams = [track] };
+                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLayoutSettingsVersion = 1,
+                    TagLayout = "bands", TagLabelDensity = density, QualityAudioDisplayMode = mode }, new(), null);
+                foreach (var cached in new[] { false, true })
+                {
+                    data.DistinctQualities = cached ? QualityTagRules.DetectDistinct(data.Streams) : null;
+                    Assert.Equal(new[] { row.GetProperty(density).GetString() }, Labels(new() { Type = "Movie", StreamData = data }, settings));
+                }
+            }
+        }
+    }
 
     [Fact]
     public void DistinctFactsKeepActualTrackChannelsAndAreImmutableValueComparedCacheData()
@@ -50,6 +150,22 @@ public class QualityDisplayTests
         Assert.False(TagCacheEntry.ContentEquals(entry, restored));
         Assert.Same(streams, entry.Clone().StreamData);
     }
+
+    [Theory]
+    [InlineData("Dolby Digital", "DD")]
+    [InlineData("Dolby Digital 5.1", "DD 5.1")]
+    [InlineData("Dolby Digital+", "DD+")]
+    [InlineData("Dolby Digital+ 5.1", "DD+ 5.1")]
+    [InlineData("Dolby Digital+ 7.1", "DD+ 7.1")]
+    [InlineData("DTS-HD MA 5.1", "DTS-HD 5.1")]
+    [InlineData("DTS-HD HRA 7.1", "DTS-HD 7.1")]
+    [InlineData("Dolby TrueHD 7.1", "TrueHD 7.1")]
+    [InlineData("Dolby Atmos 7.1", "Atmos 7.1")]
+    [InlineData("DTS:X 7.1", "DTS:X 7.1")]
+    [InlineData("ATMOS 7.1", "ATMOS")]
+    [InlineData("MPEG2", "MPEG2")]
+    public void CompactLabelsKeepCodecIdentityAndChannels(string full, string compact)
+        => Assert.Equal(compact, QualityTagRules.CompactLabel(full));
 
     [Theory]
     [InlineData("eng", "eng", "deu", false)]
@@ -175,7 +291,7 @@ public class QualityDisplayTests
     [InlineData("qualityHideSdr", true)]
     public void AdditiveQualitySettingsChangeTheirDigestWithIntegratedResolverIdentity(string key, object value)
     {
-        Assert.Equal("10", PosterTagSettings.ResolverVersion);
+        Assert.Equal("12", PosterTagSettings.ResolverVersion);
         var config = new PluginConfiguration();
         var baseline = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true}", config);
         var explicitDefaults = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true,qualityAudioDisplayMode:'highest',qualityVideoCodecDisplayMode:'highest',qualityHdrDisplayMode:'highest',qualityMinimumResolution:'off',qualityHideSdr:false}", config);

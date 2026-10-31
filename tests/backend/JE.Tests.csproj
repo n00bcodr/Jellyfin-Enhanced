@@ -15,8 +15,13 @@
     <EmbeddedResource Include="../fixtures/native-overflow/*.png;../fixtures/native-overflow/metrics.json" LogicalName="NativeOverflow.%(Filename)%(Extension)" />
     <EmbeddedResource Include="../fixtures/native-band-fit.json" LogicalName="NativeBandFit.json" />
     <EmbeddedResource Include="../fixtures/native-status-dates.json" LogicalName="NativeStatusDates.json" />
+    <EmbeddedResource Include="../fixtures/audio-legacy-documents.json" LogicalName="AudioLegacyDocuments.json" />
+    <EmbeddedResource Include="../fixtures/audio-aggregation.json" LogicalName="AudioAggregation.json" />
+    <EmbeddedResource Include="../fixtures/audio-alias-labels.json" LogicalName="AudioAliasLabels.json" />
+    <EmbeddedResource Include="../fixtures/audio-stream-labels.json" LogicalName="AudioStreamLabels.json" />
     <EmbeddedResource Include="../fixtures/technical-quality.json" LogicalName="TechnicalQuality.json" />
     <EmbeddedResource Include="../fixtures/source-edition-names.json" LogicalName="SourceEditionNames.json" />
+    <EmbeddedResource Include="../fixtures/flush-edges.json" LogicalName="FlushEdges.json" />
     <EmbeddedResource Include="../fixtures/logo-custom-layout.json" LogicalName="LogoCustomLayout.json" />
     <EmbeddedResource Include="../fixtures/custom-tag-labels.json" LogicalName="CustomTagLabels.json" />
     <EmbeddedResource Include="../fixtures/genre-styles.json" LogicalName="GenreStyles.json" />

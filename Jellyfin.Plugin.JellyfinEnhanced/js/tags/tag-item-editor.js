@@ -419,7 +419,12 @@
             layout: startLayout,
             density: effective.density,
             slots: {},
-            caps: Object.fromEntries(Object.entries(effective.caps).filter(([group, cap]) => cap !== base.caps[group])),
+            caps: {
+                ...Object.fromEntries(Object.entries(effective.caps).filter(([group, cap]) => cap !== base.caps[group])),
+                // Presentation caps do not rewrite a saved single-chip cap when another field is edited.
+                ...Object.fromEntries(Object.entries({ ...(startLock?.caps || {}), ...(startLock?.shapes?.[shape]?.caps || {}) })
+                    .filter(([group]) => L.singleChipGroup(group))),
+            },
             tagScale: effective.tagScale === base.tagScale ? null : effective.tagScale,
             tagGap: effective.tagGap === base.tagGap ? null : effective.tagGap,
             edge: effective.edge === base.edge ? null : effective.edge,
@@ -542,9 +547,10 @@
                 const where = draft.layout === 'corners'
                     ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor" title="${tx(`panel_settings_ui_tag_slot_corners_${a}`)}"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" aria-label="${esc(slotLabel('corners', a))}" ${a === current ? 'checked' : ''}></label>`).join('')}</div>`
                     : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
-                const cap = meta.capFixed ? 1 : (draft.caps[group] ?? base.caps[group]);
+                const fixed = L.singleChipGroup(group);
+                const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
                 const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
-                const stepper = meta.capFixed ? '' : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
+                const stepper = fixed ? '' : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
                     <span>${tx('panel_settings_ui_tag_editor_show_up_to')}</span>
                     <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
                     <output aria-live="polite">${esc(capText)}</output>
@@ -622,6 +628,7 @@
             if (!button || button.disabled) return;
             const group = /** @type {HTMLElement} */ (button.closest('[data-group]')).dataset.group || '';
             const meta = GROUPS[group];
+            if (L.singleChipGroup(group)) return;
             const cap = draft.caps[group] ?? base.caps[group];
             const next = stepCap(cap, Number(button.dataset.tieStep), meta);
             if (next === null) return;

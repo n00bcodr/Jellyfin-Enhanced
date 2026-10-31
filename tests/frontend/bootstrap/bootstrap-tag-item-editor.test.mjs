@@ -104,6 +104,29 @@ function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagDat
 
 const kidsRule = { id: 'kids', enabled: true, when: [{ field: 'library', value: KIDS }], layout: 'caption', density: 'compact', colourPreset: null, slots: null };
 
+for (const maximum of [1, 2]) for (const server of [false, true]) test(`Flush item editor preserves saved single-chip caps (${maximum} logos, server=${server})`, async t => {
+  const caps = { status: 9, ageRating: 0, logos: 8 };
+  const look = { layout: 'corners', density: 'compact', edgeSpacing: 'flush', caps, lockedAt: 4 };
+  const h = setup(t, { admin: server, html: card(MOVIE, 'Movie'),
+    settings: server ? {} : { tagLayoutLocks: { [MOVIE]: look } },
+    plugin: { LogoTagsMaxLogos: maximum, ...(server ? { TagLookItemOverrides: [{ ItemId: MOVIE, ...look }] } : {}) } });
+  let saved;
+  await h.open(MOVIE, server ? { mode: 'server', look, onSave: async value => { saved = value; return true; } } : undefined);
+  for (const group of ['status', 'ageRating', 'logos', 'quality']) {
+    const fixed = ['status', 'ageRating'].includes(group) || (group === 'logos' && maximum === 1);
+    assert.equal(!!h.$(`.je-tie-group[data-group="${group}"] [data-tie-step]`), !fixed, group);
+  }
+  const L = h.JE.core.tagLayout, conf = L.resolveLayout(h.$('.je-tie-card'));
+  assert.equal(conf.edge, 'flush');
+  assert.equal(conf.caps.status, 1);
+  assert.equal(conf.caps.ageRating, 1);
+  assert.equal(conf.caps.logos, maximum === 1 ? 1 : 8);
+  h.change(h.$('[data-tie-select="tagGap"]'), 'tight');
+  h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  assert.deepEqual(plain(server ? saved.caps : h.writes.at(-1).tagLayoutLocks[MOVIE].caps), caps);
+});
+
 // ── The menu row ───────────────────────────────────────────────────────
 
 test('the detail page ⋮ gets a native-looking Media Tags row before Share, which opens the editor for the page\'s item', async t => {

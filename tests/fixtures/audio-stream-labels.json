@@ -1,0 +1,210 @@
+[
+  {
+    "name": "ac3",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "ac3",
+      "DisplayTitle": "English - Dolby Digital 5.1",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "Dolby Digital 5.1",
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
+  },
+  {
+    "name": "ac3-codec",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "ac3",
+      "DisplayTitle": "",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "Dolby Digital 5.1",
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
+  },
+  {
+    "name": "ac3-profile",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "",
+      "DisplayTitle": "",
+      "Profile": "Dolby Digital",
+      "Channels": 6
+    },
+    "full": "Dolby Digital 5.1",
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
+  },
+  {
+    "name": "ac3-title",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "",
+      "DisplayTitle": "Dolby Digital",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "Dolby Digital 5.1",
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
+  },
+  {
+    "name": "eac3",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "eac3",
+      "DisplayTitle": "English - Dolby Digital+ 5.1",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "Dolby Digital+ 5.1",
+    "compact": "DD+ 5.1",
+    "legacyFull": "Dolby Digital+ 5.1"
+  },
+  {
+    "name": "eac3-codec",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "eac3",
+      "DisplayTitle": "",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "Dolby Digital+ 5.1",
+    "compact": "DD+ 5.1",
+    "legacyFull": "Dolby Digital+ 5.1"
+  },
+  {
+    "name": "truehd",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "truehd",
+      "DisplayTitle": "Dolby TrueHD",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "TRUEHD 5.1",
+    "compact": "TRUEHD",
+    "legacyFull": "TRUEHD 5.1"
+  },
+  {
+    "name": "dts",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "dts",
+      "DisplayTitle": "DTS",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "DTS 5.1",
+    "compact": "DTS",
+    "legacyFull": "DTS 5.1"
+  },
+  {
+    "name": "dts-hd-ma",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "dts",
+      "DisplayTitle": "DTS-HD MA",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "DTS-HD MA 5.1",
+    "compact": "DTS-HD 5.1",
+    "legacyFull": "DTS 5.1"
+  },
+  {
+    "name": "dts-hd-ma-profile",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "dts",
+      "DisplayTitle": "",
+      "Profile": "DTS-HD MA",
+      "Channels": 6
+    },
+    "full": "DTS-HD MA 5.1",
+    "compact": "DTS-HD 5.1",
+    "legacyFull": "DTS 5.1"
+  },
+  {
+    "name": "dts-hd-hra",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "dts",
+      "DisplayTitle": "DTS-HD HRA",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "DTS-HD HRA 5.1",
+    "compact": "DTS-HD 5.1",
+    "legacyFull": "DTS 5.1"
+  },
+  {
+    "name": "dtsx",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "dts",
+      "DisplayTitle": "DTS:X",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "DTS-X 5.1",
+    "compact": "DTS-X",
+    "legacyFull": "DTS 5.1"
+  },
+  {
+    "name": "atmos",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "truehd",
+      "DisplayTitle": "Dolby Atmos",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "ATMOS 5.1",
+    "compact": "ATMOS",
+    "legacyFull": "ATMOS 5.1"
+  },
+  {
+    "name": "aac",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "aac",
+      "DisplayTitle": "AAC",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "5.1",
+    "compact": "5.1",
+    "legacyFull": "5.1"
+  },
+  {
+    "name": "flac",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "flac",
+      "DisplayTitle": "FLAC",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "5.1",
+    "compact": "5.1",
+    "legacyFull": "5.1"
+  },
+  {
+    "name": "opus",
+    "stream": {
+      "Type": "Audio",
+      "Codec": "opus",
+      "DisplayTitle": "Opus",
+      "Profile": "",
+      "Channels": 6
+    },
+    "full": "5.1",
+    "compact": "5.1",
+    "legacyFull": "5.1"
+  }
+]

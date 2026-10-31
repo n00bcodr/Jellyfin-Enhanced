@@ -21,7 +21,7 @@
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', 'SDR'];
     const specialFormatOrder = ['IMAX', '3D'];
     const codecOrder = ['AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA'];
-    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS', 'Dolby Digital+', '7.1', '5.1'];
+    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '5.1'];
 
     // showXxxTag = enable, xxxTagOrder = 1..N stack position.
     const CATEGORIES = [
@@ -61,6 +61,9 @@
         'IMAX': { bg: 'rgba(0, 114, 206, 0.9)', text: '#ffffff' },
         'ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
         'DTS-X': { bg: 'rgba(255, 100, 0, 0.9)', text: '#ffffff' },
+        'DTS-HD MA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
+        'DTS-HD HRA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
+        'Dolby Digital': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
         'DTS': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
         'Dolby Digital+': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
         'TRUEHD': { bg: 'rgba(76, 175, 80, 0.9)', text: '#ffffff' },
@@ -254,7 +257,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 3 && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 6 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -395,7 +398,7 @@
     function normalizeQualityLabel(label) {
         if (!label || typeof label !== 'string') return label;
 
-        const audioBases = ['Dolby Digital+', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS'];
+        const audioBases = ['Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS'];
         for (const base of audioBases) {
             if (label === base || label.startsWith(`${base} `)) {
                 return base;
@@ -483,6 +486,51 @@
     }
 
     // --- CORE LOGIC ---
+    // Reference: Radarr/Sonarr audio custom formats, TRaSH-Guides Audio Formats:
+    // https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats
+    // Stream aliases use the established chip vocabulary: both Atmos families → ATMOS,
+    // DTS-ES → DTS; FLAC/PCM/AAC/Opus/MP3 keep the channel-only fallback.
+    // HRA precedes generic DTS-HD; Plus/Atmos precede plain DD. Boundaries reject suffixes.
+    const AUDIO_ALIASES = [
+        [/(?:^|[^a-z0-9_])(?:atmos|ddpa)(?![a-z_])/, 'ATMOS'],
+        [/(?:^|[^a-z0-9_])true[ .-]?hd(?![a-z_])/, 'TRUEHD'],
+        [/(?:^|[^a-z0-9_])dts[-_.: ]?x7?(?![a-z_])(?![-_. ]?26[456])/, 'DTS-X'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:hra?|hi|high[ -]?resolution)(?![a-z_])/, 'DTS-HD HRA'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?(?:ma|hd(?:[-_. ]?ma)?|xll|master[ -]?audio)(?![a-z_])/, 'DTS-HD MA'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?es(?![a-z_])/, 'DTS'],
+        [/(?:^|[^a-z0-9_])dts(?![a-z_])/, 'DTS'],
+        [/(?:^|[^a-z0-9_])(?:ddp(?:lus)?|dd\+|e[-_. ]?ac-?3|dolby\s*digital(?:\s*plus|\s*\+))(?![a-z_])/, 'Dolby Digital+'],
+        [/(?:^|[^a-z0-9_])(?:dd(?!\s*\+)|dolby\s*digital(?!\s*(?:plus|\+)))(?![a-z_])|(?:^|[^a-z0-9_-])ac-?3(?![a-z_])/, 'Dolby Digital'],
+    ];
+
+    /**
+     * Match the most specific stream alias before its carrier codec.
+     * @param {string} text Display title or technical metadata.
+     * @returns {string|null} Canonical sound chip identity, before channels.
+     */
+    function audioCodecFromText(text) {
+        const value = String(text || '').toLowerCase();
+        return AUDIO_ALIASES.find(([pattern]) => pattern.test(value))?.[1] || null;
+    }
+
+    /**
+     * Keep first-recognized-title priority, enriching its carrier from the same track's
+     * profile; only use metadata-only tracks when no display title identifies a codec.
+     * @param {Object[]} streams Eligible audio tracks.
+     * @returns {string|null} Current codec label; legacy detection remains independent.
+     */
+    function detectCurrentAudioCodec(streams) {
+        for (const stream of streams) {
+            const title = audioCodecFromText(stream.DisplayTitle);
+            if (title) return audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title;
+        }
+        for (const stream of streams) {
+            const label = audioCodecFromText([stream.Codec, stream.Profile].filter(Boolean).join(' '));
+            if (label) return label;
+        }
+        return null;
+    }
+
     /**
      * Analyzes media stream and source information to determine quality tags.
      * @param {Array} mediaStreams - The MediaStreams array from the Jellyfin item.
@@ -753,70 +801,73 @@
             }
         }
 
+        // Version-0 documents retain the detector they already used.
+        const legacyAudio = legacyFullAudio();
         // --- AUDIO LOGIC ---
-        let audioTag = null;
-
-        for (let i = 0; i < audioStreams.length; i++) {
-            const stream = audioStreams[i];
-
-            // Priority 1: DisplayTitle Scan
-            const displayTitle = stream.DisplayTitle || '';
-
-            const atmosRegex = /atmos/i;
-            const truehd = /truehd/i;
-            const dtsxRegex = /dts-x/i;
-            const dtsRegex = /\bdts\b/i;
-            const ddpRegex = /dolby\s*digital\+/i;
-
-            const atmosMatch = displayTitle.match(atmosRegex);
-            const truehdMatch = displayTitle.match(truehd);
-            const dtsxMatch = displayTitle.match(dtsxRegex);
-            const dtsMatch = displayTitle.match(dtsRegex);
-            const ddpMatch = displayTitle.match(ddpRegex);
-
-            if (atmosMatch) {
-                audioTag = 'ATMOS';
-                break; // Stop all further audio checks
-            } else if (truehdMatch) {
-                audioTag = 'TRUEHD';
-                break;
-            } else if (dtsxMatch) {
-                audioTag = 'DTS-X';
-                break;
-            } else if (dtsMatch) {
-                audioTag = 'DTS';
-                break;
-            } else if (ddpMatch) {
-                audioTag = 'Dolby Digital+';
-                break;
-            }
-        }
-
-        if (!audioTag) {
-
-            // Priority 2: Technical Metadata Fallback
+        let audioTag = legacyAudio ? null : detectCurrentAudioCodec(audioStreams);
+        if (legacyAudio) {
             for (let i = 0; i < audioStreams.length; i++) {
                 const stream = audioStreams[i];
-                const codec = (stream.Codec || '').toLowerCase();
-                const profile = (stream.Profile || '').toLowerCase();
 
-                if (codec.includes('truehd') || profile.includes('truehd')) {
-                    if (codec.includes('atmos') || profile.includes('atmos')) {
-                        audioTag = 'ATMOS';
-                    } else {
-                        audioTag = 'TRUEHD';
-                    }
+                // Priority 1: DisplayTitle Scan
+                const displayTitle = stream.DisplayTitle || '';
+
+                const atmosRegex = /atmos/i;
+                const truehd = /truehd/i;
+                const dtsxRegex = /dts-x/i;
+                const dtsRegex = /\bdts\b/i;
+                const ddpRegex = /dolby\s*digital\+/i;
+
+                const atmosMatch = displayTitle.match(atmosRegex);
+                const truehdMatch = displayTitle.match(truehd);
+                const dtsxMatch = displayTitle.match(dtsxRegex);
+                const dtsMatch = displayTitle.match(dtsRegex);
+                const ddpMatch = displayTitle.match(ddpRegex);
+
+                if (atmosMatch) {
+                    audioTag = 'ATMOS';
+                    break; // Stop all further audio checks
+                } else if (truehdMatch) {
+                    audioTag = 'TRUEHD';
                     break;
-                } else if (codec.includes('dts')) {
-                    if (codec.includes('x') || profile.includes('x')) {
-                        audioTag = 'DTS-X';
-                    } else {
-                        audioTag = 'DTS';
-                    }
+                } else if (dtsxMatch) {
+                    audioTag = 'DTS-X';
                     break;
-                } else if (codec.includes('eac3') || codec.includes('ddp')) {
+                } else if (dtsMatch) {
+                    audioTag = 'DTS';
+                    break;
+                } else if (ddpMatch) {
                     audioTag = 'Dolby Digital+';
                     break;
+                }
+            }
+
+            if (!audioTag) {
+
+                // Priority 2: Technical Metadata Fallback
+                for (let i = 0; i < audioStreams.length; i++) {
+                    const stream = audioStreams[i];
+                    const codec = (stream.Codec || '').toLowerCase();
+                    const profile = (stream.Profile || '').toLowerCase();
+
+                    if (codec.includes('truehd') || profile.includes('truehd')) {
+                        if (codec.includes('atmos') || profile.includes('atmos')) {
+                            audioTag = 'ATMOS';
+                        } else {
+                            audioTag = 'TRUEHD';
+                        }
+                        break;
+                    } else if (codec.includes('dts')) {
+                        if (codec.includes('x') || profile.includes('x')) {
+                            audioTag = 'DTS-X';
+                        } else {
+                            audioTag = 'DTS';
+                        }
+                        break;
+                    } else if (codec.includes('eac3') || codec.includes('ddp')) {
+                        audioTag = 'Dolby Digital+';
+                        break;
+                    }
                 }
             }
         }
@@ -902,7 +953,8 @@
             for (const category of ['audio', 'videoCodec', 'dynamicRange']) {
                 if (!allValues(category)) continue;
                 for (const label of qualities) if (categorize(label) === category) qualities.delete(label);
-                let values = distinct.filter(value => value.Category === (category === 'audio' ? 'audioInfo' : category));
+                const facts = category === 'audio' && legacyAudio ? distinctQualities([], audioStreams) : distinct;
+                let values = facts.filter(value => value.Category === (category === 'audio' ? 'audioInfo' : category));
                 if (category === 'audio' && resolvePreferredAudioLanguage()) {
                     // The raw tracks already chose the language tier above, including
                     // unlabelled tracks. No labels in that tier means no sound chip.
@@ -983,15 +1035,15 @@
             : representative.filter(label => !['resolution', 'dynamicRange', 'videoCodec', 'audio'].includes(categorize(label)));
         const preferred = resolvePreferredAudioLanguage();
         const match = JE.core.mediaLanguage?.matchesLanguage;
-        const audioVariants = Object.entries(summary.AudioByLanguage || {});
-        const regionalFallbacks = Object.entries(summary.AudioRegionFallback || {});
+        const audioVariants = Object.entries((legacyFullAudio() ? summary.LegacyAudioByLanguage : summary.AudioByLanguage) || {});
+        const regionalFallbacks = Object.entries((legacyFullAudio() ? summary.LegacyAudioRegionFallback : summary.AudioRegionFallback) || {});
         const audio = preferred && typeof match === 'function'
             ? (audioVariants.find(([language]) => match(language, preferred, { requireRegion: true }))
                 || regionalFallbacks.find(([language]) => match(language, preferred))
                 || audioVariants.find(([language]) => !language.includes('-') && match(language, preferred)))?.[1] : null;
         let mixed = false;
         for (const [key, category] of Object.entries(summary.Categories || {})) {
-            const facts = key === 'audioInfo' && audio ? audio : category;
+            const facts = key === 'audioInfo' ? audio || (legacyFullAudio() ? summary.LegacyAudio : category) || {} : category;
             const cat = CATEGORY_BY_KEY.get(categoryKeys[key]);
             if (allValues(categoryKeys[key])) {
                 qualities.push(...((policy === 'latest' ? facts.LatestAll : policy === 'shared' ? facts.Shared : facts.All) || []));
@@ -1004,6 +1056,11 @@
         }
         if (policy === 'mixed' && summary.EpisodeCount > 1 && mixed) qualities.push('Mixed');
         return qualities;
+    }
+
+    /** @returns {boolean} Whether audio must retain version-0 presentation. */
+    function legacyFullAudio() {
+        return JE.core.tagLayout?.isLegacySettings() ?? true;
     }
 
     /**
@@ -1300,7 +1357,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 3, displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 6, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1336,7 +1393,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 3, displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 6, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

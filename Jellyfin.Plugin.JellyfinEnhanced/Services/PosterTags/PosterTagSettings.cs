@@ -41,7 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "10";
+        public const string ResolverVersion = "12";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -93,6 +93,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Static-friendly active layout; Caption, Summary and Minimal retain the Corners profile.</summary>
         public bool Bands { get; private init; }
         public bool CompactBands { get; private init; }
+
+        /// <summary>Preserve the original audio detector for version-0 documents.</summary>
+        public bool LegacyAudioFacts { get; private init; }
         public bool StatusTagsEnabled { get; private init; }
         public string StatusTagsPosition { get; private init; } = "top-right";
         public bool StatusJustAdded { get; private init; }
@@ -486,7 +489,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>The settings for a user document; <paramref name="itemLooks"/> keeps its per-item looks for <see cref="ForItem(string, string?)"/>.</summary>
-        private static PosterTagSettings Build(JellyfinEnhancedUserSettings user, PluginConfiguration config, string? jellyfinAudioLanguagePreference, bool itemLooks)
+        private static PosterTagSettings Build(JellyfinEnhancedUserSettings user, PluginConfiguration config, string? jellyfinAudioLanguagePreference, bool itemLooks, bool? legacyAudioFacts = null)
         {
 
             var preferredChoice = user.QualityTagsPreferredAudioLanguage ?? string.Empty;
@@ -499,6 +502,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 UseNativePosterTags = useNative,
                 Bands = layout.Bands,
                 CompactBands = layout.Bands && user.TagLabelDensity == "compact",
+                LegacyAudioFacts = legacyAudioFacts ?? TagLayoutRules.IsLegacy(user),
                 StatusTagsEnabled = user.StatusTagsEnabled,
                 StatusTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Status) ?? Position(user.StatusTagsPosition, config.StatusTagsPosition, "top-right"),
                 StatusJustAdded = user.StatusTagsJustAdded,
@@ -536,8 +540,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
                 RatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Rating) ?? Position(user.RatingTagsPosition, config.RatingTagsPosition, "bottom-right"),
                 AgeRatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.AgeRating) ?? Position(user.AgeRatingTagsPosition, config.AgeRatingTagsPosition, "bottom-right"),
-                TagScale = user.TagLayoutSettingsVersion < 1 ? "default" : TagLayoutRules.NormalizeScale(user.TagScale ?? config.TagScale),
-                TagGap = user.TagLayoutSettingsVersion < 1 ? "default" : TagLayoutRules.NormalizeGap(user.TagGap ?? config.TagGap),
+                TagScale = TagLayoutRules.IsLegacy(user) ? "default" : TagLayoutRules.NormalizeScale(user.TagScale ?? config.TagScale),
+                TagGap = TagLayoutRules.IsLegacy(user) ? "default" : TagLayoutRules.NormalizeGap(user.TagGap ?? config.TagGap),
                 LogoTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Logos) ?? Position(user.LogoTagsPosition, config.LogoTagsPosition, "bottom-left"),
                 CustomTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Custom) ?? Position(user.CustomTagsPosition, config.CustomTagsPosition, "top-left"),
                 OffGroups = layout.Off,
@@ -550,8 +554,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageStyle = LanguageTagDisplay.NormalizeStyle(user.LanguageTagsStyle),
                 LanguageCountBadge = LanguageTagDisplay.NormalizeCountBadge(user.LanguageTagsCountBadge),
                 RatingCap = layout.Cap("rating"),
-                AgeRatingCap = layout.Cap("ageRating"),
-                LogoCap = layout.Cap("logos"),
+                AgeRatingCap = 1,
+                LogoCap = LogoTagRules.Max(config.LogoTagsMaxLogos) == 1 ? 1 : layout.Cap("logos"),
                 CustomCap = layout.Cap("custom"),
                 ShowResolutionTag = user.ShowResolutionTag,
                 ShowSourceTag = user.ShowSourceTag,
@@ -603,7 +607,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowUserReviews = config.ShowUserReviews,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,
-                EdgeSpacing = user.TagLayoutSettingsVersion < 1
+                EdgeSpacing = TagLayoutRules.IsLegacy(user)
                     ? "default"
                     : TagLayoutRules.NormalizeEdgeSpacing(user.TagEdgeSpacing) ?? TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
                 Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both"
@@ -650,7 +654,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var user = _user;
             var config = _config;
             var audio = _audioPreference;
-            return _itemVariants.GetOrAdd(key, _ => Build(WithLook(user, look), config, audio, itemLooks: false));
+            return _itemVariants.GetOrAdd(key, _ => Build(WithLook(user, look), config, audio, itemLooks: false, legacyAudioFacts: LegacyAudioFacts));
         }
 
         /// <summary>The look an item has of its own (see <see cref="ForItem(string, string?)"/>), or null.</summary>
@@ -912,7 +916,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         private static NativeLayout ResolveLayout(JellyfinEnhancedUserSettings user, PluginConfiguration config)
         {
-            var legacy = user.TagLayoutSettingsVersion < 1;
+            var legacy = TagLayoutRules.IsLegacy(user);
             var bands = !legacy && TagLayoutRules.NormalizeLayout(user.TagLayout) == "bands";
             var corners = new Dictionary<PosterTagGroup, string>();
             var off = new HashSet<PosterTagGroup>();
@@ -1124,6 +1128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (Shows(PosterTagGroup.Quality))
             {
                 values["quality.position"] = QualityTagsPosition;
+                values["quality.legacyAudioFacts"] = Bool(LegacyAudioFacts);
                 values["quality.cap"] = Int(QualityCap);
                 values["quality.show.resolution"] = Bool(ShowResolutionTag);
                 values["quality.show.source"] = Bool(ShowSourceTag);

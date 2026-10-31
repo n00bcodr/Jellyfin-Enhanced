@@ -860,7 +860,7 @@ test('Layout defaults: tiles, density, order, limits, nine anchors and per-layou
   h.$('.je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]').click();
   await h.save();
   assert.deepEqual(plain(h.server.TagGroupCaps), { Genre: 4 });
-  assert.ok(h.$('.je-ta-lrow[data-group="status"] [data-act="cap"][data-dir="1"]').disabled);
+  assert.equal(h.$('.je-ta-lrow[data-group="status"] [data-act="cap"]'), null);
   // Corners: an anchor writes the old position setting; Hidden is the only stored corners entry.
   h.change(h.$('input[name="jeTaLayout"][value="corners"]'), true);
   h.$('.je-ta-lrow[data-group="genre"] .je-ta-anchor[data-slot="bc"]').click();
@@ -1631,4 +1631,21 @@ for (const result of ['failure', 'success', 'conflict-mine', 'conflict-theirs'])
   assert.deepEqual(h.server.TagLookItemOverrides.map(e => e.ItemId).sort(), result.endsWith('theirs') ? [A, C] : [C]);
   assert.ok(h.patches.every(p => Array.isArray(p.Changes.TagLookItemOverrides)), 'edits fold into the unacknowledged replacement');
   assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
+});
+
+for (const maximum of [1, 2]) test(`admin layout and Groups omit single-chip steppers with maximum ${maximum}`, async t => {
+  const h = setup(t, { config: { LogoTagsMaxLogos: maximum } });
+  await h.settle();
+  for (const group of ['status', 'ageRating', 'logos', 'quality', 'genre', 'language', 'rating', 'awards', 'custom']) {
+    const fixed = ['status', 'ageRating'].includes(group) || (group === 'logos' && maximum === 1);
+    assert.equal(!!h.$(`.je-ta-lrow[data-group="${group}"] [data-act="cap"]`), !fixed, group);
+  }
+});
+
+
+test('editing Genre cap carries stored single-chip limits through the admin layout editor', async t => {
+  const h = setup(t, { config: { TagGroupCaps: { Status: 9, AgeRating: 0, Genre: 2 } } });
+  h.$('.je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]').click();
+  await h.save();
+  assert.deepEqual(plain(h.server.TagGroupCaps), { Status: 9, AgeRating: 0, Genre: 3 });
 });

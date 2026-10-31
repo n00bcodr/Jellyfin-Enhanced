@@ -110,6 +110,57 @@ public class ApiMediaTagsPortableTests
     }
 
     [Fact]
+    public void UnrelatedUserSaveAndPortableRoundTripKeepSingleChipCaps()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, user, _) = Signed(f);
+        var id = user.ToString("N");
+        var source = new JellyfinEnhancedUserSettings { TagLayoutSettingsVersion = 1,
+            TagGroupCaps = new() { Status = 9, AgeRating = 0, Genre = 2 } };
+        f.Core.Manager.SaveUserConfiguration(id, "settings.json", source);
+        source.DisplayLanguage = "fr";
+        Assert.IsType<OkObjectResult>(controller.SaveUserSettingsSettings(id, source));
+        var saved = f.Core.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(id, "settings.json");
+        Assert.Equal(9, saved.TagGroupCaps!.Status);
+        Assert.Equal(0, saved.TagGroupCaps.AgeRating);
+        Assert.Equal(2, saved.TagGroupCaps.Genre);
+        var exported = Body(controller.ExportUserMediaTags(id));
+        Assert.Equal(9, (int)exported["settings"]!["TagGroupCaps"]!["Status"]!);
+        Assert.Equal(0, (int)exported["settings"]!["TagGroupCaps"]!["AgeRating"]!);
+        var preview = MediaTagsPortable.PreviewUser(Json(exported), new JellyfinEnhancedUserSettings());
+        Assert.Empty(preview.Skipped);
+        var target = JsonNode.Parse(JsonSerializer.Serialize(new JellyfinEnhancedUserSettings()))!.AsObject();
+        // Apply exactly the exported field values through the same import validator and save path.
+        foreach (var field in exported["settings"]!.AsObject()) target[field.Key] = field.Value?.DeepClone();
+        var imported = JsonSerializer.Deserialize<JellyfinEnhancedUserSettings>(target.ToJsonString())!;
+        Assert.True(MediaTagsPortable.TryNormalizeUser(imported, out var error), error);
+        Assert.True(JsonNode.DeepEquals(exported, MediaTagsPortable.ExportUser(imported)));
+    }
+
+    [Fact]
+    public void AdminExportImportAndGenreEditKeepStoredSingleChipCaps()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _, _) = Signed(f, true);
+        f.Plugin.Configuration.TagGroupCaps = new() { Status = 9, AgeRating = 0, Genre = 2 };
+        var exported = Body(controller.ExportAdminMediaTags());
+        var same = Body(controller.PreviewAdminMediaTags(Json(exported)));
+        Assert.Empty(same["skipped"]!.AsArray());
+        Assert.Empty(same["changes"]!.AsArray());
+        f.Plugin.Configuration.TagGroupCaps = null;
+        var preview = Body(controller.PreviewAdminMediaTags(Json(exported)));
+        Assert.Empty(preview["skipped"]!.AsArray());
+        var change = preview["changes"]!.AsArray().Single(c => (string?)c!["field"] == "TagGroupCaps")!;
+        Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new() { Changes = new() { ["TagGroupCaps"] = Json(change["to"]!) } }));
+        Assert.True(JsonNode.DeepEquals(exported, Body(controller.ExportAdminMediaTags())));
+        Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new() { Changes = new() {
+            ["TagGroupCaps"] = Json("{\"Status\":9,\"AgeRating\":0,\"Genre\":3}") } }));
+        Assert.Equal(9, f.Plugin.Configuration.TagGroupCaps!.Status);
+        Assert.Equal(0, f.Plugin.Configuration.TagGroupCaps.AgeRating);
+        Assert.Equal(3, f.Plugin.Configuration.TagGroupCaps.Genre);
+    }
+
+    [Fact]
     public void IntegratedQualityFieldsUseTheSameNormalisationAndPreviewContracts()
     {
         var values = new JellyfinEnhancedUserSettings

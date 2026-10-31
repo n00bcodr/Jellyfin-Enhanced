@@ -652,7 +652,7 @@ test('earlier queued settings saves cannot persist a priority edit that later fa
 });
 
 test('the Logos row precedes Custom by default, switches the group, offers All and previews a made-up logo', async t => {
-  const h = setup(t);
+  const h = setup(t, { plugin: { LogoTagsMaxLogos: 2 } });
   h.load('tags/logotags.js');
   const row = h.row('logos');
   assert.ok(row, 'the Logos row exists');
@@ -732,4 +732,13 @@ test('all nullable Quality choices preserve the loaded defaults across an admini
   assert.equal(later.JE.currentSettings.qualityAudioDisplayMode, 'highest');
   assert.equal(later.JE.currentSettings.qualityHideSdr, false);
   assert.equal(later.JE.currentSettings.seriesQualityAggregation, 'mixed', 'untouched policy follows new default');
+});
+
+for (const maximum of [1, 2]) test(`single-chip group controls are hidden for a logo maximum of ${maximum}`, t => {
+  const h = setup(t, { stored: { tagLayoutSettingsVersion: 1, tagGroupCaps: { status: 8, ageRating: 8, logos: 8 } }, plugin: { LogoTagsMaxLogos: maximum } });
+  for (const group of ['status', 'ageRating', 'logos', 'quality', 'genre', 'language', 'rating', 'awards', 'custom']) {
+    const fixed = ['status', 'ageRating'].includes(group) || (group === 'logos' && maximum === 1);
+    assert.equal(h.row(group).querySelector('[data-je-cap-control]').hidden, fixed, group);
+    if (fixed) assert.equal(h.row(group).querySelector('.je-tge-summary').textContent.includes('summary_up_to'), false, group);
+  }
 });

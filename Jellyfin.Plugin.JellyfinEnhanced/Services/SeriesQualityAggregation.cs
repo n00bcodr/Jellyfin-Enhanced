@@ -38,14 +38,14 @@ internal static class SeriesQualityAggregation
     }
     private static readonly ConditionalWeakTable<TagStreamData, Detected> Detection = new();
     private static List<string> Labels(TagStreamData? streams) => streams == null ? new() : Detection.GetValue(streams, data => new(data)).Labels;
-    private static string? Audio(TagStreamData? streams, string? language)
+    private static string? Audio(TagStreamData? streams, string? language, bool legacyAudio = false)
     {
         if (streams == null) return null;
         var detected = Detection.GetValue(streams, data => new(data));
         // With one audio language every preference selects those same tracks,
         // whether by exact match or fallback. Most episode files take this path.
-        var key = detected.SingleAudioLanguage ? "" : language ?? "";
-        return detected.Audio.GetOrAdd(key, code => new(QualityTagRules.DetectAggregationAudio(streams, code))).Label;
+        var key = (legacyAudio ? "legacy:" : "current:") + (detected.SingleAudioLanguage ? "" : language ?? "");
+        return detected.Audio.GetOrAdd(key, _ => new(QualityTagRules.DetectAggregationAudio(streams, language, legacyAudio))).Label;
     }
 
     internal sealed record Episode(string Id, long? Aired, TagStreamData? Streams, string? Source = null, string? Edition = null);
@@ -79,6 +79,11 @@ internal static class SeriesQualityAggregation
                 languages.Add(code);
             }
         }
+        TagQualityCategory AudioFacts(string? language, bool legacyAudio) => Summarize(
+            episodes.Select(e => Audio(e.Streams, language, legacyAudio)).ToArray(), QualityTagRules.AudioInfo, latest,
+            episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language, allSources: true, legacyAudio: legacyAudio)).ToArray());
+        var legacyByLanguage = languages.OrderBy(l => l, StringComparer.Ordinal).ToDictionary(l => l, l => AudioFacts(l, true), StringComparer.Ordinal);
+        var legacyRegionFallback = new Dictionary<string, TagQualityCategory>(StringComparer.Ordinal);
         var audio = new Dictionary<string, TagQualityCategory>(StringComparer.Ordinal);
         foreach (var language in languages.OrderBy(l => l, StringComparer.Ordinal))
         {
@@ -87,11 +92,15 @@ internal static class SeriesQualityAggregation
         }
         var regionFallback = new Dictionary<string, TagQualityCategory>(StringComparer.Ordinal);
         foreach (var language in languages.Where(code => !code.Contains('-') && languages.Any(variant => variant.StartsWith(code + "-", StringComparison.Ordinal))).OrderBy(code => code, StringComparer.Ordinal))
-            regionFallback[language] = Summarize(episodes.Select(e => Audio(e.Streams, language + "-ZZ")).ToArray(), QualityTagRules.AudioInfo, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language + "-ZZ", allSources: true)).ToArray());
+        {
+            regionFallback[language] = AudioFacts(language + "-ZZ", false);
+            legacyRegionFallback[language] = AudioFacts(language + "-ZZ", true);
+        }
         return new TagQualitySummary
         {
             NextPremiere = episodes.Select(e => e.Aired).Where(date => date > boundary).Min(),
             EpisodeCount = episodes.Count, Categories = categories, AudioByLanguage = audio, AudioRegionFallback = regionFallback,
+            LegacyAudio = AudioFacts(null, true), LegacyAudioByLanguage = legacyByLanguage, LegacyAudioRegionFallback = legacyRegionFallback,
             LatestExtras = latest < 0 ? Array.Empty<string>() : QualityTagRules.Detect(episodes[latest].Streams, null, episodes[latest].Source, episodes[latest].Edition).Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToArray(),
         };
     }
@@ -109,25 +118,28 @@ internal static class SeriesQualityAggregation
     };
 
     /// <summary>Resolve the same category facts the web reads, with exact-region then base-language audio matching.</summary>
-    public static IEnumerable<KeyValuePair<string, TagQualityCategory>> EffectiveCategories(TagQualitySummary summary, string? preferred)
+    public static IEnumerable<KeyValuePair<string, TagQualityCategory>> EffectiveCategories(TagQualitySummary summary, string? preferred, bool legacyAudio = false)
     {
-        var audio = summary.AudioByLanguage.FirstOrDefault(pair => LanguageFlagRules.MatchesLanguage(pair.Key, preferred, true)).Value;
+        var byLanguage = legacyAudio ? summary.LegacyAudioByLanguage : summary.AudioByLanguage;
+        var regionFallback = legacyAudio ? summary.LegacyAudioRegionFallback : summary.AudioRegionFallback;
+        var audio = byLanguage.FirstOrDefault(pair => LanguageFlagRules.MatchesLanguage(pair.Key, preferred, true)).Value;
         if (audio == null && LanguageFlagRules.Parse(preferred, out var wanted) && wanted.Region != null)
-            audio = summary.AudioRegionFallback.FirstOrDefault(pair => LanguageFlagRules.MatchesLanguage(pair.Key, preferred, false)).Value;
-        audio ??= summary.AudioByLanguage.FirstOrDefault(pair => LanguageFlagRules.MatchesLanguage(pair.Key, preferred, false)
+            audio = regionFallback.FirstOrDefault(pair => LanguageFlagRules.MatchesLanguage(pair.Key, preferred, false)).Value;
+        audio ??= byLanguage.FirstOrDefault(pair => LanguageFlagRules.MatchesLanguage(pair.Key, preferred, false)
             && LanguageFlagRules.Parse(pair.Key, out var tag) && tag.Region == null).Value;
+        audio ??= legacyAudio ? summary.LegacyAudio : summary.Categories.GetValueOrDefault(QualityTagRules.AudioInfo);
         return summary.Categories.Select(pair => pair.Key == QualityTagRules.AudioInfo && audio != null ? new KeyValuePair<string, TagQualityCategory>(pair.Key, audio) : pair);
     }
 
     /// <summary>Apply a policy while retaining representative source/format tags, except latest uses its own.</summary>
-    public static List<string> Resolve(TagCacheEntry entry, string policy, string? preferred, Func<string, bool>? shown = null, Func<string, bool>? all = null)
+    public static List<string> Resolve(TagCacheEntry entry, string policy, string? preferred, Func<string, bool>? shown = null, Func<string, bool>? all = null, bool legacyAudio = false)
     {
-        var representative = QualityTagRules.ApplyDisplayModes(entry.StreamData, QualityTagRules.Detect(entry.StreamData, preferred, entry.Source, entry.Edition), preferred, all);
+        var representative = QualityTagRules.ApplyDisplayModes(entry.StreamData, QualityTagRules.Detect(entry.StreamData, preferred, entry.Source, entry.Edition, legacyAudio), preferred, all, legacyAudio);
         if (entry.Type is not ("Series" or "Season") || entry.QualitySummary == null || Normalize(policy) == "representative") return representative;
         var summary = entry.QualitySummary;
         var result = policy == "latest" ? summary.LatestExtras.ToList() : representative.Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToList();
         var mixed = false;
-        foreach (var pair in EffectiveCategories(summary, preferred))
+        foreach (var pair in EffectiveCategories(summary, preferred, legacyAudio))
         {
             var category = pair.Value;
             if (all?.Invoke(pair.Key) == true)

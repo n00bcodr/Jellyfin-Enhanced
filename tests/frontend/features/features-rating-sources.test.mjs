@@ -79,7 +79,7 @@ test('every persistent tag entry schema matches the server constant, including I
   const server = readFileSync(`${jsRoot}/../Services/TagCacheService.cs`, 'utf8');
   const schema = server.match(/CurrentCacheSchemaVersion = (\d+);/)[1];
   for (const file of ['tags/tag-cache-store.js', 'tags/tag-pipeline.js']) {
-    assert.match(readFileSync(`${jsRoot}/${file}`, 'utf8'), new RegExp(`const (?:ENTRY_SCHEMA|STORED_ENTRY_SCHEMA) = ${schema};`));
+    assert.match(readFileSync(`${jsRoot}/${file}`, 'utf8'), new RegExp(`const (?:ENTRY_SCHEMA|STORED_ENTRY_SCHEMA) = (?:JE\\.tagCacheStore\\?\\.ENTRY_SCHEMA \\?\\? )?${schema};`));
   }
 });
 

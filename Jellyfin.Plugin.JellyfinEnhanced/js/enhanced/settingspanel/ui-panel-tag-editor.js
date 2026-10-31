@@ -106,7 +106,7 @@
      * @returns {number} 0 = all.
      */
     function capOf(conf, group) {
-        return GROUP_META[group].capFixed ? 1 : conf.caps[group];
+        return layoutApi().singleChipGroup(group) ? 1 : conf.caps[group];
     }
 
     /**
@@ -119,7 +119,7 @@
         const slot = conf.profiles[conf.layout][group];
         if (slot === 'off') return slotLabel(conf.layout, slot);
         const where = slotLabel(conf.layout, slot);
-        if (GROUP_META[group].capFixed) return where;
+        if (layoutApi().singleChipGroup(group)) return where;
         const cap = capOf(conf, group);
         const count = cap === 0
             ? JE.t('panel_settings_ui_tag_editor_summary_all')
@@ -184,7 +184,7 @@
     function stepperState(conf, group) {
         const meta = GROUP_META[group];
         const cap = capOf(conf, group);
-        if (meta.capFixed) return { text: '1', canDown: false, canUp: false };
+        if (layoutApi().singleChipGroup(group)) return { text: '1', canDown: false, canUp: false };
         return {
             text: cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap),
             canDown: stepCap(cap, -1, meta) !== null,
@@ -409,7 +409,7 @@
                         <div class="je-tge-label" aria-hidden="true">${escapeHtml(JE.t('panel_settings_ui_tag_editor_position'))}</div>
                         <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
                     </div>
-                    <div class="je-tge-field">
+                    <div class="je-tge-field" data-je-cap-control ${layoutApi().singleChipGroup(group) ? 'hidden' : ''}>
                         <div class="je-tge-label" id="jeTgeCapLabel-${group}">${escapeHtml(JE.t('panel_settings_ui_tag_editor_show_up_to'))}</div>
                         <div class="je-tge-stepper" role="group" aria-labelledby="jeTgeCapLabel-${group}">
                             <button type="button" class="je-tge-step" data-step="-1" ${step.canDown ? '' : 'disabled'} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_cap_decrease', { group: name }))}"><span class="material-icons" aria-hidden="true">remove</span></button>
@@ -555,7 +555,7 @@
      * @returns {number|null}
      */
     function nextCap(group, cap, dir) {
-        return stepCap(cap, dir, GROUP_META[group]);
+        return layoutApi().singleChipGroup(group) ? null : stepCap(cap, dir, GROUP_META[group]);
     }
 
     /**
@@ -637,11 +637,15 @@
         #jellyfin-enhanced-panel .je-tge-pills, #jellyfin-enhanced-panel .je-tge-includes, #jellyfin-enhanced-panel .je-tge-cats { display: flex; flex-wrap: wrap; gap: 6px; }
         #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 4px 12px; background: transparent; color: rgba(255,255,255,0.85); font: inherit; font-size: 12px; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-pill[aria-pressed="true"], #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:checked) { background: var(--je-tge-accent); border-color: var(--je-tge-accent); color: #fff; }
-        #jellyfin-enhanced-panel .je-tge-toggle-pill input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+        /* Keep the hidden focus target inside its scrolling pill, rather
+           than absolutely positioning it against the fixed dialog frame. */
+        #jellyfin-enhanced-panel .je-tge-toggle-pill { position: relative; }
+        #jellyfin-enhanced-panel .je-tge-toggle-pill input { position: absolute; top: 50%; left: 50%; opacity: 0; width: 1px; height: 1px; margin: 0; }
         #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-tge-cat { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; }
         #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 24px; height: 24px; padding: 0; justify-content: center; }
         #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn .material-icons { font-size: 14px; }
+        #jellyfin-enhanced-panel [data-je-cap-control][hidden] { display: none !important; }
         #jellyfin-enhanced-panel .je-tge-stepper { display: inline-flex; align-items: center; gap: 8px; }
         #jellyfin-enhanced-panel .je-tge-cap { min-width: 32px; text-align: center; font-weight: 600; }
         #jellyfin-enhanced-panel .je-tge-list-box { margin: 0; }
@@ -807,12 +811,18 @@
             const order = displayOrder(conf);
             const focusedRow = /** @type {HTMLElement|null} */ (document.activeElement)?.closest?.('.je-tge-row');
             const focused = focusedRow && list.contains(focusedRow) ? /** @type {HTMLElement} */ (document.activeElement) : null;
+            let previous = null;
             for (const group of order) {
                 const row = list.querySelector(`.je-tge-row[data-group="${group}"]`);
-                if (row && list.lastElementChild !== row) list.appendChild(row);
+                if (!row) continue;
+                const expected = previous ? previous.nextElementSibling : list.firstElementChild;
+                // Keep an unchanged row connected: moving a focused control's
+                // ancestor drops focus and can scroll the entire dialog frame.
+                if (row !== expected) list.insertBefore(row, expected);
+                previous = row;
             }
-            // appendChild moves the node, which drops its focus: put it back.
-            if (focused && document.activeElement !== focused && focused.isConnected) focused.focus();
+            // A real order change can detach the focused row: restore focus without scrolling.
+            if (focused && document.activeElement !== focused && focused.isConnected) focused.focus({ preventScroll: true });
             const rows = Array.from(list.querySelectorAll('.je-tge-row'));
             rows.forEach((row, index) => {
                 const group = /** @type {HTMLElement} */ (row).dataset.group || '';
@@ -824,6 +834,7 @@
                 pills.dataset.layout = conf.layout;
                 pills.innerHTML = pillsHtml(conf, group);
                 if (pillFocus) /** @type {HTMLElement|null} */ (pills.querySelector(`[data-slot="${pillFocus}"]`))?.focus();
+                row.querySelector('[data-je-cap-control]').hidden = layoutApi().singleChipGroup(group);
                 const step = stepperState(conf, group);
                 /** @type {HTMLElement} */ (row.querySelector('.je-tge-cap')).textContent = step.text;
                 /** @type {HTMLButtonElement} */ (row.querySelector('.je-tge-step[data-step="-1"]')).disabled = !step.canDown;

@@ -360,7 +360,7 @@
     function read(settings, plugin) {
         const s = settings || JE.currentSettings || {};
         const p = plugin || JE.pluginConfig || {};
-        const legacy = !(Number(s.tagLayoutSettingsVersion) >= 1);
+        const legacy = JE.core.tagLayout.isLegacySettings(s);
         const own = s.tagLookRules;
         const rules = Array.isArray(own) ? normalizeRules(own) : (legacy ? [] : normalizeRules(pick(p, 'tagLookRules')));
         return { rules, locks: normalizeLocks(s.tagLayoutLocks), overrides: normalizeItemOverrides(pick(p, 'tagLookItemOverrides')) };

@@ -23,6 +23,17 @@ var mode = args.Length > 0 ? args[0] : "resolve";
 var dataDir = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "data");
 var onlyProfile = args.Length > 2 ? args[2] : null;
 
+if (mode == "compact")
+{
+    var cases = JsonSerializer.Deserialize<string[][]>(File.ReadAllText(Path.Combine(dataDir, "compact-expected.json")))!;
+    var method = typeof(PosterTagResolver).Assembly.GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.QualityTagRules")!
+        .GetMethod("CompactLabel", BindingFlags.Static | BindingFlags.NonPublic)!;
+    foreach (var pair in cases)
+        if ((string)method.Invoke(null, new object[] { pair[0] })! != pair[1]) throw new Exception("Compact quality mismatch: " + pair[0]);
+    Console.WriteLine($"Compact vocabulary: {cases.Length} web/native fixtures match.");
+    return 0;
+}
+
 // Named float literals let synthetic entries carry non-finite ratings ("Infinity", "NaN"); the web's
 // Number() / parseFloat() read those strings as the same numbers.
 var serverJson = new JsonSerializerOptions

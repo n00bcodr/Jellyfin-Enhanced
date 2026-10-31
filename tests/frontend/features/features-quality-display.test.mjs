@@ -1,9 +1,10 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
 /** Real renderer, streams and summary, with only pipeline discovery stubbed. */
-function setup(t, policy = 'representative', density = 'full') {
+function setup(t, policy = 'representative', density = 'full', stored = null) {
   const renderers = new Map();
   const h = createHarness({ html: '<div class="card"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div></div><div class="cardText">Show</div></div></div>',
     JE: { t: key => ({ series_quality_mixed: 'Mixed', series_quality_mixed_compact: '±', quality_edition_extended: 'Extended' }[key] || key),
@@ -15,6 +16,11 @@ function setup(t, policy = 'representative', density = 'full') {
       tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (key, renderer) => renderers.set(key, { ...renderer, render: (el, item, extras = {}) => renderer.render(el, item, { stripRevision: 'none', ...extras }) }), clearProcessed() {}, scheduleScan() {} } } });
   t.after(() => h.close());
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/qualitytags.js']) h.load(file);
+  if (stored) {
+    h.window.localStorage.setItem('JellyfinEnhanced-qualityTagsCache:identity-owner', 's:a');
+    h.window.localStorage.setItem('JellyfinEnhanced-qualityTagsCache', JSON.stringify(stored));
+    h.JE.pluginConfig.EnableTagsLocalStorageFallback = true;
+  }
   h.JE.initializeQualityTags();
   const card = h.document.querySelector('.cardImageContainer');
   const render = (entry, id = 'series') => {
@@ -261,3 +267,94 @@ test('returning to details restores the remembered picker option and cancels an 
   await new Promise(resolve => h.window.setTimeout(resolve, 350));
   assert.equal(h.document.querySelector('.selectSource').value, 'first');
 });
+
+
+const audioCases = JSON.parse(readFileSync(new URL('../../fixtures/audio-stream-labels.json', import.meta.url)));
+for (const row of audioCases) for (const density of ['full', 'compact']) {
+  test(`stream-to-chip ${row.name} ${density} in Highest and All`, t => {
+    const h = setup(t, 'representative', density);
+    for (const qualityAudioDisplayMode of ['highest', 'all']) {
+      Object.assign(h.JE.currentSettings, { qualityAudioDisplayMode });
+      const entry = { Type: 'Movie', StreamData: { Streams: [row.stream], Sources: [] } };
+      assert.deepEqual(h.render(entry), [row[density]], qualityAudioDisplayMode);
+      h.JE.core.tagLayout.clearCard(h.card);
+      delete h.document.querySelector('.card').dataset.jeQualityTagged;
+      h.renderers.get('quality').render(h.card, { Id: 'batch-audio', Type: 'Movie', MediaStreams: [row.stream] });
+      assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), [row[density]], 'batch path');
+    }
+  });
+}
+
+for (const row of audioCases) test(`legacy Full stream labels stay unchanged for ${row.name}`, t => {
+  const h = setup(t);
+  h.JE.currentSettings.tagLayoutSettingsVersion = 0;
+  assert.deepEqual(h.render({ Type: 'Movie', StreamData: { Streams: [row.stream] } }), [row.legacyFull]);
+});
+
+const legacyDocuments = JSON.parse(readFileSync(new URL('../../fixtures/audio-legacy-documents.json', import.meta.url)));
+for (const row of legacyDocuments) test(`audio gate follows resolved layout version: ${row.name}`, t => {
+  const h = setup(t);
+  h.JE.currentSettings = Object.fromEntries(Object.entries(row.settings).map(([k, v]) => [k[0].toLowerCase() + k.slice(1), v]));
+  h.JE.currentSettings.qualityTagsPreferredAudioLanguage = 'none';
+  const layout = h.JE.core.tagLayout.normalizeSettings();
+  assert.equal(layout.density, row.density);
+  assert.deepEqual(h.render({ Type: 'Movie', StreamData: { Streams: [{ Type: 'Audio', Codec: 'ac3', Channels: 6 }] } }), [row.label]);
+});
+
+for (const density of [undefined, 'full', 'compact']) test(`version transition invalidates hot and server computed audio (${density ?? 'missing'})`, t => {
+  const h = setup(t), renderer = h.renderers.get('quality');
+  Object.assign(h.JE.currentSettings, { tagLayoutSettingsVersion: 0, tagLabelDensity: density });
+  const track = { Type: 'Audio', Codec: 'ac3', Channels: 6 }, item = { Id: 'transition', Type: 'Movie', MediaStreams: [track] };
+  const entry = { Type: 'Movie', StreamData: { Streams: [track] } };
+  renderer.render(h.card, item);
+  h.render(entry);
+  const clear = () => { h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged; };
+  Object.assign(h.JE.currentSettings, { tagLayoutSettingsVersion: 1, tagLabelDensity: 'full' });
+  clear();
+  assert.equal(renderer.renderFromCache(h.card, item.Id), false, 'legacy hot labels cannot become normalized labels');
+  assert.deepEqual(h.render(entry), ['Dolby Digital 5.1'], 'same server entry is re-detected');
+  clear(); renderer.render(h.card, item);
+  Object.assign(h.JE.currentSettings, { tagLayoutSettingsVersion: 0, tagLabelDensity: density });
+  clear(); assert.equal(renderer.renderFromCache(h.card, item.Id), false, 'reverse transition also misses');
+  assert.deepEqual(h.render(entry), ['5.1']);
+});
+
+for (const namingVersion of [3, 4, 5, 6]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
+  const payload = { namingVersion, legacyAudio: false, displayModeKey: '000', audioLang: '', srcId: '',
+    qualities: ['Dolby Digital 5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
+  const h = setup(t, 'representative', 'full', { old: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
+  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 6);
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 6 ? 1 : 0);
+});
+
+test('persisted current naming labels are still invalidated by a legacy-version transition', t => {
+  const payload = { namingVersion: 6, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
+    qualities: ['5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
+  const h = setup(t, 'representative', 'compact', { saved: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
+  h.JE.currentSettings.tagLayoutSettingsVersion = 0;
+  const renderer = h.renderers.get('quality');
+  assert.equal(renderer.renderFromCache(h.card, 'saved'), true);
+  h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged;
+  Object.assign(h.JE.currentSettings, { tagLayoutSettingsVersion: 1, tagLabelDensity: 'full' });
+  assert.equal(renderer.renderFromCache(h.card, 'saved'), false);
+});
+
+const audioAliases = JSON.parse(readFileSync(new URL('../../fixtures/audio-alias-labels.json', import.meta.url)));
+for (const row of audioAliases) for (const density of ['full', 'compact']) {
+  test(`TRaSH stream alias ${row.alias} (${row.format}) → ${density}`, t => {
+    const h = setup(t, 'representative', density);
+    const variants = row.stream ? [row.stream] : [
+      { DisplayTitle: row.alias }, { Codec: row.alias }, { Profile: row.alias },
+      { Codec: row.codec, DisplayTitle: row.alias }, { Codec: row.codec, Profile: row.alias },
+    ];
+    for (const fields of variants) for (const mode of ['highest', 'all']) {
+      h.JE.currentSettings.qualityAudioDisplayMode = mode;
+      const track = { Type: 'Audio', Channels: 6, ...fields };
+      const entry = { Type: 'Movie', StreamData: { Streams: [track] } };
+      assert.deepEqual(h.render(entry), [row[density]], JSON.stringify({ fields, mode }));
+      h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged;
+      h.renderers.get('quality').render(h.card, { Id: 'batch-alias', Type: 'Movie', MediaStreams: [track] });
+      assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(e => e.textContent), [row[density]], 'batch ' + JSON.stringify({ fields, mode }));
+    }
+  });
+}

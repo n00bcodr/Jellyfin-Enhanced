@@ -34,6 +34,22 @@ const synthetic = {
         video({ SourceId: 'first', Width: 1920, Height: 800, DisplayTitle: '' }), audio({ SourceId: 'first', Codec: 'ac3', Channels: 6, DisplayTitle: 'AC3 5.1' }),
         video({ SourceId: 'second', Width: 3840, Height: 1600, Codec: 'hevc', VideoRangeType: 'HDR10', DisplayTitle: '' }), audio({ SourceId: 'second', DisplayTitle: 'ATMOS 7.1', Channels: 8 }),
     ], [{ Id: 'first', Path: 'first.mkv', Source: 'WEB' }, { Id: 'second', Path: 'second.IMAX.mkv', Source: 'REMUX', Edition: 'IMAX' }]) }),
+    audio0: movie({ StreamData: sd([{"Type": "Audio", "Codec": "ac3", "DisplayTitle": "English - Dolby Digital 5.1", "Profile": "", "Channels": 6}]) }),
+    audio1: movie({ StreamData: sd([{"Type": "Audio", "Codec": "ac3", "DisplayTitle": "", "Profile": "", "Channels": 6}]) }),
+    audio2: movie({ StreamData: sd([{"Type": "Audio", "Codec": "", "DisplayTitle": "", "Profile": "Dolby Digital", "Channels": 6}]) }),
+    audio3: movie({ StreamData: sd([{"Type": "Audio", "Codec": "", "DisplayTitle": "Dolby Digital", "Profile": "", "Channels": 6}]) }),
+    audio4: movie({ StreamData: sd([{"Type": "Audio", "Codec": "eac3", "DisplayTitle": "English - Dolby Digital+ 5.1", "Profile": "", "Channels": 6}]) }),
+    audio5: movie({ StreamData: sd([{"Type": "Audio", "Codec": "eac3", "DisplayTitle": "", "Profile": "", "Channels": 6}]) }),
+    audio6: movie({ StreamData: sd([{"Type": "Audio", "Codec": "truehd", "DisplayTitle": "Dolby TrueHD", "Profile": "", "Channels": 6}]) }),
+    audio7: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS", "Profile": "", "Channels": 6}]) }),
+    audio8: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS-HD MA", "Profile": "", "Channels": 6}]) }),
+    audio9: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "", "Profile": "DTS-HD MA", "Channels": 6}]) }),
+    audio10: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS-HD HRA", "Profile": "", "Channels": 6}]) }),
+    audio11: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS:X", "Profile": "", "Channels": 6}]) }),
+    audio12: movie({ StreamData: sd([{"Type": "Audio", "Codec": "truehd", "DisplayTitle": "Dolby Atmos", "Profile": "", "Channels": 6}]) }),
+    audio13: movie({ StreamData: sd([{"Type": "Audio", "Codec": "aac", "DisplayTitle": "AAC", "Profile": "", "Channels": 6}]) }),
+    audio14: movie({ StreamData: sd([{"Type": "Audio", "Codec": "flac", "DisplayTitle": "FLAC", "Profile": "", "Channels": 6}]) }),
+    audio15: movie({ StreamData: sd([{"Type": "Audio", "Codec": "opus", "DisplayTitle": "Opus", "Profile": "", "Channels": 6}]) }),
     // Quality detection
     q01: movie({ StreamData: sd([video({ DisplayTitle: '4K HEVC Dolby Vision Profile 8', Codec: 'hevc', Height: 2160, VideoRangeType: 'DOVIWithHDR10' }), audio({ DisplayTitle: 'English - TrueHD Atmos 7.1', Codec: 'truehd', Channels: 8, ChannelLayout: '7.1' })]) }),
     q02: movie({ StreamData: sd([video({ DisplayTitle: '4K HEVC HDR10', Codec: 'hevc', Height: 1080, VideoRangeType: 'HDR10' }), audio({ DisplayTitle: 'DTS-HD MA 5.1', Codec: 'dts', Profile: 'DTS-HD MA', Channels: 6, ChannelLayout: '5.1(side)' })]) }), // falsely 4K
@@ -194,10 +210,20 @@ for (const type of ['Series', 'Season']) {
     const data = { Type: type, Source: 'WEB', Edition: 'Criterion', AudioLanguages: ['eng', 'jpn'], SubtitleLanguages: ['fra', 'eng'], Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92 },
         StreamData: sd([video(), audio()]), QualitySummary: { EpisodeCount: 2,
         Categories: { resolution: facts('4K', '720p', false), dynamicRange: facts('Dolby Vision', null, false), videoCodec: facts('AV1'), audioInfo: facts('ATMOS 7.1', 'DTS 5.1', false) },
-        AudioByLanguage: { de: facts('DTS 5.1') }, LatestExtras: ['IMAX', 'REMUX', 'edition:Extended'] } };
+        LegacyAudio: facts('ATMOS 7.1', 'DTS 5.1', false), LegacyAudioByLanguage: { de: facts('DTS 5.1') }, AudioByLanguage: { de: facts('DTS 5.1') }, LatestExtras: ['IMAX', 'REMUX', 'edition:Extended'] } };
     synthetic[`aggregate-${type.toLowerCase()}`] = data;
 }
 
+
+// Alias rows share Full/Compact expectations with both consumer suites.
+for (const [index, row] of JSON.parse(readFileSync(join(here, '../../fixtures/audio-alias-labels.json'), 'utf8')).entries()) {
+    synthetic[`audio-alias-title-${index}`] = movie({ StreamData: sd([row.stream || { Type: 'Audio', Channels: 6, DisplayTitle: row.alias }]) });
+    synthetic[`audio-alias-profile-${index}`] = movie({ StreamData: sd([row.stream || { Type: 'Audio', Channels: 6, Codec: row.codec, Profile: row.alias }]) });
+}
+
+// Shared audio regression summaries have independent version-0/current facts.
+for (const row of JSON.parse(readFileSync(join(here, '../../fixtures/audio-aggregation.json'), 'utf8')))
+    for (const type of ['Series', 'Season']) synthetic[`audio-aggregate-${row.name}-${type}`] = { ...row.entry, Type: type };
 
 // ISO display identity stays distinct from audio-equivalence grouping/counting.
 for (const code of ['tl', 'tgl', 'nb', 'nob', 'nn', 'nno', 'fil', 'srd', 'cmn']) {
@@ -237,7 +263,7 @@ for (const [key, entry] of Object.entries(synthetic)) {
 // stay on those (Corners with full labels); see the item-looks profiles below.
 const LOOK = Object.fromEntries(['movieLock', 'movieItemLook', 'movieBoth', 'series', 'seriesEpisode', 'seriesPoster', 'seriesPosterEpisode'].map((key, i) => [key, `00000000000000000000000000000f${(i + 1).toString(16).padStart(2, '0')}`]));
 const lookEntries = {
-    [LOOK.movieLock]: movie({ Genres: ['Drama', 'Comedy', 'Family'], AudioLanguages: ['eng', 'fra', 'deu'] }),
+    [LOOK.movieLock]: movie({ Genres: ['Drama', 'Comedy', 'Family'], AudioLanguages: ['eng', 'fra', 'deu'], StreamData: sd([video(), audio({ Codec: 'ac3', Channels: 6, DisplayTitle: 'AC-3 5.1' })]) }),
     [LOOK.movieItemLook]: movie({ Genres: ['Drama', 'Comedy'] }),
     [LOOK.movieBoth]: movie({ Genres: ['Animation'] }),
     [LOOK.series]: { Type: 'Series', TmdbId: '3000', Genres: ['Drama'], CommunityRating: 8.2, OfficialRating: 'TV-14', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]) },
@@ -304,6 +330,11 @@ const synthLooks = (name, settingsRaw, pluginOverrides) =>
 synthLooks('item-looks', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks });
 synthLooks('item-looks-bands-default', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact', TagEdgeSpacing: 'tight', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks });
 synthLooks('item-looks-legacy', { ...allOn, GenreTagsPosition: 'bottom-left', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks, TagGroupCaps: { Genre: 5, Language: 1 }, TagScale: 'largest', TagEdgeSpacing: 'flush' });
+for (const version of [0, 1]) synthLooks(`item-looks-flush-single-${version}`, {
+    ...allOn, TagLayoutSettingsVersion: version, LogoTagsEnabled: true,
+    TagLayoutLocks: { [LOOK.movieLock]: { Layout: 'corners', Density: 'compact', EdgeSpacing: 'flush', Caps: { Status: 9, AgeRating: 0, Logos: 8 }, LockedAt: 9 } },
+}, { LogoTagsMaxLogos: 1, TagLookItemOverrides: [{ ItemId: LOOK.movieItemLook, Layout: 'corners', Density: 'compact', EdgeSpacing: 'flush', Caps: { Status: 0, AgeRating: 9, Logos: 8 }, LockedAt: 8 }] });
+
 
 for (const layout of ['caption', 'summary', 'minimal']) {
     const slots = [{ Group: 'quality', Slot: 'off' }, { Group: 'genre', Slot: 'off' }, { Group: 'rating', Slot: 'off' }];
@@ -343,6 +374,13 @@ for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed']) {
     synth('aggregate-' + policy, { QualityTagsEnabled: true, SeriesQualityAggregation: policy });
     synth('aggregate-' + policy + '-de', { QualityTagsEnabled: true, SeriesQualityAggregation: policy, QualityTagsPreferredAudioLanguage: 'de' });
 }
+for (const version of [0, 1]) for (const mode of ['highest', 'all'])
+    for (const policy of ['best', 'latest', 'shared', 'mixed']) for (const language of ['none', 'eng', 'en-US', 'en-GB', 'de', 'fra'])
+        synth(`audio-aggregate-v${version}-${mode}-${policy}-${language}`, { QualityTagsEnabled: true,
+            TagLayoutSettingsVersion: version, QualityAudioDisplayMode: mode, SeriesQualityAggregation: policy,
+            QualityTagsPreferredAudioLanguage: language });
+for (const row of JSON.parse(readFileSync(join(here, '../../fixtures/audio-legacy-documents.json'), 'utf8')))
+    synth(`audio-gate-${row.name}`, row.settings);
 // Display modes independently, inherited defaults, native caps/density and all container policies.
 const displayAll = { QualityTagsEnabled: true, QualityAudioDisplayMode: 'all', QualityVideoCodecDisplayMode: 'all', QualityHdrDisplayMode: 'all' };
 for (const field of ['QualityAudioDisplayMode', 'QualityVideoCodecDisplayMode', 'QualityHdrDisplayMode'])
@@ -354,6 +392,8 @@ synth('display-all-admin', { QualityTagsEnabled: true }, displayAll);
 synth('display-user-highest', { QualityTagsEnabled: true, QualityAudioDisplayMode: 'highest', QualityVideoCodecDisplayMode: 'highest', QualityHdrDisplayMode: 'highest' }, displayAll);
 for (const minimum of ['off', '720p', '1080p', '4k'])
     synth('display-minimum-' + minimum, { ...displayAll, QualityMinimumResolution: minimum, QualityHideSdr: true });
+for (const max of [1, 2]) synth(`single-chip-caps-${max}`, { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1,
+    TagGroupCaps: { Status: 9, AgeRating: 0, Genre: 2, Logos: 9 } }, { LogoTagsMaxLogos: max });
 synth('display-compact-cap', { ...displayAll, TagLayout: 'bands', TagLabelDensity: 'compact', TagLayoutSettingsVersion: 1, TagGroupCaps: { Quality: 3 } });
 synth('aggregate-admin-default', { QualityTagsEnabled: true }, { SeriesQualityAggregation: 'best' });
 for (const policy of ['latest', 'mixed']) {

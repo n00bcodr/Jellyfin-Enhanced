@@ -171,7 +171,7 @@ An enabled shape override has its own **Tag size** and **Gap** selectors. **Same
 | **Tight** | 3px | |
 | **Flush** | 0px | Tags touch the edge, like a tab hanging off the poster: the chip corners against an edge are square, and a tag in a corner follows the poster's own rounded corner. Nothing is drawn outside the poster |
 
-The gap below Jellyfin's played or unplayed-count indicator, the room kept above the progress bar for bottom-centre tags, and the space the centre anchors leave between corner stacks all follow the chosen spacing. The other layouts have their own spacing and ignore it. Native Poster Tags use the selected inset in Corners; Bands retains its own 6px inset, including for overflow chips. Edge spacing applies to every Corners card, including shape overrides; size and gap may be overridden independently for each shape.
+Flush chips have no visible border or shadow on the sides touching an edge; inward borders and shadows remain. Top-centre tabs meet `top: 0` with square top corners, and bottom-centre tabs meet `bottom: 0` with square bottom corners. If a progress bar is present, bottom centre meets its top edge without a gap. Top centre first narrows to the gap between corner indicators and moves below them only when that gap cannot fit its first chip. Tight and Default retain their existing indicator and progress gaps. The other layouts have their own spacing and ignore it. Native Poster Tags use the selected inset in Corners; Bands retains its own 6px inset, including for overflow chips. Edge spacing applies to every Corners card, including shape overrides; size and gap may be overridden independently for each shape.
 
 !!! note "Flush and rounded posters"
     Flush tags are clipped to the poster's rounded corners rather than being given a radius of their own, so a corner tag takes exactly the curve your theme gives the poster.
@@ -218,16 +218,28 @@ The limit applies after each group's own filtering (quality categories, language
 | Setting | Default | What it does |
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
-| Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
+| Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital 5.1` → `DD 5.1`, `Dolby Digital+ 5.1` → `DD+ 5.1`) and hides the critic score when a community score is shown |
 | **Tag Groups** order | Status, quality, rating, age rating, language, genre, awards, logos, custom | Priority order of the groups |
-| **Show up to** | Genre 3, language 3, age rating 1, status 1, awards 2, custom 3, quality, rating and logos all | The same limits as before layouts existed; logos are limited by the administrator's **Logos per title** |
+| **Show up to** | Genre 3, language 3, awards 2, custom 3; quality, rating and two-logo groups all | Hidden for single-chip Status and Age rating, and for Logos when **Logos per title** is 1; these groups always cap at 1 |
 | **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
+Compact quality vocabulary is shared by web and native rendering. The canonical Full label remains the colour identity; normalized layouts detect AC-3 and DTS-HD explicitly. Audio aliases follow the [TRaSH-Guides Audio Formats](https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats) vocabulary, adapted from release names to stream titles, codecs and profiles: Atmos and Plus forms win before plain DD, and DTS-HD before DTS. E-AC-3, EAC3, DDP, DD+ and Dolby Digital Plus share the DD+ identity.
+
+| Full label (optional channel suffix) | Compact |
+|---|---|
+| Dolby Digital / Dolby Digital+ | DD / DD+ (keeps channels, for example DD+ 5.1) |
+| DTS-HD MA / DTS-HD HRA | DTS-HD (keeps channels) |
+| TRUEHD / ATMOS / DTS-X / DTS (including DTS-ES) | Keeps the canonical codec name; drops channels |
+| AAC / FLAC / PCM / Opus / MP3 | Channel-only fallback: 5.1 or 7.1; stereo has no sound chip |
+| Dolby Vision / HDR10+ / BluRay | DV / HDR+ / BD |
+
+Other emitted video codec labels (AV1, HEVC, H265, VP9, H264, VP8, XVID, DIVX, WMV, MPEG2, MPEG4, MJPEG, THEORA) are already short and remain unchanged.
+
 The four default corners keep their original appearance. Top and bottom centre wrap chips into centred rows (up to two); left and right centre stack chips vertically. Centre rows reserve the width occupied by corner groups; side columns reserve the height of their neighbouring corner stacks. Chips that are too wide or tall are hidden whole and counted in a **+N** chip, which names the hidden tags on hover or focus. Group limits apply before fitting.
 
-Top-right groups move below Jellyfin's watched or unplayed-count indicator. Top centre reserves space for side indicators and moves below any top-centre Jellyfin indicator; bottom centre clears a card's progress bar when present. People Tags have their own cast-card layout and no position.
+Top-right groups move below Jellyfin's watched or unplayed-count indicator. Top centre reserves space for side indicators; in Flush it stays on the edge while the first chip fits that gap, and falls below indicators only when needed. Default and Tight keep their existing clearance. Bottom centre clears a card's progress bar; Flush meets the bar's top edge. People Tags have their own cast-card layout and no position.
 
 At the left and right centre anchors, genre names appear toward the inside of the card on hover.
 
@@ -420,7 +432,7 @@ Administrators configure the same defaults on the Media Tags settings page under
     | Special format | `IMAX`, `3D` |
     | Video codec | `AV1`, `HEVC`, `H265`, `VP9`, `H264`, `VP8`, `XVID`, `DIVX`, `WMV`, `MPEG2`, `MPEG4`, `MJPEG`, `THEORA` |
     | Edition | `Director's Cut`, `Extended`, `Unrated`, `Theatrical`, `IMAX`, `Remastered`, `Criterion`, `Uncut`, `Final Cut`, `Special Edition`, or a custom `{edition-…}` label |
-    | Sound | `ATMOS`, `DTS-X`, `TRUEHD`, `DTS`, `Dolby Digital+`, `7.1`, `5.1`; codec labels can include channels, such as `ATMOS 7.1` |
+    | Sound | `ATMOS`, `DTS-X`, `TRUEHD`, `DTS-HD MA`, `DTS-HD HRA`, `DTS`, `Dolby Digital+`, `Dolby Digital`, `7.1`, `5.1`; codec labels can include channels, such as `Dolby Digital 5.1` |
 
 ![File and folder naming source and edition tags in the jetest movie grid](../images/tags/source-edition-desktop.webp)
 
@@ -496,7 +508,7 @@ The policy covers each series' episodes or each season's own episodes, including
 
 Missing streams count as unknown: a known/unknown difference suppresses that category in shared mode and marks mixed mode. Empty containers show no mixed marker. Collections keep their existing behavior and normally have no quality badges. Older cache entries without a summary fall back to representative streams until rebuilt.
 
-The server stores policy-independent summaries, so changing the policy does not need another episode fetch. Access-restricted users receive summaries recomputed from the episodes they can see, using the existing access/filter revision. The batch fallback and Native Poster Tags honor the same policy. Quality category switches, ordering, layout limits, label density and Tag Styles still apply; **Mixed** is an editable quality label in Tag Styles.
+The server stores policy-independent summaries with both legacy and current sound facts, so changing the policy does not need another episode fetch. Version-0 accounts retain their previous audio vocabulary under every policy, sound display mode and language preference; normalized accounts use the current codec labels. Access-restricted users receive summaries recomputed from the episodes they can see, using the existing access/filter revision. The batch fallback and Native Poster Tags honor the same policy. Quality category switches, ordering, layout limits, label density and Tag Styles still apply; **Mixed** is an editable quality label in Tag Styles.
 
 ![Quality settings with the series and season aggregation selector](../images/tags/quality-aggregation-hub.webp)
 
@@ -529,7 +541,7 @@ The server stores policy-independent summaries, so changing the policy does not 
 
     **Sound:** JE takes the first recognized candidate display title, then checks technical metadata if no title matched. It detects channels separately. It does not rank every track by richness, despite the **No preference (best track overall)** option wording. Standalone channel fallback produces `5.1` or `7.1`; `2.0` can be appended to a recognized codec.
 
-    A sound-language preference tries language plus region, then the base language, then all tracks if no match exists. For example, selecting a German AC3 5.1 dub can replace an English Atmos badge with `5.1`; the detector does not emit `AC3` as a codec label. These choices change the badge, not the audio selected for playback.
+    A sound-language preference tries language plus region, then the base language, then all tracks if no match exists. For example, selecting a German AC3 5.1 dub replaces an English Atmos badge with `Dolby Digital 5.1` (`DD 5.1` in Compact); a version-0 account keeps its earlier `5.1` label. The detector does not emit `AC3` as a codec label. These choices change the badge, not the audio selected for playback.
 
 ## Genre Tags
 
@@ -1345,3 +1357,11 @@ Styles change colours, not size, shape, position or visibility. For web layout, 
 Other integrations have separate badge systems: see [Seerr](../seerr/seerr-features.md) for request/availability/provider badges and [*arr](../arr/arr-features.md) for service status and synchronized tag links. Those are configured independently of these poster groups.
 
 `LeavingSoonMaintainerrApiKey` is explicitly excluded from both user and administrator portable exports/imports, public/private configuration and runtime snapshots. The Status badges page uses a write-only password input: stored keys are never populated, compared or returned by its patch response; an unchanged blank field keeps the key. The administrator-only core Jellyfin plugin configuration API retains its normal credential-editing contract. Source URLs, collection names and cadence are administrator settings; private collection provenance never reaches tag clients.
+
+**Show up to** appears only for groups that can show multiple chips. Status (including Leaving soon and direct play) and Age rating always have a limit of one. Logos hides the control when the administrator permits only one logo, and shows it when the maximum is two. Saved higher limits cannot increase these single-chip groups. The hub and administrator Layout defaults / Groups panels follow the same rule.
+
+Native Flush uses the same touching-edge treatment and centre-row indicator fallback. A native image request does not provide the app's progress-bar geometry; callers with known geometry can supply it to the layout planner. Native apps drawing their own progress overlays still control that placement.
+
+AC-3 tracks now produce **Dolby Digital 5.1** in Full and **DD 5.1** in Compact (E-AC-3 uses **Dolby Digital+ 5.1** / **DD+ 5.1**). DTS-HD Master Audio and High Resolution remain distinct Full facts (**DTS-HD MA** / **DTS-HD HRA**) and both shorten to **DTS-HD**, retaining channels. Dolby TrueHD, Dolby Atmos and DTS:X stream aliases resolve to the established **TRUEHD**, **ATMOS** and **DTS-X** facts. The formatter also accepts their long names from portable or older cached labels; those aliases are not the detector’s canonical output. AAC, FLAC and Opus keep the existing channel-only fallback.
+
+Existing version-0 Full layouts keep their previous audio labels until a layout setting is saved. This preserves their appearance; normalized layouts and Compact presentation use the codec facts above.

@@ -167,7 +167,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private static bool HasTopRightOffset(List<PosterTagGroupLayout> groups, PosterTagSettings settings, PosterTagItemContext context)
         {
             if (!ShowsPlayedIndicator(context)) return false;
-            if (settings.Bands) return true;
+            if (settings.Bands || (settings.EdgeInset == 0 && groups.Any(g => g.Corner == PosterTagCorner.TopCenter))) return true;
             foreach (var group in groups)
             {
                 if (string.Equals(settings.PositionOf(group.Group), "top-right", StringComparison.Ordinal)) return true;
@@ -178,7 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private static PosterTagGroupLayout? ResolveQuality(TagCacheEntry entry, PosterTagSettings settings)
         {
-            var labels = SeriesQualityAggregation.Resolve(entry, settings.SeriesQualityAggregation, settings.PreferredAudioLanguage, settings.IsQualityCategoryShown, settings.AllQualityValues);
+            var labels = SeriesQualityAggregation.Resolve(entry, settings.SeriesQualityAggregation, settings.PreferredAudioLanguage, settings.IsQualityCategoryShown, settings.AllQualityValues, settings.LegacyAudioFacts);
             if (labels.Count == 0) return null;
             var tags = QualityTagRules.Arrange(labels, settings);
             if (tags.Count == 0) return null;
@@ -231,11 +231,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The web's compact quality labels, retaining the full label for colour identity.</summary>
         private static string CompactQuality(string label)
         {
-            var exact = label switch { "Dolby Vision" => "DV", "HDR10+" => "HDR+", "Dolby Digital+" => "DD+", "BluRay" => "BD",
+            var exact = label switch {
                 "Director's Cut" => "DC", "Extended" => "Ext", "Unrated" => "Unr", "Remastered" => "Rem", "Criterion" => "CC", "Special Edition" => "Special", "Mixed" => "±", _ => null };
-            if (exact != null) return exact;
-            var audio = Regex.Match(label, @"^(ATMOS|DTS-X|TRUEHD|DTS|Dolby Digital\+) (\d+\.\d+)$", RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(50));
-            return audio.Success ? audio.Groups[audio.Groups[1].Value == "Dolby Digital+" ? 2 : 1].Value : label;
+            return exact ?? QualityTagRules.CompactLabel(label);
         }
 
         private static int IndexOf(IReadOnlyList<PosterTagGroup> order, PosterTagGroup group)

@@ -57,7 +57,7 @@ test('group and label rules cover every chip group, status and language included
   assert.match(css, /\.quality-overlay-label\[data-quality="4K"\] \{ background: rgba\(255, 0, 0, 1\) !important;color: rgba\(0, 0, 255, 1\) !important; \}/);
   assert.match(css, /\.age-rating-tag\[rating="PG-13"\], \.age-rating-overlay-container \.age-rating-tag\[rating="TV-14"\] \{ background-color: rgba\(1, 2, 3, 1\)/);
   assert.match(css, /\.age-rating-overlay-container\.age-rating-overlay-container \.age-rating-tag \{ background-color: rgba\(9, 9, 9, 1\)/);
-  assert.match(css, /\.rating-tag-tmdb \{ color: rgba\(255, 209, 102, 1\) !important;outline: 1px solid rgba\(255, 255, 255, 0\.35\) !important; outline-offset: -1px !important; \}/,
+  assert.match(css, /\.rating-tag-tmdb \{ color: rgba\(255, 209, 102, 1\) !important;outline: 1px solid rgba\(255, 255, 255, 0\.35\) !important; outline-offset: -1px !important;[^}]*\}/,
     'rating chips take the border as an inner ring');
   assert.match(css, /\.rating-tag-tmdb \.rating-star-icon \{ color: rgba\(255, 209, 102, 1\)/);
   assert.match(css, /\.rating-tag-userreview \.je-userreview-icon \{ color: rgba\(1, 1, 1, 1\)/);

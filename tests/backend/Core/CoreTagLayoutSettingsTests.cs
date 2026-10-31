@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Xml.Serialization;
@@ -17,6 +18,25 @@ public class CoreTagLayoutSettingsTests
 
     private static TagLayoutProfile Profile(params (string Group, string Slot)[] entries) =>
         new() { Groups = entries.Select(e => new TagLayoutGroupSlot { Group = e.Group, Slot = e.Slot }).ToList() };
+
+    [Fact]
+    public void SingleChipCapsPreserveStoredValuesAndOnlyLimitPresentation()
+    {
+        var caps = TagLayoutRules.NormalizeCaps(new TagGroupCaps { Status = 9, AgeRating = 0, Logos = 10, Quality = 8 })!;
+        Assert.Equal(9, caps.Status);
+        Assert.Equal(0, caps.AgeRating);
+        Assert.Equal(10, caps.Logos);
+        Assert.Equal(8, caps.Quality);
+        Assert.Equal(10, TagLayoutRules.NormalizeCaps(new TagGroupCaps { Logos = 10 })!.Logos);
+        foreach (var max in new[] { 1, 2 })
+        {
+            var settings = PosterTagSettings.FromUserSettings(new() { TagLayoutSettingsVersion = 1,
+                TagGroupCaps = new() { Status = 9, AgeRating = 9, Logos = 9 } }, new() { LogoTagsMaxLogos = max }, null);
+            Assert.Equal(1, settings.CapOf(PosterTagGroup.Status));
+            Assert.Equal(1, settings.CapOf(PosterTagGroup.AgeRating));
+            Assert.Equal(max == 1 ? 1 : 9, settings.CapOf(PosterTagGroup.Logos));
+        }
+    }
 
     [Fact]
     public void NewDocumentsAreLegacyCornersWithInheritedLayoutValues()

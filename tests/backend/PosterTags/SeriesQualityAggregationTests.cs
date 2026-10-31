@@ -151,7 +151,7 @@ public class SeriesQualityAggregationTests
         Directory.CreateDirectory(f.Core.ConfigRoot);
         var path = Path.Combine(f.Core.ConfigRoot, "tag-cache.json");
         var items = new Dictionary<string, TagCacheEntry> { [Guid.NewGuid().ToString("N")] = new() { Type = "Series", QualitySummary = SeriesQualityAggregation.Build([Fact(2160, 1)]) } };
-        foreach (var schema in new[] { 9, 13, 14, 15, 16, 17, 18, 19, 20, TagCacheService.CurrentCacheSchemaVersion })
+        foreach (var schema in new[] { 9, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, TagCacheService.CurrentCacheSchemaVersion })
         {
             File.WriteAllText(path, JsonSerializer.Serialize(new { SchemaVersion = schema, Version = 1, LastModified = 10, Items = items }));
             using var cache = new TagCacheService(Mock.Of<ILibraryManager>(), f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
@@ -181,6 +181,34 @@ public class SeriesQualityAggregationTests
         Assert.Equal("4K", summary.Categories["resolution"].Best);
         Assert.Equal("Dolby Vision", summary.Categories["dynamicRange"].Best);
         Assert.Equal("HEVC", summary.Categories["videoCodec"].Best);
+    }
+
+    [Fact]
+    public void AggregatedAudioUsesTheCallerGateForEveryPolicyModeAndLanguageInBothContainers()
+    {
+        using var fixture = typeof(SeriesQualityAggregationTests).Assembly.GetManifestResourceStream("AudioAggregation.json")!;
+        using var cases = JsonDocument.Parse(fixture);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        {
+            var episodes = row.GetProperty("episodes").EnumerateArray().Select(ep => new SeriesQualityAggregation.Episode(
+                ep.GetProperty("Id").GetString()!, ep.GetProperty("Aired").GetInt64(), JsonSerializer.Deserialize<TagStreamData>(ep.GetProperty("Streams")))).ToArray();
+            var summary = SeriesQualityAggregation.Build(episodes, 100);
+            foreach (var expected in row.GetProperty("expected").EnumerateArray())
+            foreach (var type in new[] { "Series", "Season" })
+            foreach (var density in expected.GetProperty("legacy").GetBoolean() ? new string?[] { null, "full", "compact" } : new[] { "full" })
+            {
+                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLabelDensity = density ?? "full",
+                    TagLayoutSettingsVersion = expected.GetProperty("legacy").GetBoolean() ? 0 : 1,
+                    SeriesQualityAggregation = expected.GetProperty("policy").GetString()!,
+                    QualityAudioDisplayMode = expected.GetProperty("mode").GetString(),
+                    QualityTagsPreferredAudioLanguage = expected.GetProperty("preferred").GetString()! }, new(), null);
+                var entry = new TagCacheEntry { Type = type, StreamData = episodes[0].Streams, QualitySummary = summary };
+                var labels = PosterTagResolver.Resolve(entry, settings, new(type, false, null, null, null), false)?
+                    .Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.DisplayText ?? tag.Label) ?? [];
+                Assert.Equal(expected.GetProperty("labels").EnumerateArray().Select(label => label.GetString()), labels);
+            }
+            Assert.True(TagQualitySummary.ContentEquals(summary, JsonSerializer.Deserialize<TagQualitySummary>(row.GetProperty("entry").GetProperty("QualitySummary"))), JsonSerializer.Serialize(summary));
+        }
     }
 
     private sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode

@@ -88,6 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         public bool IsLeft => Corner is PosterTagCorner.TopLeft or PosterTagCorner.BottomLeft;
     }
 
+    [Flags]
+    internal enum FlushEdges { None = 0, Left = 1, Top = 2, Right = 4, Bottom = 8 }
+
     /// <summary>One chip, circle or flag: its border box in card CSS px plus what was measured to size it.</summary>
     internal sealed class PlannedItem
     {
@@ -128,6 +131,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         /// <summary>A whole chip omitted when a centre anchor has no room.</summary>
         public bool Hidden { get; set; }
+
+        public FlushEdges FlushEdges { get; set; }
     }
 
     /// <summary>
@@ -179,7 +184,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 return new PosterTagPlan(imageWidth, imageHeight, css, bandGroups, bands);
             }
             Place(groups, css, cardHeight, layout.TopRightOffset, layout.EdgeInset);
-            PlaceCentres(groups, css, cardHeight, layout.EdgeInset);
+            PlaceCentres(groups, css, cardHeight, layout.EdgeInset, layout.TopRightOffset, layout.ProgressBarHeight);
+            if (layout.EdgeInset == 0) ApplyFlushEdges(groups, css.CardWidth, cardHeight - Math.Clamp(layout.ProgressBarHeight, 0, cardHeight));
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
         }
 
@@ -458,7 +464,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// stack between the occupied corner stacks. All dimensions are CSS px.
         /// Static images omit whole chips that have no room (there is no hover tooltip).
         /// </summary>
-        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, float inset)
+        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, float inset, bool indicators, float progressHeight)
         {
             float gap = css.StackGap;
             foreach (var anchor in groups.Where(g => IsCentre(g.Corner)).GroupBy(g => g.Corner))
@@ -472,6 +478,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float reserve = neighbours.Select(g => vertical
                     ? g.IsTop ? g.Y + g.Height + gap : cardHeight - g.Y + gap
                     : g.IsLeft ? g.X + g.Width + gap : css.CardWidth - g.X + gap).DefaultIfEmpty(inset).Max();
+                float top = inset;
+                float bottom = Math.Max(inset, Math.Clamp(progressHeight, 0, cardHeight) + (inset == 0 ? 0 : gap));
+                if (progressHeight <= 0) bottom = inset;
+                if (inset == 0 && corner == PosterTagCorner.TopCenter)
+                {
+                    // The native indicator occupies the top-right corner. Try
+                    // the symmetric gap first, then move below it if needed.
+                    if (indicators) reserve = Math.Max(reserve, css.IndicatorOffset + gap);
+                    var first = anchor.SelectMany(g => g.Items).FirstOrDefault();
+                    if (first != null && first.Width > css.CardWidth - 2 * reserve)
+                    {
+                        top = Math.Max(indicators ? css.IndicatorOffset + gap : 0, neighbours.Select(g => g.Y + g.Height + gap).DefaultIfEmpty(0).Max());
+                        reserve = 0;
+                    }
+                }
                 float width = Math.Max(0, vertical ? (css.CardWidth / 2) - inset : css.CardWidth - (2 * reserve));
                 float maxHeight = Math.Max(0, vertical ? cardHeight - (2 * reserve) : cardHeight / 3);
                 var items = anchor.SelectMany(g => g.Items).ToList();
@@ -512,20 +533,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     {
                         float rowWidth = row.Count > 0 ? row[^1].X + row[^1].Width : 0;
                         float tallest = row.Select(i => i.Height).DefaultIfEmpty(0).Max();
-                        foreach (var item in row) { item.X += (width - rowWidth) / 2; item.Y += (tallest - item.Height) / 2; }
+                        foreach (var item in row)
+                        {
+                            item.X += (width - rowWidth) / 2;
+                            item.Y += inset == 0 && corner == PosterTagCorner.TopCenter ? 0
+                                : inset == 0 && corner == PosterTagCorner.BottomCenter ? tallest - item.Height
+                                : (tallest - item.Height) / 2;
+                        }
                     }
                 }
                 float x = vertical ? right ? css.CardWidth - inset - width : inset : (css.CardWidth - width) / 2;
-                float y = corner == PosterTagCorner.TopCenter ? inset : corner == PosterTagCorner.BottomCenter ? cardHeight - inset - height : (cardHeight - height) / 2;
+                float y = corner == PosterTagCorner.TopCenter ? top : corner == PosterTagCorner.BottomCenter ? cardHeight - bottom - height : (cardHeight - height) / 2;
                 foreach (var g in anchor)
                 {
-                    g.X = x; g.Y = g.NaturalY = y; g.Width = width; g.Height = height; g.Clips = true;
+                    g.X = x; g.Y = g.NaturalY = y; g.Width = width; g.Height = height; g.Clips = inset != 0;
                     foreach (var item in g.Items)
                     {
                         item.X = x + (vertical ? right ? width - item.Width : 0 : item.X);
                         item.Y += y;
                     }
                 }
+            }
+        }
+
+        /// <summary>Only sides actually meeting artwork or a known progress edge lose their seam.</summary>
+        private static void ApplyFlushEdges(List<PlannedGroup> groups, float cardWidth, float bottom)
+        {
+            foreach (var group in groups)
+            foreach (var item in group.Items.Where(i => !i.Hidden))
+            {
+                if (item.Kind is PosterTagTileKind.Genre or PosterTagTileKind.Flag) continue;
+                if (item.X <= 0.01f) item.FlushEdges |= FlushEdges.Left;
+                if (item.Y <= 0.01f) item.FlushEdges |= FlushEdges.Top;
+                if (item.X + item.Width >= cardWidth - 0.01f) item.FlushEdges |= FlushEdges.Right;
+                if (item.Y + item.Height >= bottom - 0.01f) item.FlushEdges |= FlushEdges.Bottom;
             }
         }
 

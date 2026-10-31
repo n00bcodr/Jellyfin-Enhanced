@@ -20,19 +20,25 @@ public class PosterTokenTests : IDisposable
     }
 
     [Fact]
-    public void SdhRetiresExistingSubtitleTokensThroughTheResolverWhileDefaultPixelVersionStaysStable()
+    public void AudioResolverTenToElevenRetiresTokensAtTheSamePixelIdentity()
     {
-        // Recorded from f4d7267a with the same document and default plugin configuration.
-        const string version8SubtitleDigest = "61f410f756f0eab9";
+        // Same subtitle-only document and defaults, resolver 10 then 11, both at pixel 7.1.
+        // Only resolver.version changes in this document's canonical digest.
+        const string version10Digest = "5c28225fcda7dccf";
+        const string version11Digest = "223695b6d0444ff8";
         var settings = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsShowSubtitles\":true,\"LanguageTagsStyle\":\"codes\"}", new());
-        Assert.Equal("10", PosterTagSettings.ResolverVersion);
-        Assert.Equal("6.1", PosterTagComposer.PixelVersion);
-        Assert.NotEqual(version8SubtitleDigest, settings.Digest);
+        Assert.Equal("12", PosterTagSettings.ResolverVersion);
+        Assert.Equal("7.1", PosterTagComposer.PixelVersion);
         var service = Tokens();
-        var old = service.Mint(user, item, version8SubtitleDigest, "6.1", PosterTagVariantFlags.None, "abcdef");
-        Assert.False(service.Verify(old, user, item, settings.Digest, PosterTagComposer.PixelVersion, out _));
-        var current = service.Mint(user, item, settings.Digest, PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
-        Assert.True(service.Verify(current, user, item, settings.Digest, PosterTagComposer.PixelVersion, out _));
+        var old = service.Mint(user, item, version10Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+        var version11 = service.Mint(user, item, version11Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.NotEqual(old, version11);
+        Assert.False(service.Verify(old, user, item, version11Digest, "7.1", out _));
+        Assert.True(service.Verify(version11, user, item, version11Digest, "7.1", out _));
+        Assert.False(service.Verify(old, user, item, settings.Digest, "7.1", out _));
+        Assert.False(service.Verify(version11, user, item, settings.Digest, "7.1", out _));
+        var current = service.Mint(user, item, settings.Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, settings.Digest, "7.1", out _));
     }
 
     [Theory]
@@ -41,7 +47,7 @@ public class PosterTokenTests : IDisposable
     public void TierTwoPixelsRejectTierOneAndRoundOneTokens(string historicalVersion)
     {
         var service = Tokens();
-        Assert.Equal("6.1", PosterTagComposer.PixelVersion);
+        Assert.Equal("7.1", PosterTagComposer.PixelVersion);
         var old = service.Mint(user, item, "settings", historicalVersion, PosterTagVariantFlags.None, "abcdef");
         Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
     }

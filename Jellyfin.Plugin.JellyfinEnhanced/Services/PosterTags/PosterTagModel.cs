@@ -137,6 +137,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public float EdgeInset { get; init; } = 6f;
 
+        /// <summary>Known progress-bar height in logical CSS pixels; zero when the image caller has no overlay geometry.</summary>
+        public float ProgressBarHeight { get; init; }
+
         /// <summary>True when nothing would be drawn.</summary>
         public bool IsEmpty
         {

@@ -1,0 +1,878 @@
+[
+{
+  "name": "agreeing",
+  "episodes": [
+    {
+      "Id": "0",
+      "Aired": 1,
+      "Streams": {
+        "Streams": [
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 5.1",
+            "Channels": 6,
+            "Language": "eng"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 7.1",
+            "Channels": 8,
+            "Language": "en-US"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "dts",
+            "DisplayTitle": "DTS-HD HRA 5.1",
+            "Channels": 6,
+            "Language": "deu"
+          }
+        ]
+      }
+    },
+    {
+      "Id": "1",
+      "Aired": 2,
+      "Streams": {
+        "Streams": [
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 5.1",
+            "Channels": 6,
+            "Language": "eng"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 7.1",
+            "Channels": 8,
+            "Language": "en-US"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "dts",
+            "DisplayTitle": "DTS-HD HRA 5.1",
+            "Channels": 6,
+            "Language": "deu"
+          }
+        ]
+      }
+    }
+  ],
+  "entry": {
+    "Type": "Series",
+    "StreamData": {
+      "Streams": [
+        {
+          "Type": "Audio",
+          "Codec": "ac3",
+          "DisplayTitle": "AC-3 5.1",
+          "Channels": 6,
+          "Language": "eng"
+        },
+        {
+          "Type": "Audio",
+          "Codec": "ac3",
+          "DisplayTitle": "AC-3 7.1",
+          "Channels": 8,
+          "Language": "en-US"
+        },
+        {
+          "Type": "Audio",
+          "Codec": "dts",
+          "DisplayTitle": "DTS-HD HRA 5.1",
+          "Channels": 6,
+          "Language": "deu"
+        }
+      ]
+    },
+    "QualitySummary": {
+      "EpisodeCount": 2,
+      "Categories": {
+        "audioInfo": {
+          "Best": "DTS-HD HRA 5.1",
+          "Latest": "DTS-HD HRA 5.1",
+          "Values": [
+            "DTS-HD HRA 5.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "DTS-HD HRA 5.1",
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "Shared": [
+            "DTS-HD HRA 5.1",
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "LatestAll": [
+            "DTS-HD HRA 5.1",
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "AllSetsAgree": true
+        },
+        "resolution": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        },
+        "dynamicRange": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        },
+        "videoCodec": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        }
+      },
+      "AudioByLanguage": {
+        "en": {
+          "Best": "Dolby Digital 7.1",
+          "Latest": "Dolby Digital 7.1",
+          "Values": [
+            "Dolby Digital 7.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "Shared": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "LatestAll": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "AllSetsAgree": true
+        },
+        "en-us": {
+          "Best": "Dolby Digital 7.1",
+          "Latest": "Dolby Digital 7.1",
+          "Values": [
+            "Dolby Digital 7.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "Dolby Digital 7.1"
+          ],
+          "Shared": [
+            "Dolby Digital 7.1"
+          ],
+          "LatestAll": [
+            "Dolby Digital 7.1"
+          ],
+          "AllSetsAgree": true
+        },
+        "de": {
+          "Best": "DTS-HD HRA 5.1",
+          "Latest": "DTS-HD HRA 5.1",
+          "Values": [
+            "DTS-HD HRA 5.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "DTS-HD HRA 5.1"
+          ],
+          "Shared": [
+            "DTS-HD HRA 5.1"
+          ],
+          "LatestAll": [
+            "DTS-HD HRA 5.1"
+          ],
+          "AllSetsAgree": true
+        }
+      },
+      "AudioRegionFallback": {
+        "en": {
+          "Best": "Dolby Digital 5.1",
+          "Latest": "Dolby Digital 5.1",
+          "Values": [
+            "Dolby Digital 5.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "Dolby Digital 5.1"
+          ],
+          "Shared": [
+            "Dolby Digital 5.1"
+          ],
+          "LatestAll": [
+            "Dolby Digital 5.1"
+          ],
+          "AllSetsAgree": true
+        }
+      },
+      "LegacyAudio": {
+        "Best": "DTS 5.1",
+        "Latest": "DTS 5.1",
+        "Values": [
+          "DTS 5.1"
+        ],
+        "AllAgree": true,
+        "All": [
+          "DTS 5.1",
+          "7.1",
+          "5.1"
+        ],
+        "Shared": [
+          "DTS 5.1",
+          "7.1",
+          "5.1"
+        ],
+        "LatestAll": [
+          "DTS 5.1",
+          "7.1",
+          "5.1"
+        ],
+        "AllSetsAgree": true
+      },
+      "LegacyAudioByLanguage": {
+        "en": {
+          "Best": "7.1",
+          "Latest": "7.1",
+          "Values": [
+            "7.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "7.1",
+            "5.1"
+          ],
+          "Shared": [
+            "7.1",
+            "5.1"
+          ],
+          "LatestAll": [
+            "7.1",
+            "5.1"
+          ],
+          "AllSetsAgree": true
+        },
+        "en-us": {
+          "Best": "7.1",
+          "Latest": "7.1",
+          "Values": [
+            "7.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "7.1"
+          ],
+          "Shared": [
+            "7.1"
+          ],
+          "LatestAll": [
+            "7.1"
+          ],
+          "AllSetsAgree": true
+        },
+        "de": {
+          "Best": "DTS 5.1",
+          "Latest": "DTS 5.1",
+          "Values": [
+            "DTS 5.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "DTS 5.1"
+          ],
+          "Shared": [
+            "DTS 5.1"
+          ],
+          "LatestAll": [
+            "DTS 5.1"
+          ],
+          "AllSetsAgree": true
+        }
+      },
+      "LegacyAudioRegionFallback": {
+        "en": {
+          "Best": "5.1",
+          "Latest": "5.1",
+          "Values": [
+            "5.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "5.1"
+          ],
+          "Shared": [
+            "5.1"
+          ],
+          "LatestAll": [
+            "5.1"
+          ],
+          "AllSetsAgree": true
+        }
+      },
+      "LatestExtras": []
+    }
+  },
+  "expected": [
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "shared", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "mixed", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "best", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "latest", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "shared", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "shared", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "mixed", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "best", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "latest", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "shared", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "mixed", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "shared", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "mixed", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "shared", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "mixed", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "best", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "latest", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "shared", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "mixed", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "best", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "latest", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "shared", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "mixed", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "best", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "latest", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "shared", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "mixed", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "best", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "latest", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "shared", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "mixed", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "best", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "latest", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "shared", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "mixed", "labels": ["DTS 5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "latest", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "shared", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "shared", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "mixed", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "best", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "latest", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "shared", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "best", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "latest", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "shared", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "mixed", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "best", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "latest", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "shared", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "mixed", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "best", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "latest", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "shared", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "mixed", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "best", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "latest", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "shared", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "mixed", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "best", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "latest", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "shared", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "mixed", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "best", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "latest", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "shared", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "mixed", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "best", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "latest", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "shared", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "mixed", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "best", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "latest", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "shared", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "mixed", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "best", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "latest", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "shared", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "mixed", "labels": ["DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "latest", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "shared", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]}
+  ]
+},
+{
+  "name": "varying",
+  "episodes": [
+    {
+      "Id": "0",
+      "Aired": 1,
+      "Streams": {
+        "Streams": [
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 5.1",
+            "Channels": 6,
+            "Language": "eng"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 7.1",
+            "Channels": 8,
+            "Language": "en-US"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "dts",
+            "DisplayTitle": "DTS-HD HRA 5.1",
+            "Channels": 6,
+            "Language": "deu"
+          }
+        ]
+      }
+    },
+    {
+      "Id": "1",
+      "Aired": 2,
+      "Streams": {
+        "Streams": [
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 7.1",
+            "Channels": 8,
+            "Language": "eng"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "ac3",
+            "DisplayTitle": "AC-3 5.1",
+            "Channels": 6,
+            "Language": "en-US"
+          },
+          {
+            "Type": "Audio",
+            "Codec": "dts",
+            "DisplayTitle": "DTS-HD MA 7.1",
+            "Channels": 8,
+            "Language": "deu"
+          }
+        ]
+      }
+    }
+  ],
+  "entry": {
+    "Type": "Series",
+    "StreamData": {
+      "Streams": [
+        {
+          "Type": "Audio",
+          "Codec": "ac3",
+          "DisplayTitle": "AC-3 5.1",
+          "Channels": 6,
+          "Language": "eng"
+        },
+        {
+          "Type": "Audio",
+          "Codec": "ac3",
+          "DisplayTitle": "AC-3 7.1",
+          "Channels": 8,
+          "Language": "en-US"
+        },
+        {
+          "Type": "Audio",
+          "Codec": "dts",
+          "DisplayTitle": "DTS-HD HRA 5.1",
+          "Channels": 6,
+          "Language": "deu"
+        }
+      ]
+    },
+    "QualitySummary": {
+      "EpisodeCount": 2,
+      "Categories": {
+        "audioInfo": {
+          "Best": "DTS-HD MA 7.1",
+          "Latest": "DTS-HD MA 7.1",
+          "Values": [
+            "DTS-HD HRA 5.1",
+            "DTS-HD MA 7.1"
+          ],
+          "AllAgree": false,
+          "All": [
+            "DTS-HD MA 7.1",
+            "DTS-HD HRA 5.1",
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "Shared": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "LatestAll": [
+            "DTS-HD MA 7.1",
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "AllSetsAgree": false
+        },
+        "resolution": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        },
+        "dynamicRange": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        },
+        "videoCodec": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        }
+      },
+      "AudioByLanguage": {
+        "en": {
+          "Best": "Dolby Digital 7.1",
+          "Latest": "Dolby Digital 7.1",
+          "Values": [
+            "Dolby Digital 7.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "Shared": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "LatestAll": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "AllSetsAgree": true
+        },
+        "en-us": {
+          "Best": "Dolby Digital 7.1",
+          "Latest": "Dolby Digital 5.1",
+          "Values": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "AllAgree": false,
+          "All": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "Shared": [],
+          "LatestAll": [
+            "Dolby Digital 5.1"
+          ],
+          "AllSetsAgree": false
+        },
+        "de": {
+          "Best": "DTS-HD MA 7.1",
+          "Latest": "DTS-HD MA 7.1",
+          "Values": [
+            "DTS-HD HRA 5.1",
+            "DTS-HD MA 7.1"
+          ],
+          "AllAgree": false,
+          "All": [
+            "DTS-HD MA 7.1",
+            "DTS-HD HRA 5.1"
+          ],
+          "Shared": [],
+          "LatestAll": [
+            "DTS-HD MA 7.1"
+          ],
+          "AllSetsAgree": false
+        }
+      },
+      "AudioRegionFallback": {
+        "en": {
+          "Best": "Dolby Digital 7.1",
+          "Latest": "Dolby Digital 7.1",
+          "Values": [
+            "Dolby Digital 5.1",
+            "Dolby Digital 7.1"
+          ],
+          "AllAgree": false,
+          "All": [
+            "Dolby Digital 7.1",
+            "Dolby Digital 5.1"
+          ],
+          "Shared": [],
+          "LatestAll": [
+            "Dolby Digital 7.1"
+          ],
+          "AllSetsAgree": false
+        }
+      },
+      "LegacyAudio": {
+        "Best": "DTS 7.1",
+        "Latest": "DTS 7.1",
+        "Values": [
+          "DTS 5.1",
+          "DTS 7.1"
+        ],
+        "AllAgree": false,
+        "All": [
+          "DTS 7.1",
+          "DTS 5.1",
+          "7.1",
+          "5.1"
+        ],
+        "Shared": [
+          "7.1",
+          "5.1"
+        ],
+        "LatestAll": [
+          "DTS 7.1",
+          "7.1",
+          "5.1"
+        ],
+        "AllSetsAgree": false
+      },
+      "LegacyAudioByLanguage": {
+        "en": {
+          "Best": "7.1",
+          "Latest": "7.1",
+          "Values": [
+            "7.1"
+          ],
+          "AllAgree": true,
+          "All": [
+            "7.1",
+            "5.1"
+          ],
+          "Shared": [
+            "7.1",
+            "5.1"
+          ],
+          "LatestAll": [
+            "7.1",
+            "5.1"
+          ],
+          "AllSetsAgree": true
+        },
+        "en-us": {
+          "Best": "7.1",
+          "Latest": "5.1",
+          "Values": [
+            "7.1",
+            "5.1"
+          ],
+          "AllAgree": false,
+          "All": [
+            "7.1",
+            "5.1"
+          ],
+          "Shared": [],
+          "LatestAll": [
+            "5.1"
+          ],
+          "AllSetsAgree": false
+        },
+        "de": {
+          "Best": "DTS 7.1",
+          "Latest": "DTS 7.1",
+          "Values": [
+            "DTS 5.1",
+            "DTS 7.1"
+          ],
+          "AllAgree": false,
+          "All": [
+            "DTS 7.1",
+            "DTS 5.1"
+          ],
+          "Shared": [],
+          "LatestAll": [
+            "DTS 7.1"
+          ],
+          "AllSetsAgree": false
+        }
+      },
+      "LegacyAudioRegionFallback": {
+        "en": {
+          "Best": "7.1",
+          "Latest": "7.1",
+          "Values": [
+            "5.1",
+            "7.1"
+          ],
+          "AllAgree": false,
+          "All": [
+            "7.1",
+            "5.1"
+          ],
+          "Shared": [],
+          "LatestAll": [
+            "7.1"
+          ],
+          "AllSetsAgree": false
+        }
+      },
+      "LatestExtras": []
+    }
+  },
+  "expected": [
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["DTS 7.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS 7.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "mixed", "labels": ["DTS 7.1", "Mixed"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "best", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "latest", "labels": ["DTS 7.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "shared", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1", "Mixed"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "shared", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "mixed", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "best", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "latest", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "shared", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "eng", "mode": "all", "policy": "mixed", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "latest", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "en-US", "mode": "highest", "policy": "mixed", "labels": ["7.1", "Mixed"]},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "best", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "latest", "labels": ["5.1"]},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "en-US", "mode": "all", "policy": "mixed", "labels": ["7.1", "5.1", "Mixed"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "en-GB", "mode": "highest", "policy": "mixed", "labels": ["7.1", "Mixed"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "best", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "en-GB", "mode": "all", "policy": "mixed", "labels": ["7.1", "5.1", "Mixed"]},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "best", "labels": ["DTS 7.1"]},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "latest", "labels": ["DTS 7.1"]},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "de", "mode": "highest", "policy": "mixed", "labels": ["DTS 7.1", "Mixed"]},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "best", "labels": ["DTS 7.1", "DTS 5.1"]},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "latest", "labels": ["DTS 7.1"]},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "de", "mode": "all", "policy": "mixed", "labels": ["DTS 7.1", "DTS 5.1", "Mixed"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "best", "labels": ["DTS 7.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "latest", "labels": ["DTS 7.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "mixed", "labels": ["DTS 7.1", "Mixed"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "latest", "labels": ["DTS 7.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "shared", "labels": ["7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1", "Mixed"]},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["DTS-HD MA 7.1"]},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS-HD MA 7.1"]},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "none", "mode": "highest", "policy": "mixed", "labels": ["DTS-HD MA 7.1", "Mixed"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "best", "labels": ["DTS-HD MA 7.1", "DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "latest", "labels": ["DTS-HD MA 7.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "shared", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["DTS-HD MA 7.1", "DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1", "Mixed"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "best", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "latest", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "shared", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "highest", "policy": "mixed", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "best", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "latest", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "shared", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "eng", "mode": "all", "policy": "mixed", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "best", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "latest", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "en-US", "mode": "highest", "policy": "mixed", "labels": ["Dolby Digital 7.1", "Mixed"]},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "best", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "latest", "labels": ["Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "en-US", "mode": "all", "policy": "mixed", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1", "Mixed"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "best", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "latest", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "en-GB", "mode": "highest", "policy": "mixed", "labels": ["Dolby Digital 7.1", "Mixed"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "best", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "latest", "labels": ["Dolby Digital 7.1"]},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "en-GB", "mode": "all", "policy": "mixed", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1", "Mixed"]},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "best", "labels": ["DTS-HD MA 7.1"]},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "latest", "labels": ["DTS-HD MA 7.1"]},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "de", "mode": "highest", "policy": "mixed", "labels": ["DTS-HD MA 7.1", "Mixed"]},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "best", "labels": ["DTS-HD MA 7.1", "DTS-HD HRA 5.1"]},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "latest", "labels": ["DTS-HD MA 7.1"]},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "de", "mode": "all", "policy": "mixed", "labels": ["DTS-HD MA 7.1", "DTS-HD HRA 5.1", "Mixed"]},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "best", "labels": ["DTS-HD MA 7.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "latest", "labels": ["DTS-HD MA 7.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "shared", "labels": []},
+    {"legacy": false, "preferred": "fra", "mode": "highest", "policy": "mixed", "labels": ["DTS-HD MA 7.1", "Mixed"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["DTS-HD MA 7.1", "DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "latest", "labels": ["DTS-HD MA 7.1", "Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "shared", "labels": ["Dolby Digital 7.1", "Dolby Digital 5.1"]},
+    {"legacy": false, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["DTS-HD MA 7.1", "DTS-HD HRA 5.1", "Dolby Digital 7.1", "Dolby Digital 5.1", "Mixed"]}
+  ]
+}
+]

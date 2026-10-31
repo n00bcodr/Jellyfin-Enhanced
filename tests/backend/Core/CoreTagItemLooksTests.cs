@@ -146,6 +146,49 @@ public class CoreTagItemLooksTests
 
     private const string NormalizedUser = "{qualityTagsEnabled:true,ratingTagsEnabled:true,tagLayoutSettingsVersion:1,tagLayout:'corners',qualityTagsPosition:'top-left'";
 
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    [InlineData(true, 2)]
+    public void FlushItemVariantsApplySingleChipCapsWithoutRewritingLooks(bool personal, int maximum)
+    {
+        var look = new TagLookItemOverride { ItemId = Movie, Layout = "corners", Density = "compact", EdgeSpacing = "flush",
+            Caps = new TagGroupCaps { Status = 9, AgeRating = 0, Logos = 8 }, LockedAt = 1 };
+        var config = Config(personal ? [] : [look]);
+        config.LogoTagsMaxLogos = maximum;
+        var user = new JellyfinEnhancedUserSettings { TagLayoutSettingsVersion = 1, AgeRatingTagsEnabled = true };
+        if (personal) user.TagLayoutLocks = new() { [Movie] = look };
+        var settings = PosterTagSettings.FromUserSettings(user, config).ForItem(Movie, null);
+        Assert.Equal("flush", settings.EdgeSpacing);
+        Assert.Equal(1, settings.AgeRatingCap);
+        Assert.Equal(maximum == 1 ? 1 : 8, settings.LogoCap);
+        Assert.Equal((9, 0, 8), (look.Caps.Status, look.Caps.AgeRating, look.Caps.Logos));
+        var entry = new Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry { Type = "Movie", OfficialRating = "PG-13" };
+        var layout = PosterTagResolver.Resolve(entry, settings, new("Movie", false, null, null, null), false)!;
+        using var renderer = new Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering.PosterTagRenderer();
+        Assert.Contains(renderer.Plan(180, 270, layout).Groups.SelectMany(g => g.Items), i => i.FlushEdges != 0);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ItemVariantAudioGateAndDigestFollowTheOriginalDocumentVersion(bool personal)
+    {
+        var look = new TagLookItemOverride { ItemId = Movie, Layout = "corners", Density = "full", EdgeSpacing = "flush", LockedAt = 1 };
+        var config = Config(personal ? [] : [look]);
+        var user = new JellyfinEnhancedUserSettings { QualityTagsEnabled = true };
+        if (personal) user.TagLayoutLocks = new() { [Movie] = look };
+        var legacy = PosterTagSettings.FromUserSettings(user, config).ForItem(Movie, null);
+        user.TagLayoutSettingsVersion = 1;
+        var current = PosterTagSettings.FromUserSettings(user, config).ForItem(Movie, null);
+        Assert.True(legacy.LegacyAudioFacts);
+        Assert.False(current.LegacyAudioFacts);
+        Assert.NotEqual(legacy.Digest, current.Digest);
+        Assert.Equal("12", PosterTagSettings.ResolverVersion);
+        Assert.Equal("flush", legacy.EdgeSpacing);
+    }
+
     [Fact]
     public void NativeItemsWithoutALookShareTheUsersSettings()
     {

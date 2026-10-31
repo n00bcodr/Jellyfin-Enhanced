@@ -46,7 +46,7 @@ for (const edge of ['tight', 'flush']) for (const [scale, gap, size, spacing] of
       if (['tr', 'mr', 'br'].includes(r.slot)) expect(r.right).toBeCloseTo(inset, 1);
       if (['tl', 'tc'].includes(r.slot)) expect(r.top).toBeCloseTo(inset, 1);
       if (r.slot === 'tr') expect(r.top).toBeCloseTo(inset + 30 * size, 1);
-      if (r.slot === 'bc') expect(r.progressBottom).toBeCloseTo(Math.max(inset, 4 + 4 * size * spacing), 1);
+      if (r.slot === 'bc') expect(r.progressBottom).toBeCloseTo(edge === 'flush' ? 4 : Math.max(inset, 4 + 4 * size * spacing), 1);
       if (edge === 'flush') { expect(r.clipped).toBe('hidden'); expect(r.radius).toBe('8px'); }
     }
   });
