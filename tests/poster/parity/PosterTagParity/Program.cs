@@ -209,6 +209,8 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     RatingTagsMinScore = defaultConfig.RatingTagsMinScore,
     RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
     AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+    LogoTagsEnabled = defaultConfig.LogoTagsEnabled,
+    LogoTagsPosition = defaultConfig.LogoTagsPosition,
     ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
     RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
     ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -318,6 +320,7 @@ void ResolveAll()
         if (settings.AgeRatingTagsEnabled) groupOrder.Add("agerating");
         if (settings.LanguageTagsEnabled) groupOrder.Add("language");
         if (settings.AwardsTagsEnabled) groupOrder.Add("awards");
+        if (settings.LogoTagsEnabled) groupOrder.Add("logos");
         if (settings.QualityTagsEnabled && settings.UsesJellyfinAudioPreference) groupOrder.Add("quality");
 
         var summary = new Dictionary<string, object?>
@@ -342,6 +345,8 @@ void ResolveAll()
             ["languagePriorityIsPersonal"] = settings.LanguagePriorityIsPersonal,
             ["ratingTagsPosition"] = settings.RatingTagsPosition,
             ["ageRatingTagsPosition"] = settings.AgeRatingTagsPosition,
+            ["logoTagsEnabled"] = settings.LogoTagsEnabled,
+            ["logoTagsPosition"] = settings.LogoTagsPosition,
             ["showResolutionTag"] = settings.ShowResolutionTag,
             ["showSourceTag"] = settings.ShowSourceTag,
             ["showEditionTag"] = settings.ShowEditionTag,
@@ -373,7 +378,7 @@ void ResolveAll()
             ["ratingTagsColorByScore"] = settings.RatingTagsColorByScore,
             ["layoutOrder"] = settings.GroupOrder is null ? null : string.Join(",", settings.GroupOrder.Select(LayoutId)),
             ["layoutOff"] = string.Join(",", Enum.GetValues<PosterTagGroup>().Where(settings.OffGroups.Contains).Select(LayoutId)),
-            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Awards }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
+            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Awards, PosterTagGroup.Logos }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
             ["edgeSpacing"] = settings.EdgeSpacing,
         };
 
@@ -394,8 +399,14 @@ static string LayoutId(PosterTagGroup group) => group switch
     PosterTagGroup.AgeRating => "ageRating",
     PosterTagGroup.Awards => "awards",
     PosterTagGroup.Status => "status",
+    PosterTagGroup.Logos => "logos",
     _ => "language",
 };
+
+// Name chip text (Resolution.LogoRules.ShortName, internal).
+static string ShortName(string name) => (string)typeof(PosterTagSettings).Assembly
+    .GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.LogoRules", throwOnError: true)!
+    .GetMethod("ShortName", BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object[] { name })!;
 
 static string Describe(PosterTag tag) => tag switch
 {
@@ -409,6 +420,7 @@ static string Describe(PosterTag tag) => tag switch
     RatingTag r => $"{r.Source}|{r.Text}",
     AwardTag a => $"{a.Id}|{a.Text}",
     AgeRatingTag a => $"{a.Text}|{a.ColorKey}",
+    LogoTag l => $"{l.Kind}|{l.Name}|{l.Logo ?? string.Empty}|{(l.Logo is null ? ShortName(l.Name) : string.Empty)}",
     _ => tag.ToString() ?? string.Empty,
 };
 

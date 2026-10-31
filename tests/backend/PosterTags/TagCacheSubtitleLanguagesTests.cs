@@ -22,7 +22,7 @@ namespace JE.Tests;
 public class TagCacheSubtitleLanguagesTests
 {
     // Jellyfin derives an item's kind from its class name, so the doubles keep it.
-    private sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode
+    internal sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode
     {
         public List<MediaSourceInfo> Sources { get; init; } = [];
         public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution) => Sources;

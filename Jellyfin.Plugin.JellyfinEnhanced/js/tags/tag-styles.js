@@ -95,7 +95,7 @@
 
     /**
      * Builds the stylesheet from the server's web model (GET tag-styles).
-     * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language}`.
+     * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language, logos}`.
      * @param {string} [scope] - The id selector of one element every rule is
      *   limited to (`#tagStylePreview` for the config page's live preview);
      *   omitted, the rules style the whole page. Anything but a single `#id`
@@ -170,6 +170,12 @@
             const color = styles.languageLabels?.[label];
             if (!color) continue;
             push(rules, `${P}.language-overlay-container.language-overlay-container [data-je-language="${label}"]:not(.language-flag-partial)`, ring(color.border));
+        }
+        // Logos: the pill behind a logo or name; text colours the name chip.
+        const logos = styles.logos || {};
+        for (const key of ['provider', 'company', 'text']) {
+            const c = logos[key];
+            if (c) push(rules, `${P}.logo-overlay-container .je-logo-chip[data-je-logo-style="${key}"]`, box(c));
         }
         return rules.join('\n');
     }

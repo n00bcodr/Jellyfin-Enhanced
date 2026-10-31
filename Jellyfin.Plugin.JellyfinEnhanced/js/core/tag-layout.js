@@ -2,7 +2,7 @@
 // /js/core/tag-layout.js
 //
 // Shared placement layer for the poster tag groups (quality, genre, language,
-// rating, age rating, status). Renderers keep building their group wrapper
+// rating, age rating, status, logos). Renderers keep building their group wrapper
 // (.quality-overlay-container and friends, with the same chip classes) and
 // hand it to commitGroup(); this module decides where, and in what form, it
 // appears on the card for the user's layout:
@@ -38,7 +38,7 @@
     JE.core = JE.core || {};
 
     /** Group ids in the default priority order. */
-    const DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards'];
+    const DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos'];
     const GROUPS = new Set(DEFAULT_ORDER);
 
     /** Valid slots per layout; "off" hides a group in any layout. */
@@ -53,10 +53,10 @@
 
     /** Built-in profiles (corners comes from the position settings instead). */
     const DEFAULT_PROFILES = {
-        bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom' },
-        caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption' },
-        summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover' },
-        minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover' },
+        bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom', logos: 'top' },
+        caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption', logos: 'caption' },
+        summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover', logos: 'hover' },
+        minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover', logos: 'hover' },
     };
 
     /** Card shapes with a look of their own; every other card is a portrait (the default look). */
@@ -94,7 +94,7 @@
     const EDGE_SPACINGS = Object.assign(Object.create(null), { default: 6, tight: 3, flush: 0 });
 
     /** Built-in chip limits (0 = unlimited): the limits each group had before caps existed. */
-    const DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 };
+    const DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0 };
     const MAX_CAP = 10;
     const TAG_SCALES = { smaller: 0.85, default: 1, larger: 1.15, largest: 1.3 };
     const TAG_GAPS = { tight: 0.75, default: 1, roomy: 1.5 };
@@ -149,6 +149,7 @@
         ageRating: { userKey: 'ageRatingTagsPosition', pluginKey: 'AgeRatingTagsPosition', fallback: 'bottom-right' },
         awards: { userKey: 'awardsTagsPosition', pluginKey: 'AwardsTagsPosition', fallback: 'top-left' },
         status: { userKey: 'statusTagsPosition', pluginKey: 'StatusTagsPosition', fallback: 'top-right' },
+        logos: { userKey: 'logoTagsPosition', pluginKey: 'LogoTagsPosition', fallback: 'bottom-left' },
     };
     const POSITION_TO_SLOT = Object.assign(Object.create(null), { 'top-left': 'tl', 'top-right': 'tr', 'bottom-left': 'bl', 'bottom-right': 'br', 'top-center': 'tc', 'bottom-center': 'bc', 'center-left': 'ml', 'center-right': 'mr', 'center': 'c' });
 
@@ -161,6 +162,7 @@
         ageRating: 'ageRatingTagsEnabled',
         status: 'statusTagsEnabled',
         awards: 'awardsTagsEnabled',
+        logos: 'logoTagsEnabled',
     };
     const SLOT_TO_POSITION = Object.assign(Object.create(null), { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' });
 
@@ -173,6 +175,7 @@
         ageRating: 'age-rating-overlay-container',
         status: 'status-overlay-container',
         awards: 'awards-overlay-container',
+        logos: 'logo-overlay-container',
     };
 
     /** Slots that summarise a group; its full chips are added to the hover scrim. */
@@ -1306,6 +1309,10 @@
             }
             case 'genre': {
                 const text = master.querySelector('.genre-tag')?.getAttribute('title') || '';
+                return text ? { text } : null;
+            }
+            case 'logos': {
+                const text = master.querySelector('.je-logo-chip')?.getAttribute('title') || '';
                 return text ? { text } : null;
             }
             default:

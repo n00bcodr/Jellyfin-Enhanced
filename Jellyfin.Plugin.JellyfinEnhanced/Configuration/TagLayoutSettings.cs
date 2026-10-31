@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     /// </summary>
     public class TagLayoutGroupSlot
     {
-        /// <summary>Group id: quality, genre, language, rating, ageRating or status.</summary>
+        /// <summary>Group id: quality, genre, language, rating, ageRating, status or logos.</summary>
         public string Group { get; set; } = string.Empty;
 
         /// <summary>Slot id valid for the profile's layout, or "off".</summary>
@@ -52,6 +52,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int? AgeRating { get; set; }
         public int? Status { get; set; }
         public int? Awards { get; set; }
+        public int? Logos { get; set; }
     }
 
     /// <summary>
@@ -69,7 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public const int MaxCap = 10;
 
         /// <summary>Group ids in the default priority order.</summary>
-        public static readonly IReadOnlyList<string> DefaultGroupOrder = new[] { "status", "quality", "rating", "ageRating", "language", "genre", "awards" };
+        public static readonly IReadOnlyList<string> DefaultGroupOrder = new[] { "status", "quality", "rating", "ageRating", "language", "genre", "awards", "logos" };
 
         /// <summary>Valid slots per layout ("off" is valid everywhere).</summary>
         public static readonly IReadOnlyDictionary<string, string[]> LayoutSlots = new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -229,9 +230,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 AgeRating = Clamp(caps.AgeRating),
                 Status = Clamp(caps.Status),
                 Awards = Clamp(caps.Awards),
+                Logos = Clamp(caps.Logos),
             };
             return result.Quality == null && result.Genre == null && result.Language == null
-                && result.Rating == null && result.AgeRating == null && result.Status == null && result.Awards == null
+                && result.Rating == null && result.AgeRating == null && result.Status == null && result.Awards == null && result.Logos == null
                 ? null
                 : result;
         }

@@ -1154,6 +1154,7 @@
                     if (JE.currentSettings?.statusTagsEnabled && typeof JE.initializeStatusTags === 'function') JE.initializeStatusTags();
                     if (JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false && typeof JE.initializeAwardsTags === 'function') JE.initializeAwardsTags();
                     if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
+                    if (JE.currentSettings?.logoTagsEnabled && typeof JE.initializeLogoTags === 'function') JE.initializeLogoTags();
 
                     // Translations follow the per-user language choice.
                     try {
@@ -1367,6 +1368,7 @@
             if (typeof JE.initializeDoesTheDogDieScript === 'function' && JE.pluginConfig?.DoesTheDogDieEnabled) JE.initializeDoesTheDogDieScript();
             if (typeof JE.initializeMdblistRatingsScript === 'function' && JE.pluginConfig?.MdblistRatingsEnabled && JE.pluginConfig?.MdblistRatingsShowOnItemDetails) JE.initializeMdblistRatingsScript();
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
+            if (typeof JE.initializeLogoTags === 'function' && JE.currentSettings?.logoTagsEnabled) JE.initializeLogoTags();
             if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();
             // Initialize the unified tag pipeline AFTER all tag renderers have registered
             if (typeof JE.tagPipeline?.initialize === 'function') JE.tagPipeline.initialize();

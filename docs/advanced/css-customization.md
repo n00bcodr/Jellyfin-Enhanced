@@ -181,10 +181,11 @@ The administrator's **Display** → **Media Tags** settings provide defaults. Al
 | **Enable Rating Tags** (admin) / **Show Rating Tags** (viewer) | Off | `RatingTagsEnabled`: community and critic scores. |
 | **Enable Age Rating Tags** (admin) / **Show Age Rating Tags** (viewer) | Off | `AgeRatingTagsEnabled`: official age/content certification. |
 | **Enable Status Tags** (admin) / **Show Status Tags** (viewer) | Off | `StatusTagsEnabled`: Just Added, New Movie/Series/Episode and trending rank badges. |
+| **Enable Logo Tags** (admin) / **Logos** (viewer) | Off | `LogoTagsEnabled`: streaming service, network or studio logos. |
 | **Enable People Tags** (admin) / **Show People Tags** (viewer) | Off | `PeopleTagsEnabled`: cast ages, birthplace, and deceased status. |
 | **Hide Tags on Hover** (admin and viewer) | Off | `TagsHideOnHover`: adds `body.je-tags-hide-on-hover`; an important hover rule hides the poster tag host. |
 
-New user settings for the seven tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See [Settings Overview](../getting-started/settings-overview.md) for default management.
+New user settings for the eight tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See [Settings Overview](../getting-started/settings-overview.md) for default management.
 
 Server and saved user properties use PascalCase. Resolved client settings use camelCase, such as `qualityTagsEnabled`.
 
@@ -507,6 +508,26 @@ Built-in chip and icon text colors are important pink declarations. Override bot
 ```
 
 See [User Reviews](../elsewhere/elsewhere-features.md#user-reviews) for writing and managing reviews.
+
+### Logo Tags CSS
+
+The Logos group renders `.logo-overlay-container` with one `.je-logo-chip` per logo. Each chip carries `data-je-logo-kind` (`provider`, `network` or `studio`) and `data-je-logo-style`: `provider` (a provider logo on its dark pill), `company` (a network or studio logo on its light pill) or `text` (the name chip, also used when an image fails to load). Image chips hold an `img.je-logo-img` served by the plugin's logo route; the chip's `title` and the image's `alt` are the full name.
+
+**Square provider logos without a pill, larger network logos:**
+
+```css
+.je-logo-chip[data-je-logo-style="provider"] {
+    background: none !important;
+    border: 0 !important;
+    padding: 0 !important;
+}
+
+.je-logo-chip[data-je-logo-style="company"] .je-logo-img {
+    max-width: 96px !important;
+}
+```
+
+Tag Styles colour the three pill kinds with stronger important rules on the **Logos** tab. Native Poster Tags draw the default pills (or the Tag Styles colours) and ignore custom CSS.
 
 ### Age Rating Tags CSS
 
@@ -949,7 +970,7 @@ Conditional controls appear only when their feature is available.
 | Subtitle position and status | `#subtitlePositionGrid`, `#subtitlePositionPreview`, `#subtitlePositionReset`, `#disableCustomSubtitleStyles`, `#je-subtitle-format-warning`, `#je-subtitle-position-note` |
 | Random selection | `#randomButtonToggle`, `#randomUnwatchedOnly`, `#randomIncludeMovies`, `#randomIncludeShows`, `#randomScopeCurrentContainer`, `#randomSourceSelect` |
 | Detail display | `#showWatchProgressToggle`, `#watchProgressModeSelect`, `#watchProgressTimeFormatSelect`, `#showFileSizesToggle`, `#showAudioLanguagesToggle` |
-| Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#statusTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
+| Tags and removal | Conditional `#nativePosterTagsToggle`; `#qualityTagsToggle`, `#genreTagsToggle`, `#languageTagsToggle`, `#ratingTagsToggle`, `#ageRatingTagsToggle`, `#statusTagsToggle`, `#logoTagsToggle`, `#peopleTagsToggle`, `#tagsHideOnHoverToggle`, `#removeContinueWatchingToggle` |
 | Tag group editor | `#jeTagGroupEditor` (`.je-tge`), `.je-tge-head`, `#tagLayoutSelect`, `#tagLabelDensitySelect`, `#jeTgeReset`; rows `.je-tge-rows` > `.je-tge-row[data-group]` (`--je-tge-swatch`), `.je-tge-row-head`, `.je-tge-move[data-dir]`, `.je-tge-swatch`, `.je-tge-expand` (`aria-expanded`), `.je-tge-name`, `.je-tge-summary`, `.je-tge-enable`; open editor `.je-tge-body` (`#jeTgeBody-<group>`), `.je-tge-pill[data-slot]` (`aria-pressed`), `.je-tge-stepper`, `.je-tge-step[data-step]`, `.je-tge-cap`, `.je-tge-toggle-pill`, `[data-include-key]` |
 | Tag preview | `#jeTgePreview`, `.je-tge-card` (gets `.je-tag-reveal` for **Hover**), `.je-tge-card-art`, `.je-tge-card-title`, `.je-tge-view [data-view]` |
 | Category layout | `.je-tge-cats`, `.je-tge-cat`, `.je-quality-cat-list`, `.je-quality-cat-row`, `.je-quality-cat-label-wrap`, `.je-quality-cat-label`, `.je-cat-btn`, `.je-cat-up`, `.je-cat-down`, `.je-quality-audio-lang` |

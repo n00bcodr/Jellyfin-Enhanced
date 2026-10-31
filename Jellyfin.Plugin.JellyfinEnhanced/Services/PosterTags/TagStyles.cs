@@ -326,6 +326,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 status = Map(TagStyleKeys.Status, TagStyleKeys.StatusLabels.Select(l => l.Key)),
                 language = language.IsEmpty ? null : Web(language),
                 languageLabels = Map(TagStyleKeys.Language, TagStyleCatalog.Labels(TagStyleKeys.Language).Select(l => l.Key)),
+                logos = Map(TagStyleKeys.Logos, TagStyleKeys.LogoLabels.Select(l => l.Key)),
             };
         }
 
@@ -669,6 +670,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             TagStyleKeys.Awards => TagStyleKeys.AwardLabels,
             TagStyleKeys.Genre => new[] { ("genre", "Genre") },
             TagStyleKeys.Status => TagStyleKeys.StatusLabels,
+            TagStyleKeys.Logos => TagStyleKeys.LogoLabels,
             TagStyleKeys.Language => new[] { ("flag", "Flag / code"), ("subtitles", "Subtitles"), ("countBadge", "Dual / Multi") },
             _ => Array.Empty<(string, string)>(),
         };

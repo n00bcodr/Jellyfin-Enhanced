@@ -21,6 +21,10 @@
     // request. Explicit refreshes (invalidation, user switch, a cache that was
     // empty at startup) are not spaced out — see the navigation handler.
     const NAV_REFRESH_MIN_INTERVAL_MS = 20000;
+    // waitForServerCache: milliseconds before each delta (about five minutes in
+    // all; the server's background warm is rate-limited, so a large library
+    // takes a while).
+    const SERVER_CACHE_WAIT_DELAYS = [2000, 3000, 5000, 5000, 10000, 10000, 15000, 15000, 30000, 30000, 30000, 30000, 60000, 60000];
     const logPrefix = '🪼 Jellyfin Enhanced [TagPipeline]:';
 
     // ── Server cache state ─────────────────────────────────────────────
@@ -61,6 +65,7 @@
     let loadInFlight = null;         // Promise of the running loadServerCache(), shared by concurrent callers
     let loadInFlightEpoch = 0;       // session epoch that load was started for
     let refreshInFlight = null;      // Promise of the running refreshServerCache()
+    let serverCacheWait = 0;         // bumped to end the running waitForServerCache()
     let lastNavigationRoute = null;  // route key of the last navigation the pipeline acted on (see navigationRoute)
     let lastNavRefreshAt = -Infinity; // performance.now() of the last navigation-triggered delta
     let navRefreshTimer = null;      // trailing delta for navigations that fell inside the minimum interval
@@ -75,7 +80,7 @@
     // that happens to change the cache version. 17: cached Awards facts.
     const STORED_ENTRY_SCHEMA = 17;
     const MEMORY_SOFT_CAP = 20000;
-    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
+    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -749,6 +754,34 @@
         refreshInFlight = refresh;
         refresh.finally(() => { if (refreshInFlight === refresh) refreshInFlight = null; });
         return refresh;
+    }
+
+    /**
+     * Wait until the server tag cache in memory satisfies `ready`, fetching a
+     * delta now and then (a full download when the server's cache version
+     * moved): for data the server fills in after a setting changed, such as
+     * the logos it looks up and republishes once the first user turns the
+     * Logos group on. Bounded by SERVER_CACHE_WAIT_DELAYS; a later call or
+     * stopWaitingForServerCache() ends an earlier wait, and so does a user
+     * switch. Nothing is redrawn here: the caller decides.
+     * @param {(entries: Iterable<object>) => boolean} ready - Checked after each delta.
+     * @param {{delays?: number[]}} [options] - Milliseconds before each delta (tests).
+     * @returns {Promise<boolean>} True once `ready` holds; false when the server
+     *   cache is off, the wait ended, or the bound ran out.
+     */
+    async function waitForServerCache(ready, options) {
+        if (!JE.pluginConfig?.TagCacheServerMode) return false;
+        const wait = ++serverCacheWait;
+        const epoch = JE.session ? JE.session.getEpoch() : 0;
+        const ended = () => wait !== serverCacheWait || (JE.session && !JE.session.isCurrent(epoch));
+        for (const delay of options?.delays || SERVER_CACHE_WAIT_DELAYS) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            if (ended()) return false;
+            try { await refreshServerCache(); } catch { /* the next attempt retries */ }
+            if (ended()) return false;
+            if (serverCache && ready(serverCache.values())) return true;
+        }
+        return false;
     }
 
     /**
@@ -1932,7 +1965,8 @@
                 .je-tag-host .language-overlay-container,
                 .je-tag-host .rating-overlay-container,
                 .je-tag-host .age-rating-overlay-container,
-                .je-tag-host .status-overlay-container {
+                .je-tag-host .status-overlay-container,
+                .je-tag-host .logo-overlay-container {
                     contain: layout style;
                     pointer-events: none;
                     z-index: auto !important;
@@ -2030,6 +2064,9 @@
          * @returns {Iterable<object>}
          */
         serverEntries() { return serverCache ? serverCache.values() : []; },
+        waitForServerCache,
+        /** End the running waitForServerCache() (it resolves false). */
+        stopWaitingForServerCache() { serverCacheWait++; },
         /**
          * Review rating averages that came with the server cache, once the
          * load or refresh in flight has settled: Map<"mediaType:tmdbKey",
@@ -2104,12 +2141,12 @@
                     document.querySelectorAll(
                         '.quality-overlay-container, .rating-overlay-container, '
                         + '.genre-overlay-container, .language-overlay-container, '
-                        + '.age-rating-overlay-container, .status-overlay-container, .awards-overlay-container'
+                        + '.age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .logo-overlay-container'
                     ).forEach(function (el) { el.remove(); });
                     document.querySelectorAll(
                         '[data-je-quality-tagged], [data-je-rating-tagged], '
                         + '[data-je-genre-tagged], [data-je-language-tagged], '
-                        + '[data-je-age-rating-tagged], [data-je-status-tagged], [data-je-awards-tagged]'
+                        + '[data-je-age-rating-tagged], [data-je-status-tagged], [data-je-awards-tagged], [data-je-logo-tagged]'
                     ).forEach(function (el) {
                         delete el.dataset.jeQualityTagged;
                         delete el.dataset.jeRatingTagged;
@@ -2117,6 +2154,7 @@
                         delete el.dataset.jeLanguageTagged;
                         delete el.dataset.jeAgeRatingTagged;
                         delete el.dataset.jeStatusTagged;
+                        delete el.dataset.jeLogoTagged;
                     });
                     // Pills, dots, hover copies and caption outlets carry no
                     // group wrapper class: the layout controller drops them.

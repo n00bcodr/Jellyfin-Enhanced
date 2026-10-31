@@ -1,9 +1,9 @@
 # Tags & Badges
 
-See quality, genres, audio languages, scores, age classifications, and what is new or trending while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), set their order and limits, and change their colors. People Tags add age and birthplace information to cast cards.
+See quality, genres, audio languages, scores, age classifications, what is new or trending, and where a title streams or which network or studio made it while browsing your library. You can choose which badges appear, pick a layout for them (corners, bands, a caption below the poster, a summary pill or a minimal set), set their order and limits, and change their colors. People Tags add age and birthplace information to cast cards.
 
 ![Library posters with quality, genre, language and rating tags](../images/tags/library-tags.webp)
-*The optional tag groups are enabled for this example; all seven groups start off.*
+*The optional tag groups are enabled for this example; every group starts off.*
 
 ## Set up your tags
 
@@ -69,6 +69,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 | [User-review chips](#user-review-chips) | Average visible review rating, or an optional dash | Movie, series, season, and episode cards with a usable review identity |
 | [Age Rating Tags](#age-rating-tags) | Official parental/content classification | Supported library cards with classification metadata |
 | [Status Tags](#status-tags) | One badge: trending, release, schedule, milestone or series status | Supported library cards and eligible native posters |
+| [Logo Tags](#logo-tags) | The streaming service, TV network or studio as a small logo (or its name) | Movie, series, season and episode cards; seasons and episodes show their series' logo |
 | [People Tags](#people-tags) | Age, age at release, birthplace, deceased styling | Cast and guest-cast cards on web item detail pages |
 | [Audio language links](#audio-language-links) | Named audio languages linking to Jellyfin tag lists | Movie, series, season, and episode detail pages |
 | [Player badges](#player-badges) | Scores in the controls; optional age/advisory badge at playback start | Jellyfin web video player |
@@ -201,8 +202,8 @@ The limit applies after each group's own filtering (quality categories, language
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
 | Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
-| **Tag Groups** order | Status, quality, rating, age rating, language, genre | Priority order of the groups |
-| **Show up to** | Genre 3, language 3, age rating 1, status 1, quality and rating all | The same limits as before layouts existed |
+| **Tag Groups** order | Status, quality, rating, age rating, language, genre, logos | Priority order of the groups |
+| **Show up to** | Genre 3, language 3, age rating 1, status 1, quality, rating and logos all | The same limits as before layouts existed; logos are limited by the administrator's **Logos per title** |
 | **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
@@ -738,6 +739,35 @@ Awards belongs to the exact movie or series, so seasons and episodes do not inhe
 
 The bundled simplified source marks and award silhouettes provide the same paths on web and native posters without remote logo downloads. They are nominative identification, distributed under this project's GPL-3.0 terms; award/service trademarks remain with their owners. See the asset generator and its provenance table. The existing detail-page CDN award logos remain independent.
 
+## Logo Tags
+
+Logo Tags show where a title streams, or the TV network or studio behind it, as one small logo on the card. Provider logos sit on a dark pill, network and studio logos on a light one so dark logos stay readable over any poster. A title without a logo image shows its name instead, shortened to its initials when it is long (`Home Box Office` → `HBO`).
+
+![Movie posters with Netflix and Disney+ logos on dark pills and studio logos on light pills in the bottom-left corner](../images/tags/logo-tags.webp)
+
+**How to use:**
+
+1. Turn on the **Logos** group on the **Groups** tab of **Media Tags**. Choose its position and **Show up to** like any other group.
+2. Administrators choose what the logo shows under **Display** → **Media Tags** → **Logo choices (all users)**.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Admin: **Enable Logo Tags** / personal: **Logos** switch | Off | Shows the Logos group; the admin value is the starting value for new users |
+| Admin / personal: **Position** | Bottom left | The group's corner or anchor in the Corners layout. Bands puts it in the top band, Caption in the caption strip, Summary and Minimal in the hover reveal |
+| Admin: **Movies show** | **Streaming service (studio when none)** | **Streaming service**, **Studio** or **No logo** |
+| Admin: **Series show** | **Network** | **Network**, **Streaming service (network when none)** or **No logo**. Seasons and episodes show their series' logo |
+| Admin: **Streaming region** | Empty (the Seerr default region, else US) | Two-letter country code whose subscription services count |
+| Admin: **Logos per title** | 1 | 1 or 2; personal **Show up to** can show fewer |
+
+??? info "Where the logos come from"
+    - **Streaming service:** the title's subscription (flat-rate) services in the region, from TMDB's watch providers, in TMDB's order. Titles that no service streams there show their studio or network instead.
+    - **Network and studio:** the names Jellyfin has for the item (its studios), with the matching TMDB network or production-company logo when TMDB has one; otherwise the name.
+    - The server looks titles up with the **TMDB API Key** from the [Elsewhere settings](../elsewhere/elsewhere-settings.md) and keeps each answer for a day. Full tag cache builds and the daily **Refresh Tag Cache** fetch new and expired lookups in small, rate-limited batches; a failed lookup is retried after an hour. A newly added item gets its logo when its cache entry is built, and the batch lookup used with the server cache off waits at most three seconds for it.
+    - Logo images are downloaded by the server once and served from its own cache (`/JellyfinEnhanced/logo/…`), so **browsers never contact TMDB**. Without a TMDB key or internet access the server cannot look anything up: cards show the studio or network names Jellyfin has, as name chips.
+    - Turning the group on for the first user, or changing the administrator's choices, refreshes the logos of every cached item in the background. With the server tag cache on, the page you turned the group on from shows the logos once that refresh lands (it checks for a few minutes), without a reload.
+
+**Native Poster Tags** draw the same logos from the server's image cache, and the name chip when an image is not cached yet; a poster request never waits for TMDB, it queues the lookup or image in the background and the poster is redrawn once it arrives. [Spoiler Guard](../spoiler-guard/spoiler-guard-settings.md)'s **Hide tags** removes the logos from protected items like their genres, on web cards, batch lookups and native posters. Logos the browser remembers (with the server tag cache off, or its local fallback on) carry the guard choices they were stripped under: after you protect or unprotect an item, or switch **Hide tags**, they are fetched again instead of being redrawn. Tag Styles colour the pills on the **Logos** tab. Custom CSS can target `.logo-overlay-container`, `.je-logo-chip` and its `data-je-logo-kind` / `data-je-logo-style` attributes (see [CSS Customization](../advanced/css-customization.md)).
+
 ## People Tags
 
 People Tags add age and birthplace facts to cast and guest-cast cards on item detail pages. They support rectangular and round portraits.
@@ -917,7 +947,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
     The master switch alone does not produce visible tags: each user's applicable groups start off.
 
 ??? info "Supported groups and preferences"
-    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, ratings, user-review, age-classification, Awards and Status. People Tags are not a native group.
+    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, ratings, user-review, age-classification, Awards, Status and Logos. People Tags are not a native group.
 
     It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the personal language-priority policy (or the live administrator fallback). Native posters draw **Corners** or **Bands** from your saved default layout. Corners supports all nine anchors, hidden groups, your explicit group order (otherwise the original stacking order), limits and full labels. Bands uses its own top/bottom/hidden profile, priority order, limits and Full/Compact density. Its translucent gradient strips keep the middle clear; the first top group starts left and later groups align right. Each strip fits at most two rows. The bottom strip skips a chip that does not fit and continues with later smaller chips, counting every omission in **+N**. The overflow chip uses the web’s 11px bold style multiplied by tag size and reserves the total-count width before bottom-band selection, then displays the actual omitted count. Caption, Summary and Minimal fall back to the saved Corners profile because native images have no title block or hover surface. Shape overrides, rules and per-item locks remain web features.
 
@@ -975,7 +1005,7 @@ Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, t
 1. Open **Display** → **Media Tags** and turn on **Enable Tag Styles**.
 2. Under **Apply to**, choose **Web**, **Native posters** or **Both**.
 3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set.
-4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**), then **Whole group** or one tag.
+4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**, **Logos**), then **Whole group** or one tag.
 5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an opacity of 40–100%. Watch the contrast badge and the preview.
 6. Click **Save Settings**. Refresh web clients to see the change; native posters redraw the next time they load.
 
@@ -1024,6 +1054,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending**, schedule, milestone and series-state badges | Applies to web and native posters. A Trending text colour also recolours the rank |
 | **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar winner**, **Emmy winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
 | **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
+| **Logos** | **Provider logo**, **Network / studio logo**, **Name chip** | Colours the pill behind the logo; **Text** colours the name chip |
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
 

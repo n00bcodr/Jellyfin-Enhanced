@@ -30,6 +30,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public const string Language = "language";
         public const string Awards = "awards";
 
+        /// <summary>Logos tag group pills: provider logos, network/studio logos and name chips.</summary>
+        public const string Logos = "logos";
+
         /// <summary>The label every chip of a group falls back to when it is not in the catalog.</summary>
         public const string AnyLabel = "*";
 
@@ -43,7 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public const string PosterPreset = "poster";
 
         /// <summary>Every group, in editor tab order.</summary>
-        public static readonly IReadOnlyList<string> Groups = new[] { Quality, AgeRating, Rating, Genre, Status, Language, Awards };
+        public static readonly IReadOnlyList<string> Groups = new[] { Quality, AgeRating, Rating, Genre, Status, Language, Awards, Logos };
 
         /// <summary>Every preset, in editor order.</summary>
         public static readonly IReadOnlyList<string> Presets = new[] { DefaultPreset, "glass", "outline", "dark", "light", "mono", PosterPreset };
@@ -55,6 +58,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>The Status Tags labels (the <c>data-je-status</c> values the web draws).</summary>
         public static readonly IReadOnlyList<(string Key, string Name)> StatusLabels = Resolution.StatusRules.StyleLabels;
+
+        /// <summary>The Logos labels (the <c>data-je-logo-style</c> values the web draws).</summary>
+        public static readonly IReadOnlyList<(string Key, string Name)> LogoLabels = new[]
+        {
+            ("provider", "Provider logo"), ("company", "Network / studio logo"), ("text", "Name chip"),
+        };
 
         /// <summary>A known preset id, or null.</summary>
         /// <param name="preset">Any string.</param>
@@ -129,6 +138,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 TagStyleKeys.Status => new TagColors("rgba(15, 15, 15, 0.72)", "rgba(255, 255, 255, 0.18)", White),
                 TagStyleKeys.Language => new TagColors(Transparent, Transparent, White),
                 TagStyleKeys.Awards => new TagColors("rgba(15, 15, 15, 0.85)", Transparent, White),
+                TagStyleKeys.Logos => label switch
+                {
+                    "company" => new TagColors("rgba(255, 255, 255, 0.9)", "rgba(0, 0, 0, 0.12)", "#111111"),
+                    "text" => new TagColors("rgba(0, 0, 0, 0.75)", "rgba(255, 255, 255, 0.25)", White),
+                    _ => new TagColors("rgba(0, 0, 0, 0.6)", "rgba(255, 255, 255, 0.2)", White),
+                },
                 _ => Unknown,
             };
             return Normalised(c);

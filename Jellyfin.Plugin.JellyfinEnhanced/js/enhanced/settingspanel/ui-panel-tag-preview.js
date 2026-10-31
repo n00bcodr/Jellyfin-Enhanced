@@ -30,11 +30,17 @@
         ageRating: 'ageRatingTagsEnabled',
         language: 'languageTagsEnabled',
         genre: 'genreTagsEnabled',
+        logos: 'logoTagsEnabled',
     };
     const GROUP_IDS = Object.keys(ENABLED);
 
     /** Each sample art's dominant colour (its CSS gradient's main band), for the Poster tag colours. */
     const ART_RGB = { movie: '181,86,47', series: '44,111,122', episode: '143,208,242', list: '143,208,242' };
+    /** Made-up logos (inline SVG), so the Logos samples never touch the network or a real brand. */
+    const LOGOS = {
+        provider: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="8" fill="#d81b60"/><path d="M13 11h14v5H18v3h8v5h-8v5h9v5H13z" fill="#fff"/></svg>',
+        network: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 32"><circle cx="16" cy="16" r="12" fill="#1565c0"/><path d="M10 22V10l12 12V10" stroke="#fff" stroke-width="3" fill="none"/><text x="34" y="22" font-family="Arial,sans-serif" font-size="15" font-weight="700" fill="#111">NWB</text></svg>',
+    };
 
     /** Inline flags (data URIs), so the preview never touches the network. */
     const FLAGS = {
@@ -59,6 +65,7 @@
             quality: { showResolutionTag: ['4K', '4K', 'resolution'], showDynamicRangeTag: ['Dolby Vision', 'Dolby Vision', 'video-codec'], showSpecialFormatTag: ['IMAX', 'IMAX', 'video-codec'], showVideoCodecTag: ['HEVC', 'HEVC', 'video-format'], showAudioInfoTag: ['ATMOS 7.1', 'ATMOS', 'audio-codec'] },
             rating: { critic: '92%', community: '8.1' },
             age: 'PG-13', flags: ['fr', 'jp', 'de'], genres: [['Science Fiction', 'science'], ['Thriller', 'psychology']],
+            logos: [{ kind: 'provider', name: 'Streamflix', svg: LOGOS.provider }],
             status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added']],
         },
         {
@@ -68,6 +75,7 @@
             quality: { showResolutionTag: ['4K', '4K', 'resolution'], showDynamicRangeTag: ['HDR10', 'HDR10', 'video-codec'], showAudioInfoTag: ['Dolby Digital+ 5.1', 'Dolby Digital+', 'audio-codec'] },
             rating: { critic: '97%', community: '8.7' },
             age: 'TV-MA', flags: ['it'], genres: [['Drama', 'theater_comedy'], ['Mystery', 'psychology_alt']],
+            logos: [{ kind: 'network', name: 'Northwind Broadcasting', svg: LOGOS.network }],
             status: [['statusTagsSchedule', 'schedule', 'status_tag_airs_date', null, { date: 'Fri' }], ['statusTagsSeriesStatus', 'status', 'status_tag_returning']],
         },
         {
@@ -77,6 +85,7 @@
             quality: { showResolutionTag: ['1080p', '1080p', 'resolution'], showAudioInfoTag: ['AAC 2.0', 'AAC', 'audio-codec'] },
             rating: { community: '9.3' },
             age: 'TV-Y', flags: ['jp'], genres: [['Animation', 'animation'], ['Family', 'family_restroom']],
+            logos: [{ kind: 'network', name: 'Harbor Kids Network' }],
             status: [['statusTagsMilestones', 'milestone', 'status_tag_season_finale', 'status_tag_compact_finale'], ['statusTagsNewRelease', 'new', 'status_tag_new_episode', 'status_tag_compact_new_episode']],
         },
     ];
@@ -200,6 +209,14 @@
                 }
                 break;
             }
+            case 'logos':
+                // A logo on its pill, or the name chip a logo without an image shows.
+                for (const logo of sample.logos || []) {
+                    const chip = JE.logoTags?.buildChip({ kind: logo.kind, name: logo.name, logo: null },
+                        logo.svg ? `data:image/svg+xml,${encodeURIComponent(logo.svg)}` : undefined);
+                    if (chip) wrap.appendChild(chip);
+                }
+                break;
             default:
                 return null;
         }
@@ -283,13 +300,14 @@
         const L = layoutApi();
         const lead = [];
         const rest = [];
-        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .language-chip, .genre-tag, .status-tag, .awards-tag, .je-tag-pill-fact, .je-tag-more)');
+        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .language-chip, .genre-tag, .status-tag, .awards-tag, .je-logo-chip, .je-tag-pill-fact, .je-tag-more)');
         for (const chip of chips) {
             const el = /** @type {HTMLElement} */ (chip);
             if (el.parentElement?.classList.contains('language-subtitle')) continue;
             let text;
             if (el.classList.contains('language-flag')) text = String(el.dataset.lang || '').toUpperCase();
             else if (el.classList.contains('genre-tag')) text = el.title || el.textContent || '';
+            else if (el.classList.contains('je-logo-chip')) text = el.title || el.textContent || '';
             // Rating chips: their score only (the star is an icon ligature).
             else if (el.classList.contains('rating-tag')) text = `${el.classList.contains('rating-tag-tmdb') ? '★' : ''}${el.querySelector('.rating-text')?.textContent || ''}`;
             else text = el.textContent || '';
@@ -343,7 +361,7 @@
         #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: #ffd166; }
         #jellyfin-enhanced-panel .je-mtp-note[hidden] { display: none; }
         /* Spotlight: the group being edited stays bright, the others step back. */
-        #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }
+        #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .logo-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }
     `;
 
     /**

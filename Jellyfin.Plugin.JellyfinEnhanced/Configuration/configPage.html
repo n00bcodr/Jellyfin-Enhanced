@@ -442,6 +442,50 @@
                             </div>
 
                             <div class="je-tag-row">
+                                <div class="checkboxContainer"><label><input id="logoTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Logo Tags</span></label></div>
+                                <div class="inputContainer je-tag-position">
+                                    <label class="inputLabel" for="logoTagsPosition">Position</label>
+                                    <select is="emby-select" id="logoTagsPosition" name="logoTagsPosition" class="emby-select">
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="logoTagsEnabled">
+                                <div class="fieldDescription">Show the streaming service, TV network or studio of each title as a small logo on poster cards; seasons and episodes show their series' logo. The server looks logos up on TMDB with the TMDB API key and serves the images itself, so browsers never contact TMDB. Without a key or internet access the names are shown instead.</div>
+                            </div>
+                            <details class="je-logo-tag-options" id="logoTagsOptions">
+                                <summary>Logo choices (all users)</summary>
+                                <div class="selectContainer">
+                                    <label class="selectLabel" for="logoTagsMovieMode">Movies show</label>
+                                    <select is="emby-select" id="logoTagsMovieMode" class="emby-select-withcolor emby-select">
+                                        <option value="provider">Streaming service (studio when none)</option>
+                                        <option value="studio">Studio</option>
+                                        <option value="off">No logo</option>
+                                    </select>
+                                </div>
+                                <div class="selectContainer">
+                                    <label class="selectLabel" for="logoTagsSeriesMode">Series show</label>
+                                    <select is="emby-select" id="logoTagsSeriesMode" class="emby-select-withcolor emby-select">
+                                        <option value="network">Network</option>
+                                        <option value="provider">Streaming service (network when none)</option>
+                                        <option value="off">No logo</option>
+                                    </select>
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel inputLabelUnfocused" for="logoTagsRegion">Streaming region</label>
+                                    <input is="emby-input" type="text" id="logoTagsRegion" maxlength="2" placeholder="Seerr default region"/>
+                                    <div class="fieldDescription">Two-letter country code (US, GB, DE ...) whose subscription services are shown. Empty uses the default region of the Seerr settings.</div>
+                                </div>
+                                <div class="selectContainer">
+                                    <label class="selectLabel" for="logoTagsMaxLogos">Logos per title</label>
+                                    <select is="emby-select" id="logoTagsMaxLogos" class="emby-select-withcolor emby-select">
+                                        <option value="1">1</option>
+                                        <option value="2">2</option>
+                                    </select>
+                                </div>
+                            </details>
+
+                            <div class="je-tag-row">
                                 <div class="checkboxContainer"><label><input id="statusTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Status Tags</span></label></div>
                                 <div class="inputContainer je-tag-position">
                                     <label class="inputLabel" for="statusTagsPosition">Position</label>
@@ -5897,10 +5941,11 @@
                 rating: { name: 'Rating', position: 'ratingTagsPosition', capAll: true },
                 ageRating: { name: 'Age Rating', position: 'ageRatingTagsPosition', capFixed: true },
                 language: { name: 'Language', position: 'languageTagsPosition' },
-                genre: { name: 'Genre', position: 'genreTagsPosition' }
+                genre: { name: 'Genre', position: 'genreTagsPosition' },
+                logos: { name: 'Logos', position: 'logoTagsPosition', capAll: true }
             };
-            var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards'];
-            var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2 };
+            var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos'];
+            var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0 };
             var LAYOUT_SLOTS = {
                 corners: ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br', 'off'],
                 bands: ['top', 'bottom', 'off'],
@@ -5909,10 +5954,10 @@
                 minimal: ['top', 'dots', 'corner', 'hover', 'off']
             };
             var DEFAULT_PROFILES = {
-                bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom' },
-                caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption' },
-                summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover' },
-                minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover' }
+                bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom', logos: 'top' },
+                caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption', logos: 'caption' },
+                summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover', logos: 'hover' },
+                minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover', logos: 'hover' }
             };
             var SLOT_LABELS = {
                 corners: { tl: 'Top left', tc: 'Top centre', tr: 'Top right', ml: 'Left centre', c: 'Centre', mr: 'Right centre', bl: 'Bottom left', bc: 'Bottom centre', br: 'Bottom right' },
@@ -6215,7 +6260,7 @@
                 });
                 var caps = pick(look, 'caps');
                 var wantCaps = want.caps || {};
-                return same && ['quality', 'genre', 'language', 'rating', 'ageRating', 'status'].every(function (g) {
+                return same && ['quality', 'genre', 'language', 'rating', 'ageRating', 'status', 'logos'].every(function (g) {
                     var have = pick(caps, g);
                     return (have === undefined ? null : Number(have)) === (wantCaps[g] === undefined ? null : wantCaps[g]);
                 });
@@ -6740,7 +6785,8 @@
         const tagStyles = (() => {
             const GROUPS = [
                 { key: 'quality', title: 'Quality' }, { key: 'ageRating', title: 'Age' }, { key: 'rating', title: 'Rating' },
-                { key: 'genre', title: 'Genre' }, { key: 'status', title: 'Status' }, { key: 'language', title: 'Language' }, { key: 'awards', title: 'Awards' }
+                { key: 'genre', title: 'Genre' }, { key: 'status', title: 'Status' }, { key: 'language', title: 'Language' }, { key: 'awards', title: 'Awards' },
+                { key: 'logos', title: 'Logos' }
             ];
             const PRESET_TITLES = { default: 'Default', glass: 'Glass', outline: 'Outline', dark: 'Dark', light: 'Light', mono: 'Mono', poster: 'Poster' };
             const FIELDS = [['background', 'Background'], ['border', 'Border'], ['text', 'Text']];
@@ -6750,8 +6796,10 @@
             const NOTES = {
                 genre: 'Text colours the genre icon.',
                 status: 'Status tags are drawn on the web only: native posters do not show them.',
-                language: 'Flags are images, so only the border ring can be coloured. Partial dubs keep their dashed outline.'
+                language: 'Flags are images, so only the border ring can be coloured. Partial dubs keep their dashed outline.',
+                logos: 'Colours the pill behind a logo, or the name chip a logo without an image shows (Text colours the name).'
             };
+            const LOGO_SAMPLES = { provider: 'Stream', company: 'Studio', text: 'HBO' };
             const RATING_SAMPLES = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'] };
             const STATUS_SAMPLES = { added: 'Just Added', newMovie: 'New Movie', newSeries: 'New Series', newEpisode: 'New Episode', trending: '#3 Today' };
             const ALL = '*';
@@ -7013,6 +7061,9 @@
                     n.appendChild(el('i', 'material-icons', 'theaters'));
                 } else if (g === 'status') {
                     n = el('span', 'je-ts-chip je-ts-status status-tag', STATUS_SAMPLES[label.key] || label.name);
+                } else if (g === 'logos') {
+                    n = el('span', 'je-ts-chip je-ts-status je-logo-chip', LOGO_SAMPLES[label.key] || label.name);
+                    n.dataset.jeLogoStyle = label.key;
                 } else if (label.key === 'countBadge' || label.key === 'subtitles') {
                     n = el('span', 'je-ts-chip language-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
                 } else {
@@ -7262,7 +7313,8 @@
                     status: map('status'),
                     awards: map('awards'),
                     language: { border: effective('language', 'flag').border },
-                    languageLabels: Object.fromEntries(['flag', 'subtitles', 'countBadge'].map(key => [key, { border: effective('language', key).border }]))
+                    languageLabels: Object.fromEntries(['flag', 'subtitles', 'countBadge'].map(key => [key, { border: effective('language', key).border }])),
+                    logos: map('logos')
                 };
             }
 
@@ -7310,6 +7362,9 @@
                     n.dataset.jeStatus = label.key;
                     if (label.key === 'trending') n.append(el('span', 'status-tag-rank', '#3'), ' Today');
                     else n.textContent = STATUS_SAMPLES[label.key] || label.name;
+                } else if (g === 'logos') {
+                    n = el('span', 'je-logo-chip je-ts-chip je-ts-status', LOGO_SAMPLES[label.key] || label.name);
+                    n.dataset.jeLogoStyle = label.key;
                 } else if (label.key === 'countBadge' || label.key === 'subtitles') {
                     n = el('span', 'language-chip je-ts-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
                     n.dataset.jeLanguage = label.key;
@@ -7325,7 +7380,7 @@
             // The container class each group's chips sit in on a poster.
             const CONTAINERS = {
                 quality: 'quality-overlay-container', ageRating: 'age-rating-overlay-container', rating: 'rating-overlay-container',
-                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container', awards: 'awards-overlay-container'
+                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container', awards: 'awards-overlay-container', logos: 'logo-overlay-container'
             };
 
             /**
@@ -7714,6 +7769,12 @@
                 document.querySelector('#qualityTagsAudioLanguageFromUser').checked = config.QualityTagsAudioLanguageFromUser === true;
                 if (rChk) rChk.checked = ratingEnabled;
                 if (arChk) arChk.checked = ageRatingEnabled;
+                document.querySelector('#logoTagsEnabled').checked = config.LogoTagsEnabled === true;
+                document.querySelector('#logoTagsPosition').value = config.LogoTagsPosition || 'bottom-left';
+                document.querySelector('#logoTagsMovieMode').value = ['studio', 'off'].includes(config.LogoTagsMovieMode) ? config.LogoTagsMovieMode : 'provider';
+                document.querySelector('#logoTagsSeriesMode').value = ['provider', 'off'].includes(config.LogoTagsSeriesMode) ? config.LogoTagsSeriesMode : 'network';
+                document.querySelector('#logoTagsRegion').value = config.LogoTagsRegion || '';
+                document.querySelector('#logoTagsMaxLogos').value = String(config.LogoTagsMaxLogos === 2 ? 2 : 1);
                 document.querySelector('#statusTagsEnabled').checked = config.StatusTagsEnabled === true;
                 document.querySelector('#awardsTagsEnabled').checked = config.AwardsTagsEnabled === true;
                 document.querySelector('#awardsTagsPosition').value = config.AwardsTagsPosition || 'top-left';
@@ -8325,6 +8386,11 @@
             config.LanguageTagsEnabled = document.querySelector('#languageTagsEnabled').checked;
             config.RatingTagsEnabled = document.querySelector('#ratingTagsEnabled').checked;
             config.AgeRatingTagsEnabled = document.querySelector('#ageRatingTagsEnabled').checked;
+            config.LogoTagsEnabled = document.querySelector('#logoTagsEnabled').checked;
+            config.LogoTagsMovieMode = document.querySelector('#logoTagsMovieMode').value;
+            config.LogoTagsSeriesMode = document.querySelector('#logoTagsSeriesMode').value;
+            config.LogoTagsRegion = document.querySelector('#logoTagsRegion').value.trim().toUpperCase();
+            config.LogoTagsMaxLogos = parseInt(document.querySelector('#logoTagsMaxLogos').value, 10) === 2 ? 2 : 1;
             config.StatusTagsEnabled = document.querySelector('#statusTagsEnabled').checked;
             config.AwardsTagsEnabled = document.querySelector('#awardsTagsEnabled').checked;
             config.AwardsTagsPosition = document.querySelector('#awardsTagsPosition').value;
@@ -8373,6 +8439,7 @@
             config.QualityTagsAudioLanguageFromUser = document.querySelector('#qualityTagsAudioLanguageFromUser').checked;
             config.RatingTagsPosition = document.querySelector('#ratingTagsPosition').value;
             config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
+            config.LogoTagsPosition = document.querySelector('#logoTagsPosition').value;
             config.StatusTagsPosition = document.querySelector('#statusTagsPosition').value;
             config.RatingTagsSources = posterRatingSources.collect();
             config.RatingTagsMinScore = Number(document.getElementById('ratingTagsMinScore').value);
@@ -9998,10 +10065,11 @@
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'languageTagsShowAudio', 'languageTagsShowSubtitles', 'languageTagsStyle', 'languageTagsCountBadge', 'tagGroupAdminRowLanguage'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsSources', 'ratingTagsSourceRows', 'ratingTagsMinScore', 'ratingTagsColorByScore', 'tagGroupAdminRowRating'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
+            { parent: 'logoTagsEnabled', label: 'Enable Logo Tags', children: ['logoTagsPosition', 'tagGroupAdminRowLogos'], noHint: true },
             { parent: 'awardsTagsEnabled', label: 'Enable Awards Tags', children: ['awardsTagsPosition', 'awardsTagsImdb', 'awardsTagsCertifiedFresh', 'awardsTagsOscar', 'awardsTagsEmmy', 'awardsTagsLetterboxd', 'awardsTagsImdbList', 'awardsTagsLetterboxdList', 'awardsTagsRefreshHours', 'tagGroupAdminRowAwards'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
             // Layout and density matter once any poster tag group is on by default.
-            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagScale', 'tagGap', 'tagEdgeSpacing'], noHint: true },
+            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagScale', 'tagGap', 'tagEdgeSpacing'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
@@ -10726,7 +10794,7 @@
 
             // Display
             feat('Remove from Continue Watching', bool('removeContinueWatchingEnabled'), 'display', 'Enabled');
-            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','statusTagsEnabled','peopleTagsEnabled'].filter(bool).length;
+            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','statusTagsEnabled','logoTagsEnabled','peopleTagsEnabled'].filter(bool).length;
             feat('Media Tags', tagCount > 0, 'display', tagCount + ' tag type(s) enabled');
             feat('Random Button', bool('randomButtonEnabled'), 'display', 'Enabled');
 

@@ -318,7 +318,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A schema mismatch discards the stale cache so it can be rebuilt.
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
-        // v17 adds independently refreshed Awards facts.
+        // Current schema includes independently refreshed Awards and Logos facts.
         internal const int CurrentCacheSchemaVersion = 17;
 
         // Page size for hydrating library items during full builds and
@@ -490,7 +490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null, TagLogoService? logoService = null)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
@@ -499,6 +499,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _languageCache = languageCache;
             _mdblistService = mdblistService;
             _awardTagsService = awardTagsService;
+            _logoService = logoService;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -642,6 +643,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void BuildFullCacheBody(IProgress<double>? progress, CancellationToken cancellationToken, DateTime reconciliationStartedUtc)
         {
             WarmSourceRatings(cancellationToken);
+            NoteLogoBaseline();
+            WarmLogos(cancellationToken);
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var languageCacheAtStart = LanguageCacheCounters();
@@ -874,6 +877,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             WarmSourceRatings(cancellationToken);
             RefreshSourceRatings();
+            WarmLogos(cancellationToken);
+            RefreshLogos();
             var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
             _logger.Info($"[TagCache] Reconciling changes since {changedSinceUtc:O}");
             var languageCacheAtStart = LanguageCacheCounters();
@@ -1382,6 +1387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var siblingsChanged = item is MediaBrowser.Controller.Entities.TV.Season season
                 && RefreshStatusSiblings(season.Id, episodeScans);
             WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
+            WarmLogosForItems(new[] { item }, CancellationToken.None);
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return siblingsChanged;
 
@@ -2047,12 +2053,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// touching the cache (native poster tags when the cache is off or has no
         /// entry yet). Same derivation as the cache, including the Series/Season
         /// episode scan, so it can be expensive for containers: callers memoize.
-        /// Null for non-taggable items or when the build fails.
+        /// Logos are read from stored lookups only: a poster request never waits
+        /// on TMDB, and what is missing is warmed in the background for a later
+        /// build (<see cref="QueueLogoWarm"/>). Null for non-taggable items or
+        /// when the build fails.
         /// </summary>
         public TagCacheEntry? BuildEntryOnDemand(BaseItem item)
         {
             if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
             WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
+            QueueLogoWarm(new[] { item });
             return BuildEntryForItem(item);
         }
 
@@ -2199,6 +2209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private void LoadFromDiskCore()
         {
+            NoteLogoBaseline();
             var path = CacheFilePath;
             if (!File.Exists(path))
             {
@@ -2628,6 +2639,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
                 entry.Ratings = GetSourceRatings(series ?? item);
                 entry.Awards = GetAwards(item);
+                entry.Logos = GetLogos(item, series);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
 
                 if (isContainer)

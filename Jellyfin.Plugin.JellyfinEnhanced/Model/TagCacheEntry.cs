@@ -26,6 +26,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// <summary>Cached title-level awards/chart facts, refreshed independently of library metadata.</summary>
         public TagAwards? Awards { get; set; }
 
+        // Logos tag group (schema v17). Seasons and episodes carry their series'.
+        /// <summary>Provider, network or studio logos, at most the administrator's maximum; null when none or nobody shows the group.</summary>
+        public TagLogo[]? Logos { get; set; }
+
         /// <summary>
         /// Parental / age rating as stored by Jellyfin (e.g. "PG-13", "TV-MA",
         /// "DE-12"). Seasons and Episodes fall back to their Series' rating at
@@ -183,6 +187,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && NullableFloatEquals(a.CriticRating, b.CriticRating)
                 && a.Ratings == b.Ratings
                 && a.Awards == b.Awards
+                && TagLogo.SequencesEqual(a.Logos, b.Logos)
                 && a.OfficialRating == b.OfficialRating
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
@@ -257,6 +262,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             CriticRating = CriticRating,
             Ratings = Ratings,
             Awards = Awards,
+            Logos = Logos,
             OfficialRating = OfficialRating,
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,

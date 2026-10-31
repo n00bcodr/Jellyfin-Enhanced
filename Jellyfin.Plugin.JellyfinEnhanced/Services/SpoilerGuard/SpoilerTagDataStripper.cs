@@ -434,6 +434,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (stripGenresEnabled)
             {
                 stripped.Genres = System.Array.Empty<string>();
+                // Hide tags covers every card tag group, the Logos group included.
+                stripped.Logos = null;
                 stripped.AudioLanguages = null;
                 stripped.PartialAudioLanguages = null;
                 stripped.SubtitleLanguages = null;

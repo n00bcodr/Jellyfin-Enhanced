@@ -63,6 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
+        public bool LogoTagsEnabled { get; set; }
         public bool StatusTagsEnabled { get; set; }
 
         /// <summary>Opt-in Awards poster group; administrator also gates refresh work.</summary>
@@ -109,6 +110,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Only show priority languages; null inherits the current administrator policy.</summary>
         public bool? LanguageTagsPriorityStrict { get; set; }
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        public string LogoTagsPosition { get; set; } = "bottom-left";
         public string StatusTagsPosition { get; set; } = "top-right";
         public bool StatusTagsJustAdded { get; set; } = true;
         public bool StatusTagsNewRelease { get; set; } = true;

@@ -31,6 +31,7 @@
         ageRating: { toggleId: 'ageRatingTagsToggle', settingKey: 'ageRatingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_age_rating', descKey: 'panel_settings_ui_age_rating_tags_desc', color: '#8e24aa', capFixed: true },
         language: { toggleId: 'languageTagsToggle', settingKey: 'languageTagsEnabled', nameKey: 'panel_settings_ui_tag_group_language', descKey: 'panel_settings_ui_language_tags_desc', color: '#43a047' },
         genre: { toggleId: 'genreTagsToggle', settingKey: 'genreTagsEnabled', nameKey: 'panel_settings_ui_tag_group_genre', descKey: 'panel_settings_ui_genre_tags_desc', color: '#00897b' },
+        logos: { toggleId: 'logoTagsToggle', settingKey: 'logoTagsEnabled', nameKey: 'panel_settings_ui_tag_group_logos', descKey: 'panel_settings_ui_logo_tags_desc', color: '#5e35b1', capAll: true },
     };
     const GROUP_IDS = Object.keys(GROUP_META);
     const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
@@ -345,6 +346,7 @@
         else if (group === 'rating') include = ratingIncludeHtml();
         else if (group === 'language') include = languageIncludeHtml();
         else if (group === 'status') include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_media_tags_badges_include'))}</div>`;
+        else if (group === 'logos') include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_logo_tags_include'))}</div>`;
         else include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_nothing_to_include'))}</div>`;
         // The Status row opens the hub's Status badges tab (its include list).
         const badges = group === 'status'

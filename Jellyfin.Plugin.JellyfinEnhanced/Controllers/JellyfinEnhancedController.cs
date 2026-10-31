@@ -3851,6 +3851,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsEnabled,
                 config.RatingTagsEnabled,
                 config.AgeRatingTagsEnabled,
+                config.LogoTagsEnabled,
                 config.StatusTagsEnabled,
                 config.AwardsTagsEnabled,
                 config.AwardsTagsPosition,
@@ -3896,6 +3897,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LanguageTagsStyle = LanguageTagDisplay.NormalizeStyle(config.LanguageTagsStyle),
                 LanguageTagsCountBadge = LanguageTagDisplay.NormalizeCountBadge(config.LanguageTagsCountBadge),
                 config.AgeRatingTagsPosition,
+                // Logos group: its starting corner and the administrator's (read-only) choices.
+                config.LogoTagsPosition,
+                LogoTagsMovieMode = LogoTagRules.MovieMode(config.LogoTagsMovieMode),
+                LogoTagsSeriesMode = LogoTagRules.SeriesMode(config.LogoTagsSeriesMode),
+                LogoTagsMaxLogos = LogoTagRules.Max(config.LogoTagsMaxLogos),
                 config.StatusTagsPosition,
                 config.StatusTagsJustAdded,
                 config.StatusTagsNewRelease,
@@ -5024,6 +5030,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// A TMDB provider, network or company logo for the Logos tag group,
+        /// from the server's disk cache (fetched from TMDB's image server once).
+        /// <paramref name="size"/> is w45 or w92; <paramref name="file"/> a logo
+        /// file name the server has seen in a provider or details lookup, so this
+        /// is not an open TMDB image proxy and the browser never contacts TMDB.
+        /// Anonymous like the CDN assets: &lt;img&gt; cannot carry a Jellyfin token,
+        /// and these are public logos. 404 when not allowed or unavailable.
+        /// </summary>
+        [HttpGet("logo/{size}/{file}")]
+        public async Task<IActionResult> GetLogoImage(string size, string file, [FromServices] Services.TagLogoService logos, CancellationToken cancellationToken)
+        {
+            if (!logos.IsAllowed(size, file)) return NotFound();
+            var image = await logos.GetImageAsync(size, file, cancellationToken).ConfigureAwait(false);
+            if (image == null) return NotFound();
+            Response.Headers["Cache-Control"] = "public, max-age=604800";
+            Response.Headers["ETag"] = image.ETag;
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], image.ETag))
+            {
+                return StatusCode(StatusCodes.Status304NotModified);
+            }
+
+            return File(image.Bytes, image.ContentType);
+        }
+
+        /// <summary>
         /// Local CDN route. Serves a third-party static asset (icon, flag, theme
         /// sheet, remote locale, …) from the plugin's on-disk cache, fetching it from the
         /// fixed upstream CDN on a cache miss. This is the ONLY endpoint clients use for
@@ -5384,6 +5416,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                         RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                         AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+                        LogoTagsEnabled = defaultConfig.LogoTagsEnabled,
                         StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
                         AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
                         AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
@@ -5408,6 +5441,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(defaultConfig.RatingTagsMinScore),
                         RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                         AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+                        LogoTagsPosition = defaultConfig.LogoTagsPosition,
                         StatusTagsPosition = defaultConfig.StatusTagsPosition,
                         StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                         StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
@@ -5549,6 +5583,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (!isIdentical)
                 {
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
+                    // Turning the Logos group on (or the last user off) changes whether cache entries carry logos.
+                    if (existing?.LogoTagsEnabled != userConfiguration.LogoTagsEnabled)
+                        Services.TagCacheService.Instance?.OnLogoSettingsChanged();
 
                     if (changes.Count > 0)
                         _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
@@ -8426,6 +8463,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                 RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                 AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+                LogoTagsEnabled = defaultConfig.LogoTagsEnabled,
                 StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
                         AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
                         AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
@@ -8450,6 +8488,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(defaultConfig.RatingTagsMinScore),
                 RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                 AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+                LogoTagsPosition = defaultConfig.LogoTagsPosition,
                 StatusTagsPosition = defaultConfig.StatusTagsPosition,
                 StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                 StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
@@ -8536,6 +8575,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            // Every user took the admin's Logos switch: re-check who shows the group.
+            Services.TagCacheService.Instance?.OnLogoSettingsChanged();
             _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}.");
             return Ok(new
             {
@@ -9056,6 +9097,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .Select(id => _libraryManager.GetItemById<BaseItem>(Guid.Parse(id.Trim()), user))
                 .Where(item => item != null).Select(item => item!).ToArray();
             _tagCacheService.WarmSourceRatingsForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
+            _tagCacheService.WarmLogosForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
             var results = new List<object>(accessibleItems.Length);
 
             // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources).
@@ -9143,6 +9185,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spEp),
+                        // Hide tags strips the Logos group like genres (shared/native strip too).
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spEp),
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spEp),
                         // Suppress the parent-series rating fallback only when the
@@ -9190,6 +9234,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeries),
                         Awards = spStripRatings ? null : _tagCacheService.GetAwards(spSeries),
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spSeries),
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
                         LibraryId = TagDataLibraryId(spSeries),
                         SeriesId = (Guid?)null,
@@ -9264,6 +9309,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CriticRating = spStripRatings ? (float?)null : spMovie.CriticRating,
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spMovie),
                         Awards = spStripRatings ? null : _tagCacheService.GetAwards(spMovie),
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spMovie),
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
                         LibraryId = TagDataLibraryId(spMovie),
                         SeriesId = (Guid?)null,
@@ -9308,6 +9354,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeason),
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spSeason),
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spSeason),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
@@ -9409,6 +9456,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     CriticRating = item.CriticRating,
                     Ratings = _tagCacheService.GetSourceRatings(item),
                     Awards = _tagCacheService.GetAwards(item),
+                    Logos = _tagCacheService.GetLogos(item),
                     OfficialRating = ResolveTagDataOfficialRating(item),
                     LibraryId = TagDataLibraryId(item),
                     SeriesId = seriesId,

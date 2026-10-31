@@ -62,6 +62,7 @@
             ${CORNER} > :is(.quality-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container) {
                 max-width: 100%;
             }
+            ${CORNER} > .logo-overlay-container { max-width: 100%; }
             ${CORNER} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
                 max-height: calc(90% + 10.8px);
             }

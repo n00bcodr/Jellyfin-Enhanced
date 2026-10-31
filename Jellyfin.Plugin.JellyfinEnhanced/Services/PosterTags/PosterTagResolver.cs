@@ -32,7 +32,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// Decides which tags the web would draw on a card, from JE's tag-cache entry and the user's
     /// effective settings: a pure, allocation-light port of the five card tag groups
     /// (js/tags/qualitytags.js, genretags.js, ratingtags.js + userreviewtags.js, ageratingtags.js,
-    /// languagetags.js + js/core/media-language.js) and of the pipeline's ordering and top-right
+    /// languagetags.js + js/core/media-language.js, logotags.js) and of the pipeline's ordering and top-right
     /// indicator offset (js/tags/tag-pipeline.js, js/core/tag-renderer-base.js). Thread-safe, no I/O.
     /// </summary>
     /// <remarks>
@@ -66,7 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (!settings.AnyGroupEnabled) return null;
 
             // DOM order of the tag containers = paint and stack order. Renderers run in registration
-            // order (quality, genre, rating, age rating, language), except that quality registers
+            // order (quality, genre, rating, age rating, language, logos), except that quality registers
             // late when it waits for the Jellyfin audio preference.
             var groups = new List<PosterTagGroupLayout>(5);
             PosterTagGroupLayout? reviewOnly = null;
@@ -113,6 +113,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (settings.Shows(PosterTagGroup.Language) && LanguageFlagRules.ResolveGroup(entry, settings) is { } languages)
             {
                 groups.Add(Group(PosterTagGroup.Language, settings, languages));
+            }
+
+            if (settings.Shows(PosterTagGroup.Logos) && LogoRules.Resolve(entry.Logos) is { } logos)
+            {
+                groups.Add(Group(PosterTagGroup.Logos, settings, logos));
             }
 
             if (quality is not null && settings.UsesJellyfinAudioPreference) groups.Add(quality);
