@@ -95,7 +95,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             "LanguageTagsShowAudio", "LanguageTagsShowSubtitles", "LanguageTagsStyle", "LanguageTagsCountBadge",
             "LanguageTagsPriority", "LanguageTagsPriorityStrict",
             "StatusTagsJustAdded", "StatusTagsNewRelease", "StatusTagsTrending", "StatusTagsSchedule",
-            "StatusTagsMilestones", "StatusTagsSeriesStatus", "StatusTagsScenes",
+            "StatusTagsMilestones", "StatusTagsSeriesStatus", "StatusTagsScenes", "StatusTagsLeaving", "StatusTagsDirectPlay",
             "QualityTagsPosition", "GenreTagsPosition", "LanguageTagsPosition", "RatingTagsPosition",
             "AgeRatingTagsPosition", "StatusTagsPosition", "AwardsTagsPosition", "LogoTagsPosition", "CustomTagsPosition",
             "TagLayout", "TagLayoutSettingsVersion", "TagLayouts", "TagGroupOrder", "TagGroupCaps", "TagLabelDensity",
@@ -109,13 +109,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// <summary>
         /// Every credential field of <see cref="PluginConfiguration"/>, spelled as declared: API keys, the custom
         /// rule key, the analytics secret and the Sonarr/Radarr instance lists (each instance carries its API key).
-        /// None is a page field; an import naming one reports it as a secret and never reads it.
+        /// The page-owned Maintainerr key is write-only; an import naming any credential reports it as a secret and never reads it.
         /// </summary>
         public static readonly IReadOnlySet<string> Secrets = new HashSet<string>(StringComparer.Ordinal)
         {
             "TMDB_API_KEY", "MdblistApiKey", "DoesTheDogDieApiKey", "ReviewTranslationApiKey", "JellyseerrApiKey",
             "ShokoApiKey", "SonarrApiKey", "RadarrApiKey", "SonarrInstances", "RadarrInstances", "CustomTagRuleKey",
-            "AnalyticsInstallSecret",
+            "AnalyticsInstallSecret", "LeavingSoonMaintainerrApiKey",
         };
 
         private static readonly Regex PresetIdRegex = new Regex("^[a-z0-9][a-z0-9-]{0,39}$", RegexOptions.Compiled);

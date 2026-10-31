@@ -100,6 +100,7 @@
         'RatingTagsOnSeasons', 'RatingTagsOnEpisodes', 'RatingTagsOnContinueWatching', 'RatingTagsOnNextUp', 'RatingTagsShowCommunity',
         'RatingTagsShowCritic', 'RatingTagsSources', 'RatingTagsMinScore', 'RatingTagsColorByScore', 'AgeRatingTagsPosition', 'StatusTagsPosition',
         'StatusTagsJustAdded', 'StatusTagsNewRelease', 'StatusTagsTrending', 'StatusTagsSchedule', 'StatusTagsMilestones', 'StatusTagsSeriesStatus', 'StatusTagsScenes',
+        'StatusTagsLeaving', 'StatusTagsDirectPlay',
         'AwardsTagsEnabled', 'AwardsTagsPosition', 'LogoTagsEnabled', 'LogoTagsPosition', 'CustomTagsEnabled', 'CustomTagsPosition',
         'ShowRatingInPlayer', 'TagLayout', 'TagLabelDensity', 'TagScale', 'TagGap', 'TagEdgeSpacing', 'TagLayouts', 'TagGroupOrder', 'TagGroupCaps',
         'LanguageTagsShowAudio', 'LanguageTagsShowSubtitles', 'LanguageTagsStyle', 'LanguageTagsCountBadge',
@@ -200,6 +201,7 @@
      * @returns {*}
      */
     function fieldValue(f, config) {
+        if (f.secret) return '';
         const raw = config[f.key];
         if (f.read) return f.read(raw, config);
         if (f.type === 'switch' || f.type === 'enable' || f.type === 'ordered') return raw === true;
@@ -253,7 +255,7 @@
             case 'number':
             case 'text':
                 return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${tx(f.label)}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
-                    + `<span class="je-ta-field-control"><input type="${f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
+                    + `<span class="je-ta-field-control"><input type="${f.secret ? 'password' : f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.secret ? ' autocomplete="new-password" spellcheck="false"' : ''}${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
             case 'textarea':
                 return `<div class="je-ta-field je-ta-field--block" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${tx(f.label)}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><textarea id="${esc(f.id)}" ${data} rows="${f.rows || 4}" spellcheck="false"${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${esc(value)}</textarea></span></div>`;
@@ -496,7 +498,7 @@
         // meanwhile is the next save's.
         const changes = Object.fromEntries(sent);
         const expected = {};
-        for (const key of sent.keys()) if (store.base.has(key)) expected[key] = store.base.get(key);
+        for (const key of sent.keys()) if (store.base.has(key) && !sections.some(s => s.fields?.some(f => f.key === key && f.secret))) expected[key] = store.base.get(key);
         setStoreState('saving');
         let refused = false;
         const saving = (async () => {
@@ -613,6 +615,8 @@
                 dataType: 'json',
             }),
         };
+        config = { ...config };
+        for (const section of sections) for (const field of section.fields || []) if (field.secret) delete config[field.key];
         checkSession();
         store.host = host;
         const contextMark = sessionMark();
@@ -1097,6 +1101,7 @@
             if (disposed) return;
             const keep = protectedFields();
             for (const key of Object.keys(fresh)) if (!keep.has(key)) config[key] = fresh[key];
+            for (const { f } of allFields) if (f.secret && !keep.has(f.key)) delete config[f.key];
             for (const s of sections) s.load?.(ctx, bodyOf(s));
             refresh();
             loadPreviewStyles();

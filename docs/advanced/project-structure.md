@@ -14,7 +14,7 @@ This section follows the client from loader injection through initialization and
 
 `Services/ScriptInjectionStartupFilter.cs` injects the loader into web responses. `GET /JellyfinEnhanced/script` serves `js/plugin.js`; it is separate from the component bundle. `JellyfinEnhanced.csproj` embeds `js/**`, and `GetScript` in `Controllers/JellyfinEnhancedController.cs` serves individual resources at `/JellyfinEnhanced/js/{path}`.
 
-The ordered module list lives in `js/component-scripts.json`: 166 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
+The ordered module list lives in `js/component-scripts.json`: 181 component modules, with paths relative to `js/`. Entries starting with `//` are ordering notes.
 
 **Modules execute in manifest order.** Place a module after every producer whose exports it reads at load time. A consumer loaded too early can capture `undefined`.
 
@@ -341,6 +341,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `tag-layout-styles.js` | The one stylesheet for every tag layout, keyed off `.je-tag-host[data-je-layout]` and `.je-tag-slot[data-je-slot]`. |
 | `tag-styles.js` | Retrieves the resolved Tag Styles (with the user's own preset when allowed) and injects web CSS for every chip group; paired with server `Services/PosterTags/TagStyles.cs`. |
 | `tag-poster-colours.js` | The Poster preset on the web: samples each card's artwork in idle slices (dominant colour, normalised for contrast; the same algorithm as `Services/PosterTags/PosterColour.cs`), sets `--je-tag-bg/-border/-fg` on the card and keeps the colours in memory and in the tag cache store. |
+| `tag-direct-play.js` | The Status group's direct-play warning: jellyfin-web 12.1's browser device profile (ported; `tests/fixtures/direct-play-web-12.1-chromium.json` is the real client's, captured in Chromium) and the user's saved bitrate, `PlaybackInfo` lookups for on-screen cards in idle slices (two in flight, each aborted after 15 seconds), answers per item and profile hash for a day in memory and the tag cache store. |
 
 `Configuration/LogoTagSettings.cs` (`LogoTagRules`) normalizes the administrator's Logos modes, region and maximum. `Model/TagLogo.cs` is the immutable `{kind,name,logo}` cache-entry value. `Services/TagLogoService.cs` keeps the daily TMDB provider and company/network lookups (`tag-logos.json`), rate-limits them, and serves the allow-listed logo images from its size-bounded disk cache (least recently read evicted first, orphans swept at start) through `/JellyfinEnhanced/logo/{size}/{file}`. `Services/TagCacheLogos.cs` projects the lookups and Jellyfin's studio names into cache entries and batch DTOs, warms them before builds and reconciles, and republishes them after settings changes.
 
@@ -454,6 +455,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `TagLogoService.cs`, `TagCacheLogos.cs` | Logos group data: daily TMDB lookups and the logo image proxy cache; projection into tag cache entries. |
 | `StatusTagsSeriesService.cs` | Authenticated caller-filtered series schedule endpoint support: six-hour TMDB cache, four concurrent lookups, 35 starts per ten seconds, season episode-type enrichment. No per-user storage. |
 | `StatusTagsEpisodeFacts.cs` | Shared episode aggregation for cache and user-filtered batch fallback: aired episode indexes, episode-one season premiere and season added span. |
+| `LeavingSoonService.cs`, `TagCacheLeaving.cs` | Leaving soon facts: Maintainerr's `/api/collections` (delete date per item) or the administrator's leaving collections, refreshed on an interval with retry backoff into `leaving-soon.json` (no URL or key); projection into tag cache entries (`Leaving`), `/tag-data` and native posters. |
 | `TagCacheCustomTags.cs` | Custom tags in the tag cache: the rules each entry matches (`CustomTags`) from item and series tags and a pass over the collections a rule names; patches members after collection changes, series children after series changes, and re-matches the cache when the rules change. |
 | `ItemLibraryResolver.cs` | The library an item is in (seasons and episodes: their series'), stored as `LibraryId` in tag-cache entries and `tag-data` items for tag look rules. |
 | `TagCachePendingChanges.cs`, `TagCacheResponseBody.cs` | Coalesces pending item changes; assembles bulk response bytes and hashes the viewer's final body for its ETag. |
@@ -756,6 +758,7 @@ Native settings and cache digests are resolved in `Services/PosterTags/PosterTag
 - `Services/AwardTagsService.cs`: persistent `award-tags.json`, configurable MDBList list membership, provider certification, cached Wikidata winner projection, TTLs, quota reserve and cancellation.
 - `Services/TagCacheAwards.cs`: cache-only batch/native projection and normal tag-cache publication after scheduled refresh or config changes.
 - `ScheduledTasks/RefreshAwardTagsTask.cs`: **Refresh Awards Tags**, daily 04:00 and on demand, hidden while Awards is off.
+- `ScheduledTasks/RefreshLeavingSoonTagsTask.cs`: **Refresh Leaving Soon Tags**, hourly, acting once the configured interval has passed, hidden without a Leaving soon source. `Model/TagLeaving.cs` is its cache-entry value.
 - `js/tags/awardstags.js`: IIFE renderer and shared preview chips/logos, registered in the component manifest.
 - `Assets/PosterTags/award-icons.json`: generated logo paths loaded by `PosterTagAssets`; `scripts/build_poster_assets.py --awards-only` regenerates just those paths and manifest records. Source marks are nominative; project artwork is GPL-3.0 and trademarks remain with their owners.
 

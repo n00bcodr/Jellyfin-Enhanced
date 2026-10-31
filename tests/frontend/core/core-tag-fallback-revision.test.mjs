@@ -13,6 +13,7 @@ const cases = [
   ['awards', 'Awards', 'awardstags', 'awards-tag', { Awards: { OscarWinner: true } }],
   ['logos', 'Logo', 'logotags', 'je-logo-chip', { Logos: [{ kind: 'network', name: 'Northwind' }] }],
   ['custom', 'Custom', 'customtags', 'custom-tag', { CustomTags: [rules[0].Id] }],
+  ['status', 'Status', 'statustags', 'status-tag', { Leaving: {} }],
 ];
 async function page(t, group, store, prefetched, answer, responseStamp = prefetched) {
   const [name, init, file, chip] = group;
@@ -21,8 +22,8 @@ async function page(t, group, store, prefetched, answer, responseStamp = prefetc
   const storage = { getItem: k => store.get(k) ?? null, setItem: (k,v) => store.set(k,String(v)), removeItem: k => store.delete(k),
     key: i => [...store.keys()][i] ?? null, get length() { return store.size; } };
   const h = createHarness({ html: `<div class="card" data-id="${id}" data-type="Movie"><div class="cardScalable"><div class="cardImageContainer"></div></div></div>`,
-    JE: { currentSettings: { [`${init[0].toLowerCase()+init.slice(1)}TagsEnabled`]: true, qualityTagsPreferredAudioLanguage: 'none' },
-      pluginConfig: { TagCacheServerMode: false, CustomTagRules: rules, AwardsTagsEnabled: true },
+    JE: { currentSettings: { [`${init[0].toLowerCase()+init.slice(1)}TagsEnabled`]: true, qualityTagsPreferredAudioLanguage: 'none', statusTagsLeaving: true, statusTagsTrending: false },
+      pluginConfig: { TagCacheServerMode: false, CustomTagRules: rules, AwardsTagsEnabled: true, LeavingSoonAvailable: true },
       t: k => k, cdn: { flagSvg: c => `/flags/${c}.svg` },
       takePrefetched: k => { if(prefetched instanceof Error) throw prefetched; return k === 'TagStripRevision' ? prefetched : undefined; },
       _cacheManager: { register: f => saves.push(f), markDirty() {} }, helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} } },
@@ -30,7 +31,7 @@ async function page(t, group, store, prefetched, answer, responseStamp = prefetc
     globals: { requestIdleCallback: f => idle.push(f), setTimeout: (f,ms) => { timers.set(++seq,{ f,ms }); return seq; }, clearTimeout: n => timers.delete(n) } });
   Object.defineProperty(h.window, 'localStorage', { value: storage, configurable: true });
   t.after(() => h.close());
-  for (const f of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'tags/tag-pipeline.js', `tags/${file}.js`]) h.load(f);
+  for (const f of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'tags/tag-pipeline.js', 'tags/status-vocabulary.js', `tags/${file}.js`]) h.load(f);
   h.JE[`initialize${init}Tags`](); h.JE.tagPipeline.initialize();
   const flush = async () => { for (let n=0;n<8;n++) {
     await new Promise(r => setImmediate(r));

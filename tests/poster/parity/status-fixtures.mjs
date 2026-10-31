@@ -68,6 +68,24 @@ add('german-weekday-locale', show(), 'airs_date', 'Airs Sonntag', { locale: 'de-
 add('french-weekday-locale', show(), 'airs_date', 'Airs dimanche', { locale: 'fr-FR', schedule: schedule(null, ep('2026-11-01')) });
 add('new-york-before-dst-fallback', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 10, 1, 5, 30), zone: 'America/New_York', schedule: schedule(null, ep('2026-11-01')) });
 add('new-york-after-dst-fallback', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 10, 1, 6, 30), zone: 'America/New_York', schedule: schedule(null, ep('2026-11-01')) });
+// Leaving soon (Maintainerr or leaving collections): first match, local calendar days.
+const leavingOn = { settings: { StatusTagsLeaving: true }, plugin: { LeavingSoonCollections: 'Leaving Soon' } };
+const leaving = (deleteAt) => ({ Leaving: deleteAt === undefined ? {} : { DeleteAt: deleteAt } });
+add('leaving-days', movie(leaving(now + 5 * day)), 'leaving_days', 'Leaving in 5d', leavingOn);
+add('leaving-tomorrow', show(leaving(now + day)), 'leaving_tomorrow', 'Leaving tomorrow', leavingOn);
+add('leaving-today-episode', episode(leaving(now + 3600000)), 'leaving_today', 'Leaving today', leavingOn);
+add('leaving-undated-season', season(leaving()), 'leaving_soon', 'Leaving soon', leavingOn);
+add('leaving-overdue', movie(leaving(now - day)), 'leaving_soon', 'Leaving soon', leavingOn);
+add('leaving-before-trending', movie(leaving(now + 9 * day)), 'leaving_days', 'Leaving in 9d', { ...leavingOn, rank: 3 });
+add('leaving-before-new-movie', movie({ ...leaving(now + 2 * day), PremiereDate: ago(2) }), 'leaving_days', 'Leaving in 2d', leavingOn);
+add('leaving-family-off', movie(leaving(now + 5 * day)), null, null, { plugin: leavingOn.plugin });
+add('leaving-without-source', movie(leaving(now + 5 * day)), null, null, { settings: leavingOn.settings });
+add('leaving-not-on-collections', { Type: 'BoxSet', DateCreated: old, ...leaving(now + 5 * day) }, null, null, leavingOn);
+add('leaving-perth-same-local-day', movie(leaving(Date.UTC(2026, 9, 31, 15, 30))), 'leaving_today', 'Leaving today', { ...leavingOn, now: Date.UTC(2026, 9, 30, 23, 30), zone: 'Australia/Perth' });
+add('leaving-utc-next-day', movie(leaving(Date.UTC(2026, 9, 31, 15, 30))), 'leaving_tomorrow', 'Leaving tomorrow', { ...leavingOn, now: Date.UTC(2026, 9, 30, 23, 30) });
+add('leaving-new-york-across-dst', movie(leaving(Date.UTC(2026, 10, 2, 5))), 'leaving_days', 'Leaving in 2d', { ...leavingOn, now: Date.UTC(2026, 10, 1, 3, 30), zone: 'America/New_York' });
+add('leaving-compact-bands', movie(leaving(now + 5 * day)), 'leaving_days', '5d left', { plugin: leavingOn.plugin, settings: { ...leavingOn.settings, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' } });
+add('leaving-german-falls-back-to-english', movie(leaving(now + 5 * day)), 'leaving_days', 'Leaving in 5d', { ...leavingOn, locale: 'de-DE' });
 // Every shipped locale, plus Persian calendar boundaries; the six review cases stay literal below.
 const dates = ['2026-01-04', '2026-03-20', '2026-03-21', '2026-10-04'];
 for (const file of readdirSync(new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url)).filter(f => f.endsWith('.json'))) {

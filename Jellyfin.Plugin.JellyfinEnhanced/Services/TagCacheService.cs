@@ -320,7 +320,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v16 adds subtitle languages to the deployed combined v15 shape.
         // Current schema includes Awards, Logos, Custom rule matches, per-track distinct
         // quality values and full union/shared/latest sets for container display modes.
-        // Technical stream/subtitle facts and Scenes share the integrated shape.
+        // Technical stream/subtitle facts, Scenes and Leaving share the integrated shape.
         internal const int CurrentCacheSchemaVersion = 20;
 
         // Page size for hydrating library items during full builds and
@@ -492,7 +492,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null, TagLogoService? logoService = null, StatusTagsScenesService? scenesService = null)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null, TagLogoService? logoService = null, StatusTagsScenesService? scenesService = null, LeavingSoonService? leavingSoonService = null)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
@@ -503,6 +503,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _awardTagsService = awardTagsService;
             _logoService = logoService;
             _scenesService = scenesService;
+            _leavingSoonService = leavingSoonService;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -1638,7 +1639,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (since.HasValue && alsoInclude == null && since.Value >= generation.MaxLastUpdated
                 && TryGetAccessDigest(access, generation, out var memoizedRevision))
             {
-                accessRevision = memoizedRevision + CollectionAccessSuffix(accessibleSet);
+                accessRevision = memoizedRevision + CollectionAccessSuffix(accessibleSet) + LeavingAccessSuffix(accessibleSet);
                 return new Dictionary<string, TagCacheEntry>();
             }
 
@@ -1661,14 +1662,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                var visible = WithVisibleCustomTags(kvp.Value, Guid.TryParse(kvp.Key, out var itemId) ? itemId : Guid.Empty, accessibleSet);
+                var visible = WithVisibleLeaving(WithVisibleCustomTags(kvp.Value, Guid.TryParse(kvp.Key, out var itemId) ? itemId : Guid.Empty, accessibleSet), accessibleSet);
                 result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(visible, accessibleSet), accessibleSet, generation.Cache));
             }
 
             var keyRevision = FormatAccessRevision(excludedCount, excludedSum);
             // The collection matches' access is part of the revision (not of the memo,
             // which covers the cache keys only).
-            accessRevision = keyRevision + CollectionAccessSuffix(accessibleSet);
+            accessRevision = keyRevision + CollectionAccessSuffix(accessibleSet) + LeavingAccessSuffix(accessibleSet);
             // Only a walk that saw one unchanged state leaves results for other
             // requests: its digest as the memo and, for a whole-cache walk, its
             // result as shareable.
@@ -1976,7 +1977,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             timestamp = generation.Timestamp;
             if (!live || !generation.Quiescent) return false;
 
-            accessRevision = ResolveAccessDigest(access, generation) + CollectionAccessSuffix(access.Ids);
+            accessRevision = ResolveAccessDigest(access, generation) + CollectionAccessSuffix(access.Ids) + LeavingAccessSuffix(access.Ids);
             if (!IsUnchangedSince(generation)) return false;
 
             shareable = true;
@@ -2331,6 +2332,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     RefreshDueStatusContainers();
                     // A snapshot written under other Custom tag rules is re-matched in the background.
                     QueueCustomTagRefreshIfStale();
+                    // A Leaving answer published just before a crash may be newer than this snapshot.
+                    ReconcileLeaving();
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
@@ -2677,6 +2680,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 entry.Logos = GetLogos(item, series);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
                 entry.CustomTags = CustomTagsFor(item, series);
+                entry.Leaving = GetLeaving(item);
 
                 if (isContainer)
                 {

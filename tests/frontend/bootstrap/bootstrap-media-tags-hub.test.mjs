@@ -218,15 +218,15 @@ test('every hub control keeps writing the setting it always did', async t => {
   assert.equal(h.saved().useNativePosterTags, false);
   // A badge switch re-initialises the status tags, which removes every status overlay on the page.
   const reinit = h.JE.reinitializeStatusTags = () => h.document.querySelectorAll('.status-overlay-container').forEach(el => el.remove());
-  for (const key of ['statusTagsJustAdded', 'statusTagsNewRelease', 'statusTagsTrending', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus']) {
+  for (const key of ['statusTagsJustAdded', 'statusTagsNewRelease', 'statusTagsTrending', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsLeaving', 'statusTagsDirectPlay']) {
     const box = h.$(`#${key}Toggle`);
     await h.change(box, !box.checked);
     assert.equal(h.saved()[key], box.checked, key);
   }
   assert.ok(reinit);
-  assert.equal(h.document.querySelectorAll('.je-mth-badge-sample .status-tag').length, 7, 'the badge samples survive it');
+  assert.equal(h.document.querySelectorAll('.je-mth-badge-sample .status-tag').length, 9, 'the badge samples survive it');
   assert.equal(h.$('.je-mtp-sample[data-sample="series"] .status-tag')?.textContent, 'status_tag_returning', 'and the preview redraws its badge (Series status is on now)');
-  assert.equal(h.$('.je-mtp-sample[data-sample="movie"] .status-tag'), null, 'the movie\'s three families are all off');
+  assert.match(h.$('.je-mtp-sample[data-sample="movie"] .status-tag')?.textContent || '', /^status_tag_(compact_)?leaving_days:5$/, 'the movie\'s three families are off and Leaving soon is on now (in either density)');
   // The Status master switch is the Status row's box on Groups: the badges tab says when it is off.
   await h.change(h.$('#statusTagsToggle'), false);
   assert.equal(h.saved().statusTagsEnabled, false);

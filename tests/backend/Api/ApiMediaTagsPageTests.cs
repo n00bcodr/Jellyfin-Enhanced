@@ -73,7 +73,7 @@ public class ApiMediaTagsPageTests
         var path = Path.Combine(f.Core.ConfigRoot, "config-schema-snapshot.json");
         var ids = JsonConvert.DeserializeObject<ConfigSchemaSnapshot>(File.ReadAllText(path))!.SettingIds;
         // Moved off configPage.html, declared by the page's section modules under their old ids.
-        foreach (var id in new[] { "qualityTagsEnabled", "showResolutionTag", "tagLayout", "statusTagsJustAddedDays", "tagStylesEnabled", "tagCacheServerMode", "nativePosterTagsWebClientNames", "tagLookRulesJson", "tagScale", "tagGap", "tagEdgeSpacing", "awardsTagsEnabled", "awardsTagsImdbList", "awardsTagsRefreshHours", "logoTagsMovieMode", "logoTagsSeriesMode", "logoTagsRegion", "logoTagsMaxLogos", "customTagRules" })
+        foreach (var id in new[] { "qualityTagsEnabled", "showResolutionTag", "tagLayout", "statusTagsJustAddedDays", "tagStylesEnabled", "tagCacheServerMode", "nativePosterTagsWebClientNames", "tagLookRulesJson", "tagScale", "tagGap", "tagEdgeSpacing", "awardsTagsEnabled", "awardsTagsImdbList", "awardsTagsRefreshHours", "logoTagsMovieMode", "logoTagsSeriesMode", "logoTagsRegion", "logoTagsMaxLogos", "customTagRules", "statusTagsLeaving", "statusTagsDirectPlay", "leavingSoonMaintainerrUrl", "leavingSoonMaintainerrApiKey", "leavingSoonCollections", "leavingSoonRefreshHours" })
         {
             Assert.Contains(id, ids);
         }
@@ -97,6 +97,23 @@ public class ApiMediaTagsPageTests
         Changes = StjSerializer.Deserialize<Dictionary<string, JsonElement>>(StjSerializer.Serialize(changes)),
         Expected = expected == null ? null : StjSerializer.Deserialize<Dictionary<string, JsonElement>>(StjSerializer.Serialize(expected)),
     };
+
+    [Fact]
+    public void MaintainerrKeyIsWriteOnlyInPagePatchIncludingStaleExpectedValues()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        f.Plugin.Configuration.LeavingSoonMaintainerrApiKey = "old-key-canary";
+        var result = Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(
+            new { LeavingSoonMaintainerrApiKey = "new-key-canary" }, new { LeavingSoonMaintainerrApiKey = "" })));
+        Assert.Equal("new-key-canary", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
+        Assert.Equal("{\"values\":{\"LeavingSoonMaintainerrApiKey\":\"\"}}", StjSerializer.Serialize(result.Value));
+        var conflict = Assert.IsType<ConflictObjectResult>(controller.PatchConfiguration(Patch(
+            new { LeavingSoonMaintainerrApiKey = "next-key-canary", TagGap = "roomy" },
+            new { LeavingSoonMaintainerrApiKey = "", TagGap = "tight" })));
+        Assert.DoesNotContain("key-canary", StjSerializer.Serialize(conflict.Value));
+        Assert.Equal("new-key-canary", f.Plugin.Configuration.LeavingSoonMaintainerrApiKey);
+    }
 
     [Fact]
     public void TwoAdministratorsEditingDifferentFieldsBothPersist()

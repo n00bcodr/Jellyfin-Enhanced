@@ -146,12 +146,12 @@
 .je-ta-field-control { flex: 0 1 auto; display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
 .je-ta-field--block { display: block; }
 .je-ta-field--block .je-ta-field-control { margin-top: 8px; display: block; }
-.je-tag-admin select, .je-tag-admin input[type="text"], .je-tag-admin input[type="number"], .je-tag-admin textarea {
+.je-tag-admin select, .je-tag-admin input[type="text"], .je-tag-admin input[type="password"], .je-tag-admin input[type="number"], .je-tag-admin textarea {
     min-height: 36px; padding: 5px 9px; border: 1px solid var(--je-ta-border-strong); border-radius: 6px; background: var(--je-ta-input); color: var(--je-ta-text); font: inherit; font-size: 14px; max-width: 100%;
 }
 .je-tag-admin select { padding-right: 28px; }
 .je-tag-admin input[type="number"] { width: 6.5em; }
-.je-tag-admin input[type="text"] { width: min(100%, 28em); }
+.je-tag-admin input[type="text"], .je-tag-admin input[type="password"] { width: min(100%, 28em); }
 .je-tag-admin textarea { width: 100%; min-height: 6em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .je-ta-unit { font-size: 13px; color: var(--je-ta-muted); }
 .je-ta-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; }

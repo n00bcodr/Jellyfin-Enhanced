@@ -45,6 +45,8 @@
         { key: 'statusTagsMilestones', id: 'statusTagsMilestonesToggle', fallback: true, nameKey: 'panel_media_tags_badge_milestones', descKey: 'panel_settings_ui_status_tags_milestones', chip: ['milestone', 'season_finale', 'status_tag_season_finale'] },
         { key: 'statusTagsSeriesStatus', id: 'statusTagsSeriesStatusToggle', fallback: false, nameKey: 'panel_media_tags_badge_series_status', descKey: 'panel_settings_ui_status_tags_series_status', chip: ['status', 'returning', 'status_tag_returning'] },
         { key: 'statusTagsScenes', id: 'statusTagsScenesToggle', fallback: false, nameKey: 'panel_media_tags_badge_scenes', descKey: 'panel_settings_ui_status_tags_scenes', chip: ['scenes', 'post_credits', 'status_tag_post_credits'] },
+        { key: 'statusTagsLeaving', id: 'statusTagsLeavingToggle', fallback: false, nameKey: 'panel_media_tags_badge_leaving', descKey: 'panel_media_tags_badge_leaving_desc', chip: ['leaving', 'leaving', 'status_tag_leaving_days', { days: 5 }], requires: 'LeavingSoonAvailable', requiresKey: 'panel_media_tags_badge_leaving_unavailable' },
+        { key: 'statusTagsDirectPlay', id: 'statusTagsDirectPlayToggle', fallback: false, nameKey: 'panel_media_tags_badge_direct_play', descKey: 'panel_media_tags_badge_direct_play_desc', chip: ['playback', 'direct_play', 'status_tag_transcode'] },
     ];
 
     /** The admin pointers: the Media Tags admin page tab each one opens. */
@@ -285,13 +287,13 @@
      * @param {string[]} chip - [kind, data-je-status, label key].
      * @returns {string}
      */
-    function statusChipHtml([kind, status, labelKey]) {
+    function statusChipHtml([kind, status, labelKey, params]) {
         if (kind === 'trending') {
             const [before, after = ''] = JE.t(labelKey, { rank: '\u0001' }).split('\u0001');
             const hash = before.endsWith('#') ? '#' : '';
             return `<span class="status-tag status-tag--${kind}" data-je-status="${status}">${escapeHtml(before.slice(0, before.length - hash.length))}<span class="status-tag-rank">${hash}1</span>${escapeHtml(after)}</span>`;
         }
-        return `<span class="status-tag status-tag--${kind}" data-je-status="${status}">${tx(labelKey)}</span>`;
+        return `<span class="status-tag status-tag--${kind}" data-je-status="${status}">${tx(labelKey, params)}</span>`;
     }
 
     /** @returns {string} The Status badges tab. */
@@ -299,7 +301,8 @@
         const admin = isAdmin();
         const rows = BADGE_FAMILIES.map((f) => {
             const days = Number(JE.pluginConfig?.[f.windowSetting]) || f.windowFallback;
-            const window = f.windowKey ? `<span class="je-mth-badge-window">${tx(f.windowKey, { days })}</span>` : '';
+            const window = f.windowKey ? `<span class="je-mth-badge-window">${tx(f.windowKey, { days })}</span>`
+                : f.requires && JE.pluginConfig?.[f.requires] !== true ? `<span class="je-mth-badge-window">${tx(f.requiresKey)}</span>` : '';
             return `
                 <div class="je-quality-cat-row je-mth-badge" data-cat-key="${f.key}">
                     <label class="je-mth-badge-main">

@@ -84,7 +84,7 @@ public class ApiMediaTagsPortableTests
         Assert.Equal(1, (int)exported["v"]!);
         Assert.Equal("je-media-tags-user", (string?)exported["kind"]);
         var settings = exported["settings"]!.AsObject();
-        Assert.Equal(84, MediaTagsPortable.UserFields.Count);
+        Assert.Equal(86, MediaTagsPortable.UserFields.Count);
         Assert.Equal(MediaTagsPortable.UserFields, settings.Select(p => p.Key));
 
         // The same document again changes nothing and skips nothing.
@@ -285,6 +285,7 @@ public class ApiMediaTagsPortableTests
         config.CustomTagRuleKey = "rule-key-secret";
         config.MdblistApiKey = "mdblist-secret";
         config.JellyseerrApiKey = "seerr-secret";
+        config.LeavingSoonMaintainerrApiKey = "maintainerr-secret";
         config.CustomTagRules = new List<CustomTagRule> { new() { Match = "tag", Value = "4K Remaster", Label = "Remaster" } };
         config.AwardsTagsImdbList = "ls012345";
         config.LogoTagsMovieMode = "studio";
@@ -295,11 +296,11 @@ public class ApiMediaTagsPortableTests
         var document = JsonNode.Parse(text)!;
         Assert.Equal("je-media-tags-admin", (string?)document["kind"]);
         var settings = document["settings"]!.AsObject();
-        foreach (var secret in new[] { "rule-key-secret", "mdblist-secret", "seerr-secret" }) Assert.DoesNotContain(secret, text);
+        foreach (var secret in new[] { "rule-key-secret", "mdblist-secret", "seerr-secret", "maintainerr-secret" }) Assert.DoesNotContain(secret, text);
         Assert.False(settings.ContainsKey("CustomTagRuleKey"));
         Assert.False(settings.ContainsKey("ClearLocalStorageTimestamp"));
         Assert.Equal(MediaTagsPortable.AdminFields(MediaTagsPageFields.Allowed), settings.Select(p => p.Key));
-        Assert.Equal(MediaTagsPageFields.Allowed.Count - 1, settings.Count);
+        Assert.Equal(MediaTagsPageFields.Allowed.Count - 2, settings.Count);
         Assert.Equal("Remaster", (string?)settings["CustomTagRules"]![0]!["Label"]);
         Assert.Equal("ls012345", (string?)settings["AwardsTagsImdbList"]);
         Assert.Equal("studio", (string?)settings["LogoTagsMovieMode"]);
@@ -510,14 +511,14 @@ public class ApiMediaTagsPortableTests
         Assert.Equal(fields, MediaTagsPortable.Secrets.OrderBy(n => n, StringComparer.Ordinal));
         foreach (var field in fields) Assert.True(MediaTagsPortable.IsSecret(field), field);
         // Other spellings of a credential, from a hand-edited or newer document.
-        foreach (var field in new[] { "tmdb_api_key", "Other-Api-Key", "AuthToken", "AdminPassword", "ClientSecretValue" })
+        foreach (var field in new[] { "tmdb_api_key", "Other-Api-Key", "AuthToken", "AdminPassword", "ClientSecretValue", "leavingsoonmaintainerrapikey", "Leaving-Soon-Maintainerr-Api-Key" })
             Assert.True(MediaTagsPortable.IsSecret(field), field);
         // No page field is one: they all export.
-        Assert.DoesNotContain(MediaTagsPageFields.Allowed, MediaTagsPortable.IsSecret);
+        Assert.Equal(new[] { "LeavingSoonMaintainerrApiKey" }, MediaTagsPageFields.Allowed.Where(MediaTagsPortable.IsSecret));
 
         // Both previews report every one as a secret, never as unknown, and read none of them.
         var settings = new JsonObject { ["TagGap"] = "roomy" };
-        foreach (var field in fields) settings[field] = "x";
+        foreach (var field in fields.Concat(new[] { "leavingsoonmaintainerrapikey", "Leaving-Soon-Maintainerr-Api-Key" })) settings[field] = "x";
         f.Core.Manager.SaveUserConfiguration(id, "settings.json", new JellyfinEnhancedUserSettings { TagLayoutSettingsVersion = 1 });
         var userPreview = Body(controller.PreviewUserMediaTags(id, Json(new JsonObject { ["v"] = 1, ["kind"] = "je-media-tags-user", ["settings"] = settings.DeepClone() })));
         signIn(true);
@@ -525,7 +526,7 @@ public class ApiMediaTagsPortableTests
         foreach (var preview in new[] { userPreview, adminPreview })
         {
             var skipped = preview["skipped"]!.AsArray().ToDictionary(s => (string)s!["field"]!, s => (string)s!["reason"]!);
-            foreach (var field in fields) Assert.Equal("secret", skipped[field]);
+            foreach (var field in fields.Concat(new[] { "leavingsoonmaintainerrapikey", "Leaving-Soon-Maintainerr-Api-Key" })) Assert.Equal("secret", skipped[field]);
             Assert.DoesNotContain(fields, field => preview["imported"]!.AsObject().ContainsKey(field));
         }
 

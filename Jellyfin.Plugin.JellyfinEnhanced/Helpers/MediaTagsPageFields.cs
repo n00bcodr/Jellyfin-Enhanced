@@ -81,6 +81,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             ["QualityTagsPreferredAudioLanguage"] = 32,
             // Characters never outnumber UTF-8 bytes: the byte cap (on the canonical text too) is the real limit.
             ["TagOfferedPresets"] = MediaTagsPortable.MaxOfferedPresetsBytes,
+            ["LeavingSoonMaintainerrUrl"] = 512,
+            ["LeavingSoonMaintainerrApiKey"] = 256,
+            ["LeavingSoonCollections"] = 4096,
         };
 
         private static readonly string[] StyleTargets = { "web", "native", "both" };
@@ -128,7 +131,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     error = "must be empty or a valid two-letter region";
                     return false;
                 case "AwardsTagsRefreshHours":
+                case "LeavingSoonRefreshHours":
                     return InRange((int)value!, 1, 168, out error);
+                case "LeavingSoonMaintainerrUrl":
+                    var url = (value as string)?.Trim();
+                    normalized = url;
+                    if (url != null && (url.Length == 0 || LeavingSoonService.IsMaintainerrUrl(url))) return true;
+                    error = "must be empty or an http(s) address without credentials, query or fragment";
+                    return false;
+                case "LeavingSoonMaintainerrApiKey":
+                    var key = (value as string)?.Trim();
+                    normalized = key;
+                    if (key != null && key.All(c => c > ' ' && c < '\u007f')) return true;
+                    error = "must be printable ASCII without spaces";
+                    return false;
+                case "LeavingSoonCollections":
+                    var names = value as string;
+                    normalized = names?.Trim();
+                    if (LeavingSoonService.IsCollectionList(names)) return true;
+                    error = $"must be at most {LeavingSoonService.MaxCollectionNames} names of at most {LeavingSoonService.MaxCollectionNameLength} characters";
+                    return false;
                 case "AwardsTagsImdbList":
                 case "AwardsTagsLetterboxdList":
                     var list = (value as string)?.Trim();

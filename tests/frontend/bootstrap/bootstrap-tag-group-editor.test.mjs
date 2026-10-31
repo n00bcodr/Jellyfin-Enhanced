@@ -301,15 +301,15 @@ test('expanding a row is a real button with aria-expanded; every editor control 
 test('status badge families live on the Status badges tab with defaults and personal overrides', async t => {
   const h = setup(t, { stored: { statusTagsEnabled: true } });
   h.JE.reinitializeStatusTags = () => h.calls.push('status');
-  assert.equal(h.$('#jeMthPanel-badges').querySelectorAll('#statusTagsSubToggles input').length, 7);
+  assert.equal(h.$('#jeMthPanel-badges').querySelectorAll('#statusTagsSubToggles input').length, 9);
   assert.equal(h.row('status').querySelector('#statusTagsSubToggles'), null, 'not duplicated in the Status row');
-  for (const [name, expected] of [['Schedule', true], ['Milestones', true], ['SeriesStatus', false]]) {
+  for (const [name, expected] of [['Schedule', true], ['Milestones', true], ['SeriesStatus', false], ['Leaving', false], ['DirectPlay', false]]) {
     const input = h.$(`#statusTags${name}Toggle`);
     assert.equal(input.checked, expected, name);
     await h.change(input, !expected);
     assert.equal(h.saved()[`statusTags${name}`], !expected);
   }
-  assert.equal(h.calls.filter(name => name === 'status').length, 3);
+  assert.equal(h.calls.filter(name => name === 'status').length, 5);
   const inherited = setup(t, { plugin: { StatusTagsSeriesStatus: true, StatusTagsSchedule: false } });
   assert.equal(inherited.$('#statusTagsSeriesStatusToggle').checked, true);
   assert.equal(inherited.$('#statusTagsScheduleToggle').checked, false);

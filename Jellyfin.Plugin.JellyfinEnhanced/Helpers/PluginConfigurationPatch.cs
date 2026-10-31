@@ -92,7 +92,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 {
                     foreach (var (key, property) in properties)
                     {
-                        if (expected == null || !expected.TryGetValue(key, out var before)) continue;
+                        if (MediaTagsPortable.IsSecret(key) || expected == null || !expected.TryGetValue(key, out var before)) continue;
                         var now = ToNode(property.GetValue(current), property.PropertyType, options);
                         if (!JsonNode.DeepEquals(now, JsonNode.Parse(before.GetRawText()))
                             && !JsonNode.DeepEquals(now, JsonNode.Parse(changes[key].GetRawText())))
@@ -112,7 +112,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 // The stored values, as the save normalised them, before any later save.
                 saved =>
                 {
-                    foreach (var (key, property) in properties) stored[key] = ToNode(property.GetValue(saved), property.PropertyType, options);
+                    foreach (var (key, property) in properties) stored[key] = MediaTagsPortable.IsSecret(key) ? JsonValue.Create(string.Empty) : ToNode(property.GetValue(saved), property.PropertyType, options);
                 });
             if (conflicts.Count > 0) return new Result { Conflicts = conflicts };
 

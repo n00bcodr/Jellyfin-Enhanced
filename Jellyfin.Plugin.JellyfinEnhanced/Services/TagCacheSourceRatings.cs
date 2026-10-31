@@ -23,10 +23,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var config = JellyfinEnhanced.Instance?.Configuration;
             var hideRatings = !SourceRatingsConfigured && entry.Ratings != null;
             var hideAwards = config?.AwardsTagsEnabled != true && entry.Awards != null;
-            if (!hideRatings && !hideAwards) return entry;
+            // A removed Leaving soon source retires its facts before the next publish.
+            var hideLeaving = entry.Leaving != null && !LeavingSoonService.Configured(config);
+            if (!hideRatings && !hideAwards && !hideLeaving) return entry;
             var copy = entry.Clone();
             if (hideRatings) copy.Ratings = null;
             if (hideAwards) copy.Awards = null;
+            if (hideLeaving) copy.Leaving = null;
             return copy;
         }
 

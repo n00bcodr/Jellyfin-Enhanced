@@ -308,6 +308,8 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | --- | --- | --- |
     | **Just Added** / **New releases** / **Trending** / **Schedule** / **Milestones** | On | Which badge families the Status group may show. A poster shows one badge at a time. |
     | **Series status** | Off | Returning / Ended / Cancelled. |
+    | **Leaving soon** | Off | **Leaving in 5d** / **Leaving soon** on items the server will remove (Maintainerr or the administrator's leaving collections). Says *needs a Leaving soon source on the server* until an administrator sets one. |
+    | **Direct-play warning** | Off | **Transcode** / **Won't direct play** on movies and episodes this browser can't play as they are, with the reasons on hover. Web only; checked for cards on screen. |
 
     The administrator's two time windows show beside **Just Added** and **New releases**; administrators also get a link to change them. Turn the Status group itself on in **Groups**. Native posters follow these family switches and time windows too; their trending badge requires a TMDB key. A personal web save remembers the date locale and timezone used for native relative dates. Invalid or oversized context values are dropped, retaining the display-language/server-timezone fallback.
 
@@ -769,7 +771,7 @@ For personal tag choices, open **Media Tags**. Administrators use **Display** �
 
 #### Status Tags badge groups
 
-Under **Media Tags** → **Status badges**, the six personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), and Series status (Returning / Ended / Cancelled). All default on except the last. Administrators set starting defaults in **Display** → **Media Tags** and the two shared day windows. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
+Under **Media Tags** → **Status badges**, the eight personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), Series status (Returning / Ended / Cancelled), Leaving soon (Maintainerr or leaving collections) and Direct-play warning (Transcode / Won't direct play, web only). The first five default on; the last three off. The administrator sets the Leaving soon source (Maintainerr URL and API key, or existing collection names, and how often it is read) on the **Status badges** tab of the Media Tags settings page; see [Leaving soon](tags.md#leaving-soon-maintainerr) and [Direct-play warning](tags.md#direct-play-warning). Administrators set starting defaults in **Display** → **Media Tags** and the two shared day windows. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
 
 #### Logo Tags
 

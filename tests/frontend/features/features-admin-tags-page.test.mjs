@@ -26,6 +26,7 @@ const BASE = {
   RatingTagsOnMovies: true, RatingTagsOnSeries: true, RatingTagsOnSeasons: true, RatingTagsOnEpisodes: true, RatingTagsOnContinueWatching: true, RatingTagsOnNextUp: true,
   RatingTagsShowCommunity: true, RatingTagsShowCritic: true, RatingTagsSources: null, RatingTagsMinScore: 0, RatingTagsColorByScore: false, ShowRatingInPlayer: true,
   StatusTagsJustAdded: true, StatusTagsNewRelease: true, StatusTagsTrending: true, StatusTagsSchedule: true, StatusTagsMilestones: true, StatusTagsSeriesStatus: false, StatusTagsJustAddedDays: 7, StatusTagsNewReleaseDays: 30,
+  StatusTagsLeaving: false, StatusTagsDirectPlay: false, LeavingSoonMaintainerrUrl: '', LeavingSoonMaintainerrApiKey: '', LeavingSoonCollections: '', LeavingSoonRefreshHours: 6,
   TagLayout: 'corners', TagLabelDensity: 'full', TagLayouts: null, TagGroupOrder: null, TagGroupCaps: null, TagLookRules: null, TagShapeOverrides: null,
   TagsHideOnHover: false, DisableTagsOnSearchPage: false,
   TagStylesEnabled: true, TagStyleTarget: 'both', TagStyleOverrides: '', TagStylePreset: 'default', TagStylesAllowUserPreset: false,
@@ -55,7 +56,9 @@ function serverPatch(server, body) {
   }
   if (Object.keys(conflicts).length) throw { status: 409, json: async () => ({ conflicts }) };
   Object.assign(server, structuredClone(body.Changes));
-  return { values: structuredClone(body.Changes) };
+  const values = structuredClone(body.Changes);
+  if ('LeavingSoonMaintainerrApiKey' in values) values.LeavingSoonMaintainerrApiKey = '';
+  return { values };
 }
 
 /**
@@ -130,10 +133,10 @@ function boot(t, { server, url, apiClient = {}, globals = {}, patch, routes = {}
  * @param {import('node:test').TestContext} t
  * @param {{config?: object, url?: string, confirm?: boolean}} [options]
  */
-function setup(t, { config = {}, url, confirm = true, apiClient = {}, patch } = {}) {
+function setup(t, { config = {}, url, confirm = true, apiClient = {}, patch, routes } = {}) {
   const server = structuredClone({ ...BASE, ...config });
   const confirms = [];
-  const h = boot(t, { server, url, apiClient, patch });
+  const h = boot(t, { server, url, apiClient, patch, routes });
   const root = h.document.getElementById('jeTaRoot');
   // The page's own host: ApiClient.getPluginConfiguration and the field patch above.
   const ctx = h.A.createPage(root, structuredClone(server), { confirm: (text, title) => { confirms.push(title); return confirm; } });
@@ -162,7 +165,7 @@ test('every declared field reads its configuration field and saves the new value
       } else if (f.type === 'number') h.change(el, String((f.min || 0) + 2));
       else if (f.type === 'text' || f.type === 'textarea') h.change(el, '  changed  ');
       else h.change(el);
-      const expected = h.A.controlValue(f, el, h.ctx.config);
+      const expected = f.secret ? 'changed' : h.A.controlValue(f, el, h.ctx.config);
       await h.save();
       assert.deepEqual(plain(h.server[f.key]), plain(expected), `${f.id} saved ${f.key}`);
       checked.push(f.id);
@@ -218,7 +221,7 @@ test('every old-form control writes exactly its own field (oracle from the old f
         if (el.type === 'checkbox') { expected = !el.checked; h.change(el, expected); }
         else if (el.tagName === 'SELECT') { expected = [...el.options].find((o) => o.value !== el.value && !o.disabled).value; h.change(el, expected); }
         else if (el.type === 'number') { expected = Number(el.value) >= Number(el.max) ? Number(el.value) - 1 : Number(el.value) + 1; h.change(el, String(expected)); }
-        else if (el.tagName === 'TEXTAREA' || el.type === 'text') { h.change(el, `  ${id}  `); expected = id; }
+        else if (el.tagName === 'TEXTAREA' || el.type === 'text' || el.type === 'password') { h.change(el, `  ${id}  `); expected = id; }
         else { const radio = inputs.find((r) => !r.checked); expected = radio.value; h.change(radio, true); }
       }
       await h.ctx.flush();
@@ -1027,6 +1030,45 @@ test('Status badges: family switches and windows (clamped to 1-365)', async t =>
   assert.equal(h.server.StatusTagsJustAddedDays, 365);
   assert.equal(h.server.StatusTagsNewReleaseDays, 1);
   assert.equal(h.$('#statusTagsJustAddedDays').value, '365');
+});
+
+test('Status badges › Leaving soon: source fields save, the key is a password field, and Refresh saves first then asks the server', async t => {
+  const status = { Configured: true, Maintainerr: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
+  const h = setup(t, { config: { LeavingSoonCollections: 'Leaving Soon', LeavingSoonMaintainerrApiKey: 'stored-key-canary' }, routes: { '/admin/leaving-soon': () => status } });
+  await h.settle(); await h.settle();
+  assert.equal(h.$('[data-leaving-state]').textContent, 'admin_tags_leaving_state_ok:');
+  assert.match(h.$('[data-leaving-detail]').textContent, /^admin_tags_leaving_detail:4\|3\|.* · admin_tags_leaving_detail_collections:1\|1$/);
+  const key = h.$('#leavingSoonMaintainerrApiKey');
+  assert.equal(key.type, 'password');
+  assert.equal(key.value, '');
+  assert.ok(!h.document.body.innerHTML.includes('stored-key-canary'));
+  assert.equal(key.getAttribute('autocomplete'), 'new-password');
+  h.change(h.$('#leavingSoonMaintainerrUrl'), ' http://maintainerr:6246 ');
+  h.change(key, 'abc123');
+  h.change(h.$('#leavingSoonCollections'), 'Leaving Soon\nGone Next Week');
+  h.change(h.$('#leavingSoonRefreshHours'), '500');
+  h.change(h.$('#statusTagsLeaving'), true);
+  h.change(h.$('#statusTagsDirectPlay'), true);
+  // Refresh: pending edits are saved before the server reads the source.
+  h.$('#leavingSoonRefreshBtn').click();
+  await h.settle(); await h.settle(); await h.settle();
+  assert.equal(h.server.LeavingSoonMaintainerrUrl, 'http://maintainerr:6246');
+  assert.equal(h.server.LeavingSoonMaintainerrApiKey, 'abc123');
+  assert.equal(h.server.LeavingSoonCollections, 'Leaving Soon\nGone Next Week');
+  assert.equal(h.server.LeavingSoonRefreshHours, 168);
+  assert.equal(h.server.StatusTagsLeaving, true);
+  assert.equal(h.server.StatusTagsDirectPlay, true);
+  assert.equal(key.value, '');
+  assert.ok(!('LeavingSoonMaintainerrApiKey' in h.patches.find(p => p.Changes.LeavingSoonMaintainerrApiKey).Expected));
+  h.ctx.reload({ ...h.server, LeavingSoonMaintainerrApiKey: 'another-stored-canary' });
+  assert.equal(key.value, '');
+  assert.deepEqual(h.posts.filter((p) => p.includes('leaving-soon')), ['/JellyfinEnhanced/admin/leaving-soon/refresh']);
+  // Without a source the button is off.
+  h.change(h.$('#leavingSoonMaintainerrUrl'), '');
+  h.change(h.$('#leavingSoonCollections'), '');
+  await h.save();
+  assert.equal(h.$('#leavingSoonRefreshBtn').disabled, true);
+  assert.equal(h.$('[data-leaving-state]').textContent, 'admin_tags_leaving_state_off:');
 });
 
 test('Server: cache off keeps the browser cache on, excluded libraries and the clear signal are saved', async t => {

@@ -191,6 +191,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             StatusTagsScenes = false;
             StatusTagsJustAddedDays = 7;
             StatusTagsNewReleaseDays = 30;
+            StatusTagsLeaving = false;
+            StatusTagsDirectPlay = false;
+            LeavingSoonRefreshHours = 6;
             TagLayout = "corners";
             TagLayouts = null;
             TagGroupOrder = null;
@@ -914,6 +917,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public int StatusTagsJustAddedDays { get; set; } = 7;
         /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>
         public int StatusTagsNewReleaseDays { get; set; } = 30;
+
+        // Leaving soon status family (Maintainerr or collection names) and the
+        // web-only direct-play warning family. Both off by default.
+        /// <summary>Starting value of the Leaving soon family switch for new users.</summary>
+        public bool StatusTagsLeaving { get; set; } = false;
+        /// <summary>Starting value of the direct-play warning family switch for new users (web only).</summary>
+        public bool StatusTagsDirectPlay { get; set; } = false;
+        /// <summary>Maintainerr base URL (http/https); empty uses only the collection names.</summary>
+        public string LeavingSoonMaintainerrUrl { get; set; } = string.Empty;
+        /// <summary>Maintainerr API key. A secret: never in public config, responses, logs or exports.</summary>
+        public string LeavingSoonMaintainerrApiKey { get; set; } = string.Empty;
+        /// <summary>Existing Jellyfin collection names (one per line or comma separated) whose members count as leaving.</summary>
+        public string LeavingSoonCollections { get; set; } = string.Empty;
+        /// <summary>Hours between Leaving soon refreshes (1-168).</summary>
+        public int LeavingSoonRefreshHours { get; set; } = 6;
         /// <summary>Starting poster tag layout for new users (corners, bands, caption, summary, minimal).</summary>
         [AnalyticsInclude]
         public string TagLayout { get; set; } = "corners";

@@ -464,6 +464,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 stripped.SubtitleLanguages = null;
                 stripped.SdhSubtitleLanguages = null;
                 stripped.Scenes = null;
+                stripped.Leaving = null;
                 stripped.StreamData = null;
                 stripped.QualitySummary = null;
                 stripped.QualityEpisodeIds = null;

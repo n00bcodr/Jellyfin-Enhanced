@@ -141,6 +141,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool StatusTagsMilestones { get; set; } = true;
         public bool StatusTagsSeriesStatus { get; set; } = false;
         public bool StatusTagsScenes { get; set; } = false;
+        // Leaving soon and the web-only direct-play warning families.
+        public bool StatusTagsLeaving { get; set; } = false;
+        public bool StatusTagsDirectPlay { get; set; } = false;
         // Poster tag layout (see TagLayoutRules). Version 0 marks a document
         // written before layouts existed: it keeps the corners layout, its
         // position settings above, arrival ordering and the original limits

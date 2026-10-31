@@ -67,7 +67,7 @@
             rating: { critic: '92%', community: '8.1' },
             age: 'PG-13', flags: ['fr', 'jp', 'de'], genres: [['Science Fiction', 'science'], ['Thriller', 'psychology']],
             logos: [{ kind: 'provider', name: 'Streamflix', svg: LOGOS.provider }],
-            status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added'], ['statusTagsScenes', 'scenes', 'status_tag_post_credits']],
+            status: [['statusTagsLeaving', 'leaving', 'status_tag_leaving_days', 'status_tag_compact_leaving_days', { days: 5 }], ['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added'], ['statusTagsScenes', 'scenes', 'status_tag_post_credits']],
             custom: 2,
         },
         {
@@ -113,6 +113,8 @@
 
     /** @param {string} key @returns {string} The setting's PascalCase plugin key. */
     const pluginKeyOf = (key) => key.charAt(0).toUpperCase() + key.slice(1);
+    /** Status families whose built-in default is off. */
+    const OFF_BY_DEFAULT = new Set(['statusTagsSeriesStatus', 'statusTagsScenes', 'statusTagsLeaving', 'statusTagsDirectPlay']);
 
     /**
      * The sample group wrapper for one card, with the renderers' real classes.
@@ -210,11 +212,11 @@
                 break;
             case 'status': {
                 // One badge per card, the first whose family is on (as statustags.js picks).
-                const badge = sample.status.find(([key]) => effectiveBool(key, pluginKeyOf(key), !['statusTagsSeriesStatus', 'statusTagsScenes'].includes(key)));
+                const badge = sample.status.find(([key]) => effectiveBool(key, pluginKeyOf(key), !OFF_BY_DEFAULT.has(key)));
                 if (!badge) break;
                 const [, kind, labelKey, compactKey, params] = badge;
                 const tag = add(`status-tag status-tag--${kind}`);
-                if (compactKey) tag.dataset.jeCompact = JE.t(compactKey);
+                if (compactKey) tag.dataset.jeCompact = JE.t(compactKey, params);
                 if (kind === 'trending') {
                     // "#{rank} Today" with the rank in its own span, as the status module draws it.
                     const [before, after = ''] = JE.t(labelKey, { rank: '\u0001' }).split('\u0001');

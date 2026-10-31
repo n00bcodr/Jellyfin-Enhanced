@@ -4,7 +4,11 @@
 // Today"), a milestone ("New Season", "Season Premiere", "Season Finale",
 // "Series Finale", "Complete Season"), on the schedule ("Airing Today",
 // "Airs Thursday", "Returns Oct 4", "Coming Soon") or, when switched on, the
-// series status ("Returning", "Ended", "Cancelled"). The badge is drawn over
+// series status ("Returning", "Ended", "Cancelled"), and two opt-in
+// families: "Leaving in 5d" / "Leaving soon" (Maintainerr or the
+// administrator's leaving collections, resolved by the server into the tag
+// cache entry's Leaving) and a "Transcode" / "Won't direct play" warning for
+// this browser (tags/tag-direct-play.js). The badge is drawn over
 // the card, so the poster image itself (e.g. a custom poster set) is never
 // replaced.
 // A spec over the core tag-renderer factory (js/core/tag-renderer-base.js),
@@ -12,7 +16,8 @@
 // supplies only the status-specific parts: reading the item's facts, picking
 // the one badge a card shows, the live TMDB data and the badge markup.
 //
-// One badge per card, first match wins:
+// One badge per card, first match wins (Leaving soon, when on, before all of
+// them; the direct-play warning, when on, after all of them):
 //   Movie   Trending → Coming Soon → New Movie → Just Added
 //   Series  Trending → Airing Today → Series Finale → New Season → Airs {date}
 //           → Returns {date} → New Episode → Coming Soon → New Series
@@ -93,7 +98,15 @@
         milestones: { userKey: 'statusTagsMilestones', pluginKey: 'StatusTagsMilestones', fallback: true },
         scenes: { userKey: 'statusTagsScenes', pluginKey: 'StatusTagsScenes', fallback: false },
         seriesStatus: { userKey: 'statusTagsSeriesStatus', pluginKey: 'StatusTagsSeriesStatus', fallback: false },
+        leaving: { userKey: 'statusTagsLeaving', pluginKey: 'StatusTagsLeaving', fallback: false },
+        directPlay: { userKey: 'statusTagsDirectPlay', pluginKey: 'StatusTagsDirectPlay', fallback: false },
     };
+    /** Item types the Leaving soon badge shows on (Maintainerr collects movies, shows, seasons and episodes). */
+    const LEAVING_TYPES = new Set(['Movie', 'Series', 'Season', 'Episode']);
+    /** The largest distance from 1970 a Date holds (ms). */
+    const MAX_DATE_MS = 8.64e15;
+    /** Item types that play, and so can have a direct-play warning. */
+    const PLAYABLE_TYPES = new Set(['Movie', 'Episode', 'Video', 'MusicVideo']);
 
     /**
      * Trending list shared by every card of this page lifetime.
@@ -184,6 +197,7 @@
      * @property {boolean|null} isLast - Whether this is the last locally available episode in its season.
      * @property {string|null} seriesId - The series whose TMDB schedule applies (Series: itself).
      * @property {string|null|undefined} seriesTmdb - That series' TMDB id; undefined when unknown.
+     * @property {{deleteAt: number|null}|null} [leaving] - Leaving soon facts (deleteAt: Unix ms, or null when undated).
      */
 
     /**
@@ -216,6 +230,37 @@
         return JE.pluginConfig?.StatusTagsEnabled === true
             && JE.pluginConfig?.StatusTagsTrending !== false
             && isScopeEnabled(BADGE_SCOPES.trending);
+    }
+
+    /**
+     * Whether the Leaving soon badge can show: the user's switch, while the
+     * server has a Leaving soon source (it resolves the facts).
+     * @returns {boolean}
+     */
+    function isLeavingWanted() {
+        return JE.pluginConfig?.LeavingSoonAvailable === true && isScopeEnabled(BADGE_SCOPES.leaving);
+    }
+
+    /**
+     * Whether a card can get a direct-play warning: the user's switch and a
+     * playable item type (tags/tag-direct-play.js does the lookups).
+     * @param {StatusData} data
+     * @returns {boolean}
+     */
+    function wantsDirectPlay(data) {
+        return !!JE.tagDirectPlay && PLAYABLE_TYPES.has(data.type || '') && isScopeEnabled(BADGE_SCOPES.directPlay);
+    }
+
+    /**
+     * Leaving soon facts from a cache entry or /tag-data item, or null.
+     * @param {*} raw - { DeleteAt } (Unix ms or null).
+     * @returns {{deleteAt: number|null}|null}
+     */
+    function readLeaving(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        const deleteAt = toMs(raw.DeleteAt ?? raw.deleteAt ?? null);
+        // A time no Date can hold reads as undated (the server bounds what it stores).
+        return { deleteAt: deleteAt !== null && Math.abs(deleteAt) <= MAX_DATE_MS ? deleteAt : null };
     }
 
     /**
@@ -334,6 +379,7 @@
             // The cache records the series' TMDB id on its seasons and episodes,
             // so a missing one means the series has none.
             seriesTmdb: type === 'Series' ? tmdb : (entry.SeriesTmdbId ? String(entry.SeriesTmdbId) : null),
+            leaving: readLeaving(entry.Leaving),
         };
     }
 
@@ -361,6 +407,7 @@
             // A season/episode item does not say whether its series has a TMDB
             // id; the server answers only for those that do.
             seriesTmdb: type === 'Series' ? tmdb : undefined,
+            leaving: readLeaving(item.Leaving),
         };
     }
 
@@ -502,7 +549,40 @@
     function makeBadge(kind, key, params) {
         const definition = vocabulary.badges[key];
         const badge = { kind: definition.kind, key, label: label(definition.label, params) };
-        if (COMPACT_LABEL_KEYS[key]) badge.compact = label(COMPACT_LABEL_KEYS[key]);
+        if (COMPACT_LABEL_KEYS[key]) badge.compact = label(COMPACT_LABEL_KEYS[key], params);
+        return badge;
+    }
+
+    /**
+     * The Leaving soon badge: "Leaving in {days}d" by local calendar days (a
+     * DST day is not 24 hours), "Leaving tomorrow", "Leaving today", and
+     * "Leaving soon" without a date or once it has passed (Maintainerr
+     * removes it on its next run). Mirrors StatusRules.LeavingBadge.
+     * @param {{deleteAt: number|null}} leaving
+     * @param {number} now
+     * @returns {{kind: string, key: string, label: string, compact?: string}}
+     */
+    function leavingBadge(leaving, now) {
+        if (leaving.deleteAt === null) return makeBadge('leaving', 'leaving_soon');
+        const days = localDay(leaving.deleteAt) - localDay(now);
+        if (days < 0) return makeBadge('leaving', 'leaving_soon');
+        if (days === 0) return makeBadge('leaving', 'leaving_today');
+        if (days === 1) return makeBadge('leaving', 'leaving_tomorrow');
+        return makeBadge('leaving', 'leaving_days', { days });
+    }
+
+    /**
+     * The direct-play warning for a playable card, once its lookup answered.
+     * @param {StatusData} data
+     * @param {string|null} itemId
+     * @returns {{kind: string, key: string, label: string, compact?: string, title?: string}|null}
+     */
+    function directPlayBadge(data, itemId) {
+        if (!itemId || !wantsDirectPlay(data)) return null;
+        const result = JE.tagDirectPlay.peek(String(itemId));
+        if (!result || result.directPlay) return null;
+        const badge = makeBadge('playback', result.remux ? 'direct_play_remux' : 'direct_play_transcode');
+        badge.title = JE.tagDirectPlay.describe(result, badge.label);
         return badge;
     }
 
@@ -555,6 +635,8 @@
         const showMilestones = isScopeEnabled(BADGE_SCOPES.milestones);
         const showStatus = isScopeEnabled(BADGE_SCOPES.seriesStatus);
         const facts = wantsSeriesFacts(data) ? seriesFactsFor(data) : null;
+
+        if (data.leaving && LEAVING_TYPES.has(data.type || '') && isLeavingWanted()) return leavingBadge(data.leaving, now);
 
         // Match the series aggregate: specials never identify a final regular episode.
         const finalRegular = finalRegularEpisode(data, facts);
@@ -655,7 +737,7 @@
             if (data.scenes?.MidCredits === true) return makeBadge('scenes', 'mid_credits');
         }
         if (data.type === 'Series' && showStatus) return seriesStatusBadge(data, facts);
-        return null;
+        return directPlayBadge(data, itemId);
     }
 
     /**
@@ -707,6 +789,7 @@
             seriesId: entry.si ?? null,
             // Stored only when known (null and undefined both mean "unknown" here).
             seriesTmdb: entry.stm ?? (entry.t === 'Series' ? null : undefined),
+            leaving: Array.isArray(entry.lv) ? readLeaving({ DeleteAt: typeof entry.lv[0] === 'number' ? entry.lv[0] : null }) : null,
         };
     }
 
@@ -735,6 +818,7 @@
         if (data.episode !== null) entry.en = data.episode;
         if (data.seriesId) entry.si = data.seriesId;
         if (data.seriesTmdb) entry.stm = data.seriesTmdb;
+        if (data.leaving) entry.lv = [data.leaving.deleteAt];
         ctx.setPersistent(itemId, entry);
         ctx.hot?.set(itemId, entry);
     }
@@ -743,7 +827,7 @@
      * Create and append the status badge to a card.
      * @param {Object} ctx - Factory context.
      * @param {HTMLElement} el - The card container to receive the overlay.
-     * @param {{kind: string, key: string, label: string, compact?: string, rank?: number}|null} badge - From pickBadge.
+     * @param {{kind: string, key: string, label: string, compact?: string, rank?: number, title?: string}|null} badge - From pickBadge.
      * @returns {void}
      */
     function applyStatusTag(ctx, el, badge) {
@@ -761,6 +845,12 @@
         tag.dataset.jeStatus = status;
         // The layout controller shows this instead in compact density.
         if (badge.compact) tag.dataset.jeCompact = badge.compact;
+        // The direct-play warning says why (and takes hover for its tooltip).
+        if (badge.title) {
+            tag.title = badge.title;
+            tag.setAttribute('aria-label', badge.title);
+            tag.dataset.jeDp = '1';
+        }
         if (badge.kind === 'trending') {
             // "#{rank} Today": the "#N" goes in its own span (warmer colour).
             const [before, after = ''] = badge.label.split(RANK_TOKEN);
@@ -783,7 +873,7 @@
      * @returns {string}
      */
     function badgeKey(badge) {
-        return `${localDay(Date.now())}|${badge ? `${badge.kind}|${badge.key}|${badge.label}|${badge.rank ?? ''}` : ''}`;
+        return `${localDay(Date.now())}|${badge ? `${badge.kind}|${badge.key}|${badge.label}|${badge.rank ?? ''}|${badge.title ?? ''}` : ''}`;
     }
 
     /**
@@ -821,6 +911,10 @@
         liveCards.set(el, { domId: cardIdentity(el), id: normId(itemId), data, shown: badgeKey(badge), rev: trackRev });
         el.dataset[LIVE_ATTR] = '1';
         if (readsSeries) observeSeriesCard(ctx, el);
+        // A direct-play lookup only for a card that would show nothing else,
+        // and only once it is on screen (the module's idle slices).
+        if (wantsDirectPlay(data) && itemId && (!badge || badge.kind === 'playback')) JE.tagDirectPlay.track(el, String(itemId), onDirectPlayAnswer);
+        else JE.tagDirectPlay?.untrack(el);
         applyStatusTag(ctx, el, badge);
     }
 
@@ -1284,6 +1378,11 @@
         armMidnight(ctx);
     }
 
+    /** One live pass for the direct-play answers a slice applied (one stable callback, so a slice runs it once). */
+    function onDirectPlayAnswer() {
+        if (statusCtx) applyLivePass(statusCtx);
+    }
+
     /** @type {Object} Factory spec — everything status-specific lives here. */
     const spec = {
         logPrefix,
@@ -1335,6 +1434,8 @@
                     pointer-events: none;
                 }
                 .${tagClass}--trending .${tagClass}-rank { color: #ffd166; }
+                /* Only the direct-play warning takes hover, for its tooltip. */
+                .${tagClass}[data-je-dp] { pointer-events: auto; cursor: help; }
 
                 /* Card-width sizing, matching the rating tag rules in tag-pipeline.js */
                 @supports (container-type: inline-size) {
@@ -1373,11 +1474,9 @@
 
                 JE.tagPipeline?.rememberItemFacts?.(item);
                 const data = { ...fromItem(item), fetchedAt: Date.now() };
-                // A Spoiler Guard strip stub (no ProviderIds) is only cached when
-                // it carries the TMDB id, so a full item's id is never lost to it.
-                if (item.ProviderIds || data.tmdb || (data.type !== 'Movie' && data.type !== 'Series')) {
-                    setCachedEntry(ctx, item.Id, data);
-                }
+                // The shared factory stamps this accepted answer with its own strip revision.
+                // Empty guarded answers are page-local hits; only unstripped answers persist.
+                setCachedEntry(ctx, item.Id, data);
                 renderData(ctx, el, data, item.Id);
             },
             renderFromCache(ctx, el, itemId) {
@@ -1415,6 +1514,7 @@
             },
             cleanup() {
                 stopStatus();
+                JE.tagDirectPlay?.reset();
             },
             onServerCacheRefresh(ctx, updatedIds, info) {
                 onCacheReplaced(ctx, updatedIds, info);

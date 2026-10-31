@@ -299,6 +299,10 @@
       "category": "Model"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagLeaving.cs",
+      "category": "Model"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Model/TagLogo.cs",
       "category": "Model"
     },
@@ -399,6 +403,10 @@
       "category": "ScheduledTasks"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshLeavingSoonTagsTask.cs",
+      "category": "ScheduledTasks"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "category": "ScheduledTasks"
     },
@@ -480,6 +488,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/ItemStatsService.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonService.cs",
       "category": "Services"
     },
     {
@@ -760,6 +772,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheCustomTags.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheLeaving.cs",
       "category": "Services"
     },
     {
@@ -1760,6 +1776,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-cache-store.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-direct-play.js",
       "category": "js"
     },
     {
@@ -3183,6 +3203,26 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/tag-cache/summary",
       "method": "GetTagCacheSummary",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/leaving-soon",
+      "method": "GetLeavingSoonStatus",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/leaving-soon/refresh",
+      "method": "RefreshLeavingSoon",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
@@ -5122,6 +5162,54 @@
       "type": "int",
       "initializer": "30",
       "constructor_assignment": "30",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsLeaving",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsDirectPlay",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonMaintainerrUrl",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonMaintainerrApiKey",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonCollections",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "LeavingSoonRefreshHours",
+      "type": "int",
+      "initializer": "6",
+      "constructor_assignment": "6",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -8214,6 +8302,22 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsLeaving",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsDirectPlay",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "TagLayout",
       "type": "string",
       "initializer": "\"corners\"",
@@ -9367,6 +9471,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/HostCompatibilityService.cs"
     },
     {
+      "literal": "leaving-soon.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/LeavingSoonService.cs"
+    },
+    {
       "literal": "maintenance-state.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/MaintenanceModeService.cs"
     },
@@ -9613,6 +9721,11 @@
       "key": "JellyfinEnhancedRefreshCdnAssets"
     },
     {
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/RefreshLeavingSoonTagsTask.cs",
+      "class": "RefreshLeavingSoonTagsTask",
+      "key": "JellyfinEnhancedRefreshLeavingSoonTags"
+    },
+    {
       "file": "Jellyfin.Plugin.JellyfinEnhanced/ScheduledTasks/SpoilerApplyExistingTitlesTask.cs",
       "class": "SpoilerApplyExistingTitlesTask",
       "key": "JellyfinEnhancedSpoilerApplyExistingTitles"
@@ -9726,11 +9839,11 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 445,
-    "routes": 192,
-    "configuration_properties": 705,
-    "storage_references": 82,
-    "scheduled_tasks": 14,
+    "files": 450,
+    "routes": 194,
+    "configuration_properties": 713,
+    "storage_references": 83,
+    "scheduled_tasks": 15,
     "locales": 33
   }
 }
