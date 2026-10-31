@@ -701,7 +701,7 @@
                 if (everyoneBox) {
                     const had = overrideAt(targetId);
                     if (everyone) {
-                        const ok = await look.saveItemOverride(targetId, chosen);
+                        const ok = await look.saveItemOverride(targetId, chosen, { remove: targetId !== id && ownOverride ? [id] : [] });
                         if (!isCurrent()) return;
                         results.push(ok);
                         if (ok) JE.toast?.(esc(JE.t('tag_item_editor_everyone_saved', { name: label })));

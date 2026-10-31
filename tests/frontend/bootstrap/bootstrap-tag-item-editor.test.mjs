@@ -527,3 +527,20 @@ test('server-wide Undo preserves a newer look saved on its removed target', asyn
   await h.settle();
   assert.equal(h.io.config.TagLookItemOverrides[0].Layout, 'caption');
 });
+
+for (const type of ['Season', 'Episode']) test(`For everyone moves a ${type} look to its series atomically`, async t => {
+  const h = setup(t, { admin: true, plugin: { TagLookItemOverrides: [{ ItemId: EPISODE, Layout: 'bands', LockedAt: 4 }, { ItemId: SERIES, Layout: 'caption', LockedAt: 2 }] } });
+  h.io.config.TagLookItemOverrides = plain(h.JE.pluginConfig.TagLookItemOverrides);
+  await h.open(EPISODE, { item: { ...ITEMS[EPISODE], Type: type } });
+  h.change(h.$('.je-tie input[name$="Scope"][value="series"]'), true);
+  h.change(h.$('.je-tie input[value="summary"]'), true);
+  h.change(h.$('[data-tie-everyone]'), true);
+  h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  assert.equal(h.patches.length, 1);
+  const looks = h.JE.core.tagLook.normalizeItemOverrides(h.io.config.TagLookItemOverrides);
+  assert.equal(looks.has(EPISODE), false, 'no winning child entry left');
+  assert.equal(looks.get(SERIES).layout, 'summary');
+  h.JE.core.tagLayout.invalidateSettings();
+  assert.equal(h.JE.core.tagLayout.resolveLayout({ itemId: EPISODE, SeriesId: SERIES, Type: type }).layout, 'summary');
+});

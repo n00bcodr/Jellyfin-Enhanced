@@ -760,11 +760,12 @@
      * Change one server-wide item look (administrators only): set it to a
      * look, or remove it (look null). Reads the stored list fresh, writes it
      * through the Media Tags field patch with that list as the expected value
+     * (including removal of a child when its look moves to its series)
      * (once more on a conflict), then puts the stored list into
      * JE.pluginConfig and re-presents the cards.
      * @param {string} itemId
      * @param {ItemLook|null} look
-     * @param {{restoreOnly?: boolean, api?: {get: () => Promise<Object>, patch: (changes: Object, expected: Object) => Promise<Object>}}} [options] - Host hooks (tests).
+     * @param {{remove?: string[], restoreOnly?: boolean, api?: {get: () => Promise<Object>, patch: (changes: Object, expected: Object) => Promise<Object>}}} [options] - Host hooks (tests).
      * @returns {Promise<boolean>} Whether it was saved.
      */
     async function saveItemOverride(itemId, look, options = {}) {
@@ -789,7 +790,9 @@
                 const before = config?.TagLookItemOverrides ?? null;
                 // Undo never replaces a newer entry on the same target.
                 if (options.restoreOnly && normalizeItemOverrides(before).has(id)) return true;
-                const next = itemOverridesWith(before, id, look);
+                let next = before;
+                for (const child of options.remove || []) next = itemOverridesWith(next, child, null);
+                next = itemOverridesWith(next, id, look);
                 if (next === undefined) return false;
                 if (!isCurrent()) return false;
                 const result = await api.patch({ TagLookItemOverrides: next }, { TagLookItemOverrides: before });
