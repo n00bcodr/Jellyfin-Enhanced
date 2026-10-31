@@ -294,6 +294,21 @@
             </div>`;
         if (group === 'quality') {
             return `
+                <div class="je-tge-extra" data-quality-display>
+                    <p class="je-tge-hint">${escapeHtml(JE.t('quality_display_help'))}</p>
+                    ${['qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr'].map((key, index) => {
+                        const labels = ['quality_display_audio', 'quality_display_video', 'quality_display_hdr', 'quality_minimum_resolution', 'quality_hide_sdr'];
+                        const options = key === 'qualityMinimumResolution' ? [['off', 'quality_resolution_off'], ['720p', '=720p'], ['1080p', '=1080p'], ['4k', '=4K']]
+                            : key === 'qualityHideSdr' ? [['false', 'quality_sdr_show'], ['true', 'quality_sdr_hide']]
+                            : [['highest', 'quality_display_highest'], ['all', 'quality_display_all']];
+                        const value = JE.currentSettings[key] == null ? '' : String(JE.currentSettings[key]);
+                        return `<label for="${key}Select" class="je-tge-label">${escapeHtml(JE.t(labels[index]))}</label>
+                            <select id="${key}Select" data-quality-display-key="${key}" style="width:100%;background:${detailsBackground};color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:6px;">
+                                <option value="" ${value === '' ? 'selected' : ''}>${escapeHtml(JE.t('quality_display_inherit'))}</option>
+                                ${options.map(([v, label]) => `<option value="${v}" ${value === v ? 'selected' : ''}>${escapeHtml(label.startsWith('=') ? label.slice(1) : JE.t(label))}</option>`).join('')}
+                            </select>`;
+                    }).join('')}
+                </div>
                 ${scopeRow('showLowQualitySourceTagToggle', 'showLowQualitySourceTag', 'ShowLowQualitySourceTag', 'panel_settings_ui_quality_tags_low_source', false)}
                 <div class="je-tge-extra">
                     <label for="seriesQualityAggregationSelect" class="je-tge-label">${escapeHtml(JE.t('series_quality_aggregation_label'))}</label>

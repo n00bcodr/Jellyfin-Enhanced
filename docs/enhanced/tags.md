@@ -339,7 +339,7 @@ Administrators configure the same defaults on the Media Tags settings page under
     |---|---|
     | Resolution | `8K`, `4K`, `1440p`, `1080p`, `720p`, `576p`, `480p`, `LOW-RES` |
     | Source | `REMUX`, `BluRay`, `WEB`, `HDTV`, `DVD`; physical stubs also support `HD DVD`, `VHS`, `Physical`; optional `CAM`, `TS`, `TC`, `SCR` |
-    | Dynamic range | `Dolby Vision`, `HDR10+`, `HDR10`, `HDR` |
+    | Dynamic range | `Dolby Vision`, `HDR10+`, `HDR10`, `HDR`; All mode also recognizes `SDR` |
     | Special format | `IMAX`, `3D` |
     | Video codec | `AV1`, `HEVC`, `H265`, `VP9`, `H264`, `VP8`, `XVID`, `DIVX`, `WMV`, `MPEG2`, `MPEG4`, `MJPEG`, `THEORA` |
     | Edition | `Director's Cut`, `Extended`, `Unrated`, `Theatrical`, `IMAX`, `Remastered`, `Criterion`, `Uncut`, `Final Cut`, `Special Edition`, or a custom `{edition-…}` label |
@@ -352,6 +352,36 @@ Administrators configure the same defaults on the Media Tags settings page under
     ![Compact source and edition labels on a 420px phone grid](../images/tags/source-edition-mobile.webp)
 
     ![Edition category in the Quality group's Include controls](../images/tags/source-edition-settings.webp)
+
+### Highest only or every stream value
+
+![Wish Dragon with Highest only on the left and All distinct values on the right](../images/tags/quality-display-modes.webp)
+
+Under **Groups → Quality**, below the categories, choose a separate **Sound display mode**, **Video codec display mode** and **HDR display mode**. **Highest only** is the default and keeps the existing detector's output. **All distinct values** shows every recognized value from the available streams, deduplicated and ranked within its category. For sound, each codec stays paired with that track's own channels: `ATMOS 7.1`, `DTS 7.1`, `DTS 5.1`. The existing sound-language preference still selects tracks before deduplication; this does not change playback.
+
+| Setting | Default | Choices |
+|---|---|---|
+| **Sound display mode** | Highest only | Highest only / All distinct values |
+| **Video codec display mode** | Highest only | Highest only / All distinct values |
+| **HDR display mode** | Highest only | Highest only / All distinct values; All can include SDR |
+| **Minimum resolution to show** | Off | Off / 720p / 1080p / 4K; hide resolution chips below the selected bucket |
+| **Hide SDR** | Off | Suppresses SDR in All HDR mode; Highest only retains its existing omission of SDR |
+
+Each personal control also offers **Server default**, which follows future administrator changes. Administrators set starting values under **Media Tags → Groups → Quality**. New accounts and **Apply defaults to all users** copy those defaults. Existing preferences keep their appearance until a mode or default changes; editing these controls does not migrate a legacy layout.
+
+The resolution threshold is inclusive: **1080p** keeps 1080p and higher; **4K** hides the 1080p chips in a mostly 1080p library while keeping 4K and 8K standouts. Other quality categories remain eligible. Category switches and order apply first, then the Quality group's **Show up to** limit. Compact density shortens every additional chip as usual. Chips omitted by layout fitting count toward **+N**; chips intentionally removed by category filtering, thresholds or the group limit do not.
+
+For series and seasons, each category in All mode follows the selected aggregation policy:
+
+| Policy | All-mode values |
+|---|---|
+| Representative episode | That episode's distinct sets |
+| Latest episode | The latest aired episode's distinct sets |
+| Best quality | Union of the episodes' distinct sets, ranked |
+| Only what every episode has | Intersection: values present in every episode; an unknown episode contributes an empty set |
+| Best, marked when mixed | Ranked union, plus Mixed when an enabled category's episode sets differ |
+
+Categories left on Highest only keep their existing aggregation semantics. Source, edition, special formats and resolution retain their existing policies. Restricted accounts aggregate only episodes they can access. Browser cache, batch fallback and Native Poster Tags use the same facts and filtering. Corners native posters retain full labels; native Bands respects Compact and its existing overflow rules.
 
 ### Detection limits
 

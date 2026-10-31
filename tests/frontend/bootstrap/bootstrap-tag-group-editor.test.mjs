@@ -576,3 +576,29 @@ test('the Logos row precedes Custom by default, switches the group, offers All a
   assert.equal(h.saved().logoTagsEnabled, false);
   assert.equal(h.preview()?.querySelector('.je-logo-chip') ?? null, null);
 });
+
+
+test('Quality display fields preserve inheritance, save independently and update preview extras and threshold', async t => {
+  const h = setup(t, { stored: { qualityTagsEnabled: true }, plugin: { QualityAudioDisplayMode: 'all', QualityMinimumResolution: '4k' } });
+  const fields = ['qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr'];
+  for (const key of fields) {
+    assert.equal(h.JE.currentSettings[key], null, `${key} follows admin until chosen`);
+    assert.equal(h.$(`#${key}Select`).value, '');
+  }
+  await h.change(h.$('#qualityAudioDisplayModeSelect'), 'highest');
+  assert.equal(h.saved().qualityAudioDisplayMode, 'highest');
+  assert.equal(h.saved().qualityVideoCodecDisplayMode, null);
+  await h.change(h.$('#qualityAudioDisplayModeSelect'), 'all');
+  assert.equal(h.saved().qualityAudioDisplayMode, 'all');
+  assert.ok(h.preview().querySelector('[data-quality="DTS"]'));
+  await h.change(h.$('#qualityHdrDisplayModeSelect'), 'all');
+  assert.ok(h.preview().querySelector('[data-quality="SDR"]'));
+  await h.change(h.$('#qualityHideSdrSelect'), 'true');
+  assert.equal(h.saved().qualityHideSdr, true);
+  assert.equal(h.preview().querySelector('[data-quality="SDR"]'), null);
+  await h.change(h.$('#qualityMinimumResolutionSelect'), '4k');
+  assert.equal(h.saved().qualityMinimumResolution, '4k');
+  await h.change(h.$('#qualityAudioDisplayModeSelect'), '');
+  assert.equal(h.saved().qualityAudioDisplayMode, null);
+  assert.equal(h.saved().tagLayoutSettingsVersion, 0, 'display settings do not promote the legacy layout');
+});

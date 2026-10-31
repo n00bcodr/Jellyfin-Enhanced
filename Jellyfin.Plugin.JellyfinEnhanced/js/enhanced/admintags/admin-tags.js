@@ -94,6 +94,7 @@
         'ShowDynamicRangeTag', 'ShowSpecialFormatTag', 'ShowVideoCodecTag', 'ShowAudioInfoTag', 'ResolutionTagOrder', 'SourceTagOrder',
         'DynamicRangeTagOrder', 'SpecialFormatTagOrder', 'VideoCodecTagOrder', 'AudioInfoTagOrder', 'GenreTagsEnabled', 'LanguageTagsEnabled',
         'RatingTagsEnabled', 'AgeRatingTagsEnabled', 'StatusTagsEnabled', 'PeopleTagsEnabled', 'TagsHideOnHover', 'QualityTagsPosition',
+        'QualityAudioDisplayMode', 'QualityVideoCodecDisplayMode', 'QualityHdrDisplayMode', 'QualityMinimumResolution', 'QualityHideSdr',
         'SeriesQualityAggregation', 'GenreTagsPosition', 'LanguageTagsPosition', 'RatingTagsPosition', 'RatingTagsOnMovies', 'RatingTagsOnSeries',
         'RatingTagsOnSeasons', 'RatingTagsOnEpisodes', 'RatingTagsOnContinueWatching', 'RatingTagsOnNextUp', 'RatingTagsShowCommunity',
         'RatingTagsShowCritic', 'RatingTagsSources', 'RatingTagsMinScore', 'RatingTagsColorByScore', 'AgeRatingTagsPosition', 'StatusTagsPosition',

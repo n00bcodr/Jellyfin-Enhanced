@@ -1,0 +1,160 @@
+using System.Security.Claims;
+using System.Text.Json;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
+using Microsoft.AspNetCore.Mvc;
+using Moq;
+
+namespace JE.Tests;
+
+[Collection("Plugin singleton")]
+public class QualityDisplayTests
+{
+    private static TagStreamData Streams() => new()
+    {
+        Streams = [new() { Type = "Video", Height = 1080, Codec = "h264", VideoRangeType = "SDR" },
+            new() { Type = "Video", Height = 2160, Codec = "hevc", VideoRangeType = "HDR10" },
+            new() { Type = "Video", Height = 2160, Codec = "hevc", VideoRangeType = "HDR10" },
+            new() { Type = "Audio", Language = "eng", DisplayTitle = "DTS 5.1", Channels = 6 },
+            new() { Type = "Audio", Language = "eng", DisplayTitle = "ATMOS 7.1", Channels = 8 },
+            new() { Type = "Audio", Language = "eng", DisplayTitle = "DTS 7.1", Channels = 8 },
+            new() { Type = "Audio", Language = "deu", DisplayTitle = "TRUEHD 5.1", Channels = 6 }],
+    };
+    private static PosterTagSettings Settings(string policy = "representative", int cap = 0) => PosterTagSettings.FromUserSettings(new()
+    {
+        QualityTagsEnabled = true, QualityAudioDisplayMode = "all", QualityVideoCodecDisplayMode = "all", QualityHdrDisplayMode = "all",
+        SeriesQualityAggregation = policy, TagLayoutSettingsVersion = 1, TagGroupCaps = new() { Quality = cap },
+    }, new(), null);
+
+    private static string[] Labels(TagCacheEntry entry, PosterTagSettings settings) => PosterTagResolver.Resolve(entry, settings,
+        new(entry.Type ?? "Movie", false, null, null, null), false)?.Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.Label).ToArray() ?? [];
+
+    [Fact]
+    public void DistinctFactsKeepActualTrackChannelsAndAreImmutableValueComparedCacheData()
+    {
+        var streams = Streams();
+        streams.DistinctQualities = QualityTagRules.DetectDistinct(streams.Streams);
+        Assert.Equal(8, streams.DistinctQualities.Count);
+        Assert.Equal(new[] { "ATMOS 7.1", "DTS 7.1", "DTS 5.1" }, QualityTagRules.DistinctValues(streams, "audioInfo", "eng"));
+        Assert.Equal(new[] { "TRUEHD 5.1" }, QualityTagRules.DistinctValues(streams, "audioInfo", "de"));
+        var entry = new TagCacheEntry { Type = "Movie", StreamData = streams };
+        var restored = JsonSerializer.Deserialize<TagCacheEntry>(JsonSerializer.Serialize(entry))!;
+        Assert.True(TagCacheEntry.ContentEquals(entry, restored));
+        restored.StreamData!.DistinctQualities!.Add(new("videoCodec", "AV1"));
+        Assert.False(TagCacheEntry.ContentEquals(entry, restored));
+        Assert.Same(streams, entry.Clone().StreamData);
+    }
+
+    [Fact]
+    public void NativeAllOrderingDedupeThresholdsHideSdrAndCapsMatchWeb()
+    {
+        var entry = new TagCacheEntry { Type = "Movie", StreamData = Streams() };
+        Assert.Equal(["1080p", "HDR10", "SDR", "HEVC", "H264", "ATMOS 7.1", "TRUEHD 5.1", "DTS 7.1", "DTS 5.1"], Labels(entry, Settings()));
+        Assert.Equal(["1080p", "HDR10"], Labels(entry, Settings(cap: 2)));
+        var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, QualityMinimumResolution = "4k", QualityHdrDisplayMode = "all", QualityHideSdr = true }, new(), null);
+        Assert.Equal(["HDR10", "H264", "DTS 7.1"], Labels(entry, settings));
+        var legacy = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true }, new(), null);
+        Assert.Equal(["1080p", "H264", "DTS 7.1"], Labels(entry, legacy));
+        Assert.NotEqual(legacy.Digest, Settings().Digest);
+    }
+
+    [Fact]
+    public void AllDoesNotResurrectMalformedEntriesThatTheWebDetectorDrops()
+    {
+        var entry = new TagCacheEntry { Type = "Movie", StreamData = Streams() };
+        entry.StreamData.Streams!.Add(null!);
+        Assert.Empty(Labels(entry, Settings()));
+        entry.StreamData = Streams(); entry.StreamData.Sources = [null!];
+        Assert.Empty(Labels(entry, Settings()));
+        entry.StreamData.Sources = [new() { Path = "movie.3d.hsbs.mkv" }, null!];
+        Assert.Contains("HEVC", Labels(entry, Settings()));
+    }
+
+    [Theory]
+    [InlineData("representative", "HEVC,H264")]
+    [InlineData("latest", "AV1,HEVC")]
+    [InlineData("best", "AV1,HEVC,H264")]
+    [InlineData("shared", "HEVC")]
+    [InlineData("mixed", "AV1,HEVC,H264")]
+    public void AllSetsRespectEachContainerPolicyAndUnknownMembers(string policy, string expected)
+    {
+        var first = Streams();
+        var last = new TagStreamData { Streams = [new() { Type = "Video", Codec = "hevc" }, new() { Type = "Video", Codec = "av1" }] };
+        var summary = SeriesQualityAggregation.Build([new("first", 1, first), new("last", 2, last)], 100);
+        var entry = new TagCacheEntry { Type = "Season", StreamData = first, QualitySummary = summary };
+        var labels = Labels(entry, Settings(policy));
+        Assert.Equal(expected.Split(','), labels.Where(label => QualityTagRules.CategoryOf(label) == "videoCodec"));
+        Assert.Equal(policy == "mixed", labels.Contains("Mixed"));
+        var unknown = SeriesQualityAggregation.Build([new("known", 1, first), new("unknown", 2, null)], 100);
+        Assert.Empty(unknown.Categories["videoCodec"].Shared);
+        Assert.Empty(unknown.Categories["videoCodec"].LatestAll);
+        Assert.False(unknown.Categories["videoCodec"].AllSetsAgree);
+    }
+
+    [Theory]
+    [InlineData("off", "480p", true)]
+    [InlineData("720p", "720p", true)]
+    [InlineData("720p", "576p", false)]
+    [InlineData("1080p", "1080p", true)]
+    [InlineData("1080p", "720p", false)]
+    [InlineData("4k", "1080p", false)]
+    [InlineData("4k", "4K", true)]
+    [InlineData("4k", "8K", true)]
+    public void ThresholdsAreInclusive(string minimum, string label, bool shown) => Assert.Equal(shown, QualityDisplayRules.MeetsMinimum(label, minimum));
+
+    [Theory]
+    [InlineData("QualityAudioDisplayMode", "all", "unknown")]
+    [InlineData("QualityVideoCodecDisplayMode", "highest", "off")]
+    [InlineData("QualityHdrDisplayMode", "ALL", "true")]
+    [InlineData("QualityMinimumResolution", "4K", "720")]
+    public void AdminValidatorsAcceptOnlyControlValues(string field, string valid, string invalid)
+    {
+        Assert.True(MediaTagsPageFields.TryNormalize(field, valid, out _, out _));
+        Assert.False(MediaTagsPageFields.TryNormalize(field, invalid, out _, out _));
+    }
+
+    private static Jellyfin.Plugin.JellyfinEnhanced.Controllers.JellyfinEnhancedController Controller(ApiPluginFixture f, Claim claim)
+    {
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), f.Core.Paths.Object, f.Core.Logger);
+        var controller = ApiAssetTests.Controller(f.Core, maintenance, f.Core.Manager);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([claim], "test"));
+        return controller;
+    }
+
+    [Fact]
+    public void SettingsSeedValidateRoundTripInheritAndApplyDefaults()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.QualityAudioDisplayMode = "all"; config.QualityVideoCodecDisplayMode = "all"; config.QualityHdrDisplayMode = "all";
+        config.QualityMinimumResolution = "4k"; config.QualityHideSdr = true;
+        var id = Guid.NewGuid().ToString("N");
+        var user = Controller(f, new Claim("Jellyfin-UserId", id));
+        Assert.IsType<OkObjectResult>(user.GetUserSettingsSettings(id));
+        var seeded = f.Core.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(id, "settings.json");
+        Assert.Equal("all", seeded.QualityAudioDisplayMode); Assert.Equal("all", seeded.QualityVideoCodecDisplayMode);
+        Assert.Equal("all", seeded.QualityHdrDisplayMode); Assert.Equal("4k", seeded.QualityMinimumResolution); Assert.True(seeded.QualityHideSdr);
+        seeded.QualityAudioDisplayMode = "invalid"; seeded.QualityVideoCodecDisplayMode = " ALL "; seeded.QualityHdrDisplayMode = null;
+        seeded.QualityMinimumResolution = "invalid"; seeded.QualityHideSdr = null;
+        Assert.IsType<OkObjectResult>(user.SaveUserSettingsSettings(id, seeded));
+        var saved = f.Core.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(id, "settings.json");
+        Assert.Equal("highest", saved.QualityAudioDisplayMode); Assert.Equal("all", saved.QualityVideoCodecDisplayMode);
+        Assert.Null(saved.QualityHdrDisplayMode); Assert.Equal("off", saved.QualityMinimumResolution); Assert.Null(saved.QualityHideSdr);
+        Assert.Equal("all", PosterTagSettings.FromUserSettings(saved, config, null).QualityHdrDisplayMode);
+        var admin = Controller(f, new Claim(ClaimTypes.Role, "Administrator"));
+        Assert.IsType<OkObjectResult>(admin.ResetAllUsersSettings());
+        var reset = f.Core.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(id, "settings.json");
+        Assert.Equal("all", reset.QualityAudioDisplayMode); Assert.Equal("4k", reset.QualityMinimumResolution); Assert.True(reset.QualityHideSdr);
+        var legacy = new JellyfinEnhancedUserSettings();
+        TagLayoutRules.Normalize(legacy);
+        Assert.Equal(0, legacy.TagLayoutSettingsVersion); Assert.Null(legacy.QualityAudioDisplayMode);
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(admin.GetPublicConfig()).Value));
+        Assert.Equal("all", doc.RootElement.GetProperty("QualityAudioDisplayMode").GetString());
+    }
+}

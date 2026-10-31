@@ -1,0 +1,125 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createHarness } from '../helpers/harness.mjs';
+
+/** Real renderer, streams and summary, with only pipeline discovery stubbed. */
+function setup(t, policy = 'representative', density = 'full') {
+  const renderers = new Map();
+  const h = createHarness({ html: '<div class="card"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div></div><div class="cardText">Show</div></div></div>',
+    JE: { t: key => ({ series_quality_mixed: 'Mixed', series_quality_mixed_compact: '±' }[key] || key),
+      currentSettings: { qualityTagsEnabled: true, qualityTagsPreferredAudioLanguage: 'none', seriesQualityAggregation: policy,
+        tagLabelDensity: density, tagLayoutSettingsVersion: 1, tagLayout: 'corners' },
+      pluginConfig: { TagCacheServerMode: true },
+      session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
+      _cacheManager: { register() {}, markDirty() {} },
+      tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (key, renderer) => renderers.set(key, { ...renderer, render: (el, item, extras = {}) => renderer.render(el, item, { stripRevision: 'none', ...extras }) }), clearProcessed() {}, scheduleScan() {} } } });
+  t.after(() => h.close());
+  for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/qualitytags.js']) h.load(file);
+  h.JE.initializeQualityTags();
+  const card = h.document.querySelector('.cardImageContainer');
+  const render = (entry, id = 'series') => {
+    h.JE.core.tagLayout.clearCard(card);
+    delete h.document.querySelector('.card').dataset.jeQualityTagged;
+    renderers.get('quality').renderFromServerCache(card, entry, id);
+    return [...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent);
+  };
+  return { ...h, renderers, card, render };
+}
+
+const streams = () => [
+  { Type: 'Video', Height: 1080, Codec: 'h264', VideoRangeType: 'SDR' },
+  { Type: 'Video', Height: 2160, Codec: 'hevc', VideoRangeType: 'HDR10' },
+  { Type: 'Video', Height: 2160, Codec: 'hevc', VideoRangeType: 'HDR10' },
+  { Type: 'Audio', Language: 'eng', DisplayTitle: 'DTS 5.1', Channels: 6 },
+  { Type: 'Audio', Language: 'eng', DisplayTitle: 'ATMOS 7.1', Channels: 8 },
+  { Type: 'Audio', Language: 'eng', DisplayTitle: 'DTS 7.1', Channels: 8 },
+  { Type: 'Audio', Language: 'deu', DisplayTitle: 'TRUEHD 5.1', Channels: 6 },
+];
+const movie = () => ({ Type: 'Movie', StreamData: { Streams: streams(), Sources: [] } });
+const all = { qualityAudioDisplayMode: 'all', qualityVideoCodecDisplayMode: 'all', qualityHdrDisplayMode: 'all' };
+
+test('All deduplicates and ranks per-track values; Highest default retains legacy detection', t => {
+  const h = setup(t);
+  const data = movie();
+  assert.deepEqual(h.render(data), ['1080p', 'H264', 'DTS 7.1']);
+  Object.assign(h.JE.currentSettings, all);
+  assert.deepEqual(h.render(data), ['1080p', 'HDR10', 'SDR', 'HEVC', 'H264', 'ATMOS 7.1', 'TRUEHD 5.1', 'DTS 7.1', 'DTS 5.1']);
+  h.JE.currentSettings.qualityAudioDisplayMode = 'highest';
+  assert.deepEqual(h.render(data).filter(label => /DTS|ATMOS|TRUEHD/.test(label)), ['DTS 7.1']);
+});
+
+test('All uses cached distinct sets and exact-language tiers rather than recomputing raw tracks', t => {
+  const h = setup(t);
+  Object.assign(h.JE.currentSettings, all, { qualityTagsPreferredAudioLanguage: 'en-US' });
+  const data = movie();
+  data.StreamData.DistinctQualities = [
+    { Category: 'audioInfo', Label: 'DTS 5.1', Language: 'eng' },
+    { Category: 'audioInfo', Label: 'ATMOS 7.1', Language: 'en-US' },
+    { Category: 'videoCodec', Label: 'AV1' },
+    { Category: 'dynamicRange', Label: 'Dolby Vision' },
+  ];
+  assert.deepEqual(h.render(data), ['1080p', 'Dolby Vision', 'AV1', 'ATMOS 7.1']);
+  h.JE.currentSettings.qualityTagsPreferredAudioLanguage = 'en-GB';
+  assert.deepEqual(h.render(data).slice(-1), ['DTS 5.1']);
+});
+
+for (const [threshold, present] of [['off', true], ['720p', true], ['1080p', true], ['4k', false], ['invalid', true]]) {
+  test(`minimum ${threshold} filters inclusively before caps`, t => {
+    const h = setup(t); Object.assign(h.JE.currentSettings, all, { qualityMinimumResolution: threshold, qualityHideSdr: true });
+    const labels = h.render(movie());
+    assert.equal(labels.includes('1080p'), present);
+    assert.ok(!labels.includes('SDR'));
+    assert.ok(labels.includes('HDR10'));
+  });
+}
+
+test('per-category inheritance, compact labels and group caps count extra distinct values', t => {
+  const h = setup(t, 'representative', 'compact');
+  Object.assign(h.JE.pluginConfig, { QualityAudioDisplayMode: 'all', QualityMinimumResolution: '4k' });
+  Object.assign(h.JE.currentSettings, { tagGroupCaps: { quality: 2 } });
+  h.render(movie());
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, 2);
+  assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), ['H264', 'ATMOS']);
+  // Caps apply before the layout fitter; no overflow chip represents deliberately capped values.
+  assert.equal(h.document.querySelector('.je-tag-more'), null);
+});
+
+for (const [policy, expected] of [['representative', ['H264']], ['latest', ['AV1']], ['best', ['AV1', 'HEVC', 'H264']], ['shared', ['HEVC']], ['mixed', ['AV1', 'HEVC', 'H264', 'Mixed']]]) {
+  test(`All ${policy} respects the container set policy`, t => {
+    const h = setup(t, policy); Object.assign(h.JE.currentSettings, { qualityVideoCodecDisplayMode: 'all', showResolutionTag: false, showAudioInfoTag: false, showDynamicRangeTag: false });
+    const data = { Type: 'Season', StreamData: { Streams: [{ Type: 'Video', Codec: 'h264' }] }, QualitySummary: { EpisodeCount: 2,
+      Categories: { videoCodec: { Best: 'AV1', Latest: 'AV1', AllAgree: false, AllSetsAgree: false, All: ['AV1', 'HEVC', 'H264'], Shared: ['HEVC'], LatestAll: ['AV1'] } } } };
+    assert.deepEqual(h.render(data), expected);
+  });
+}
+
+test('batch fallback and mode changes cannot reuse a computed Highest-only cache', t => {
+  const h = setup(t); const renderer = h.renderers.get('quality');
+  const item = { Id: 'batch', Type: 'Movie', MediaStreams: streams(), MediaSources: [] };
+  renderer.render(h.card, item);
+  assert.ok(!h.document.querySelector('[data-quality="ATMOS"]'));
+  Object.assign(h.JE.currentSettings, all);
+  h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged;
+  assert.equal(renderer.renderFromCache(h.card, 'batch'), false);
+  renderer.render(h.card, item);
+  assert.ok(h.document.querySelector('[data-quality="ATMOS"]'));
+  assert.equal(h.document.querySelectorAll('[data-quality="HEVC"]').length, 1);
+});
+
+
+test('Bands overflow counts every eligible extra stream value after compact presentation', t => {
+  const h = setup(t, 'representative', 'compact');
+  Object.assign(h.JE.currentSettings, all, { tagLayout: 'bands' });
+  h.render(movie());
+  const proto = h.window.HTMLElement.prototype;
+  proto.getBoundingClientRect = function () {
+    const width = this.classList.contains('je-tag-more') ? 20 : this.parentElement?.dataset?.jeGroup ? 30 : 0;
+    return { width, height: width ? 18 : 0, top: 0, left: 0, right: width, bottom: 18 };
+  };
+  Object.defineProperty(h.window.Element.prototype, 'clientWidth', { configurable: true, get() { return this.matches('.je-tag-host, .je-tag-slot') ? 113 : 0; } });
+  Object.defineProperty(h.window.Element.prototype, 'clientHeight', { configurable: true, get() { return this.matches('.je-tag-host') ? 170 : 0; } });
+  h.JE.core.tagLayout.flushFit();
+  const hidden = h.document.querySelectorAll('.quality-overlay-label[data-je-overflow]');
+  assert.ok(hidden.length > 0);
+  assert.equal(h.document.querySelector('.je-tag-more').textContent, `+${hidden.length}`);
+});

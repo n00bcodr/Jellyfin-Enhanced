@@ -150,6 +150,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return OneOf(value as string, LanguageTagDisplay.NormalizeStyle, new[] { LanguageTagDisplay.StyleFlags, LanguageTagDisplay.StyleCodes }, out normalized, out error);
                 case "LanguageTagsCountBadge":
                     return OneOf(value as string, LanguageTagDisplay.NormalizeCountBadge, new[] { LanguageTagDisplay.BadgeOff, LanguageTagDisplay.BadgeOnly, LanguageTagDisplay.BadgeWithChips }, out normalized, out error);
+                case "QualityAudioDisplayMode":
+                    return OneOf(value as string, v => new[] { "highest", "all" }.Contains(v?.Trim().ToLowerInvariant()) ? QualityDisplayRules.Mode(v) : string.Empty, new[] { "highest", "all" }, out normalized, out error);
+                case "QualityVideoCodecDisplayMode":
+                    return OneOf(value as string, v => new[] { "highest", "all" }.Contains(v?.Trim().ToLowerInvariant()) ? QualityDisplayRules.Mode(v) : string.Empty, new[] { "highest", "all" }, out normalized, out error);
+                case "QualityHdrDisplayMode":
+                    return OneOf(value as string, v => new[] { "highest", "all" }.Contains(v?.Trim().ToLowerInvariant()) ? QualityDisplayRules.Mode(v) : string.Empty, new[] { "highest", "all" }, out normalized, out error);
+                case "QualityMinimumResolution":
+                    return OneOf(value as string, v => new[] { "off", "720p", "1080p", "4k" }.Contains(v?.Trim().ToLowerInvariant()) ? QualityDisplayRules.Minimum(v) : string.Empty, new[] { "off", "720p", "1080p", "4k" }, out normalized, out error);
                 case "SeriesQualityAggregation":
                     return OneOf(value as string, SeriesQualityAggregation.Normalize, new[] { "representative", "latest", "best", "shared", "mixed" }, out normalized, out error);
                 case "TagStyleTarget":

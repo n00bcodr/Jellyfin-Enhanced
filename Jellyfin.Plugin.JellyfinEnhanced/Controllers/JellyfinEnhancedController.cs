@@ -3898,6 +3898,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsMergeRegions,
                 config.QualityTagsPreferredAudioLanguage,
                 SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(config.SeriesQualityAggregation),
+                config.QualityHideSdr,
+                QualityMinimumResolution = QualityDisplayRules.Minimum(config.QualityMinimumResolution),
+                QualityHdrDisplayMode = QualityDisplayRules.Mode(config.QualityHdrDisplayMode),
+                QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(config.QualityVideoCodecDisplayMode),
+                QualityAudioDisplayMode = QualityDisplayRules.Mode(config.QualityAudioDisplayMode),
                 config.QualityTagsAudioLanguageFromUser,
                 config.RatingTagsPosition,
                 config.RatingTagsOnMovies,
@@ -5463,6 +5468,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
                         // Series/season quality aggregation default.
                         SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
+                        QualityHideSdr = defaultConfig.QualityHideSdr,
+                        QualityMinimumResolution = QualityDisplayRules.Minimum(defaultConfig.QualityMinimumResolution),
+                        QualityHdrDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityHdrDisplayMode),
+                        QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityVideoCodecDisplayMode),
+                        QualityAudioDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityAudioDisplayMode),
                         GenreTagsPosition = defaultConfig.GenreTagsPosition,
                         LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                         RatingTagsPosition = defaultConfig.RatingTagsPosition,
@@ -5583,6 +5593,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // clamped, so a stale client cannot store an unusable layout.
                 RatingSourceSettings.Normalize(userConfiguration);
                 TagLayoutRules.Normalize(userConfiguration);
+                if (userConfiguration.QualityAudioDisplayMode != null) userConfiguration.QualityAudioDisplayMode = QualityDisplayRules.Mode(userConfiguration.QualityAudioDisplayMode);
+                if (userConfiguration.QualityVideoCodecDisplayMode != null) userConfiguration.QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(userConfiguration.QualityVideoCodecDisplayMode);
+                if (userConfiguration.QualityHdrDisplayMode != null) userConfiguration.QualityHdrDisplayMode = QualityDisplayRules.Mode(userConfiguration.QualityHdrDisplayMode);
+                if (userConfiguration.QualityMinimumResolution != null) userConfiguration.QualityMinimumResolution = QualityDisplayRules.Minimum(userConfiguration.QualityMinimumResolution);
                 if (userConfiguration.SeriesQualityAggregation != null)
                     userConfiguration.SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(userConfiguration.SeriesQualityAggregation);
                 // Unknown language tag styles / badge modes fall back to flags / off.
@@ -8512,6 +8526,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
                 // Series/season quality aggregation default.
                 SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
+                QualityHideSdr = defaultConfig.QualityHideSdr,
+                QualityMinimumResolution = QualityDisplayRules.Minimum(defaultConfig.QualityMinimumResolution),
+                QualityHdrDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityHdrDisplayMode),
+                QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityVideoCodecDisplayMode),
+                QualityAudioDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityAudioDisplayMode),
                 GenreTagsPosition = defaultConfig.GenreTagsPosition,
                 LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                 RatingTagsPosition = defaultConfig.RatingTagsPosition,

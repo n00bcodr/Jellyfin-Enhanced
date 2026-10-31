@@ -84,6 +84,17 @@ const synthetic = {
     ns09: movie({ Source: 'SCR', Edition: 'Uncut' }),
     ns10: movie({ Source: 'WEB', Edition: 'IMAX', StreamData: sd([], [], 'Film.IMAX') }),
     ns11: movie({ Source: 'REMUX', Edition: 'Fan Edit', StreamData: null }),
+    // Display modes: multi-video/HDR and per-track audio combinations, with duplicates.
+    display01: movie({ StreamData: sd([video(), video({ Codec: 'hevc', VideoRangeType: 'HDR10', DisplayTitle: '4K HDR10', Height: 2160 }),
+        audio({ Codec: 'dts', DisplayTitle: 'DTS 5.1', Channels: 6, ChannelLayout: '' }),
+        audio({ Codec: 'truehd', DisplayTitle: 'ATMOS 7.1', Channels: 8, ChannelLayout: '' }),
+        audio({ Codec: 'dts', DisplayTitle: 'DTS 5.1', Channels: 6, ChannelLayout: '' }),
+        audio({ Language: 'deu', Codec: 'eac3', DisplayTitle: 'Dolby Digital+ 5.1', Channels: 6, ChannelLayout: '' })]) }),
+    display02: movie({ StreamData: { Streams: [video()], DistinctQualities: [
+        { Category: 'videoCodec', Label: 'AV1' }, { Category: 'videoCodec', Label: 'H264' },
+        { Category: 'dynamicRange', Label: 'HDR10' }, { Category: 'dynamicRange', Label: 'SDR' },
+        { Category: 'audioInfo', Label: 'DTS 5.1', Language: 'eng' }, { Category: 'audioInfo', Label: 'ATMOS 7.1', Language: 'deu' },
+    ] } }),
     // Genres
     g01: movie({ Genres: ['Science Fiction', 'Action', 'Adventure', 'Comedy'] }),
     g02: movie({ Genres: ['SCIENCE-FICTION', 'Comédie', 'Ciencia Ficción', 'Боевик'] }),
@@ -173,7 +184,7 @@ const synthetic = {
 };
 // Aggregation facts deliberately disagree with representative streams; native and web must use the policy.
 for (const type of ['Series', 'Season']) {
-    const facts = (best, latest = best, agree = true) => ({ Best: best, Latest: latest, Values: [best], AllAgree: agree });
+    const facts = (best, latest = best, agree = true) => ({ Best: best, Latest: latest, Values: [best], AllAgree: agree, All: [...new Set([best, latest].filter(Boolean))], Shared: agree && best ? [best] : [], LatestAll: latest ? [latest] : [], AllSetsAgree: agree });
     const data = { Type: type, Source: 'WEB', Edition: 'Criterion', AudioLanguages: ['eng', 'jpn'], SubtitleLanguages: ['fra', 'eng'], Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92 },
         StreamData: sd([video(), audio()]), QualitySummary: { EpisodeCount: 2,
         Categories: { resolution: facts('4K', '720p', false), dynamicRange: facts('Dolby Vision', null, false), videoCodec: facts('AV1'), audioInfo: facts('ATMOS 7.1', 'DTS 5.1', false) },
@@ -278,6 +289,18 @@ for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed']) {
     synth('aggregate-' + policy, { QualityTagsEnabled: true, SeriesQualityAggregation: policy });
     synth('aggregate-' + policy + '-de', { QualityTagsEnabled: true, SeriesQualityAggregation: policy, QualityTagsPreferredAudioLanguage: 'de' });
 }
+// Display modes independently, inherited defaults, native caps/density and all container policies.
+const displayAll = { QualityTagsEnabled: true, QualityAudioDisplayMode: 'all', QualityVideoCodecDisplayMode: 'all', QualityHdrDisplayMode: 'all' };
+for (const field of ['QualityAudioDisplayMode', 'QualityVideoCodecDisplayMode', 'QualityHdrDisplayMode'])
+    synth('display-' + field, { QualityTagsEnabled: true, [field]: 'all' });
+for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed'])
+    synth('display-all-' + policy, { ...displayAll, SeriesQualityAggregation: policy });
+synth('display-all-language', { ...displayAll, QualityTagsPreferredAudioLanguage: 'de' });
+synth('display-all-admin', { QualityTagsEnabled: true }, displayAll);
+synth('display-user-highest', { QualityTagsEnabled: true, QualityAudioDisplayMode: 'highest', QualityVideoCodecDisplayMode: 'highest', QualityHdrDisplayMode: 'highest' }, displayAll);
+for (const minimum of ['off', '720p', '1080p', '4k'])
+    synth('display-minimum-' + minimum, { ...displayAll, QualityMinimumResolution: minimum, QualityHideSdr: true });
+synth('display-compact-cap', { ...displayAll, TagLayout: 'bands', TagLabelDensity: 'compact', TagLayoutSettingsVersion: 1, TagGroupCaps: { Quality: 3 } });
 synth('aggregate-admin-default', { QualityTagsEnabled: true }, { SeriesQualityAggregation: 'best' });
 for (const policy of ['latest', 'mixed']) {
     synth('tier1-combined-' + policy, { QualityTagsEnabled: true, RatingTagsEnabled: true,

@@ -18,7 +18,7 @@
     const sourceOrder = ['REMUX', 'BluRay', 'WEB', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'Physical', 'CAM', 'TS', 'TC', 'SCR'];
     const EDITION_PREFIX = 'edition:';
     const editionOrder = [];
-    const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR'];
+    const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', 'SDR'];
     const specialFormatOrder = ['IMAX', '3D'];
     const codecOrder = ['AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA'];
     const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS', 'Dolby Digital+', '7.1', '5.1'];
@@ -50,6 +50,7 @@
         '576p': { bg: 'rgba(255, 179, 0, 0.85)', text: '#000000' },
         '480p': { bg: 'rgba(255, 193, 7, 0.85)', text: '#000000' },
         'SD': { bg: 'rgba(108, 117, 125, 0.85)', text: '#ffffff' },
+        'SDR': { bg: 'rgba(84, 110, 122, 0.9)', text: '#ffffff' },
         'HDR': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
         'HDR10': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
         'HDR10+': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
@@ -250,7 +251,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 1 && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 2 && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     /**
@@ -392,9 +393,10 @@
      * @param {Array} mediaStreams - The MediaStreams array from the Jellyfin item.
      * @param {Array} mediaSources - The MediaSources array from the Jellyfin item.
      * @param {Object} [itemData] - Optional item metadata for filename/title signals.
+     * @param {boolean} [singleTrack=false] Internal per-track detection without display-mode expansion.
      * @returns {Array<string>} A list of detected quality tags.
      */
-    function getEnhancedQuality(mediaStreams, mediaSources, itemData = null) {
+    function getEnhancedQuality(mediaStreams, mediaSources, itemData = null, singleTrack = false) {
         if (!mediaStreams && !mediaSources && !itemData?.Source && !itemData?.Edition) return [];
 
         const qualities = new Set();
@@ -783,7 +785,60 @@
             qualities.add(itemData.Source);
         }
         if (itemData?.Edition) qualities.add(EDITION_PREFIX + itemData.Edition);
+        if (!singleTrack && displayModeKey() !== '000') {
+            const distinct = itemData?.DistinctQualities || distinctQualities(videoStreams, audioStreams);
+            for (const category of ['audio', 'videoCodec', 'dynamicRange']) {
+                if (!allValues(category)) continue;
+                for (const label of qualities) if (categorize(label) === category) qualities.delete(label);
+                let values = distinct.filter(value => value.Category === (category === 'audio' ? 'audioInfo' : category));
+                if (category === 'audio') values = selectAudioStreamsForLanguage(values, resolvePreferredAudioLanguage());
+                for (const value of values) qualities.add(value.Label);
+            }
+        }
         return Array.from(qualities);
+    }
+
+    /** @param {string} category Web category id. @returns {boolean} Whether distinct sets are enabled. */
+    function allValues(category) {
+        const key = { audio: 'qualityAudioDisplayMode', videoCodec: 'qualityVideoCodecDisplayMode', dynamicRange: 'qualityHdrDisplayMode' }[category];
+        return !!key && (JE.currentSettings?.[key] ?? JE.pluginConfig?.[key[0].toUpperCase() + key.slice(1)]) === 'all';
+    }
+
+    /** @returns {string} Cache fingerprint for detection-affecting category modes. */
+    function displayModeKey() {
+        return ['audio', 'videoCodec', 'dynamicRange'].map(category => allValues(category) ? '1' : '0').join('');
+    }
+
+    /** Detect independently per track; cached and batch fallback paths use the same labels and language tiers.
+     * @param {Object[]} videos Video streams. @param {Object[]} audio Audio streams. @returns {Object[]} Distinct facts.
+     */
+    function distinctQualities(videos, audio) {
+        const values = [];
+        for (const stream of [...videos, ...audio]) {
+            const labels = getEnhancedQuality([stream], null, null, true);
+            const categories = stream.Type === 'Video' ? ['videoCodec', 'dynamicRange'] : ['audio'];
+            for (const label of labels) {
+                const category = categorize(label);
+                if (categories.includes(category)) values.push({ Category: category === 'audio' ? 'audioInfo' : category, Label: label, Language: stream.Language });
+            }
+            if (stream.Type === 'Video' && !labels.some(label => categorize(label) === 'dynamicRange')
+                && (stream.VideoRangeType || stream.Codec || stream.Height > 0)) values.push({ Category: 'dynamicRange', Label: 'SDR' });
+        }
+        return values;
+    }
+
+    /** @param {string} label Quality label. @param {string} category Web category. @returns {number} Rank with per-track channel ties. */
+    function distinctRank(label, category) {
+        const index = CATEGORY_BY_KEY.get(category)?.items.indexOf(normalizeQualityLabel(label)) ?? -1;
+        return (index < 0 ? 999 : index) * 10 + (category === 'audio' ? label.includes('7.1') ? 0 : label.includes('5.1') ? 1 : 2 : 0);
+    }
+
+    /** @param {string} label Detected resolution. @returns {boolean} Inclusive threshold, unknown settings mean Off. */
+    function meetsMinimum(label) {
+        const threshold = JE.currentSettings?.qualityMinimumResolution ?? JE.pluginConfig?.QualityMinimumResolution;
+        const last = { '4k': 1, '1080p': 3, '720p': 4 }[threshold];
+        const index = resolutionOrder.indexOf(label);
+        return last === undefined || (index >= 0 && index <= last);
     }
 
     /**
@@ -820,9 +875,14 @@
         let mixed = false;
         for (const [key, category] of Object.entries(summary.Categories || {})) {
             const facts = key === 'audioInfo' && audio ? audio : category;
+            const cat = CATEGORY_BY_KEY.get(categoryKeys[key]);
+            if (allValues(categoryKeys[key])) {
+                qualities.push(...((policy === 'latest' ? facts.LatestAll : policy === 'shared' ? facts.Shared : facts.All) || []));
+                mixed ||= !facts.AllSetsAgree && !!cat && readBool(cat.settingKey, true);
+                continue;
+            }
             const value = policy === 'latest' ? facts.Latest : policy === 'shared' && !facts.AllAgree ? null : facts.Best;
             if (value) qualities.push(value);
-            const cat = CATEGORY_BY_KEY.get(categoryKeys[key]);
             mixed ||= !facts.AllAgree && !!cat && readBool(cat.settingKey, true);
         }
         if (policy === 'mixed' && summary.EpisodeCount > 1 && mixed) qualities.push('Mixed');
@@ -908,7 +968,9 @@
         // the pre-PR `.other-quality` rendering behavior.
         const buckets = new Map();
         const otherBucket = [];
-        for (const q of qualities) {
+        for (const q of new Set(qualities)) {
+            if (q === 'SDR' && readBool('qualityHideSdr', false)) continue;
+            if (categorize(q) === 'resolution' && !meetsMinimum(q)) continue;
             if (['CAM', 'TS', 'TC', 'SCR'].includes(q) && !readBool('showLowQualitySourceTag', false)) continue;
             if (q === EDITION_PREFIX + 'IMAX' && qualities.includes('IMAX') && readBool('showSpecialFormatTag', true)) continue;
             const catKey = categorize(q);
@@ -933,6 +995,7 @@
         for (const [catKey, tags] of buckets) {
             const cat = CATEGORY_BY_KEY.get(catKey);
             tags.sort((a, b) => {
+                if (allValues(catKey)) return distinctRank(a, catKey) - distinctRank(b, catKey) || (a < b ? -1 : a > b ? 1 : 0);
                 const aKey = normalizeQualityLabel(a);
                 const bKey = normalizeQualityLabel(b);
                 const aIdx = cat.items.indexOf(aKey);
@@ -1115,7 +1178,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 1, timestamp: Date.now(), audioLang, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 2, displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1148,9 +1211,9 @@
                 }
                 const audioLang = audioPreferenceKey();
                 const sd = entry.StreamData;
-                const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, Source: entry.Source, Edition: entry.Edition });
+                const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities });
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, qualities, entry, namingVersion: 1, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, qualities, entry, namingVersion: 2, displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

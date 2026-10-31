@@ -318,8 +318,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A schema mismatch discards the stale cache so it can be rebuilt.
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
-        // Current schema includes Awards, Logos and Custom rule matches.
-        internal const int CurrentCacheSchemaVersion = 18;
+        // Current schema includes Awards, Logos, Custom rule matches, per-track distinct
+        // quality values and full union/shared/latest sets for container display modes.
+        internal const int CurrentCacheSchemaVersion = 19;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2915,6 +2916,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return new TagStreamData
             {
                 Streams = streams,
+                DistinctQualities = PosterTags.Resolution.QualityTagRules.DetectDistinct(streams),
                 Sources = sources,
                 ItemName = item.Name,
                 ItemPath = itemPath

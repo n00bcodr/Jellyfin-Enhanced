@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "8";
+        public const string ResolverVersion = "9";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -254,6 +254,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>Effective series/season quality aggregation policy.</summary>
         public string SeriesQualityAggregation { get; private init; } = "representative";
+
+        /// <summary>Whether a stream category should emit its distinct values.</summary>
+        public bool AllQualityValues(string category) => category switch
+        {
+            "audioInfo" => QualityAudioDisplayMode == "all",
+            "videoCodec" => QualityVideoCodecDisplayMode == "all",
+            "dynamicRange" => QualityHdrDisplayMode == "all",
+            _ => false,
+        };
+
+        /// <summary>Effective stream-derived quality display preference.</summary>
+        public bool QualityHideSdr { get; private init; }
+
+        /// <summary>Effective stream-derived quality display preference.</summary>
+        public string QualityMinimumResolution { get; private init; } = "off";
+
+        /// <summary>Effective stream-derived quality display preference.</summary>
+        public string QualityHdrDisplayMode { get; private init; } = "highest";
+
+        /// <summary>Effective stream-derived quality display preference.</summary>
+        public string QualityVideoCodecDisplayMode { get; private init; } = "highest";
+
+        /// <summary>Effective stream-derived quality display preference.</summary>
+        public string QualityAudioDisplayMode { get; private init; } = "highest";
 
         /// <summary>
         /// The language whose audio tracks decide the sound tag, or null for "best track overall":
@@ -511,6 +535,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 AudioInfoTagOrder = user.AudioInfoTagOrder ?? config.AudioInfoTagOrder,
                 QualityTagsPreferredAudioLanguage = preferredChoice,
                 SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(user.SeriesQualityAggregation ?? config.SeriesQualityAggregation),
+                QualityHideSdr = user.QualityHideSdr ?? config.QualityHideSdr,
+                QualityMinimumResolution = QualityDisplayRules.Minimum(user.QualityMinimumResolution ?? config.QualityMinimumResolution),
+                QualityHdrDisplayMode = QualityDisplayRules.Mode(user.QualityHdrDisplayMode ?? config.QualityHdrDisplayMode),
+                QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(user.QualityVideoCodecDisplayMode ?? config.QualityVideoCodecDisplayMode),
+                QualityAudioDisplayMode = QualityDisplayRules.Mode(user.QualityAudioDisplayMode ?? config.QualityAudioDisplayMode),
                 PreferredAudioLanguage = preferred,
                 UsesJellyfinAudioPreference = usesJellyfin,
                 RatingTagsOnMovies = user.RatingTagsOnMovies,
@@ -822,6 +851,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 DisplayLanguage = config.DefaultLanguage,
                 QualityTagsPosition = config.QualityTagsPosition,
                 SeriesQualityAggregation = config.SeriesQualityAggregation,
+                QualityHideSdr = config.QualityHideSdr,
+                QualityMinimumResolution = config.QualityMinimumResolution,
+                QualityHdrDisplayMode = config.QualityHdrDisplayMode,
+                QualityVideoCodecDisplayMode = config.QualityVideoCodecDisplayMode,
+                QualityAudioDisplayMode = config.QualityAudioDisplayMode,
                 GenreTagsPosition = config.GenreTagsPosition,
                 LanguageTagsPosition = config.LanguageTagsPosition,
                 RatingTagsPosition = config.RatingTagsPosition,
@@ -898,6 +932,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["quality.order.videoCodec"] = Int(VideoCodecTagOrder);
                 values["quality.order.audioInfo"] = Int(AudioInfoTagOrder);
                 values["quality.seriesAggregation"] = SeriesQualityAggregation;
+                values["quality.QualityHideSdr"] = Bool(QualityHideSdr);
+                values["quality.QualityMinimumResolution"] = QualityMinimumResolution;
+                values["quality.QualityHdrDisplayMode"] = QualityHdrDisplayMode;
+                values["quality.QualityVideoCodecDisplayMode"] = QualityVideoCodecDisplayMode;
+                values["quality.QualityAudioDisplayMode"] = QualityAudioDisplayMode;
                 values["quality.audioLanguage"] = PreferredAudioLanguage ?? string.Empty;
                 values["quality.registeredLate"] = Bool(UsesJellyfinAudioPreference);
             }

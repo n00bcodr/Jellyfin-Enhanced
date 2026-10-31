@@ -1,5 +1,5 @@
 {
-  "_source": "Derived from Configuration/configPage.html at 058f982b (Tier 2 integration) (the old main form): every control id in its \"Media Tags\" and \"Tag Cache\" fieldsets, mapped to the PluginConfiguration field its own load or save line reads or writes. Ids without such a line were bound by custom code (layout tiles, rating sources, rules JSON, shapes) or are actions.",
+  "_source": "Derived from Configuration/configPage.html at 058f982b (Tier 2 integration) (the old main form): every control id in its \"Media Tags\" and \"Tag Cache\" fieldsets, mapped to the PluginConfiguration field its own load or save line reads or writes. Ids without such a line were bound by custom code (layout tiles, rating sources, rules JSON, shapes) or are actions. Extended with the five Quality stream display controls declared on the dedicated Media Tags page.",
   "fields": {
     "qualityTagsEnabled": "QualityTagsEnabled",
     "qualityTagsPosition": "QualityTagsPosition",
@@ -82,7 +82,12 @@
     "customTagRules": "CustomTagRules",
     "awardsTagsPosition": "AwardsTagsPosition",
     "logoTagsPosition": "LogoTagsPosition",
-    "customTagsPosition": "CustomTagsPosition"
+    "customTagsPosition": "CustomTagsPosition",
+    "qualityAudioDisplayMode": "QualityAudioDisplayMode",
+    "qualityVideoCodecDisplayMode": "QualityVideoCodecDisplayMode",
+    "qualityHdrDisplayMode": "QualityHdrDisplayMode",
+    "qualityMinimumResolution": "QualityMinimumResolution",
+    "qualityHideSdr": "QualityHideSdr"
   },
   "unmapped": [
     "ratingTagsSources",

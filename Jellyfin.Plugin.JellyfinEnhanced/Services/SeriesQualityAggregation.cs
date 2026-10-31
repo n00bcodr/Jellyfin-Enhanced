@@ -67,7 +67,7 @@ internal static class SeriesQualityAggregation
         }
         var labels = episodes.Select(e => Labels(e.Streams)).ToArray();
         var categories = Categories.ToDictionary(key => key, key => Summarize(key == QualityTagRules.AudioInfo ? episodes.Select(e => Audio(e.Streams, null)).ToArray()
-            : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest));
+            : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, key, null)).ToArray()));
         var languages = new HashSet<string>(StringComparer.Ordinal);
         foreach (var episode in episodes)
         {
@@ -83,11 +83,11 @@ internal static class SeriesQualityAggregation
         foreach (var language in languages.OrderBy(l => l, StringComparer.Ordinal))
         {
             var values = episodes.Select(e => Audio(e.Streams, language)).ToArray();
-            audio[language] = Summarize(values, QualityTagRules.AudioInfo, latest);
+            audio[language] = Summarize(values, QualityTagRules.AudioInfo, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language)).ToArray());
         }
         var regionFallback = new Dictionary<string, TagQualityCategory>(StringComparer.Ordinal);
         foreach (var language in languages.Where(code => !code.Contains('-') && languages.Any(variant => variant.StartsWith(code + "-", StringComparison.Ordinal))).OrderBy(code => code, StringComparer.Ordinal))
-            regionFallback[language] = Summarize(episodes.Select(e => Audio(e.Streams, language + "-ZZ")).ToArray(), QualityTagRules.AudioInfo, latest);
+            regionFallback[language] = Summarize(episodes.Select(e => Audio(e.Streams, language + "-ZZ")).ToArray(), QualityTagRules.AudioInfo, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language + "-ZZ")).ToArray());
         return new TagQualitySummary
         {
             NextPremiere = episodes.Select(e => e.Aired).Where(date => date > boundary).Min(),
@@ -96,8 +96,12 @@ internal static class SeriesQualityAggregation
         };
     }
 
-    private static TagQualityCategory Summarize(string?[] values, string category, int latest) => new()
+    private static TagQualityCategory Summarize(string?[] values, string category, int latest, List<string>[] sets) => new()
     {
+        All = sets.SelectMany(set => set).Distinct(StringComparer.Ordinal).OrderBy(label => QualityTagRules.AggregationRank(label, category)).ThenBy(label => label, StringComparer.Ordinal).ToArray(),
+        Shared = sets.Length == 0 ? Array.Empty<string>() : sets[0].Where(label => sets.All(set => set.Contains(label, StringComparer.Ordinal))).ToArray(),
+        LatestAll = latest < 0 ? Array.Empty<string>() : sets[latest].ToArray(),
+        AllSetsAgree = sets.Length > 0 && sets.All(set => set.SequenceEqual(sets[0])),
         Best = values.Where(value => value != null).OrderBy(value => QualityTagRules.AggregationRank(value!, category)).FirstOrDefault(),
         Latest = latest < 0 ? null : values[latest],
         Values = values.Distinct(StringComparer.Ordinal).Take(4).ToArray(),
@@ -116,9 +120,9 @@ internal static class SeriesQualityAggregation
     }
 
     /// <summary>Apply a policy while retaining representative source/format tags, except latest uses its own.</summary>
-    public static List<string> Resolve(TagCacheEntry entry, string policy, string? preferred, Func<string, bool>? shown = null)
+    public static List<string> Resolve(TagCacheEntry entry, string policy, string? preferred, Func<string, bool>? shown = null, Func<string, bool>? all = null)
     {
-        var representative = QualityTagRules.Detect(entry.StreamData, preferred, entry.Source, entry.Edition);
+        var representative = QualityTagRules.ApplyDisplayModes(entry.StreamData, QualityTagRules.Detect(entry.StreamData, preferred, entry.Source, entry.Edition), preferred, all);
         if (entry.Type is not ("Series" or "Season") || entry.QualitySummary == null || Normalize(policy) == "representative") return representative;
         var summary = entry.QualitySummary;
         var result = policy == "latest" ? summary.LatestExtras.ToList() : representative.Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToList();
@@ -126,6 +130,12 @@ internal static class SeriesQualityAggregation
         foreach (var pair in EffectiveCategories(summary, preferred))
         {
             var category = pair.Value;
+            if (all?.Invoke(pair.Key) == true)
+            {
+                result.AddRange(policy == "latest" ? category.LatestAll : policy == "shared" ? category.Shared : category.All);
+                mixed |= !category.AllSetsAgree && (shown?.Invoke(pair.Key) ?? true);
+                continue;
+            }
             var value = policy == "latest" ? category.Latest : policy == "shared" && !category.AllAgree ? null : category.Best;
             if (value != null) result.Add(value);
             mixed |= !category.AllAgree && (shown?.Invoke(pair.Key) ?? true);

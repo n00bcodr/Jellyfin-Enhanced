@@ -67,6 +67,10 @@
       "category": "Configuration"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/QualityDisplaySettings.cs",
+      "category": "Configuration"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/RatingSourceSettings.cs",
       "category": "Configuration"
     },
@@ -4598,6 +4602,46 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "QualityAudioDisplayMode",
+      "type": "string",
+      "initializer": "\"highest\"",
+      "constructor_assignment": "\"highest\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "QualityVideoCodecDisplayMode",
+      "type": "string",
+      "initializer": "\"highest\"",
+      "constructor_assignment": "\"highest\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "QualityHdrDisplayMode",
+      "type": "string",
+      "initializer": "\"highest\"",
+      "constructor_assignment": "\"highest\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "QualityMinimumResolution",
+      "type": "string",
+      "initializer": "\"off\"",
+      "constructor_assignment": "\"off\"",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "QualityHideSdr",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "SeriesQualityAggregation",
       "type": "string",
       "initializer": "\"representative\"",
@@ -7646,6 +7690,46 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "QualityAudioDisplayMode",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "QualityVideoCodecDisplayMode",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "QualityHdrDisplayMode",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "QualityMinimumResolution",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "QualityHideSdr",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "SeriesQualityAggregation",
       "type": "string?",
       "initializer": null,
@@ -9394,9 +9478,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 434,
+    "files": 435,
     "routes": 185,
-    "configuration_properties": 680,
+    "configuration_properties": 690,
     "storage_references": 79,
     "scheduled_tasks": 14,
     "locales": 33

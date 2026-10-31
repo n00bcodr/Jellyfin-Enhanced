@@ -329,12 +329,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public int Count { get; init; }
     }
 
-    /// <summary>
-    /// Raw media stream data for client-side quality tag computation.
-    /// Quality detection logic (700+ lines) stays in JS to avoid C# duplication.
-    /// </summary>
+    /// <summary>One distinct per-track quality value; audio retains its language for personal filtering.</summary>
+    public sealed record TagStreamQuality(string Category, string Label, string? Language = null);
+
+    /// <summary>Raw stream facts and precomputed per-track quality sets shared by web and native resolution.</summary>
     public class TagStreamData
     {
+        /// <summary>Distinct stream category values, derived once while building the cache. Null on old/fixture entries.</summary>
+        public List<TagStreamQuality>? DistinctQualities { get; set; }
         public List<TagMediaStream>? Streams { get; set; }
         public List<TagMediaSource>? Sources { get; set; }
         public string? ItemName { get; set; }
@@ -351,6 +353,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
 
             return a.ItemName == b.ItemName
                 && a.ItemPath == b.ItemPath
+                && ListsEqual(a.DistinctQualities, b.DistinctQualities, (x, y) => x == y)
                 && ListsEqual(a.Streams, b.Streams, TagMediaStream.ContentEquals)
                 && ListsEqual(a.Sources, b.Sources, TagMediaSource.ContentEquals);
         }

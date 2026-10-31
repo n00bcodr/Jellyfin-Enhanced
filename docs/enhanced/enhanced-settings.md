@@ -809,3 +809,8 @@ Open **Docs** to load **Documentation** from the GitHub Pages site, or choose **
 ### Awards poster group
 
 **Media Tags → Groups → Awards** enables chart and winner chips, with the usual position, priority and cap controls (default two). Existing users start off. Administrators first enable Awards under **Display → Media Tags → Awards Tags**, choose ribbons, configure the two MDBList lists and a freshness interval (24 hours), and run **Refresh Awards Tags**. IMDb/Letterboxd charts and Certified Fresh require the server MDBList key; Wikidata Oscar/Emmy wins do not. Native posters follow the same group preference. See [Awards Tags](tags.md#awards-tags).
+
+
+### Quality stream display
+
+In **Media Tags → Groups → Quality**, the Sound, Video codec and HDR display modes independently choose **Highest only** (the unchanged default) or **All distinct values**. **Minimum resolution to show** filters resolution chips below Off / 720p / 1080p / 4K; **Hide SDR** removes SDR exposed by All HDR mode. Each field offers **Server default**. Administrator defaults live on the dedicated **Media Tags → Groups → Quality** page. The Quality group limit and Compact labels apply to the resulting chips, including the existing layout overflow count. See [quality display and aggregation](tags.md#highest-only-or-every-stream-value).
