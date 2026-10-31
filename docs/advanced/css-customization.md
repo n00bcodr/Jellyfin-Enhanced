@@ -589,6 +589,18 @@ Use `.status-overlay-container` and `.status-tag` to style the Just Added, New a
 
 The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.
 
+The opt-in [Leaving soon](../enhanced/tags.md#leaving-soon-maintainerr) badges are `.status-tag--leaving` with `data-je-status="leaving"`; the [direct-play warning](../enhanced/tags.md#direct-play-warning) is `.status-tag--playback` with `data-je-status="direct_play"` and `data-je-dp`, which takes pointer events so its `title` tooltip shows:
+
+```css
+.status-tag--leaving {
+    background-color: rgba(150, 30, 30, 0.85) !important;
+}
+
+.status-tag[data-je-dp] {
+    border-color: #ffb300 !important;
+}
+```
+
 ### Custom Tags CSS
 
 Each [Custom tag](../enhanced/tags.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
