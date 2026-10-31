@@ -139,12 +139,14 @@ public class ApiItemLookMutationTests(ITestOutputHelper output)
     [InlineData("immediate-undo")]
     [InlineData("immediate-undo-with-field")]
     [InlineData("already-absent")]
+    [InlineData("import-replace")]
     public async Task ProductionPageSavesThroughRealHttpValidator(string scenario)
     {
         using var fixture = new ApiPluginFixture();
         var first = Largest(1); first.LockedAt = 1;
         fixture.Plugin.Configuration.TagLookItemOverrides = new() { first };
         if (scenario == "queued-edit") { var second = Largest(2); second.LockedAt = 2; fixture.Plugin.Configuration.TagLookItemOverrides.Add(second); }
+        if (scenario == "import-replace") fixture.Plugin.Configuration.TagLookItemOverrides = Enumerable.Range(1, 500).Select(i => { var entry = Largest(i); entry.LockedAt = 1000 - i; return entry; }).ToList();
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.UseKestrel().UseUrls("http://127.0.0.1:0");

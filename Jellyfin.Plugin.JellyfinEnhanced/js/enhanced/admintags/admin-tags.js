@@ -542,8 +542,10 @@
         const itemEdits = sent.has(itemKey) && store.itemMode === 'entries' ? new Map(store.itemEdits) : null;
         for (const key of sent.keys()) if (store.base.has(key) && !sections.some(s => s.fields?.some(f => f.key === key && f.secret))) expected[key] = store.base.get(key);
         if (sent.has(itemKey)) {
-            changes[itemKey] = itemEdits ? itemEditsMutation(itemEdits) : JE.core.tagLook.itemOverrideMutation(expected[itemKey], changes[itemKey]);
-            delete expected[itemKey];
+            if (itemEdits) {
+                changes[itemKey] = itemEditsMutation(itemEdits);
+                delete expected[itemKey];
+            }
             store.itemFlight = { value: sent.get(itemKey), edits: itemEdits };
         }
         setStoreState('saving');

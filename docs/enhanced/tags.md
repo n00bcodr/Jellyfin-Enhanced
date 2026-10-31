@@ -1207,6 +1207,8 @@ If a custom web wrapper shows tags twice, add its name as shown under **Dashboar
 
     The preview attempts composition even with the master/personal native switch off. It strips tag data for Spoiler Guard but uses original, unblurred artwork. It therefore does not preview image protection.
 
+Server-wide item look edits preserve unrelated changes made by another administrator while saving. Removing a look and immediately choosing **Undo** cancels that edit. Server import and its **Undo** replace the complete item-look list, including when both lists contain 500 different entries.
+
 ## Tag Styles and CSS
 
 Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, then adjust a whole group of tags or a single tag. The same colours reach the web overlays and the posters drawn for native apps.
