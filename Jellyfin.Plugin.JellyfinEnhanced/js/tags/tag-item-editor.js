@@ -133,6 +133,7 @@
 
     /** @type {null|{close: (saved?: boolean) => void, backdrop: HTMLElement}} the open editor */
     let current = null;
+    let sequence = 0;
 
     const esc = (value) => JE.escapeHtml(String(value ?? ''));
     const tx = (key, params) => esc(JE.t(key, params));
@@ -447,17 +448,17 @@
         let everyone = !!overrideAt(targetOf());
 
         // ── Markup ──
-        const uid = `jeTie${Math.random().toString(36).slice(2, 8)}`;
+        const uid = `jeTie${++sequence}`;
         const backdrop = document.createElement('div');
         backdrop.className = 'je-tie-backdrop';
         const typeName = JE.t(`tag_looks_type_${type.toLowerCase()}`);
         const titleKey = serverMode ? 'tag_item_editor_title_server' : 'tag_item_editor_title';
         backdrop.innerHTML = `<div class="je-tie" role="dialog" aria-modal="true" aria-labelledby="${uid}Title" tabindex="-1">
-            <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title">${tx(titleKey, { name: name || typeName })}${serverMode ? `<span class="je-tie-chip">${tx('tag_item_editor_everyone_chip')}</span>` : ''}</h3>
+            <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title"><span data-tie-title></span>${serverMode ? `<span class="je-tie-chip">${tx('tag_item_editor_everyone_chip')}</span>` : ''}</h3>
                 <button type="button" class="je-tie-close" data-tie-close aria-label="${tx('tag_item_editor_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>
             <div class="je-tie-body">
                 <div class="je-tie-side">
-                    <div class="je-tie-card" data-je-shape="${shape}" data-id="${esc(id)}" data-type="${esc(type)}" aria-hidden="true"><div class="cardBox"><div class="je-tie-scalable cardScalable"></div><div class="cardText je-tie-card-title">${esc(name)}</div></div></div>
+                    <div class="je-tie-card" data-je-shape="${esc(shape)}" data-id="${esc(id)}" data-type="${esc(type)}" aria-hidden="true"><div class="cardBox"><div class="je-tie-scalable cardScalable"></div><div class="cardText je-tie-card-title">${esc(name)}</div></div></div>
                     <div><p class="je-tie-source" data-tie-source></p><p class="je-tie-note" data-tie-note hidden></p></div>
                 </div>
                 <div class="je-tie-main">
@@ -485,6 +486,8 @@
                 <button type="button" data-tie-close>${tx('tag_item_editor_cancel')}</button>
                 <button type="button" class="je-tie-save" data-tie-save>${tx('tag_item_editor_save')}</button></div>
         </div>`;
+        // Item names and translated substitutions are text, including hostile markup.
+        backdrop.querySelector('[data-tie-title]').textContent = JE.t(titleKey, { name: name || typeName });
         const host = options.host && options.host.isConnected ? options.host : document.body;
         host.appendChild(backdrop);
         const dialog = /** @type {HTMLElement} */ (backdrop.firstElementChild);

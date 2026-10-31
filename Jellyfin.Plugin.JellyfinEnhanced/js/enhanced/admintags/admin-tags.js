@@ -711,7 +711,7 @@
         let preview = null;
         let snackTimer = null;
         /** @type {Object<string, boolean>} open state of each group row */
-        const openGroups = {};
+        const openGroups = new Map();
 
         root.classList.add('je-tag-admin');
         const groupSections = sections.filter((s) => s.tab === 'groups' && s.group);
@@ -1018,7 +1018,7 @@
             }
             const body = /** @type {HTMLElement} */ (row.querySelector('.je-ta-grow-body'));
             const button = /** @type {HTMLElement} */ (row.querySelector('.je-ta-expand'));
-            openGroups[group] = open;
+            openGroups.set(group, open);
             row.dataset.open = String(open);
             body.hidden = !open;
             button.setAttribute('aria-expanded', String(open));
@@ -1100,7 +1100,7 @@
         /** Outline the group being edited in the preview. */
         function syncSpotlight() {
             if (!preview) return;
-            const open = current() === 'groups' ? Object.keys(openGroups).find((g) => openGroups[g]) : null;
+            const open = current() === 'groups' ? Array.from(openGroups.keys()).find((g) => openGroups.get(g)) : null;
             const spot = current() === 'badges' ? 'status' : (open && open !== 'people' ? open : null);
             preview.setSpotlight(spot);
         }
