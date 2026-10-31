@@ -172,6 +172,7 @@
                 } else if (id === 'awardsTagsToggle') {
                     if (e.target.checked) JE.initializeAwardsTags?.();
                     else removeTagGroup('awards', 'awards-overlay-container');
+                    requiresRefresh = false;
                 } else if (id === 'customTagsToggle') {
                     if (e.target.checked) {
                         if (typeof JE.initializeCustomTags === 'function') {
