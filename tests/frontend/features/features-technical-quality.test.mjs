@@ -63,3 +63,8 @@ test('new technical fields leave legacy resolution and special-format chips unch
   ] } }, 'a');
   assert.deepEqual(h.labels(), ['1080p']);
 });
+
+
+test('web aspect tolerance table matches the server source', () => {
+  execFileSync('python3', [fileURLToPath(new URL('../../../scripts/generate_technical_ratios.py', import.meta.url)), '--check']);
+});

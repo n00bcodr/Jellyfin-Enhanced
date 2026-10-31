@@ -4,15 +4,15 @@ using Jellyfin.Plugin.JellyfinEnhanced.Model;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
-/// <summary>Technical labels shared by cache aggregation, batch and native posters; mirrored in qualitytags.js.</summary>
+/// <summary>Technical labels shared by cache aggregation, batch and native posters; the web aspect table is generated from this table.</summary>
 internal static class TechnicalQualityRules
 {
-    // Absolute display-aspect tolerances; nearest candidate wins (2.35 and 2.39 stay distinct).
+    // Absolute display-aspect tolerances; nearest candidate wins; anamorphic scope shares one label.
     private static readonly (double Ratio, double Tolerance, string Label)[] Ratios =
     {
         (4d / 3, .025, "4:3"), (1.43, .015, "IMAX 1.43"), (1.66, .02, "1.66:1"),
         (16d / 9, .025, "16:9"), (1.85, .025, "1.85:1"), (1.90, .02, "IMAX 1.90"),
-        (2, .025, "2:1"), (2.20, .025, "2.20:1"), (2.35, .019, "2.35:1"),
+        (2, .025, "2:1"), (2.20, .025, "2.20:1"), (2.35, .019, "2.39:1"),
         (2.39, .025, "2.39:1"), (2.76, .025, "2.76:1"),
     };
 
