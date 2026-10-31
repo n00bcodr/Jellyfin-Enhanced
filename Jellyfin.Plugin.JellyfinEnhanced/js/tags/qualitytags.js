@@ -257,7 +257,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 5 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 6 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -1000,15 +1000,15 @@
             : representative.filter(label => !['resolution', 'dynamicRange', 'videoCodec', 'audio'].includes(categorize(label)));
         const preferred = resolvePreferredAudioLanguage();
         const match = JE.core.mediaLanguage?.matchesLanguage;
-        const audioVariants = Object.entries(summary.AudioByLanguage || {});
-        const regionalFallbacks = Object.entries(summary.AudioRegionFallback || {});
+        const audioVariants = Object.entries((legacyFullAudio() ? summary.LegacyAudioByLanguage : summary.AudioByLanguage) || {});
+        const regionalFallbacks = Object.entries((legacyFullAudio() ? summary.LegacyAudioRegionFallback : summary.AudioRegionFallback) || {});
         const audio = preferred && typeof match === 'function'
             ? (audioVariants.find(([language]) => match(language, preferred, { requireRegion: true }))
                 || regionalFallbacks.find(([language]) => match(language, preferred))
                 || audioVariants.find(([language]) => !language.includes('-') && match(language, preferred)))?.[1] : null;
         let mixed = false;
         for (const [key, category] of Object.entries(summary.Categories || {})) {
-            const facts = key === 'audioInfo' && audio ? audio : category;
+            const facts = key === 'audioInfo' ? audio || (legacyFullAudio() ? summary.LegacyAudio : category) || {} : category;
             const cat = CATEGORY_BY_KEY.get(categoryKeys[key]);
             if (allValues(categoryKeys[key])) {
                 qualities.push(...((policy === 'latest' ? facts.LatestAll : policy === 'shared' ? facts.Shared : facts.All) || []));
@@ -1322,7 +1322,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 5, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 6, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1358,7 +1358,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 5, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 6, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

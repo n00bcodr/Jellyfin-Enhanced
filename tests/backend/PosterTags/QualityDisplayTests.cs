@@ -225,7 +225,7 @@ public class QualityDisplayTests
     [InlineData("qualityHideSdr", true)]
     public void AdditiveQualitySettingsChangeTheirDigestWithIntegratedResolverIdentity(string key, object value)
     {
-        Assert.Equal("11", PosterTagSettings.ResolverVersion);
+        Assert.Equal("12", PosterTagSettings.ResolverVersion);
         var config = new PluginConfiguration();
         var baseline = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true}", config);
         var explicitDefaults = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true,qualityAudioDisplayMode:'highest',qualityVideoCodecDisplayMode:'highest',qualityHdrDisplayMode:'highest',qualityMinimumResolution:'off',qualityHideSdr:false}", config);

@@ -380,19 +380,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         }
 
         private sealed record AudioLabel(string? Value);
+        private static readonly ConditionalWeakTable<TagMediaStream, AudioLabel> LegacyAggregationAudio = new();
         private static readonly ConditionalWeakTable<TagMediaStream, AudioLabel> AggregationAudio = new();
 
         /// <summary>Rank actual audio tracks for aggregation, retaining language fallback and each track's own channels.</summary>
-        internal static string? DetectAggregationAudio(TagStreamData? data, string? preferred)
+        internal static string? DetectAggregationAudio(TagStreamData? data, string? preferred, bool legacyAudio = false)
         {
             var streams = SelectAudioStreamsForLanguage(data?.Streams?.FindAll(stream => stream?.Type == "Audio") ?? new List<TagMediaStream>(), preferred);
             string? best = null;
             foreach (var stream in streams)
             {
-                var label = AggregationAudio.GetValue(stream, static item =>
+                var label = (legacyAudio ? LegacyAggregationAudio : AggregationAudio).GetValue(stream, item =>
                 {
                     var track = new List<TagMediaStream>(1) { item };
-                    var codec = DetectAudioCodec(track);
+                    var codec = DetectAudioCodec(track, legacyAudio);
                     var channels = DetectChannels(track);
                     return new AudioLabel(codec == null ? (channels is "7.1" or "5.1" ? channels : null)
                         : channels != null && !codec.Contains(channels, StringComparison.Ordinal) ? codec + " " + channels : codec);

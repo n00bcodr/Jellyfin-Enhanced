@@ -210,10 +210,14 @@ for (const type of ['Series', 'Season']) {
     const data = { Type: type, Source: 'WEB', Edition: 'Criterion', AudioLanguages: ['eng', 'jpn'], SubtitleLanguages: ['fra', 'eng'], Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92 },
         StreamData: sd([video(), audio()]), QualitySummary: { EpisodeCount: 2,
         Categories: { resolution: facts('4K', '720p', false), dynamicRange: facts('Dolby Vision', null, false), videoCodec: facts('AV1'), audioInfo: facts('ATMOS 7.1', 'DTS 5.1', false) },
-        AudioByLanguage: { de: facts('DTS 5.1') }, LatestExtras: ['IMAX', 'REMUX', 'edition:Extended'] } };
+        LegacyAudio: facts('ATMOS 7.1', 'DTS 5.1', false), LegacyAudioByLanguage: { de: facts('DTS 5.1') }, AudioByLanguage: { de: facts('DTS 5.1') }, LatestExtras: ['IMAX', 'REMUX', 'edition:Extended'] } };
     synthetic[`aggregate-${type.toLowerCase()}`] = data;
 }
 
+
+// Shared audio regression summaries have independent version-0/current facts.
+for (const row of JSON.parse(readFileSync(join(here, '../../fixtures/audio-aggregation.json'), 'utf8')))
+    for (const type of ['Series', 'Season']) synthetic[`audio-aggregate-${row.name}-${type}`] = { ...row.entry, Type: type };
 
 // ISO display identity stays distinct from audio-equivalence grouping/counting.
 for (const code of ['tl', 'tgl', 'nb', 'nob', 'nn', 'nno', 'fil', 'srd', 'cmn']) {
@@ -315,6 +319,11 @@ for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed']) {
     synth('aggregate-' + policy, { QualityTagsEnabled: true, SeriesQualityAggregation: policy });
     synth('aggregate-' + policy + '-de', { QualityTagsEnabled: true, SeriesQualityAggregation: policy, QualityTagsPreferredAudioLanguage: 'de' });
 }
+for (const version of [0, 1]) for (const mode of ['highest', 'all'])
+    for (const policy of ['best', 'latest', 'shared', 'mixed']) for (const language of ['none', 'eng', 'en-US', 'en-GB', 'de', 'fra'])
+        synth(`audio-aggregate-v${version}-${mode}-${policy}-${language}`, { QualityTagsEnabled: true,
+            TagLayoutSettingsVersion: version, QualityAudioDisplayMode: mode, SeriesQualityAggregation: policy,
+            QualityTagsPreferredAudioLanguage: language });
 // Display modes independently, inherited defaults, native caps/density and all container policies.
 const displayAll = { QualityTagsEnabled: true, QualityAudioDisplayMode: 'all', QualityVideoCodecDisplayMode: 'all', QualityHdrDisplayMode: 'all' };
 for (const field of ['QualityAudioDisplayMode', 'QualityVideoCodecDisplayMode', 'QualityHdrDisplayMode'])

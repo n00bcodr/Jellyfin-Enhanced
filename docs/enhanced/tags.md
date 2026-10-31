@@ -472,7 +472,7 @@ The policy covers each series' episodes or each season's own episodes, including
 
 Missing streams count as unknown: a known/unknown difference suppresses that category in shared mode and marks mixed mode. Empty containers show no mixed marker. Collections keep their existing behavior and normally have no quality badges. Older cache entries without a summary fall back to representative streams until rebuilt.
 
-The server stores policy-independent summaries, so changing the policy does not need another episode fetch. Access-restricted users receive summaries recomputed from the episodes they can see, using the existing access/filter revision. The batch fallback and Native Poster Tags honor the same policy. Quality category switches, ordering, layout limits, label density and Tag Styles still apply; **Mixed** is an editable quality label in Tag Styles.
+The server stores policy-independent summaries with both legacy and current sound facts, so changing the policy does not need another episode fetch. Version-0 accounts retain their previous audio vocabulary under every policy, sound display mode and language preference; normalized accounts use the current codec labels. Access-restricted users receive summaries recomputed from the episodes they can see, using the existing access/filter revision. The batch fallback and Native Poster Tags honor the same policy. Quality category switches, ordering, layout limits, label density and Tag Styles still apply; **Mixed** is an editable quality label in Tag Styles.
 
 ![Quality settings with the series and season aggregation selector](../images/tags/quality-aggregation-hub.webp)
 

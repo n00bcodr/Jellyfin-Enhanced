@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
@@ -28,7 +29,7 @@ function setup(t, policy = 'representative', density = 'full') {
 const fact = (best, latest = best, agree = true) => ({ Best: best, Latest: latest, AllAgree: agree, Values: [best] });
 const entry = () => ({ Type: 'Series', StreamData: { Streams: [{ Type: 'Video', Height: 1080, Codec: 'h264' }], Sources: [] },
   QualitySummary: { EpisodeCount: 2, Categories: { resolution: fact('4K', '720p', false), dynamicRange: fact('Dolby Vision', null, false),
-    videoCodec: fact('H264'), audioInfo: fact('ATMOS 7.1', 'DTS 5.1', false) }, AudioByLanguage: { de: fact('DTS 5.1') }, LatestExtras: ['IMAX'] } });
+    videoCodec: fact('H264'), audioInfo: fact('ATMOS 7.1', 'DTS 5.1', false) }, LegacyAudio: fact('ATMOS 7.1', 'DTS 5.1', false), LegacyAudioByLanguage: { de: fact('DTS 5.1') }, AudioByLanguage: { de: fact('DTS 5.1') }, LatestExtras: ['IMAX'] } });
 
 for (const type of ['Series', 'Season']) for (const [policy, expected] of [
   ['representative', ['1080p', 'H264']], ['latest', ['720p', 'IMAX', 'H264', 'DTS 5.1']],
@@ -126,5 +127,28 @@ for (const [category, setting] of [['resolution', 'showResolutionTag'], ['dynami
     h.JE.currentSettings[setting] = true;
     h.JE.reinitializeQualityTags();
     assert.ok(render().includes('Mixed'), 're-enabling the differing category restores Mixed');
+  });
+}
+
+const audioAggregation = JSON.parse(readFileSync(new URL('../../fixtures/audio-aggregation.json', import.meta.url)));
+for (const row of audioAggregation) for (const type of ['Series', 'Season']) {
+  test(`${type} ${row.name} audio preserves every aggregation policy, language tier and display mode under the caller gate`, t => {
+    const h = setup(t);
+    for (const expected of row.expected) {
+      Object.assign(h.JE.currentSettings, { tagLayoutSettingsVersion: expected.legacy ? 0 : 1,
+        seriesQualityAggregation: expected.policy, qualityAudioDisplayMode: expected.mode,
+        qualityTagsPreferredAudioLanguage: expected.preferred });
+      assert.deepEqual(h.render({ ...row.entry, Type: type }), expected.labels, JSON.stringify(expected));
+      h.JE.core.tagLayout.clearCard(h.card);
+      delete h.document.querySelector('.card').dataset.jeQualityTagged;
+      const renderer = h.renderers.get('quality');
+      renderer.render(h.card, { ...row.entry, Type: type, Id: 'batch-aggregate' },
+        { firstEpisode: { MediaStreams: row.episodes[0].Streams.Streams } });
+      assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(e => e.textContent), expected.labels, 'batch ' + JSON.stringify(expected));
+      h.JE.core.tagLayout.clearCard(h.card);
+      delete h.document.querySelector('.card').dataset.jeQualityTagged;
+      assert.equal(renderer.renderFromCache(h.card, 'batch-aggregate'), true);
+      assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(e => e.textContent), expected.labels, 'retained batch facts');
+    }
   });
 }
