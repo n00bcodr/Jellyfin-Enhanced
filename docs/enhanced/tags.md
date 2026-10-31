@@ -30,7 +30,7 @@ The **Media Tags** page gathers every server-wide tag setting, laid out like the
 | **Overview** | Which tag groups new users start with (select one to open it), the default look, the server tag cache (items cached, last change, **Rebuild cache**), Native Poster Tags and tag colours at a glance, and quick links |
 | **Layout defaults** | Default layout, **Label Density**, **Tag size**, **Tag gap** and **Edge spacing**, each group's order, limit and position (nine anchors for Corners, the layout's slots otherwise), **Card shapes** for episode thumbnails and list rows, **Hide tags on hover**, **No tags on the search page**, and **Apply defaults to all users** |
 | **Groups** | One row per group (Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People) with its switch for new users; open a row for its server settings |
-| **Rules** | The default [tag look rules](#rules-and-locked-items): a list, a form to add one, and **Edit as JSON** |
+| **Rules** | The default [tag look rules](#rules-and-locked-items): a list, a form to add one, and **Edit as JSON**; and the [server-wide item looks](#one-items-look) with **Edit** and remove |
 | **Colours** | The [Tag Styles](#tag-styles-and-css) editor |
 | **Status badges** | The badge families new users start with, the **Just added** and **New release** windows, and whether the TMDB key is set |
 | **Server** | [Server-side tag cache](#server-side-tag-cache), library exclusions, **Rebuild cache**, browser cache options and [Native Poster Tags](#native-poster-tags-experimental) |
@@ -60,7 +60,7 @@ Every personal poster tag setting lives in one section of the panel, **Media Tag
 | **Colours** | Your [Tag Colours](#tag-styles-and-css) preset, one tile per preset with three sample chips in its real colours. Only shown while the administrator lets users pick a preset. |
 | **Server** | Administrators only: shortcuts to **Server defaults for new users**, the **Tag colours editor**, the **Tag cache** and **Native poster tags**, each opening its tab of the Media Tags settings page. Other users never get this tab. |
 
-**The live preview** draws four sample cards with the same layout code and tag styles as your library: a movie poster, a series poster, an episode still and a 92px list row. Each says where its look comes from (**Default**, **🔒 Locked**, **Rule N** or a shape look), decided the same way as for real cards: the series stands in for your most recently locked item and the episode for the first enabled rule, so a lock or rule change shows at once. **Resting** / **Hover** switches to what Summary and Minimal reveal on hover. While you edit a group, its chips are outlined and the others dimmed. Overflowing chips show as `+N`, as on real cards.
+**The live preview** draws four sample cards with the same layout code and tag styles as your library: a movie poster, a series poster, an episode still and a 92px list row. Each says where its look comes from (**Default**, **🔒 Locked**, **Server-wide**, **Rule N** or a shape look), decided the same way as for real cards: the series stands in for your most recently locked item and the episode for the first enabled rule, so a lock or rule change shows at once. **Resting** / **Hover** switches to what Summary and Minimal reveal on hover. While you edit a group, its chips are outlined and the others dimmed. Overflowing chips show as `+N`, as on real cards.
 
 On a phone the section fills the screen: the tabs use short names (**Badges**, **Rules**), and the preview folds into a one-line strip under them. The strip names the sample that your current edit affects (the episode on **Rules & locks**, the series for schedule badges) and lists its chips, the edited group's first; tap **Preview** to unfold the full preview.
 
@@ -187,7 +187,7 @@ On **Layout**, turn on **Use a different look** under **Episode thumbnails** or 
 
 Both switches start off. Switching one off uses your default look again. Portrait posters and square cards (including music and people) use the default look. Jellyfin's card classes determine the shape first; otherwise the image's rendered aspect ratio does (wider than 1.2:1 is landscape; square cards count as portrait).
 
-The choice for each card is **item lock → first matching rule → shape override → default**. A rule or lock takes precedence over the general shape settings. Stored rules and locks may also contain their own shape looks through the API; the rule editor continues to edit layout and density only.
+The choice for each card is **your item lock → the administrator's item look → first matching rule → shape override → default**. A lock, item look or rule takes precedence over the general shape settings. Stored rules and locks may also contain their own shape looks through the API; the rule editor continues to edit layout and density only.
 
 The episode and list samples in the live preview follow their own shape settings. **Caption** on list rows still puts caption chips on the image; choose another layout to avoid this fallback. **Native Poster Tags** draw on poster images only and ignore shape overrides.
 
@@ -259,23 +259,24 @@ The **Layout defaults** tab of the Media Tags settings page sets what new users 
 
 ### Rules and locked items
 
-Rules give some cards a different look (a layout and a label density) than your default: for example, a caption strip in the Movies library and compact bands on episodes. A lock keeps one item's look as it is, whatever you change later.
+Rules give some cards a different look (a layout and a label density) than your default: for example, a caption strip in the Movies library and compact bands on episodes. A lock keeps one item's own look (set in its [Media Tags editor](#one-items-look)), whatever you change later.
 
 **How to use:**
 
 1. In **Media Tags**, open **Rules & locks**. The **Add a rule** form is always open beside the list (below it on a phone).
 2. Pick one or more conditions (all of them must hold, up to five; every condition needs a value) and the look, which starts at **Caption** and **Compact**. Click **Add rule**: the rule goes to the end of the list.
 3. Use the arrows to order the rules, **On**/**Off** to pause one, **Edit** to load it into the form (**Save rule** keeps its place and its On/Off state) or **Delete** to remove it.
-4. To lock an item, open its page and click the padlock (**Lock tag look**). Click it again, or use **Unlock** in **Locked items**, to release it. **Unlock all** asks for a second click. On a phone, **Show** unfolds the locked items and **Unlock all**.
+4. To give one item its own look, choose **Media Tags** in its ⋮ menu (see [One item's look](#one-items-look)). In **Locked items**, **Edit** opens that editor again and **Unlock** releases the item. **Unlock all** asks for a second click. On a phone, **Show** unfolds the locked items and **Unlock all**.
 
 ![Rules & locks: a rule, the Otherwise row and two locked series on the left, the Add a rule form on the right; the preview shows the locked series and the rule's episode](../images/tags/tag-look-rules.webp)
 
 Each card gets its look from the first of these that applies:
 
-1. **A lock** on the item. A locked series also locks its seasons and episodes, unless one of them has its own lock.
-2. **The first enabled rule** whose conditions all hold, from the top of the list.
-3. **The shape override**, if enabled for an episode thumbnail or list row.
-4. **Your default** Tag Layout and Label Density (the **Otherwise** row).
+1. **Your lock** on the item. A series locked for its seasons and episodes also gives them its look, unless one of them has its own lock.
+2. **The administrator's item look** for it (**For everyone** in the item editor), the same way: the item's own, else its series'.
+3. **The first enabled rule** whose conditions all hold, from the top of the list.
+4. **The shape override**, if enabled for an episode thumbnail or list row.
+5. **Your default** Tag Layout and Label Density (the **Otherwise** row).
 
 | Condition | Matches | Notes |
 |---|---|---|
@@ -289,20 +290,55 @@ Each card gets its look from the first of these that applies:
 | Setting | Default | What it does |
 |---|---|---|
 | Personal: **Rules & locks** | No rules | Ordered rules: when every condition holds, the card uses that rule's layout and density |
-| Personal: **Locked items** | None | Items that keep the look they had when locked; **Unlock all** asks for a second click |
+| Personal: **Locked items** | None | Items that keep the look you gave them; **Edit** reopens the item editor, **Unlock all** asks for a second click |
 | Admin: **Rules** tab | Empty | Rules that new users and **Apply defaults to all users** start with: add one condition per rule with the form, or several with **Edit as JSON** |
+| Admin: **Rules** → **Server-wide item looks** | None | Item looks every user gets (set with **For everyone** in the item editor); **Edit** opens the editor, the bin removes one with **Undo** |
 
 ??? info "Limits and details"
-    - Up to 50 rules, each with up to 5 conditions, and up to 500 locked items; past 500 the oldest lock is released. The server drops an invalid rule or lock (an unknown layout, a malformed id) on its own and keeps the rest.
-    - A lock stores the layout, the density and where every group sits in that layout at that moment, so later changes to your arrangement do not move a locked item. Group order and per-group limits still follow your settings.
+    - Up to 50 rules, each with up to 5 conditions, up to 500 locked items per user and up to 500 server-wide item looks; past 500 the oldest is released. The server drops an invalid rule, lock or item look (an unknown layout, a malformed id) on its own and keeps the rest.
+    - A lock stores the layout, the density and where every group sits in that layout, plus any **Show up to**, size, gap and edge spacing chosen for the item, so later changes to your arrangement do not move a locked item. Group order still follows your settings, and so does anything the lock leaves at **Your default**.
     - A rule uses your arrangement for its layout. Group order and limits are yours for every look.
     - Rules on library, genre and age rating, and a series lock on its seasons and episodes, read the item's data: its entry in the server tag cache, or the batch lookup when the cache is off or does not have the item yet. The browser remembers what the lookup said about each item (type, series, library, genres, age rating), so cards drawn from the per-tag fallback cache match every rule as well; an item it knows nothing about is looked up once.
     - While a card's data is on its way and a rule or lock could change its look, its chips wait for the data instead of appearing in your default look and then moving. Type-only rules never make a card wait. Space for the caption strip follows your default in the meantime, so when a rule gives a card Caption (or takes it away) the strip appears (or goes) once the data arrives, the first time this browser sees that item. A card whose data does not come shows its tags in your default look once the lookup ends, or after 8 seconds at most.
-    - Locking from an item's page looks the item up first when its data is not loaded yet (the padlock shows an hourglass meanwhile), so the lock keeps the look its cards really have. If a rule or lock change cannot be saved, it is undone on screen and a message says so.
+    - The item editor looks the item up first when its data is not loaded yet, so it starts from the look the item's cards really have; if the lookup fails it says the current look is not known. If a rule or lock change cannot be saved, it is undone on screen and a message says so.
     - Mixing Caption with other looks on one row is allowed; caption cards are taller than their neighbours.
     - Settings saved before layouts existed never pick up the administrator's default rules; rules you add yourself apply.
     - Changing a rule or a lock updates the cards on screen at once, without reloading their tags.
-    - Locked cards carry `data-je-locked="1"` on their tag host for [custom CSS](../advanced/css-customization.md). Nothing else marks them by default.
+    - Locked cards carry `data-je-locked="1"` on their tag host for [custom CSS](../advanced/css-customization.md); cards with a server-wide item look do not. Nothing else marks them by default.
+    - Server-wide item looks reach every account, including settings saved before layouts existed (which never take the administrator's rules); the item ids are sent only to signed-in users.
+
+### One item's look
+
+Any movie, series, season, episode, collection or video can have its own look. Open its ⋮ menu, on its page or on its card, and choose **Media Tags**. The editor shows the item's poster with its real tags, in the look you are building:
+
+![The ⋮ menu of a movie with Media Tags under Refresh metadata](../images/tags/item-editor-menu.webp)
+
+![The item editor: the poster with its tags in Bands, the layout tiles, label density and the groups with their positions and Show up to](../images/tags/item-editor.webp)
+
+**How to use:**
+
+1. Pick a **Layout** and **Label Density**. Under **Groups**, switch groups on or off, choose where each one goes (the nine anchors on Corners, the layout's places otherwise) and how many tags it shows (**Show up to**). **Size and spacing** changes tag size, gap and edge spacing for this item only.
+2. For a series, season or episode, choose **Apply to**: **This series and its seasons and episodes** keeps one look on the series that its seasons and episodes share; **This episode only** (or **This series poster only**) keeps it to the one card.
+3. Turn on **Keep this look for this item** and click **Save**. Nothing is kept while it is off: the item follows your rules and default. Turning it off on a kept item and saving releases it; the message offers **Undo**.
+4. Administrators also see **For everyone (server-wide)**: the look becomes the item's look for every user, unless they keep their own. The Media Tags settings page lists these looks on its **Rules** tab.
+
+On a phone the editor fills the screen, with the poster beside the item's name at the top and **Save** always in reach:
+
+![The item editor on a phone](../images/tags/item-editor-phone.webp)
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Layout**, **Label Density** | The item's current look | The look the item gets |
+| **Groups** | The item's current look | On/off, place and **Show up to** per group; groups you switched off in your settings say so and show nothing |
+| **Size and spacing** | **Your default: …** | Tag size, gap and edge spacing for this item; **Your default** follows your own setting |
+| **Apply to** | Series: the series and its episodes; season or episode: this one only | Where the look is kept |
+| **Keep this look for this item** | Off (on for a kept item) | Saves the look as your lock; off releases it |
+| Admin: **For everyone (server-wide)** | Off | Saves the look as the item's server-wide look |
+
+??? info "Limits and details"
+    - The editor's row is added to Jellyfin's own ⋮ menu with the same markup as its other rows, so it looks and works the same with a mouse, touch or keyboard. It appears only for items that can have poster tags and while at least one tag group is on.
+    - The poster in the editor is the item's own artwork with the tags copied from its card on the page, or drawn from the tag cache. Nothing else on the page changes until **Save**.
+    - [Native Poster Tags](#native-poster-tags-experimental) follow locks and server-wide item looks in Corners and Bands, with their size, gap, edge spacing, positions, hidden groups and limits; Caption, Summary and Minimal use your Corners profile there, as for your default look.
 
 ### Import, export and presets
 
@@ -1124,9 +1160,9 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 ??? info "Supported groups and preferences"
     JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, ratings, user-review, age-classification, Awards, Status, Logos and Custom. People Tags are not a native group.
 
-    It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the personal language-priority policy (or the live administrator fallback). Native posters draw **Corners** or **Bands** from your saved default layout. Corners supports all nine anchors, hidden groups, your explicit group order (otherwise the original stacking order), limits and full labels. Bands uses its own top/bottom/hidden profile, priority order, limits and Full/Compact density. Its translucent gradient strips keep the middle clear; the first top group starts left and later groups align right. Each strip fits at most two rows. The bottom strip skips a chip that does not fit and continues with later smaller chips, counting every omission in **+N**. The overflow chip uses the web’s 11px bold style multiplied by tag size and reserves the total-count width before bottom-band selection, then displays the actual omitted count. Caption, Summary and Minimal fall back to the saved Corners profile because native images have no title block or hover surface. Shape overrides, rules and per-item locks remain web features.
+    It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the personal language-priority policy (or the live administrator fallback). Native posters draw **Corners** or **Bands** from your saved default layout. Corners supports all nine anchors, hidden groups, your explicit group order (otherwise the original stacking order), limits and full labels. Bands uses its own top/bottom/hidden profile, priority order, limits and Full/Compact density. Its translucent gradient strips keep the middle clear; the first top group starts left and later groups align right. Each strip fits at most two rows. The bottom strip skips a chip that does not fit and continues with later smaller chips, counting every omission in **+N**. The overflow chip uses the web’s 11px bold style multiplied by tag size and reserves the total-count width before bottom-band selection, then displays the actual omitted count. Caption, Summary and Minimal fall back to the saved Corners profile because native images have no title block or hover surface. Per-item locks and server-wide item looks apply natively (each look gets its own poster variant); shape overrides and rules remain web features.
 
-    **Centre-anchor differences:** native posters omit whole chips that do not fit, without the web's **+N** tooltip. Very wide chips in side columns are omitted rather than squeezed. The image request cannot reproduce the web card's progress bar, Jellyfin indicators or custom overlays, rules or per-item locks; native placement uses the saved default Bands or Corners profile. The four default corner positions are unchanged.
+    **Centre-anchor differences:** native posters omit whole chips that do not fit, without the web's **+N** tooltip. Very wide chips in side columns are omitted rather than squeezed. The image request cannot reproduce the web card's progress bar, Jellyfin indicators or custom overlays, or rules; native placement uses the saved default Bands or Corners profile, or the item's own look. The four default corner positions are unchanged.
 
 ### Eligible clients and requests
 

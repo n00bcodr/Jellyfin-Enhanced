@@ -252,7 +252,9 @@ In the Corners layout, containers carry `data-je-corner` with one of the nine st
 
 **Edge Spacing** other than Default marks a Corners host with `data-je-edge="tight"` or `data-je-edge="flush"` and sets `--je-edge` (`3px` or `0px`) on it; every anchor's offset, the corner containers' size limits, the centre budgets' defaults and the indicator gap use it. Default has no marker and keeps the original rules. A flush host clips its chips with `overflow: hidden` and `border-radius: var(--je-card-radius)`, where `--je-card-radius` is the artwork's corner radius, measured once per card; box chips touching an edge get square corners there. For example, `.je-tag-host[data-je-edge="flush"] .quality-overlay-label { border-radius: 0; }` makes every flush quality chip square.
 
-A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards.
+A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards. A server-wide item look does not set it.
+
+The per-item editor ([One item's look](../enhanced/tags.md#one-items-look)) is a dialog `.je-tie` inside `.je-tie-backdrop`; its sample card is `.je-tie-card`, and its row in Jellyfin's ⋮ menu is `.actionSheetMenuItem[data-id="je-media-tags"]`. Its Undo message is `.je-tie-toast`.
 
 The Media Tags import, export and preset dialogs (in the settings panel and on the Media Tags settings page) are `.je-pt-backdrop > .je-pt-dialog[role="dialog"]`, with `.je-pt-change` / `.je-pt-skip` rows (`.je-pt-from`, `.je-pt-to`, `.je-pt-reason`) and `.je-pt-btn` buttons (`[data-primary]` for the main action). The panel's preset rows are `.je-mth-tp-item` inside `[data-tp-source="builtIn" | "offered" | "mine"]`.
 
