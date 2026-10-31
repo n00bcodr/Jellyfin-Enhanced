@@ -79,7 +79,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             ["TagCacheExcludedLibraryIds"] = 8192,
             ["LanguageTagsPriority"] = 256,
             ["QualityTagsPreferredAudioLanguage"] = 32,
-            ["TagOfferedPresets"] = 80 * 1024,
+            // Characters never outnumber UTF-8 bytes: the byte cap (on the canonical text too) is the real limit.
+            ["TagOfferedPresets"] = MediaTagsPortable.MaxOfferedPresetsBytes,
         };
 
         private static readonly string[] StyleTargets = { "web", "native", "both" };

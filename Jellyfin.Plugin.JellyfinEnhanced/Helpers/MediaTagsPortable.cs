@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -48,6 +49,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
         /// <summary>Presets an administrator may offer.</summary>
         public const int MaxOfferedPresets = 20;
+
+        /// <summary>
+        /// The largest offered-presets text (<see cref="PluginConfiguration.TagOfferedPresets"/>) in UTF-8 bytes, for
+        /// the text as sent and for its canonical stored form, so a stored value always reads back and re-imports.
+        /// </summary>
+        public const int MaxOfferedPresetsBytes = 80 * 1024;
 
         /// <summary>The longest preset name.</summary>
         public const int MaxNameLength = 60;
@@ -337,7 +344,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
 
         /// <summary>
         /// Checks the offered presets field (<see cref="PluginConfiguration.TagOfferedPresets"/>): a JSON array of at most
-        /// <see cref="MaxOfferedPresets"/> presets with distinct ids, each valid as a whole (no unknown or invalid field).
+        /// <see cref="MaxOfferedPresets"/> presets with distinct ids, each valid as a whole (no unknown or invalid field),
+        /// whose canonical text (the presets normalised and serialised as stored) is at most
+        /// <see cref="MaxOfferedPresetsBytes"/> UTF-8 bytes. Normalising can lengthen a preset (escaped text, filled-in
+        /// layout profiles), so the canonical text is measured, not only the text as sent.
         /// </summary>
         /// <param name="text">The field's value.</param>
         /// <param name="normalized">The canonical text to store (empty for none).</param>
@@ -348,6 +358,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             normalized = string.Empty;
             error = null;
             if (string.IsNullOrWhiteSpace(text)) return true;
+            if (Encoding.UTF8.GetByteCount(text) > MaxOfferedPresetsBytes)
+            {
+                error = $"larger than {MaxOfferedPresetsBytes} bytes";
+                return false;
+            }
+
             JsonDocument parsed;
             try
             {
@@ -399,7 +415,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     list.Add(preset);
                 }
 
-                normalized = list.Count == 0 ? string.Empty : list.ToJsonString();
+                var canonical = list.Count == 0 ? string.Empty : list.ToJsonString();
+                var bytes = Encoding.UTF8.GetByteCount(canonical);
+                if (bytes > MaxOfferedPresetsBytes)
+                {
+                    error = $"larger than {MaxOfferedPresetsBytes} bytes once normalised ({bytes} bytes); offer fewer or shorter presets";
+                    return false;
+                }
+
+                normalized = canonical;
                 return true;
             }
         }

@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -374,5 +376,84 @@ public class ApiMediaTagsPortableTests
         Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest { Changes = new Dictionary<string, JsonElement> { ["TagOfferedPresets"] = Json(JsonSerializer.Serialize(one)) } }));
         var offered = Body(controller.GetMediaTagsPresets(user.ToString("N")))["offered"]!.AsArray();
         Assert.Equal("family", (string?)Assert.Single(offered)!["id"]);
+    }
+
+    [Fact]
+    public void OfferedPresetsAreCappedOnTheirCanonicalStoredText()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, user, _) = Signed(f, admin: true);
+        const int cap = MediaTagsPortable.MaxOfferedPresetsBytes;
+        // Every field of a user document, as presets are offered from an export.
+        var settings = MediaTagsPortable.ExportUser(Customised())["settings"]!.ToJsonString();
+        // Sent unescaped ("<" is one byte); stored escaped ("\u003C", six bytes).
+        var relaxed = new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        static int Bytes(string text) => Encoding.UTF8.GetByteCount(text);
+        // Names of "<" too: sent as 60 bytes, stored as 360.
+        var name = new string('<', MediaTagsPortable.MaxNameLength);
+        string Preset(int i, string description) => new JsonObject
+        {
+            ["v"] = 1, ["kind"] = "je-media-tags-preset", ["id"] = $"p{i}", ["name"] = name, ["description"] = description,
+            ["settings"] = JsonNode.Parse(settings),
+        }.ToJsonString(relaxed);
+        string List(IReadOnlyList<string> descriptions) => $"[{string.Join(",", descriptions.Select((d, i) => Preset(i, d)))}]";
+        int? Canonical(IReadOnlyList<string> descriptions)
+            => MediaTagsPortable.TryNormalizeOfferedPresets(List(descriptions), out var text, out _) ? Bytes(text) : null;
+
+        // The fewest presets whose canonical text reaches the cap with escaped descriptions, still sent under it.
+        var count = Enumerable.Range(1, MediaTagsPortable.MaxOfferedPresets).First(n =>
+            Bytes(List(Enumerable.Repeat(new string('<', MediaTagsPortable.MaxDescriptionLength), n).ToList())) <= cap
+            && Canonical(Enumerable.Repeat(string.Empty, n).ToList()) + (n * MediaTagsPortable.MaxDescriptionLength * 6) >= cap);
+        var plain = Enumerable.Repeat(string.Empty, count).ToList();
+        // Fill descriptions with "<" (six stored bytes each), then letters (one byte), to exactly the cap.
+        var missing = cap - Canonical(plain)!.Value;
+        Assert.True(missing >= 0, $"{count} presets are over the cap without descriptions");
+        var descriptions = new List<string>();
+        foreach (var _ in plain)
+        {
+            var escaped = Math.Min(MediaTagsPortable.MaxDescriptionLength, missing / 6);
+            missing -= escaped * 6;
+            var letters = Math.Min(MediaTagsPortable.MaxDescriptionLength - escaped, missing);
+            missing -= letters;
+            descriptions.Add(new string('<', escaped) + new string('a', letters));
+        }
+
+        Assert.Equal(0, missing);
+        var atCap = List(descriptions);
+        Assert.True(MediaTagsPortable.TryNormalizeOfferedPresets(atCap, out var stored, out var refusal), refusal);
+        Assert.Equal(cap, Bytes(stored));
+        Assert.True(Bytes(atCap) < cap * 0.8, "sent well under the cap");
+
+        // One more byte once normalised: refused, saying why, although the text as sent is far under the cap.
+        var letter = descriptions.FindIndex(d => d.Length < MediaTagsPortable.MaxDescriptionLength);
+        var over = descriptions.ToList();
+        over[letter] += "a";
+        var overText = List(over);
+        Assert.True(Bytes(overText) < cap);
+        Assert.False(MediaTagsPortable.TryNormalizeOfferedPresets(overText, out var none, out var error));
+        Assert.Equal(string.Empty, none);
+        Assert.Equal($"larger than {cap} bytes once normalised ({cap + 1} bytes); offer fewer or shorter presets", error);
+        // Too large as sent: refused before it is read.
+        Assert.False(MediaTagsPortable.TryNormalizeOfferedPresets($"[{new string(' ', cap)}]", out _, out var sentError));
+        Assert.Equal($"larger than {cap} bytes", sentError);
+
+        // The page's patch: the over-cap value writes nothing and names the field.
+        var refused = controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest { Changes = new Dictionary<string, JsonElement> { ["TagOfferedPresets"] = Json(JsonSerializer.Serialize(overText)) } });
+        Assert.Contains("once normalised", JsonSerializer.Serialize(((ObjectResult)refused).Value), StringComparison.Ordinal);
+        Assert.IsType<BadRequestObjectResult>(refused);
+        Assert.Equal(string.Empty, f.Plugin.Configuration.TagOfferedPresets);
+
+        // The value at the cap is stored canonically and round-trips: normalised again unchanged, exported,
+        // previewed with nothing skipped or changed, and shown to users.
+        Assert.IsType<OkObjectResult>(controller.PatchConfiguration(new JellyfinEnhancedController.ConfigurationPatchRequest { Changes = new Dictionary<string, JsonElement> { ["TagOfferedPresets"] = Json(JsonSerializer.Serialize(atCap)) } }));
+        Assert.Equal(stored, f.Plugin.Configuration.TagOfferedPresets);
+        Assert.True(MediaTagsPortable.TryNormalizeOfferedPresets(stored, out var again, out var againError), againError);
+        Assert.Equal(stored, again);
+        var exported = Body(controller.ExportAdminMediaTags());
+        Assert.Equal(stored, (string?)exported["settings"]!["TagOfferedPresets"]);
+        var preview = Body(controller.PreviewAdminMediaTags(Json(exported)));
+        Assert.Empty(preview["skipped"]!.AsArray());
+        Assert.Empty(preview["changes"]!.AsArray());
+        Assert.Equal(count, Body(controller.GetMediaTagsPresets(user.ToString("N")))["offered"]!.AsArray().Count);
     }
 }
