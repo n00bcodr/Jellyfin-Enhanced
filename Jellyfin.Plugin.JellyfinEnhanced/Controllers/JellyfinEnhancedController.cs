@@ -3965,6 +3965,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagEdgeSpacing = TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
                 // Tag look rules starting default (normalized; null = none)
                 TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
+                // Server-wide per-item looks (normalized; null = none): ids and looks only,
+                // and only for signed-in callers (item ids are not for the login page).
+                TagLookItemOverrides = isAuthed ? TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides) : null,
                 // Per-shape tag looks starting default (normalized; null = none)
                 TagShapeOverrides = TagShapeRules.NormalizeDefaults(config.TagShapeOverrides),
                 config.ShowRatingInPlayer,
@@ -9993,7 +9996,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SupportedOutputFormats = new[] { MediaBrowser.Model.Drawing.ImageFormat.Jpg },
                 }).ConfigureAwait(false);
 
-                var settings = posterTagSettings.Get(user.Id);
+                // The item's own look (a lock, a server-wide item look), as native clients get it.
+                var previewSeriesId = item switch
+                {
+                    MediaBrowser.Controller.Entities.TV.Episode episode => episode.SeriesId,
+                    MediaBrowser.Controller.Entities.TV.Season season => season.SeriesId,
+                    _ => Guid.Empty,
+                };
+                var settings = posterTagSettings.Get(user.Id).ForItem(item.Id, previewSeriesId == Guid.Empty ? null : previewSeriesId.ToString("N"));
                 // Same rule the stamper applies to the card's own indicator
                 // (NativePosterTagStamper.StampItem): played check or unplayed count.
                 var offset = topRightOffset ?? (_userDataManager.GetUserDataDto(item, user) is { } userData

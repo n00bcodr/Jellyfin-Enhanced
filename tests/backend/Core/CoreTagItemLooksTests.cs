@@ -1,0 +1,186 @@
+using System.Security.Claims;
+using System.Text.Json;
+using System.Xml.Serialization;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Controllers;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
+using Microsoft.AspNetCore.Mvc;
+using Moq;
+
+namespace JE.Tests;
+
+/// <summary>
+/// Per-item looks (the item editor): the richer lock document (caps, size, gap, edge
+/// spacing, scope), the administrator's server-wide item looks
+/// (<see cref="PluginConfiguration.TagLookItemOverrides"/>) and their precedence on native
+/// posters (<see cref="PosterTagSettings.ForItem(string, string?)"/>).
+/// </summary>
+[Collection("Plugin singleton")]
+public class CoreTagItemLooksTests
+{
+    private const string Movie = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private const string Series = "cccccccccccccccccccccccccccccccc";
+    private const string Episode = "dddddddddddddddddddddddddddddddd";
+    private const string Other = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    [Fact]
+    public void LocksKeepTheirCapsSizeGapEdgeAndScopeAndDropUnknownValues()
+    {
+        var locks = TagLookValidation.NormalizeLocks(new Dictionary<string, TagLayoutLock?>
+        {
+            [Movie] = new TagLayoutLock
+            {
+                Layout = "Corners", Density = "compact", Caps = new TagGroupCaps { Genre = 1, Quality = 99 },
+                TagScale = "Larger", TagGap = "roomy", EdgeSpacing = "FLUSH", Scope = "Item", LockedAt = 3,
+            },
+            [Other] = new TagLayoutLock { Layout = "bands", TagScale = "huge", TagGap = "wide", EdgeSpacing = "nowhere", Scope = "series" },
+        })!;
+        var movie = locks[Movie];
+        Assert.Equal(("corners", "compact", 1, 10), (movie.Layout, movie.Density, movie.Caps!.Genre, movie.Caps.Quality));
+        Assert.Equal(("larger", "roomy", "flush", "item"), (movie.TagScale, movie.TagGap, movie.EdgeSpacing, movie.Scope));
+        var other = locks[Other];
+        Assert.Null(other.TagScale);
+        Assert.Null(other.TagGap);
+        Assert.Null(other.EdgeSpacing);
+        Assert.Null(other.Scope);
+        Assert.Null(other.Caps);
+    }
+
+    [Fact]
+    public void ItemLooksNormalizeLikeLocksNewestFirstCappedAndNullWhenEmpty()
+    {
+        Assert.Null(TagLookValidation.NormalizeItemOverrides(null));
+        Assert.Null(TagLookValidation.NormalizeItemOverrides([]));
+        Assert.Null(TagLookValidation.NormalizeItemOverrides([new TagLookItemOverride { ItemId = "nope", Layout = "bands" }]));
+        var looks = TagLookValidation.NormalizeItemOverrides(
+        [
+            new TagLookItemOverride { ItemId = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", Layout = "bands", LockedAt = 1 },
+            new TagLookItemOverride { ItemId = Movie, Layout = "caption", LockedAt = 5 },
+            new TagLookItemOverride { ItemId = Series, Layout = "minimal", Scope = "item", LockedAt = 3 },
+            new TagLookItemOverride { ItemId = Other, Layout = "grid", LockedAt = 9 },
+        ])!;
+        Assert.Equal([Movie, Series], looks.Select(l => l.ItemId));
+        Assert.Equal("caption", looks[0].Layout); // a repeated id keeps its newest look
+        Assert.Equal("item", looks[1].Scope);
+
+        var many = Enumerable.Range(0, TagLookValidation.MaxItemOverrides + 20)
+            .Select(i => new TagLookItemOverride { ItemId = i.ToString("x32"), Layout = "bands", LockedAt = i }).ToList();
+        var capped = TagLookValidation.NormalizeItemOverrides(many)!;
+        Assert.Equal(TagLookValidation.MaxItemOverrides, capped.Count);
+        Assert.Equal((TagLookValidation.MaxItemOverrides + 19).ToString("x32"), capped[0].ItemId);
+        Assert.DoesNotContain(capped, l => l.LockedAt < 20); // the oldest went
+    }
+
+    [Fact]
+    public void ItemLooksRoundTripTheXmlAndArePublishedOnlyToSignedInCallers()
+    {
+        var config = new PluginConfiguration
+        {
+            TagLookItemOverrides = [new TagLookItemOverride { ItemId = Movie, Layout = "bands", Density = "compact", Caps = new TagGroupCaps { Rating = 2 }, EdgeSpacing = "tight", LockedAt = 4, Slots = [new TagLayoutGroupSlot { Group = "quality", Slot = "top" }] }],
+        };
+        Assert.Null(new PluginConfiguration().TagLookItemOverrides);
+        var serializer = new XmlSerializer(typeof(PluginConfiguration));
+        using var stream = new MemoryStream();
+        serializer.Serialize(stream, config);
+        stream.Position = 0;
+        var loaded = ((PluginConfiguration)serializer.Deserialize(stream)!).TagLookItemOverrides!.Single();
+        Assert.Equal((Movie, "bands", "compact", 2, "tight", 4L, "top"), (loaded.ItemId, loaded.Layout, loaded.Density, loaded.Caps!.Rating!.Value, loaded.EdgeSpacing, loaded.LockedAt, loaded.Slots!.Single().Slot));
+
+        using var fixture = new ApiPluginFixture();
+        fixture.Plugin.Configuration.TagLookItemOverrides = config.TagLookItemOverrides;
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
+        using (var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value)))
+        {
+            var published = Assert.Single(document.RootElement.GetProperty("TagLookItemOverrides").EnumerateArray());
+            Assert.Equal(Movie, published.GetProperty("ItemId").GetString());
+        }
+
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
+        using (var anonymous = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value)))
+        {
+            Assert.Equal(JsonValueKind.Null, anonymous.RootElement.GetProperty("TagLookItemOverrides").ValueKind);
+        }
+    }
+
+    private static PluginConfiguration Config(params TagLookItemOverride[] looks) => new()
+    {
+        TagLookItemOverrides = looks.Length == 0 ? null : looks.ToList(),
+    };
+
+    private const string NormalizedUser = "{qualityTagsEnabled:true,ratingTagsEnabled:true,tagLayoutSettingsVersion:1,tagLayout:'corners',qualityTagsPosition:'top-left'";
+
+    [Fact]
+    public void NativeItemsWithoutALookShareTheUsersSettings()
+    {
+        var settings = PosterTagSettings.FromSettingsJson(NormalizedUser + "}", Config());
+        Assert.False(settings.HasItemLooks);
+        Assert.Same(settings, settings.ForItem(Movie, null));
+        var withLook = PosterTagSettings.FromSettingsJson(NormalizedUser + "}", Config(new TagLookItemOverride { ItemId = Series, Layout = "bands", LockedAt = 1 }));
+        Assert.True(withLook.HasItemLooks);
+        Assert.Same(withLook, withLook.ForItem(Movie, null));
+        Assert.Equal(settings.Digest, withLook.Digest); // an item look elsewhere never moves anyone else's posters
+    }
+
+    [Fact]
+    public void NativeLookOrderIsTheUsersLockThenTheItemLookThenTheUsersSettings()
+    {
+        var config = Config(new TagLookItemOverride { ItemId = Movie, Layout = "bands", Density = "compact", LockedAt = 1 });
+        var user = PosterTagSettings.FromSettingsJson(NormalizedUser + "}", config);
+        var item = user.ForItem(Movie, null);
+        Assert.True(item.Bands);
+        Assert.True(item.CompactBands);
+        Assert.NotEqual(user.Digest, item.Digest);
+        Assert.Same(item, user.ForItem(Movie, null)); // memoised per look
+
+        var locked = PosterTagSettings.FromSettingsJson(NormalizedUser + $",tagLayoutLocks:{{'{Movie}':{{layout:'corners',density:'full',caps:{{quality:1}},tagScale:'largest',edgeSpacing:'flush',slots:[{{group:'quality',slot:'br'}},{{group:'rating',slot:'off'}}],lockedAt:2}}}}}}", config);
+        var mine = locked.ForItem(Movie, null);
+        Assert.False(mine.Bands); // the user's lock wins over the item look
+        Assert.Equal(("bottom-right", 1, "largest", "flush"), (mine.QualityTagsPosition, mine.QualityCap, mine.TagScale, mine.EdgeSpacing));
+        Assert.Contains(PosterTagGroup.Rating, mine.OffGroups);
+        Assert.False(locked.ForItem(Other, null).Bands);
+        Assert.Equal(locked.Digest, locked.ForItem(Other, null).Digest);
+    }
+
+    [Fact]
+    public void NativeSeasonsAndEpisodesInheritTheirSeriesLookUnlessItStaysOnTheSeries()
+    {
+        var series = PosterTagSettings.FromSettingsJson(NormalizedUser + "}", Config(new TagLookItemOverride { ItemId = Series, Layout = "bands", LockedAt = 1 }));
+        Assert.True(series.ForItem(Series, null).Bands);
+        Assert.True(series.ForItem(Episode, "cccccccc-cccc-cccc-cccc-cccccccccccc").Bands);
+        Assert.Equal(series.ForItem(Series, null).Digest, series.ForItem(Episode, Series).Digest); // one look, one variant
+
+        var poster = PosterTagSettings.FromSettingsJson(NormalizedUser + "}", Config(new TagLookItemOverride { ItemId = Series, Layout = "bands", Scope = "item", LockedAt = 1 }));
+        Assert.True(poster.ForItem(Series, null).Bands);
+        Assert.False(poster.ForItem(Episode, Series).Bands);
+
+        // The episode's own look wins over its series'; the user's lock on the series wins over the item look on the episode.
+        var mixed = PosterTagSettings.FromSettingsJson(
+            NormalizedUser + $",tagLayoutLocks:{{'{Series}':{{layout:'corners',density:'full',tagScale:'smaller',lockedAt:1}}}}}}",
+            Config(new TagLookItemOverride { ItemId = Episode, Layout = "bands", LockedAt = 1 }));
+        Assert.Equal("smaller", mixed.ForItem(Episode, Series).TagScale);
+        Assert.False(mixed.ForItem(Episode, Series).Bands);
+    }
+
+    [Fact]
+    public void NativeItemLooksOnLegacyDocumentsKeepWhatTheLookDoesNotSet()
+    {
+        var config = Config(new TagLookItemOverride { ItemId = Movie, Layout = "corners", Density = "full", Caps = new TagGroupCaps { Genre = 1 }, LockedAt = 1 });
+        config.TagGroupCaps = new TagGroupCaps { Language = 1, Genre = 5 };
+        config.TagScale = "largest";
+        config.TagEdgeSpacing = "flush";
+        var legacy = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true,genreTagsEnabled:true,languageTagsEnabled:true,genreTagsPosition:'bottom-left'}", config);
+        var item = legacy.ForItem(Movie, null);
+        Assert.Equal(1, item.GenreCap);
+        Assert.Equal(3, item.LanguageCap); // the built-in limit, never the administrator's
+        Assert.Equal("default", item.TagScale);
+        Assert.Equal("default", item.EdgeSpacing);
+        Assert.Equal("bottom-left", item.GenreTagsPosition);
+        Assert.Null(item.GroupOrder); // arrival order
+        Assert.Equal(legacy.GenreTagsPosition, item.GenreTagsPosition);
+    }
+}

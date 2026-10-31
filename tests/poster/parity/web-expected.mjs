@@ -32,6 +32,7 @@ const SCRIPTS = [
     'core/media-language.js',
     'core/tag-renderer-base.js',
     'core/tag-layout.js',
+    'core/tag-look.js',
     'tags/rating-sources.js', 'enhanced/config.js',
     'tags/tag-pipeline.js',
     'tags/tag-layout-styles.js',
@@ -359,6 +360,8 @@ async function runProfile(profile) {
     for (const [id, entry] of Object.entries(entries)) {
         const host = new Element('div');
         host.className = 'je-tag-host';
+        // Per-item looks: the item data a lock or item look is found with (its id, its series).
+        if (profile.itemLooks) JE.core.tagLayout.setCardContext(host, { ...entry, Id: id }, id);
         for (const [, renderer] of order) {
             if (!renderer.isEnabled()) continue;
             if (renderer.renderFromServerCache) {
@@ -376,17 +379,23 @@ async function runProfile(profile) {
     const items = {};
     for (const [id, host] of hosts) {
         const indicator = showsIndicator(userData[id]);
+        // An item with a look of its own is laid out (and compared) with that look.
+        const conf = profile.itemLooks ? JE.core.tagLayout.resolveLayout({ ...entries[id], Id: id, itemId: id, cardType: entries[id].Type }) : layoutConf;
+        const itemBands = profile.itemLooks ? conf.layout === 'bands' : nativeBands;
+        const itemRank = (d) => (conf.order ? conf.order.indexOf(d.group) : 0);
         items[id] = JE.core.tagLayout.describe(host)
-            .sort((a, b) => rank(a) - rank(b))
+            .sort((a, b) => itemRank(a) - itemRank(b))
             .filter((d) => d.element && CONTAINERS[d.element.className.split(' ')[0]])
             .map((d) => {
                 const group = CONTAINERS[d.element.className.split(' ')[0]];
                 const offset = (host.dataset.jeIndicatorGap === '1' && offsetSlots.has(d.slot))
                     || (d.element.dataset.jeIndicatorGap === '1' && legacyOffsetSlots.has(d.slot));
-                const placed = { g: group, c: nativeBands ? (d.slot === 'top' ? 'TopLeft' : 'BottomLeft') : cornerOf(d.element.dataset.jeCorner || ''), o: indicator && !nativeBands && offset, t: readTags(group, d.element) };
+                const placed = { g: group, c: itemBands ? (d.slot === 'top' ? 'TopLeft' : 'BottomLeft') : cornerOf(d.element.dataset.jeCorner || ''), o: indicator && !itemBands && offset, t: readTags(group, d.element) };
                 // Only a non-default edge spacing adds the inset, so other profiles' expectations stay as they were.
                 const edge = host.dataset.jeEdge;
-                if (!nativeBands && edge) placed.e = edgeSlots.has(d.slot) && edge in edgeInsets ? edgeInsets[edge] : 6;
+                if (!itemBands && edge) placed.e = edgeSlots.has(d.slot) && edge in edgeInsets ? edgeInsets[edge] : 6;
+                // A look's own size and gap (native scales the chips by them).
+                if (profile.itemLooks && (conf.tagScale !== layoutConf.tagScale || conf.tagGap !== layoutConf.tagGap)) placed.s = `${conf.tagScale}/${conf.tagGap}`;
                 return placed;
             })
             .filter((g) => g.t.length > 0);

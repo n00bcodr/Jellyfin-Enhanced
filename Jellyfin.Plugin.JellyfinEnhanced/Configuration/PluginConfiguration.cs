@@ -203,6 +203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagGap = "default";
             TagEdgeSpacing = "default";
             TagLookRules = null;
+            TagLookItemOverrides = null;
             TagShapeOverrides = null;
             CustomTagsEnabled = false;
             CustomTagsPosition = "top-left";
@@ -955,6 +956,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string TagEdgeSpacing { get; set; } = "default";
         /// <summary>Starting tag look rules for new users (first match wins); null = none.</summary>
         public List<TagLookRule>? TagLookRules { get; set; }
+        /// <summary>
+        /// Server-wide per-item looks (the item editor's "For everyone"), at most
+        /// <see cref="TagLookValidation.MaxItemOverrides"/>: every user's cards of the item get
+        /// this look unless the user locked the item; it wins over every rule. Null = none.
+        /// </summary>
+        public List<TagLookItemOverride>? TagLookItemOverrides { get; set; }
         /// <summary>Starting per-shape tag looks (landscape cards, list rows) for new users; null = every shape uses the default look.</summary>
         public TagShapeOverrides? TagShapeOverrides { get; set; }
 

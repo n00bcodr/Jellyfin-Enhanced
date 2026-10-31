@@ -324,3 +324,117 @@ test('centre slots travel unchanged through rules, locks and a saved lock snapsh
   await h.settle();
   for (const {group, slot} of slots) assert.equal(h.layout.resolveLayout(h.hostOf(MOVIE)).slots[group], slot);
 });
+
+test('the user\'s lock beats the administrator\'s item look, which beats every rule; removing each falls back in order', async t => {
+  const h = setup(t, {
+    settings: { tagLayout: 'corners', tagLookRules: [rule([{ field: 'library', value: MOVIES_LIB }], 'caption', 'compact')] },
+    plugin: { TagLookItemOverrides: [{ ItemId: MOVIE, Layout: 'bands', Density: 'compact', LockedAt: 1 }] },
+  });
+  h.render();
+  assert.equal(h.layoutOf(MOVIE), 'bands', 'the item look wins over the rule');
+  assert.equal(h.hostOf(MOVIE).dataset.jeLocked, undefined, 'an item look is not the user\'s lock');
+  assert.equal(h.layout.lookSource(h.hostOf(MOVIE)).source, 'override');
+
+  await h.look.lockItem(MOVIE, { layout: 'minimal', density: 'full' });
+  await h.settle();
+  assert.equal(h.layoutOf(MOVIE), 'minimal', 'the user\'s lock wins over the item look');
+
+  await h.look.unlockItems([MOVIE]);
+  await h.settle();
+  assert.equal(h.layoutOf(MOVIE), 'bands', 'back to the item look');
+
+  h.JE.pluginConfig.TagLookItemOverrides = null;
+  h.layout.invalidateSettings();
+  await h.settle();
+  assert.equal(h.layoutOf(MOVIE), 'caption', 'back to the rule');
+});
+
+test('an item look applies to documents saved before layouts too, with their legacy sizing kept', async t => {
+  const h = setup(t, {
+    settings: { tagLayoutSettingsVersion: 0, tagLayout: undefined },
+    plugin: { TagLookItemOverrides: [{ ItemId: MOVIE, Layout: 'bands', Density: 'full', LockedAt: 1 }], TagLookRules: [rule([{ field: 'type', value: 'Movie' }], 'caption')] },
+  });
+  h.render();
+  assert.equal(h.layoutOf(MOVIE), 'bands');
+  const conf = h.layout.resolveLayout(h.hostOf(MOVIE));
+  assert.equal(conf.legacy, true);
+  assert.equal(conf.order.join(','), h.layout.DEFAULT_ORDER.join(','), 'bands use the built-in order, as for any layout but corners');
+  assert.deepEqual(plain(h.look.read().rules), [], 'the administrator\'s rules still do not reach a legacy document');
+});
+
+test('a series lock scoped to the series poster stays off its seasons and episodes', async t => {
+  const html = card(SERIES, 'Series') + card(SEASON, 'Season') + card(EPISODE, 'Episode');
+  const h = setup(t, { html, plugin: { TagLookItemOverrides: [{ ItemId: SERIES, Layout: 'summary', Density: 'full', LockedAt: 1 }] } });
+  h.render(SERIES, entry({ Type: 'Series' }));
+  h.render(SEASON, entry({ Type: 'Season', SeriesId: SERIES }));
+  h.render(EPISODE, entry({ Type: 'Episode', SeriesId: SERIES }));
+  assert.deepEqual([SERIES, SEASON, EPISODE].map(h.layoutOf), ['summary', 'summary', 'summary'], 'the series item look reaches its children');
+  await h.look.lockItem(SERIES, { layout: 'bands', density: 'compact', scope: 'item' });
+  await h.settle();
+  assert.deepEqual([SERIES, SEASON, EPISODE].map(h.layoutOf), ['bands', 'summary', 'summary'], 'the item-scoped lock stays on the series; the children keep the series item look');
+  assert.equal(h.writes.at(-1).tagLayoutLocks[SERIES].scope, 'item');
+  await h.look.lockItem(SERIES, { layout: 'bands', density: 'compact' });
+  await h.settle();
+  assert.deepEqual([SERIES, SEASON, EPISODE].map(h.layoutOf), ['bands', 'bands', 'bands'], 'a series-wide lock reaches them');
+});
+
+test('a lock carries its own caps, size, gap and edge spacing over the user\'s', async t => {
+  const h = setup(t, { settings: { tagLayout: 'corners', tagEdgeSpacing: 'default', tagGroupCaps: { genre: 3 } } });
+  h.render();
+  await h.look.lockItem(MOVIE, { layout: 'corners', density: 'full', caps: { genre: 1 }, tagScale: 'larger', tagGap: 'roomy', edge: 'flush' });
+  await h.settle();
+  const conf = h.layout.resolveLayout(h.hostOf(MOVIE));
+  assert.equal(conf.caps.genre, 1);
+  assert.equal(conf.tagScale, 'larger');
+  assert.equal(conf.tagGap, 'roomy');
+  assert.equal(conf.edge, 'flush');
+  assert.equal(h.hostOf(MOVIE).dataset.jeEdge, 'flush');
+  assert.equal(h.hostOf(MOVIE).querySelectorAll('.genre-tag').length, 1, 'one genre chip');
+  const saved = h.writes.at(-1).tagLayoutLocks[MOVIE];
+  assert.deepEqual(plain({ caps: saved.caps, tagScale: saved.tagScale, tagGap: saved.tagGap, edgeSpacing: saved.edgeSpacing }), { caps: { genre: 1 }, tagScale: 'larger', tagGap: 'roomy', edgeSpacing: 'flush' });
+  assert.equal(saved.edge, undefined, 'stored under the server\'s name');
+  // Read back in the server's casing.
+  const read = h.look.normalizeLocks({ [MOVIE]: { Layout: 'corners', Density: 'full', Caps: { Genre: 2, AgeRating: 1 }, TagScale: 'Smaller', EdgeSpacing: 'tight', Scope: 'item', LockedAt: 3 } }).get(MOVIE);
+  assert.deepEqual(plain({ caps: read.caps, tagScale: read.tagScale, edge: read.edge, scope: read.scope }), { caps: { genre: 2, ageRating: 1 }, tagScale: 'smaller', edge: 'tight', scope: 'item' });
+  assert.equal(h.look.normalizeLocks({ [MOVIE]: { layout: 'corners', tagScale: 'huge', edgeSpacing: 'wide', caps: { genre: 99 } } }).get(MOVIE).caps.genre, 10, 'caps clamp; unknown sizes inherit');
+});
+
+test('editLocks moves a season\'s own look to its series in one save', async t => {
+  const h = setup(t, { settings: { tagLayoutLocks: { [SEASON]: { layout: 'bands', density: 'full', lockedAt: 1 } } } });
+  assert.equal(await h.look.editLocks({ [SERIES]: { layout: 'minimal', density: 'compact' } }, [SEASON]), true);
+  assert.equal(h.writes.length, 1);
+  assert.deepEqual(Object.keys(h.writes[0].tagLayoutLocks), [SERIES]);
+  assert.equal(await h.look.editLocks({ [SERIES]: { layout: 'nope' } }), false, 'an invalid look saves nothing');
+  assert.equal(h.writes.length, 1);
+});
+
+test('saveItemOverride writes the whole list with the value it read, retries once on a conflict and re-presents', async t => {
+  const h = setup(t, { plugin: { TagLookItemOverrides: null } });
+  h.render();
+  const stored = [{ ItemId: OTHER, Layout: 'caption', Density: 'full', LockedAt: 5 }];
+  const patches = [];
+  let conflicts = 1;
+  const api = {
+    get: async () => ({ TagLookItemOverrides: stored }),
+    patch: async (changes, expected) => {
+      patches.push(plain({ changes, expected }));
+      if (conflicts-- > 0) throw Object.assign(new Error('conflict'), { status: 409 });
+      return { values: { TagLookItemOverrides: changes.TagLookItemOverrides } };
+    },
+  };
+  assert.equal(await h.look.saveItemOverride(MOVIE, { layout: 'bands', density: 'compact', caps: { quality: 2 } }, { api }), true);
+  assert.equal(patches.length, 2, 'once more after the conflict');
+  const list = patches[1].changes.TagLookItemOverrides;
+  assert.deepEqual(patches[1].expected.TagLookItemOverrides, stored);
+  assert.deepEqual(list.map((o) => o.ItemId), [MOVIE, OTHER], 'newest first, the other item kept');
+  assert.deepEqual(list[0].Caps, { Quality: 2 }, 'the configuration\'s casing');
+  assert.ok(list[0].LockedAt > 5);
+  await h.settle();
+  assert.equal(h.layoutOf(MOVIE), 'bands', 'the stored list is in the plugin configuration now');
+
+  assert.equal(await h.look.saveItemOverride(MOVIE, null, { api: { get: async () => ({ TagLookItemOverrides: h.JE.pluginConfig.TagLookItemOverrides }), patch: async (c) => ({ values: c }) } }), true);
+  await h.settle();
+  assert.equal(h.layoutOf(MOVIE), 'corners');
+  assert.equal(await h.look.saveItemOverride(MOVIE, { layout: 'bands' }, { api: { get: async () => ({}), patch: async () => { throw Object.assign(new Error('forbidden'), { status: 403 }); } } }), false);
+  assert.equal(await h.look.saveItemOverride('nope', { layout: 'bands' }, { api }), false);
+});
