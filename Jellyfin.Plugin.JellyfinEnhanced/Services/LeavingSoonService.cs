@@ -16,6 +16,7 @@ using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
@@ -28,10 +29,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// reads are cache-only. A failed Maintainerr request keeps the last good answer and
     /// retries with a growing delay (15 minutes, doubling, at most the refresh interval).
     /// The API key is sent as <c>X-Api-Key</c> and is never logged, persisted here or
-    /// handed to clients.
+    /// handed to clients. Redirects are never followed (<see cref="ClientName"/>): a 3xx
+    /// answer is a failed refresh, so the key only ever goes to the configured origin,
+    /// whose address the URL guard checked.
     /// </summary>
     public sealed class LeavingSoonService
     {
+        /// <summary>The named HttpClient for Maintainerr: automatic redirects off (see <see cref="AddHttpClient"/>).</summary>
+        public const string ClientName = "JellyfinEnhanced.Maintainerr";
         /// <summary>Most collection names the fallback list takes.</summary>
         public const int MaxCollectionNames = 20;
         /// <summary>Longest collection name the fallback list takes.</summary>
@@ -49,6 +54,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly SemaphoreSlim _refresh = new(1, 1);
         private readonly object _sync = new();
         private Snapshot _snapshot = new();
+        private string? _loggedRedirectHost;
 
         /// <summary>The clock (tests replace it).</summary>
         internal Func<DateTimeOffset> Now { get; set; } = () => DateTimeOffset.UtcNow;
@@ -76,6 +82,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             catch (Exception ex) { _logger.Warning($"[LeavingSoon] Could not read snapshot: {ex.Message}"); }
         }
+
+        /// <summary>
+        /// Register <see cref="ClientName"/>: a client that never follows a redirect, so the
+        /// <c>X-Api-Key</c> header cannot be carried to another origin or to an address the
+        /// URL guard never checked.
+        /// </summary>
+        public static IHttpClientBuilder AddHttpClient(IServiceCollection services)
+            => services.AddHttpClient(ClientName).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
         /// <summary>Whether a source is set: a usable Maintainerr URL or at least one collection name.</summary>
         public static bool Configured(PluginConfiguration? config)
@@ -287,6 +301,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             JsonException => "not a Maintainerr collections answer",
             InvalidDataException => "answer too large",
             UnauthorizedAccessException => "address not allowed",
+            RedirectException => "redirected (redirects are not followed)",
             _ => "request failed",
         };
 
@@ -297,12 +312,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!await Helpers.ArrUrlGuard.IsAllowedUrlAsync(url, token).ConfigureAwait(false)) throw new UnauthorizedAccessException();
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(Timeout);
-            var client = _http.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            var client = _http.CreateClient(ClientName);
+            var target = new Uri(url);
+            using var request = new HttpRequestMessage(HttpMethod.Get, target);
             request.Headers.Accept.ParseAdd("application/json");
             var key = (config.LeavingSoonMaintainerrApiKey ?? string.Empty).Trim();
             if (key.Length > 0) request.Headers.TryAddWithoutValidation("X-Api-Key", key);
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            if ((int)response.StatusCode is >= 300 and < 400)
+            {
+                LogRedirect(target, response.Headers.Location);
+                throw new RedirectException();
+            }
+
+            // A client that followed a redirect anyway (not ClientName's) answered for another address: refuse it.
+            if (response.RequestMessage?.RequestUri is { } answered && answered != target) throw new RedirectException();
             if (!response.IsSuccessStatusCode) throw new HttpRequestException("Maintainerr answered " + (int)response.StatusCode, null, response.StatusCode);
             if (response.Content.Headers.ContentLength > MaxResponseBytes) throw new InvalidDataException();
             await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token).ConfigureAwait(false);
@@ -318,6 +342,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             using var document = JsonDocument.Parse(buffer.ToArray());
             var parsed = ParseCollections(document.RootElement);
             return ToItems(parsed, TmdbLookup);
+        }
+
+        /// <summary>A 3xx answer: never followed.</summary>
+        private sealed class RedirectException : Exception
+        {
+        }
+
+        /// <summary>
+        /// Say once per destination host where a redirect pointed (the host only: a path or
+        /// query may carry a token, and the key is never logged).
+        /// </summary>
+        private void LogRedirect(Uri from, Uri? location)
+        {
+            var host = location == null ? "(no location)" : !location.IsAbsoluteUri ? from.Host : location.Host;
+            if (string.Equals(_loggedRedirectHost, host, StringComparison.OrdinalIgnoreCase)) return;
+            _loggedRedirectHost = host;
+            _logger.Warning($"[LeavingSoon] Maintainerr answered with a redirect to host '{host}'; redirects are not followed, so set the Maintainerr URL to the final address.");
         }
 
         /// <summary>One Maintainerr collection member: its Jellyfin id (when the answer has one), TMDB id and type, and delete time.</summary>

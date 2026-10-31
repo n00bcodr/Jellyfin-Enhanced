@@ -728,7 +728,7 @@ An administrator sets the source in **Media Tags** › **Status badges** › **L
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Maintainerr URL** | Empty | The address this server reaches Maintainerr at (`http://` or `https://`, no credentials or query). The server reads `GET /api/collections` and computes each item's delete date from `addDate + deleteAfterDays`. Inactive collections are skipped |
+| **Maintainerr URL** | Empty | The address this server reaches Maintainerr at (`http://` or `https://`, no credentials or query). The server reads `GET /api/collections` and computes each item's delete date from `addDate + deleteAfterDays`. Inactive collections are skipped. Redirects are not followed: use the final address (a redirect shows as the last failure and is logged with its host) |
 | **Maintainerr API key** | Empty | Sent as `X-Api-Key` when set. It is kept in the plugin configuration like the other keys and never sent to users or written to the Leaving soon snapshot or logs |
 | **Leaving collections** | Empty | Existing Jellyfin collection names, one per line (up to 20), whose members count as leaving, without a date. For setups without the API; nothing is created |
 | **Refresh every** | 6 hours | How often the server reads the source again (1–168 hours) |

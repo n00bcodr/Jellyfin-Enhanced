@@ -75,6 +75,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<AwardTagsService>();
             // Leaving soon facts (Maintainerr API or collection names), refreshed by RefreshLeavingSoonTagsTask.
+            // Its Maintainerr client never follows redirects (the API key must not reach another origin).
+            LeavingSoonService.AddHttpClient(serviceCollection);
             serviceCollection.AddSingleton<LeavingSoonService>();
             serviceCollection.AddSingleton<AnilistReviewsService>();
             serviceCollection.AddSingleton<ReviewTranslationService>();

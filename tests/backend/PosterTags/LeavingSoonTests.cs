@@ -17,6 +17,7 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Session;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.Globalization;
 using Moq;
@@ -88,7 +89,23 @@ public sealed class LeavingSoonTests : IDisposable
         }
     }
 
+    /// <summary>The plugin's own registration of the Maintainerr client (redirects off).</summary>
+    private static readonly IHttpClientFactory Registered = RegisteredClients();
+
+    private static IHttpClientFactory RegisteredClients()
+    {
+        var services = new ServiceCollection();
+        LeavingSoonService.AddHttpClient(services);
+        return services.BuildServiceProvider().GetRequiredService<IHttpClientFactory>();
+    }
+
     private sealed class Clients : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => Registered.CreateClient(name);
+    }
+
+    /// <summary>A factory whose clients follow redirects (not how the plugin registers it).</summary>
+    private sealed class FollowingClients : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
     }
@@ -285,6 +302,54 @@ public sealed class LeavingSoonTests : IDisposable
         var metadata = Config("http://169.254.169.254");
         await service.RefreshAsync(metadata, true, CancellationToken.None);
         Assert.Equal("address not allowed", service.Status(metadata).LastError);
+    }
+
+    [Fact]
+    public async Task A_redirect_is_never_followed_so_the_key_never_reaches_another_origin()
+    {
+        using var server = new MaintainerrFixture();
+        using var receiver = new MaintainerrFixture();
+        var item = Guid.NewGuid();
+        var location = (string?)null;
+        server.Answer = r =>
+        {
+            if (location == null) return MaintainerrFixture.Json(r, Collections((true, 10, "movie", new Media[] { new(item.ToString(), null, "2026-10-25T10:00:00Z") })));
+            r.StatusCode = 302;
+            r.RedirectLocation = location;
+            return Task.CompletedTask;
+        };
+        var service = Service();
+        var config = Config(server.Url, key: "redirect-secret-key");
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        Assert.NotNull(service.Get(item, config));
+
+        // Another origin (another host and port), the address guard's metadata address and a
+        // relative redirect: none is followed, the last good answer stays.
+        foreach (var to in new[] { receiver.Url.Replace("127.0.0.1", "localhost") + "/receive?token=t0ken", "http://169.254.169.254/latest/meta-data", "/elsewhere" })
+        {
+            location = to;
+            Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
+            Assert.Equal("redirected (redirects are not followed)", service.Status(config).LastError);
+            Assert.NotNull(service.Get(item, config));
+        }
+
+        Assert.Equal(0, receiver.Requests);
+        Assert.Equal(4, server.Requests);
+        Assert.All(server.Seen, s => Assert.Equal("/api/collections", s.Path));
+        var log = File.ReadAllText(_core.Logger.CurrentLogFilePath);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(log, "redirect to host 'localhost'"));
+        Assert.Contains("redirect to host '169.254.169.254'", log);
+        Assert.DoesNotContain("redirect-secret-key", log);
+        Assert.DoesNotContain("t0ken", log);
+        Assert.DoesNotContain("/receive", log);
+
+        // A client that follows redirects anyway (not the plugin's registration): the answer
+        // from the other address is refused.
+        receiver.Answer = r => MaintainerrFixture.Json(r, "[]");
+        location = receiver.Url + "/api/collections";
+        var following = new LeavingSoonService(new FollowingClients(), Path.Combine(_core.Root, "following.json"), null, _core.Logger) { Now = () => Added.AddDays(1) };
+        await following.RefreshAsync(config, true, CancellationToken.None);
+        Assert.Equal("redirected (redirects are not followed)", following.Status(config).LastError);
     }
 
     [Fact]
