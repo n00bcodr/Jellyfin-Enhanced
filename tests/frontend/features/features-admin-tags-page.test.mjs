@@ -1376,3 +1376,61 @@ test('Scenes-only admin preview follows saved server defaults without changing p
   assert.equal(movie()?.textContent, 'Post-credits');
   assert.equal(h.JE.currentSettings, own);
 });
+
+test('Rules: server-wide item looks are listed with titles; Remove saves and can be undone; Edit saves what the item editor hands back', async t => {
+  const MOVIE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const SERIES = 'cccccccccccccccccccccccccccccccc';
+  const EPISODE = 'dddddddddddddddddddddddddddddddd';
+  const stored = [
+    { ItemId: MOVIE, Layout: 'caption', Density: 'full', LockedAt: 9 },
+    { ItemId: SERIES, Layout: 'bands', Density: 'compact', Scope: 'item', LockedAt: 5 },
+  ];
+  const titles = [];
+  const h = setup(t, {
+    config: { TagLookItemOverrides: stored },
+    apiClient: {
+      getJSON: async (url) => {
+        if (!url.includes('/Items')) return [{ ItemId: LIBRARY, Name: 'Movies' }];
+        titles.push(new URL(url).searchParams.get('Ids'));
+        return { Items: [{ Id: MOVIE, Name: 'Movie <i>One</i>', Type: 'Movie' }, { Id: SERIES, Name: 'Series One', Type: 'Series' }] };
+      },
+    },
+  });
+  await h.settle(); await h.settle(); await h.settle();
+  const rows = () => h.$$('[data-item-looks] [data-item]');
+  assert.deepEqual(rows().map((r) => r.dataset.item), [MOVIE, SERIES], 'newest first');
+  assert.deepEqual(titles, [`${MOVIE},${SERIES}`], 'titles in one request');
+  assert.match(rows()[0].textContent, /Movie <i>One<\/i>/);
+  assert.equal(rows()[0].querySelector('i'), null, 'names are text');
+  assert.match(rows()[1].textContent, /tag_item_editor_scope_series_only/, 'a series poster only look says so');
+  assert.equal(h.$('[data-item-looks-empty]').hidden, true);
+
+  rows()[0].querySelector('[data-act="remove"]').click();
+  await h.save();
+  assert.deepEqual(plain(h.server.TagLookItemOverrides.map((o) => o.ItemId)), [SERIES]);
+  assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['TagLookItemOverrides']);
+  assert.deepEqual(plain(h.patches.at(-1).Expected.TagLookItemOverrides), stored, 'with the list read before');
+  h.$('.je-ta-snack .je-ta-button').click();
+  await h.save();
+  assert.deepEqual(plain(h.server.TagLookItemOverrides), stored, 'undo puts it back');
+
+  // Edit: the item editor in its server mode hands the look back to the page.
+  const opened = [];
+  h.JE.tagItemEditor = { open: (id, options) => { opened.push([id, options]); return Promise.resolve(true); } };
+  rows()[1].querySelector('[data-act="edit"]').click();
+  assert.equal(opened[0][0], SERIES);
+  assert.equal(opened[0][1].mode, 'server');
+  assert.equal(opened[0][1].look.scope, 'item', 'starts from the stored look');
+  opened[0][1].onSave({ layout: 'minimal', density: 'full', scope: null }, SERIES);
+  await h.save();
+  const series = h.server.TagLookItemOverrides.find((o) => o.ItemId === SERIES);
+  assert.deepEqual([series.Layout, series.Scope], ['minimal', null]);
+  assert.equal(h.server.TagLookItemOverrides[0].ItemId, SERIES, 'the edited look is the newest');
+  // An episode's look moved to its series: the episode's entry goes, the series' takes it.
+  h.ctx.set('TagLookItemOverrides', [{ ItemId: EPISODE, Layout: 'bands', Density: 'full', LockedAt: 1 }]);
+  await h.save();
+  rows()[0].querySelector('[data-act="edit"]').click();
+  opened.at(-1)[1].onSave({ layout: 'summary', density: 'full', scope: null }, SERIES);
+  await h.save();
+  assert.deepEqual(plain(h.server.TagLookItemOverrides.map((o) => [o.ItemId, o.Layout])), [[SERIES, 'summary']]);
+});

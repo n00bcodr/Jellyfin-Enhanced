@@ -266,6 +266,110 @@
         hint: 'admin_tags_locks_desc',
     });
 
+    /** @type {Map<string, {name: string, type: string}>} item id → title, loaded once per page */
+    const itemTitles = new Map();
+    /** @type {Set<string>} ids whose title is being loaded (a refresh meanwhile asks for no more) */
+    const loadingTitles = new Set();
+
+    /**
+     * Load the titles of server-wide item looks not known yet (50 per request).
+     * @param {Object} ctx
+     * @param {string[]} ids
+     * @returns {Promise<boolean>} Whether a title was added.
+     */
+    async function loadItemTitles(ctx, ids) {
+        const missing = ids.filter((id) => !itemTitles.has(id) && !loadingTitles.has(id));
+        for (const id of missing) loadingTitles.add(id);
+        for (let i = 0; i < missing.length; i += 50) {
+            const batch = missing.slice(i, i + 50);
+            try {
+                const resp = await ApiClient.getJSON(ApiClient.getUrl(`Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), EnableImages: false, EnableUserData: false }));
+                if (!ctx.isCurrent()) { for (const id of batch) loadingTitles.delete(id); return false; }
+                for (const item of resp?.Items || []) itemTitles.set(String(item.Id).replace(/-/g, '').toLowerCase(), { name: String(item.Name || ''), type: String(item.Type || '') });
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: could not load the item titles', err);
+            }
+            for (const id of batch) {
+                if (!itemTitles.has(id)) itemTitles.set(id, { name: '', type: '' });
+                loadingTitles.delete(id);
+            }
+        }
+        return missing.length > 0;
+    }
+
+    /**
+     * One server-wide item look's list row.
+     * @param {Object} ctx
+     * @param {string} id
+     * @param {Object} look - Normalised (core/tag-look.js).
+     * @returns {string}
+     */
+    function itemLookHtml(ctx, id, look) {
+        const info = itemTitles.get(id);
+        const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('tag_looks_loading');
+        const type = info?.type ? `${JE.t(`tag_looks_type_${info.type.toLowerCase()}`)} · ` : '';
+        const outcome = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${look.layout}`), density: JE.t(`panel_settings_ui_tag_density_${look.density}`) });
+        const scope = info?.type === 'Series' ? ` · ${JE.t(look.scope === 'item' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_series')}` : '';
+        const label = info?.name || id;
+        return `<li class="je-ta-rule" data-item="${ctx.esc(id)}">
+            <span class="je-ta-rule-text"><strong>${ctx.esc(name)}</strong> ${ctx.esc(type)}${ctx.esc(outcome)}${ctx.esc(scope)}</span>
+            <span class="je-ta-rule-tools">
+                <button type="button" class="je-ta-button" data-act="edit" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('tag_looks_edit')}</button>
+                <button type="button" class="je-ta-icon-btn" data-act="remove" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_remove_named', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
+            </span>
+        </li>`;
+    }
+
+    A.registerSection({
+        id: 'item-looks',
+        tab: 'rules',
+        order: 30,
+        title: 'admin_tags_item_looks_title',
+        hint: 'admin_tags_item_looks_desc',
+        writes: ['TagLookItemOverrides'],
+        render(ctx, body) {
+            body.innerHTML = `<p class="je-ta-off" data-item-looks-empty>${ctx.tx('admin_tags_item_looks_none')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
+            body.querySelector('[data-item-looks]')?.addEventListener('click', (e) => {
+                const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('button[data-act]'));
+                const row = /** @type {HTMLElement|null} */ (button?.closest('[data-item]') || null);
+                const look = JE.core.tagLook;
+                if (!button || !row || !look) return;
+                const id = row.dataset.item || '';
+                const stored = ctx.config.TagLookItemOverrides ?? null;
+                const name = itemTitles.get(id)?.name || id;
+                if (button.dataset.act === 'remove') {
+                    const next = look.itemOverridesWith(stored, id, null);
+                    if (next === undefined) return;
+                    ctx.set('TagLookItemOverrides', next);
+                    ctx.snack(JE.t('admin_tags_item_looks_removed', { name }), () => ctx.set('TagLookItemOverrides', stored));
+                    /** @type {HTMLElement|null} */ (body.querySelector('[data-item] [data-act="remove"]') || body.querySelector('[data-item-looks-empty]'))?.focus?.();
+                } else if (button.dataset.act === 'edit') {
+                    JE.tagItemEditor?.open(id, {
+                        mode: 'server',
+                        opener: button,
+                        look: look.normalizeItemOverrides(stored).get(id) || null,
+                        onSave: (chosen, target) => {
+                            let next = look.itemOverridesWith(ctx.config.TagLookItemOverrides ?? null, id, target === id ? chosen : null);
+                            if (next !== undefined && target !== id) next = look.itemOverridesWith(next, target, chosen);
+                            if (next === undefined) return;
+                            ctx.set('TagLookItemOverrides', next);
+                            ctx.announce(JE.t('tag_item_editor_everyone_saved', { name }));
+                        },
+                    });
+                }
+            });
+        },
+        refresh(ctx, body) {
+            const list = body?.querySelector('[data-item-looks]');
+            const look = JE.core.tagLook;
+            if (!list || !look) return;
+            const looks = look.normalizeItemOverrides(ctx.config.TagLookItemOverrides ?? null);
+            list.innerHTML = Array.from(looks.entries()).map(([id, entry]) => itemLookHtml(ctx, id, entry)).join('');
+            /** @type {HTMLElement} */ (body.querySelector('[data-item-looks-empty]')).hidden = looks.size > 0;
+            loadItemTitles(ctx, Array.from(looks.keys())).then((added) => { if (added && ctx.isCurrent()) this.refresh(ctx, body); });
+        },
+    });
+
     // Exposed for tests.
     A.rulesData = { parseRules, conditionText };
 })(window.JellyfinEnhanced);

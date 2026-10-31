@@ -165,6 +165,24 @@ public class ApiMediaTagsPageTests
     }
 
     [Fact]
+    public void ServerWideItemLooksAreWrittenNormalizedAndAConflictingListIsRefused()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _) = PatchController(f);
+        var look = new { ItemId = "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA", Layout = "Bands", Density = "compact", Caps = new { Quality = 2 }, Scope = "item", LockedAt = 5 };
+        var ok = Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(new { TagLookItemOverrides = new[] { look } }, new { TagLookItemOverrides = (object?)null })));
+        var stored = Assert.Single(f.Plugin.Configuration.TagLookItemOverrides!);
+        Assert.Equal(("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bands", 2, "item"), (stored.ItemId, stored.Layout, stored.Caps!.Quality!.Value, stored.Scope));
+        Assert.Contains("\"ItemId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"", StjSerializer.Serialize(ok.Value), StringComparison.Ordinal);
+        // Someone else's list moved on meanwhile: refused, nothing written.
+        Assert.IsType<ConflictObjectResult>(controller.PatchConfiguration(Patch(new { TagLookItemOverrides = Array.Empty<object>() }, new { TagLookItemOverrides = (object?)null })));
+        Assert.Single(f.Plugin.Configuration.TagLookItemOverrides!);
+        // An empty list is stored as none.
+        Assert.IsType<OkObjectResult>(controller.PatchConfiguration(Patch(new { TagLookItemOverrides = Array.Empty<object>() })));
+        Assert.Null(f.Plugin.Configuration.TagLookItemOverrides);
+    }
+
+    [Fact]
     public void PatchIsAdminOnlyAndRefusesUnknownFieldsAndBadValues()
     {
         using var f = new ApiPluginFixture();
@@ -293,6 +311,9 @@ public class ApiMediaTagsPageTests
     [InlineData("TagCacheExcludedLibraryIds", "\"movies,shows\"", "must be library ids")]
     [InlineData("TagStyleOverrides", "\"{not json\"", "document is not valid JSON")]
     [InlineData("TagLookRules", "[{\"Layout\":\"nowhere\",\"When\":[]}]", "every rule needs")]
+    [InlineData("TagLookItemOverrides", "[{\"ItemId\":\"not-an-id\",\"Layout\":\"bands\"}]", "every item look needs")]
+    [InlineData("TagLookItemOverrides", "[{\"ItemId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"Layout\":\"grid\"}]", "every item look needs")]
+    [InlineData("TagLookItemOverrides", "[{\"ItemId\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"Layout\":\"bands\"},{\"ItemId\":\"AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA\",\"Layout\":\"caption\"}]", "an id used once")]
     // Numbers outside their range.
     [InlineData("TagsCacheTtlDays", "-2147483648", "must be between 1 and 365")]
     [InlineData("TagsCacheTtlDays", "0", "must be between 1 and 365")]
