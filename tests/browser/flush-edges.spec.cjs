@@ -29,12 +29,13 @@ async function place(page, row, text = '4K') {
     if(row.indicator){const box=document.createElement('div');box.className='cardIndicators';box.innerHTML='<div style="position:absolute;width:100%"><div class="countIndicator">2</div></div>';surface.append(box);}
     if(row.progress){const bar=document.createElement('div');bar.className='itemProgressBar';surface.append(bar);}
     JE.currentSettings.tagLayouts={corners:{groups:[{group:'quality',slot:row.slot}]}};
-    const group=document.createElement('div');group.className='quality-overlay-container';group.innerHTML=`<span class="quality-overlay-label resolution">${text}</span>`;
+    const group=document.createElement('div');group.className='quality-overlay-container';group.innerHTML=`<span class="quality-overlay-label resolution" data-quality="${text}">${text}</span>`;
     L.invalidateSettings();L.commitGroup(host,'quality',group);
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
     const chip=host.querySelector('.quality-overlay-label'),b=chip.getBoundingClientRect(),h=host.getBoundingClientRect(),s=getComputedStyle(chip);
     const clear=c=>c==='transparent'||c==='rgba(0, 0, 0, 0)';
     return {indicatorGap:host.dataset.jeIndicatorGap,slot:chip.closest('.je-tag-slot').outerHTML.slice(0,200),edges:(clear(s.borderLeftColor)?1:0)|(clear(s.borderTopColor)?2:0)|(clear(s.borderRightColor)?4:0)|(clear(s.borderBottomColor)?8:0),
+      borderColors:[s.borderLeftColor,s.borderTopColor,s.borderRightColor,s.borderBottomColor],
       top:b.top-h.top,bottom:h.bottom-b.bottom,left:b.left-h.left,right:h.right-b.right,hidden:chip.hasAttribute('data-je-overflow'),clip:s.clipPath,
       tl:s.borderTopLeftRadius,tr:s.borderTopRightRadius,bl:s.borderBottomLeftRadius,br:s.borderBottomRightRadius};
   }, {row,text});
@@ -88,7 +89,9 @@ test('scoped presets, Poster, group and label colours keep only inward Flush bor
   await setup(page);
   await page.addScriptTag({ path: path.join(root, 'tags/tag-styles.js') });
   await page.evaluate(() => {
-    const card = document.querySelector('.card'); card.id = 'jeTaPreviewBody'; card.setAttribute('data-je-tag-styles-scope', '');
+    const card = document.querySelector('.card'), scope = document.createElement('div');
+    scope.id = 'jeTaPreviewBody'; scope.setAttribute('data-je-tag-styles-scope', '');
+    card.before(scope); scope.append(card);
     card.setAttribute('data-je-poster-colour', ''); card.style.setProperty('--je-tag-border', 'rgb(0, 255, 0)');
   });
   for (const model of [
@@ -107,6 +110,8 @@ test('scoped presets, Poster, group and label colours keep only inward Flush bor
       const row = {slot,indicator:false,progress:0,edges: {tc:2,bc:8,tl:3,tr:6,bl:9,br:12}[slot]};
       const result = await place(page, row);
       expect(result.edges, JSON.stringify({model,order,slot,result})).toBe(row.edges);
+      const inward = result.borderColors.filter((_,i) => !(row.edges & [1,2,4,8][i]));
+      expect(inward).toEqual(inward.map(() => model.quality ? 'rgb(255, 0, 0)' : 'rgb(0, 255, 0)'));
     }
   }
 });
