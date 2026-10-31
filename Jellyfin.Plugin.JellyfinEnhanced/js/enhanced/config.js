@@ -119,6 +119,7 @@
             randomIncludeMovies: true, randomIncludeShows: true, randomUnwatchedOnly: false,
             randomScopeCurrentContainer: false, randomSourceId: '',
             showWatchProgress: false, showFileSizes: false, showAudioLanguages: true, removeContinueWatchingEnabled: false,
+            simplifyDubLanguageFlags: false,
             watchProgressMode: 'percentage',
             watchProgressTimeFormat: 'hours',
             pauseScreenEnabled: true,

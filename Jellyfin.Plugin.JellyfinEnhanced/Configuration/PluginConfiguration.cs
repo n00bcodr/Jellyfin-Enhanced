@@ -74,6 +74,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             ShowFileSizes = false;
             RemoveContinueWatchingEnabled = false;
             ShowAudioLanguages = true;
+            SimplifyDubLanguageFlags = false;
             ShowReviews = false;
             ShowUserReviews = false;
             ShowAnilistReviews = false;
@@ -544,6 +545,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool ShowFileSizes { get; set; }
         public bool RemoveContinueWatchingEnabled { get; set; }
         public bool ShowAudioLanguages { get; set; }
+        public bool SimplifyDubLanguageFlags { get; set; }
         public bool ShowReviews { get; set; }
         public bool ShowUserReviews { get; set; }
         public bool ShowAnilistReviews { get; set; }

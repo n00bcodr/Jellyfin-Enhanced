@@ -159,6 +159,7 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     WatchProgressTimeFormat = string.IsNullOrWhiteSpace(defaultConfig.WatchProgressTimeFormat) ? "hours" : defaultConfig.WatchProgressTimeFormat,
     ShowFileSizes = defaultConfig.ShowFileSizes,
     ShowAudioLanguages = defaultConfig.ShowAudioLanguages,
+    SimplifyDubLanguageFlags = defaultConfig.SimplifyDubLanguageFlags,
     UseNativePosterTags = null,
     QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
     ShowResolutionTag = defaultConfig.ShowResolutionTag,
