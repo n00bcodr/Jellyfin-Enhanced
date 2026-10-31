@@ -3,8 +3,17 @@ import assert from 'node:assert/strict';
 import { createHarness, deferred } from './harness.mjs';
 
 const [origin, scenario] = process.argv.slice(2);
-const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002';
+const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002', C = '00000000000000000000000000000003', D = '00000000000000000000000000000004';
 const patches = [], gate = deferred();
+const holdAt = scenario.startsWith('pending-restore-') ? 2 : 1;
+/** Wait for the real dialog/store's asynchronous continuation. */
+async function wait(predicate) {
+  for (let i = 0; i < 300; i++) {
+    if (predicate()) return;
+    await new Promise(r => setTimeout(r, 20));
+  }
+  throw new Error('Page flow did not settle');
+}
 const get = async () => (await fetch(`${origin}/test/configuration`)).json();
 async function request(path, body) {
   const response = await fetch(`${origin}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Test-Admin': '1' }, body: JSON.stringify(body) });
@@ -24,6 +33,14 @@ const h = createHarness({
       const body = JSON.parse(req.data);
       if (path.endsWith('/admin/configuration')) {
         patches.push(body);
+        if (scenario.startsWith('pending-') && patches.length === holdAt) {
+          await gate.promise;
+          if (scenario.endsWith('-failure')) return request(path, { Changes: { TagLookItemOverrides: 17 } });
+          if (scenario.endsWith('-lost')) {
+            await request(path, body);
+            throw new TypeError('replacement response lost after apply');
+          }
+        }
         if ((scenario.startsWith('queued-') || scenario.startsWith('failed-undo-')) && patches.length === 1) await gate.promise;
         if (scenario.startsWith('failed-undo-') && patches.length === 1) {
           if (scenario.endsWith('lost-response')) {
@@ -95,6 +112,57 @@ try {
     assert.equal(await h.JE.core.tagLook.saveItemOverride(A, null), true);
     assert.equal(patches.length, 0, 'a fresh GET that already lacks the target needs no PATCH');
     assert.equal(h.JE.pluginConfig.TagLookItemOverrides, null);
+  } else if (scenario.startsWith('pending-')) {
+    const initial = (await get()).TagLookItemOverrides;
+    const replacement = [B, C].map((ItemId, i) => ({ ...initial[0], ItemId, LockedAt: 10 - i }));
+    const restoring = scenario.startsWith('pending-restore-');
+    const conflict = scenario.includes('-conflict-');
+    if (!conflict) h.expectConsoleError('could not save the Media Tags settings');
+    ctx.openTab('server');
+    h.document.querySelector('#jeTaImport').click();
+    h.document.querySelector('[data-pt-paste]').value = JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLookItemOverrides: replacement } });
+    h.document.querySelector('[data-pt-action="next"]').click();
+    await wait(() => h.document.querySelector('[data-pt-action="apply"]'));
+    h.document.querySelector('[data-pt-action="apply"]').click();
+    if (restoring) {
+      await wait(() => h.document.querySelector('.je-ta-snack .je-ta-button'));
+      undo();
+    }
+    await wait(() => patches.length === holdAt);
+    h.document.querySelector('[data-pt-close]')?.click();
+    ctx.openTab('rules');
+    let onSave;
+    h.JE.tagItemEditor = { open: (_, options) => { onSave = options.onSave; } };
+    const target = restoring ? A : B;
+    const removing = scenario.includes('-remove-');
+    if (removing) button(target, 'remove').click();
+    else { button(target, 'edit').click(); onSave({ layout: 'summary', density: 'full' }, target); }
+    const remote = [{ ...initial[0], ItemId: D, Layout: 'minimal' }];
+    if (conflict) await request('/JellyfinEnhanced/admin/configuration', { Changes: { TagLookItemOverrides: remote } });
+    const saving = ctx.flush();
+    gate.resolve();
+    assert.equal(await saving, false);
+    assert.equal(h.document.querySelector('#jeTaSaved').dataset.state, conflict ? 'conflict' : 'error');
+    if (!conflict) {
+      const retry = await ctx.flush();
+      if (scenario.endsWith('-lost')) assert.equal(retry, false, 'unknown replacement outcome conflicts as a whole');
+      else assert.equal(retry, true);
+    }
+    if (conflict || scenario.endsWith('-lost')) {
+      h.document.querySelector(scenario.endsWith('-theirs') ? '[data-je-theirs]' : '[data-je-keep]').click();
+      await wait(() => h.document.querySelector('#jeTaSaved').dataset.state === 'saved');
+    }
+    const final = (await get()).TagLookItemOverrides;
+    const ids = final.map(e => e.ItemId).sort();
+    assert.deepEqual(ids, scenario.endsWith('-theirs') ? [D] : restoring ? [A] : removing ? [C] : [B, C]);
+    if (!removing && !scenario.endsWith('-theirs')) assert.equal(final.find(e => e.ItemId === target).Layout, 'summary');
+    const retries = patches.slice(holdAt);
+    assert.ok(retries.every(p => Array.isArray(p.Changes.TagLookItemOverrides)), 'unacknowledged replacement stays whole-list transport');
+    if (scenario.endsWith('-mine')) assert.deepEqual([...h.JE.core.tagLook.normalizeItemOverrides(retries.at(-1).Expected.TagLookItemOverrides)], [...h.JE.core.tagLook.normalizeItemOverrides(remote)]);
+    // Only the final acknowledgement releases replacement mode.
+    button(final[0].ItemId, 'edit').click(); onSave({ layout: 'bands', density: 'compact' }, final[0].ItemId);
+    assert.equal(await ctx.flush(), true);
+    assert.equal(patches.at(-1).Changes.TagLookItemOverrides.Set.length, 1);
   } else if (scenario === 'import-replace') {
     const initial = (await get()).TagLookItemOverrides;
     const replacement = initial.map((e, i) => ({ ...e, ItemId: (i + 501).toString(16).padStart(32, '0') }));

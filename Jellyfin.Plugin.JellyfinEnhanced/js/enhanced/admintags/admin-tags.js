@@ -842,7 +842,9 @@
                 // What the server should still hold when this edit is saved.
                 if (!store.values.has(key) && !store.base.has(key)) store.base.set(key, copy(config[key]));
                 if (key === 'TagLookItemOverrides') {
-                    const replacing = store.itemMode === 'replace' && store.values.get(key) !== store.itemFlight?.value;
+                    // Until the whole list is acknowledged, entry edits fold into that
+                    // replacement, including while its request is pending or failed.
+                    const replacing = store.itemMode === 'replace';
                     if (opts.itemEdit && !replacing) {
                         const delta = JE.core.tagLook.itemOverrideMutation(config[key], value);
                         const sets = new Map(delta.Set.map(e => [e.ItemId, e]));

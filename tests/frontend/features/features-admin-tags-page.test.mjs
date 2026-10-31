@@ -1598,3 +1598,37 @@ for (const failure of ['lost-response', '503-applied', '503-unapplied', '400-wit
   assert.deepEqual(plain([...h.JE.core.tagLook.normalizeItemOverrides(h.server.TagLookItemOverrides)]), plain([...h.JE.core.tagLook.normalizeItemOverrides([entry])]));
   assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
 });
+
+for (const result of ['failure', 'success', 'conflict-mine', 'conflict-theirs']) test(`Rules edits during a pending replacement preserve whole-list intent after ${result}`, async t => {
+  const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002', C = '00000000000000000000000000000003';
+  const entry = ItemId => ({ ItemId, Layout: 'bands', Density: 'full', LockedAt: 1 });
+  const gate = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [entry(A)] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        if (result === 'failure') throw { status: 400, json: async () => ({ error: 'Invalid value for TagLookItemOverrides' }) };
+        if (result.startsWith('conflict')) h.server.TagLookItemOverrides = [entry(A), { ...entry(C), Layout: 'minimal' }];
+      }
+      return serverPatch(h.server, body);
+    },
+  });
+  if (result === 'failure') h.expectConsoleError('could not save the Media Tags settings');
+  // The production import boundary writes a whole-list replacement.
+  h.ctx.setMany({ TagLookItemOverrides: [entry(B), entry(C)] });
+  const saving = h.ctx.flush();
+  h.$(`[data-item="${B}"] [data-act="remove"]`).click();
+  gate.resolve();
+  assert.equal(await saving, result === 'success');
+  if (result === 'failure') assert.equal(await h.ctx.flush(), true);
+  if (result.startsWith('conflict')) {
+    assert.equal(h.$('#jeTaSaved').dataset.state, 'conflict');
+    h.$(result.endsWith('mine') ? '[data-je-keep]' : '[data-je-theirs]').click();
+    await h.ctx.flush();
+  }
+  assert.deepEqual(h.server.TagLookItemOverrides.map(e => e.ItemId).sort(), result.endsWith('theirs') ? [A, C] : [C]);
+  assert.ok(h.patches.every(p => Array.isArray(p.Changes.TagLookItemOverrides)), 'edits fold into the unacknowledged replacement');
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
+});

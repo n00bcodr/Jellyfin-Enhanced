@@ -1207,7 +1207,7 @@ If a custom web wrapper shows tags twice, add its name as shown under **Dashboar
 
     The preview attempts composition even with the master/personal native switch off. It strips tag data for Spoiler Guard but uses original, unblurred artwork. It therefore does not preview image protection.
 
-Server-wide item look edits preserve unrelated changes made by another administrator while saving. Removing a look and immediately choosing **Undo** cancels that edit. Server import and its **Undo** replace the complete item-look list, including when both lists contain 500 different entries.
+Server-wide item look edits preserve unrelated changes made by another administrator while saving. Removing a look and immediately choosing **Undo** cancels that edit. After an uncertain save failure, **Undo** stays pending until the server acknowledges the restored look. Server import and its **Undo** replace the complete item-look list, including when both lists contain 500 different entries. Edits made while a replacement is still saving or awaiting **Retry** become part of that replacement; **Keep mine** and **Take theirs** resolve the complete list.
 
 ## Tag Styles and CSS
 

@@ -142,6 +142,14 @@ public class ApiItemLookMutationTests(ITestOutputHelper output)
     [InlineData("failed-undo-rejected")]
     [InlineData("already-absent")]
     [InlineData("import-replace")]
+    [InlineData("pending-replace-remove-failure")]
+    [InlineData("pending-replace-edit-failure")]
+    [InlineData("pending-restore-edit-failure")]
+    [InlineData("pending-replace-remove-lost")]
+    [InlineData("pending-replace-conflict-mine")]
+    [InlineData("pending-replace-conflict-theirs")]
+    [InlineData("pending-restore-conflict-mine")]
+    [InlineData("pending-restore-conflict-theirs")]
     public async Task ProductionPageSavesThroughRealHttpValidator(string scenario)
     {
         using var fixture = new ApiPluginFixture();
