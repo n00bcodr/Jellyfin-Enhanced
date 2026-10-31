@@ -819,9 +819,11 @@
                 next = itemOverridesWith(next, id, look);
                 if (next === undefined) return false;
                 if (!isCurrent()) return false;
-                const result = await api.patch({ TagLookItemOverrides: itemOverrideMutation(before, next) }, {});
+                const mutation = itemOverrideMutation(before, next);
+                const result = mutation.Set.length || mutation.Remove.length
+                    ? await api.patch({ TagLookItemOverrides: mutation }, {}) : null;
                 if (!isCurrent()) return false;
-                const stored = result?.values?.TagLookItemOverrides ?? result?.Values?.TagLookItemOverrides ?? next;
+                const stored = result?.values?.TagLookItemOverrides ?? result?.Values?.TagLookItemOverrides ?? (result ? next : before);
                 if (JE.pluginConfig) JE.pluginConfig.TagLookItemOverrides = stored;
                 represent();
                 return true;

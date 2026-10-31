@@ -33,7 +33,7 @@ const h = createHarness({
 let ctx;
 try {
   h.window.Element.prototype.scrollIntoView = () => {};
-  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/admintags/admin-tags.js', 'enhanced/admintags/sections/rules.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/admintags/admin-tags.js', 'enhanced/admintags/sections/rules.js', 'enhanced/admintags/sections/quality.js']) h.load(file);
   ctx = h.JE.adminTags.createPage(h.document.getElementById('root'), await get());
   const button = (id, action) => h.document.querySelector(`[data-item="${id}"] [data-act="${action}"]`);
   const undo = () => h.document.querySelector('.je-ta-snack .je-ta-button').click();
@@ -58,6 +58,22 @@ try {
     assert.ok(patches.every(p => !p.Changes.TagLookItemOverrides.Remove.includes(B)));
     if (scenario === 'queued-add' || scenario === 'queued-edit') assert.equal(final.find(e => e.ItemId === A)?.Layout, 'corners');
     else assert.equal(final.some(e => e.ItemId === A), scenario === 'queued-undo');
+  } else if (scenario.startsWith('immediate-undo')) {
+    const initial = await get();
+    button(A, 'remove').click(); undo();
+    if (scenario.endsWith('with-field')) ctx.set('QualityTagsEnabled', !initial.QualityTagsEnabled);
+    assert.equal(await ctx.flush(), true);
+    assert.deepEqual((await get()).TagLookItemOverrides, initial.TagLookItemOverrides);
+    assert.equal(patches.length, scenario.endsWith('with-field') ? 1 : 0);
+    if (patches.length) {
+      assert.equal('TagLookItemOverrides' in patches[0].Changes, false);
+      assert.equal((await get()).QualityTagsEnabled, !initial.QualityTagsEnabled);
+    }
+  } else if (scenario === 'already-absent') {
+    await request('/JellyfinEnhanced/admin/configuration', { Changes: { TagLookItemOverrides: null } });
+    assert.equal(await h.JE.core.tagLook.saveItemOverride(A, null), true);
+    assert.equal(patches.length, 0, 'a fresh GET that already lacks the target needs no PATCH');
+    assert.equal(h.JE.pluginConfig.TagLookItemOverrides, null);
   } else throw new Error(`Unknown scenario ${scenario}`);
   assert.equal(h.document.querySelector('#jeTaSaved').dataset.state, 'saved');
   console.log(`${scenario}: production page/store/transport and HTTP validator passed (${patches.length} patches)`);

@@ -135,15 +135,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                             return null;
                         }
 
-                        values[nameof(PluginConfiguration.TagLookItemOverrides)] = TagLookValidation.NormalizeItemOverrides(merged);
+                        if (targets.Count == 0)
+                            stored[nameof(PluginConfiguration.TagLookItemOverrides)] = ToNode(current.TagLookItemOverrides, typeof(List<TagLookItemOverride>), options);
+                        else
+                            values[nameof(PluginConfiguration.TagLookItemOverrides)] = TagLookValidation.NormalizeItemOverrides(merged);
                     }
 
-                    if (conflicts.Count > 0) return null;
+                    if (conflicts.Count > 0 || values.Count == 0) return null;
 
                     // A shallow copy keeps every field this request does not name (including ones the API never shows);
                     // the named ones are replaced, never mutated, so the live configuration is untouched until the swap.
                     var next = (PluginConfiguration)MemberwiseCloneMethod.Invoke(current, null)!;
-                    foreach (var (key, property) in properties) property.SetValue(next, values[key]);
+                    foreach (var (key, value) in values) properties[key].SetValue(next, value);
                     return next;
                 },
                 // The stored values, as the save normalised them, before any later save.
@@ -172,7 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             try
             {
                 var read = raw.Deserialize<ItemOverrideMutation>(new JsonSerializerOptions(JsonDefaults.Options) { PropertyNameCaseInsensitive = true });
-                if (read?.Set == null || read.Remove == null || read.Expected == null || read.Set.Count + read.Remove.Count is < 1 or > TagLookValidation.MaxItemOverrides) return false;
+                if (read?.Set == null || read.Remove == null || read.Expected == null || read.Set.Count + read.Remove.Count > TagLookValidation.MaxItemOverrides) return false;
                 var ids = read.Set.Select(e => e?.ItemId).Concat(read.Remove).ToList();
                 if (ids.Any(id => id == null || TagLookValidation.NormalizeItemId(id) != id) || ids.Distinct(StringComparer.Ordinal).Count() != ids.Count) return false;
                 if (read.Expected.Count != ids.Count || ids.Any(id => !read.Expected.ContainsKey(id!))) return false;

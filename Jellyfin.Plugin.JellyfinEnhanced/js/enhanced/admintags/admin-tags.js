@@ -512,6 +512,20 @@
         store.timer = null;
         checkSession();
         if (store.saving) return store.saving.then((ok) => (ok && store.values.size ? flushStore() : ok));
+        // A canceled entry edit succeeds locally; other fields still share one atomic patch.
+        if (store.itemMode === 'entries' && !store.conflicts.has('TagLookItemOverrides')) {
+            for (const [id, edit] of store.itemEdits) {
+                const delta = JE.core.tagLook.itemOverrideMutation(edit.expected ? [edit.expected] : null, edit.value ? [edit.value] : null);
+                if (!delta.Set.length && !delta.Remove.length) store.itemEdits.delete(id);
+            }
+            if (!store.itemEdits.size) {
+                const value = store.base.get('TagLookItemOverrides') ?? null;
+                store.values.delete('TagLookItemOverrides');
+                store.base.delete('TagLookItemOverrides');
+                store.itemMode = null;
+                notify({ type: 'saved', values: { TagLookItemOverrides: value } });
+            }
+        }
         const sent = new Map(Array.from(store.values).filter(([key]) => !store.conflicts.has(key)));
         if (!sent.size) {
             setStoreState(store.conflicts.size ? 'conflict' : 'saved');
@@ -568,6 +582,12 @@
             } catch (err) {
                 const conflicts = await conflictsOf(err);
                 if (!sameSession(mark)) return false;
+                // A failed in-flight operation did not establish its desired value.
+                // A newer queued edit must retry from that operation's original stamp.
+                for (const [id, edit] of itemEdits || []) {
+                    const pending = store.itemEdits.get(id);
+                    if (pending && pending !== edit) store.itemEdits.set(id, { ...pending, expected: edit.expected });
+                }
                 if (conflicts && Object.keys(conflicts).length) {
                     for (const [key, theirs] of Object.entries(conflicts)) store.conflicts.set(key, theirs);
                     refused = true;

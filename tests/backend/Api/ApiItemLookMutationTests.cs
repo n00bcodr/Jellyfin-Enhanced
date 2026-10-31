@@ -136,6 +136,9 @@ public class ApiItemLookMutationTests(ITestOutputHelper output)
     [InlineData("queued-edit")]
     [InlineData("queued-remove")]
     [InlineData("queued-undo")]
+    [InlineData("immediate-undo")]
+    [InlineData("immediate-undo-with-field")]
+    [InlineData("already-absent")]
     public async Task ProductionPageSavesThroughRealHttpValidator(string scenario)
     {
         using var fixture = new ApiPluginFixture();
@@ -176,6 +179,29 @@ public class ApiItemLookMutationTests(ITestOutputHelper output)
             Assert.True(process.ExitCode == 0, log);
         }
         finally { await app.StopAsync(); }
+    }
+
+    [Fact]
+    public void ValidatedEmptyMutationIsANoWriteSuccessAndStillValidatesItsShape()
+    {
+        using var fixture = new ApiPluginFixture();
+        var before = fixture.Plugin.Configuration;
+        var empty = JsonSerializer.SerializeToElement(new { Set = Array.Empty<object>(), Remove = Array.Empty<string>(), Expected = new { } });
+        var changes = new Dictionary<string, JsonElement> { ["TagLookItemOverrides"] = empty };
+        var result = PluginConfigurationPatch.Apply(fixture.Plugin, changes, null, MediaTagsPageFields.Allowed);
+        Assert.Null(result.Error);
+        Assert.Empty(result.Conflicts);
+        Assert.True(result.Values.ContainsKey("TagLookItemOverrides"));
+        Assert.Same(before, fixture.Plugin.Configuration);
+        changes["QualityTagsEnabled"] = JsonSerializer.SerializeToElement(!before.QualityTagsEnabled);
+        result = PluginConfigurationPatch.Apply(fixture.Plugin, changes, null, MediaTagsPageFields.Allowed);
+        Assert.Null(result.Error);
+        Assert.Equal(!before.QualityTagsEnabled, fixture.Plugin.Configuration.QualityTagsEnabled);
+        foreach (var invalid in new[] { "{}", "{\"Set\":[],\"Remove\":[],\"Expected\":{\"extra\":null}}", "{\"Set\":null,\"Remove\":[],\"Expected\":{}}" })
+        {
+            changes = new() { ["TagLookItemOverrides"] = JsonSerializer.Deserialize<JsonElement>(invalid) };
+            Assert.NotNull(PluginConfigurationPatch.Apply(fixture.Plugin, changes, null, MediaTagsPageFields.Allowed).Error);
+        }
     }
 
 }

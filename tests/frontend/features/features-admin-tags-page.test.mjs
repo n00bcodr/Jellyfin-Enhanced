@@ -1544,3 +1544,23 @@ for (const undo of [false, true]) test(`Rules Remove during a pending save prese
   assert.equal(h.server.TagLookItemOverrides.some(e => e.ItemId === A), undo);
   assert.ok(h.patches.every(p => !p.Changes.TagLookItemOverrides.Remove.includes(B)));
 });
+
+
+test('Rules canceled edit after a failed pending save resolves locally without retrying an empty mutation', async t => {
+  const A = '00000000000000000000000000000001';
+  const gate = deferred();
+  const h = setup(t, {
+    config: { TagLookItemOverrides: [{ ItemId: A, Layout: 'bands', Density: 'full', LockedAt: 1 }] },
+    patch: async () => { await gate.promise; throw { status: 503 }; },
+  });
+  h.expectConsoleError('could not save the Media Tags settings');
+  await h.settle();
+  h.$(`[data-item="${A}"] [data-act="remove"]`).click();
+  const saving = h.ctx.flush();
+  h.$('.je-ta-snack .je-ta-button').click();
+  gate.resolve();
+  assert.equal(await saving, false);
+  assert.equal(await h.ctx.flush(), true);
+  assert.equal(h.patches.length, 1, 'Retry recognizes the canceled operation');
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
+});
