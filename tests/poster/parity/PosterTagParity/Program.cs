@@ -192,6 +192,7 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
     AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
     AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
+    CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
     PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
     QualityTagsPosition = defaultConfig.QualityTagsPosition,
     GenreTagsPosition = defaultConfig.GenreTagsPosition,
@@ -211,6 +212,7 @@ static JellyfinEnhancedUserSettings ControllerDefaults(PluginConfiguration defau
     AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
     LogoTagsEnabled = defaultConfig.LogoTagsEnabled,
     LogoTagsPosition = defaultConfig.LogoTagsPosition,
+    CustomTagsPosition = defaultConfig.CustomTagsPosition,
     ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
     RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
     ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -318,6 +320,7 @@ void ResolveAll()
         if (settings.GenreTagsEnabled) groupOrder.Add("genre");
         if (settings.RatingTagsEnabled) groupOrder.Add("rating");
         if (settings.AgeRatingTagsEnabled) groupOrder.Add("agerating");
+        if (settings.CustomTagsEnabled) groupOrder.Add("custom");
         if (settings.LanguageTagsEnabled) groupOrder.Add("language");
         if (settings.AwardsTagsEnabled) groupOrder.Add("awards");
         if (settings.LogoTagsEnabled) groupOrder.Add("logos");
@@ -347,6 +350,8 @@ void ResolveAll()
             ["ageRatingTagsPosition"] = settings.AgeRatingTagsPosition,
             ["logoTagsEnabled"] = settings.LogoTagsEnabled,
             ["logoTagsPosition"] = settings.LogoTagsPosition,
+            ["customTagsEnabled"] = settings.CustomTagsEnabled,
+            ["customTagsPosition"] = settings.CustomTagsPosition,
             ["showResolutionTag"] = settings.ShowResolutionTag,
             ["showSourceTag"] = settings.ShowSourceTag,
             ["showEditionTag"] = settings.ShowEditionTag,
@@ -378,7 +383,7 @@ void ResolveAll()
             ["ratingTagsColorByScore"] = settings.RatingTagsColorByScore,
             ["layoutOrder"] = settings.GroupOrder is null ? null : string.Join(",", settings.GroupOrder.Select(LayoutId)),
             ["layoutOff"] = string.Join(",", Enum.GetValues<PosterTagGroup>().Where(settings.OffGroups.Contains).Select(LayoutId)),
-            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Awards, PosterTagGroup.Logos }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
+            ["layoutCaps"] = string.Join(",", new[] { PosterTagGroup.Quality, PosterTagGroup.Genre, PosterTagGroup.Language, PosterTagGroup.Rating, PosterTagGroup.AgeRating, PosterTagGroup.Awards, PosterTagGroup.Logos, PosterTagGroup.Custom }.Select(g => $"{LayoutId(g)}={settings.CapOf(g)}")),
             ["edgeSpacing"] = settings.EdgeSpacing,
         };
 
@@ -400,6 +405,7 @@ static string LayoutId(PosterTagGroup group) => group switch
     PosterTagGroup.Awards => "awards",
     PosterTagGroup.Status => "status",
     PosterTagGroup.Logos => "logos",
+    PosterTagGroup.Custom => "custom",
     _ => "language",
 };
 
@@ -421,6 +427,7 @@ static string Describe(PosterTag tag) => tag switch
     AwardTag a => $"{a.Id}|{a.Text}",
     AgeRatingTag a => $"{a.Text}|{a.ColorKey}",
     LogoTag l => $"{l.Kind}|{l.Name}|{l.Logo ?? string.Empty}|{(l.Logo is null ? ShortName(l.Name) : string.Empty)}",
+    CustomTag c => $"{c.Label}|{c.Icon}",
     _ => tag.ToString() ?? string.Empty,
 };
 

@@ -318,8 +318,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A schema mismatch discards the stale cache so it can be rebuilt.
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
-        // Current schema includes independently refreshed Awards and Logos facts.
-        internal const int CurrentCacheSchemaVersion = 17;
+        // Current schema includes Awards, Logos and Custom rule matches.
+        internal const int CurrentCacheSchemaVersion = 18;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -645,6 +645,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             WarmSourceRatings(cancellationToken);
             NoteLogoBaseline();
             WarmLogos(cancellationToken);
+            var customTagsFingerprint = PrepareCustomTagsForBuild();
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var languageCacheAtStart = LanguageCacheCounters();
@@ -799,6 +800,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     _cacheReleased = false;
                     _cache = newCache;
+                    _customTagsFingerprint = customTagsFingerprint;
+                    _collectionMatchesUnreconciled = false;
                     Interlocked.Increment(ref _version);
                     Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     Interlocked.Exchange(ref _maxLastUpdated, newMaxLastUpdated);
@@ -960,6 +963,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 rebuilt++;
                 progress?.Report(idsToRebuild.Count == 0 ? 50 : (double)rebuilt / idsToRebuild.Count * 80);
             }
+
+            // Collection membership changes the monitor did not see (Custom tags).
+            changed |= ReconcileCustomTags(cancellationToken);
 
             var currentIds = _libraryManager.GetItemIds(new InternalItemsQuery
             {
@@ -1258,7 +1264,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var batch = _pending.Drain();
                     using (BeginInPlaceWrites())
                     {
+                        var customTagsBefore = CaptureCustomTagsBefore(batch);
                         var changed = ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry);
+                        changed |= ApplyCustomTagFollowUps(batch, customTagsBefore);
                         // Any library change may alter who can see an item (added,
                         // removed, moved, re-rated, re-tagged) even when its tag entry
                         // is unchanged: access sets computed before it are stale.
@@ -1617,7 +1625,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (since.HasValue && alsoInclude == null && since.Value >= generation.MaxLastUpdated
                 && TryGetAccessDigest(access, generation, out var memoizedRevision))
             {
-                accessRevision = memoizedRevision;
+                accessRevision = memoizedRevision + CollectionAccessSuffix(accessibleSet);
                 return new Dictionary<string, TagCacheEntry>();
             }
 
@@ -1640,14 +1648,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(kvp.Value, accessibleSet), accessibleSet, generation.Cache));
+                var visible = WithVisibleCustomTags(kvp.Value, Guid.TryParse(kvp.Key, out var itemId) ? itemId : Guid.Empty, accessibleSet);
+                result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(visible, accessibleSet), accessibleSet, generation.Cache));
             }
 
-            accessRevision = FormatAccessRevision(excludedCount, excludedSum);
+            var keyRevision = FormatAccessRevision(excludedCount, excludedSum);
+            // The collection matches' access is part of the revision (not of the memo,
+            // which covers the cache keys only).
+            accessRevision = keyRevision + CollectionAccessSuffix(accessibleSet);
             // Only a walk that saw one unchanged state leaves results for other
             // requests: its digest as the memo and, for a whole-cache walk, its
             // result as shareable.
-            if (StoreAccessDigest(access, generation, accessRevision) && !since.HasValue && alsoInclude == null)
+            if (StoreAccessDigest(access, generation, keyRevision) && !since.HasValue && alsoInclude == null)
             {
                 shareKey = new SerializedItemsKey(generation.Version, generation.Timestamp, generation.Epoch, accessRevision);
             }
@@ -1949,7 +1961,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             timestamp = generation.Timestamp;
             if (!live || !generation.Quiescent) return false;
 
-            accessRevision = ResolveAccessDigest(access, generation);
+            accessRevision = ResolveAccessDigest(access, generation) + CollectionAccessSuffix(access.Ids);
             if (!IsUnchangedSince(generation)) return false;
 
             shareable = true;
@@ -2270,6 +2282,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             _cacheReleased = false;
                             _cache = loaded;
+                            _customTagsFingerprint = data.CustomTagsFingerprint ?? string.Empty;
+                            // Which collections its matches came from is not in the snapshot.
+                            _collectionMatchesUnreconciled = true;
                             Interlocked.Exchange(ref _version, data.Version);
                             Interlocked.Exchange(ref _lastModified, data.LastModified);
                             Interlocked.Exchange(ref _maxLastUpdated, loadedMaxLastUpdated);
@@ -2299,6 +2314,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     PublishAwards();
                     RefreshDueStatusContainers();
+                    // A snapshot written under other Custom tag rules is re-matched in the background.
+                    QueueCustomTagRefreshIfStale();
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }
@@ -2366,6 +2383,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Version = Interlocked.Read(ref _version),
                         LastModified = Interlocked.Read(ref _lastModified),
                         LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
+                        CustomTagsFingerprint = _customTagsFingerprint,
                         Items = new Dictionary<string, TagCacheEntry>(_cache)
                     };
 
@@ -2641,6 +2659,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 entry.Awards = GetAwards(item);
                 entry.Logos = GetLogos(item, series);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
+                entry.CustomTags = CustomTagsFor(item, series);
 
                 if (isContainer)
                 {
@@ -3676,6 +3695,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public long Version { get; set; }
             public long LastModified { get; set; }
             public long LastReconciledUtcTicks { get; set; }
+            // The Custom tag rules (match fingerprint) the entries' CustomTags follow.
+            public string? CustomTagsFingerprint { get; set; }
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
         }
     }

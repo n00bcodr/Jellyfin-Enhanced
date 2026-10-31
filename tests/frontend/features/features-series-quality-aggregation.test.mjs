@@ -12,7 +12,7 @@ function setup(t, policy = 'representative', density = 'full') {
       pluginConfig: { TagCacheServerMode: true },
       session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} },
-      tagPipeline: { registerRenderer: (key, renderer) => renderers.set(key, renderer), clearProcessed() {}, scheduleScan() {} } } });
+      tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (key, renderer) => renderers.set(key, { ...renderer, render: (el, item, extras = {}) => renderer.render(el, item, { stripRevision: 'none', ...extras }) }), clearProcessed() {}, scheduleScan() {} } } });
   t.after(() => h.close());
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/qualitytags.js']) h.load(file);
   h.JE.initializeQualityTags();

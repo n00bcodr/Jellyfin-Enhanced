@@ -68,6 +68,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             CleanupOldScript();
             CheckPluginPages(applicationPaths, serverConfigurationManager, 1);
             BackfillMissingDefaultShortcuts();
+            BackfillCustomTagRuleKey();
+        }
+
+        /// <summary>
+        /// The Custom tag rule id key to store: the current one, else a posted one, else a new
+        /// one once there are rules (see <see cref="PluginConfiguration.CustomTagRuleKey"/>).
+        /// </summary>
+        private static string EnsureCustomTagRuleKey(PluginConfiguration incoming, PluginConfiguration? current)
+        {
+            if (!string.IsNullOrEmpty(current?.CustomTagRuleKey)) return current.CustomTagRuleKey;
+            if (!string.IsNullOrEmpty(incoming.CustomTagRuleKey)) return incoming.CustomTagRuleKey;
+            return incoming.CustomTagRules.Count > 0 ? CustomTagRuleSet.NewKey() : string.Empty;
+        }
+
+        // Rules saved before the key existed get one, so their ids stop naming the source.
+        private void BackfillCustomTagRuleKey()
+        {
+            try
+            {
+                var config = Configuration;
+                if (config == null || config.CustomTagRules.Count == 0 || !string.IsNullOrEmpty(config.CustomTagRuleKey)) return;
+                config.CustomTagRuleKey = CustomTagRuleSet.NewKey();
+                SaveConfiguration();
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"Jellyfin Enhanced: could not store the Custom tag rule key: {ex.Message}");
+            }
         }
 
         // Dedupes Shortcuts (XmlSerializer appends to constructor-initialized lists, doubling on each restart)
@@ -286,6 +314,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
                 // Logos tag group: unknown modes, regions and maximums fall back to the defaults.
                 if (configuration is PluginConfiguration logosConfig) LogoTagRules.Normalize(logosConfig);
+                // Custom tag rules: unknown match types dropped, values and labels trimmed,
+                // repeated rules collapsed, at most 20 (a save can come from anywhere).
+                // The rule id key is the server's: the stored one wins over a posted one.
+                if (configuration is PluginConfiguration customTagsConfig)
+                {
+                    customTagsConfig.CustomTagRules = CustomTagRuleSet.Normalize(customTagsConfig.CustomTagRules);
+                    customTagsConfig.CustomTagRuleKey = EnsureCustomTagRuleKey(customTagsConfig, Configuration as PluginConfiguration);
+                }
 
                 // Tag Styles: only a valid document is stored (normalised to version 2); anything
                 // else keeps the current one, since a save can come from anywhere (API, restored backup).
@@ -321,6 +357,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
             // The Logos switch, modes, region or maximum may have changed what cache entries carry.
             Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+            // Custom tag rules that match differently re-match the cache in the background.
+            Services.TagCacheService.Instance?.QueueCustomTagRefreshIfStale();
 
             // Removing an MDBList key must also retire previously cached source scores.
             // This waits on TagCacheService's rebuild lock, so a key change saved during

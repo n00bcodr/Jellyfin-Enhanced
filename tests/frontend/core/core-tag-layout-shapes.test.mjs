@@ -34,8 +34,8 @@ const entry = (overrides = {}) => ({
 
 /** The "Use recommended" looks in the wire form the panel writes. */
 const RECOMMENDED = {
-  landscape: { layout: 'bands', density: 'compact', slots: [{ group: 'status', slot: 'top' }, { group: 'ageRating', slot: 'top' }, { group: 'quality', slot: 'bottom' }, { group: 'rating', slot: 'bottom' }, { group: 'language', slot: 'off' }, { group: 'genre', slot: 'off' }], caps: null },
-  list: { layout: 'corners', density: 'compact', slots: [{ group: 'quality', slot: 'tl' }, { group: 'status', slot: 'tr' }, { group: 'rating', slot: 'br' }, { group: 'ageRating', slot: 'off' }, { group: 'language', slot: 'off' }, { group: 'genre', slot: 'off' }], caps: { quality: 2, status: 2, rating: 2 } },
+  landscape: { layout: 'bands', density: 'compact', slots: [{ group: 'status', slot: 'top' }, { group: 'ageRating', slot: 'top' }, { group: 'quality', slot: 'bottom' }, { group: 'rating', slot: 'bottom' }, { group: 'language', slot: 'off' }, { group: 'genre', slot: 'off' }, { group: 'custom', slot: 'off' }], caps: null },
+  list: { layout: 'corners', density: 'compact', slots: [{ group: 'quality', slot: 'tl' }, { group: 'status', slot: 'tr' }, { group: 'rating', slot: 'br' }, { group: 'ageRating', slot: 'off' }, { group: 'language', slot: 'off' }, { group: 'genre', slot: 'off' }, { group: 'custom', slot: 'off' }], caps: { quality: 2, status: 2, rating: 2 } },
 };
 
 /** The real renderers, layout controller and tag look module over one page of cards. */

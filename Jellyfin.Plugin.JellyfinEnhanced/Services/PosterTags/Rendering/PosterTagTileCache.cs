@@ -231,5 +231,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         Status,
         Overflow,
         Logo,
+        Custom,
     }
 }

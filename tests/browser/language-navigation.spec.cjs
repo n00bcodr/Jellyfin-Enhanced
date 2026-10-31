@@ -75,10 +75,16 @@ async function prepare(page, style, slot) {
     if (card) card.id = 'language-navigation-proof';
     return !!card;
   }, !!lab);
-  return page.evaluate(async ({ style, isLab }) => {
+  // Jellyfin can replace the rail after review ratings arrive. Select and stamp
+  // the current card in the same synchronous pass as the fixture render.
+  const destination = await page.waitForFunction(({ style, isLab }) => {
     const JE = window.JellyfinEnhanced;
-    if (isLab) await JE.tagPipeline.getReviewRatings();
-    const card = document.getElementById('language-navigation-proof');
+    const card = document.getElementById('language-navigation-proof')
+      || [...document.querySelectorAll('.card[data-id]')].find(c => (!isLab || c.dataset.type === 'Movie')
+        && c.querySelector('a.cardImageContainer[href]') && c.getBoundingClientRect().width > 100
+        && (!isLab || JE.core.tagLayout.hasGroup(c.querySelector('.cardScalable'), 'language')));
+    if (!card) return null;
+    card.id = 'language-navigation-proof';
     const host = JE.core.tagLayout.ensureHost(card.querySelector('.cardScalable'));
     for (const group of JE.core.tagLayout.GROUPS) JE.core.tagLayout.removeGroup(host, group);
     // Through the registered renderer, as the pipeline renders a server-cache entry: it marks the
@@ -88,6 +94,7 @@ async function prepare(page, style, slot) {
     JE.core.tagLayout.flushFit();
     return card.querySelector('a.cardImageContainer[href]').href;
   }, { style, isLab: !!lab });
+  return destination.jsonValue();
 }
 
 /** Tab (or Shift+Tab) from a sentinel before (after) the proof card to one after (before) it; returns the focus stops between. */

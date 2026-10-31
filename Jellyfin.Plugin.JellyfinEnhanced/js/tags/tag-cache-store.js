@@ -51,8 +51,8 @@
     const KEY_SEP = '|';
     // The server's tag-cache entry schema (TagCacheService
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
-    // from another schema is never restored. v17 adds cached Awards facts.
-    const ENTRY_SCHEMA = 17;
+    // from another schema is never restored. The current schema includes Awards, Logos and Custom matches.
+    const ENTRY_SCHEMA = 18;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;

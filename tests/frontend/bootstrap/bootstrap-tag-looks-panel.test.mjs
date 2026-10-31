@@ -377,7 +377,7 @@ test('the detail-page button locks the item with its current look and unlocks it
   const lock = h.writes.at(-1).tagLayoutLocks[MOVIE];
   assert.equal(lock.layout, 'caption', 'the look the matching rule gives the item now');
   assert.equal(lock.density, 'compact');
-  assert.ok(Array.isArray(lock.slots) && lock.slots.length === 7, 'the whole slot profile');
+  assert.ok(Array.isArray(lock.slots) && lock.slots.length === 9, 'the whole slot profile');
   assert.equal(button.getAttribute('aria-pressed'), 'true');
   assert.equal(button.querySelector('.detailButton-icon').textContent, 'lock');
   assert.match(h.toasts.at(-1), /^tag_look_locked_toast:/);

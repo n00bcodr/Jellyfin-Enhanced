@@ -14,7 +14,7 @@
 
     const logPrefix = '🪼 Jellyfin Enhanced [TagLook]:';
     const TYPES = new Set(['Movie', 'Series', 'Season', 'Episode', 'BoxSet', 'Video']);
-    const TAG_TOGGLES = ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled'];
+    const TAG_TOGGLES = ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled', 'customTagsEnabled'];
 
     /** @returns {boolean} Some poster tag type is on for this user. */
     function anyTagsOn() {

@@ -273,7 +273,7 @@
                     genres = item.Genres;
                 }
 
-                if (!genres || genres.length === 0) return;
+                genres = genres || [];
 
                 // Every genre is cached and committed; the layout's genre cap
                 // (3 by default) decides how many show. `full` marks an entry
@@ -294,8 +294,8 @@
                     // An entry cut to three by an older version can't fill a
                     // larger (or unlimited) cap: treat it as a miss so it refills.
                     if (genres && genres.length >= 3 && !cached.full && !genreCapFitsTruncated()) return false;
-                    if (genres && genres.length > 0) {
-                        insertGenreTags(ctx, el, genres);
+                    if (Array.isArray(genres)) {
+                        if (genres.length) insertGenreTags(ctx, el, genres);
                         return true;
                     }
                 }

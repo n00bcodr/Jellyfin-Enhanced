@@ -445,7 +445,7 @@ public class LogoTagTests
             : request.RequestUri.AbsolutePath == "/3/movie/603/watch/providers" ? IntegrationTransport.Response(Providers) : IntegrationTransport.Response("{}", 404));
         var library = new Mock<ILibraryManager>();
         using var cache = new TagCacheService(library.Object, fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), fixture.Core.Logger,
-            new MatroskaLanguageCache(fixture.Core.Paths.Object, fixture.Core.Logger), null, logos) { LogoWarmDelay = TimeSpan.FromSeconds(1) };
+            new MatroskaLanguageCache(fixture.Core.Paths.Object, fixture.Core.Logger), logoService: logos) { LogoWarmDelay = TimeSpan.FromSeconds(1) };
         var resolver = new SpoilerUserResolver(fixture.Core.Manager, library.Object, fixture.Core.Logger, null!);
         using var provider = new PosterTagDataProvider(cache, library.Object, new SpoilerTagDataStripper(library.Object, Mock.Of<IUserDataManager>(), resolver), resolver,
             new PosterTagReviewRatings(fixture.Core.Manager, new PosterTagUserCache(Mock.Of<IUserManager>()), fixture.Core.Logger), fixture.Core.Logger);

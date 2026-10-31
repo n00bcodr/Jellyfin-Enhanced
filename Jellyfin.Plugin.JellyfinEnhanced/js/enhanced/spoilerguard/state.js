@@ -20,12 +20,6 @@
     let loaded = false;
     let loadOk = false;
     let statePromise = null;
-    // Bumped on every change to the sets, preferences or load state above;
-    // tagStripRevision memoizes on it.
-    let stateVersion = 0;
-    let revisionMemo = { version: -1, value: '' };
-    function changed() { stateVersion++; }
-
     function request(path, options) {
         return JE.core.api.plugin(path, options);
     }
@@ -54,7 +48,6 @@
                 userPrefs = value.Prefs || {};
                 loaded = true;
                 loadOk = true;
-                changed();
                 // If tag renderers already ran fail-closed while this request was
                 // in flight, give them one authoritative pass now.
                 try {
@@ -69,7 +62,6 @@
                 console.error(`${logPrefix} state load failed; downstream consumers will fail closed:`, err);
                 loaded = true;
                 loadOk = false;
-                changed();
                 // Tag renderers held back on cards while this was in flight
                 // (e.g. user-review chips, see ratingtags.js): with the state
                 // settled — failed, so ratings stay suppressed — give them
@@ -114,7 +106,6 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledSeries.add(normalized);
-                changed();
             });
     };
 
@@ -125,7 +116,6 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledSeries.delete(normalized);
-                changed();
             });
     };
 
@@ -137,7 +127,6 @@
         }).then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledMovies.add(normalized);
-                changed();
             });
     };
 
@@ -148,7 +137,6 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledMovies.delete(normalized);
-                changed();
             });
     };
 
@@ -160,7 +148,6 @@
         }).then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledCollections.add(normalized);
-                changed();
             });
     };
 
@@ -171,7 +158,6 @@
             .then(function() {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
                 enabledCollections.delete(normalized);
-                changed();
             });
     };
 
@@ -201,13 +187,11 @@
                     const jellyfinId = internal.normalizeId(response.jellyfinId);
                     enabledSeries.add(jellyfinId);
                     if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.set(key, jellyfinId); }
-                    changed();
-                } else if (response?.promoted === 'movie' && response.jellyfinId) {
+                    } else if (response?.promoted === 'movie' && response.jellyfinId) {
                     const jellyfinId = internal.normalizeId(response.jellyfinId);
                     enabledMovies.add(jellyfinId);
                     if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.set(key, jellyfinId); }
-                    changed();
-                }
+                    }
                 return response;
             });
     };
@@ -224,49 +208,11 @@
                 if (key) { enabledPendingTmdb.delete(key); tmdbToJellyfin.delete(key); }
                 if (response?.removedFrom === 'series' && response.jellyfinId) {
                     enabledSeries.delete(internal.normalizeId(response.jellyfinId));
-                    changed();
-                } else if (response?.removedFrom === 'movie' && response.jellyfinId) {
+                    } else if (response?.removedFrom === 'movie' && response.jellyfinId) {
                     enabledMovies.delete(internal.normalizeId(response.jellyfinId));
-                    changed();
-                }
+                    }
                 return response;
             });
-    };
-
-    /**
-     * A short fingerprint of what this user's Spoiler Guard strips from card
-     * tags (Hide tags, as the server's SpoilerTagDataStripper decides it):
-     * 'off' when nothing is (the feature, the administrator's tag strip or
-     * the user's Hide tags is off, or nothing is guarded), else a hash of the
-     * guarded series, movies and collections. Null while the state is unknown
-     * (loading or failed). Tag renderers stamp what they keep in browser
-     * caches with it and treat another stamp as a miss, since the server's
-     * strip at the time decided those tags.
-     * @returns {string|null}
-     */
-    internal.tagStripRevision = function() {
-        const cfg = JE.pluginConfig || {};
-        if (cfg.SpoilerBlurEnabled !== true || cfg.SpoilerStripTags === false) return 'off';
-        if (!loaded || !loadOk) return null;
-        if (userPrefs.HideTags === false) return 'off';
-        if (revisionMemo.version === stateVersion) return revisionMemo.value;
-        const keys = [];
-        enabledSeries.forEach(id => keys.push(`s${id}`));
-        enabledMovies.forEach(id => keys.push(`m${id}`));
-        enabledCollections.forEach(id => keys.push(`c${id}`));
-        let value = 'off';
-        if (keys.length > 0) {
-            // FNV-1a over the sorted keys: short enough to stamp every entry.
-            let hash = 0x811c9dc5;
-            const text = keys.sort().join(',');
-            for (let i = 0; i < text.length; i++) {
-                hash ^= text.charCodeAt(i);
-                hash = Math.imul(hash, 0x01000193) >>> 0;
-            }
-            value = `g${keys.length}.${hash.toString(36)}`;
-        }
-        revisionMemo = { version: stateVersion, value };
-        return value;
     };
 
     internal.getUserPrefs = function() { return Object.assign({}, userPrefs); };
@@ -277,7 +223,6 @@
             .then(function(response) {
                 if (JE.session && !JE.session.isCurrent(requestEpoch)) return response;
                 userPrefs = Object.assign({}, payload);
-                changed();
                 return response?.prefs || userPrefs;
             })
             .catch(function(err) {
@@ -300,6 +245,5 @@
         enabledPendingTmdb.clear();
         tmdbToJellyfin.clear();
         userPrefs = {};
-        changed();
     });
 })(window.JellyfinEnhanced);

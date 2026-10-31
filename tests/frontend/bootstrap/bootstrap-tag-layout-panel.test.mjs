@@ -5,7 +5,7 @@ import { createHarness } from '../helpers/harness.mjs';
 const toggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
   'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
   'showAudioLanguagesToggle', 'removeContinueWatchingToggle', 'qualityTagsToggle', 'genreTagsToggle', 'pauseScreenToggle',
-  'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'logoTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
+  'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'logoTagsToggle', 'customTagsToggle', 'peopleTagsToggle', 'tagsHideOnHoverToggle',
   'disableCustomSubtitleStyles', 'longPress2xEnabled', 'nativePosterTagsToggle', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /**

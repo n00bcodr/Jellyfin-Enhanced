@@ -244,6 +244,7 @@ What does not fit is hidden whole, never cut: once a card is laid out, chips tha
 | `.rating-overlay-container` | `RatingTagsPosition` | `bottom-right` |
 | `.age-rating-overlay-container` | `AgeRatingTagsPosition` | `bottom-right` |
 | `.status-overlay-container` | `StatusTagsPosition` | `top-right` |
+| `.custom-overlay-container` | `CustomTagsPosition` | `top-left` |
 
 Native poster pixels now include Status and the saved Bands layout. They have no DOM/CSS hooks: use **Tag Styles → Status** to colour the whole group or an individual badge (including schedule/milestone/series-state labels). Web hooks remain `.status-tag`, `data-je-status`, `.je-tag-slot[data-je-slot="top"|"bottom"]` and `.je-tag-more`; no new web selectors are required. Native strips use fixed image-width sizing and `+N` without a hover tooltip.
 
@@ -585,6 +586,25 @@ Use `.status-overlay-container` and `.status-tag` to style the Just Added, New a
 ```
 
 The default look is a dark translucent pill with a blurred backdrop, the same for every kind except the warmer rank colour. Status Tags are not part of Tag Styles.
+
+### Custom Tags CSS
+
+Each [Custom tag](../enhanced/tags.md#custom-tags) chip is a `.custom-tag` inside `.custom-overlay-container`, with the label in `.custom-tag-text` and, when the rule has an icon, a `.custom-tag-icon` before it (the chip then also has `.custom-tag--icon`). `data-je-custom` holds the label (Tag Styles colour chips through it) and `data-je-custom-rule` the rule id (`tag:` or `collection:` and an opaque hash, for example `collection:9f2c1e0b7a6d5c4e`; style by label, since the id changes if the rule is re-targeted). The default look is a dark blue-grey chip with a faint border.
+
+**Colour one label and hide the icons:**
+
+```css
+.custom-tag[data-je-custom="Criterion"] {
+    background-color: #111 !important;
+    color: #ffd166 !important;
+}
+
+.custom-tag .custom-tag-icon {
+    display: none;
+}
+```
+
+Tag Styles (**Custom** tab) sets the same colours without CSS, for native posters too.
 
 ### People Tags CSS
 

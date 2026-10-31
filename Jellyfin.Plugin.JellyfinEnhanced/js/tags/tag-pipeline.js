@@ -77,10 +77,10 @@
     // Shape of the stored entries (the server's tag cache schema they were
     // written under). A stored copy of another shape is dropped on restore and
     // downloaded in full, so new entry fields never wait for a server rebuild
-    // that happens to change the cache version. 17: cached Awards facts.
-    const STORED_ENTRY_SCHEMA = 17;
+    // that happens to change the cache version. Current schema: Awards, Logos and Custom matches.
+    const STORED_ENTRY_SCHEMA = 18;
     const MEMORY_SOFT_CAP = 20000;
-    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
+    const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled', 'customTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
 
@@ -99,9 +99,25 @@
     let loadStartedForEpoch = null;        // session epoch in which a renderer registration started the load
     let isProcessing = false;
     let batchGeneration = 0; // Incremented on navigation to cancel stale in-flight batches
+    /** @type {Function|null} Release a retired drain even if a first-episode request is still pending. */
+    let cancelBatchWait = null;
+    function advanceBatchGeneration() {
+        batchGeneration++;
+        cancelBatchWait?.();
+    }
     let activeBatch = [];               // entries whose request is currently in flight
     let requestQueue = [];               // { el, renderTarget, itemId, itemType, cardId, awaiting, reuse }
     const cardReuse = new WeakMap();     // card image → times its card was reused for another item (see releaseReusedCards)
+    // The server's effective data-affecting strip policy for /tag-data answers
+    // ("none": nothing; SpoilerTagDataStripper.TagStripRevision): the page-load
+    // bootstrap's value, then that of the latest batch answer (batches run one
+    // at a time, and a cancelled one's answer is dropped). Null while unknown:
+    // after a user switch or Spoiler Guard change until the next answer.
+    // Renderers keeping /tag-data results across page loads stamp them with it
+    // and fetch again when it differs (core/tag-renderer-base.js).
+    let prefetchedStripRevision;
+    try { prefetchedStripRevision = JE.takePrefetched?.('TagStripRevision'); } catch { /* Unknown until an authoritative answer. */ }
+    let tagStripRevision = typeof prefetchedStripRevision === 'string' ? prefetchedStripRevision : null;
 
     /**
      * Remove a container fact and the season lookup owned by it.
@@ -230,7 +246,9 @@
      * @param {string} name - Unique renderer name (e.g., 'genre', 'quality')
      * @param {Object} config
      * @param {Function} config.render - (el, item, extras) => void. Renders the overlay.
-     *   `extras` contains: { firstEpisode, parentSeries }
+     *   `extras` contains: { firstEpisode, parentSeries, ratingParentSeries, renderTarget,
+     *   stripRevision } (stripRevision: the answer's Spoiler Guard tag strip revision, null
+     *   when the item did not come from /tag-data)
      * @param {Function} config.isEnabled - () => boolean. Checked before rendering.
      * @param {Function} [config.renderFromCache] - (el, itemId) => boolean. Try to render from
      *   localStorage/hot cache without any API call. Returns true if rendered successfully.
@@ -1613,6 +1631,9 @@
     async function processQueue() {
         if (isProcessing || requestQueue.length === 0) return;
         isProcessing = true;
+        let cancel;
+        const cancelled = new Promise(resolve => { cancel = resolve; });
+        cancelBatchWait = cancel;
 
         try {
             const myGeneration = batchGeneration;
@@ -1628,7 +1649,11 @@
                     .filter((entry) => entry.el.isConnected);
                 if (batch.length === 0) continue;
                 activeBatch = batch;
-                await processBatch(batch, myGeneration);
+                // The transport can finish in the background, but a retired
+                // generation must not hold fresh guard/user work behind it.
+                // processBatch checks its generation after every await and before writes.
+                await Promise.race([processBatch(batch, myGeneration), cancelled]);
+                if (myGeneration !== batchGeneration) break;
                 activeBatch = [];
                 // Cards still waiting for item data the batch didn't bring
                 // (failed, or no such item) show their tags without it.
@@ -1637,6 +1662,7 @@
                 }
             }
         } finally {
+            if (cancelBatchWait === cancel) cancelBatchWait = null;
             activeBatch = [];
             isProcessing = false;
             // Cancelled by a generation bump (a reinitialize or navigation
@@ -1690,6 +1716,8 @@
             // Abort if navigation happened while we were waiting for the API response
             if (!isCurrent()) return;
             if (needsLatestEpisode) items.forEach(item => rememberItemFacts(item));
+            const stripRevision = typeof response?.StripRevision === 'string' ? response.StripRevision : null;
+            tagStripRevision = stripRevision;
 
             // Build parent series lookup for rating fallback
             const parentSeriesNeeded = new Set();
@@ -1770,7 +1798,7 @@
                         if (!el.isConnected) continue; // card itself is gone
                         renderTarget = resolveRenderTarget(el);
                     }
-                    const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget };
+                    const extras = { firstEpisode, parentSeries, ratingParentSeries, renderTarget, stripRevision };
                     // Dropped by the layout when the card shows another item by now.
                     if (JE.core.tagLayout?.setCardContext?.(renderTarget, item, itemId, entry.cardId) === false) continue;
                     for (const [name, renderer] of renderers) {
@@ -1851,7 +1879,7 @@
                         if (!el.isConnected) continue; // card itself is gone
                         renderTarget = resolveRenderTarget(el);
                     }
-                    const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget };
+                    const extras = { firstEpisode, parentSeries: null, ratingParentSeries: null, renderTarget, stripRevision: null };
                     const layout = JE.core.tagLayout;
                     if (layout?.cardIdentity && layout.cardIdentity(renderTarget) !== cardId) continue;
                     if (!needsLibraryFacts() && layout?.setCardContext?.(renderTarget, item, itemId, cardId) === false) continue;
@@ -1928,7 +1956,7 @@
                 lastNavigationRoute = route;
                 // Invalidate any in-flight batch processing (don't reset isProcessing
                 // directly — let stale batches finish naturally and discard results)
-                batchGeneration++;
+                advanceBatchGeneration();
                 scanGeneration++;
                 // Cancelled work is not processed: surviving/re-attached cards
                 // must be eligible for the scan scheduled below.
@@ -2086,6 +2114,14 @@
         /** @returns {number} performance.now() when the request behind the current review averages started (0 = none). */
         getReviewRatingsRequestedAt() { return reviewRatingsRequestedAt; },
         /**
+         * What Spoiler Guard's Hide tags strips from this user's /tag-data
+         * answers: "none" for nothing, another string for a guard set, null
+         * while unknown (before the first answer when the bootstrap did not
+         * say, and after a user switch or Spoiler Guard change).
+         * @returns {string|null}
+         */
+        tagStripRevision() { return tagStripRevision; },
+        /**
          * Subscribe to accepted review averages maps.
          * @param {(changed: Set<string>|null) => void} listener - Receives the "mediaType:tmdbKey" keys whose value changed (possibly none), or null for all.
          */
@@ -2094,7 +2130,7 @@
         clearProcessed() {
             processedCards = new WeakSet(); // Create fresh WeakSet so all cards get re-scanned
             requestQueue = [];
-            batchGeneration++;
+            advanceBatchGeneration();
             scanGeneration++; // a scan chain waiting on the stored copy would render into the old set
             firstEpisodeCache.clear();
             parentSeriesCache.clear();
@@ -2111,6 +2147,7 @@
          */
         async invalidateServerCache(options) {
             // Not started (no tag type enabled): no cache or overlays to replace.
+            tagStripRevision = null;
             if (!pipelineStarted) return;
             // Hold a flag for the duration of the reload so concurrent scheduleScan()
             // calls (from the body MutationObserver during the await) no-op instead of
@@ -2119,9 +2156,10 @@
             isInvalidating = true;
             try {
                 dropServerCache();
+                tagStripRevision = null;
                 processedCards = new WeakSet();
                 requestQueue = [];
-                batchGeneration++;
+                advanceBatchGeneration();
                 scanGeneration++;
                 firstEpisodeCache.clear();
                 parentSeriesCache.clear();
@@ -2141,12 +2179,12 @@
                     document.querySelectorAll(
                         '.quality-overlay-container, .rating-overlay-container, '
                         + '.genre-overlay-container, .language-overlay-container, '
-                        + '.age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .logo-overlay-container'
+                        + '.age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .logo-overlay-container, .custom-overlay-container'
                     ).forEach(function (el) { el.remove(); });
                     document.querySelectorAll(
                         '[data-je-quality-tagged], [data-je-rating-tagged], '
                         + '[data-je-genre-tagged], [data-je-language-tagged], '
-                        + '[data-je-age-rating-tagged], [data-je-status-tagged], [data-je-awards-tagged], [data-je-logo-tagged]'
+                        + '[data-je-age-rating-tagged], [data-je-status-tagged], [data-je-awards-tagged], [data-je-logo-tagged], [data-je-custom-tagged]'
                     ).forEach(function (el) {
                         delete el.dataset.jeQualityTagged;
                         delete el.dataset.jeRatingTagged;
@@ -2154,7 +2192,9 @@
                         delete el.dataset.jeLanguageTagged;
                         delete el.dataset.jeAgeRatingTagged;
                         delete el.dataset.jeStatusTagged;
+                        delete el.dataset.jeAwardsTagged;
                         delete el.dataset.jeLogoTagged;
+                        delete el.dataset.jeCustomTagged;
                     });
                     // Pills, dots, hover copies and caption outlets carry no
                     // group wrapper class: the layout controller drops them.
@@ -2194,6 +2234,7 @@
     // outgoing user's is deleted when the incoming user's opens.
     JE.session?.onUserChange('tag-pipeline', () => {
         dropServerCache();
+        tagStripRevision = null;
         // The outgoing user's remembered tag look facts; the incoming user's
         // stored copy loads (owner checked) on first use.
         lookFacts = null;

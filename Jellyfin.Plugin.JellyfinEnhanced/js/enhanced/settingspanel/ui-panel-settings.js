@@ -82,7 +82,7 @@
     };
 
     /** Panel toggles of the poster tag groups the layout controller places. */
-    const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'awardsTagsToggle', 'logoTagsToggle'];
+    const TAG_GROUP_TOGGLES = ['qualityTagsToggle', 'genreTagsToggle', 'languageTagsToggle', 'ratingTagsToggle', 'ageRatingTagsToggle', 'statusTagsToggle', 'awardsTagsToggle', 'logoTagsToggle', 'customTagsToggle'];
 
     /**
      * Wires the feature toggles, quality-tag category controls and subtitle
@@ -172,6 +172,14 @@
                 } else if (id === 'awardsTagsToggle') {
                     if (e.target.checked) JE.initializeAwardsTags?.();
                     else removeTagGroup('awards', 'awards-overlay-container');
+                } else if (id === 'customTagsToggle') {
+                    if (e.target.checked) {
+                        if (typeof JE.initializeCustomTags === 'function') {
+                            JE.initializeCustomTags();
+                        }
+                    } else {
+                        removeTagGroup('custom', 'custom-overlay-container');
+                    }
                     requiresRefresh = false;
                 } else if (id === 'peopleTagsToggle') {
                     if (e.target.checked) {
@@ -442,6 +450,7 @@
         addSettingToggleListener('statusTagsToggle', 'statusTagsEnabled', 'feature_status_tags', true);
         if (document.getElementById('awardsTagsToggle')) addSettingToggleListener('awardsTagsToggle', 'awardsTagsEnabled', 'feature_awards_tags', true);
         addSettingToggleListener('logoTagsToggle', 'logoTagsEnabled', 'feature_logo_tags', true);
+        addSettingToggleListener('customTagsToggle', 'customTagsEnabled', 'feature_custom_tags', true);
         addSettingToggleListener('peopleTagsToggle', 'peopleTagsEnabled', 'feature_people_tags', true);
         addSettingToggleListener('tagsHideOnHoverToggle', 'tagsHideOnHover', 'feature_tags_hide_on_hover', false);
         // --- Tag layout, label density and edge spacing ---

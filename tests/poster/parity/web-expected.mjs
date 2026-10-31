@@ -42,6 +42,7 @@ const SCRIPTS = [
     'tags/ageratingtags.js',
     'tags/awardstags.js',
     'tags/logotags.js',
+    'tags/customtags.js',
     'tags/userreviewtags.js',
     'extras/colored-ratings.js',
 ];
@@ -246,6 +247,7 @@ const CONTAINERS = {
     'language-overlay-container': 'Language',
     'awards-overlay-container': 'Awards',
     'logo-overlay-container': 'Logos',
+    'custom-overlay-container': 'Custom',
 };
 const cornerOf = (pos) => {
     const centre = { 'top-center': 'TopCenter', 'bottom-center': 'BottomCenter', 'center-left': 'CenterLeft', 'center-right': 'CenterRight', center: 'Center' };
@@ -288,6 +290,9 @@ function readTags(group, container) {
                 tags.push(`${child.dataset.jeLogoKind}|${child.title}|${path}|${img ? '' : child.textContent}`);
                 break;
             }
+            case 'Custom':
+                tags.push(`${child.dataset.jeCustom}|${child.querySelector('.custom-tag-icon')?.textContent ?? ''}`);
+                break;
             case 'Language': {
                 const flag = child.dataset.lang === 'zxx' ? 'no-dialogue' : child.dataset.lang;
                 if (child.classList.contains('language-count-badge')) tags.push(`badge|${child.textContent}`);
@@ -327,6 +332,7 @@ async function runProfile(profile) {
     if (s?.genreTagsEnabled) JE.initializeGenreTags();
     if (s?.ratingTagsEnabled) JE.initializeRatingTags();
     if (s?.ageRatingTagsEnabled) JE.initializeAgeRatingTags();
+    if (s?.customTagsEnabled) JE.initializeCustomTags();
     if (JE.pluginConfig?.ShowUserReviews && JE.pluginConfig?.ShowUserRatingOnPosters && s?.ratingTagsEnabled) JE.initializeUserReviewTags();
     if (s?.languageTagsEnabled) JE.initializeLanguageTags();
     if (s?.awardsTagsEnabled && JE.pluginConfig.AwardsTagsEnabled !== false) JE.initializeAwardsTags();
@@ -388,7 +394,7 @@ async function runProfile(profile) {
 
     // The corners profile's slot (a corner, or "off") wins over the position setting.
     const SLOT_POS = { tl: 'top-left', tr: 'top-right', bl: 'bottom-left', br: 'bottom-right', tc: 'top-center', bc: 'bottom-center', ml: 'center-left', mr: 'center-right', c: 'center' };
-    const groupOf = { qualityTagsPosition: 'quality', genreTagsPosition: 'genre', languageTagsPosition: 'language', ratingTagsPosition: 'rating', ageRatingTagsPosition: 'ageRating', logoTagsPosition: 'logos' };
+    const groupOf = { qualityTagsPosition: 'quality', genreTagsPosition: 'genre', languageTagsPosition: 'language', ratingTagsPosition: 'rating', ageRatingTagsPosition: 'ageRating', logoTagsPosition: 'logos', customTagsPosition: 'custom' };
     const ownCorner = (u) => {
         if (nativeBands) return layoutConf.slots[groupOf[u]] === 'top' ? 'top-left' : layoutConf.slots[groupOf[u]] === 'bottom' ? 'bottom-left' : undefined;
         const groups = s.tagLayouts?.corners?.groups ?? s.tagLayouts?.Corners?.Groups;
@@ -398,7 +404,7 @@ async function runProfile(profile) {
         return SLOT_POS[slot] || null;
     };
     const pos = (u, p, f) => ownCorner(u) || JE.core.tagRenderer.resolvePosition(u, p, f).pos;
-    const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language', 'awards', 'status', 'logos'].filter((g) => layoutConf.slots[g] === 'off');
+    const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language', 'awards', 'status', 'logos', 'custom'].filter((g) => layoutConf.slots[g] === 'off');
     const readInt = (k, d) => (Number.isFinite(s[k]) ? s[k] : d);
     const scope = (u, p) => (typeof s[u] === 'boolean' ? s[u] : (typeof pluginConfig[p] === 'boolean' ? pluginConfig[p] : true));
     const settings = {
@@ -418,6 +424,8 @@ async function runProfile(profile) {
         ageRatingTagsPosition: pos('ageRatingTagsPosition', 'AgeRatingTagsPosition', 'bottom-right'),
         logoTagsEnabled: !!s.logoTagsEnabled,
         logoTagsPosition: pos('logoTagsPosition', 'LogoTagsPosition', 'bottom-left'),
+        customTagsEnabled: !!s.customTagsEnabled,
+        customTagsPosition: pos('customTagsPosition', 'CustomTagsPosition', 'top-left'),
         showResolutionTag: typeof s.showResolutionTag === 'boolean' ? s.showResolutionTag : true,
         showSourceTag: typeof s.showSourceTag === 'boolean' ? s.showSourceTag : true,
         showEditionTag: typeof s.showEditionTag === 'boolean' ? s.showEditionTag : (pluginConfig.ShowEditionTag ?? true),
@@ -445,7 +453,7 @@ async function runProfile(profile) {
         ratingTagsColorByScore: JE.ratingSources.settings().color,
         layoutOrder: layoutConf.order ? layoutConf.order.join(',') : null,
         layoutOff: offGroups.join(','),
-        layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating', 'awards', 'logos'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),
+        layoutCaps: ['quality', 'genre', 'language', 'rating', 'ageRating', 'awards', 'logos', 'custom'].map((g) => `${g}=${layoutConf.caps[g]}`).join(','),
         edgeSpacing: layoutConf.edge,
     };
 

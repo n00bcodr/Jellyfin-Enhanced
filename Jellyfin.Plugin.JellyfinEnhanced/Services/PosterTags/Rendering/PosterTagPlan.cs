@@ -201,6 +201,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     StatusTag status when group.Group == PosterTagGroup.Status => MeasureStatus(status, css, styles),
                     LanguageTag l when group.Group == PosterTagGroup.Language => MeasureFlag(l, css, styles),
                     LogoTag l when group.Group == PosterTagGroup.Logos => MeasureLogo(l, css, styles),
+                    CustomTag c when group.Group == PosterTagGroup.Custom => MeasureCustom(c, css, keepEnd, styles),
                     _ => null,
                 };
                 if (item is not null)
@@ -221,7 +222,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 PosterTagGroup.Rating => PosterTagCss.Lu(css.RatingGap),
                 PosterTagGroup.Awards => PosterTagCss.Lu(css.StackGap),
                 PosterTagGroup.Language => PosterTagCss.Lu(css.LanguageGap),
-                PosterTagGroup.Logos => PosterTagCss.LogoGap,
+                PosterTagGroup.Logos => PosterTagCss.Lu(PosterTagCss.LogoGap * css.Scale * css.Gap),
+                PosterTagGroup.Custom => PosterTagCss.Lu(PosterTagCss.CustomGap * css.Scale * css.Gap),
                 _ => 0f, // the age-rating container has no gap
             };
 
@@ -238,7 +240,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             float maxHeight = PosterTagCss.Lu(0.9f * cardHeight);
             float maxWidth = PosterTagCss.Lu(css.CardWidth - (2 * inset));
             bool hasMaxHeight = group.Group is PosterTagGroup.Quality or PosterTagGroup.Genre or PosterTagGroup.Language;
-            bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating or PosterTagGroup.Status or PosterTagGroup.Logos;
+            bool hasMaxWidth = group.Group is PosterTagGroup.Quality or PosterTagGroup.Rating or PosterTagGroup.AgeRating or PosterTagGroup.Status or PosterTagGroup.Logos or PosterTagGroup.Custom;
             float width = hasMaxWidth ? Math.Min(contentWidth, maxWidth) : contentWidth;
             float height = hasMaxHeight ? Math.Min(contentHeight, maxHeight) : contentHeight;
             bool clips = group.Group is PosterTagGroup.Quality or PosterTagGroup.Language;
@@ -646,6 +648,34 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return new PlannedItem(PosterTagTileKind.AgeRating, tag, text, style, width, height) { TextLayout = layout };
         }
 
+        /// <summary>
+        /// customtags.js chip: the label (line-height 1.15) after an optional 1.2em genre-set icon and a
+        /// 0.3em gap, the age chip's padding and a 1px border. The style key is the icon, then the Tag
+        /// Styles colours of the label.
+        /// </summary>
+        private PlannedItem MeasureCustom(CustomTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)
+        {
+            var text = ClampText(tag.Label, keepEnd);
+            float fontSize = css.ChipFontSize;
+            var layout = _text.Layout(text, fontSize, smallCaps: false, letterSpacing: 0.01f * fontSize);
+            var icon = tag.Icon is { } name && _assets.GetIcon(name) is not null ? name : null;
+            float iconSize = PosterTagCss.CustomIconScale * fontSize;
+            float iconWidth = icon is null ? 0f : GlyphBoxWidth(icon, iconSize);
+            float iconHeight = icon is null ? 0f : PosterTagCss.Lu(iconSize);
+            float gap = icon is null ? 0f : PosterTagCss.Lu(PosterTagCss.CustomIconGapEm * fontSize);
+            float textHeight = PosterTagCss.Lu(PosterTagCss.CustomLineHeight * fontSize);
+            float width = PosterTagCss.LuCeil(layout.Width) + iconWidth + gap + (2 * PosterTagCss.Lu(css.ChipPaddingH)) + 2f;
+            float height = Math.Max(iconHeight, textHeight) + (2 * PosterTagCss.Lu(css.ChipPaddingV)) + 2f;
+            var colors = styles.Resolve(TagStyleKeys.Custom, tag.Label);
+            var style = (icon ?? string.Empty) + (colors.IsEmpty ? string.Empty : "\n" + colors.Encode());
+            return new PlannedItem(PosterTagTileKind.Custom, tag, text, style, width, height)
+            {
+                TextLayout = layout,
+                IconWidth = iconWidth,
+                IconHeight = iconHeight,
+            };
+        }
+
         /// <summary>A resolved style as a tile-key fragment; empty when nothing is overridden.</summary>
         private static string StyleKey(TagColors colors) => colors.IsEmpty ? string.Empty : colors.Encode();
 
@@ -694,10 +724,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             if (image is not null)
             {
                 bool provider = tag.ImageStyle == "provider";
-                float padV = provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingV;
-                float padH = provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingH;
+                float padV = (provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingV) * css.Scale;
+                float padH = (provider ? PosterTagCss.LogoProviderPadding : PosterTagCss.LogoPaddingH) * css.Scale;
                 float imageHeight = Math.Max(0f, height - 2f - (2 * padV));
-                float imageWidth = PosterTagCss.Lu(Math.Min(imageHeight * image.Width / image.Height, PosterTagCss.LogoMaxImageWidth));
+                float imageWidth = PosterTagCss.Lu(Math.Min(imageHeight * image.Width / image.Height, PosterTagCss.LogoMaxImageWidth * css.Scale));
                 var colors = styles.Resolve(TagStyleKeys.Logos, tag.ImageStyle);
                 return new PlannedItem(PosterTagTileKind.Logo, tag, tag.Logo!, tag.ImageStyle + "|" + colors.Encode(), imageWidth + (2 * padH) + 2f, height)
                 {
@@ -709,7 +739,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var text = LogoRules.ShortName(tag.Name);
             float fontSize = css.LogoFontSize;
             var layout = _text.Layout(text, fontSize, smallCaps: false, letterSpacing: 0.02f * fontSize);
-            float width = PosterTagCss.LuCeil(layout.Width) + (2 * PosterTagCss.LogoPaddingH) + 2f;
+            float width = PosterTagCss.LuCeil(layout.Width) + (2 * PosterTagCss.LogoPaddingH * css.Scale) + 2f;
             var textColors = styles.Resolve(TagStyleKeys.Logos, "text");
             return new PlannedItem(PosterTagTileKind.Logo, tag, text, "text|" + textColors.Encode(), width, height) { TextLayout = layout };
         }

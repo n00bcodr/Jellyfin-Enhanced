@@ -69,7 +69,7 @@ async function setup(t, { cache = false, cards = [aggregate, finale], parent = a
           if (batchDelay) await new Promise(resolve => h.window.setTimeout(resolve, batchDelay));
           const ids = JSON.parse(options.data);
           if (parentResponse && ids.length === 1 && ids[0] === SERIES) return parentResponse.promise;
-          return { Items: ids.map(id => items.get(id)).filter(Boolean) };
+          return { StripRevision: 'none', Items: ids.map(id => items.get(id)).filter(Boolean) };
         }
         if (options.url.includes('/status-tags/series')) {
           const ids = new URL(options.url, 'http://jellyfin.test').searchParams.get('ids').split(',');

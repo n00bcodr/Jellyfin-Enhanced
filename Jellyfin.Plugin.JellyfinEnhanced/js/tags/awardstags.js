@@ -63,9 +63,19 @@
         logPrefix: '[AwardsTags]', settingKey: 'awardsTagsEnabled', containerClass: 'awards-overlay-container', taggedAttr: 'jeAwardsTagged',
         styleId: 'je-awards-tags-css', buildCss: () => CSS,
         position: { userKey: 'awardsTagsPosition', pluginKey: 'AwardsTagsPosition', fallback: 'top-left' },
+        cache: { key: 'JellyfinEnhanced-awardsTagsCache', legacyPrefix: 'awardsTagsCache', hotBucket: 'awards', saveOnUnload: false },
         pipeline: {
             needsFirstEpisode: false, needsParentSeries: false,
-            render(ctx, el, item) { render(ctx, el, item.Awards); },
+            render(ctx, el, item) {
+                ctx.setPersistent(item.Id, { facts: item.Awards || null });
+                render(ctx, el, item.Awards);
+            },
+            renderFromCache(ctx, el, itemId) {
+                const cached = ctx.hot?.get(itemId) ?? ctx.getPersistent(itemId);
+                if (!cached) return false;
+                render(ctx, el, cached.facts);
+                return true;
+            },
             renderFromServerCache(ctx, el, entry) { render(ctx, el, entry.Awards); },
         },
     };

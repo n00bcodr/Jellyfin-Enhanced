@@ -307,6 +307,63 @@
             unloadRegistered: false,
         };
 
+        // Only the accepted /tag-data callback can authorize a fallback write. Never
+        // label /Items, IndexedDB or server-cache projections with mutable page state.
+        let writeRevision = null;
+        const ENVELOPE_VERSION = 1;
+        function revision() {
+            try {
+                const value = JE.tagPipeline?.tagStripRevision?.();
+                return typeof value === 'string' && value.length ? value : null;
+            } catch { return null; }
+        }
+        function dirty() { JE._cacheManager?.markDirty(); }
+        function discard(itemId) {
+            delete state.cache[itemId];
+            state.hot?.delete(itemId);
+            dirty();
+        }
+        function valid(entry, stamp) {
+            return !!entry && entry.v === ENVELOPE_VERSION && entry.stripRevision === stamp
+                && Object.prototype.hasOwnProperty.call(entry, 'payload')
+                && Number.isFinite(entry.timestamp) && Date.now() - entry.timestamp < state.cacheTtl;
+        }
+        function readFallback(itemId, persistent) {
+            const stamp = revision();
+            // Bootstrap failure/guard invalidation is unknown, not permission to reuse
+            // a copy. Leave it intact until an authoritative answer arrives.
+            if (stamp === null) return undefined;
+            const entry = persistent ? state.cache[itemId] : state.hot?.get(itemId);
+            if (entry === undefined) return undefined;
+            if (!valid(entry, stamp) || (persistent && stamp !== 'none')) {
+                discard(itemId);
+                return undefined;
+            }
+            return entry.payload;
+        }
+        function writeFallback(itemId, payload, persistent) {
+            if (writeRevision === null || !spec.cache) return;
+            const entry = { v: ENVELOPE_VERSION, stripRevision: writeRevision, payload,
+                timestamp: Number.isFinite(payload?.timestamp) ? payload.timestamp : Date.now() };
+            // Every persistent write also has a page-local copy, including empty facts.
+            if (state.hot) state.hot.set(itemId, entry);
+            if (writeRevision === 'none' && persistent) state.cache[itemId] = entry;
+            else if (writeRevision !== 'none') delete state.cache[itemId];
+            dirty();
+        }
+        // Preserve the module-facing Map vocabulary, but never expose raw hot entries.
+        const hot = {
+            get: itemId => readFallback(itemId, false),
+            set(itemId, payload) { writeFallback(itemId, payload, false); return hot; },
+            delete(itemId) { discard(itemId); return true; },
+            clear() { state.hot?.clear(); },
+            get size() { return state.hot?.size || 0; },
+        };
+        function invalidateFallback(updatedIds) {
+            if (!updatedIds) { state.cache = {}; state.hot?.clear(); dirty(); }
+            else for (const id of updatedIds) discard(String(id));
+        }
+
         // ── Ignore / tagged helpers ────────────────────────────────────
 
         /** @returns {string[]} */
@@ -447,10 +504,9 @@
         function saveCache() {
             if (!spec.cache || !state.localStorageEnabled) return;
             try {
-                if (spec.cache.pruneOnSave) {
-                    const now = Date.now();
+                { // Every saved envelope must be authoritative, unstripped and within TTL.
                     for (const [key, entry] of Object.entries(state.cache)) {
-                        if (entry && now - entry.timestamp > state.cacheTtl) {
+                        if (!valid(entry, 'none')) {
                             delete state.cache[key];
                         }
                     }
@@ -523,53 +579,20 @@
             containerClass,
             taggedAttr: TAGGED_ATTR,
             /** @returns {Map<string, any>|null} shared hot cache bucket */
-            get hot() { return state.hot; },
+            get hot() { return state.hot ? hot : null; },
             /** @returns {number} cache TTL in ms */
             get cacheTtl() { return state.cacheTtl; },
             /** @returns {boolean} whether localStorage fallback is active */
             get localStorageEnabled() { return state.localStorageEnabled; },
             /**
              * @param {string} itemId
-             * @returns {*} the persistent cache entry (raw, module-defined shape)
+             * @returns {*} the validated, module-defined payload
              */
-            getPersistent(itemId) { return state.cache[itemId]; },
-            /**
-             * Store a persistent cache entry and schedule a save.
-             * @param {string} itemId
-             * @param {*} value
-             */
-            setPersistent(itemId, value) {
-                state.cache[itemId] = value;
-                if (JE._cacheManager) JE._cacheManager.markDirty();
-            },
-            /**
-             * Drop one persistent cache entry and schedule a save.
-             * @param {string} itemId
-             */
-            deletePersistent(itemId) {
-                if (!(itemId in state.cache)) return;
-                delete state.cache[itemId];
-                if (JE._cacheManager) JE._cacheManager.markDirty();
-            },
-            /** Drop every persistent cache entry and schedule a save. */
-            clearPersistent() {
-                state.cache = {};
-                if (JE._cacheManager) JE._cacheManager.markDirty();
-            },
-            /**
-             * Drop one persistent cache entry and schedule a save.
-             * @param {string} itemId
-             */
-            deletePersistent(itemId) {
-                if (!(itemId in state.cache)) return;
-                delete state.cache[itemId];
-                if (JE._cacheManager) JE._cacheManager.markDirty();
-            },
-            /** Drop every persistent cache entry and schedule a save. */
-            clearPersistent() {
-                state.cache = {};
-                if (JE._cacheManager) JE._cacheManager.markDirty();
-            },
+            getPersistent(itemId) { return readFallback(itemId, true); },
+            /** Only called within an authoritative batch render (see writeRevision). */
+            setPersistent(itemId, value) { writeFallback(itemId, value, true); },
+            deletePersistent: discard,
+            clearPersistent() { state.cache = {}; dirty(); },
             isTagged,
             markTagged,
             shouldIgnore,
@@ -663,16 +686,22 @@
                 return;
             }
             JE.tagPipeline.registerRenderer(name, {
-                render: (el, item, extras) => p.render(ctx, el, item, extras),
+                render: (el, item, extras) => {
+                    writeRevision = typeof extras?.stripRevision === 'string' && extras.stripRevision.length
+                        ? extras.stripRevision : null;
+                    try { return p.render(ctx, el, item, extras); }
+                    finally { writeRevision = null; }
+                },
                 renderFromCache: p.renderFromCache
                     ? (el, itemId) => p.renderFromCache(ctx, el, itemId)
                     : undefined,
                 renderFromServerCache: p.renderFromServerCache
                     ? (el, entry, itemId) => p.renderFromServerCache(ctx, el, entry, itemId)
                     : undefined,
-                onServerCacheRefresh: p.onServerCacheRefresh
-                    ? (updatedIds, info) => p.onServerCacheRefresh(ctx, updatedIds, info)
-                    : undefined,
+                onServerCacheRefresh: (updatedIds, info) => {
+                    invalidateFallback(updatedIds);
+                    p.onServerCacheRefresh?.(ctx, updatedIds, info);
+                },
                 cleanup: p.cleanup ? () => p.cleanup(ctx) : undefined,
                 isEnabled: () => !!JE.currentSettings?.[spec.settingKey],
                 needsFirstEpisode: !!p.needsFirstEpisode,

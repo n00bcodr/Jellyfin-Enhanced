@@ -327,6 +327,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 language = language.IsEmpty ? null : Web(language),
                 languageLabels = Map(TagStyleKeys.Language, TagStyleCatalog.Labels(TagStyleKeys.Language).Select(l => l.Key)),
                 logos = Map(TagStyleKeys.Logos, TagStyleKeys.LogoLabels.Select(l => l.Key)),
+                // Every custom chip ("*"), then each label with an override of its own.
+                custom = Map(TagStyleKeys.Custom, Labels.Keys
+                    .Where(k => k.StartsWith(TagStyleKeys.Custom + ":", StringComparison.Ordinal))
+                    .Select(k => k[(TagStyleKeys.Custom.Length + 1)..])
+                    .Order(StringComparer.Ordinal)
+                    .Prepend(TagStyleKeys.AnyLabel)),
             };
         }
 
@@ -675,11 +681,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _ => Array.Empty<(string, string)>(),
         };
 
-        /// <summary>Whether <paramref name="label"/> is an editable label of <paramref name="group"/>.</summary>
+        /// <summary>
+        /// Whether <paramref name="label"/> is an editable label of <paramref name="group"/>. Custom labels
+        /// are the administrator's rule labels, so any valid label is one (they change with the rules).
+        /// </summary>
         /// <param name="group">A group id.</param>
         /// <param name="label">A label key.</param>
         /// <returns>True when known.</returns>
-        public static bool IsLabel(string group, string label) => Labels(group).Any(l => l.Key == label);
+        public static bool IsLabel(string group, string label) => group == TagStyleKeys.Custom
+            ? label != TagStyleKeys.AnyLabel && Configuration.CustomTagRuleSet.IsValidLabel(label)
+            : Labels(group).Any(l => l.Key == label);
 
         /// <summary>The catalog label a drawn quality label takes its colours from (composites by their base), or null.</summary>
         /// <param name="label">A drawn quality label.</param>

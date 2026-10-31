@@ -101,8 +101,8 @@ test('a legacy document keeps corners, its positions, arrival order and the orig
   assert.equal(s.layout, 'corners');
   assert.equal(s.density, 'full');
   assert.equal(s.order, null, 'legacy documents keep arrival order');
-  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0 });
-  assert.deepEqual(plain(s.slots), { status: 'tr', quality: 'br', rating: 'tl', ageRating: 'br', language: 'bl', genre: 'bl', awards: 'tl', logos: 'bl' },
+  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0, custom: 3 });
+  assert.deepEqual(plain(s.slots), { status: 'tr', quality: 'br', rating: 'tl', ageRating: 'br', language: 'bl', genre: 'bl', awards: 'tl', logos: 'bl', custom: 'tl' },
     'positions map user → admin → built-in (genre inherits the admin bottom-left)');
 });
 
@@ -119,14 +119,14 @@ test('a normalized document inherits admin profiles and caps, overrides them per
   assert.equal(s.legacy, false);
   assert.equal(s.layout, 'bands');
   assert.equal(s.density, 'compact');
-  assert.deepEqual(plain(s.slots), { status: 'top', quality: 'bottom', rating: 'top', ageRating: 'bottom', language: 'bottom', genre: 'top', awards: 'bottom', logos: 'top' },
+  assert.deepEqual(plain(s.slots), { status: 'top', quality: 'bottom', rating: 'top', ageRating: 'bottom', language: 'bottom', genre: 'top', awards: 'bottom', logos: 'top', custom: 'bottom' },
     'own valid slots win, the admin profile fills in, then the built-in profile (invalid "middle" ignored)');
-  assert.deepEqual(plain(s.order), ['genre', 'status', 'quality', 'rating', 'ageRating', 'language', 'awards', 'logos'], 'own order wins and is completed in default order');
-  assert.deepEqual(plain(s.caps), { quality: 0, genre: 2, language: 10, rating: 0, ageRating: 1, status: 0, awards: 2, logos: 0 }, 'clamped 0..10; admin caps fill gaps');
+  assert.deepEqual(plain(s.order), ['genre', 'status', 'quality', 'rating', 'ageRating', 'language', 'awards', 'logos', 'custom'], 'own order wins and is completed in default order');
+  assert.deepEqual(plain(s.caps), { quality: 0, genre: 2, language: 10, rating: 0, ageRating: 1, status: 0, awards: 2, logos: 0, custom: 3 }, 'clamped 0..10; admin caps fill gaps');
   // The admin order only reaches users by being copied in (seeding, apply to all, Reset).
   h.JE.currentSettings.tagGroupOrder = null;
   h.layout.invalidateSettings();
-  assert.deepEqual(plain(h.layout.normalizeSettings().order), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos'],
+  assert.deepEqual(plain(h.layout.normalizeSettings().order), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos', 'custom'],
     'without an own order bands uses the default order, not the admin order');
   h.JE.currentSettings.tagLayout = 'corners';
   h.layout.invalidateSettings();

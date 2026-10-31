@@ -42,7 +42,6 @@
         confirmDisableSpoiler: internal.confirmDisableSpoiler,
         getUserPrefs: internal.getUserPrefs,
         setUserPrefs: internal.setUserPrefs,
-        tagStripRevision: internal.tagStripRevision,
     };
 
     // pluginConfig is already available when component scripts execute. Starting

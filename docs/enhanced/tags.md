@@ -202,8 +202,8 @@ The limit applies after each group's own filtering (quality categories, language
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
 | Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital+ 5.1` → `5.1`) and hides the critic score when a community score is shown |
-| **Tag Groups** order | Status, quality, rating, age rating, language, genre, logos | Priority order of the groups |
-| **Show up to** | Genre 3, language 3, age rating 1, status 1, quality, rating and logos all | The same limits as before layouts existed; logos are limited by the administrator's **Logos per title** |
+| **Tag Groups** order | Status, quality, rating, age rating, language, genre, awards, logos, custom | Priority order of the groups |
+| **Show up to** | Genre 3, language 3, age rating 1, status 1, awards 2, custom 3, quality, rating and logos all | The same limits as before layouts existed; logos are limited by the administrator's **Logos per title** |
 | **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
@@ -701,7 +701,7 @@ For series cards on screen, and parent series of season/episode cards, the brows
     [Native Poster Tags](#native-poster-tags-experimental) draw the same winning status chip, with your family switches and the administrator's day windows. Native trending uses TMDB's daily list, refreshed at UTC midnight; without a TMDB key or a usable list it shows no popular badge. Web cards retain their Seerr weekly fallback. Native schedule facts share the six-hour TMDB response cache.
 
 ??? info "Cache, access filtering and styling"
-    The current tag cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`) includes named-source `Ratings`, `LibraryId` (library rules), `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex` (`Season`, `Episode`, `IsLast`), `SeasonPremiere` (`Season`, `Aired`), `SeasonAddedSpan` (`First`, `Last`, `Count`) and `EpisodeIndex` (`Season`, `Episode`, nullable `IsLast`). Dates are Unix milliseconds UTC. Movie, series and episode entries can have `PremiereDate`. The persisted browser copy is replaced when its entry schema differs.
+    The current tag cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`) includes `Awards`, `Logos`, `CustomTags`, named-source `Ratings`, `LibraryId` (library rules), `Status`, `LatestEpisodeAired`, `LatestEpisodeIndex` (`Season`, `Episode`, `IsLast`), `SeasonPremiere` (`Season`, `Aired`), `SeasonAddedSpan` (`First`, `Last`, `Count`) and `EpisodeIndex` (`Season`, `Episode`, nullable `IsLast`). Dates are Unix milliseconds UTC. Movie, series and episode entries can have `PremiereDate`. The persisted browser copy is replaced when its entry schema differs.
 
     All derived episode facts follow the existing access-filtering and `filterRevision` path. When any contributing episode is inaccessible, related aggregates are omitted conservatively; the shared entry is unchanged. The server-only `StatusEpisodeIds`, `LatestEpisodeId` and `NextEpisodePremiere` never enter client responses. `NextEpisodePremiere` records the next relevant future air date; reconciliation and snapshot load recompute elapsed boundaries without requiring a metadata save. Compatible snapshots without the optional field seed the boundary from their cached episode dates. Episode changes refresh sibling indexes and contributor lists together. With server cache off, `tag-data?latestEpisode=true` computes through the target user's access.
 
@@ -766,7 +766,37 @@ Logo Tags show where a title streams, or the TV network or studio behind it, as 
     - Logo images are downloaded by the server once and served from its own cache (`/JellyfinEnhanced/logo/…`), so **browsers never contact TMDB**. Without a TMDB key or internet access the server cannot look anything up: cards show the studio or network names Jellyfin has, as name chips.
     - Turning the group on for the first user, or changing the administrator's choices, refreshes the logos of every cached item in the background. With the server tag cache on, the page you turned the group on from shows the logos once that refresh lands (it checks for a few minutes), without a reload.
 
-**Native Poster Tags** draw the same logos from the server's image cache, and the name chip when an image is not cached yet; a poster request never waits for TMDB, it queues the lookup or image in the background and the poster is redrawn once it arrives. [Spoiler Guard](../spoiler-guard/spoiler-guard-settings.md)'s **Hide tags** removes the logos from protected items like their genres, on web cards, batch lookups and native posters. Logos the browser remembers (with the server tag cache off, or its local fallback on) carry the guard choices they were stripped under: after you protect or unprotect an item, or switch **Hide tags**, they are fetched again instead of being redrawn. Tag Styles colour the pills on the **Logos** tab. Custom CSS can target `.logo-overlay-container`, `.je-logo-chip` and its `data-je-logo-kind` / `data-je-logo-style` attributes (see [CSS Customization](../advanced/css-customization.md)).
+**Native Poster Tags** draw the same logos from the server's image cache, and the name chip when an image is not cached yet; a poster request never waits for TMDB, it queues the lookup or image in the background and the poster is redrawn once it arrives. [Spoiler Guard](../spoiler-guard/spoiler-guard-settings.md)'s **Hide tags** removes the logos from protected items like their genres, on web cards, batch lookups and native posters. All browser fallback groups share the server-issued `StripRevision`, validated centrally for both memory and saved copies. Only unguarded (`none`) answers survive page loads; guarded answers stay on the current page, and unknown authority causes a fresh lookup. Logos the browser remembers (with the server tag cache off, or its local fallback on) carry that revision: after you protect or unprotect an item, or switch **Hide tags**, they are fetched again instead of being redrawn. Tag Styles colour the pills on the **Logos** tab. Custom CSS can target `.logo-overlay-container`, `.je-logo-chip` and its `data-je-logo-kind` / `data-je-logo-style` attributes (see [CSS Customization](../advanced/css-customization.md)).
+
+## Custom Tags
+
+Custom Tags turn your own Jellyfin metadata into poster chips. The administrator writes rules: items that carry a Jellyfin tag (for example `4K Remaster`) or belong to a collection (for example `Criterion`) get a chip with the rule's label and, optionally, an icon. Tags are the ones in each item's metadata (**Edit metadata** → **Tags**, or imported keywords).
+
+![Custom chips under the quality tags: Comic (with an icon) for movies tagged "based on comic", Criterion for a collection, each in its Tag Styles colour](../images/custom-tags-posters.png)
+
+**How to use — administrators:**
+
+1. Open **Display** → **Media Tags** → **Custom tag rules**.
+2. Click **Add rule**. Choose **Tag** or **Collection**, then type the name: suggestions list the library's tags or collections. Enter the chip's **Label** and pick an **Icon** if you want one.
+3. Click **Save Settings**. Colour each label under **Tag Styles** → **Custom**.
+4. **Enable Custom Tags** and its **Position** set the starting values for users, like the other groups.
+
+![The Custom tag rules table: match type, tag or collection name, label, icon and a remove button per rule](../images/custom-tags-rules.png)
+
+**How to use — personal preferences:** turn on the **Custom** group on the **Groups** tab of **Media Tags** and choose its position and limit, like any other group.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Admin: **Enable Custom Tags** / personal: **Custom** switch | Off | Shows a chip for each rule an item matches |
+| Admin: **Custom tag rules** | None | Up to 20 rules: **Match** (**Tag** or **Collection**), the tag or collection name, a **Label** of up to 24 characters and an optional **Icon** from the genre icon set |
+| **Show up to** | 3 | Chips beyond the limit are left out, as for other groups |
+
+Names match exactly but ignore case and extra spaces. Chips follow the rule order in the table, and reordering the rules takes effect at once; a rule whose name matches nothing simply shows no chip. Seasons and episodes take their series' tags and collections as well as their own. A collection chip only shows for users who can open that collection: if library access or parental controls hide the collection from someone, its chip is hidden on its items too, even on items they can see. Hovering a chip shows its label; administrators also see the tag or collection it came from. Other users never receive the tag or collection names a rule uses. Spoiler Guard treats custom chips like genres: when it hides tags (**Hide tags**, unless the user's own override keeps them), guarded items show no custom chips, since a tag or collection can give away the plot. With the server tag cache off, the browser keeps custom matches between page loads only for users with nothing guarded. A guard set on another device therefore takes effect on the next page load. The server checks the rules when you save: it drops incomplete rows, unknown match types and labels made only of punctuation in any script (such as `*`, which the table flags), trims names and labels, shortens long labels and merges rows that name the same tag or collection.
+
+??? info "When chips update"
+    The [server tag cache](#server-side-tag-cache) records which rules each item matches. Editing an item's tags, adding items to or removing them from a collection, renaming or deleting a collection, or changing a series' tags updates its chips (and its seasons' and episodes') within seconds. Saving rules that match something new re-checks the whole cache in the background, without reading media files; changing only a label, icon or colour takes effect at once. The nightly reconcile and a full rebuild catch anything else.
+
+    With the server tag cache off, chips come from each card's batched tag data and match **tags only**: collection membership needs the cache. Browsers remember an item's chips only while the rules stay the same.
 
 ## People Tags
 
@@ -889,7 +919,7 @@ Turn off **Server-Side Tag Cache** to reveal **Persist Tag Fallback Cache in Bro
 
     Saving with the server cache off forces **Persist Tag Fallback Cache in Browser Storage** on. The client enables localStorage fallback whenever server mode is off.
 
-    Batch fallback fetches the items needed for the current page and keeps frequently used entries in memory. With server mode off, it also persists fallback entries in localStorage, using **Tags Cache Duration (days)**. This is separate from the full server-payload copy in IndexedDB. Browser storage failures leave tags able to fetch data again. Average-review lookups in fallback mode are batched separately.
+    Batch fallback fetches the items needed for the current page and keeps frequently used entries in memory. Every group validates its fallback data against the server-issued `StripRevision` through the shared renderer base. Only authoritative `none` entries persist in localStorage using **Tags Cache Duration (days)**; guarded entries are page-only, and unknown or mismatched revisions require fresh data. This is separate from the full server-payload copy in IndexedDB. Browser storage failures leave tags able to fetch data again. Average-review lookups in fallback mode are batched separately.
 
     For [rules and locked items](#rules-and-locked-items), the batch lookup's type, series, library, genres and age rating of each item are remembered beside those entries (`JE_tagLookFacts`, at most 3,000 items, newest kept). Like the per-tag entries, they belong to the signed-in user and are dropped when another account signs in or by **Clear All Client Caches**.
 
@@ -947,7 +977,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
     The master switch alone does not produce visible tags: each user's applicable groups start off.
 
 ??? info "Supported groups and preferences"
-    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, ratings, user-review, age-classification, Awards, Status and Logos. People Tags are not a native group.
+    JE draws tags into Primary images for movies, series, seasons, episodes, collections, and videos. Supported groups are quality, genre, language, ratings, user-review, age-classification, Awards, Status, Logos and Custom. People Tags are not a native group.
 
     It uses personal tag switches, audio/subtitle includes, Flags/Codes style and Dual/Multi badge mode, quality categories/order, sound-language preference, rating item-type scopes and score includes, together with the personal language-priority policy (or the live administrator fallback). Native posters draw **Corners** or **Bands** from your saved default layout. Corners supports all nine anchors, hidden groups, your explicit group order (otherwise the original stacking order), limits and full labels. Bands uses its own top/bottom/hidden profile, priority order, limits and Full/Compact density. Its translucent gradient strips keep the middle clear; the first top group starts left and later groups align right. Each strip fits at most two rows. The bottom strip skips a chip that does not fit and continues with later smaller chips, counting every omission in **+N**. The overflow chip uses the web’s 11px bold style multiplied by tag size and reserves the total-count width before bottom-band selection, then displays the actual omitted count. Caption, Summary and Minimal fall back to the saved Corners profile because native images have no title block or hover surface. Shape overrides, rules and per-item locks remain web features.
 
@@ -1005,7 +1035,7 @@ Use Tag Styles to recolour poster tags without writing CSS. You pick a preset, t
 1. Open **Display** → **Media Tags** and turn on **Enable Tag Styles**.
 2. Under **Apply to**, choose **Web**, **Native posters** or **Both**.
 3. Pick a **Preset**. It applies straight away and keeps any group or tag colours you set.
-4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**, **Logos**), then **Whole group** or one tag.
+4. Choose a group tab (**Quality**, **Age**, **Rating**, **Genre**, **Status**, **Language**, **Awards**, **Logos**, **Custom**), then **Whole group** or one tag.
 5. Set **Background**, **Border** and **Text** with a swatch or any colour, and an opacity of 40–100%. Watch the contrast badge and the preview.
 6. Click **Save Settings**. Refresh web clients to see the change; native posters redraw the next time they load.
 
@@ -1055,6 +1085,8 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar winner**, **Emmy winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
 | **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
 | **Logos** | **Provider logo**, **Network / studio logo**, **Name chip** | Colours the pill behind the logo; **Text** colours the name chip |
+
+| **Custom** | Each label of the **Custom tag rules** | The labels follow the rules table as you edit it; rules that share a label share its colours. The icon takes the text colour |
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
 

@@ -410,6 +410,135 @@ public class PerfRound2TagCacheResponseTests
     }
 
     [Fact]
+    public async Task CustomTagMatchesFollowTheSpoilerTagStripInTheCacheAndTheBatch()
+    {
+        var plainMovie = Guid.NewGuid();
+        var guardedEpisode = Guid.NewGuid();
+        var twist = CustomTagRuleSet.RuleId(new CustomTagRule { Match = "tag", Value = "Twist", Label = "Twist" }, null);
+        using var endpoint = new Endpoint(e => new()
+        {
+            [plainMovie.ToString("N")] = new() { Type = "Movie", CustomTags = [twist], LastUpdated = 120 },
+            [guardedEpisode.ToString("N")] = new() { Type = "Episode", SeriesId = e.SeriesId.ToString("N"), CustomTags = [twist], LastUpdated = 130 },
+        });
+        endpoint.Fixture.Plugin.Configuration.CustomTagRules = CustomTagRuleSet.Normalize([new CustomTagRule { Match = "tag", Value = "Twist", Label = "Twist" }]);
+        endpoint.AliceAccess = [endpoint.First, plainMovie, guardedEpisode];
+        static string[]? Matches(string body, Guid id)
+        {
+            using var json = JsonDocument.Parse(body);
+            return json.RootElement.GetProperty("items").GetProperty(id.ToString("N")).TryGetProperty("CustomTags", out var tags) && tags.ValueKind == JsonValueKind.Array
+                ? tags.EnumerateArray().Select(t => t.GetString()!).ToArray() : null;
+        }
+
+        var open = await endpoint.Read(endpoint.Alice);
+        Assert.Equal([twist], Matches(open.Body, guardedEpisode));
+
+        // Guard on with the tag strip: the guarded episode loses its matches like its genres (full
+        // load and the delta's guarded rider), the unguarded movie keeps them, and the strip
+        // fingerprint (part of filterRevision) changes, so stored copies are replaced.
+        endpoint.GuardSeries();
+        var guarded = await endpoint.Read(endpoint.Alice);
+        Assert.Null(Matches(guarded.Body, guardedEpisode));
+        Assert.Equal([twist], Matches(guarded.Body, plainMovie));
+        Assert.NotEqual(FilterRevision(open.Body), FilterRevision(guarded.Body));
+        Assert.Null(Matches((await endpoint.Read(endpoint.Alice, since: 500)).Body, guardedEpisode));
+
+        // A ratings-only strip leaves them, as it leaves genres.
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripTags = false;
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripRatings = true;
+        Assert.Equal([twist], Matches((await endpoint.Read(endpoint.Alice)).Body, guardedEpisode));
+
+        // /tag-data: the guarded series' stub follows the same switch.
+        var series = new Series { Id = endpoint.SeriesId, Name = "Show", Tags = ["Twist"] };
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id, It.IsAny<User>())).Returns(series);
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns([]);
+        string[]? Batch()
+        {
+            endpoint.SignIn(endpoint.Alice);
+            var ok = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [series.Id.ToString()]));
+            using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+            var item = json.RootElement.GetProperty("Items")[0];
+            Assert.Equal(series.Id.ToString(), item.GetProperty("Id").GetString());
+            return item.GetProperty("CustomTags").ValueKind == JsonValueKind.Array ? item.GetProperty("CustomTags").EnumerateArray().Select(t => t.GetString()!).ToArray() : null;
+        }
+
+        Assert.Equal([twist], Batch());
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripTags = true;
+        Assert.Null(Batch());
+    }
+
+    [Fact]
+    public void BatchAnswersAndTheBootstrapStateWhatHideTagsStripsForTheUser()
+    {
+        // The web batch fallback keeps answers across page loads only under "none" and
+        // drops ones stamped with another revision, so a guard set from another client
+        // is never bypassed by a copy from before it (js/tags/customtags.js).
+        using var endpoint = new Endpoint();
+        string? Revision(object? body, params string[] path)
+        {
+            using var json = JsonDocument.Parse(JsonSerializer.Serialize(body));
+            var node = json.RootElement;
+            foreach (var key in path) node = node.GetProperty(key);
+            return node.ValueKind == JsonValueKind.Null ? null : node.GetString();
+        }
+
+        string? Batch()
+        {
+            endpoint.SignIn(endpoint.Alice);
+            return Revision(Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [Guid.NewGuid().ToString()])).Value, "StripRevision");
+        }
+
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<MediaBrowser.Controller.Session.ISessionManager>(), endpoint.Fixture.Core.Paths.Object, endpoint.Fixture.Core.Logger);
+        var bootstrap = ApiAssetTests.Controller(endpoint.Fixture.Core, maintenance, endpoint.Fixture.Core.Manager, endpoint.Library.Object);
+        bootstrap.ControllerContext.HttpContext.User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(endpoint.Alice.Id, false);
+        string? Bootstrap() => Revision(Assert.IsType<JsonResult>(bootstrap.GetBootstrap()).Value, "Prefetched", "TagStripRevision");
+
+        Assert.Equal((SpoilerTagDataStripper.NoTagStrip, SpoilerTagDataStripper.NoTagStrip), (Batch(), Bootstrap()));
+
+        endpoint.GuardSeries();
+        var guarded = Batch();
+        Assert.StartsWith("g2:", guarded);
+        Assert.Equal(guarded, Bootstrap());
+
+        // Another guarded title (from any client) changes it; the same set in another order or case does not.
+        var state = endpoint.Fixture.Core.Manager.GetUserConfiguration<UserSpoilerBlur>(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName);
+        state.Movies[endpoint.First.ToString("N")] = new();
+        endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        var more = Batch();
+        Assert.NotEqual(guarded, more);
+        Assert.Equal(more, Bootstrap());
+        var shuffled = new UserSpoilerBlur();
+        shuffled.Movies[endpoint.First.ToString("N").ToUpperInvariant()] = new();
+        shuffled.Series[endpoint.SeriesId.ToString("N")] = new();
+        Assert.Equal(more, SpoilerTagDataStripper.TagStripRevision(SpoilerTagDataStripper.CreatePolicy(endpoint.Fixture.Plugin.Configuration, shuffled)));
+
+        // Ratings-only and title-only strips still invalidate every shared fallback group.
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripTags = false;
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripRatings = true;
+        var ratingsOnly = Batch();
+        Assert.StartsWith("g2:", ratingsOnly);
+        Assert.NotEqual(more, ratingsOnly);
+        Assert.Equal(ratingsOnly, Bootstrap());
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripTags = true;
+        state.Prefs = new SpoilerBlurUserPrefs { HideTags = false };
+        endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        Assert.Equal(ratingsOnly, Batch());
+        Assert.Equal(ratingsOnly, Bootstrap());
+        endpoint.Fixture.Plugin.Configuration.SpoilerStripRatings = false;
+        endpoint.Fixture.Plugin.Configuration.SpoilerReplaceTitle = true;
+        var titleOnly = Batch();
+        Assert.StartsWith("g2:", titleOnly);
+        Assert.NotEqual(ratingsOnly, titleOnly);
+        Assert.Equal(titleOnly, Bootstrap());
+        state.Prefs = new SpoilerBlurUserPrefs { HideTags = false, ReplaceEpisodeTitles = false, HideEpisodeDescriptions = false, HideRatings = false };
+        endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, state);
+        Assert.Equal((SpoilerTagDataStripper.NoTagStrip, SpoilerTagDataStripper.NoTagStrip), (Batch(), Bootstrap()));
+
+        // Unguarded again: back to "none", so kept copies are trusted once more.
+        endpoint.Fixture.Core.Manager.SaveUserConfiguration(endpoint.Alice.Id.ToString("N"), SpoilerBlurImageFilter.SpoilerBlurFileName, new UserSpoilerBlur());
+        Assert.Equal((SpoilerTagDataStripper.NoTagStrip, SpoilerTagDataStripper.NoTagStrip), (Batch(), Bootstrap()));
+    }
+
+    [Fact]
     public async Task LatestEpisodeDateOnlyReachesUsersWhoCanSeeThatEpisodeAndItsIdNeverDoes()
     {
         // The series entry's "New Episode" date came from Episode. Alice can see

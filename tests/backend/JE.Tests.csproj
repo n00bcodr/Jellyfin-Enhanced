@@ -16,6 +16,8 @@
     <EmbeddedResource Include="../fixtures/native-band-fit.json" LogicalName="NativeBandFit.json" />
     <EmbeddedResource Include="../fixtures/native-status-dates.json" LogicalName="NativeStatusDates.json" />
     <EmbeddedResource Include="../fixtures/source-edition-names.json" LogicalName="SourceEditionNames.json" />
+    <EmbeddedResource Include="../fixtures/logo-custom-layout.json" LogicalName="LogoCustomLayout.json" />
+    <EmbeddedResource Include="../fixtures/custom-tag-labels.json" LogicalName="CustomTagLabels.json" />
     <ProjectReference Include="../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />

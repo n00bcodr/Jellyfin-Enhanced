@@ -287,11 +287,11 @@ Everything about poster tags for your account: the layout, the tag groups, statu
 
     | Setting | Default | What it does |
     | --- | --- | --- |
-    | Move up / move down | Status, quality, rating, age rating, language, genre | Sets the priority order. Higher groups win when space is short. |
+    | Move up / move down | Status, quality, rating, age rating, language, genre, custom | Sets the priority order. Higher groups win when space is short. |
     | Group switch | Off | Turns the group's tags on or off. |
     | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corners offers a 3×3 grid with four corners, top/bottom centre, left/right centre and centre. Native Poster Tags use these picks for Corners and Bands. |
-    | **Show up to** | Genre 3, language 3, age rating and status 1, quality and rating **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
-    | **Include** | Categories on; low-quality sources off | Quality: resolution, source, HDR, special format, video format, sound and edition, their stack order and the sound language. Edition defaults on after sound; **Include low-quality sources (CAM, TS, TC, SCR)** defaults off. Source/edition naming is resolved on the server. Language: **Audio** and **Subtitles** (CC marker), **Style: Flags / Codes** and **Audio count badge: Off / Badge only / Badge and flags**. Rating: ordered source checkboxes with move buttons, **Minimum score**, **Colour by score** and where to show ratings. Status: the **Badges** button opens **Status badges**. |
+    | **Show up to** | Genre 3, language 3, custom 3, awards 2, age rating and status 1, quality, rating and logos **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
+    | **Include** | Categories on; low-quality sources off | Quality: resolution, source, HDR, special format, video format, sound and edition, their stack order and the sound language. Edition defaults on after sound; **Include low-quality sources (CAM, TS, TC, SCR)** defaults off. Source/edition naming is resolved on the server. Language: **Audio** and **Subtitles** (CC marker), **Style: Flags / Codes** and **Audio count badge: Off / Badge only / Badge and flags**. Rating: ordered source checkboxes with move buttons, **Minimum score**, **Colour by score** and where to show ratings. Status: the **Badges** button opens **Status badges**. Custom chips follow the administrator’s rules (see [Custom Tags](tags.md#custom-tags)). |
     | Language **Style** / **Audio count badge** | Flags / Off | Codes show uppercase language codes with full-name tooltips. Dual means two audio languages, Multi three or more. The badge and included audio/subtitle chips share the language limit, audio first. |
     | Language **Priority** → **Follow server policy** | On | Uses the administrator's live language list. Turn off to search by name or ISO code, add up to 12 languages, move them or remove them. An empty personal list has no priorities. Applies to audio/subtitle chips, Dual/Multi counts, Summary and native posters. |
     | Language **Only show priority languages** | Follow server | Inherit the current strict policy, show only prioritized languages, or keep other languages after them. The administrator's regional-merge setting still applies. |
@@ -752,9 +752,13 @@ See [Enhanced features](enhanced-features.md) for the full gesture workflow and 
 
     The server retains `catchup-log.jsonl` and `catchup-log.1.jsonl` in the plugin configuration folder. It rotates before the next append once the live file exceeds 5 MiB.
 
-### Tags: Quality, Genre, Language, Rating, Age Rating, Status, Logos, People
+### Tags: Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People
 
-All tag settings have moved to [Tags & Badges](tags.md): personal **Media Tags** controls, admin **Display** → **Media Tags** defaults, quality categories/order, language preferences, rating scopes, people/review badges, hover behavior, and Tag Styles.
+All tag settings have moved to [Tags & Badges](tags.md): personal **Media Tags** controls, admin **Display** → **Media Tags** defaults, quality categories/order, language preferences, rating scopes, custom tag rules, people/review badges, hover behavior, and Tag Styles.
+
+#### Custom tag rules
+
+**Display** → **Media Tags** → **Custom tag rules** turns Jellyfin tags and collections into poster chips: up to 20 rules of match type, name, label and optional icon, plus **Enable Custom Tags** and its **Position** as defaults for users. Colour the labels under **Tag Styles** → **Custom**. See [Custom Tags](tags.md#custom-tags).
 
 #### Configuration
 

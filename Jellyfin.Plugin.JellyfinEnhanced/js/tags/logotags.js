@@ -142,15 +142,7 @@
      * before stamping) is a miss, so the batch lookup asks the server again.
      * @returns {string|null}
      */
-    function guardStamp() {
-        if (JE.pluginConfig?.SpoilerBlurEnabled !== true) return 'off';
-        try {
-            const revision = JE.spoilerBlur?.tagStripRevision?.();
-            return typeof revision === 'string' ? revision : null;
-        } catch {
-            return null;
-        }
-    }
+
 
     /**
      * Build the group wrapper and hand it to the layout controller.
@@ -189,7 +181,7 @@
                     display: flex;
                     flex-direction: column;
                     align-items: flex-start;
-                    gap: 4px;
+                    gap: calc(4px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     z-index: 10;
                     pointer-events: none;
                     max-width: calc(100% - 12px);
@@ -200,16 +192,16 @@
                     align-items: center;
                     justify-content: center;
                     box-sizing: border-box;
-                    height: 22px;
+                    height: calc(22px * var(--je-tag-scale, 1));
                     max-width: 100%;
-                    padding: 3px 6px;
+                    padding: calc(3px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
                     overflow: hidden;
                     background-color: rgba(0, 0, 0, 0.6);
                     color: #ffffff;
                     border: 1px solid rgba(255, 255, 255, 0.2);
                     border-radius: 4px;
                     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-                    font-size: 12px;
+                    font-size: calc(12px * var(--je-tag-scale, 1));
                     font-weight: 700;
                     line-height: 1;
                     letter-spacing: 0.02em;
@@ -217,7 +209,7 @@
                     pointer-events: none;
                 }
 
-                .${chipClass}[data-je-logo-style="provider"] { padding: 2px; }
+                .${chipClass}[data-je-logo-style="provider"] { padding: calc(2px * var(--je-tag-scale, 1)); }
 
                 .${chipClass}[data-je-logo-style="company"] {
                     background-color: rgba(255, 255, 255, 0.9);
@@ -235,7 +227,7 @@
                     display: block;
                     height: 100%;
                     width: auto;
-                    max-width: 72px;
+                    max-width: calc(72px * var(--je-tag-scale, 1));
                     object-fit: contain;
                     border-radius: 3px;
                 }
@@ -243,12 +235,12 @@
                 /* Card-width sizing, like the age rating chip */
                 @supports (container-type: inline-size) {
                     html:not(.layout-mobile) .je-tag-host .${chipClass} {
-                        height: clamp(14px, 11cqw, 22px);
-                        font-size: clamp(9px, 6.4cqw, 12px);
+                        height: calc(clamp(14px, 11cqw, 22px) * var(--je-tag-scale, 1));
+                        font-size: calc(clamp(9px, 6.4cqw, 12px) * var(--je-tag-scale, 1));
                     }
                 }
 
-                .layout-mobile .${chipClass} { height: 18px; font-size: 10px; }
+                .layout-mobile .${chipClass} { height: calc(18px * var(--je-tag-scale, 1)); font-size: calc(10px * var(--je-tag-scale, 1)); }
             `;
         },
         pipeline: {
@@ -259,7 +251,7 @@
                 if (ctx.isTagged(el)) return;
                 if (el.closest('.je-hidden')) return;
                 const logos = readLogos(item?.Logos);
-                const entry = { l: logos, g: guardStamp() };
+                const entry = { l: logos };
                 ctx.setPersistent(item.Id, entry);
                 ctx.hot?.set(item.Id, entry);
                 applyLogoTags(ctx, el, logos);
@@ -270,15 +262,6 @@
                 if (el.closest('.je-hidden')) return true;
                 const cached = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
                 if (!cached || typeof cached !== 'object' || !Array.isArray(cached.l)) return false;
-                // Stripped under another Spoiler Guard policy, or the policy is not
-                // known yet: ask the server, which strips for the current one.
-                const stamp = guardStamp();
-                if (stamp === null) return false;
-                if (cached.g !== stamp) {
-                    ctx.deletePersistent(itemId);
-                    ctx.hot?.delete(itemId);
-                    return false;
-                }
                 // A cached "no logos" is still a hit: nothing to fetch.
                 applyLogoTags(ctx, el, readLogos(cached.l));
                 return true;

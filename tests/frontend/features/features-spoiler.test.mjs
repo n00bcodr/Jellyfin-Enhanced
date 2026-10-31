@@ -113,42 +113,11 @@ test('spoiler identity cookie follows login, switch and logout',t=>{
   h.switchUser('second'); assert.match(h.window.document.cookie,/je-spoiler-uid=second/);
   h.switchUser(null); assert.equal(h.window.document.cookie,'');
 });
-test('the tag strip revision follows guarded items and Hide tags, is order independent and unknown until the state loads', async t => {
-  let response = { Series: { 'AA-BB': {} }, Movies: { 'CC-DD': {} }, Prefs: {} };
-  const h = setup(t, async path => path === '/spoiler-blur/series' ? response : {});
-  const s = h.state;
-  assert.equal(s.tagStripRevision(), null, 'not loaded yet');
-  await s.whenLoaded();
-  const two = s.tagStripRevision();
-  assert.match(two, /^g2\./);
-  await s.enableForSeries('EE-FF');
-  const three = s.tagStripRevision();
-  assert.notEqual(three, two);
-  await s.disableForSeries('EE-FF');
-  assert.equal(s.tagStripRevision(), two, 'the same guarded set gives the same revision');
-  await s.setUserPrefs({ HideTags: false });
-  assert.equal(s.tagStripRevision(), 'off', 'Hide tags off strips nothing');
-  await s.setUserPrefs({});
-  h.JE.pluginConfig.SpoilerStripTags = false;
-  assert.equal(s.tagStripRevision(), 'off', 'the administrator\'s tag strip is off');
-  h.JE.pluginConfig.SpoilerStripTags = true;
-  // Another order of the same items, after a user switch and reload.
-  response = { Movies: { 'cc-dd': {} }, Series: { aabb: {} }, Prefs: {} };
-  h.switchUser();
-  assert.equal(s.tagStripRevision(), null);
-  await s.whenLoaded();
-  assert.equal(s.tagStripRevision(), two);
-  response = { Series: {}, Movies: {}, Collections: {}, Prefs: {} };
-  h.switchUser();
-  await s.whenLoaded();
-  assert.equal(s.tagStripRevision(), 'off', 'nothing guarded strips nothing');
-  h.JE.pluginConfig.SpoilerBlurEnabled = false;
-  assert.equal(s.tagStripRevision(), 'off');
-});
-
-test('a failed state load leaves the tag strip revision unknown', async t => {
-  const h = setup(t, async () => { throw new Error('offline'); });
-  h.expectConsoleError(/state load failed/);
+test('Spoiler Guard exposes policy inputs for UI but no independent browser cache stamp', async t => {
+  const h = setup(t, async () => ({ Series: { aabb: {} }, Prefs: {} }));
   await h.state.whenLoaded();
-  assert.equal(h.state.tagStripRevision(), null);
+  assert.equal(h.state.isEnabledFor('aabb'), true);
+  assert.equal(h.state.tagStripRevision, undefined);
+  await h.state.setUserPrefs({ HideTags: false });
+  assert.equal(h.state.getUserPrefs().HideTags, false);
 });

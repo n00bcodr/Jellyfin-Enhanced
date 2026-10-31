@@ -30,7 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The user's spoiler state the policy was built from (non-empty).</summary>
         public UserSpoilerBlur State { get; }
 
-        /// <summary>Strip genres, languages and stream data (SpoilerStripTags).</summary>
+        /// <summary>Strip genres, languages, stream data and Custom tag matches (SpoilerStripTags).</summary>
         public bool StripGenres { get; }
 
         /// <summary>Strip community/critic ratings and an Episode/Season's own age rating (SpoilerStripRatings).</summary>
@@ -120,6 +120,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // The user opted out of everything the admin enabled: nothing to do.
             if (!(stripGenres || stripRatings || replaceTitle || stripOverview)) return null;
             return new SpoilerTagStripPolicy(state, stripGenres, stripRatings, replaceTitle, stripOverview);
+        }
+
+        /// <summary>No tag strip applies to the user (<see cref="TagStripRevision"/>).</summary>
+        public const string NoTagStrip = "none";
+
+        /// <summary>
+        /// Revision of every effective data strip in POST /tag-data: tags, ratings and title-stream
+        /// sanitization, including user opt-outs and the guarded sets. Bootstrap carries the same
+        /// snapshot revision as Prefetched.TagStripRevision. All renderer fallback caches validate
+        /// this stamp centrally; only NoTagStrip results survive a page load.
+        /// </summary>
+        /// <param name="policy">The user's policy (<see cref="CreatePolicy"/>), or null.</param>
+        /// <returns>The revision.</returns>
+        public static string TagStripRevision(SpoilerTagStripPolicy? policy)
+        {
+            if (policy == null || !(policy.StripGenres || policy.StripRatings || policy.SanitizeTitleStreams)) return NoTagStrip;
+            var keys = policy.State.Series.Keys.Select(k => "s:" + k.ToLowerInvariant())
+                .Concat(policy.State.Movies.Keys.Select(k => "m:" + k.ToLowerInvariant()))
+                .Concat(policy.State.Collections.Keys.Select(k => "c:" + k.ToLowerInvariant()))
+                .Order(StringComparer.Ordinal);
+            var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(($"g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|" + string.Join(",", keys))));
+            return "g2:" + Convert.ToHexString(digest, 0, 12).ToLowerInvariant();
         }
 
         /// <summary>
@@ -243,7 +265,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var revisionKeys = guardedKinds.Keys.ToList();
             revisionKeys.Sort(StringComparer.Ordinal);
-            var fingerprint = $"naming2|g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
+            // "c1": the tag strip covers Custom tag matches too, so copies stored before it are replaced.
+            var fingerprint = $"naming2|c1|g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
 
             foreach (var kvp in items.ToList())
             {
@@ -442,6 +465,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 stripped.StreamData = null;
                 stripped.QualitySummary = null;
                 stripped.QualityEpisodeIds = null;
+                // Custom tag labels can be plot facts (a tag or collection naming a twist).
+                stripped.CustomTags = null;
             }
             // Latest policy reads its naming facts from the summary rather than StreamData.
             // Replace the shared summary before filtering; keep technical categories unchanged.

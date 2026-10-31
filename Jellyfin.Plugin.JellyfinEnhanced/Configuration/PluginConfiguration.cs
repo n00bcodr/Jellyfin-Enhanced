@@ -189,6 +189,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagEdgeSpacing = "default";
             TagLookRules = null;
             TagShapeOverrides = null;
+            CustomTagsEnabled = false;
+            CustomTagsPosition = "top-left";
+            CustomTagRules = new List<CustomTagRule>();
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -900,6 +903,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<TagLookRule>? TagLookRules { get; set; }
         /// <summary>Starting per-shape tag looks (landscape cards, list rows) for new users; null = every shape uses the default look.</summary>
         public TagShapeOverrides? TagShapeOverrides { get; set; }
+
+        // Custom tag group: administrator rules that turn Jellyfin tags or collection
+        // membership into poster chips (see CustomTagRules).
+        /// <summary>Default for the per-user Custom tags group.</summary>
+        public bool CustomTagsEnabled { get; set; }
+        /// <summary>Starting corner of the Custom tags group (a position string, as the other groups).</summary>
+        [AnalyticsInclude]
+        public string CustomTagsPosition { get; set; } = "top-left";
+        /// <summary>Custom tag rules (match type, value, label, optional icon), normalised on save; at most 20.</summary>
+        public List<CustomTagRule> CustomTagRules { get; set; } = new List<CustomTagRule>();
+        /// <summary>
+        /// Secret the Custom tag rule ids are derived from (see <see cref="CustomTagRuleSet.RuleId"/>),
+        /// so the ids clients see do not reveal a rule's tag or collection name. Generated when
+        /// rules are first saved and kept across saves; admin-only (never in the public config).
+        /// </summary>
+        public string CustomTagRuleKey { get; set; } = string.Empty;
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

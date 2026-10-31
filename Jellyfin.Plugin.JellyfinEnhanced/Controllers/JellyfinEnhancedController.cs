@@ -1259,10 +1259,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 g => g,
                 g => TagStyleCatalog.Labels(g).Select(l => new { key = l.Key, name = l.Name }).ToList(),
                 StringComparer.Ordinal);
+            // Custom labels are the administrator's (the editor reads them from the rules table):
+            // every custom chip takes the "custom:*" palette colours.
             var palettes = TagStyleKeys.Presets.ToDictionary(
                 p => p,
                 p => TagStyleKeys.Groups
                     .SelectMany(g => TagStyleCatalog.Labels(g).Select(l => (Key: g + ":" + l.Key, Colors: TagStylePalettes.Concrete(p, g, l.Key))))
+                    .Append((Key: TagStyleKeys.Custom + ":" + TagStyleKeys.AnyLabel, Colors: TagStylePalettes.Concrete(p, TagStyleKeys.Custom, TagStyleKeys.AnyLabel)))
                     .ToDictionary(e => e.Key, e => Web(e.Colors), StringComparer.Ordinal),
                 StringComparer.Ordinal);
             return new JsonResult(new
@@ -3696,7 +3699,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // action endpoint to round-trip a corruption error envelope.
                 SonarrInstancesCorrupt = config.IsSonarrInstancesCorrupt(),
                 RadarrInstancesCorrupt = config.IsRadarrInstancesCorrupt(),
+
+                // What each Custom tag rule matches, by rule id (the chip tooltip's second line).
+                CustomTagRuleSources = CustomTagRuleSourcesForAdmins(config),
             };
+        }
+
+        /// <summary>The Custom tag rules as every client may see them: id, label and icon, in table order.</summary>
+        private static object[] CustomTagRulesForClients(PluginConfiguration config)
+        {
+            var matcher = CustomTagMatcher.For(config);
+            return matcher.Rules.Select((rule, i) => (object)new { Id = matcher.Ids[i], rule.Label, rule.Icon }).ToArray();
+        }
+
+        /// <summary>The tag or collection each Custom tag rule matches, by id (admins only).</summary>
+        private static object[] CustomTagRuleSourcesForAdmins(PluginConfiguration config)
+        {
+            var matcher = CustomTagMatcher.For(config);
+            return matcher.Rules.Select((rule, i) => (object)new { Id = matcher.Ids[i], rule.Match, rule.Value }).ToArray();
         }
         // [AllowAnonymous]: public-config is loaded by `loadLoginImageEarly` before
         // the user logs in, so we cannot gate the whole endpoint on [Authorize].
@@ -3860,6 +3880,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.AwardsTagsOscar,
                 config.AwardsTagsEmmy,
                 config.AwardsTagsLetterboxd,
+                config.CustomTagsEnabled,
                 config.PeopleTagsEnabled,
                 config.DisableAllShortcuts,
                 config.DefaultSubtitleStyle,
@@ -3903,6 +3924,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LogoTagsSeriesMode = LogoTagRules.SeriesMode(config.LogoTagsSeriesMode),
                 LogoTagsMaxLogos = LogoTagRules.Max(config.LogoTagsMaxLogos),
                 config.StatusTagsPosition,
+                // Custom tag group: starting corner and rules.
+                config.CustomTagsPosition,
+                // Rule ids, labels and icons only: the tag or collection a rule matches is
+                // admin-only (CustomTagRuleSources in the private config).
+                CustomTagRules = CustomTagRulesForClients(config),
                 config.StatusTagsJustAdded,
                 config.StatusTagsNewRelease,
                 config.StatusTagsTrending,
@@ -4189,10 +4215,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         ///   SeerrUserStatus      — GET jellyseerr/user-status, when no Seerr lookup is needed
         ///   SeerrStatus          — GET jellyseerr/status, from the 30-second probe cache only
         ///   ActiveStreamSessions — GET active-streams/sessions, admins or ActiveStreamsAllUsers
+        ///   TagStripRevision     — the StripRevision POST tag-data answers carry (no endpoint of its
+        ///                          own), null when the Spoiler Guard state could not be read
         /// </summary>
         private object BuildBootstrapPrefetched(PluginConfiguration config, Guid userId, string authorizedUserId, bool isAdmin)
         {
-            object? spoilerBlurSeries = null;
+            UserSpoilerBlur? spoilerBlurSeries = null;
             object? seerrUserStatus = null;
             object? seerrStatus = null;
             List<object>? activeStreamSessions = null;
@@ -4201,6 +4229,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 spoilerBlurSeries = TryReadSpoilerBlurStateForBootstrap(authorizedUserId);
             }
+
+            // Lets the web batch fallback check what it kept from earlier pages before
+            // its first request (tags/tag-pipeline.js); unknown when the state is unreadable.
+            string? tagStripRevision = !Services.SpoilerTagDataStripper.IsConfigured(config)
+                ? Services.SpoilerTagDataStripper.NoTagStrip
+                : spoilerBlurSeries == null
+                    ? null
+                    : Services.SpoilerTagDataStripper.TagStripRevision(Services.SpoilerTagDataStripper.CreatePolicy(config, spoilerBlurSeries));
 
             if (config.JellyseerrEnabled)
             {
@@ -4236,6 +4272,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 SeerrUserStatus = seerrUserStatus,
                 SeerrStatus = seerrStatus,
                 ActiveStreamSessions = activeStreamSessions,
+                TagStripRevision = tagStripRevision,
             };
         }
 
@@ -5420,6 +5457,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
                         AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
                         AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
+                        CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
                         PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         TagsHideOnHover = defaultConfig.TagsHideOnHover,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
@@ -5443,6 +5481,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                         LogoTagsPosition = defaultConfig.LogoTagsPosition,
                         StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                        CustomTagsPosition = defaultConfig.CustomTagsPosition,
                         StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                         StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
                         StatusTagsTrending = defaultConfig.StatusTagsTrending,
@@ -8467,6 +8506,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
                         AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
                         AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
+                CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
                 PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                 TagsHideOnHover = defaultConfig.TagsHideOnHover,
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
@@ -8490,6 +8530,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
                 LogoTagsPosition = defaultConfig.LogoTagsPosition,
                 StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                CustomTagsPosition = defaultConfig.CustomTagsPosition,
                 StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
                 StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
                 StatusTagsTrending = defaultConfig.StatusTagsTrending,
@@ -8995,6 +9036,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // it (Seasons/Episodes take their Series'), memoized per series.
             var seriesLibraryMemo = new Dictionary<Guid, string?>();
             string? TagDataLibraryId(BaseItem tagItem) => Services.ItemLibraryResolver.Resolve(_libraryManager, tagItem, null, seriesLibraryMemo);
+            // Custom tag rule ids, as the server tag cache stores them, with collection
+            // matches only for collections this user can access. The Spoiler Guard stubs
+            // drop them with the genres (SpoilerStripTags): a tag or collection label can
+            // be a plot fact.
+            var customSeriesMemo = new Dictionary<Guid, BaseItem?>();
+            string[]? TagDataCustomTags(BaseItem tagItem) => _tagCacheService.GetCustomTags(tagItem, user, customSeriesMemo);
             string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
             {
                 if (!seriesOnly && !string.IsNullOrWhiteSpace(tagItem.OfficialRating))
@@ -9189,6 +9236,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Logos = spStripGenres ? null : _tagCacheService.GetLogos(spEp),
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spEp),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spEp),
                         // Suppress the parent-series rating fallback only when the
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
@@ -9237,6 +9285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Logos = spStripGenres ? null : _tagCacheService.GetLogos(spSeries),
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
                         LibraryId = TagDataLibraryId(spSeries),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spSeries),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9312,6 +9361,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Logos = spStripGenres ? null : _tagCacheService.GetLogos(spMovie),
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
                         LibraryId = TagDataLibraryId(spMovie),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spMovie),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9357,6 +9407,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Logos = spStripGenres ? null : _tagCacheService.GetLogos(spSeason),
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spSeason),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spSeason),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9459,6 +9510,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Logos = _tagCacheService.GetLogos(item),
                     OfficialRating = ResolveTagDataOfficialRating(item),
                     LibraryId = TagDataLibraryId(item),
+                    CustomTags = TagDataCustomTags(item),
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,
@@ -9486,7 +9538,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 });
             }
 
-            return Ok(new { Items = results });
+            // What Hide tags stripped from these answers ("none": nothing). The web batch
+            // fallback stamps what it keeps with it (SpoilerTagDataStripper.TagStripRevision).
+            return Ok(new { Items = results, StripRevision = Services.SpoilerTagDataStripper.TagStripRevision(spoilerPolicy) });
         }
 
 

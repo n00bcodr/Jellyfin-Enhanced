@@ -85,6 +85,8 @@
             `${M} .rating-overlay-container .rating-tag { ${fill} ${ringed} }`,
             `${M} .rating-overlay-container .rating-tag :is(.rating-star-icon, .je-userreview-icon) { color: var(--je-tag-fg) !important; }`,
             `${M} .awards-overlay-container .awards-tag { ${fill} ${ringed} }`,
+            `${M} .logo-overlay-container .je-logo-chip[data-je-logo-style] { ${fill} ${edge} }`,
+            `${M} .custom-overlay-container.custom-overlay-container .custom-tag { ${fill} ${edge} }`,
             `${M} .genre-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
             `${M} .status-overlay-container .status-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
             `${M} .status-overlay-container .status-tag .status-tag-rank { color: var(--je-tag-fg) !important; }`,
@@ -95,7 +97,7 @@
 
     /**
      * Builds the stylesheet from the server's web model (GET tag-styles).
-     * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language, logos}`.
+     * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language, awards, logos, custom}`.
      * @param {string} [scope] - The id selector of one element every rule is
      *   limited to (`#tagStylePreview` for the config page's live preview);
      *   omitted, the rules style the whole page. Anything but a single `#id`
@@ -161,6 +163,15 @@
             push(rules, S, box(c));
             // The rank ("#3") keeps its accent unless the text colour is styled.
             if (key === 'trending') push(rules, `${S} .status-tag-rank`, decl('color', c.color));
+        }
+
+        // Custom chips: "*" is every chip of the group, then each rule label.
+        const custom = styles.custom || {};
+        const C = `${P}.custom-overlay-container.custom-overlay-container .custom-tag`;
+        if (custom['*']) push(rules, C, box(custom['*']));
+        for (const [label, c] of Object.entries(custom)) {
+            if (label === '*' || !c) continue;
+            push(rules, `${C}[data-je-custom="${attr(label)}"]`, box(c));
         }
 
         if (styles.language) {

@@ -23,6 +23,28 @@ test('tag pipeline drops removed cards while a lookup is pending',async t=>{
 test('tag pipeline rejects a late previous-user batch after identity reset',async t=>{
  const h=setup(t);h.scan();h.fetch();h.changes.get('tag-pipeline')({userId:'b'});h.response.resolve({Items:[{Id:'aabb',Type:'Movie',Genres:['private']} ]});await settle();assert.equal(h.rendered.length,0);
 });
+test('the Spoiler Guard tag strip revision comes from the bootstrap, then each current /tag-data answer, and resets with the user',async t=>{
+ const idle=[],timers=new Map(),changes=new Map(),answers=[],extras=[];let seq=0;
+ const h=createHarness({html:card,globals:{requestIdleCallback:fn=>idle.push(fn),setTimeout:(fn,ms)=>{timers.set(++seq,{fn,ms});return seq;},clearTimeout:id=>timers.delete(id)},
+  apiClient:{ajax:()=>{const answer=deferred();answers.push(answer);return answer.promise;}},
+  JE:{pluginConfig:{TagCacheServerMode:false},currentSettings:{},takePrefetched:name=>name==='TagStripRevision'?'none':undefined,core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},session:{onUserChange:(id,fn)=>changes.set(id,fn)}}});
+ t.after(()=>h.close());h.load('tags/tag-pipeline.js');
+ h.JE.tagPipeline.registerRenderer('probe',{isEnabled:()=>true,render:(host,item,extra)=>extras.push(extra.stripRevision)});
+ const scan=()=>{while(idle.length)idle.shift()({timeRemaining:()=>50});};
+ const fetch=()=>{for(const[id,timer]of[...timers])if(timer.ms===150){timers.delete(id);timer.fn();}};
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),'none','the bootstrap value before any request');
+ // A batch cancelled by a reinitialize: its answer is dropped, revision and all.
+ scan();fetch();h.JE.tagPipeline.clearProcessed();h.JE.tagPipeline.scheduleScan();scan();
+ answers[0].resolve({Items:[],StripRevision:'g1:old'});await settle();
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),'none');
+ fetch();await settle();
+ assert.equal(answers.length,2);
+ answers[1].resolve({Items:[{Id:'aabb',Type:'Movie'}],StripRevision:'g1:new'});await settle();
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),'g1:new');
+ assert.deepEqual(extras,['g1:new'],'each render learns its own answer\'s revision');
+ changes.get('tag-pipeline')({userId:'b'});
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),null,'unknown for the next user until an answer says');
+});
 test('identity reset drops the previous user\'s review ratings',async t=>{
  const changes=new Map();
  const h=createHarness({globals:{requestIdleCallback:()=>{}},apiClient:{ajax:async()=>({reviewRatings:{'movie:42':{average:4.5}},items:{series:{Type:'Series',LatestEpisodeIndex:{Season:1,Episode:10}}},count:1})},JE:{pluginConfig:{TagCacheServerMode:true},currentSettings:{qualityTagsEnabled:true},helpers:{onBodyMutation(){},onNavigate(){},addCSS(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}},
@@ -175,7 +197,7 @@ async function loadWithStoredCopy(t, meta) {
   return { calls, cleared };
 }
 
-for (const schema of [undefined, 11, 12, 13, 14, 15, 16]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
+for (const schema of [undefined, 11, 12, 13, 14, 15, 16, 17]) test(`a stored tag cache copy from an older entry schema (${schema ?? 'missing'}) is dropped and downloaded in full`, async t => {
   const { calls, cleared } = await loadWithStoredCopy(t, schema === undefined ? {} : { schema });
   assert.deepEqual(cleared, ['server-a:user-a'], 'the copy without the current schema is cleared');
   assert.ok(calls.length > 0 && calls.every(url => !url.includes('since=')), 'a full download, never a delta on top of it');
@@ -304,4 +326,24 @@ test('waitForServerCache gives up after its bound, when stopped, and with the se
   off.h.JE.pluginConfig.TagCacheServerMode = false;
   assert.equal(await off.pipeline.waitForServerCache(carriesLogos, { delays: [0] }), false);
   assert.equal(off.urls.length, 0);
+});
+
+test('guard invalidation releases a drain waiting for an old first episode and rejects that episode when it eventually arrives', async t => {
+ const idle=[],timers=new Map(),seen=[],oldEpisode=deferred();let seq=0,guarded=false,requests=0;
+ const html=card+card.replace('AA-BB','CC-DD').replace('data-type="Movie"','data-type="Series"');
+ const h=createHarness({html,globals:{requestIdleCallback:fn=>idle.push(fn),setTimeout:(fn,ms)=>{timers.set(++seq,{fn,ms});return seq;},clearTimeout:id=>timers.delete(id)},
+  apiClient:{ajax:async options=>{
+   const ids=JSON.parse(options.data);if(ids.length===1&&ids[0]==='eeff')return oldEpisode.promise;
+   requests++;return {StripRevision:guarded?'g2:guarded':'none',Items:[{Id:'aabb',Type:'Movie'},{Id:'ccdd',Type:'Series',FirstEpisode:guarded?null:{Id:'eeff',NeedsStreamFetch:true}}]};
+  }},JE:{pluginConfig:{TagCacheServerMode:false},currentSettings:{},helpers:{onBodyMutation(){},onNavigate(){},addCSS(){}},core:{tagRenderer:{applyCornerStacking(){},scheduleCornerStacking(){}}}}});
+ t.after(()=>h.close());h.load('tags/tag-pipeline.js');
+ h.JE.tagPipeline.registerRenderer('probe',{isEnabled:()=>true,needsFirstEpisode:true,render:(el,item,extras)=>seen.push([item.Id,extras.stripRevision])});h.JE.tagPipeline.initialize();
+ const flush=async()=>{for(let n=0;n<5;n++){while(idle.length)idle.shift()({timeRemaining:()=>50});for(const[id,timer]of[...timers])if(timer.ms===150){timers.delete(id);timer.fn();}await settle();}};
+ await flush();assert.equal(requests,1);assert.deepEqual(seen,[['aabb','none']]);
+ guarded=true;await h.JE.tagPipeline.invalidateServerCache();await flush();
+ assert.equal(requests,2,'new policy is fetched while the obsolete episode remains unresolved');
+ assert.deepEqual(seen,[['aabb','none'],['aabb','g2:guarded'],['ccdd','g2:guarded']]);
+ oldEpisode.resolve({Items:[{Id:'eeff',Type:'Episode',Genres:['obsolete']}],StripRevision:'none'});await flush();
+ assert.equal(seen.length,3,'obsolete first-episode completion cannot render or stamp anything');
+ assert.equal(h.JE.tagPipeline.tagStripRevision(),'g2:guarded');
 });

@@ -1112,7 +1112,7 @@
 
                 const representativeQualities = qualities;
                 qualities = aggregateQualities(item, qualities);
-                if (qualities.length > 0 || item.QualitySummary) {
+                {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
                         namingVersion: 1, timestamp: Date.now(), audioLang, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };

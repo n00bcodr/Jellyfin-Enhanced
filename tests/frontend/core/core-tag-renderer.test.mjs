@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 function setup(t,config={}){
  const saved=[], renderers=new Map(), changes=new Map();let scans=0;
- const h=createHarness({html:'<div class="card"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>',JE:{currentSettings:{tags:true},pluginConfig:config,session:{getUserId:()=> 'a',getServerId:()=> 's',onUserChange:(name,fn)=>changes.set(name,fn)},_cacheManager:{register:fn=>saved.push(fn),markDirty(){}},tagPipeline:{registerRenderer:(name,r)=>renderers.set(name,r),getRenderer:name=>renderers.get(name),clearProcessed(){},scheduleScan:()=>scans++}}});
+ const h=createHarness({html:'<div class="card"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>',JE:{currentSettings:{tags:true},pluginConfig:config,session:{getUserId:()=> 'a',getServerId:()=> 's',onUserChange:(name,fn)=>changes.set(name,fn)},_cacheManager:{register:fn=>saved.push(fn),markDirty(){}},tagPipeline:{tagStripRevision:()=> 'none',registerRenderer:(name,r)=>renderers.set(name,r),getRenderer:name=>renderers.get(name),clearProcessed(){},scheduleScan:()=>scans++}}});
  t.after(()=>h.close());h.load('core/ui-kit.js');h.load('core/tag-renderer-base.js');
- const spec={logPrefix:'test',settingKey:'tags',containerClass:'test-overlay',taggedAttr:'jeTestTagged',styleId:'test-tag-css',buildCss:()=>'.test-overlay{color:red}',position:{userKey:'position',pluginKey:'Position',fallback:'top-right'},cache:{key:'test-v2',legacyPrefix:'oldtest',hotBucket:'test',pruneOnSave:true},pipeline:{render(ctx,el,item){const overlay=h.document.createElement('div');overlay.className='test-overlay';overlay.innerHTML='<span></span>';ctx.commitOverlay(el,overlay);}}};
+ const spec={logPrefix:'test',settingKey:'tags',containerClass:'test-overlay',taggedAttr:'jeTestTagged',styleId:'test-tag-css',buildCss:()=>'.test-overlay{color:red}',position:{userKey:'position',pluginKey:'Position',fallback:'top-right'},cache:{key:'test-v2',legacyPrefix:'oldtest',hotBucket:'test',pruneOnSave:true},pipeline:{render(ctx,el,item){if(item.Id)ctx.setPersistent(item.Id,item);const overlay=h.document.createElement('div');overlay.className='test-overlay';overlay.innerHTML='<span></span>';ctx.commitOverlay(el,overlay);}}};
  return Object.assign(h,{spec,saved,renderers,changes,scans:()=>scans,register:()=>h.JE.core.tagRenderer.register('test',spec),host:h.document.querySelector('.je-tag-host')});
 }
 test('tag registration preserves enabled contract, hooks and real overlay DOM',t=>{
@@ -23,12 +23,12 @@ test('tag position resolves user then administrator then fallback',t=>{
 });
 test('tag cache rejects previous-owner data and clears hot/persistent state on user change',t=>{
  const h=setup(t,{TagCacheServerMode:false});const store=h.window.localStorage;store.setItem('test-v2',JSON.stringify({secret:{owner:'previous'}}));store.setItem('test-v2:identity-owner','s:previous');
- const ctx=h.register();assert.equal(ctx.getPersistent('secret'),undefined);ctx.setPersistent('new',{timestamp:Date.now()});ctx.hot.set('new',1);h.saved[0]();assert.ok(store.getItem('test-v2').includes('new'));
+ const ctx=h.register();assert.equal(ctx.getPersistent('secret'),undefined);h.renderers.get('test').render(h.host,{Id:'new',timestamp:Date.now()},{stripRevision:'none'});h.saved[0]();assert.ok(store.getItem('test-v2').includes('new'));
  h.changes.get('tag-cache-test')({serverId:'s',userId:'b'});assert.equal(ctx.getPersistent('new'),undefined);assert.equal(ctx.hot.size,0);assert.equal(store.getItem('test-v2'),null);assert.equal(store.getItem('test-v2:identity-owner'),'s:b');
 });
 test('tag cache honors TTL pruning, legacy cleanup and server clear timestamp',t=>{
  const h=setup(t,{TagCacheServerMode:false,TagsCacheTtlDays:1});const store=h.window.localStorage;
- store.setItem('oldtest-v1','{}');store.setItem('oldtest','{}');store.setItem('oldtestTimestamp','1');store.setItem('test-v2:identity-owner','s:a');store.setItem('test-v2',JSON.stringify({old:{timestamp:0},fresh:{timestamp:Date.now()}}));
+ store.setItem('oldtest-v1','{}');store.setItem('oldtest','{}');store.setItem('oldtestTimestamp','1');store.setItem('test-v2:identity-owner','s:a');store.setItem('test-v2',JSON.stringify({old:{timestamp:0},fresh:{v:1,stripRevision:"none",payload:{timestamp:Date.now()},timestamp:Date.now()}}));
  const ctx=h.register();h.saved[0]();assert.equal(ctx.getPersistent('old'),undefined);assert.ok(ctx.getPersistent('fresh'));
  for(const key of ['oldtest-v1','oldtest','oldtestTimestamp'])assert.equal(store.getItem(key),null,key);
  h.register();assert.ok(ctx.getPersistent('fresh'),'a plain re-register (page reload) keeps the cache');
@@ -40,7 +40,7 @@ test('legacy sweep keeps the current cache, timestamp and owner keys when they s
  // A past server clear (timestamp 1000) is already applied; sweeping its "…-v2Timestamp" key would re-apply it on every reload.
  const h=setup(t,{TagCacheServerMode:false,ClearLocalStorageTimestamp:1000});h.spec.cache={key:'JellyfinEnhanced-languageTagsCache-v2',legacyPrefix:['JellyfinEnhanced-languageTagsCache','languageTagsCache'],hotBucket:'language'};
  const store=h.window.localStorage;store.setItem('JellyfinEnhanced-languageTagsCache','{}');store.setItem('languageTagsCache-x','{}');
- const ctx=h.register();ctx.setPersistent('fresh',{timestamp:Date.now()});h.saved[0]();
+ const ctx=h.register();h.renderers.get('test').render(h.host,{Id:'fresh',timestamp:Date.now()},{stripRevision:'none'});h.saved[0]();
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache'),null);assert.equal(store.getItem('languageTagsCache-x'),null);
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2:identity-owner'),'s:a');
  assert.equal(store.getItem('JellyfinEnhanced-languageTagsCache-v2Timestamp'),'1000');

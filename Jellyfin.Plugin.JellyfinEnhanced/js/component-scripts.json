@@ -211,6 +211,7 @@
     "// Poster preset colours (read by tag-styles.js and core/tag-layout.js at call time).",
     "tags/tag-poster-colours.js",
     "tags/logotags.js",
+    "tags/customtags.js",
     "tags/tag-styles.js",
     "tags/userreviewtags.js",
     "// Detail-page Lock tag look button (reads JE.core.tagLook at call time).",

@@ -30,7 +30,7 @@ The initialization stages and user-switch behavior are:
 
 The bootstrap's `UserSettings` members are `Settings`, `Shortcuts`, `Bookmark`, `Elsewhere` and `HiddenContent`. A document-loading failure yields null for that document. Bootstrap always loads the token user's data, with no target-user parameter, and is served with `no-store`.
 
-Bootstrap's `Prefetched` block can carry `SpoilerBlurSeries`, `SeerrUserStatus`, `SeerrStatus` and `ActiveStreamSessions`. These reuse standalone response bodies under the same feature, access and cache gates. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.
+Bootstrap's `Prefetched` block can carry `SpoilerBlurSeries`, `SeerrUserStatus`, `SeerrStatus`, `ActiveStreamSessions` and `TagStripRevision`. The first four reuse standalone response bodies under the same feature, access and cache gates. `TagStripRevision` is the Spoiler Guard tag strip revision that `tag-data` answers carry; the tag pipeline reads it before its first request. Seerr answers are included only when no upstream lookup is needed; sessions follow the active-streams access gate.
 
 Components consume a value once, shortly after bootstrap, through `JE.takePrefetched(name)`. Otherwise, they call their endpoint normally. Bootstrap does not fetch every feature's data.
 
@@ -72,6 +72,7 @@ Jellyfin.Plugin.JellyfinEnhanced/
 │   ├── UserConfiguration.cs
 │   ├── TagShapeSettings.cs         # Per-shape layout/density/slot/cap validation and defaults
 │   ├── TagLookSettings.cs
+│   ├── CustomTagRuleSet.cs        # Custom tag rules: model, validation and the matcher
 │   ├── UserConfigurationManager.cs
 │   ├── configPage.html
 │   ├── configPage.css
@@ -152,6 +153,7 @@ This table maps server settings, per-user documents and the configuration UI to 
 | `Configuration/LogoTagSettings.cs` | Logos group modes (movies: provider/studio/off; series: network/provider/off), region and maximum, normalized on save. |
 | `Configuration/LanguageTagDisplaySettings.cs` | Language display enums, save normalization and admin defaults for new-user seeding and reset-all. |
 | `Configuration/TagLookSettings.cs` | Tag look rules and per-item locks: models and validation (`TagLookValidation`) for `settings.json` and the administrator's default rules. |
+| `Configuration/CustomTagRuleSet.cs` | Custom tag rules (`CustomTagRule`): save-time normalisation (`CustomTagRuleSet`), rule ids, the icon list, and the matcher (`CustomTagMatcher`) the tag cache, `tag-data` and native posters share. |
 | `Configuration/UserConfigurationManager.cs` | Server file storage, locking, writes, shared stores and migration of historical user-ID directory variants. |
 | `Configuration/whats-new-seed.json` | Fallback baseline for detecting new admin controls; this is a historical baseline, not current defaults or a feature count. |
 | `js/enhanced/config.js` | Resolves effective values from server-stored user settings, admin defaults and client fallbacks; serializes per-user saves to the server in order. It does not store user settings in localStorage. |
@@ -323,6 +325,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `ageratingtags.js` | Color-coded parental/age ratings, sharing the Colored Ratings color table. |
 | `status-vocabulary.json`, `status-vocabulary.js` | Shared status badge keys, style ids, compact translation keys and date thresholds; the JSON is embedded by native code and `scripts/generate_status_vocabulary.py` generates/checks its IIFE web table. |
 | `logotags.js` | Logo Tags: the streaming provider, network or studio logo chips (server-proxied images, name chips with initials as the fallback); also builds the hub preview's samples. |
+| `customtags.js` | Custom Tags: one chip per administrator rule the item matched (label, optional genre-set icon, with source tooltips for administrators only), from the cache entry's or `tag-data`'s `CustomTags`; Tag Styles hooks `data-je-custom`. |
 | `statustags.js` | Status Tags: first-match badge per card for added/release dates, season milestones, schedules, trending and optional series status. Batches visible series through `status-tags/series`, guards stale card/user answers and supplies compact labels and `data-je-status` styling hooks. |
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
 | `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating group through the layout controller. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
@@ -445,6 +448,7 @@ The client interacts with server classes through endpoints, cookies and image re
 | `TagLogoService.cs`, `TagCacheLogos.cs` | Logos group data: daily TMDB lookups and the logo image proxy cache; projection into tag cache entries. |
 | `StatusTagsSeriesService.cs` | Authenticated caller-filtered series schedule endpoint support: six-hour TMDB cache, four concurrent lookups, 35 starts per ten seconds, season episode-type enrichment. No per-user storage. |
 | `StatusTagsEpisodeFacts.cs` | Shared episode aggregation for cache and user-filtered batch fallback: aired episode indexes, episode-one season premiere and season added span. |
+| `TagCacheCustomTags.cs` | Custom tags in the tag cache: the rules each entry matches (`CustomTags`) from item and series tags and a pass over the collections a rule names; patches members after collection changes, series children after series changes, and re-matches the cache when the rules change. |
 | `ItemLibraryResolver.cs` | The library an item is in (seasons and episodes: their series'), stored as `LibraryId` in tag-cache entries and `tag-data` items for tag look rules. |
 | `TagCachePendingChanges.cs`, `TagCacheResponseBody.cs` | Coalesces pending item changes; assembles bulk response bytes and hashes the viewer's final body for its ETag. |
 | `HiddenContentResponseFilter.cs` | Filters supported Jellyfin item lists and Home Screen Sections responses using the viewer's hidden-content scopes. |
@@ -527,7 +531,7 @@ Missing or wrong-length keys are recreated; old URLs can serve original artwork 
 | `Helpers/Jellyseerr/` | `SeerrHttpHelper.cs`, `JellyseerrPermissionHelper.cs`, `JellyseerrUserImportHelper.cs`: HTTP, permission and import helpers. `ParentalRatingDecision.cs`, `ParentalTagDecision.cs`, `SeerrCertificationExtractor.cs`, `SeerrTagSignatureExtractor.cs`: shared parental decisions/extraction. |
 | `Extensions/` | `ItemRepositoryExtensions.cs`, `JellyfinDbContextExtensions.cs`, `UserManagerExtensions.cs`: repository/database provider lookups and compatible user enumeration across server API changes. |
 | `Services/MediaNamingTags.cs` | Server-side source/edition detection from file and immediate parent-folder names, physical-stub priority and resolution-ranked multi-version selection. Shared by the tag cache and `/tag-data`; only labels reach clients. |
-| `Model/TagCacheEntry.cs` | Tag data at the current cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`), including source/edition labels, named-source ratings, Logos (`Model/TagLogo.cs`), series/season quality summaries, Status Tags facts and server-only contributor IDs for access filtering, plus precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups. |
+| `Model/TagCacheEntry.cs` | Tag data at the current cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`), including source/edition labels, named-source ratings, Custom rule matches, Logos (`Model/TagLogo.cs`), series/season quality summaries, Status Tags facts and server-only contributor IDs for access filtering, plus precomputed item tag data, including parent-series IDs for Spoiler Guard filtering without per-entry library lookups. |
 | `Model/TagQualitySummary.cs`, `Services/SeriesQualityAggregation.cs` | Policy-independent container quality facts, bounded distinct values, audio-language variants and policy resolution; built from existing episode streams and recomputed through the cache access filter for restricted users. |
 | `Model/AnalyticsData.cs`, `WhatsNewData.cs` | Report/counter records and inclusion/exclusion annotations; configuration-schema and pending-change records. |
 | `Model/AwardsData.cs`, `MdblistRatings.cs` | Awards cache records and MDBList cache/account models. |

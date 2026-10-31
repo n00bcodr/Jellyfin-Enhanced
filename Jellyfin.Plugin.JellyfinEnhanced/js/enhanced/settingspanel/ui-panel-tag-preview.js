@@ -31,6 +31,7 @@
         language: 'languageTagsEnabled',
         genre: 'genreTagsEnabled',
         logos: 'logoTagsEnabled',
+        custom: 'customTagsEnabled',
     };
     const GROUP_IDS = Object.keys(ENABLED);
 
@@ -67,6 +68,7 @@
             age: 'PG-13', flags: ['fr', 'jp', 'de'], genres: [['Science Fiction', 'science'], ['Thriller', 'psychology']],
             logos: [{ kind: 'provider', name: 'Streamflix', svg: LOGOS.provider }],
             status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added']],
+            custom: 2,
         },
         {
             key: 'series', type: 'Series', shape: 'poster', titleKey: 'panel_media_tags_preview_title_series',
@@ -77,6 +79,7 @@
             age: 'TV-MA', flags: ['it'], genres: [['Drama', 'theater_comedy'], ['Mystery', 'psychology_alt']],
             logos: [{ kind: 'network', name: 'Northwind Broadcasting', svg: LOGOS.network }],
             status: [['statusTagsSchedule', 'schedule', 'status_tag_airs_date', null, { date: 'Fri' }], ['statusTagsSeriesStatus', 'status', 'status_tag_returning']],
+            custom: 1,
         },
         {
             key: 'episode', type: 'Episode', shape: 'thumb', titleKey: 'panel_media_tags_preview_title_episode',
@@ -217,6 +220,19 @@
                     if (chip) wrap.appendChild(chip);
                 }
                 break;
+            case 'custom': {
+                // The administrator's first rules (as customtags.js draws them), or a
+                // sample label while none is set up.
+                const custom = JE.customTags;
+                const rules = custom ? [...custom.currentRules().rules.values()] : [];
+                const shown = rules.length ? rules.slice(0, sample.custom || 0)
+                    : (sample.custom ? [{ id: 'collection:sample', match: 'collection', value: JE.t('custom_tags_sample'), label: JE.t('custom_tags_sample'), icon: null }] : []);
+                for (const rule of shown) {
+                    if (custom) wrap.appendChild(custom.buildChip(rule));
+                    else add('custom-tag', rule.label).dataset.jeCustom = rule.label;
+                }
+                break;
+            }
             default:
                 return null;
         }
@@ -300,7 +316,7 @@
         const L = layoutApi();
         const lead = [];
         const rest = [];
-        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .language-chip, .genre-tag, .status-tag, .awards-tag, .je-logo-chip, .je-tag-pill-fact, .je-tag-more)');
+        const chips = card.querySelectorAll('.je-tag-slot:not([data-je-slot="hover"]) :is(.quality-overlay-label, .rating-tag, .age-rating-tag, .language-flag, .language-chip, .genre-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .je-tag-pill-fact, .je-tag-more)');
         for (const chip of chips) {
             const el = /** @type {HTMLElement} */ (chip);
             if (el.parentElement?.classList.contains('language-subtitle')) continue;
@@ -310,6 +326,8 @@
             else if (el.classList.contains('je-logo-chip')) text = el.title || el.textContent || '';
             // Rating chips: their score only (the star is an icon ligature).
             else if (el.classList.contains('rating-tag')) text = `${el.classList.contains('rating-tag-tmdb') ? '★' : ''}${el.querySelector('.rating-text')?.textContent || ''}`;
+            // Custom chips: their label (an icon is a ligature too).
+            else if (el.classList.contains('custom-tag')) text = el.dataset.jeCustom || '';
             else text = el.textContent || '';
             text = text.replace(/\s+/g, ' ').trim();
             if (!text) continue;
@@ -361,7 +379,7 @@
         #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: #ffd166; }
         #jellyfin-enhanced-panel .je-mtp-note[hidden] { display: none; }
         /* Spotlight: the group being edited stays bright, the others step back. */
-        #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .logo-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }
+        #jellyfin-enhanced-panel .je-mtp[data-spot] .je-mtp-card :is(.quality-overlay-container, .genre-overlay-container, .language-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .awards-overlay-container, .logo-overlay-container, .custom-overlay-container, .je-tag-pill, .je-tag-dots) { opacity: 0.6; transition: opacity 0.15s; }
     `;
 
     /**

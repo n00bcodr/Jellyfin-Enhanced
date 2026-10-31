@@ -382,7 +382,7 @@
 
                 var languages = { audio: extractLanguagesFromItem(sourceItem), subtitles: sourceItem.SubtitleLanguages || item.SubtitleLanguages || extractLanguagesFromItem(sourceItem, 'Subtitle') };
 
-                if (languages.audio.length || languages.subtitles.length) {
+                {
                     ctx.setPersistent(itemId, languages);
                     ctx.hot?.set(itemId, { value: languages, timestamp: Date.now() });
                     insertLanguageTags(ctx, el, languages);
@@ -395,7 +395,7 @@
                 const hot = ctx.hot?.get(itemId);
                 const cached = hot || ctx.getPersistent(itemId);
                 if (cached) {
-                    const languages = Array.isArray(cached) ? cached : (cached.value || cached.languages);
+                    const languages = Array.isArray(cached) ? cached : (cached.value || cached.languages || cached);
                     if (languages && !Array.isArray(languages)) {
                         insertLanguageTags(ctx, el, languages);
                         return true;

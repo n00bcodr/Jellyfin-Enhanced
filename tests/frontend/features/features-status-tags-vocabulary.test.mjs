@@ -37,7 +37,7 @@ function setup(t, { settings = {}, plugin = {}, series = {}, cards = 2, layout =
       t: translate,
       session: { getUserId: () => 'a', getServerId: () => 's', getEpoch: () => 0, isCurrent: () => true, onUserChange: (name, fn) => userChange.set(name, fn) },
       _cacheManager: { register() {}, markDirty() {} },
-      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), peekServerEntry: id => id === SERIES ? seriesAggregate : null, lookupServerEntries: async () => { seriesAggregate ||= await storedSeriesAggregate; }, clearProcessed() {}, scheduleScan() {} }
+      tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (name, r) => renderers.set(name, { ...r, render: (el,item,extras={}) => r.render(el,item,{stripRevision:'none',...extras}) }), getRenderer: name => renderers.get(name), peekServerEntry: id => id === SERIES ? seriesAggregate : null, lookupServerEntries: async () => { seriesAggregate ||= await storedSeriesAggregate; }, clearProcessed() {}, scheduleScan() {} }
     },
     apiClient: {
       getUrl: (path, params) => (params ? `${path}?${new URLSearchParams(params)}` : path),

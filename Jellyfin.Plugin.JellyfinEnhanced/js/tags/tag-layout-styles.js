@@ -21,7 +21,7 @@
     const EDGE = '.je-tag-host[data-je-layout="corners"][data-je-edge] > .je-tag-slot';
     const FLUSH = '.je-tag-host[data-je-layout="corners"][data-je-edge="flush"] > .je-tag-slot';
     /** Chips with a box of their own (not the genre circle or a flag image). */
-    const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .language-chip)';
+    const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
 
     /**
      * Build the shared layout stylesheet.

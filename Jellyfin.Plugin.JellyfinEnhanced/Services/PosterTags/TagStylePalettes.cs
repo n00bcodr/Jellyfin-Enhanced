@@ -33,6 +33,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Logos tag group pills: provider logos, network/studio logos and name chips.</summary>
         public const string Logos = "logos";
 
+        /// <summary>Custom tag chips (labels are the administrator's rule labels, see <see cref="Configuration.CustomTagRuleSet"/>).</summary>
+        public const string Custom = "custom";
+
         /// <summary>The label every chip of a group falls back to when it is not in the catalog.</summary>
         public const string AnyLabel = "*";
 
@@ -46,7 +49,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public const string PosterPreset = "poster";
 
         /// <summary>Every group, in editor tab order.</summary>
-        public static readonly IReadOnlyList<string> Groups = new[] { Quality, AgeRating, Rating, Genre, Status, Language, Awards, Logos };
+        public static readonly IReadOnlyList<string> Groups = new[] { Quality, AgeRating, Rating, Genre, Status, Language, Awards, Logos, Custom };
 
         /// <summary>Every preset, in editor order.</summary>
         public static readonly IReadOnlyList<string> Presets = new[] { DefaultPreset, "glass", "outline", "dark", "light", "mono", PosterPreset };
@@ -136,6 +139,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 },
                 TagStyleKeys.Genre => new TagColors("rgba(10, 10, 10, 0.8)", "rgba(255, 255, 255, 0.2)", "#E0E0E0"),
                 TagStyleKeys.Status => new TagColors("rgba(15, 15, 15, 0.72)", "rgba(255, 255, 255, 0.18)", White),
+                TagStyleKeys.Custom => new TagColors("rgba(38, 50, 56, 0.88)", "rgba(255, 255, 255, 0.22)", White),
                 TagStyleKeys.Language => new TagColors(Transparent, Transparent, White),
                 TagStyleKeys.Awards => new TagColors("rgba(15, 15, 15, 0.85)", Transparent, White),
                 TagStyleKeys.Logos => label switch

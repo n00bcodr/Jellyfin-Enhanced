@@ -11,7 +11,7 @@ function setup(t, settings = {}, plugin = {}) {
   const renderers = new Map();
   const h = createHarness({ html: '<div class="card" data-type="Movie"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div><div class="cardText">Title</div></div></div>',
     JE: { currentSettings: { logoTagsEnabled: true, ...settings }, pluginConfig: plugin, t: key => key,
-      tagPipeline: { registerRenderer: (id, renderer) => renderers.set(id, renderer), getRenderer: id => renderers.get(id), clearProcessed() {}, scheduleScan() {} } },
+      tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (id, renderer) => renderers.set(id, renderer), getRenderer: id => renderers.get(id), clearProcessed() {}, scheduleScan() {} } },
     apiClient: { getUrl: path => `http://jf/${path}` } });
   t.after(() => h.close());
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/logotags.js']) h.load(file);
@@ -78,12 +78,12 @@ test('an image that fails to load becomes the name chip, also in the copies the 
 
 test('batch lookups render and remember the logos, and a cached empty answer is still a hit', t => {
   const h = setup(t);
-  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, {});
+  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, { stripRevision: 'none' });
   assert.equal(h.chips().length, 1);
   h.JE.core.tagLayout.clearCard(h.host);
   delete h.host.dataset.jeLogoTagged;
   assert.equal(h.renderer().renderFromCache(h.host, 'item'), true);
-  h.renderer().render(h.host, { Id: 'empty', Type: 'Movie' }, {});
+  h.renderer().render(h.host, { Id: 'empty', Type: 'Movie' }, { stripRevision: 'none' });
   assert.equal(h.renderer().renderFromCache(h.host, 'empty'), true);
   const other = h.document.createElement('div');
   other.className = 'je-tag-host';
@@ -109,7 +109,7 @@ test('the summary pill names the first logo, and the layout knows the group, its
   assert.ok(L.GROUPS.includes('logos'));
   assert.equal(L.CONTAINER_CLASS.logos, 'logo-overlay-container');
   assert.equal(L.DEFAULT_CAPS.logos, 0);
-  assert.equal(L.DEFAULT_ORDER.at(-1), 'logos');
+  assert.equal(L.DEFAULT_ORDER.at(-2), 'logos');
   assert.equal(L.DEFAULT_PROFILES.bands.logos, 'top');
 });
 
@@ -136,7 +136,7 @@ async function guardedBatch(t, { stored, guarded = false } = {}) {
     apiClient: { ajax: async ({ url }) => {
       if (!url.includes('/tag-data/')) return {};
       batches++;
-      return { Items: [{ Id: 'aabb', Type: 'Movie', Logos: guard.movies.has('aabb') ? null : [netflix] }] };
+      return { StripRevision: guard.movies.has('aabb') ? 'g2:guarded' : 'none', Items: [{ Id: 'aabb', Type: 'Movie', Logos: guard.movies.has('aabb') ? null : [netflix] }] };
     } },
     JE: {
       pluginConfig: { TagCacheServerMode: false, SpoilerBlurEnabled: true, SpoilerStripTags: true },
@@ -197,7 +197,8 @@ test('guarding a movie hides its cached logo at once, and unguarding brings it b
   assert.equal(g.batches(), 3);
 
   // Same policy: the remembered answer is used again without a lookup.
-  await g.h.JE.tagPipeline.invalidateServerCache();
+  g.h.JE.tagPipeline.clearProcessed();
+  g.h.JE.tagPipeline.scheduleScan();
   await g.flush();
   assert.equal(g.chips(), 1);
   assert.equal(g.batches(), 3);
@@ -209,16 +210,16 @@ for (const [label, stored] of [['from before stamping', { l: [netflix] }], ['sta
     await g.flush();
     assert.equal(g.chips(), 0);
     assert.equal(g.batches(), 1, 'the copy is a miss: the server decides');
-    assert.deepEqual(plain(g.remembered().l), [], 'the stripped answer replaces it');
-    assert.match(g.remembered().g, /^g1\./);
+    assert.deepEqual(plain(g.remembered().payload.l), [], 'the stripped answer replaces it');
+    assert.match(g.remembered().stripRevision, /^g2:/);
   });
 }
 
 test('the fallback cache uses entries stamped under the current guard policy only, and asks again while it is unknown', t => {
-  let revision = 'off';
+  let revision = 'none';
   const h = setup(t, {}, { SpoilerBlurEnabled: true });
-  h.JE.spoilerBlur = { tagStripRevision: () => revision };
-  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, {});
+  h.JE.tagPipeline.tagStripRevision = () => revision;
+  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, { stripRevision: 'none' });
   const again = () => {
     h.JE.core.tagLayout.clearCard(h.host);
     delete h.host.dataset.jeLogoTagged;
@@ -227,14 +228,14 @@ test('the fallback cache uses entries stamped under the current guard policy onl
   assert.equal(again(), true);
   revision = null;
   assert.equal(again(), false, 'state not loaded: a miss');
-  revision = 'off';
+  revision = 'none';
   assert.equal(again(), true, 'an unknown policy keeps the entry');
-  revision = 'g1.abc';
+  revision = 'g2:abc';
   assert.equal(again(), false, 'another policy: a miss');
-  revision = 'off';
+  revision = 'none';
   assert.equal(again(), false, 'and the entry is gone');
   h.JE.pluginConfig.SpoilerBlurEnabled = false;
   h.JE.spoilerBlur = undefined;
-  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, {});
-  assert.equal(again(), true, 'Spoiler Guard off needs no state');
+  h.renderer().render(h.host, { Id: 'item', Type: 'Movie', Logos: [netflix] }, { stripRevision: 'none' });
+  assert.equal(again(), true, 'the authoritative unstripped answer can be reused');
 });

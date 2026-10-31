@@ -551,6 +551,37 @@
                             <div class="inputContainer"><label for="awardsTagsLetterboxdList" data-je-awards-label="awards_tags_admin_letterboxd_list">Letterboxd Top 250 MDBList id or owner/slug</label><input id="awardsTagsLetterboxdList" is="emby-input" type="text" pattern="(?:[1-9][0-9]{0,17}|[a-zA-Z0-9_\-]{1,80}/[a-zA-Z0-9_\-]{1,160})"/></div>
                             <div class="inputContainer"><label for="awardsTagsRefreshHours" data-je-awards-label="awards_tags_admin_interval">Refresh interval (hours)</label><input id="awardsTagsRefreshHours" is="emby-input" type="number" min="1" max="168" step="1"/><div class="fieldDescription" data-je-awards-label="awards_tags_admin_refresh_help">Default 24. Run Refresh Awards Tags in Scheduled Tasks on demand; configure its trigger there for a shorter cadence. Failed lookups retry in one hour; Wikidata retains its existing longer cache TTLs.</div></div>
                         </details>
+                            <div class="je-tag-row">
+                                <div class="checkboxContainer"><label><input id="customTagsEnabled" is="emby-checkbox" type="checkbox"/><span>Enable Custom Tags</span></label></div>
+                                <div class="inputContainer je-tag-position">
+                                    <label class="inputLabel" for="customTagsPosition">Position</label>
+                                    <select is="emby-select" id="customTagsPosition" name="customTagsPosition" class="emby-select">
+                                        <option value="top-left">Top Left</option><option value="top-center">Top centre</option><option value="top-right">Top Right</option><option value="center-left">Left centre</option><option value="center">Centre</option><option value="center-right">Right centre</option><option value="bottom-left">Bottom Left</option><option value="bottom-center">Bottom centre</option><option value="bottom-right">Bottom Right</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="je-setting-description" data-desc-for="customTagsEnabled">
+                                <div class="fieldDescription">Turn Jellyfin tags and collections into poster chips of your own, set up in the rules below (for example a "Remaster" chip for items tagged "4K Remaster", or "Criterion" for the Criterion collection). This switch is the default for users; the rules apply to everyone who turns the group on.</div>
+                            </div>
+                            <details id="customTagsAdminDetails" class="je-details-section" style="margin-left: 20px;">
+                                <summary>Custom tag rules</summary>
+                                <div class="je-details-body">
+                                    <div class="fieldDescription je-field-desc-sm" id="customTagRulesHelp">Each rule gives items that carry a Jellyfin tag, or belong to a collection, a chip with your label (up to 24 characters) and an optional icon. Names match exactly, ignoring case. Seasons and episodes take their series' tags and collections. Colour each label in Tag Styles below. Collections are matched by the server tag cache; with the cache off, only tags are. Up to 20 rules.</div>
+                                    <div id="customTagRules" class="je-ct-rules" role="table" aria-describedby="customTagRulesHelp">
+                                        <div class="je-ct-row je-ct-head" role="row">
+                                            <span role="columnheader">Match</span><span role="columnheader">Tag or collection</span><span role="columnheader">Label</span><span role="columnheader">Icon</span><span role="columnheader"><span class="je-ct-sr">Remove</span></span>
+                                        </div>
+                                        <div id="customTagRuleRows" role="rowgroup"></div>
+                                    </div>
+                                    <div class="je-ct-actions">
+                                        <button id="customTagRuleAdd" is="emby-button" type="button" class="raised raised-mini emby-button"><span>Add rule</span></button>
+                                        <span id="customTagRulesStatus" class="fieldDescription" role="status" aria-live="polite"></span>
+                                    </div>
+                                    <datalist id="customTagTagOptions"></datalist>
+                                    <datalist id="customTagCollectionOptions"></datalist>
+                                </div>
+                            </details>
+
                             <details id="tagLayoutAdminDetails" class="je-details-section">
                                 <summary>Tag layout defaults</summary>
                                 <div class="je-details-body">
@@ -4432,6 +4463,7 @@
                     if (el.closest('.je-arr-seerr-import-picker')) return; // transient browsing state, not a form change until actually imported
                     if (el.closest('.je-spoiler-apply-existing')) return; // per-run option of an action, not a saved setting
                     if (el.closest('#tagStyleRows')) return; // Tag Styles colour pickers: redrawn per editing target, the state is pushed below
+                    if (el.closest('#customTagRules')) return; // Custom tag rule rows: unnamed, added and removed; the rules are pushed below
                     const key = el.id || el.name || ('#' + i);
                     parts.push(key + '=' + (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.value));
                 });
@@ -4440,6 +4472,7 @@
                 // So are the tag layout defaults' order, limits and per-layout positions.
                 if (typeof tagLayoutAdmin !== 'undefined') parts.push('tagLayouts=' + tagLayoutAdmin.snapshot());
                 if (typeof tagShapeAdmin !== 'undefined') parts.push('tagShapes=' + tagShapeAdmin.snapshot());
+                if (typeof customTagRules !== 'undefined') parts.push('customTagRules=' + customTagRules.snapshot());
                 // So is the Tag Styles document (preset tiles, swatches and opacity pills are buttons).
                 parts.push('tagStyles=' + tagStyles.snapshot());
                 if (typeof posterRatingSources !== 'undefined') parts.push('ratingSources=' + JSON.stringify(posterRatingSources.collect()));
@@ -5942,10 +5975,11 @@
                 ageRating: { name: 'Age Rating', position: 'ageRatingTagsPosition', capFixed: true },
                 language: { name: 'Language', position: 'languageTagsPosition' },
                 genre: { name: 'Genre', position: 'genreTagsPosition' },
-                logos: { name: 'Logos', position: 'logoTagsPosition', capAll: true }
+                logos: { name: 'Logos', position: 'logoTagsPosition', capAll: true },
+                custom: { name: 'Custom', position: 'customTagsPosition' }
             };
-            var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos'];
-            var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0 };
+            var DEFAULT_ORDER = ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos', 'custom'];
+            var DEFAULT_CAPS = { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0, custom: 3 };
             var LAYOUT_SLOTS = {
                 corners: ['tl', 'tc', 'tr', 'ml', 'c', 'mr', 'bl', 'bc', 'br', 'off'],
                 bands: ['top', 'bottom', 'off'],
@@ -5954,10 +5988,10 @@
                 minimal: ['top', 'dots', 'corner', 'hover', 'off']
             };
             var DEFAULT_PROFILES = {
-                bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom', logos: 'top' },
-                caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption', logos: 'caption' },
-                summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover', logos: 'hover' },
-                minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover', logos: 'hover' }
+                bands: { quality: 'bottom', genre: 'off', language: 'bottom', rating: 'bottom', ageRating: 'top', status: 'top', awards: 'bottom', logos: 'top', custom: 'bottom' },
+                caption: { quality: 'caption', genre: 'off', language: 'caption', rating: 'caption', ageRating: 'caption', status: 'poster', awards: 'caption', logos: 'caption', custom: 'caption' },
+                summary: { quality: 'pill', genre: 'hover', language: 'hover', rating: 'pill', ageRating: 'hover', status: 'pill', awards: 'hover', logos: 'hover', custom: 'hover' },
+                minimal: { quality: 'dots', genre: 'hover', language: 'hover', rating: 'corner', ageRating: 'hover', status: 'top', awards: 'hover', logos: 'hover', custom: 'hover' }
             };
             var SLOT_LABELS = {
                 corners: { tl: 'Top left', tc: 'Top centre', tr: 'Top right', ml: 'Left centre', c: 'Centre', mr: 'Right centre', bl: 'Bottom left', bc: 'Bottom centre', br: 'Bottom right' },
@@ -6162,6 +6196,247 @@
             return { load: load, collect: collect, render: render, snapshot: snapshot };
         })();
 
+        // Custom tag rules (Media Tags -> Custom tag rules): up to 20 rows of
+        // match type, tag or collection name, label and icon. The server
+        // normalises what is saved (CustomTagRuleSet); this table only keeps
+        // the rows in shape. The name fields suggest the library's tags and
+        // collections (fetched once, when the section first opens), and Tag
+        // Styles lists each label for colouring.
+        var customTagRules = (function () {
+            var MAX_RULES = 20;
+            var MAX_LABEL = 24;
+            // The genre icons the bundled Material Symbols subset carries (js/tags/customtags.js ICONS).
+            var ICONS = ['theaters', 'sports_martial_arts', 'explore', 'animation', 'mood', 'local_police', 'article', 'theater_comedy',
+                'family_restroom', 'auto_awesome', 'history_edu', 'skull', 'music_note', 'psychology_alt', 'favorite', 'science', 'tv',
+                'psychology', 'military_tech', 'landscape', 'domino_mask', 'music_video', 'menu_book', 'sports_soccer', 'quiz', 'live_tv'];
+            var rows = [];
+            var sourcesLoaded = false;
+            var onLabels = null;
+
+            /** Read a key in either case (the server sends PascalCase). */
+            function pick(obj, key) {
+                if (!obj || typeof obj !== 'object') return undefined;
+                if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+                var pascal = key.charAt(0).toUpperCase() + key.slice(1);
+                return obj[pascal] !== undefined && obj[pascal] !== null ? obj[pascal] : undefined;
+            }
+
+            /**
+             * Trimmed, with runs of white space and control characters as one space, as
+             * the server stores names and labels (CustomTagRuleSet.Collapse).
+             */
+            function clean(text) {
+                return String(text || '').replace(/[\p{White_Space}\p{Cc}]+/gu, ' ').replace(/^ | $/g, '');
+            }
+
+            /**
+             * A label of punctuation only, such as "*" (Tag Styles' whole-group key): the
+             * server drops such rules. The definition is CustomTagRuleSet.IsReservedLabel's:
+             * every Unicode scalar value (the u flag matches code points, so U+10100 is one)
+             * is in general category P or has the White_Space property.
+             */
+            function isReservedLabel(text) {
+                var label = clean(text);
+                return label !== '' && /^[\p{P}\p{White_Space}]+$/u.test(label);
+            }
+
+            /**
+             * The rows as the server stores them: complete rows only, labels cut to
+             * 24 characters, repeated match/name pairs dropped (the first wins).
+             * @returns {Array<{Match: string, Value: string, Label: string, Icon: string|null}>}
+             */
+            function collectRules() {
+                var seen = {};
+                var out = [];
+                rows.forEach(function (r) {
+                    var value = clean(r.value);
+                    var label = clean(r.label).slice(0, MAX_LABEL).replace(/ $/, '');
+                    var key = r.match + ':' + value.toLowerCase();
+                    if (!value || !label || isReservedLabel(label) || seen[key] || out.length >= MAX_RULES) return;
+                    seen[key] = true;
+                    out.push({ Match: r.match, Value: value, Label: label, Icon: ICONS.indexOf(r.icon) >= 0 ? r.icon : null });
+                });
+                return out;
+            }
+
+            /** @returns {string[]} The distinct labels of the complete rows, in table order (Tag Styles' custom labels). */
+            function labels() {
+                var out = [];
+                collectRules().forEach(function (r) { if (out.indexOf(r.Label) < 0) out.push(r.Label); });
+                return out;
+            }
+
+            /** Tell the page (unsaved-changes check, Tag Styles) that the rules changed. */
+            function changed() {
+                var box = document.getElementById('customTagRules');
+                if (box) box.dispatchEvent(new Event('change', { bubbles: true }));
+                if (typeof onLabels === 'function') onLabels();
+            }
+
+            /** The library's tags and collections for the name suggestions, fetched once. */
+            function loadSources() {
+                if (sourcesLoaded || typeof ApiClient === 'undefined') return;
+                sourcesLoaded = true;
+                var userId = ApiClient.getCurrentUserId();
+                var fill = function (id, names) {
+                    var list = document.getElementById(id);
+                    if (!list) return;
+                    list.textContent = '';
+                    names.slice().sort(function (a, b) { return a.localeCompare(b); }).forEach(function (name) {
+                        var option = document.createElement('option');
+                        option.value = name;
+                        list.appendChild(option);
+                    });
+                };
+                // Filters2 lists every library's tags (the legacy Filters needs a parent folder).
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('Items/Filters2', { UserId: userId, Recursive: true }), dataType: 'json' })
+                    .then(function (r) { fill('customTagTagOptions', (r && Array.isArray(r.Tags) ? r.Tags : []).filter(Boolean)); })
+                    .catch(function () { /* suggestions only */ });
+                ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('Items', { UserId: userId, IncludeItemTypes: 'BoxSet', Recursive: true, SortBy: 'SortName', EnableImages: false, EnableUserData: false }), dataType: 'json' })
+                    .then(function (r) { fill('customTagCollectionOptions', (r && Array.isArray(r.Items) ? r.Items : []).map(function (i) { return i.Name; }).filter(Boolean)); })
+                    .catch(function () { /* suggestions only */ });
+            }
+
+            /** Redraw the rows from the state. */
+            function render() {
+                var box = document.getElementById('customTagRuleRows');
+                if (!box) return;
+                box.textContent = '';
+                if (!rows.length) {
+                    var empty = document.createElement('div');
+                    empty.className = 'je-ct-empty fieldDescription';
+                    empty.textContent = 'No rules yet. Add one to turn a tag or collection into a chip.';
+                    box.appendChild(empty);
+                }
+                rows.forEach(function (r, index) {
+                    var n = index + 1;
+                    var row = document.createElement('div');
+                    row.className = 'je-ct-row';
+                    row.setAttribute('role', 'row');
+                    row.dataset.index = String(index);
+                    var cell = function (cls, control) {
+                        var c = document.createElement('span');
+                        c.className = cls;
+                        c.setAttribute('role', 'cell');
+                        c.appendChild(control);
+                        row.appendChild(c);
+                        return control;
+                    };
+                    var match = document.createElement('select');
+                    match.setAttribute('aria-label', 'Rule ' + n + ' match');
+                    [['tag', 'Tag'], ['collection', 'Collection']].forEach(function (o) {
+                        var option = document.createElement('option');
+                        option.value = o[0];
+                        option.textContent = o[1];
+                        option.selected = r.match === o[0];
+                        match.appendChild(option);
+                    });
+                    match.addEventListener('change', function () { r.match = match.value; value.setAttribute('list', r.match === 'collection' ? 'customTagCollectionOptions' : 'customTagTagOptions'); changed(); });
+                    cell('je-ct-match', match);
+                    var value = document.createElement('input');
+                    value.type = 'text';
+                    value.maxLength = 200;
+                    value.value = r.value;
+                    value.placeholder = 'e.g. 4K Remaster';
+                    value.setAttribute('list', r.match === 'collection' ? 'customTagCollectionOptions' : 'customTagTagOptions');
+                    value.setAttribute('aria-label', 'Rule ' + n + ' tag or collection name');
+                    value.setAttribute('aria-invalid', String(!clean(r.value)));
+                    value.addEventListener('focus', loadSources);
+                    value.addEventListener('input', function () { r.value = value.value; value.setAttribute('aria-invalid', String(!clean(r.value))); changed(); });
+                    cell('je-ct-value', value);
+                    var label = document.createElement('input');
+                    label.type = 'text';
+                    label.maxLength = MAX_LABEL;
+                    label.value = r.label;
+                    label.placeholder = 'e.g. Remaster';
+                    label.setAttribute('aria-label', 'Rule ' + n + ' label');
+                    var hint = document.createElement('span');
+                    hint.className = 'je-ct-hint fieldDescription';
+                    hint.id = 'customTagRuleLabelHint' + index;
+                    label.setAttribute('aria-describedby', hint.id);
+                    var checkLabel = function () {
+                        var reserved = isReservedLabel(r.label);
+                        label.setAttribute('aria-invalid', String(!clean(r.label) || reserved));
+                        hint.textContent = reserved ? 'Use a letter, number or symbol: punctuation alone (such as *) is reserved, and this rule will not be saved.' : '';
+                        hint.hidden = !reserved;
+                    };
+                    checkLabel();
+                    label.addEventListener('input', function () { r.label = label.value; checkLabel(); changed(); });
+                    cell('je-ct-label', label).parentNode.appendChild(hint);
+                    var icon = document.createElement('select');
+                    icon.setAttribute('aria-label', 'Rule ' + n + ' icon');
+                    [''].concat(ICONS).forEach(function (name) {
+                        var option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name ? name.replace(/_/g, ' ') : 'No icon';
+                        option.selected = (r.icon || '') === name;
+                        icon.appendChild(option);
+                    });
+                    icon.addEventListener('change', function () { r.icon = icon.value || null; changed(); });
+                    cell('je-ct-icon', icon);
+                    var remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'raised raised-mini je-ct-remove';
+                    remove.setAttribute('aria-label', 'Remove rule ' + n);
+                    remove.innerHTML = '<i class="material-icons" aria-hidden="true">delete</i>';
+                    remove.addEventListener('click', function () {
+                        rows.splice(index, 1);
+                        render();
+                        var next = document.querySelector('#customTagRuleRows .je-ct-row[data-index="' + Math.min(index, rows.length - 1) + '"] .je-ct-remove')
+                            || document.getElementById('customTagRuleAdd');
+                        if (next) next.focus();
+                        changed();
+                    });
+                    cell('je-ct-remove-cell', remove);
+                    box.appendChild(row);
+                });
+                var add = document.getElementById('customTagRuleAdd');
+                if (add) add.disabled = rows.length >= MAX_RULES;
+                var status = document.getElementById('customTagRulesStatus');
+                if (status) status.textContent = rows.length + ' of ' + MAX_RULES + ' rules';
+            }
+
+            /** Load the stored rules into the table. */
+            function load(config) {
+                rows = (Array.isArray(config.CustomTagRules) ? config.CustomTagRules : []).slice(0, MAX_RULES).map(function (r) {
+                    var match = String(pick(r, 'match') || '').toLowerCase();
+                    return {
+                        match: match === 'collection' ? 'collection' : 'tag',
+                        value: String(pick(r, 'value') || ''),
+                        label: String(pick(r, 'label') || ''),
+                        icon: ICONS.indexOf(String(pick(r, 'icon') || '')) >= 0 ? String(pick(r, 'icon')) : null
+                    };
+                });
+                render();
+                if (typeof onLabels === 'function') onLabels();
+            }
+
+            /** Write the rules onto the configuration being saved. */
+            function collect(config) {
+                config.CustomTagRules = collectRules();
+            }
+
+            document.getElementById('customTagRuleAdd').addEventListener('click', function () {
+                if (rows.length >= MAX_RULES) return;
+                rows.push({ match: 'tag', value: '', label: '', icon: null });
+                render();
+                var inputs = document.querySelectorAll('#customTagRuleRows .je-ct-row:last-child input');
+                if (inputs[0]) inputs[0].focus();
+                changed();
+            });
+            document.getElementById('customTagsAdminDetails').addEventListener('toggle', function (e) {
+                if (e.target.open) loadSources();
+            });
+
+            return {
+                load: load,
+                collect: collect,
+                labels: labels,
+                snapshot: function () { return JSON.stringify(collectRules()); },
+                onLabelsChanged: function (fn) { onLabels = fn; }
+            };
+        })();
+
         /** Ordered poster source defaults, separate from MDBList's detail-page source preferences. */
         const posterRatingSources = (() => {
             const ids = ['community', 'critic', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd', 'trakt'];
@@ -6226,8 +6501,8 @@
         // the two equal).
         var tagShapeAdmin = (function () {
             var JE_TAG_SHAPE_RECOMMENDED = {
-                "landscape": { "layout": "bands", "density": "compact", "slots": [{ "group": "status", "slot": "top" }, { "group": "ageRating", "slot": "top" }, { "group": "quality", "slot": "bottom" }, { "group": "rating", "slot": "bottom" }, { "group": "language", "slot": "off" }, { "group": "genre", "slot": "off" }], "caps": null },
-                "list": { "layout": "corners", "density": "compact", "slots": [{ "group": "quality", "slot": "tl" }, { "group": "status", "slot": "tr" }, { "group": "rating", "slot": "br" }, { "group": "ageRating", "slot": "off" }, { "group": "language", "slot": "off" }, { "group": "genre", "slot": "off" }], "caps": { "quality": 2, "status": 2, "rating": 2 } }
+                "landscape": { "layout": "bands", "density": "compact", "slots": [{ "group": "status", "slot": "top" }, { "group": "ageRating", "slot": "top" }, { "group": "quality", "slot": "bottom" }, { "group": "rating", "slot": "bottom" }, { "group": "language", "slot": "off" }, { "group": "genre", "slot": "off" }, { "group": "custom", "slot": "off" }], "caps": null },
+                "list": { "layout": "corners", "density": "compact", "slots": [{ "group": "quality", "slot": "tl" }, { "group": "status", "slot": "tr" }, { "group": "rating", "slot": "br" }, { "group": "ageRating", "slot": "off" }, { "group": "language", "slot": "off" }, { "group": "genre", "slot": "off" }, { "group": "custom", "slot": "off" }], "caps": { "quality": 2, "status": 2, "rating": 2 } }
             };
             var SHAPES = { landscape: 'tagShapeLandscapeDefault', list: 'tagShapeListDefault' };
             /** @type {Object<string, Object|null>} the custom look each shape had when loaded */
@@ -6260,7 +6535,7 @@
                 });
                 var caps = pick(look, 'caps');
                 var wantCaps = want.caps || {};
-                return same && ['quality', 'genre', 'language', 'rating', 'ageRating', 'status', 'logos'].every(function (g) {
+                return same && ['quality', 'genre', 'language', 'rating', 'ageRating', 'status', 'awards', 'logos', 'custom'].every(function (g) {
                     var have = pick(caps, g);
                     return (have === undefined ? null : Number(have)) === (wantCaps[g] === undefined ? null : wantCaps[g]);
                 });
@@ -6786,7 +7061,8 @@
             const GROUPS = [
                 { key: 'quality', title: 'Quality' }, { key: 'ageRating', title: 'Age' }, { key: 'rating', title: 'Rating' },
                 { key: 'genre', title: 'Genre' }, { key: 'status', title: 'Status' }, { key: 'language', title: 'Language' }, { key: 'awards', title: 'Awards' },
-                { key: 'logos', title: 'Logos' }
+                { key: 'logos', title: 'Logos' },
+                { key: 'custom', title: 'Custom' }
             ];
             const PRESET_TITLES = { default: 'Default', glass: 'Glass', outline: 'Outline', dark: 'Dark', light: 'Light', mono: 'Mono', poster: 'Poster' };
             const FIELDS = [['background', 'Background'], ['border', 'Border'], ['text', 'Text']];
@@ -6797,7 +7073,8 @@
                 genre: 'Text colours the genre icon.',
                 status: 'Status tags are drawn on the web only: native posters do not show them.',
                 language: 'Flags are images, so only the border ring can be coloured. Partial dubs keep their dashed outline.',
-                logos: 'Colours the pill behind a logo, or the name chip a logo without an image shows (Text colours the name).'
+                logos: 'Colours the pill behind a logo, or the name chip a logo without an image shows (Text colours the name).',
+                custom: 'One target per label of the Custom tag rules above (labels shared by several rules share their colours). The icon takes the text colour.'
             };
             const LOGO_SAMPLES = { provider: 'Stream', company: 'Studio', text: 'HBO' };
             const RATING_SAMPLES = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'] };
@@ -6927,7 +7204,10 @@
                 return n;
             }
 
-            const labelsOf = (g) => (cat && cat.groups[g]) || [];
+            // Custom labels are the rules table's, unsaved edits included.
+            const labelsOf = (g) => (g === 'custom'
+                ? (typeof customTagRules !== 'undefined' ? customTagRules.labels() : []).map((l) => ({ key: l, name: l }))
+                : (cat && cat.groups[g]) || []);
             const labelKey = (g, l) => g + ':' + l;
             const fieldsOf = (g) => (g === 'language' ? FIELDS.filter(([f]) => f === 'border') : FIELDS);
 
@@ -6939,7 +7219,9 @@
              * @returns {{background: string, border: string, text: string}}
              */
             function palette(preset, g, l) {
-                const p = ((cat && cat.palettes[preset]) || {})[labelKey(g, l)] || {};
+                const pal = (cat && cat.palettes[preset]) || {};
+                // Every custom chip takes the group's palette colours.
+                const p = pal[labelKey(g, l)] || (g === 'custom' ? pal[labelKey(g, ALL)] : null) || {};
                 return { background: p.background, border: p.border, text: p.color };
             }
 
@@ -7064,6 +7346,8 @@
                 } else if (g === 'logos') {
                     n = el('span', 'je-ts-chip je-ts-status je-logo-chip', LOGO_SAMPLES[label.key] || label.name);
                     n.dataset.jeLogoStyle = label.key;
+                } else if (g === 'custom') {
+                    n = el('span', 'je-ts-chip je-ts-custom custom-tag', label.name);
                 } else if (label.key === 'countBadge' || label.key === 'subtitles') {
                     n = el('span', 'je-ts-chip language-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
                 } else {
@@ -7312,6 +7596,7 @@
                     genre: web(effective('genre', 'genre')),
                     status: map('status'),
                     awards: map('awards'),
+                    custom: Object.assign({ '*': web(effective('custom', ALL)) }, map('custom')),
                     language: { border: effective('language', 'flag').border },
                     languageLabels: Object.fromEntries(['flag', 'subtitles', 'countBadge'].map(key => [key, { border: effective('language', key).border }])),
                     logos: map('logos')
@@ -7365,6 +7650,10 @@
                 } else if (g === 'logos') {
                     n = el('span', 'je-logo-chip je-ts-chip je-ts-status', LOGO_SAMPLES[label.key] || label.name);
                     n.dataset.jeLogoStyle = label.key;
+                } else if (g === 'custom') {
+                    n = el('div', 'custom-tag je-ts-chip je-ts-custom');
+                    n.dataset.jeCustom = label.key;
+                    n.appendChild(el('span', 'custom-tag-text', label.name));
                 } else if (label.key === 'countBadge' || label.key === 'subtitles') {
                     n = el('span', 'language-chip je-ts-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
                     n.dataset.jeLanguage = label.key;
@@ -7380,7 +7669,7 @@
             // The container class each group's chips sit in on a poster.
             const CONTAINERS = {
                 quality: 'quality-overlay-container', ageRating: 'age-rating-overlay-container', rating: 'rating-overlay-container',
-                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container', awards: 'awards-overlay-container', logos: 'logo-overlay-container'
+                genre: 'genre-overlay-container', status: 'status-overlay-container', language: 'language-overlay-container', awards: 'awards-overlay-container', logos: 'logo-overlay-container', custom: 'custom-overlay-container'
             };
 
             /**
@@ -7433,8 +7722,9 @@
                     sheet.textContent = generate(webModel(), '#tagStylePreview');
                     box.appendChild(sheet);
                 }
+                const custom = labelsOf('custom').slice(0, 2).map((l) => ['custom', l.key]);
                 box.appendChild(card('je-ts-card-movie', 'Movie', {
-                    tl: [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']],
+                    tl: [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']].concat(custom),
                     tr: [['status', 'trending'], ['genre', 'genre']],
                     bl: [['language', 'flag']],
                     br: [['rating', 'critic'], ['rating', 'community'], ['ageRating', 'PG-13']]
@@ -7594,6 +7884,18 @@
                 render();
             });
 
+            // The Custom tab and the preview follow the rules table as it is edited.
+            if (typeof customTagRules !== 'undefined') {
+                customTagRules.onLabelsChanged(() => {
+                    if (!cat) return;
+                    if (current === 'custom') {
+                        if (target !== ALL && !labelsOf('custom').some((l) => l.key === target)) target = ALL;
+                        renderGroup();
+                    }
+                    renderPreview();
+                });
+            }
+
             return { load, serialize, settings, snapshot, renderTargetPills };
         })();
 
@@ -7752,6 +8054,9 @@
                 if (arSel) arSel.value = arPos;
                 const stSel = document.querySelector('#statusTagsPosition');
                 if (stSel) stSel.value = stPos;
+                const ctSel = document.querySelector('#customTagsPosition');
+                if (ctSel) ctSel.value = config.CustomTagsPosition || 'top-left';
+                document.querySelector('#customTagsEnabled').checked = config.CustomTagsEnabled === true;
                 if (lChk) lChk.checked = langEnabled;
                 document.querySelector('#languageTagsPriority').value = config.LanguageTagsPriority || '';
                 document.querySelector('#languageTagsPriorityStrict').checked = config.LanguageTagsPriorityStrict === true;
@@ -7826,6 +8131,7 @@
                 posterRatingSources.load(config);
                 tagLayoutAdmin.load(config);
                 tagShapeAdmin.load(config);
+                customTagRules.load(config);
                 document.querySelector('#tagCacheServerMode').checked = config.TagCacheServerMode !== false;
                 document.querySelector('#tagCacheExcludeLibraries').checked = config.TagCacheExcludeLibraries === true;
                 document.getElementById('tagCacheExcludedLibrariesBox').style.display = config.TagCacheExcludeLibraries === true ? '' : 'none';
@@ -8403,6 +8709,7 @@
             config.AwardsTagsLetterboxdList = document.querySelector('#awardsTagsLetterboxdList').value.trim();
             config.AwardsTagsRefreshHours = Math.max(1, Math.min(168, parseInt(document.querySelector('#awardsTagsRefreshHours').value, 10) || 24));
 
+            config.CustomTagsEnabled = document.querySelector('#customTagsEnabled').checked;
             config.StatusTagsJustAdded = document.querySelector('#statusTagsJustAdded').checked;
             config.StatusTagsNewRelease = document.querySelector('#statusTagsNewRelease').checked;
             config.StatusTagsTrending = document.querySelector('#statusTagsTrending').checked;
@@ -8441,11 +8748,13 @@
             config.AgeRatingTagsPosition = document.querySelector('#ageRatingTagsPosition').value;
             config.LogoTagsPosition = document.querySelector('#logoTagsPosition').value;
             config.StatusTagsPosition = document.querySelector('#statusTagsPosition').value;
+            config.CustomTagsPosition = document.querySelector('#customTagsPosition').value;
             config.RatingTagsSources = posterRatingSources.collect();
             config.RatingTagsMinScore = Number(document.getElementById('ratingTagsMinScore').value);
             config.RatingTagsColorByScore = document.getElementById('ratingTagsColorByScore').checked;
             tagLayoutAdmin.collect(config);
             tagShapeAdmin.collect(config);
+            customTagRules.collect(config);
             config.ShowRatingInPlayer = document.querySelector('#showRatingInPlayer').checked;
             config.TagsCacheTtlDays = parseInt(document.querySelector('#tagsCacheTtlDays').value, 10) || 30;
             config.StatusTagsJustAddedDays = Math.min(365, Math.max(1, parseInt(document.querySelector('#statusTagsJustAddedDays').value, 10) || 7));
@@ -10065,11 +10374,12 @@
             { parent: 'languageTagsEnabled', label: 'Enable Language Tags', children: ['languageTagsPosition', 'languageTagsPriority', 'languageTagsPriorityStrict', 'languageTagsMergeRegions', 'languageTagsShowAudio', 'languageTagsShowSubtitles', 'languageTagsStyle', 'languageTagsCountBadge', 'tagGroupAdminRowLanguage'], noHint: true },
             { parent: 'ratingTagsEnabled', label: 'Enable Rating Tags', children: ['ratingTagsPosition', 'ratingTagsOnMovies', 'ratingTagsOnSeries', 'ratingTagsOnSeasons', 'ratingTagsOnEpisodes', 'ratingTagsOnContinueWatching', 'ratingTagsOnNextUp', 'ratingTagsSources', 'ratingTagsSourceRows', 'ratingTagsMinScore', 'ratingTagsColorByScore', 'tagGroupAdminRowRating'], noHint: true },
             { parent: 'ageRatingTagsEnabled', label: 'Enable Age Rating Tags', children: ['ageRatingTagsPosition', 'tagGroupAdminRowAgeRating'], noHint: true },
+            { parent: 'customTagsEnabled', label: 'Enable Custom Tags', children: ['customTagsPosition', 'tagGroupAdminRowCustom'], noHint: true },
             { parent: 'logoTagsEnabled', label: 'Enable Logo Tags', children: ['logoTagsPosition', 'tagGroupAdminRowLogos'], noHint: true },
             { parent: 'awardsTagsEnabled', label: 'Enable Awards Tags', children: ['awardsTagsPosition', 'awardsTagsImdb', 'awardsTagsCertifiedFresh', 'awardsTagsOscar', 'awardsTagsEmmy', 'awardsTagsLetterboxd', 'awardsTagsImdbList', 'awardsTagsLetterboxdList', 'awardsTagsRefreshHours', 'tagGroupAdminRowAwards'], noHint: true },
             { parent: 'statusTagsEnabled', label: 'Enable Status Tags', children: ['statusTagsPosition', 'statusTagsTrending', 'statusTagsNewRelease', 'statusTagsJustAdded', 'statusTagsSchedule', 'statusTagsMilestones', 'statusTagsSeriesStatus', 'statusTagsJustAddedDays', 'statusTagsNewReleaseDays', 'tagGroupAdminRowStatus'], noHint: true },
             // Layout and density matter once any poster tag group is on by default.
-            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagScale', 'tagGap', 'tagEdgeSpacing'], noHint: true },
+            { parent: 'tagLayout', anyOf: ['qualityTagsEnabled', 'genreTagsEnabled', 'languageTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled', 'customTagsEnabled'], label: 'Enable ... Tags', children: ['tagLayout', 'tagLabelDensity', 'tagScale', 'tagGap', 'tagEdgeSpacing'], noHint: true },
             { parent: 'useIcons', label: 'Use Icons', children: ['iconStyle'] },
             { parent: 'letterboxdEnabled', label: 'Enable Letterboxd', children: ['showLetterboxdLinkAsText'] },
             { parent: 'enableCustomSplashScreen', label: 'Enable Custom Splash Screen', children: ['splashScreenImageUrl'] },
@@ -10794,7 +11104,7 @@
 
             // Display
             feat('Remove from Continue Watching', bool('removeContinueWatchingEnabled'), 'display', 'Enabled');
-            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','statusTagsEnabled','logoTagsEnabled','peopleTagsEnabled'].filter(bool).length;
+            var tagCount = ['qualityTagsEnabled','genreTagsEnabled','languageTagsEnabled','ratingTagsEnabled','ageRatingTagsEnabled','statusTagsEnabled','logoTagsEnabled','customTagsEnabled','awardsTagsEnabled','peopleTagsEnabled'].filter(bool).length;
             feat('Media Tags', tagCount > 0, 'display', tagCount + ' tag type(s) enabled');
             feat('Random Button', bool('randomButtonEnabled'), 'display', 'Enabled');
 

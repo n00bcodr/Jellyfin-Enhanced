@@ -25,7 +25,7 @@ function setup(t, answers) {
       t: translate,
       session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
       _cacheManager: { register() {}, markDirty() {} },
-      tagPipeline: { registerRenderer: (name, r) => renderers.set(name, r), getRenderer: name => renderers.get(name), clearProcessed() { rescans.push('clear'); }, scheduleScan() { rescans.push('scan'); } }
+      tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (name, r) => renderers.set(name, { ...r, render: (el, item, extras = {}) => r.render(el, item, { stripRevision: 'none', ...extras }) }), getRenderer: name => renderers.get(name), clearProcessed() { rescans.push('clear'); }, scheduleScan() { rescans.push('scan'); } }
     },
     apiClient: {
       ajax: async ({ url }) => {

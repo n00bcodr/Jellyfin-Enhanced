@@ -414,7 +414,7 @@
                     }
                     JE.appendUserRatingToContainer(el, syntheticItem);
                 }
-                return !!(cached.tmdb || cached.critic !== null || cached.ratings);
+                return true; // An authoritative empty rating is a valid fallback hit.
             },
             renderFromServerCache(ctx, el, entry, itemId) {
                 if (ctx.isTagged(el)) return;

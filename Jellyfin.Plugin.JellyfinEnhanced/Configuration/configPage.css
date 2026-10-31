@@ -1981,6 +1981,89 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
     outline-offset: 2px;
 }
 
+/* Custom tag rules (Media Tags): one row per rule, match type, tag or
+   collection name, label, icon and a remove button; the columns stack into
+   two lines on narrow screens. */
+.je-ct-rules {
+    margin: 8px 0 0;
+}
+.je-ct-row {
+    display: grid;
+    grid-template-columns: 8.5em minmax(0, 1.4fr) minmax(0, 1fr) 9.5em 2.5em;
+    gap: 6px;
+    align-items: center;
+    padding: 4px 0;
+}
+.je-ct-head {
+    font-size: 0.85em;
+    font-weight: 600;
+    opacity: 0.75;
+}
+.je-ct-row select,
+.je-ct-row input {
+    width: 100%;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 6px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.25);
+    color: inherit;
+    font: inherit;
+}
+.je-ct-row input[aria-invalid="true"] {
+    border-color: #ef5350;
+}
+.je-ct-hint {
+    display: block;
+    margin-top: 2px;
+    color: #ef9a9a;
+}
+.je-ct-remove {
+    min-width: 32px;
+    padding: 4px 6px;
+    margin: 0;
+    line-height: 1;
+}
+.je-ct-remove .material-icons {
+    font-size: 18px !important;
+    vertical-align: middle;
+}
+.je-ct-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.je-ct-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
+.je-ct-empty {
+    padding: 6px 0;
+    opacity: 0.7;
+}
+@media (max-width: 640px) {
+    .je-ct-head {
+        display: none;
+    }
+    .je-ct-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2.5em;
+        grid-template-areas: "match icon remove" "value value value" "label label label";
+        padding: 8px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .je-ct-row > .je-ct-match { grid-area: match; }
+    .je-ct-row > .je-ct-value { grid-area: value; }
+    .je-ct-row > .je-ct-label { grid-area: label; }
+    .je-ct-row > .je-ct-icon { grid-area: icon; }
+    .je-ct-row > .je-ct-remove-cell { grid-area: remove; }
+}
+
 /* Inline reorder-icon hints that live in the descriptive sentence above the
    list — show them at text size, not button size. */
 .je-cat-arrow-icon {
@@ -2451,6 +2534,7 @@ div#bazarrMappingsValidationResult {
 .je-ts-genre { justify-content: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid transparent; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
 .je-ts-genre .material-icons { font-size: 16px; color: inherit; }
 .je-ts-status { font-size: 13px; font-weight: 600; line-height: 1.15; padding: 4px 10px; border-radius: 6px; border: 1px solid transparent; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+.je-ts-custom { font-size: 13px; font-weight: 600; line-height: 1.15; padding: 4px 8px; border-radius: 4px; border: 1px solid transparent; box-shadow: 0 2px 4px rgba(0,0,0,0.3); white-space: nowrap; }
 .je-ts-flag { width: 28px; height: 21px; border-radius: 2px; object-fit: cover; box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 
 .je-ts-rows { display: flex; flex-direction: column; gap: 8px; }

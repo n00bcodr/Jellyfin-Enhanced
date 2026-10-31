@@ -11,7 +11,7 @@ function setup(t, settings = {}, plugin = {}) {
   const h = createHarness({ html: '<div class="card" data-id="a"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div></div><div class="cardText">Title</div></div></div>',
     JE: { currentSettings: { languageTagsEnabled: true, ...settings }, pluginConfig: { TagCacheServerMode: false, ...plugin }, t: translate,
       cdn: { flagSvg: code => `/flags/${code}.svg` }, session: { getUserId: () => 'a', getServerId: () => 's', onUserChange() {} },
-      _cacheManager: { register() {}, markDirty() {} }, tagPipeline: { registerRenderer: (key, value) => registrations.set(key, value), clearProcessed() {}, scheduleScan() {} } } });
+      _cacheManager: { register() {}, markDirty() {} }, tagPipeline: { tagStripRevision: () => 'none', registerRenderer: (key, value) => registrations.set(key, { ...value, render: (el, item, extras = {}) => value.render(el, item, { stripRevision: 'none', ...extras }) }), clearProcessed() {}, scheduleScan() {} } } });
   t.after(() => h.close());
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/media-language.js', 'tags/languagetags.js']) h.load(file);
   h.JE.initializeLanguageTags();

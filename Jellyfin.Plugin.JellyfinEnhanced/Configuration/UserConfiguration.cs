@@ -70,6 +70,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool AwardsTagsEnabled { get; set; }
         /// <summary>Legacy corner fallback for Awards.</summary>
         public string AwardsTagsPosition { get; set; } = "top-left";
+        // Custom tag group (the administrator's tag/collection rules).
+        public bool CustomTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";
@@ -112,6 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
         public string LogoTagsPosition { get; set; } = "bottom-left";
         public string StatusTagsPosition { get; set; } = "top-right";
+        public string CustomTagsPosition { get; set; } = "top-left";
         public bool StatusTagsJustAdded { get; set; } = true;
         public bool StatusTagsNewRelease { get; set; } = true;
         public bool StatusTagsTrending { get; set; } = true;

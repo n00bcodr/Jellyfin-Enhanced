@@ -151,7 +151,7 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 | Movie images | Unplayed, guarded movies follow image policy. Posters and thumbnails stay visible by default. |
 | Descriptions | Nonempty descriptions become your configured placeholder, initially `Spoiler Guard activated`. Series descriptions have a separate control. |
 | Episode and season titles | Numbered protected episodes become `Season X, Episode Y`; eligible numbered seasons become `Season N`. |
-| Story tags and JE overlays | Story tags, genre, language, quality, and logo overlays follow **Hide tags**. Score overlays follow **Hide ratings**. |
+| Story tags and JE overlays | Story tags, genre, language, quality, logo and custom overlays follow **Hide tags**. Score overlays follow **Hide ratings**. |
 | Chapters | Protected names become `Chapter N`, keeping timestamps. Thumbnail images have separate rules. |
 | Trickplay previews | Protected preview sheets use image replacement while [**Hide trickplay seek previews**](spoiler-guard-settings.md#image-replacement-mode) is on. Saved progress can reveal whole sheets. You can opt out with [**Seek previews**](spoiler-guard-settings.md#per-user-overrides). |
 | Taglines, ratings, air date | Removes taglines, community/critic scores, and premiere dates. |
@@ -163,7 +163,7 @@ With **Blur images** selected, unplayed episodes lose their original artwork and
 
     Advanced mode can reveal the next episode's Primary/Thumb image. Those image types are also exempt by default for movies. Missing numbering can prevent episode or season title replacement.
 
-    **Hide tags** empties story tags and controls JE genre, language, logo, and stream-derived quality overlays. **Hide ratings** separately controls community/critic score overlays.
+    **Hide tags** empties story tags and controls JE genre, language, logo, custom and stream-derived quality overlays. **Hide ratings** separately controls community/critic score overlays.
 
     **Guest stars only (recommended)** removes entries marked as guest stars. **Entire cast (regulars + guest stars)** removes every People entry, including crew.
 

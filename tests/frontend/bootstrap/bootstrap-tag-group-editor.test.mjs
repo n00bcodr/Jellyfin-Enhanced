@@ -76,20 +76,20 @@ function setup(t, { stored = {}, plugin = {}, looks = false } = {}) {
 
 test('rows follow the default order for a document without one; moving writes the order and keeps focus', async t => {
   const h = setup(t);
-  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos']);
+  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos', 'custom']);
   assert.equal(h.row('status').querySelector('[data-dir="up"]').disabled, true);
-  assert.equal(h.row('logos').querySelector('[data-dir="down"]').disabled, true);
+  assert.equal(h.row('custom').querySelector('[data-dir="down"]').disabled, true);
   assert.equal(h.row('genre').querySelector('[data-dir="up"]').getAttribute('aria-label'), 'panel_settings_ui_tag_editor_move_up{"group":"panel_settings_ui_tag_group_genre"}');
 
   const up = h.row('genre').querySelector('[data-dir="up"]');
   up.focus();
   await h.click(up);
-  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'genre', 'language', 'awards', 'logos']);
+  assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'genre', 'language', 'awards', 'logos', 'custom']);
   let saved = h.saved();
-  assert.deepEqual(saved.tagGroupOrder, ['status', 'quality', 'rating', 'ageRating', 'genre', 'language', 'awards', 'logos']);
+  assert.deepEqual(saved.tagGroupOrder, ['status', 'quality', 'rating', 'ageRating', 'genre', 'language', 'awards', 'logos', 'custom']);
   assert.equal(saved.tagLayoutSettingsVersion, 1);
   assert.equal(h.document.activeElement, up, 'focus stays on the moved row\'s button');
-  assert.equal(h.row('logos').querySelector('[data-dir="down"]').disabled, true);
+  assert.equal(h.row('custom').querySelector('[data-dir="down"]').disabled, true);
 
   // Moving the top row down: its up button becomes enabled, the next row's disabled.
   await h.click(h.row('status').querySelector('[data-dir="down"]'));
@@ -294,7 +294,7 @@ test('expanding a row is a real button with aria-expanded; every editor control 
     assert.equal(el.tagName, 'BUTTON');
     assert.equal(el.getAttribute('type'), 'button');
   }
-  assert.equal(h.document.querySelectorAll('.je-tge-move[aria-label], .je-tge-step[aria-label]').length, 28);
+  assert.equal(h.document.querySelectorAll('.je-tge-move[aria-label], .je-tge-step[aria-label]').length, 36);
 });
 
 
@@ -553,12 +553,12 @@ test('earlier queued settings saves cannot persist a priority edit that later fa
   assert.equal(h.$('[data-language-priority-status]').textContent, 'language_priority_save_failed');
 });
 
-test('the Logos row is last by default, switches the group, offers All and previews a made-up logo', async t => {
+test('the Logos row precedes Custom by default, switches the group, offers All and previews a made-up logo', async t => {
   const h = setup(t);
   h.load('tags/logotags.js');
   const row = h.row('logos');
   assert.ok(row, 'the Logos row exists');
-  assert.equal(h.order().at(-1), 'logos');
+  assert.equal(h.order().at(-2), 'logos');
   assert.equal(row.querySelector('.je-tge-name').textContent, 'panel_settings_ui_tag_group_logos');
   assert.equal(row.querySelector('.je-tge-cap').textContent, 'panel_settings_ui_tag_editor_cap_all');
   assert.match(row.querySelector('.je-tge-body').textContent, /panel_settings_ui_logo_tags_include/);

@@ -30,6 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         Awards,
         Status,
         Logos,
+        Custom,
     }
 
     /// <summary>Rating chip source.</summary>
@@ -108,6 +109,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>The Tag Styles label of the chip with its image: "provider" or "company".</summary>
         public string ImageStyle => Kind == "provider" ? "provider" : "company";
     }
+    /// <summary>
+    /// A Custom tag chip: the administrator's rule <paramref name="RuleId"/> drew <paramref name="Label"/>
+    /// (also its Tag Styles label), with an optional genre-set <paramref name="Icon"/> before it.
+    /// </summary>
+    public sealed record CustomTag(string Label, string? Icon, string RuleId) : PosterTag;
 
     /// <summary>The tags of one group and where they go.</summary>
     public sealed record PosterTagGroupLayout(PosterTagGroup Group, PosterTagCorner Corner, IReadOnlyList<PosterTag> Tags);

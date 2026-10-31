@@ -5,6 +5,7 @@
 // the admin's tag cache plus hand-made edge-case entries.
 //
 // Output: data/profiles.json and data/synthetic/{entries,userdata,reviews}.json.
+import { createHmac } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -189,6 +190,15 @@ synthetic.isoAliases = movie({ AudioLanguages: ['tgl', 'tl', 'fil', 'nob', 'nb',
 synthetic.awardsMovie = movie({ Awards: { ImdbRank: 12, CertifiedFresh: true, OscarWinner: true, OscarYear: 2024, LetterboxdRank: 24 } });
 synthetic.awardsSeries = { Type: 'Series', Awards: { EmmyWinner: true, EmmyYear: 2023 } };
 synthetic.awardsEmpty = movie({ Awards: { ImdbRank: 251, CertifiedFresh: false } });
+// Custom tag rule matches: one chip with an icon, one without, a retired rule id, and a series.
+// Rule ids are the server's keyed hash of the match type and value (CustomTagRuleSet.RuleId),
+// here under the profiles' CustomTagRuleKey.
+const customKey = 'parity';
+const customId = (match, value) => `${match}:${createHmac('sha256', customKey).update(`${match}:${value.toLowerCase()}`).digest('hex').slice(0, 16)}`;
+synthetic.custom1 = movie({ CustomTags: [customId('tag', '4K Remaster')] });
+synthetic.custom2 = movie({ CustomTags: [customId('collection', 'Criterion')] });
+synthetic.custom3 = movie({ CustomTags: [customId('tag', 'Signed'), customId('collection', 'Criterion'), 'tag:0000000000000000', customId('tag', '4K Remaster')] });
+synthetic.custom4 = { ...movie({ CustomTags: [customId('collection', 'Criterion'), customId('tag', 'Signed')] }), Type: 'Series' };
 const syntheticEntries = {};
 const syntheticUserData = {};
 const syntheticReviews = {};
@@ -427,6 +437,24 @@ for (const style of ['flags', 'codes']) {
         synth(`language-${style}-${badge}`, { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: style, LanguageTagsCountBadge: badge });
     }
 }
+// Custom tags: the administrator's rules (labels and icons by rule id), the group's corner,
+// arrival order next to quality and age rating, explicit order and cap, and "off" in corners.
+// The server reads Match/Value (under CustomTagRuleKey); the web reads Id/Label/Icon, as the
+// public configuration serves them.
+const customRules = { CustomTagRuleKey: customKey, CustomTagRules: [
+    { Id: customId('collection', 'Criterion'), Match: 'collection', Value: 'Criterion', Label: 'Criterion', Icon: null },
+    { Id: customId('tag', '4K Remaster'), Match: 'tag', Value: '4K Remaster', Label: 'Remaster', Icon: 'auto_awesome' },
+    { Id: customId('tag', 'Signed'), Match: 'tag', Value: 'Signed', Label: 'Signed', Icon: null },
+] };
+synth('custom-defaults', { CustomTagsEnabled: true }, customRules);
+synth('custom-shared-corner', { QualityTagsEnabled: true, AgeRatingTagsEnabled: true, AgeRatingTagsPosition: 'top-left', CustomTagsEnabled: true }, customRules);
+synth('custom-order-cap-position', { ...allOn, CustomTagsEnabled: true, CustomTagsPosition: 'top-right', TagLayoutSettingsVersion: 1, TagGroupOrder: ['custom', 'genre'], TagGroupCaps: { Custom: 1 } }, customRules);
+synth('custom-off-in-corners', { CustomTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: { Groups: [{ Group: 'custom', Slot: 'off' }] } } }, customRules);
+synth('custom-rules-group-off', { QualityTagsEnabled: true }, customRules);
+synth('custom-admin-default-on', null, { ...customRules, CustomTagsEnabled: true, CustomTagsPosition: 'bottom-left' });
+// Rules reordered after the entries were matched (their ids keep the old order): both sides draw the new order.
+synth('custom-reordered-cap', { CustomTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Custom: 1 } }, { ...customRules, CustomTagRules: [...customRules.CustomTagRules].reverse() });
+
 synth('language-subs-only', { LanguageTagsEnabled: true, LanguageTagsShowAudio: false, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes' });
 synth('language-subs-strict-merge', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes', LanguageTagsCountBadge: 'both' }, { LanguageTagsPriority: 'French, English, Hindi', LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });
 
@@ -447,6 +475,16 @@ for (const [scale, gap] of [['smaller', 'tight'], ['largest', 'roomy']]) {
         TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagScale: scale, TagGap: gap,
         TagGroupOrder: ['status', 'awards', 'quality', 'rating', 'language'],
         TagLayouts: { Bands: { Groups: [{ Group: 'awards', Slot: 'top' }] } } }, { AwardsTagsEnabled: true });
+}
+
+// Both new groups participate in scale/gap, all nine edge anchors and Bands.
+for (const [TagScale, TagGap] of [['smaller', 'tight'], ['largest', 'roomy']])
+for (const TagLayout of ['corners', 'bands'])
+for (const TagEdgeSpacing of ['tight', 'flush']) {
+    synth(`logos-custom-${TagLayout}-${TagEdgeSpacing}-${TagScale}`, {
+        LogoTagsEnabled: true, CustomTagsEnabled: true, TagLayoutSettingsVersion: 1,
+        TagScale, TagGap, TagLayout, TagEdgeSpacing, TagGroupOrder: ['logos', 'custom'],
+    }, customRules);
 }
 
 writeFileSync(join(dataDir, 'profiles.json'), JSON.stringify(profiles, null, 1));
