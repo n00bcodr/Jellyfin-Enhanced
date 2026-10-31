@@ -28,7 +28,7 @@ public class PosterTokenTests : IDisposable
         const string version11Digest = "223695b6d0444ff8";
         var settings = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsShowSubtitles\":true,\"LanguageTagsStyle\":\"codes\"}", new());
         Assert.Equal("12", PosterTagSettings.ResolverVersion);
-        Assert.Equal("7.1", PosterTagComposer.PixelVersion);
+        Assert.Equal("8.1", PosterTagComposer.PixelVersion);
         var service = Tokens();
         var old = service.Mint(user, item, version10Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
         var version11 = service.Mint(user, item, version11Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
@@ -47,7 +47,7 @@ public class PosterTokenTests : IDisposable
     public void TierTwoPixelsRejectTierOneAndRoundOneTokens(string historicalVersion)
     {
         var service = Tokens();
-        Assert.Equal("7.1", PosterTagComposer.PixelVersion);
+        Assert.Equal("8.1", PosterTagComposer.PixelVersion);
         var old = service.Mint(user, item, "settings", historicalVersion, PosterTagVariantFlags.None, "abcdef");
         Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
     }

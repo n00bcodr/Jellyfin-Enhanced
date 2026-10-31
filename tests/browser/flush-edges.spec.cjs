@@ -153,7 +153,7 @@ test('Flush tabs retain edge suppression beside scoped per-genre colours and Pos
   }
 });
 
-test('Flush overflow-only and mixed centre rows treat +N as a visible edge chip', async ({ page }) => {
+test('Flush lone labels stay visible and mixed centre rows treat +N as an edge chip', async ({ page }) => {
   await setup(page);
   for (const slot of ['tc', 'bc']) for (const mixed of [false, true]) for (const progress of [0, 4]) {
     await place(page, {slot,progress,indicator:false});
@@ -163,11 +163,12 @@ test('Flush overflow-only and mixed centre rows treat +N as a visible edge chip'
       group.innerHTML=(mixed?'<span class="quality-overlay-label">4K</span>':'')+'<span class="quality-overlay-label">'+ 'W'.repeat(100)+'</span>';
       L.commitGroup(host,'quality',group);
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
-      const more=host.querySelector('.je-tag-more'),s=getComputedStyle(more),b=more.getBoundingClientRect(),h=host.getBoundingClientRect();
-      return {text:more.textContent,hidden:more.hasAttribute('data-je-overflow'),top:b.top-h.top,bottom:h.bottom-b.bottom,
+      const more=host.querySelector('.je-tag-more'),chip=mixed?more:host.querySelector('.quality-overlay-label'),s=getComputedStyle(chip),b=chip.getBoundingClientRect(),h=host.getBoundingClientRect();
+      return {text:more.textContent,hidden:more.hasAttribute('data-je-overflow'),chipHidden:chip.hasAttribute('data-je-overflow'),top:b.top-h.top,bottom:h.bottom-b.bottom,
         border:slot==='tc'?s.borderTopColor:s.borderBottomColor, radius:slot==='tc'?s.borderTopLeftRadius:s.borderBottomLeftRadius,clip:s.clipPath};
     },{slot,mixed});
-    expect(result.text).toBe('+1');expect(result.hidden).toBe(false);
+    expect(result.hidden).toBe(!mixed);expect(result.chipHidden).toBe(false);
+    if(mixed)expect(result.text).toBe('+1');
     expect(result.border).toBe('rgba(0, 0, 0, 0)');expect(result.radius).toBe('0px');expect(result.clip).not.toBe('none');
     expect(slot==='tc'?result.top:result.bottom).toBeCloseTo(slot==='tc'?0:progress,2);
   }
@@ -235,5 +236,61 @@ test('Flush Rating and Awards keep inner rings at centre and remove only touchin
     }, {screenshot, rect});
     const edges={tl:3,tc:2,tr:6,ml:1,c:0,mr:4,bl:9,bc:8,br:12}[slot];
     expect(pixels,JSON.stringify({scoped,group,slot,rect})).toEqual([1,2,4,8].map(side=>!(edges&side)));
+  }
+});
+
+/** A narrow poster with production Status styling at the maintainer's size/gap. */
+async function sideStatus(page, row, label = row.label) {
+  return page.evaluate(async ({row,label}) => {
+    const JE=JellyfinEnhanced,L=JE.core.tagLayout,host=document.querySelector('.je-tag-host');
+    for(const group of ['quality','status']) L.removeGroup(host,group);
+    Object.assign(JE.currentSettings,{tagScale:'smaller',tagGap:'tight',tagLabelDensity:'compact',tagEdgeSpacing:row.edge,
+      tagLayouts:{corners:{groups:[{group:'status',slot:row.slot},{group:'quality',slot:row.opposite?(row.slot==='ml'?'mr':'ml'):'off'}]}}});
+    L.invalidateSettings();
+    const status=document.createElement('div');status.className='status-overlay-container';
+    const badge=document.createElement('span');badge.className='status-tag';badge.textContent=label;status.append(badge);
+    L.commitGroup(host,'status',status);
+    if(row.opposite){const q=document.createElement('div');q.className='quality-overlay-container';q.innerHTML='<span class="quality-overlay-label">Dolby Vision</span>';L.commitGroup(host,'quality',q);}
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const passes=[];
+    for(let i=0;i<3;i++){
+      L.refreshPresentation(host);L.flushFit();
+      const live=host.querySelector('.status-tag'),s=live.closest('[data-je-slot]'),b=live.getBoundingClientRect(),h=host.getBoundingClientRect(),more=s.querySelector('.je-tag-more'),q=host.querySelector('.quality-overlay-label'),qb=q?.getBoundingClientRect();
+      passes.push({hidden:live.hasAttribute('data-je-overflow'),slotHidden:s.hasAttribute('data-je-overflow'),moreHidden:!more||more.hasAttribute('data-je-overflow'),
+        budget:parseFloat(s.style.getPropertyValue('--je-anchor-width')),width:b.width,left:b.left-h.left,right:h.right-b.right,
+        truncated:live.hasAttribute('data-je-fit-width'),ellipsis:getComputedStyle(live).textOverflow,
+        overlap:qb?Math.min(b.right,qb.right)-Math.max(b.left,qb.left):0});
+    }
+    return passes;
+  },{row,label});
+}
+
+test('Status at middle sides retains its label on a narrow poster and reserves the opposite side at 420', async ({page}) => {
+  await setup(page);
+  await page.setViewportSize({width:420,height:900});
+  for(const file of ['tags/status-vocabulary.js','tags/statustags.js']) await page.addScriptTag({path:path.join(root,file)});
+  await page.evaluate(()=>JellyfinEnhanced.initializeStatusTags());
+  const rows=require('../fixtures/side-status-fit.json');
+  for(const row of rows) for(const label of [row.label,'W'.repeat(100)]) {
+    const passes=await sideStatus(page,row,label);
+    for(const p of passes){
+      expect(p.hidden,JSON.stringify({row,label,p})).toBe(false);expect(p.slotHidden).toBe(false);expect(p.moreHidden).toBe(true);
+      expect(p.budget).toBeCloseTo(row.budget,2);expect(p.width).toBeLessThanOrEqual(row.budget+.02);
+      if(row.opposite||label.length===100){expect(p.truncated).toBe(true);expect(p.ellipsis).toBe('ellipsis');}
+      if(!row.opposite&&label===row.label)expect(p.width).toBeGreaterThan(90);
+      if(row.opposite)expect(p.overlap).toBeLessThanOrEqual(-2.5);
+    }
+    expect(passes[2]).toEqual(passes[0]);
+  }
+});
+
+test('all nine anchors retain a lone oversized Status label without a +1 chip',async ({page})=>{
+  await setup(page);await page.setViewportSize({width:420,height:900});
+  for(const file of ['tags/status-vocabulary.js','tags/statustags.js'])await page.addScriptTag({path:path.join(root,file)});
+  await page.evaluate(()=>JellyfinEnhanced.initializeStatusTags());
+  for(const slot of ['tl','tc','tr','ml','c','mr','bl','bc','br']){
+    await sideStatus(page,{slot,opposite:false,edge:'flush'},'W'.repeat(100));
+    const result=await page.evaluate(()=>{const c=document.querySelector('.status-tag'),s=c.closest('[data-je-slot]'),more=s.querySelector('.je-tag-more');return {hidden:c.hasAttribute('data-je-overflow'),slotHidden:s.hasAttribute('data-je-overflow'),moreVisible:!!more&&!more.hasAttribute('data-je-overflow')};});
+    expect(result).toEqual({hidden:false,slotHidden:false,moreVisible:false});
   }
 });

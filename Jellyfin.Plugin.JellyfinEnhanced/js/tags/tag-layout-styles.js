@@ -146,7 +146,7 @@
             ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) {
                 top: 50%; transform: translateY(-50%);
                 max-height: max(0px, calc(100% - 2 * var(--je-anchor-reserve, 6px)));
-                max-width: calc(50% - 6px);
+                max-width: var(--je-anchor-width, calc(100% - 12px));
                 /* Fitting hides excess chips explicitly; hover names must be
                    able to extend from the icon toward the card's centre. */
                 flex-direction: column; overflow: visible;
@@ -156,9 +156,19 @@
             ${host('corners')}[data-je-slot="ml"] > [data-je-group] { align-items: flex-start; }
             ${host('corners')}[data-je-slot="mr"] > [data-je-group] { align-items: flex-end; }
             ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) > [data-je-group] { display: contents; }
-            /* Keep chips at their intrinsic width for measureFit's batched reads.
-               Fitting hides oversized chips whole instead of clipping their text. */
+            /* Measure intrinsic chip widths before constraining the first label. */
             ${host('corners')}:is([data-je-slot="tc"], [data-je-slot="bc"], [data-je-slot="ml"], [data-je-slot="mr"], [data-je-slot="c"]) > [data-je-group] > * { max-width: none; box-sizing: border-box; flex-shrink: 0; }
+
+            ${host('corners')}:is([data-je-slot="ml"], [data-je-slot="mr"]) .genre-text {
+                box-sizing: border-box;
+                max-width: max(0px, calc(var(--je-anchor-width, 0px) - 100% - 6px));
+                overflow: hidden; text-overflow: ellipsis;
+            }
+            ${host('corners')} > [data-je-group] > [data-je-fit-width] {
+                max-width: var(--je-chip-fit-width); min-width: 0;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                display: block;
+            }
 
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
                with a group set to top-right moves that stack below it. */

@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
         // Flush edge treatment changes pixels; Default, Tight and Bands retain their painting path.
-        public const string Version = "7";
+        public const string Version = "8";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;

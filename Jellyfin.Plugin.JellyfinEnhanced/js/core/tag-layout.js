@@ -2050,6 +2050,10 @@
     function prepareFit(ctrl) {
         for (const root of [ctrl.host, ctrl.outlet]) {
             root?.querySelectorAll('[data-je-overflow]').forEach((el) => el.removeAttribute('data-je-overflow'));
+            root?.querySelectorAll('[data-je-fit-width]').forEach((el) => {
+                el.removeAttribute('data-je-fit-width');
+                el.style.removeProperty('--je-chip-fit-width');
+            });
         }
         for (const slotEl of rowSlots(ctrl)) {
             const count = slotChips(slotEl).length;
@@ -2068,7 +2072,7 @@
     /**
      * @typedef {Object} FitPlan
      * @property {number} pillFacts - Pill facts to keep (-1 = no pill).
-     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[], more: boolean, fittedRows?: number[], fittedMoreRow?: number}>} rows -
+     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[], more: boolean, width?: number, firstWidth?: number, fittedRows?: number[], fittedMoreRow?: number}>} rows -
      *   Wrapping slots; `more` is false when not even the "+N" chip has room.
      * @property {Array<{el: HTMLElement, before: number|null}>} indicator - Exact top-right containers
      *   of a corners card saved before layouts, with how far down their slot they sit unmoved
@@ -2129,24 +2133,37 @@
      */
     function measureFit(ctrl) {
         const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [], indicator: measureIndicatorGaps(ctrl) };
-        for (const slotEl of rowSlots(ctrl)) {
+        const slots = rowSlots(ctrl);
+        const sides = new Map(slots.filter(el => ['ml', 'mr'].includes(el.dataset.jeSlot || ''))
+            .map(el => [el.dataset.jeSlot, slotChips(el).map(chip => chip.getBoundingClientRect())]));
+        const conf = resolveLayout(ctrl);
+        const innerWidth = sides.size ? Math.max(0, ctrl.host.clientWidth - 2 * edgeOf(ctrl)) : 0;
+        const sideGap = 4 * TAG_SCALES[conf.tagScale] * TAG_GAPS[conf.tagGap];
+        const half = Math.max(0, (innerWidth - sideGap) / 2);
+        for (const slotEl of slots) {
             const chips = slotChips(slotEl);
             const more = moreChipOf(slotEl);
             if (chips.length === 0 || !more) continue;
             const style = getComputedStyle(slotEl);
-            const available = slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+            const vertical = ctrl.layout === 'corners' && ['ml', 'mr'].includes(slotEl.dataset.jeSlot || '');
+            const opposite = sides.get(slotEl.dataset.jeSlot === 'ml' ? 'mr' : 'ml') || [];
+            const oppositeWidth = Math.min(half, Math.max(0, ...opposite.map(rect => rect.width)));
+            // Side budgets come from the host, never the column's content width:
+            // a previous +N chip must not shrink the next measurement's budget.
+            const available = vertical ? Math.max(0, Math.min(opposite.length ? half : innerWidth,
+                innerWidth - oppositeWidth - sideGap))
+                : slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
             const gap = parseFloat(style.columnGap) || 0;
             // Centre chips are unconstrained by CSS, so these batched reads
             // measure their intrinsic widths, including padding and borders.
             const rects = chips.map((chip) => chip.getBoundingClientRect());
             const widths = rects.map((r) => r.width);
             const moreRect = more.getBoundingClientRect();
-            if (!(available > 0)) {
-                plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => ctrl.layout !== 'corners'), more: ctrl.layout !== 'corners' });
+            if (!(available > 0) && ctrl.layout !== 'corners') {
+                plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => true), more: true });
                 continue;
             }
             if (ctrl.layout === 'corners') {
-                const vertical = ['ml', 'mr'].includes(slotEl.dataset.jeSlot || '');
                 const measured = parseFloat(slotEl.style.getPropertyValue('--je-anchor-reserve'));
                 const reserve = Number.isFinite(measured) ? measured : edgeOf(ctrl);
                 const limit = Math.max(0, vertical ? ctrl.host.clientHeight - 2 * reserve : ctrl.host.clientHeight / 3);
@@ -2155,17 +2172,30 @@
                 let shown = null;
                 let fittedRows = [];
                 let fittedMoreRow = 0;
+                const fitWidths = widths.map((width, i) => i === 0 ? Math.min(width, Math.max(0, available)) : width);
                 if (vertical) {
-                    // A column needs both height and width for a whole chip.
-                    shown = chipsThatFit(heights.map((height, i) => widths[i] <= available + 0.01 ? height : Infinity), limit, rowGap, 1, moreRect.height);
+                    // Keep the first label (ellipsized if necessary); later chips
+                    // still need both height and width to be shown whole.
+                    shown = chipsThatFit(heights.map((height, i) => fitWidths[i] <= available + 0.01 ? height : Infinity), limit, rowGap, 1, moreRect.height);
                 } else {
                     for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
                         const rows = [], moreRow = { row: 0 };
-                        const fit = chipsThatFit(widths, available, gap, n, moreRect.width, rows, moreRow);
+                        const fit = chipsThatFit(fitWidths, available, gap, n, moreRect.width, rows, moreRow);
                         if (rowsHeight(fit, rows, heights, moreRect.height, rowGap, moreRow.row) <= limit) { shown = fit; fittedRows = rows; fittedMoreRow = moreRow.row; }
                     }
                 }
-                plan.rows.push({ slot: slotEl, chips, shown: shown || chips.map(() => false), fittedRows, fittedMoreRow, more: !!shown && limit >= moreRect.height && available >= moreRect.width });
+                if (!shown?.[0]) {
+                    // An anchor always tells the user at least its first fact.
+                    // +N counts only later chips, and is omitted without room.
+                    shown = chips.map((_, i) => i === 0);
+                    fittedRows = chips.map((_, i) => i === 0 ? 1 : 0);
+                    fittedMoreRow = 2;
+                }
+                const moreFits = vertical ? heights[0] + rowGap + moreRect.height <= limit
+                    : rowsHeight(shown, fittedRows, heights, moreRect.height, rowGap, fittedMoreRow) <= limit;
+                plan.rows.push({ slot: slotEl, chips, shown, fittedRows, fittedMoreRow,
+                    width: vertical ? available : undefined, firstWidth: widths[0] > available ? Math.max(0, available) : undefined,
+                    more: moreFits && limit >= moreRect.height && available >= moreRect.width });
                 continue;
             }
             const room = rowRoom(ctrl, style);
@@ -2241,6 +2271,13 @@
      * @param {FitPlan} plan
      */
     function applyFit(ctrl, plan) {
+        for (const row of plan.rows) {
+            if (row.width !== undefined) row.slot.style.setProperty('--je-anchor-width', `${row.width}px`);
+            if (row.firstWidth !== undefined) {
+                row.chips[0].setAttribute('data-je-fit-width', '');
+                row.chips[0].style.setProperty('--je-chip-fit-width', `${row.firstWidth}px`);
+            }
+        }
         if (ctrl.layout === 'corners' && resolveLayout(ctrl).edge === 'flush') {
             for (const row of plan.rows) {
                 const slot = row.slot.dataset.jeSlot;
@@ -2271,7 +2308,7 @@
             for (const chip of hidden) chip.setAttribute('data-je-overflow', '');
             names.push(...hidden.map(chipLabel).filter(Boolean));
             // Not a single row fits: no empty scrim either.
-            if (!room) slot.setAttribute('data-je-overflow', '');
+            if (!room && !shown.some(Boolean)) slot.setAttribute('data-je-overflow', '');
             if (hidden.length === 0 || !room) {
                 more.setAttribute('data-je-overflow', '');
                 more.removeAttribute('title');

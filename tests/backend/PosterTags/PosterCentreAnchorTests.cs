@@ -86,4 +86,59 @@ public class PosterCentreAnchorTests
         Assert.True(after.Groups[1].Items[0].X >= before.X + before.Width + 4);
         Assert.True(after.Groups[2].Items[0].Y >= before.Y + before.Height + 4);
     }
+    [Fact]
+    public void Side_Status_matches_browser_budgets_with_and_without_the_opposite_group()
+    {
+        using var json = System.Text.Json.JsonDocument.Parse(typeof(PosterCentreAnchorTests).Assembly.GetManifestResourceStream("SideStatusFit.json")!);
+        using var renderer = new PosterTagRenderer();
+        foreach (var row in json.RootElement.EnumerateArray())
+        {
+            bool right = row.GetProperty("slot").GetString() == "mr";
+            bool opposite = row.GetProperty("opposite").GetBoolean();
+            var anchor = right ? PosterTagCorner.CenterRight : PosterTagCorner.CenterLeft;
+            var groups = new List<PosterTagGroupLayout> { new(PosterTagGroup.Status, anchor,
+                [new StatusTag("season_premiere", row.GetProperty("label").GetString()!, "season_premiere")]) };
+            if (opposite) groups.Add(new(PosterTagGroup.Quality, right ? PosterTagCorner.CenterLeft : PosterTagCorner.CenterRight,
+                [new QualityTag("Dolby Vision", "dynamicRange")]));
+            var layout = new PosterTagLayout(groups, false, false) { TagScale = "smaller", TagGap = "tight", EdgeInset = row.GetProperty("inset").GetSingle() };
+            var plan = renderer.Plan(180, 270, layout);
+            var group = plan.Groups[0]; var first = Assert.Single(group.Items);
+            Assert.False(first.Hidden);
+            Assert.Equal(row.GetProperty("budget").GetSingle(), group.Width, 3);
+            Assert.InRange(first.Width, 1, group.Width);
+            if (!opposite) Assert.True(first.Width > plan.CardWidth / 2);
+            else
+            {
+                Assert.EndsWith("…", first.Text);
+                var left = plan.Groups.SelectMany(g => g.Items).Where(i => !i.Hidden).OrderBy(i => i.X).ToArray();
+                Assert.True(left[0].X + left[0].Width + plan.Css.StackGap <= left[1].X + .01f);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(PosterTagCorner.TopLeft)]
+    [InlineData(PosterTagCorner.TopCenter)]
+    [InlineData(PosterTagCorner.TopRight)]
+    [InlineData(PosterTagCorner.CenterLeft)]
+    [InlineData(PosterTagCorner.Center)]
+    [InlineData(PosterTagCorner.CenterRight)]
+    [InlineData(PosterTagCorner.BottomLeft)]
+    [InlineData(PosterTagCorner.BottomCenter)]
+    [InlineData(PosterTagCorner.BottomRight)]
+    public void Every_anchor_keeps_a_lone_first_fact(PosterTagCorner anchor)
+    {
+        using var renderer = new PosterTagRenderer();
+        var layout = new PosterTagLayout([new(PosterTagGroup.Status, anchor,
+            [new StatusTag("season_premiere", new string('W', 100), "season_premiere")])], false, false) { TagScale = "smaller" };
+        var item = Assert.Single(Assert.Single(renderer.Plan(180, 270, layout).Groups).Items);
+        Assert.False(item.Hidden);
+        Assert.IsType<StatusTag>(item.Tag);
+        if (anchor is PosterTagCorner.TopCenter or PosterTagCorner.BottomCenter or PosterTagCorner.CenterLeft or PosterTagCorner.CenterRight or PosterTagCorner.Center)
+        {
+            Assert.EndsWith("…", item.Text);
+            Assert.InRange(item.Width, 1, 168);
+        }
+    }
+
 }

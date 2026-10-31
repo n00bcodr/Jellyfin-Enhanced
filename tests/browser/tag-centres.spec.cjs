@@ -75,15 +75,15 @@ async function qualityCard(page, { slot, width, corner = false, mixed = false })
 }
 
 for (const slot of ['tc', 'bc', 'c', 'ml', 'mr']) {
-  test(`${slot} hides an oversized quality chip whole and counts it in +N`, async ({ page, request }) => {
+  test(`${slot} keeps its lone oversized quality label with an ellipsis`, async ({ page, request }) => {
     await setup(page, request);
     await qualityCard(page, { slot, width: 64 });
     const chip = page.locator('.quality-overlay-label');
     await expect(chip).toHaveText('Dolby Vision');
-    await expect(chip).toBeHidden();
-    await expect(page.locator('.je-tag-more')).toBeVisible();
-    await expect(page.locator('.je-tag-more')).toHaveText('+1');
-    await expect(page.locator('.je-tag-more')).toHaveAttribute('title', 'Dolby Vision');
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveAttribute('data-je-fit-width', '');
+    await expect(chip).toHaveCSS('text-overflow', 'ellipsis');
+    await expect(page.locator('.je-tag-more')).toBeHidden();
   });
 }
 
@@ -138,5 +138,25 @@ for (const slot of ['ml', 'mr']) {
       return Math.max(0, right - left) * Math.max(0, bottom - top) / (r.width * r.height);
     });
     expect(visibleFraction).toBeGreaterThan(0.99);
+  });
+}
+
+for (const slot of ['ml', 'mr']) {
+  test(`${slot} bounds a long hover name before the opposite Status badge`, async ({page,request}) => {
+    await setup(page,request,{genreTagsEnabled:true,genreTagsPosition:slot==='ml'?'center-left':'center-right'});
+    await page.addScriptTag({path:path.join(root,'tags/genretags.js')});
+    await page.evaluate(slot=>{
+      const JE=JellyfinEnhanced,L=JE.core.tagLayout;
+      JE.initializeGenreTags();
+      document.querySelector('#cards').innerHTML='<div class="card"><div class="cardBox"><div class="cardScalable" style="width:180px;height:260px"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div></div>';
+      const host=document.querySelector('.je-tag-host');
+      JE.currentSettings.tagLayouts={corners:{groups:[{group:'genre',slot},{group:'status',slot:slot==='ml'?'mr':'ml'}]}};L.invalidateSettings();
+      JE.tagPipeline.renderers.genre.renderFromServerCache(host,{Type:'Movie',Genres:['Science Fiction']},'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+      const status=document.createElement('div');status.innerHTML='<span class="status-tag" style="width:70px;height:20px;display:block">Added</span>';L.commitGroup(host,'status',status);L.flushFit();
+    },slot);
+    await page.locator('.card').hover();
+    const distance=await page.evaluate(slot=>{const name=document.querySelector('.genre-text').getBoundingClientRect(),status=document.querySelector('.status-tag').getBoundingClientRect();return slot==='ml'?status.left-name.right:name.left-status.right;},slot);
+    expect(distance).toBeGreaterThanOrEqual(3.9);
+    await expect(page.locator('.genre-text')).toHaveCSS('opacity','1');
   });
 }

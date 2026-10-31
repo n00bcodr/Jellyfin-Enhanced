@@ -757,7 +757,7 @@ function withLayout(h, { card, chip = 30, more = 20 }, fn) {
  * the card width, the host the card height (the reveal's 40% resolves against
  * it), chips 30x18 and the "+N" chip 20x18.
  */
-function fitCard(h, { width, height, chip = 30, more = 20, tall = null }) {
+function fitCard(h, { width, height, chip = 30, more = 20, tall = null, slotWidth = width }) {
   const proto = h.window.HTMLElement.prototype;
   const rect = proto.getBoundingClientRect;
   const client = Object.getOwnPropertyDescriptor(h.window.Element.prototype, 'clientWidth');
@@ -768,7 +768,7 @@ function fitCard(h, { width, height, chip = 30, more = 20, tall = null }) {
     return { width: w, height: ht, top: 0, left: 0, right: w, bottom: ht };
   };
   Object.defineProperty(h.window.Element.prototype, 'clientWidth', { configurable: true,
-    get() { return this.matches('.je-tag-host, .je-tag-slot, .je-tag-caption') ? width : 0; } });
+    get() { return this.matches('.je-tag-host') ? width : this.matches('.je-tag-slot, .je-tag-caption') ? slotWidth : 0; } });
   Object.defineProperty(h.window.Element.prototype, 'clientHeight', { configurable: true,
     get() { return this.matches('.je-tag-host') ? height : 0; } });
   try { h.layout.refreshPresentation(h.host()); h.layout.flushFit(); } finally {
@@ -1182,7 +1182,8 @@ test('side-centre columns fit whole chips and an overflow count inside short car
     assert.equal(column.lastElementChild.textContent,'+2');
     assert.equal(column.lastElementChild.hasAttribute('data-je-overflow'),false);
     fitCard(h,{width:113,height:16});
-    assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).hasAttribute('data-je-overflow'),true);
+    assert.equal(h.host().querySelector(`[data-je-slot="${slot}"]`).hasAttribute('data-je-overflow'),false, 'the first fact stays even on a short card');
+    assert.equal(h.host().querySelector(`[data-je-slot="${slot}"] [data-je-group] > *`).hasAttribute('data-je-overflow'),false);
   }
 });
 
@@ -1295,4 +1296,42 @@ test('single-chip caps ignore stored caps and look overrides, while two-logo pol
   conf = h.layout.normalizeSettings();
   assert.equal(conf.caps.logos, 7);
   for (const group of ['quality', 'genre', 'language', 'rating', 'awards', 'custom']) assert.equal(h.layout.singleChipGroup(group), false);
+});
+
+
+test('middle-side Status budgets survive a +1-sized column and reserve the opposite side at smaller scale', t => {
+  for (const slot of ['ml', 'mr']) for (const opposite of [false, true]) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagScale: 'smaller', tagGap: 'tight', tagEdgeSpacing: 'flush',
+      tagLayouts: { corners: { groups: ['quality','genre','language','rating','ageRating','status'].map(group => ({group,
+        slot: group === 'status' ? slot : group === 'quality' && opposite ? slot === 'ml' ? 'mr' : 'ml' : 'off'})) } } } });
+    h.render();
+    // A 90px badge exceeds half the 140px poster; the slot's last +1 was only 20px.
+    for (let pass = 0; pass < 3; pass++) {
+      fitCard(h, { width: 140, height: 210, chip: 90, slotWidth: 20 });
+      const column = h.host().querySelector(`[data-je-slot="${slot}"]`);
+      const first = column.querySelector('[data-je-group] > *');
+      assert.equal(first.hasAttribute('data-je-overflow'), false);
+      assert.equal(column.querySelector('.je-tag-more').hasAttribute('data-je-overflow'), true);
+      assert.equal(parseFloat(column.style.getPropertyValue('--je-anchor-width')), opposite ? 68.725 : 137.45);
+      assert.equal(first.hasAttribute('data-je-fit-width'), opposite);
+      if (opposite) assert.equal(first.style.getPropertyValue('--je-chip-fit-width'), '68.725px');
+    }
+  }
+});
+
+test('every Corners anchor keeps its first oversized fact and counts only later chips', t => {
+  for (const slot of ['tl','tc','tr','ml','c','mr','bl','bc','br']) for (const count of [1, 2]) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups:
+      ['quality','genre','language','rating','ageRating','status'].map(group => ({group,slot:group === 'quality' ? slot : 'off'})) } } } });
+    const group = h.document.createElement('div'); group.className='quality-overlay-container';
+    group.innerHTML = '<span class="quality-overlay-label">Long first label</span>'.repeat(count);
+    h.layout.commitGroup(h.host(), 'quality', group);
+    fitCard(h, {width: 40, height: 180, chip: 90});
+    const column = h.host().querySelector(`[data-je-slot="${slot}"]`);
+    assert.equal(column.hasAttribute('data-je-overflow'), false, slot);
+    assert.equal(column.querySelector('[data-je-group] > *').hasAttribute('data-je-overflow'), false, slot);
+    const more = column.querySelector('.je-tag-more');
+    if (count === 1 && more) assert.equal(more.hasAttribute('data-je-overflow'), true, slot);
+    if (count === 2 && more && !more.hasAttribute('data-je-overflow')) assert.equal(more.textContent, '+1', slot);
+  }
 });

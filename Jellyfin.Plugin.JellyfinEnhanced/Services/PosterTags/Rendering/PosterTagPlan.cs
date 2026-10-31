@@ -109,7 +109,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         public PosterTag Tag { get; }
 
         /// <summary>The text drawn (quality label, rating value, upper-cased age rating), icon name or flag code.</summary>
-        public string Text { get; }
+        public string Text { get; set; }
 
         /// <summary>Everything else the tile's pixels depend on (colours, icon variant, partial).</summary>
         public string Style { get; }
@@ -118,11 +118,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         public float Y { get; set; }
 
-        public float Width { get; }
+        public float Width { get; set; }
 
         public float Height { get; }
 
-        public PosterTagTextLayout? TextLayout { get; init; }
+        public PosterTagTextLayout? TextLayout { get; set; }
 
         /// <summary>Icon inline box (rating chips): width and height in CSS px.</summary>
         public float IconWidth { get; init; }
@@ -467,9 +467,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// stack between the occupied corner stacks. All dimensions are CSS px.
         /// Static images omit whole chips that have no room (there is no hover tooltip).
         /// </summary>
-        private static void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, float inset, bool indicators, float progressHeight)
+        private void PlaceCentres(List<PlannedGroup> groups, PosterTagCss css, float cardHeight, float inset, bool indicators, float progressHeight)
         {
             float gap = css.StackGap;
+            // Snapshot intrinsic widths before placing either side, so paint order
+            // and a previously fitted width cannot affect the opposite budget.
+            var sides = groups.Where(g => g.Corner is PosterTagCorner.CenterLeft or PosterTagCorner.CenterRight)
+                .GroupBy(g => g.Corner).ToDictionary(g => g.Key, g => g.SelectMany(v => v.Items).Max(i => i.Width));
             foreach (var anchor in groups.Where(g => IsCentre(g.Corner)).GroupBy(g => g.Corner))
             {
                 var corner = anchor.Key;
@@ -496,16 +500,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         reserve = 0;
                     }
                 }
-                float width = Math.Max(0, vertical ? (css.CardWidth / 2) - inset : css.CardWidth - (2 * reserve));
+                float inner = Math.Max(0, css.CardWidth - 2 * inset);
+                float half = Math.Max(0, (inner - gap) / 2);
+                bool occupied = sides.TryGetValue(right ? PosterTagCorner.CenterLeft : PosterTagCorner.CenterRight, out var opposite);
+                float sideWidth = Math.Max(0, Math.Min(occupied ? half : inner, inner - Math.Min(half, opposite) - gap));
+                float width = vertical ? sideWidth : Math.Max(0, css.CardWidth - (2 * reserve));
                 float maxHeight = Math.Max(0, vertical ? cardHeight - (2 * reserve) : cardHeight / 3);
                 var items = anchor.SelectMany(g => g.Items).ToList();
+                // The first fact is useful even when a whole chip cannot fit.
+                // Constrain its text instead of replacing the slot with a count.
+                if (items.Count > 0 && items[0].Width > width) EllipsizeFirst(items[0], width, css);
                 var rows = new List<List<PlannedItem>>();
                 float used = 0, rowHeight = 0, height = 0;
                 foreach (var item in items)
                 {
                     if (vertical)
                     {
-                        if (item.Width > width || height + item.Height > maxHeight) { item.Hidden = true; continue; }
+                        if (item != items[0] && (item.Width > width || height + item.Height > maxHeight)) { item.Hidden = true; continue; }
                         item.Y = height;
                         height += item.Height + gap;
                     }
@@ -515,12 +526,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         bool wrap = rows.Count == 0 || used + gap + item.Width > width;
                         if (wrap)
                         {
-                            if (rows.Count == 2 || height + (rows.Count > 0 ? rowHeight + gap : 0) + item.Height > maxHeight) { item.Hidden = true; continue; }
+                            if (item != items[0] && (rows.Count == 2 || height + (rows.Count > 0 ? rowHeight + gap : 0) + item.Height > maxHeight)) { item.Hidden = true; continue; }
                             if (rows.Count > 0) height += rowHeight + gap;
                             rows.Add(new List<PlannedItem>());
                             used = rowHeight = 0;
                         }
-                        if (height + Math.Max(rowHeight, item.Height) > maxHeight) { item.Hidden = true; continue; }
+                        if (item != items[0] && height + Math.Max(rowHeight, item.Height) > maxHeight) { item.Hidden = true; continue; }
                         item.X = used + (used > 0 ? gap : 0);
                         item.Y = height;
                         used = item.X + item.Width;
@@ -557,6 +568,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     }
                 }
             }
+        }
+
+        /// <summary>Keep the first centre chip within its budget with a shaped ellipsis, preserving its label/style identity.</summary>
+        private void EllipsizeFirst(PlannedItem item, float width, PosterTagCss css)
+        {
+            if (item.TextLayout is { } original)
+            {
+                float fontSize = item.Kind == PosterTagTileKind.Quality ? css.QualityFontSize : css.ChipFontSize;
+                bool smallCaps = item.Kind == PosterTagTileKind.Quality;
+                float spacing = item.Kind is PosterTagTileKind.Status or PosterTagTileKind.Custom ? 0.01f * fontSize
+                    : item.Kind == PosterTagTileKind.AgeRating ? 0.02f * fontSize : 0;
+                float available = Math.Max(0, width - (item.Width - PosterTagCss.LuCeil(original.Width)));
+                var boundaries = StringInfo.ParseCombiningCharacters(item.Text);
+                int low = 0, high = boundaries.Length;
+                while (low < high)
+                {
+                    int mid = (low + high + 1) / 2;
+                    string trial = item.Text[..(mid < boundaries.Length ? boundaries[mid] : item.Text.Length)] + "…";
+                    if (_text.Layout(trial, fontSize, smallCaps, spacing).Width <= available) low = mid;
+                    else high = mid - 1;
+                }
+                item.Text = item.Text[..(low < boundaries.Length ? boundaries[low] : item.Text.Length)] + "…";
+                item.TextLayout = _text.Layout(item.Text, fontSize, smallCaps, spacing);
+            }
+            item.Width = width;
         }
 
         /// <summary>Only sides actually meeting artwork or a known progress edge lose their seam.</summary>

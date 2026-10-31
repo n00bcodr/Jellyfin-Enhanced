@@ -831,3 +831,5 @@ Changing Quality includes or display modes in Media Tags keeps the dialog frame 
 In Compact quality labels, AC-3 is **DD 5.1** and E-AC-3 is **DD+ 5.1**; Full shows **Dolby Digital 5.1** / **Dolby Digital+ 5.1**. Flush edge styling includes overflow tabs and keeps styled Rating/Awards rings inside the chip on inward sides. Single-chip limits remain effective presentation limits; valid saved caps round-trip unchanged.
 
 Series and season quality policies preserve version-0 audio labels in Highest and All modes, including preferred-language summaries. Editing an unrelated preference leaves the audio vocabulary unchanged.
+
+In the Corners tag layout, left-centre and right-centre groups use the available poster width, sharing it when both sides are occupied. The first chip remains visible even on a narrow poster; long labels use an ellipsis, and `+N` counts later chips.

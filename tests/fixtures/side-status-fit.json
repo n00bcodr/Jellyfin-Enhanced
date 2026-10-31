@@ -1,0 +1,122 @@
+[
+  {
+    "slot": "ml",
+    "opposite": false,
+    "edge": "default",
+    "inset": 6,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 165.45
+  },
+  {
+    "slot": "ml",
+    "opposite": false,
+    "edge": "tight",
+    "inset": 3,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 171.45
+  },
+  {
+    "slot": "ml",
+    "opposite": false,
+    "edge": "flush",
+    "inset": 0,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 177.45
+  },
+  {
+    "slot": "ml",
+    "opposite": true,
+    "edge": "default",
+    "inset": 6,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 82.725
+  },
+  {
+    "slot": "ml",
+    "opposite": true,
+    "edge": "tight",
+    "inset": 3,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 85.725
+  },
+  {
+    "slot": "ml",
+    "opposite": true,
+    "edge": "flush",
+    "inset": 0,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 88.725
+  },
+  {
+    "slot": "mr",
+    "opposite": false,
+    "edge": "default",
+    "inset": 6,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 165.45
+  },
+  {
+    "slot": "mr",
+    "opposite": false,
+    "edge": "tight",
+    "inset": 3,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 171.45
+  },
+  {
+    "slot": "mr",
+    "opposite": false,
+    "edge": "flush",
+    "inset": 0,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 177.45
+  },
+  {
+    "slot": "mr",
+    "opposite": true,
+    "edge": "default",
+    "inset": 6,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 82.725
+  },
+  {
+    "slot": "mr",
+    "opposite": true,
+    "edge": "tight",
+    "inset": 3,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 85.725
+  },
+  {
+    "slot": "mr",
+    "opposite": true,
+    "edge": "flush",
+    "inset": 0,
+    "scale": "smaller",
+    "gap": "tight",
+    "label": "Season Premiere",
+    "budget": 88.725
+  }
+]
