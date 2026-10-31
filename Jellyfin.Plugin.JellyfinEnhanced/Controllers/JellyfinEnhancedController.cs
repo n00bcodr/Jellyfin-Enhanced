@@ -3727,6 +3727,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // EnableLoginImage. Authenticated callers (any Jellyfin user) get the full
         // payload so client-side "Open in Seerr" deep links still work.
         [HttpGet("public-config")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public ActionResult GetPublicConfig()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -3736,6 +3737,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return new JsonResult(BuildPublicConfig(config));
+        }
+
+        /// <summary>
+        /// Publish item looks only for targets the caller can see. The library's
+        /// user-aware lookup applies Jellyfin's library and parental access checks,
+        /// including series targets whose scoped look is inherited by children.
+        /// No shared response cache or ETag is used for this per-request projection.
+        /// </summary>
+        private List<TagLookItemOverride>? VisibleItemLooks(PluginConfiguration config)
+        {
+            if (User?.Identity?.IsAuthenticated != true) return null;
+            var looks = TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides);
+            if (looks is null) return null;
+            var id = UserHelper.GetCurrentUserId(User);
+            var user = id.HasValue ? _userManager?.GetUserById(id.Value) : null;
+            if (user is null || _libraryManager is null) return null;
+            var visible = looks.Where(look => _libraryManager.GetItemById<BaseItem>(Guid.Parse(look.ItemId), user) is not null).ToList();
+            return visible.Count == 0 ? null : visible;
         }
 
         /// <summary>
@@ -3967,6 +3986,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagEdgeSpacing = TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
                 // Tag look rules starting default (normalized; null = none)
                 TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
+                // Server-wide per-item looks (normalized; null = none): ids and looks only,
+                // and only for signed-in callers (item ids are not for the login page).
+                TagLookItemOverrides = VisibleItemLooks(config),
                 // Per-shape tag looks starting default (normalized; null = none)
                 TagShapeOverrides = TagShapeRules.NormalizeDefaults(config.TagShapeOverrides),
                 config.ShowRatingInPlayer,
@@ -8909,7 +8931,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <param name="request">The changed fields and, per field, the value read before the edit.</param>
         /// <returns>
         /// 200 with the stored values, 400 for a field the page does not own or a value outside the field's contract
-        /// (<see cref="MediaTagsPageFields.TryNormalize"/>), 409 with the conflicts. A body (the whole `Changes` and `Expected` document) over 256 KiB is refused while
+        /// (<see cref="MediaTagsPageFields.TryNormalize"/>), 409 with the conflicts. A body (the whole `Changes` and `Expected` document) over 8 MiB is refused while
         /// it is read, before the action runs (Jellyfin's exception middleware answers 500).
         /// </returns>
         [HttpPost("admin/configuration")]
@@ -10006,7 +10028,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SupportedOutputFormats = new[] { MediaBrowser.Model.Drawing.ImageFormat.Jpg },
                 }).ConfigureAwait(false);
 
-                var settings = posterTagSettings.Get(user.Id);
+                // The item's own look (a lock, a server-wide item look), as native clients get it.
+                var previewSeriesId = item switch
+                {
+                    MediaBrowser.Controller.Entities.TV.Episode episode => episode.SeriesId,
+                    MediaBrowser.Controller.Entities.TV.Season season => season.SeriesId,
+                    _ => Guid.Empty,
+                };
+                var settings = posterTagSettings.Get(user.Id).ForItem(item.Id, previewSeriesId == Guid.Empty ? null : previewSeriesId.ToString("N"));
                 // Same rule the stamper applies to the card's own indicator
                 // (NativePosterTagStamper.StampItem): played check or unplayed count.
                 var offset = topRightOffset ?? (_userDataManager.GetUserDataDto(item, user) is { } userData

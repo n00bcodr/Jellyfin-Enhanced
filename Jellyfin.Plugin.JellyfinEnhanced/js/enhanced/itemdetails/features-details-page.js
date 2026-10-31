@@ -318,9 +318,6 @@
                 JE.spoilerBlur.addSpoilerBlurButton(itemId, visiblePage, lastDetailsItemType);
             }
 
-            // Lock / unlock this item's poster tag look (tags/tag-look-lock.js).
-            JE.tagLookLock?.addLockButton(itemId, visiblePage, lastDetailsItemType);
-
             // Skip unsupported item types for media features
             if (!FEATURES_SUPPORTED_TYPES.includes(lastDetailsItemType)) {
                 return;

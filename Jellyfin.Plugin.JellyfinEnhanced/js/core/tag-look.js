@@ -2,20 +2,31 @@
 // /js/core/tag-look.js
 //
 // Data side of the tag looks: per-user rules ("cards in library Kids use the
-// caption layout, compact") and per-item locks (an item keeps the look it
-// had when it was locked). A look is { layout, density, colourPreset, slots }.
+// caption layout, compact"), per-item locks (an item keeps the look it was
+// given in the item editor, tags/tag-item-editor.js) and the administrator's
+// server-wide item looks. A look is { layout, density, colourPreset, slots },
+// and a lock or item look may also carry caps, tagScale, tagGap and edge.
 //
 // This module only reads, normalises, matches and saves rules and locks. The
-// decision which look a card gets (lock → first matching enabled rule → shape
-// override → the user's default layout) is made in one place, resolveLayout() in
-// core/tag-layout.js, which calls the helpers below.
+// decision which look a card gets (the user's lock → the administrator's item
+// look → first matching enabled rule → shape override → the user's default
+// layout) is made in one place, resolveLayout() in core/tag-layout.js, which
+// calls the helpers below; the native poster resolver (PosterTagSettings.ForItem)
+// follows the same lock → item look order.
 //
 // Settings (camelCase on JE.currentSettings, PascalCase on the server):
 //   tagLookRules    ordered array of { id, enabled, when: [{ field, value }],
 //                   layout, density, colourPreset, slots }. null = inherit the
 //                   administrator's default rules (normalized documents only).
 //   tagLayoutLocks  object keyed by item id (32 lowercase hex) of
-//                   { layout, density, colourPreset, slots, lockedAt }.
+//                   { layout, density, colourPreset, slots, caps, tagScale,
+//                   tagGap, edgeSpacing, scope, lockedAt }. A Series lock
+//                   applies to its seasons and episodes too unless its scope
+//                   is "item"; a season's or episode's own lock wins.
+// Plugin configuration (JE.pluginConfig, the administrator's):
+//   TagLookItemOverrides  array of the same documents with an ItemId, for
+//                   every user ("For everyone"); written only by
+//                   administrators through POST admin/configuration.
 // slots travel as [{ group, slot }] (values, not keys, so the settings key
 // conversion never touches them) and are held here as { group: slot }.
 // A rule or lock may also carry shapes: { landscape, list } looks laid over
@@ -34,6 +45,11 @@
     const MAX_RULES = 50;
     const MAX_CONDITIONS = 5;
     const MAX_LOCKS = 500;
+    const MAX_ITEM_OVERRIDES = 500;
+    const PLUGIN_ID = 'f69e946a-4b3c-4e9a-8f0a-8d7c1b2c4d9b';
+    const SCALES = ['smaller', 'default', 'larger', 'largest'];
+    const GAPS = ['tight', 'default', 'roomy'];
+    const EDGES = ['default', 'tight', 'flush'];
     const MAX_TEXT = 100;
     const RULE_ID = /^[A-Za-z0-9_-]{1,40}$/;
     const PRESET = /^[a-z0-9_-]{1,64}$/;
@@ -128,6 +144,38 @@
     }
 
     /**
+     * A lock's chip limits ("Show up to") as { group: n } clamped to
+     * 0..MAX_CAP, from an object in either key case; null when none.
+     * @param {*} raw
+     * @returns {Object<string, number>|null}
+     */
+    function normalizeCaps(raw) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+        const layout = JE.core.tagLayout;
+        const max = layout?.MAX_CAP ?? 10;
+        /** @type {Object<string, number>} */
+        const out = {};
+        for (const group of layout?.GROUPS || []) {
+            const value = pick(raw, group);
+            const n = Number(value);
+            if (value === undefined || value === null || value === '' || !Number.isFinite(n)) continue;
+            out[group] = Math.max(0, Math.min(max, Math.round(n)));
+        }
+        return Object.keys(out).length ? out : null;
+    }
+
+    /**
+     * One of a set of canonical values, or null (inherit) when missing or unknown.
+     * @param {*} raw
+     * @param {string[]} values
+     * @returns {string|null}
+     */
+    function choice(raw, values) {
+        const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+        return values.includes(value) ? value : null;
+    }
+
+    /**
      * One condition normalised, or null when its field or value is invalid.
      * @param {*} raw
      * @returns {{field: string, value: string}|null}
@@ -218,8 +266,40 @@
      * @property {string|null} colourPreset - Reserved (a later phase).
      * @property {Object<string, string>|null} slots - Every group's slot at lock time.
      * @property {Object|null} shapes - Per-shape looks over the locked look (landscape, list).
+     * @property {Object<string, number>|null} caps - "Show up to" per group over the user's caps.
+     * @property {string|null} tagScale - Tag size; null keeps the user's.
+     * @property {string|null} tagGap - Tag spacing; null keeps the user's.
+     * @property {string|null} edge - Corners edge spacing (stored edgeSpacing); null keeps the user's.
+     * @property {'item'|null} scope - 'item': a Series lock stays on the series card.
      * @property {number} lockedAt - Unix milliseconds.
      */
+
+    /**
+     * One lock (or item look) document normalised, or null when its layout or
+     * density is unknown.
+     * @param {*} value
+     * @returns {TagLayoutLock|null}
+     */
+    function normalizeLock(value) {
+        if (!value || typeof value !== 'object') return null;
+        const layout = normalizeLayout(pick(value, 'layout'));
+        const density = normalizeDensity(pick(value, 'density'));
+        if (!layout || !density) return null;
+        const preset = String(pick(value, 'colourPreset') ?? '').trim().toLowerCase();
+        return {
+            layout,
+            density,
+            colourPreset: PRESET.test(preset) ? preset : null,
+            slots: normalizeSlots(pick(value, 'slots'), layout),
+            shapes: normalizeShapes(pick(value, 'shapes')),
+            caps: normalizeCaps(pick(value, 'caps')),
+            tagScale: choice(pick(value, 'tagScale'), SCALES),
+            tagGap: choice(pick(value, 'tagGap'), GAPS),
+            edge: choice(pick(value, 'edgeSpacing') ?? pick(value, 'edge'), EDGES),
+            scope: String(pick(value, 'scope') ?? '').trim().toLowerCase() === 'item' ? 'item' : null,
+            lockedAt: Math.max(0, Number(pick(value, 'lockedAt')) || 0),
+        };
+    }
 
     /**
      * Locks normalised: non-id keys and locks with an unknown layout or
@@ -233,22 +313,11 @@
         if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return byId;
         for (const [key, value] of Object.entries(raw)) {
             const id = normalizeId(key);
-            if (!id || !value || typeof value !== 'object') continue;
-            const layout = normalizeLayout(pick(value, 'layout'));
-            const density = normalizeDensity(pick(value, 'density'));
-            if (!layout || !density) continue;
-            const lockedAt = Math.max(0, Number(pick(value, 'lockedAt')) || 0);
+            const lock = id ? normalizeLock(value) : null;
+            if (!id || !lock) continue;
             const previous = byId.get(id);
-            if (previous && previous.lockedAt >= lockedAt) continue;
-            const preset = String(pick(value, 'colourPreset') ?? '').trim().toLowerCase();
-            byId.set(id, {
-                layout,
-                density,
-                colourPreset: PRESET.test(preset) ? preset : null,
-                slots: normalizeSlots(pick(value, 'slots'), layout),
-                shapes: normalizeShapes(pick(value, 'shapes')),
-                lockedAt,
-            });
+            if (previous && previous.lockedAt >= lock.lockedAt) continue;
+            byId.set(id, lock);
         }
         if (byId.size <= MAX_LOCKS) return byId;
         const newest = Array.from(byId.entries())
@@ -258,12 +327,35 @@
     }
 
     /**
+     * The administrator's server-wide item looks (TagLookItemOverrides, a list
+     * of lock documents with an ItemId) normalised like locks, by item id.
+     * @param {*} raw - The list (either key case).
+     * @returns {Map<string, TagLayoutLock>}
+     */
+    function normalizeItemOverrides(raw) {
+        if (!Array.isArray(raw)) return new Map();
+        /** @type {Object<string, *>} */
+        const byKey = {};
+        for (const entry of raw) {
+            const id = normalizeId(String(pick(entry, 'itemId') ?? ''));
+            if (!id) continue;
+            const seen = byKey[id];
+            if (seen && Math.max(0, Number(pick(seen, 'lockedAt')) || 0) >= Math.max(0, Number(pick(entry, 'lockedAt')) || 0)) continue;
+            byKey[id] = entry;
+        }
+        const looks = normalizeLocks(byKey);
+        return looks.size <= MAX_ITEM_OVERRIDES ? looks : new Map(Array.from(looks).slice(0, MAX_ITEM_OVERRIDES));
+    }
+
+    /**
      * The rules and locks that apply for a user document: its own rules, or
      * (a normalized document that never set any) the administrator's default
      * rules; a document saved before layouts existed never inherits them.
      * @param {Object} [settings] - Defaults to JE.currentSettings.
+     * The administrator's item looks apply to every document (they are the
+     * administrator's choice for that one item, for everyone).
      * @param {Object} [plugin] - Defaults to JE.pluginConfig.
-     * @returns {{rules: TagLookRule[], locks: Map<string, TagLayoutLock>}}
+     * @returns {{rules: TagLookRule[], locks: Map<string, TagLayoutLock>, overrides: Map<string, TagLayoutLock>}}
      */
     function read(settings, plugin) {
         const s = settings || JE.currentSettings || {};
@@ -271,7 +363,7 @@
         const legacy = !(Number(s.tagLayoutSettingsVersion) >= 1);
         const own = s.tagLookRules;
         const rules = Array.isArray(own) ? normalizeRules(own) : (legacy ? [] : normalizeRules(pick(p, 'tagLookRules')));
-        return { rules, locks: normalizeLocks(s.tagLayoutLocks) };
+        return { rules, locks: normalizeLocks(s.tagLayoutLocks), overrides: normalizeItemOverrides(pick(p, 'tagLookItemOverrides')) };
     }
 
     /**
@@ -338,17 +430,20 @@
     }
 
     /**
-     * The lock that applies to a card: its own item's, else (a Season or
-     * Episode) its series'.
+     * The lock (or item look) that applies to a card: its own item's, else (a
+     * Season or Episode) its series', unless that series lock's scope is
+     * "item" (it stays on the series card).
      * @param {Map<string, TagLayoutLock>} locks
      * @param {CardFacts} facts
      * @returns {TagLayoutLock|null}
      */
     function findLock(locks, facts) {
-        if (!locks.size) return null;
+        if (!locks || !locks.size) return null;
         for (const id of facts.lockIds) {
             const lock = locks.get(id);
-            if (lock) return lock;
+            if (!lock) continue;
+            if (lock.scope === 'item' && id === facts.seriesId && id !== facts.itemId) continue;
+            return lock;
         }
         return null;
     }
@@ -410,6 +505,26 @@
     }
 
     /**
+     * Capture the operation's user, server and epoch. Read the live client as
+     * well as the epoch: server changes may precede the session reconcile.
+     * Never reconcile in a reset hook, which runs before credentials change.
+     * @returns {() => boolean} Whether this operation still owns the session.
+     */
+    function captureSession() {
+        /** @returns {string} The live client's identity. */
+        const identity = () => {
+            try {
+                if (typeof ApiClient === 'undefined' || !ApiClient) return '|';
+                const server = (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId) || ApiClient._serverInfo?.Id;
+                return `${server || ''}|${ApiClient.getCurrentUserId?.() || ''}`;
+            } catch { return '|'; }
+        };
+        const owner = identity();
+        const epoch = JE.session?.getEpoch?.();
+        return () => owner === identity() && epoch === JE.session?.getEpoch?.();
+    }
+
+    /**
      * Apply a change to the rules or locks, re-present the cards and save the
      * settings document. When the save fails the previous value is put back
      * (unless a later change replaced it meanwhile) and the cards re-presented
@@ -419,15 +534,20 @@
      * @returns {Promise<boolean>} Whether the change was saved.
      */
     function persist(key, value) {
-        const previous = JE.currentSettings[key];
-        JE.currentSettings[key] = value;
+        const isCurrent = captureSession();
+        const settings = JE.currentSettings;
+        const previous = settings[key];
+        if (!isCurrent()) return Promise.resolve(false);
+        settings[key] = value;
         represent();
+        if (!isCurrent()) return Promise.resolve(false);
         if (typeof JE.saveUserSettings !== 'function') return Promise.resolve(true);
-        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true })))
-            .then(() => true, (err) => {
+        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent })))
+            .then(() => isCurrent(), (err) => {
+                if (!isCurrent()) return false;
                 console.warn('🪼 Jellyfin Enhanced [TagLook]: saving the tag looks failed:', err);
-                if (JE.currentSettings[key] === value) {
-                    JE.currentSettings[key] = previous;
+                if (JE.currentSettings === settings && settings[key] === value) {
+                    settings[key] = previous;
                     represent();
                 }
                 return false;
@@ -448,37 +568,73 @@
      * @param {Map<string, TagLayoutLock>} locks
      * @returns {Object<string, Object>|null}
      */
+    /**
+     * Wire form of one lock document (slots as [{ group, slot }], the edge
+     * spacing as edgeSpacing, nulls kept out of the optional fields).
+     * @param {TagLayoutLock} lock
+     * @returns {Object}
+     */
+    function lockToWire(lock) {
+        const { edge, ...rest } = lock;
+        return {
+            ...rest,
+            slots: slotsToWire(lock.slots),
+            shapes: shapesToWire(lock.shapes),
+            caps: lock.caps ? { ...lock.caps } : null,
+            edgeSpacing: edge || null,
+        };
+    }
+
     function locksToWire(locks) {
         /** @type {Object<string, Object>} */
         const out = {};
-        for (const [id, lock] of locks) out[id] = { ...lock, slots: slotsToWire(lock.slots), shapes: shapesToWire(lock.shapes) };
+        for (const [id, lock] of locks) out[id] = lockToWire(lock);
         return Object.keys(out).length ? out : null;
     }
 
     /**
-     * Lock an item to a look (the effective look it has now: layout, density
-     * and the complete slot profile, so later profile edits don't move it).
-     * Past 500 locks the oldest is dropped.
+     * @typedef {Object} ItemLook - What the item editor saves.
+     * @property {string} layout
+     * @property {string} density
+     * @property {Object<string, string>|null} [slots]
+     * @property {Object<string, number>|null} [caps]
+     * @property {string|null} [tagScale]
+     * @property {string|null} [tagGap]
+     * @property {string|null} [edge]
+     * @property {'item'|null} [scope]
+     */
+
+    /**
+     * One look as a normalised lock document stamped newer than every
+     * document in `others`, or null when the look is invalid.
+     * @param {ItemLook} look
+     * @param {Iterable<TagLayoutLock>} others
+     * @returns {TagLayoutLock|null}
+     */
+    function lockFrom(look, others) {
+        const lock = normalizeLock({ ...look, edgeSpacing: look?.edge ?? null, lockedAt: 0, shapes: null, colourPreset: null });
+        if (!lock) return null;
+        lock.lockedAt = Math.max(Date.now(), ...Array.from(others, (l) => l.lockedAt + 1));
+        return lock;
+    }
+
+    /**
+     * Lock an item to a look (the look the item editor shows: layout, density,
+     * the complete slot profile, so later profile edits don't move it, and any
+     * caps, size, gap and edge spacing chosen for it). Past 500 locks the
+     * oldest is dropped.
      * @param {string} itemId
-     * @param {{layout: string, density: string, slots?: Object<string, string>|null, colourPreset?: string|null}} look
+     * @param {ItemLook} look
      * @returns {Promise<boolean>} False when the id or look is invalid or the
      *   save failed (the previous locks are back).
      */
     function lockItem(itemId, look) {
         const id = normalizeId(itemId);
-        const layout = normalizeLayout(look?.layout);
-        const density = normalizeDensity(look?.density);
-        if (!id || !layout || !density) return Promise.resolve(false);
         const locks = normalizeLocks(JE.currentSettings.tagLayoutLocks);
+        const lock = id ? lockFrom(look, locks.values()) : null;
+        if (!id || !lock) return Promise.resolve(false);
         locks.delete(id);
-        locks.set(id, {
-            layout,
-            density,
-            colourPreset: null,
-            slots: normalizeSlots(look.slots || null, layout),
-            shapes: null,
-            lockedAt: Math.max(Date.now(), ...Array.from(locks.values(), (l) => l.lockedAt + 1)),
-        });
+        locks.set(id, lock);
         return persist('tagLayoutLocks', locksToWire(normalizeLocks(Object.fromEntries(locks))));
     }
 
@@ -494,15 +650,207 @@
         return persist('tagLayoutLocks', locksToWire(locks));
     }
 
+    /**
+     * Change several locks in one save (the item editor: a series lock that
+     * replaces a season's or episode's own lock, or an unlock of both).
+     * @param {Object<string, ItemLook>} set - item id → look to lock it to.
+     * @param {string[]} [remove] - Item ids to unlock.
+     * @returns {Promise<boolean>} False when a look is invalid or the save
+     *   failed (the previous locks are back).
+     */
+    function editLocks(set, remove = []) {
+        const locks = normalizeLocks(JE.currentSettings.tagLayoutLocks);
+        for (const raw of remove) { const id = normalizeId(raw); if (id) locks.delete(id); }
+        for (const [raw, look] of Object.entries(set || {})) {
+            const id = normalizeId(raw);
+            const lock = id ? lockFrom(look, locks.values()) : null;
+            if (!id || !lock) return Promise.resolve(false);
+            locks.delete(id);
+            locks.set(id, lock);
+        }
+        return persist('tagLayoutLocks', locksToWire(normalizeLocks(Object.fromEntries(locks))));
+    }
+
+    /**
+     * Restore only locks removed by this operation (the item editor's Undo).
+     * Newer entries win: restore an absent id only, without replacing current
+     * locks or evicting an intervening addition when the map is full.
+     * @param {Object<string, Object>|null} wire - A tagLayoutLocks value.
+     * @returns {Promise<boolean>}
+     */
+    function restoreLocks(wire) {
+        const locks = normalizeLocks(JE.currentSettings.tagLayoutLocks);
+        for (const [id, lock] of normalizeLocks(wire)) {
+            if (!locks.has(id) && locks.size < MAX_LOCKS) locks.set(id, lock);
+        }
+        return persist('tagLayoutLocks', locksToWire(locks));
+    }
+
+    /**
+     * Wire form of server-wide item looks: the configuration's list, newest first.
+     * @param {Map<string, TagLayoutLock>} looks
+     * @returns {Array<Object>|null}
+     */
+    function itemOverridesToWire(looks) {
+        const out = Array.from(looks.entries())
+            .sort((a, b) => b[1].lockedAt - a[1].lockedAt || (a[0] < b[0] ? -1 : 1))
+            .map(([id, look]) => {
+                const wire = lockToWire(look);
+                return {
+                    ItemId: id, Layout: wire.layout, Density: wire.density, ColourPreset: wire.colourPreset,
+                    Slots: wire.slots ? wire.slots.map((e) => ({ Group: e.group, Slot: e.slot })) : null,
+                    Shapes: wire.shapes, Caps: capsToWire(wire.caps), TagScale: wire.tagScale, TagGap: wire.tagGap,
+                    EdgeSpacing: wire.edgeSpacing, Scope: wire.scope, LockedAt: wire.lockedAt,
+                };
+            });
+        return out.length ? out : null;
+    }
+
+    /**
+     * Caps in the configuration's shape ({ Quality: n, AgeRating: n }).
+     * @param {Object<string, number>|null} caps
+     * @returns {Object<string, number>|null}
+     */
+    function capsToWire(caps) {
+        if (!caps) return null;
+        /** @type {Object<string, number>} */
+        const out = {};
+        for (const [group, n] of Object.entries(caps)) out[group.charAt(0).toUpperCase() + group.slice(1)] = n;
+        return out;
+    }
+
+    /**
+     * A server-wide item look list with one item's look set (stamped newest)
+     * or removed (look null), in the configuration's shape.
+     * @param {*} raw - The stored TagLookItemOverrides list.
+     * @param {string} itemId
+     * @param {ItemLook|null} look
+     * @returns {Array<Object>|null|undefined} The new list (null: none left);
+     *   undefined when the id or look is invalid.
+     */
+    function itemOverridesWith(raw, itemId, look) {
+        const id = normalizeId(itemId);
+        if (!id) return undefined;
+        const looks = normalizeItemOverrides(raw);
+        looks.delete(id);
+        if (look) {
+            const lock = lockFrom(look, looks.values());
+            if (!lock) return undefined;
+            looks.set(id, lock);
+        }
+        return itemOverridesToWire(looks);
+    }
+
+    /**
+     * Merge removed item looks into the latest list for Undo. As for personal
+     * locks, a newer entry wins and unrelated edits/removals stay as they are.
+     * @param {*} raw - The latest list.
+     * @param {*} removed - Only the removed entries.
+     * @returns {Array<Object>|null}
+     */
+    function restoreItemOverrides(raw, removed) {
+        const looks = normalizeItemOverrides(raw);
+        for (const [id, entry] of normalizeItemOverrides(removed)) {
+            if (!looks.has(id) && looks.size < MAX_ITEM_OVERRIDES) looks.set(id, entry);
+        }
+        return itemOverridesToWire(looks);
+    }
+
+    /**
+     * A per-entry mutation with expectations only for the ids that changed.
+     * Full-list replacement remains available for portable imports.
+     * @param {*} before - The configuration list read before editing.
+     * @param {*} after - The edited list.
+     * @returns {{Set: Array<Object>, Remove: string[], Expected: Object}}
+     */
+    function itemOverrideMutation(before, after) {
+        const previous = normalizeItemOverrides(before);
+        const next = normalizeItemOverrides(after);
+        const sets = new Map();
+        const remove = [];
+        const expected = {};
+        for (const id of new Set([...previous.keys(), ...next.keys()])) {
+            if (JSON.stringify(previous.get(id)) === JSON.stringify(next.get(id))) continue;
+            if (next.has(id)) sets.set(id, next.get(id));
+            else remove.push(id);
+            expected[id] = (Array.isArray(before) ? before.find((e) => normalizeId(pick(e, 'itemId')) === id) : null) || null;
+        }
+        return { Set: itemOverridesToWire(sets) || [], Remove: remove, Expected: expected };
+    }
+
+    /**
+     * Change one server-wide item look (administrators only): set it to a
+     * look, or remove it (look null). Reads the stored list fresh, writes it
+     * through an atomic per-entry patch with the affected entries as Expected
+     * (including removal of a child when its look moves to its series)
+     * (once more on a conflict), then puts the stored list into
+     * JE.pluginConfig and re-presents the cards.
+     * @param {string} itemId
+     * @param {ItemLook|null} look
+     * @param {{remove?: string[], restoreOnly?: boolean, api?: {get: () => Promise<Object>, patch: (changes: Object, expected: Object) => Promise<Object>}}} [options] - Host hooks (tests).
+     * @returns {Promise<boolean>} Whether it was saved.
+     */
+    async function saveItemOverride(itemId, look, options = {}) {
+        const isCurrent = captureSession();
+        const id = normalizeId(itemId);
+        if (!id) return false;
+        const api = options.api || {
+            get: () => ApiClient.getPluginConfiguration(PLUGIN_ID),
+            patch: (changes, expected) => ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl('/JellyfinEnhanced/admin/configuration'),
+                data: JSON.stringify({ Changes: changes, Expected: expected }),
+                contentType: 'application/json',
+                dataType: 'json',
+            }),
+        };
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                if (!isCurrent()) return false;
+                const config = await api.get();
+                if (!isCurrent()) return false;
+                const before = config?.TagLookItemOverrides ?? null;
+                // Undo never replaces a newer target or evicts an intervening
+                // addition when the list has filled during its Undo interval.
+                const current = normalizeItemOverrides(before);
+                if (options.restoreOnly && (current.has(id) || current.size >= MAX_ITEM_OVERRIDES)) return true;
+                let next = before;
+                for (const child of options.remove || []) next = itemOverridesWith(next, child, null);
+                next = itemOverridesWith(next, id, look);
+                if (next === undefined) return false;
+                if (!isCurrent()) return false;
+                const mutation = itemOverrideMutation(before, next);
+                const result = mutation.Set.length || mutation.Remove.length
+                    ? await api.patch({ TagLookItemOverrides: mutation }, {}) : null;
+                if (!isCurrent()) return false;
+                const stored = result?.values?.TagLookItemOverrides ?? result?.Values?.TagLookItemOverrides ?? (result ? next : before);
+                if (JE.pluginConfig) JE.pluginConfig.TagLookItemOverrides = stored;
+                represent();
+                return true;
+            } catch (err) {
+                if (!isCurrent()) return false;
+                if (err?.status === 409 && attempt === 0) continue;
+                console.warn('🪼 Jellyfin Enhanced [TagLook]: saving the item look for everyone failed:', err);
+                return false;
+            }
+        }
+        return false;
+    }
+
     JE.core.tagLook = {
+        captureSession,
         FIELDS: FIELDS.slice(),
         TYPES: TYPES.slice(),
         MAX_RULES,
         MAX_CONDITIONS,
         MAX_LOCKS,
+        MAX_ITEM_OVERRIDES,
         normalizeId,
         normalizeRules,
         normalizeLocks,
+        normalizeLock,
+        normalizeItemOverrides,
+        normalizeCaps,
         normalizeSlots,
         normalizeRating,
         read,
@@ -514,6 +862,13 @@
         saveRules,
         lockItem,
         unlockItems,
+        editLocks,
+        restoreLocks,
+        saveItemOverride,
+        itemOverrideMutation,
+        restoreItemOverrides,
+        itemOverridesWith,
+        itemOverridesToWire,
     };
 
 })(window.JellyfinEnhanced);

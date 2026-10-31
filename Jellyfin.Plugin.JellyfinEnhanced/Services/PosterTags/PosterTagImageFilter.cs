@@ -224,11 +224,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
 
             var userId = identity.Candidates[0];
-            var settings = _settings.Get(userId);
-            if (!settings.NativeEnabled || !settings.AnyGroupEnabled) return null;
-
-            var instant = _time.GetUtcNow();
-            if (!_tokens.Verify(token, userId, itemId, settings.DigestAt(instant), PosterTagComposer.PixelVersion, out var variant)) return null;
+            var userSettings = _settings.Get(userId);
+            if (!userSettings.NativeEnabled || (!userSettings.AnyGroupEnabled && !userSettings.HasItemLooks)) return null;
 
             var user = _users.Get(userId);
             if (user == null) return null;
@@ -237,6 +234,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // endpoints and JE's /tag-data check them.
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
             if (item == null || !TagCacheService.TaggableTypes.Contains(item.GetBaseItemKind())) return null;
+
+            // The item's own look (a lock, a server-wide item look; a season or
+            // episode inherits its series'), which the stamper minted the token with.
+            var seriesId = item switch
+            {
+                Episode episode => episode.SeriesId,
+                Season season => season.SeriesId,
+                _ => Guid.Empty,
+            };
+            var settings = userSettings.ForItem(itemId, seriesId == Guid.Empty ? null : seriesId.ToString("N"));
+            if (!settings.AnyGroupEnabled) return null;
+
+            var instant = _time.GetUtcNow();
+            if (!_tokens.Verify(token, userId, itemId, settings.DigestAt(instant), PosterTagComposer.PixelVersion, out var variant)) return null;
 
             // Taken once: the composite is drawn from this very snapshot, so a
             // tag-cache update between the check and the render can't put new

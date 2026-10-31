@@ -518,6 +518,7 @@
                 const source = L.lookSource(host);
                 const look = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${conf.layout}`), density: JE.t(conf.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
                 const sourceText = source.source === 'lock' ? JE.t('panel_media_tags_preview_source_lock')
+                    : source.source === 'override' ? JE.t('panel_media_tags_preview_source_override')
                     : source.source === 'rule' ? JE.t('panel_media_tags_preview_source_rule', { n: source.index + 1 })
                     : source.source === 'shape' ? JE.t('tag_shapes_preview_source', { shape: JE.t(`tag_shapes_${source.shape}`) })
                     : JE.t('panel_media_tags_preview_source_default');

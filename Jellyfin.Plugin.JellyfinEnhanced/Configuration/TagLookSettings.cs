@@ -71,8 +71,38 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Optional per-shape looks over the locked look (landscape cards, list rows); null = the locked look on every shape.</summary>
         public TagShapeOverrides? Shapes { get; set; }
 
+        /// <summary>Chip limits over the user's ("Show up to" in the item editor); a null cap keeps the user's.</summary>
+        public TagGroupCaps? Caps { get; set; }
+
+        /// <summary>Tag size for this item (smaller, default, larger, largest); null keeps the user's.</summary>
+        public string? TagScale { get; set; }
+
+        /// <summary>Tag spacing for this item (tight, default, roomy); null keeps the user's.</summary>
+        public string? TagGap { get; set; }
+
+        /// <summary>Corners edge spacing for this item (default, tight, flush); null keeps the user's.</summary>
+        public string? EdgeSpacing { get; set; }
+
+        /// <summary>
+        /// "item": a Series lock applies to the series card only; null (the default, and what every
+        /// lock made before scopes meant): its seasons and episodes inherit it too.
+        /// </summary>
+        public string? Scope { get; set; }
+
         /// <summary>When the item was locked, Unix milliseconds (the oldest locks go first past the limit).</summary>
         public long LockedAt { get; set; }
+    }
+
+    /// <summary>
+    /// A look the administrator gives one item for every user ("For everyone" in the item
+    /// editor): the same document as a <see cref="TagLayoutLock"/>, kept in a list in the
+    /// plugin configuration (XML cannot hold a dictionary). A user's own lock wins over it; it
+    /// wins over every rule.
+    /// </summary>
+    public class TagLookItemOverride : TagLayoutLock
+    {
+        /// <summary>The item id (32 lowercase hex once normalized).</summary>
+        public string ItemId { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -91,6 +121,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         /// <summary>Most locked items per user; the oldest are dropped first.</summary>
         public const int MaxLocks = 500;
+
+        /// <summary>Most server-wide item looks (<see cref="PluginConfiguration.TagLookItemOverrides"/>); the oldest are dropped first.</summary>
+        public const int MaxItemOverrides = 500;
 
         private const int MaxTextValue = 100;
 
@@ -236,6 +269,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                     ColourPreset = NormalizePreset(value.ColourPreset),
                     Slots = TagLayoutRules.NormalizeProfile(layout, value.Slots == null ? null : new TagLayoutProfile { Groups = value.Slots })?.Groups,
                     Shapes = TagShapeRules.NormalizeDefaults(value.Shapes),
+                    Caps = TagLayoutRules.NormalizeCaps(value.Caps),
+                    TagScale = TagLayoutRules.ReadScale(value.TagScale),
+                    TagGap = TagLayoutRules.ReadGap(value.TagGap),
+                    EdgeSpacing = ReadEdge(value.EdgeSpacing),
+                    Scope = string.Equals(value.Scope?.Trim(), "item", StringComparison.OrdinalIgnoreCase) ? "item" : null,
                     LockedAt = Math.Max(0, value.LockedAt),
                 };
                 if (!byId.TryGetValue(id, out var existing) || existing.LockedAt < normalized.LockedAt)
@@ -249,6 +287,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 .ThenBy(kv => kv.Key, StringComparer.Ordinal)
                 .Take(MaxLocks)
                 .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
+        }
+
+        /// <summary>An edge spacing id, or null when missing or unknown (the item keeps the user's).</summary>
+        private static string? ReadEdge(string? edge)
+        {
+            var value = (edge ?? string.Empty).Trim().ToLowerInvariant();
+            return TagLayoutRules.EdgeSpacings.ContainsKey(value) ? value : null;
+        }
+
+        /// <summary>
+        /// Server-wide item looks normalized exactly like <see cref="NormalizeLocks"/> (the same
+        /// document per item; an entry whose id is not an item id or whose look is invalid is
+        /// dropped, a repeated id keeps its newest look, past <see cref="MaxItemOverrides"/> the
+        /// oldest go), newest first. Null in, null out; null when nothing is left.
+        /// </summary>
+        public static List<TagLookItemOverride>? NormalizeItemOverrides(IEnumerable<TagLookItemOverride?>? overrides)
+        {
+            if (overrides == null) return null;
+            var byId = new Dictionary<string, TagLayoutLock?>(StringComparer.Ordinal);
+            foreach (var entry in overrides)
+            {
+                var id = NormalizeItemId(entry?.ItemId);
+                if (id == null || entry == null) continue;
+                // A repeated id keeps its newest look (NormalizeLocks keeps one per key).
+                if (byId.TryGetValue(id, out var seen) && seen != null && seen.LockedAt >= entry.LockedAt) continue;
+                byId[id] = entry;
+            }
+
+            var normalized = NormalizeLocks(byId);
+            if (normalized == null || normalized.Count == 0) return null;
+            return normalized.Take(MaxItemOverrides).Select(kv => new TagLookItemOverride
+            {
+                ItemId = kv.Key,
+                Layout = kv.Value.Layout,
+                Density = kv.Value.Density,
+                ColourPreset = kv.Value.ColourPreset,
+                Slots = kv.Value.Slots,
+                Shapes = kv.Value.Shapes,
+                Caps = kv.Value.Caps,
+                TagScale = kv.Value.TagScale,
+                TagGap = kv.Value.TagGap,
+                EdgeSpacing = kv.Value.EdgeSpacing,
+                Scope = kv.Value.Scope,
+                LockedAt = kv.Value.LockedAt,
+            }).ToList();
         }
 
         /// <summary>Normalize the rules and locks of a user document in place.</summary>

@@ -67,6 +67,7 @@
         .je-tag-looks-locked-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18); }
         .je-tag-looks-locked-list li > span { flex: 1 1 auto; min-width: 0; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
         .je-tag-looks-locked-list li strong { display: block; font-size: 13px; color: #fff; }
+        .je-tag-looks-locked-list li > .je-tag-looks-actions { flex: 0 0 auto; flex-wrap: nowrap; }
         .je-tag-looks-form { padding: 12px; border-radius: 8px; border: 1px solid rgba(0,164,220,0.45); background: rgba(0,164,220,0.06); display: flex; flex-direction: column; gap: 10px; }
         .je-tag-looks-form-title { margin: 0; font-size: 14px; font-weight: 600; }
         .je-tag-looks-form-hint { margin: -6px 0 0; font-size: 12px; color: rgba(255,255,255,0.6); }
@@ -597,7 +598,15 @@
                 view.announce(JE.t('tag_looks_unlocked_named', { name: info?.name || id }));
             }, JE.t('tag_looks_unlock_named', { name: info?.name || id }));
             unlock.dataset.jeFocusKey = `unlock-${id}`;
-            li.append(text, unlock);
+            // Edit opens the item's Media Tags editor (tags/tag-item-editor.js) on this lock.
+            const edit = button(JE.t('tag_looks_edit'), () => {
+                touch();
+                JE.tagItemEditor?.open(id, { opener: edit, host: /** @type {HTMLElement|undefined} */ (view.root.closest('#jellyfin-enhanced-panel') || undefined) });
+            }, JE.t('tag_looks_edit_lock_named', { name: info?.name || id }));
+            edit.dataset.jeFocusKey = `edit-${id}`;
+            const tools = el('span', 'je-tag-looks-actions');
+            tools.append(edit, unlock);
+            li.append(text, tools);
             return li;
         });
         view.lockedList.replaceChildren(...items);
@@ -962,10 +971,14 @@
                 renderLists();
             },
         };
-        // Reinitialization also covers Reset and programmatic changes. Update
-        // only the Otherwise outcome so the form keeps its input and focus.
+        // Reinitialization also covers Reset and programmatic changes (the
+        // item editor keeping or releasing a look). Update the Otherwise
+        // outcome and the locked items (focus kept by key), never the form,
+        // so it keeps its input and focus.
         const refreshDefault = () => {
-            if (mount.isConnected) renderOtherwise();
+            if (!mount.isConnected) return;
+            renderOtherwise();
+            renderLocks(view, state, touch, renderLists);
         };
         document.addEventListener('je:tag-layout-changed', refreshDefault);
         const stopWatching = () => {

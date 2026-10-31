@@ -50,6 +50,12 @@ const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
  * @param {{Changes: object, Expected?: object}} body
  */
 function serverPatch(server, body) {
+  const mutation = body.Changes.TagLookItemOverrides;
+  if (mutation && !Array.isArray(mutation)) {
+    const ids = new Set([...mutation.Remove, ...mutation.Set.map(e => e.ItemId)]);
+    body = { Changes: { ...body.Changes, TagLookItemOverrides: [...(server.TagLookItemOverrides || []).filter(e => !ids.has(e.ItemId)), ...mutation.Set].sort((a,b) => b.LockedAt - a.LockedAt) }, Expected: body.Expected };
+    if (!body.Changes.TagLookItemOverrides.length) body.Changes.TagLookItemOverrides = null;
+  }
   const conflicts = {};
   for (const [key, before] of Object.entries(body.Expected || {})) {
     if (!same(server[key], before) && !same(server[key], body.Changes[key])) conflicts[key] = structuredClone(server[key] ?? null);
@@ -1375,4 +1381,254 @@ test('Scenes-only admin preview follows saved server defaults without changing p
   await h.settle();
   assert.equal(movie()?.textContent, 'Post-credits');
   assert.equal(h.JE.currentSettings, own);
+});
+
+test('Rules: server-wide item looks are listed with titles; Remove saves and can be undone; Edit saves what the item editor hands back', async t => {
+  const MOVIE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const SERIES = 'cccccccccccccccccccccccccccccccc';
+  const EPISODE = 'dddddddddddddddddddddddddddddddd';
+  const stored = [
+    { ItemId: MOVIE, Layout: 'caption', Density: 'full', LockedAt: 9 },
+    { ItemId: SERIES, Layout: 'bands', Density: 'compact', Scope: 'item', LockedAt: 5 },
+  ];
+  const titles = [];
+  const h = setup(t, {
+    config: { TagLookItemOverrides: stored },
+    apiClient: {
+      getJSON: async (url) => {
+        if (!url.includes('/Items')) return [{ ItemId: LIBRARY, Name: 'Movies' }];
+        titles.push(new URL(url).searchParams.get('Ids'));
+        return { Items: [{ Id: MOVIE, Name: 'Movie <i>One</i>', Type: 'Movie' }, { Id: SERIES, Name: 'Series One', Type: 'Series' }] };
+      },
+    },
+  });
+  await h.settle(); await h.settle(); await h.settle();
+  const rows = () => h.$$('[data-item-looks] [data-item]');
+  assert.deepEqual(rows().map((r) => r.dataset.item), [MOVIE, SERIES], 'newest first');
+  assert.deepEqual(titles, [`${MOVIE},${SERIES}`], 'titles in one request');
+  assert.match(rows()[0].textContent, /Movie <i>One<\/i>/);
+  assert.equal(rows()[0].querySelector('i'), null, 'names are text');
+  assert.match(rows()[1].textContent, /tag_item_editor_scope_series_only/, 'a series poster only look says so');
+  assert.equal(h.$('[data-item-looks-empty]').hidden, true);
+
+  rows()[0].querySelector('[data-act="remove"]').click();
+  await h.save();
+  assert.deepEqual(plain(h.server.TagLookItemOverrides.map((o) => o.ItemId)), [SERIES]);
+  assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['TagLookItemOverrides']);
+  assert.deepEqual(plain(h.patches.at(-1).Changes.TagLookItemOverrides.Expected), { [MOVIE]: stored[0] }, 'only the removed entry is expected');
+  h.$('.je-ta-snack .je-ta-button').click();
+  await h.save();
+  assert.deepEqual(plain([...h.JE.core.tagLook.normalizeItemOverrides(h.server.TagLookItemOverrides)]), plain([...h.JE.core.tagLook.normalizeItemOverrides(stored)]), 'undo puts it back');
+
+  // Edit: the item editor in its server mode hands the look back to the page.
+  const opened = [];
+  h.JE.tagItemEditor = { open: (id, options) => { opened.push([id, options]); return Promise.resolve(true); } };
+  rows()[1].querySelector('[data-act="edit"]').click();
+  assert.equal(opened[0][0], SERIES);
+  assert.equal(opened[0][1].mode, 'server');
+  assert.equal(opened[0][1].look.scope, 'item', 'starts from the stored look');
+  opened[0][1].onSave({ layout: 'minimal', density: 'full', scope: null }, SERIES);
+  await h.save();
+  const series = h.server.TagLookItemOverrides.find((o) => o.ItemId === SERIES);
+  assert.deepEqual([series.Layout, series.Scope], ['minimal', null]);
+  assert.equal(h.server.TagLookItemOverrides[0].ItemId, SERIES, 'the edited look is the newest');
+  // An episode's look moved to its series: the episode's entry goes, the series' takes it.
+  h.ctx.set('TagLookItemOverrides', [{ ItemId: EPISODE, Layout: 'bands', Density: 'full', LockedAt: 1 }]);
+  await h.save();
+  rows()[0].querySelector('[data-act="edit"]').click();
+  opened.at(-1)[1].onSave({ layout: 'summary', density: 'full', scope: null }, SERIES);
+  await h.save();
+  assert.deepEqual(plain(h.server.TagLookItemOverrides.map((o) => [o.ItemId, o.Layout])), [[SERIES, 'summary']]);
+});
+
+for (const editedTarget of [false, true]) test(`Rules: remove Undo preserves intervening additions, edits and removals (target edited: ${editedTarget})`, async t => {
+  const MOVIE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', SERIES = 'cccccccccccccccccccccccccccccccc', EPISODE = 'dddddddddddddddddddddddddddddddd', OTHER = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+  const entry = (id, layout = 'bands') => ({ ItemId: id, Layout: layout, Density: 'full', LockedAt: 1 });
+  const h = setup(t, { config: { TagLookItemOverrides: [entry(MOVIE), entry(SERIES), entry(OTHER)] } });
+  await h.settle();
+  h.$(`[data-item="${MOVIE}"] [data-act="remove"]`).click();
+  await h.save();
+  h.ctx.set('TagLookItemOverrides', [entry(SERIES, 'summary'), entry(EPISODE, 'minimal'), ...(editedTarget ? [entry(MOVIE, 'caption')] : [])]);
+  await h.save();
+  h.$('.je-ta-snack .je-ta-button').click();
+  await h.save();
+  const looks = new Map(h.server.TagLookItemOverrides.map(e => [e.ItemId, e.Layout]));
+  assert.equal(looks.get(MOVIE), editedTarget ? 'caption' : 'bands');
+  assert.equal(looks.get(SERIES), 'summary');
+  assert.equal(looks.get(EPISODE), 'minimal');
+  assert.equal(looks.has(OTHER), false);
+});
+
+for (const move of [false, true]) test(`Rules Edit through the real item editor returns focus after save (move to series: ${move})`, async t => {
+  const ITEM = 'dddddddddddddddddddddddddddddddd', SERIES = 'cccccccccccccccccccccccccccccccc';
+  const h = setup(t, {
+    config: { TagLookItemOverrides: [{ ItemId: ITEM, Layout: 'bands', Density: 'full', LockedAt: 1 }] },
+    apiClient: {
+      getItem: async (_, id) => ({ Id: id, Name: id === SERIES ? 'Series' : 'Episode', Type: id === SERIES ? 'Series' : 'Episode', SeriesId: SERIES }),
+      getJSON: async () => ({ Items: [{ Id: ITEM, Name: 'Episode', Type: 'Episode' }, { Id: SERIES, Name: 'Series', Type: 'Series' }] }),
+    },
+  });
+  h.JE.currentSettings = { tagLayoutSettingsVersion: 1, tagLayout: 'corners', qualityTagsEnabled: true };
+  h.load('tags/tag-item-editor.js');
+  h.ctx.openTab('rules');
+  await h.settle(); await h.settle();
+  const original = h.$(`[data-item="${ITEM}"] [data-act="edit"]`);
+  original.focus(); original.click();
+  await h.settle(); await h.settle();
+  const dialog = h.document.querySelector('.je-tie');
+  assert.ok(dialog, 'real editor opened');
+  if (move) h.change(dialog.querySelector('input[name$="Scope"][value="series"]'), true);
+  dialog.querySelector('[data-tie-save]').click();
+  await h.save(); await h.settle();
+  assert.equal(h.document.querySelector('.je-tie'), null);
+  assert.equal(original.isConnected, false, 'ctx.set redrew the list');
+  assert.equal(h.document.activeElement, h.$(`[data-item="${move ? SERIES : ITEM}"] [data-act="edit"]`), 'replacement target Edit owns focus even after the save response redraw');
+});
+
+for (const remote of ['add', 'edit']) test(`Rules queued edits retain an unrelated concurrent ${remote}`, async t => {
+  const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002';
+  const entry = (ItemId, Layout) => ({ ItemId, Layout, Density: 'full', LockedAt: 1 });
+  const gate = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [entry(A, 'bands'), ...(remote === 'edit' ? [entry(B, 'caption')] : [])] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        h.server.TagLookItemOverrides = [...h.server.TagLookItemOverrides.filter(e => e.ItemId !== B), entry(B, 'minimal')];
+      }
+      return serverPatch(h.server, body);
+    },
+  });
+  await h.settle();
+  const edit = () => h.$(`[data-item="${A}"] [data-act="edit"]`).click();
+  let onSave;
+  h.JE.tagItemEditor = { open: (_, options) => { onSave = options.onSave; } };
+  edit(); onSave({ layout: 'summary', density: 'full' }, A);
+  const saving = h.ctx.flush();
+  edit(); onSave({ layout: 'corners', density: 'compact' }, A);
+  gate.resolve();
+  assert.equal(await saving, true);
+  const second = h.patches[1].Changes.TagLookItemOverrides;
+  assert.deepEqual(second.Remove, [], 'no remote entry was removed by the queued edit');
+  assert.deepEqual(second.Set.map(e => e.ItemId), [A]);
+  assert.equal(h.server.TagLookItemOverrides.find(e => e.ItemId === B)?.Layout, 'minimal');
+  assert.equal(h.ctx.config.TagLookItemOverrides.find(e => e.ItemId === B)?.Layout, 'minimal', 'response is rebased into the view');
+});
+
+for (const undo of [false, true]) test(`Rules Remove during a pending save preserves remote entries (Undo: ${undo})`, async t => {
+  const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002';
+  const gate = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [{ ItemId: A, Layout: 'bands', Density: 'full', LockedAt: 1 }] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        h.server.TagLookItemOverrides.push({ ItemId: B, Layout: 'minimal', Density: 'full', LockedAt: 2 });
+      }
+      return serverPatch(h.server, body);
+    },
+  });
+  await h.settle();
+  let onSave;
+  h.JE.tagItemEditor = { open: (_, options) => { onSave = options.onSave; } };
+  h.$(`[data-item="${A}"] [data-act="edit"]`).click();
+  onSave({ layout: 'summary', density: 'full' }, A);
+  const saving = h.ctx.flush();
+  h.$(`[data-item="${A}"] [data-act="remove"]`).click();
+  if (undo) h.$('.je-ta-snack .je-ta-button').click();
+  gate.resolve();
+  assert.equal(await saving, true);
+  assert.ok(h.server.TagLookItemOverrides.some(e => e.ItemId === B));
+  assert.equal(h.server.TagLookItemOverrides.some(e => e.ItemId === A), undo);
+  assert.ok(h.patches.every(p => !p.Changes.TagLookItemOverrides.Remove.includes(B)));
+});
+
+
+test('Rules canceled edit after a failed pending save resolves locally without retrying an empty mutation', async t => {
+  const A = '00000000000000000000000000000001';
+  const gate = deferred();
+  const h = setup(t, {
+    config: { TagLookItemOverrides: [{ ItemId: A, Layout: 'bands', Density: 'full', LockedAt: 1 }] },
+    patch: async () => { await gate.promise; throw { status: 400, json: async () => ({ error: 'TagLookItemOverrides: rejected before applying' }) }; },
+  });
+  h.expectConsoleError('could not save the Media Tags settings');
+  await h.settle();
+  h.$(`[data-item="${A}"] [data-act="remove"]`).click();
+  const saving = h.ctx.flush();
+  h.$('.je-ta-snack .je-ta-button').click();
+  gate.resolve();
+  assert.equal(await saving, false);
+  assert.equal(await h.ctx.flush(), true);
+  assert.equal(h.patches.length, 1, 'Retry recognizes the canceled operation');
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
+});
+
+for (const failure of ['lost-response', '503-applied', '503-unapplied', '400-without-field']) test(`Rules Undo after ${failure} requires an acknowledging PATCH`, async t => {
+  const A = '00000000000000000000000000000001';
+  const entry = { ItemId: A, Layout: 'bands', Density: 'full', LockedAt: 1 };
+  const gate = deferred(), retry = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [entry] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        if (failure === 'lost-response' || failure === '503-applied') serverPatch(h.server, body);
+        if (failure === 'lost-response') throw new TypeError('response lost');
+        throw { status: failure === '400-without-field' ? 400 : 503, json: async () => ({ error: 'unavailable' }) };
+      }
+      await retry.promise;
+      return serverPatch(h.server, body);
+    },
+  });
+  h.expectConsoleError('could not save the Media Tags settings');
+  h.$(`[data-item="${A}"] [data-act="remove"]`).click();
+  const saving = h.ctx.flush();
+  h.$('.je-ta-snack .je-ta-button').click();
+  gate.resolve();
+  assert.equal(await saving, false);
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'error');
+  const resaving = h.ctx.flush();
+  assert.equal(h.patches.length, 2, 'Retry sends the retained restore intent');
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saving', 'not saved before acknowledgement');
+  retry.resolve();
+  assert.equal(await resaving, true);
+  assert.deepEqual(plain([...h.JE.core.tagLook.normalizeItemOverrides(h.server.TagLookItemOverrides)]), plain([...h.JE.core.tagLook.normalizeItemOverrides([entry])]));
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
+});
+
+for (const result of ['failure', 'success', 'conflict-mine', 'conflict-theirs']) test(`Rules edits during a pending replacement preserve whole-list intent after ${result}`, async t => {
+  const A = '00000000000000000000000000000001', B = '00000000000000000000000000000002', C = '00000000000000000000000000000003';
+  const entry = ItemId => ({ ItemId, Layout: 'bands', Density: 'full', LockedAt: 1 });
+  const gate = deferred();
+  let h;
+  h = setup(t, {
+    config: { TagLookItemOverrides: [entry(A)] },
+    patch: async body => {
+      if (h.patches.length === 1) {
+        await gate.promise;
+        if (result === 'failure') throw { status: 400, json: async () => ({ error: 'Invalid value for TagLookItemOverrides' }) };
+        if (result.startsWith('conflict')) h.server.TagLookItemOverrides = [entry(A), { ...entry(C), Layout: 'minimal' }];
+      }
+      return serverPatch(h.server, body);
+    },
+  });
+  if (result === 'failure') h.expectConsoleError('could not save the Media Tags settings');
+  // The production import boundary writes a whole-list replacement.
+  h.ctx.setMany({ TagLookItemOverrides: [entry(B), entry(C)] });
+  const saving = h.ctx.flush();
+  h.$(`[data-item="${B}"] [data-act="remove"]`).click();
+  gate.resolve();
+  assert.equal(await saving, result === 'success');
+  if (result === 'failure') assert.equal(await h.ctx.flush(), true);
+  if (result.startsWith('conflict')) {
+    assert.equal(h.$('#jeTaSaved').dataset.state, 'conflict');
+    h.$(result.endsWith('mine') ? '[data-je-keep]' : '[data-je-theirs]').click();
+    await h.ctx.flush();
+  }
+  assert.deepEqual(h.server.TagLookItemOverrides.map(e => e.ItemId).sort(), result.endsWith('theirs') ? [A, C] : [C]);
+  assert.ok(h.patches.every(p => Array.isArray(p.Changes.TagLookItemOverrides)), 'edits fold into the unacknowledged replacement');
+  assert.equal(h.$('#jeTaSaved').dataset.state, 'saved');
 });

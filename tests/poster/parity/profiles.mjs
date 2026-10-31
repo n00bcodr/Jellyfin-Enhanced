@@ -232,6 +232,24 @@ for (const [key, entry] of Object.entries(synthetic)) {
     syntheticUserData[id] = { Played: mode === 1, UnplayedItemCount: mode === 2 ? 3 : (mode === 3 ? 0 : null), PlayedPercentage: null };
 }
 
+// Per-item looks (the item editor): entries with real item ids, so a user lock or an
+// administrator item look can name them. Native posters draw Corners and Bands, so the looks
+// stay on those (Corners with full labels); see the item-looks profiles below.
+const LOOK = Object.fromEntries(['movieLock', 'movieItemLook', 'movieBoth', 'series', 'seriesEpisode', 'seriesPoster', 'seriesPosterEpisode'].map((key, i) => [key, `00000000000000000000000000000f${(i + 1).toString(16).padStart(2, '0')}`]));
+const lookEntries = {
+    [LOOK.movieLock]: movie({ Genres: ['Drama', 'Comedy', 'Family'], AudioLanguages: ['eng', 'fra', 'deu'] }),
+    [LOOK.movieItemLook]: movie({ Genres: ['Drama', 'Comedy'] }),
+    [LOOK.movieBoth]: movie({ Genres: ['Animation'] }),
+    [LOOK.series]: { Type: 'Series', TmdbId: '3000', Genres: ['Drama'], CommunityRating: 8.2, OfficialRating: 'TV-14', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]) },
+    [LOOK.seriesEpisode]: { Type: 'Episode', SeriesTmdbId: '3000', SeasonNumber: 1, EpisodeNumber: 1, SeriesId: LOOK.series, CommunityRating: 7.5, OfficialRating: 'TV-14', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]) },
+    [LOOK.seriesPoster]: { Type: 'Series', TmdbId: '3001', Genres: ['Comedy'], CommunityRating: 6.4, OfficialRating: 'TV-PG', StreamData: sd([video(), audio()]) },
+    [LOOK.seriesPosterEpisode]: { Type: 'Episode', SeriesTmdbId: '3001', SeasonNumber: 2, EpisodeNumber: 3, SeriesId: LOOK.seriesPoster, CommunityRating: 6.9, OfficialRating: 'TV-PG', StreamData: sd([video(), audio()]) },
+};
+for (const [id, entry] of Object.entries(lookEntries)) {
+    syntheticEntries[id] = entry;
+    syntheticUserData[id] = { Played: false, UnplayedItemCount: null, PlayedPercentage: null };
+}
+
 // Synthetic review averages for every movie/tv key of the admin cache + synthetic entries.
 const adminCache = read(`tagcache-${admin.id}.json`);
 const averages = [null, 4.5, 3, 3.6666666666666665, 2.25, 1, 5, 4.75, 3.35, 2.5];
@@ -267,6 +285,32 @@ for (const user of users) {
 
 const synth = (name, settingsRaw, pluginOverrides = {}, jellyfinAudioPreference = null) =>
     profiles.push({ name, user: admin.id, synthetic: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference, reviews: 'synthetic' });
+
+// Per-item looks: the user's lock → the administrator's item look → the user's settings, a
+// series look its episodes inherit unless it stays on the series poster, caps, size, gap,
+// edge spacing and hidden groups from a look, on a normalized and on a legacy document.
+const itemLooks = [
+    { ItemId: LOOK.movieItemLook, Layout: 'corners', Density: 'full', EdgeSpacing: 'flush', TagScale: 'larger', Slots: [{ Group: 'rating', Slot: 'off' }, { Group: 'quality', Slot: 'bc' }], LockedAt: 3 },
+    { ItemId: LOOK.movieBoth, Layout: 'bands', Density: 'compact', LockedAt: 2 },
+    { ItemId: LOOK.series, Layout: 'bands', Density: 'full', Caps: { Genre: 1 }, LockedAt: 1 },
+    { ItemId: LOOK.seriesPoster, Layout: 'bands', Density: 'compact', Scope: 'item', LockedAt: 4 },
+];
+const userLocks = {
+    [LOOK.movieLock]: { Layout: 'bands', Density: 'compact', Caps: { Language: 1, Genre: 2 }, TagGap: 'roomy', LockedAt: 5 },
+    [LOOK.movieBoth]: { Layout: 'corners', Density: 'full', TagScale: 'smaller', Slots: [{ Group: 'genre', Slot: 'tl' }], LockedAt: 6 },
+};
+const synthLooks = (name, settingsRaw, pluginOverrides) =>
+    profiles.push({ name, user: admin.id, synthetic: true, itemLooks: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference: null, reviews: 'synthetic' });
+synthLooks('item-looks', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks });
+synthLooks('item-looks-bands-default', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact', TagEdgeSpacing: 'tight', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks });
+synthLooks('item-looks-legacy', { ...allOn, GenreTagsPosition: 'bottom-left', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks, TagGroupCaps: { Genre: 5, Language: 1 }, TagScale: 'largest', TagEdgeSpacing: 'flush' });
+
+for (const layout of ['caption', 'summary', 'minimal']) {
+    const slots = [{ Group: 'quality', Slot: 'off' }, { Group: 'genre', Slot: 'off' }, { Group: 'rating', Slot: 'off' }];
+    const look = { Layout: layout, Density: 'compact', Slots: slots, TagScale: 'larger', TagGap: 'roomy', Caps: { Language: 1 }, LockedAt: 8 };
+    synthLooks(`item-look-fallback-${layout}`, { ...allOn, TagLayoutSettingsVersion: 1, TagLayoutLocks: { [LOOK.movieLock]: look } },
+        { TagLookItemOverrides: [{ ItemId: LOOK.movieItemLook, ...look }] });
+}
 
 synth('all-on-defaults', { ...allOn });
 for (const TagScale of ['smaller', 'larger', 'largest']) {

@@ -293,6 +293,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     if (rules == null || (normalized as List<TagLookRule>)?.Count == rules.Count) return true;
                     error = "every rule needs a known layout and density and at least one valid condition";
                     return false;
+                case "TagLookItemOverrides":
+                    var overrides = (List<TagLookItemOverride>?)value;
+                    if (overrides != null && overrides.Count > TagLookValidation.MaxItemOverrides)
+                    {
+                        error = $"more than {TagLookValidation.MaxItemOverrides} item looks";
+                        return false;
+                    }
+
+                    // An empty list is stored as none.
+                    normalized = TagLookValidation.NormalizeItemOverrides(overrides);
+                    if (overrides == null || (normalized as List<TagLookItemOverride>)?.Count == overrides.Count
+                        || (overrides.Count == 0 && normalized == null)) return true;
+                    error = "every item look needs an item id, a known layout and density, and an id used once";
+                    return false;
             }
 
             if (value == null)

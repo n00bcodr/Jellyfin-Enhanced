@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -70,6 +72,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Status changes with time: retire URLs every five minutes, including cache-off tokens.</summary>
         public string DigestAt(DateTimeOffset now) => !Shows(PosterTagGroup.Status) ? _digest
             : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(_digest + "|status:" + (now.ToUnixTimeSeconds() / 300).ToString(CultureInfo.InvariantCulture))))[..16];
+
+        // Per-item looks (core/tag-layout.js lookSource): the user's locks, then the administrator's
+        // item looks, each by item id; and the inputs a look's settings are derived from.
+        private IReadOnlyDictionary<string, TagLayoutLock>? _userLocks;
+        private IReadOnlyDictionary<string, TagLayoutLock>? _adminLooks;
+        private JellyfinEnhancedUserSettings? _user;
+        private PluginConfiguration? _config;
+        private string? _audioPreference;
+        private ConcurrentDictionary<string, PosterTagSettings> _itemVariants = new(StringComparer.Ordinal);
+
+        private static readonly MethodInfo MemberwiseCloneMethod = typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        /// <summary>
+        /// True when some item has a look of its own for this user: a lock of theirs or a
+        /// server-wide item look (<see cref="PluginConfiguration.TagLookItemOverrides"/>).
+        /// </summary>
+        public bool HasItemLooks => (_userLocks?.Count ?? 0) + (_adminLooks?.Count ?? 0) > 0;
 
         /// <summary>Static-friendly active layout; Caption, Summary and Minimal retain the Corners profile.</summary>
         public bool Bands { get; private init; }
@@ -463,7 +482,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public static PosterTagSettings FromUserSettings(JellyfinEnhancedUserSettings? userSettings, PluginConfiguration config, string? jellyfinAudioLanguagePreference = null)
         {
             ArgumentNullException.ThrowIfNull(config);
-            var user = userSettings ?? DefaultsAsWritten(config);
+            return Build(userSettings ?? DefaultsAsWritten(config), config, jellyfinAudioLanguagePreference, itemLooks: true);
+        }
+
+        /// <summary>The settings for a user document; <paramref name="itemLooks"/> keeps its per-item looks for <see cref="ForItem(string, string?)"/>.</summary>
+        private static PosterTagSettings Build(JellyfinEnhancedUserSettings user, PluginConfiguration config, string? jellyfinAudioLanguagePreference, bool itemLooks)
+        {
 
             var preferredChoice = user.QualityTagsPreferredAudioLanguage ?? string.Empty;
             var (preferred, usesJellyfin) = ResolvePreferredAudioLanguage(preferredChoice, config, jellyfinAudioLanguagePreference);
@@ -587,8 +611,161 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     : TagStyleSet.Empty,
             };
 
-            return settings with { _digest = settings.ComputeDigest() };
+            settings = settings with { _digest = settings.ComputeDigest() };
+            if (!itemLooks) return settings;
+            var locks = TagLookValidation.NormalizeLocks(user.TagLayoutLocks?.ToDictionary(kv => kv.Key, kv => (TagLayoutLock?)kv.Value));
+            var adminLooks = TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides);
+            if ((locks is null || locks.Count == 0) && adminLooks is null) return settings;
+            return settings with
+            {
+                _userLocks = locks,
+                _adminLooks = adminLooks?.ToDictionary(o => o.ItemId, o => (TagLayoutLock)o, StringComparer.Ordinal),
+                _user = user,
+                _config = config,
+                _audioPreference = jellyfinAudioLanguagePreference,
+                _itemVariants = new ConcurrentDictionary<string, PosterTagSettings>(StringComparer.Ordinal),
+            };
         }
+
+        /// <summary>
+        /// The settings one item's poster is drawn with: these, or (the item has a look of its own)
+        /// these with that look laid over them, the way core/tag-layout.js resolveLayout decides:
+        /// the user's lock on the item → the user's lock on its series → the administrator's look
+        /// for the item → the administrator's look for its series (a series look marked
+        /// <c>Scope = "item"</c> stays on the series). Rules and shape looks stay web features.
+        /// Memoised per look; the result has its own <see cref="Digest"/>.
+        /// </summary>
+        /// <param name="itemId">The image owner.</param>
+        /// <param name="seriesIdN">For a season or episode, its series (N format), else null.</param>
+        /// <returns>The item's settings.</returns>
+        public PosterTagSettings ForItem(Guid itemId, string? seriesIdN) => ForItem(itemId.ToString("N"), seriesIdN);
+
+        /// <inheritdoc cref="ForItem(Guid, string?)"/>
+        public PosterTagSettings ForItem(string itemIdN, string? seriesIdN)
+        {
+            if (!HasItemLooks || _user is null || _config is null) return this;
+            var look = ItemLook(itemIdN, seriesIdN);
+            if (look is null) return this;
+            var key = System.Text.Json.JsonSerializer.Serialize(look);
+            var user = _user;
+            var config = _config;
+            var audio = _audioPreference;
+            return _itemVariants.GetOrAdd(key, _ => Build(WithLook(user, look), config, audio, itemLooks: false));
+        }
+
+        /// <summary>The look an item has of its own (see <see cref="ForItem(string, string?)"/>), or null.</summary>
+        /// <param name="itemIdN">The item id.</param>
+        /// <param name="seriesIdN">Its series, or null.</param>
+        /// <returns>The look.</returns>
+        public TagLayoutLock? ItemLook(string itemIdN, string? seriesIdN)
+        {
+            var id = TagLookValidation.NormalizeItemId(itemIdN);
+            if (id is null) return null;
+            var series = TagLookValidation.NormalizeItemId(seriesIdN);
+            return Find(_userLocks) ?? Find(_adminLooks);
+
+            TagLayoutLock? Find(IReadOnlyDictionary<string, TagLayoutLock>? looks)
+            {
+                if (looks is null || looks.Count == 0) return null;
+                if (looks.TryGetValue(id, out var own)) return own;
+                return series is not null && series != id && looks.TryGetValue(series, out var inherited) && inherited.Scope != "item" ? inherited : null;
+            }
+        }
+
+        /// <summary>
+        /// A copy of the user's settings with an item's look laid over them, as core/tag-layout.js
+        /// lookSettings does: its layout and density, its slots over the user's profile for that
+        /// layout, its caps, size, gap and edge spacing over the user's; the group order stays the
+        /// user's. A document saved before layouts keeps what it always had wherever the look sets
+        /// nothing (built-in caps, default size, gap and edge spacing, arrival order).
+        /// </summary>
+        private static JellyfinEnhancedUserSettings WithLook(JellyfinEnhancedUserSettings user, TagLayoutLock look)
+        {
+            var legacy = user.TagLayoutSettingsVersion < 1;
+            var layout = TagLayoutRules.NormalizeLayout(look.Layout);
+            var clone = (JellyfinEnhancedUserSettings)MemberwiseCloneMethod.Invoke(user, null)!;
+            clone.TagLayoutSettingsVersion = Math.Max(TagLayoutRules.CurrentVersion, user.TagLayoutSettingsVersion);
+            clone.TagLayout = layout;
+            clone.TagLabelDensity = TagLayoutRules.NormalizeDensity(look.Density);
+            clone.TagLayouts = WithProfile(user.TagLayouts, layout, look.Slots);
+            clone.TagGroupOrder = legacy ? null : user.TagGroupOrder;
+            clone.TagGroupCaps = MergeCaps(legacy ? BuiltInCaps() : user.TagGroupCaps, look.Caps);
+            clone.TagScale = look.TagScale ?? (legacy ? "default" : user.TagScale);
+            clone.TagGap = look.TagGap ?? (legacy ? "default" : user.TagGap);
+            clone.TagEdgeSpacing = look.EdgeSpacing ?? (legacy ? "default" : user.TagEdgeSpacing);
+            clone.TagLayoutLocks = null;
+            return clone;
+        }
+
+        /// <summary>The user's profiles with the look's slots over the profile of its layout.</summary>
+        private static TagLayoutProfiles WithProfile(TagLayoutProfiles? profiles, string layout, List<TagLayoutGroupSlot>? slots)
+        {
+            var result = profiles is null ? new TagLayoutProfiles() : new TagLayoutProfiles
+            {
+                Corners = profiles.Corners,
+                Bands = profiles.Bands,
+                Caption = profiles.Caption,
+                Summary = profiles.Summary,
+                Minimal = profiles.Minimal,
+            };
+            if (slots is null || slots.Count == 0) return result;
+            var own = layout switch
+            {
+                "bands" => result.Bands,
+                "caption" => result.Caption,
+                "summary" => result.Summary,
+                "minimal" => result.Minimal,
+                _ => result.Corners,
+            };
+            var merged = slots.Select(g => new TagLayoutGroupSlot { Group = g.Group, Slot = g.Slot }).ToList();
+            foreach (var entry in own?.Groups ?? new List<TagLayoutGroupSlot>())
+            {
+                if (!merged.Any(g => string.Equals(TagLayoutRules.NormalizeGroup(g.Group), TagLayoutRules.NormalizeGroup(entry.Group), StringComparison.Ordinal))) merged.Add(entry);
+            }
+
+            var profile = new TagLayoutProfile { Groups = merged };
+            switch (layout)
+            {
+                case "bands": result.Bands = profile; break;
+                case "caption": result.Caption = profile; break;
+                case "summary": result.Summary = profile; break;
+                case "minimal": result.Minimal = profile; break;
+                default: result.Corners = profile; break;
+            }
+
+            // Title/hover layouts use native Corners. Overlay only explicit
+            // off-groups there: visible groups retain valid fallback positions.
+            if (layout is "caption" or "summary" or "minimal")
+            {
+                result = WithProfile(result, "corners", slots.Where(g => g.Slot == "off").ToList());
+            }
+
+            return result;
+        }
+
+        /// <summary>The look's caps over the base caps, group by group (null when neither has any).</summary>
+        private static TagGroupCaps? MergeCaps(TagGroupCaps? caps, TagGroupCaps? over)
+        {
+            if (over is null) return caps;
+            return new TagGroupCaps
+            {
+                Quality = over.Quality ?? caps?.Quality,
+                Genre = over.Genre ?? caps?.Genre,
+                Language = over.Language ?? caps?.Language,
+                Rating = over.Rating ?? caps?.Rating,
+                AgeRating = over.AgeRating ?? caps?.AgeRating,
+                Status = over.Status ?? caps?.Status,
+                Awards = over.Awards ?? caps?.Awards,
+                Logos = over.Logos ?? caps?.Logos,
+                Custom = over.Custom ?? caps?.Custom,
+            };
+        }
+
+        /// <summary>The limits each group had before caps existed (core/tag-layout.js DEFAULT_CAPS).</summary>
+        private static TagGroupCaps BuiltInCaps() => new()
+        {
+            Quality = 0, Genre = 3, Language = 3, Rating = 0, AgeRating = 1, Status = 1, Awards = 2, Logos = 0, Custom = 3,
+        };
 
         /// <summary>The corner a position string selects (the web only tests for "top" and "left").</summary>
         /// <param name="position">A position string such as "top-right".</param>

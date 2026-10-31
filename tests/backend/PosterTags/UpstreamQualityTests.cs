@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
@@ -74,6 +76,34 @@ public class UpstreamQualityTests
             typeof(TagMediaSource).GetProperty(field)!.SetValue(copy.StreamData!.Sources![1], null);
             Assert.False(TagCacheEntry.ContentEquals(entry, copy));
         }
+    }
+
+    [Fact]
+    public void ItemLookVariantsRetainCroppedVersionFactsAndPinTheirChanges()
+    {
+        const string id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        var user = new JellyfinEnhancedUserSettings
+        {
+            QualityTagsEnabled = true, TagLayoutSettingsVersion = 1,
+            TagLayoutLocks = new() { [id] = new() { Layout = "bands", Density = "full", LockedAt = 1 } },
+        };
+        var settings = PosterTagSettings.FromUserSettings(user, new()).ForItem(id, null);
+        Assert.True(settings.Bands);
+        var entry = new TagCacheEntry { Type = "Movie", StreamData = Merged() };
+        var layout = PosterTagResolver.Resolve(entry, settings, new("Movie", false, null, null, null), false)!;
+        var labels = layout.Groups.SelectMany(g => g.Tags).OfType<QualityTag>().Select(t => t.Label).ToArray();
+        Assert.Contains("1080p", labels);
+        Assert.Contains("H264", labels);
+        Assert.Contains("DTS 5.1", labels);
+        Assert.DoesNotContain("HEVC", labels);
+        Assert.DoesNotContain("ATMOS 7.1", labels);
+        var hash = PosterTagDataProvider.ContentHash(entry);
+        var widthChanged = JsonSerializer.Deserialize<TagCacheEntry>(JsonSerializer.Serialize(entry))!;
+        widthChanged.StreamData!.Streams![0].Width = 3840;
+        Assert.NotEqual(hash, PosterTagDataProvider.ContentHash(widthChanged));
+        var sourceChanged = JsonSerializer.Deserialize<TagCacheEntry>(JsonSerializer.Serialize(entry))!;
+        sourceChanged.StreamData!.Streams![0].SourceId = "second";
+        Assert.NotEqual(hash, PosterTagDataProvider.ContentHash(sourceChanged));
     }
 
     [Fact]

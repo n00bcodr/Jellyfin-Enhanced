@@ -109,7 +109,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.NativePosterTagsEnabled != true || !_clientPolicy.IsNativeClient(httpContext.User)) return null;
             var settings = _settings.Get(userId);
-            if (!settings.NativeEnabled || !settings.AnyGroupEnabled) return null;
+            // An item look of its own can show a group the default hides.
+            if (!settings.NativeEnabled || (!settings.AnyGroupEnabled && !settings.HasItemLooks)) return null;
             var user = _users.Get(userId);
             if (user == null) return null;
             var spoilerState = cfg.SpoilerBlurEnabled ? _spoilerResolver.LoadUserState(httpContext, userId) : null;
@@ -164,6 +165,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // Idempotent: a filter re-entry must not re-mint.
             if (ImageTagDecoration.GetVariant(tag) != null) return tag;
 
+            // The owner's own look (a lock, a server-wide item look) when it has one.
+            var settings = session.Settings.ForItem(ownerId, ownerSeriesIdN);
+            if (!settings.AnyGroupEnabled) return tag;
+
             var flags = topRight ? PosterTagVariantFlags.TopRightOffset : PosterTagVariantFlags.None;
             // Same "guarded kind" rule the tag strip uses (SpoilerTagDataStripper).
             if (session.SpoilerState != null && _stripper.IsGuarded(session.SpoilerState, ownerId, ownerType, ownerSeriesIdN))
@@ -174,10 +179,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var token = _tokens.Mint(
                 session.User.Id,
                 ownerId,
-                session.Settings.DigestAt(session.Instant),
+                settings.DigestAt(session.Instant),
                 PosterTagComposer.PixelVersion,
                 flags,
-                _data.GetPinnedDataHash(ownerId, session.User, session.Settings.Shows(PosterTagGroup.Status)));
+                _data.GetPinnedDataHash(ownerId, session.User, settings.Shows(PosterTagGroup.Status)));
             var stamped = ImageTagDecoration.WithVariant(tag, token, session.Marker);
             if (dto != null && !ReferenceEquals(stamped, tag)) ReKeyPrimaryBlurhash(dto, tag, stamped);
             return stamped;

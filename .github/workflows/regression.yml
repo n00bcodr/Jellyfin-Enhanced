@@ -106,6 +106,12 @@ jobs:
             echo "::error::The $TARGET NuGet lock files are out of date after this dependency update. Regenerate both targets' lock files as described in CONTRIBUTING.md (NuGet lock files) and push them to this branch."
             exit 1
           fi
+      # The item-look HTTP tests drive the production page/store/transport in jsdom.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '22.14.0'
+          cache: npm
+      - run: npm ci
       - run: python3 tests/run.py backend --target ${{ matrix.target }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

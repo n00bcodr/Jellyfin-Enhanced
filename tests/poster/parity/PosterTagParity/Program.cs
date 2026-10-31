@@ -236,6 +236,7 @@ void ResolveAll()
         if (onlyProfile is not null && name != onlyProfile) continue;
         var user = profile["user"]!.GetValue<string>();
         var synthetic = profile["synthetic"]!.GetValue<bool>();
+        var itemLooksProfile = profile["itemLooks"]?.GetValue<bool>() == true;
         var config = LoadConfig(profile["pluginOverrides"] as JsonObject);
         var raw = profile["settingsRaw"] is JsonObject rawObject ? (JsonObject)rawObject.DeepClone() : null;
         var audioPreference = profile["jellyfinAudioPreference"]?.GetValue<string>();
@@ -284,7 +285,9 @@ void ResolveAll()
         var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var layouts = new PosterTagLayout?[contexts.Count];
-        for (var i = 0; i < contexts.Count; i++) layouts[i] = PosterTagResolver.Resolve(contexts[i].Entry, settings, contexts[i].Context, landscape: false);
+        // Each item with its own look (a lock, an administrator item look; PosterTagSettings.ForItem).
+        var itemSettings = contexts.Select(c => settings.ForItem(c.Id, c.Entry.Type is "Season" or "Episode" ? c.Entry.SeriesId : null)).ToArray();
+        for (var i = 0; i < contexts.Count; i++) layouts[i] = PosterTagResolver.Resolve(contexts[i].Entry, itemSettings[i], contexts[i].Context, landscape: false);
         watch.Stop();
         var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
 
@@ -305,7 +308,9 @@ void ResolveAll()
                         ["t"] = group.Tags.Select(Describe).ToList(),
                     };
                     // Only a non-default edge spacing adds the inset (web-expected.mjs reads it from the layout CSS).
-                    if (!layout.Bands && settings.EdgeSpacing != "default") placed["e"] = layout.EdgeInset;
+                    if (!layout.Bands && itemSettings[i].EdgeSpacing != "default") placed["e"] = layout.EdgeInset;
+                    // A look's own size and gap.
+                    if (itemLooksProfile && (itemSettings[i].TagScale != settings.TagScale || itemSettings[i].TagGap != settings.TagGap)) placed["s"] = itemSettings[i].TagScale + "/" + itemSettings[i].TagGap;
                     groups.Add(placed);
                 }
             }

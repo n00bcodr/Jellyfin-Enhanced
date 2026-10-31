@@ -613,14 +613,15 @@
         lookSettingsCache.clear();
     }
 
-    /** @type {{rules: Array<Object>, locks: Map<string, Object>}|null} memoised rules and locks */
+    /** @type {{rules: Array<Object>, locks: Map<string, Object>, overrides: Map<string, Object>}|null} memoised rules, locks and item looks */
     let cachedLooks = null;
     /** @type {Map<string, TagLayoutSettings>} derived settings per rule/lock look */
     const lookSettingsCache = new Map();
 
-    /** @returns {{rules: Array<Object>, locks: Map<string, Object>}} The user's rules and locks (core/tag-look.js). */
+    /** @returns {{rules: Array<Object>, locks: Map<string, Object>, overrides: Map<string, Object>}} The user's rules and locks and the administrator's item looks (core/tag-look.js). */
     function currentLooks() {
-        if (!cachedLooks) cachedLooks = JE.core.tagLook?.read() || { rules: [], locks: new Map() };
+        if (!cachedLooks) cachedLooks = JE.core.tagLook?.read() || { rules: [], locks: new Map(), overrides: new Map() };
+        if (!cachedLooks.overrides) cachedLooks.overrides = new Map();
         return cachedLooks;
     }
 
@@ -655,7 +656,7 @@
         const slots = switches ? shapeLook.slots : (look.slots || shapeLook.slots ? { ...(look.slots || {}), ...(shapeLook.slots || {}) } : null);
         const caps = look.caps || shapeLook.caps ? { ...(look.caps || {}), ...(shapeLook.caps || {}) } : null;
         return { layout: shapeLook.layout || look.layout, density: shapeLook.density || look.density,
-            tagScale: shapeLook.tagScale || look.tagScale, tagGap: shapeLook.tagGap || look.tagGap, slots, caps };
+            tagScale: shapeLook.tagScale || look.tagScale, tagGap: shapeLook.tagGap || look.tagGap, edge: look.edge || null, slots, caps };
     }
 
     /**
@@ -666,7 +667,7 @@
      * layout, and its caps over the user's. Order stays the user's.
      * Memoised per look.
      * @param {TagLayoutSettings} base
-     * @param {{layout: string|null, density: string|null, tagScale?: string, tagGap?: string, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
+     * @param {{layout: string|null, density: string|null, tagScale?: string, tagGap?: string, edge?: string|null, slots: Object<string, string>|null, caps?: Object<string, number>|null}} look
      * @param {boolean} locked
      * @returns {TagLayoutSettings}
      */
@@ -680,6 +681,8 @@
             density: look.density ? (look.density === 'compact' ? 'compact' : 'full') : base.density,
             tagScale: readScale(look.tagScale) || base.tagScale,
             tagGap: readGap(look.tagGap) || base.tagGap,
+            // A lock or item look may set its own edge spacing (an unknown one inherits).
+            edge: (look.edge && Object.hasOwn(EDGE_SPACINGS, look.edge) ? look.edge : null) || base.edge,
             caps: look.caps ? { ...base.caps, ...look.caps } : base.caps,
             // A chosen order applies everywhere; otherwise corners keeps
             // arrival order and the other layouts the built-in order.
@@ -837,7 +840,8 @@
         const base = currentSettings();
         if (SHAPES.some((shape) => base.shapes[shape])) return true;
         const looks = currentLooks();
-        return looks.rules.some((rule) => !!rule.shapes) || Array.from(looks.locks.values()).some((lock) => !!lock.shapes);
+        return looks.rules.some((rule) => !!rule.shapes) || Array.from(looks.locks.values()).some((lock) => !!lock.shapes)
+            || Array.from(looks.overrides.values()).some((look) => !!look.shapes);
     }
 
     /**
@@ -972,11 +976,12 @@
      */
     function needsCardData(cardType) {
         const looks = currentLooks();
-        if (!looks.rules.length && !looks.locks.size) return false;
+        const perItem = looks.locks.size + looks.overrides.size;
+        if (!looks.rules.length && !perItem) return false;
         if (!cardType) return true;
         if (looks.rules.some((rule) => rule.enabled && rule.when.some((cond) => cond.field !== 'type'))) return true;
-        // A season or episode inherits its series' lock: the series id comes with the data.
-        return looks.locks.size > 0 && (cardType === 'Season' || cardType === 'Episode');
+        // A season or episode inherits its series' lock or item look: the series id comes with the data.
+        return perItem > 0 && (cardType === 'Season' || cardType === 'Episode');
     }
 
     /**
@@ -991,12 +996,15 @@
 
     /**
      * The look decision for one card, and the only place it is made:
-     * a lock on the item (or, for a season or episode, on its series) →
-     * the first enabled rule whose conditions all hold → the look of the
-     * card's shape (landscape cards, list rows) → the user's default layout
-     * and density. A lock or rule may carry its own per-shape looks, laid
-     * over its look on cards of that shape. With no rules, no locks and no
-     * shape looks every card follows the user's settings, exactly as before.
+     * the user's lock on the item (or, for a season or episode, on its
+     * series) → the administrator's item look for it (or its series) → the
+     * first enabled rule whose conditions all hold → the look of the card's
+     * shape (landscape cards, list rows) → the user's default layout and
+     * density. A lock, item look or rule may carry its own per-shape looks,
+     * laid over its look on cards of that shape. The item editor's sample
+     * card (setPreviewLook) shows its draft look before any of them. With no
+     * rules, locks, item looks and shape looks every card follows the user's
+     * settings, exactly as before.
      * @param {CardController|HTMLElement|Object} cardContext - A card
      *   controller, a card element, or a plain item description
      *   ({ itemId, cardType, Type, Genres, OfficialRating, LibraryId, SeriesId, shape }).
@@ -1006,7 +1014,7 @@
         const base = currentSettings();
         const source = lookSource(cardContext);
         const shape = source.shape;
-        if (source.lock) return lookSettings(base, withShape(source.lock, source.lock.shapes?.[shape]), true);
+        if (source.lock) return lookSettings(base, withShape(source.lock, source.lock.shapes?.[shape]), source.source === 'lock' || !!source.lock.locked);
         if (source.rule) return lookSettings(base, withShape(source.rule, source.rule.shapes?.[shape]), false);
         if (source.source === 'shape') {
             return lookSettings(base, withShape({ layout: base.layout, density: base.density, slots: null, caps: null }, base.shapes[shape]), false);
@@ -1021,20 +1029,43 @@
      * names the source (the settings panel's preview) always agrees with the
      * cards.
      * @param {CardController|HTMLElement|Object} cardContext - As for resolveLayout.
-     * @returns {{source: 'lock'|'rule'|'shape'|'default', lock: Object|null, rule: Object|null, index: number, shape: string}}
-     *   index is the rule's position in the list (-1 otherwise); shape is the card's shape.
+     * @returns {{source: 'preview'|'lock'|'override'|'rule'|'shape'|'default', lock: Object|null, rule: Object|null, index: number, shape: string}}
+     *   lock is the lock, item look or preview look that decides; index is
+     *   the rule's position in the list (-1 otherwise); shape is the card's shape.
      */
     function lookSource(cardContext) {
         const looks = currentLooks();
         const shape = shapeOf(cardContext);
+        const el = cardContext?.host || (cardContext?.nodeType === 1 ? cardContext : null);
+        const preview = el ? contextOf(previewLooks, el) : undefined;
+        if (preview) return { source: 'preview', lock: preview, rule: null, index: -1, shape };
         const shaped = SHAPES.includes(shape) && !!currentSettings().shapes[shape];
         const none = { source: /** @type {'shape'|'default'} */ (shaped ? 'shape' : 'default'), lock: null, rule: null, index: -1, shape };
-        if (!looks.rules.length && !looks.locks.size) return none;
+        if (!looks.rules.length && !looks.locks.size && !looks.overrides.size) return none;
         const facts = cardFacts(cardContext);
         const lock = JE.core.tagLook.findLock(looks.locks, facts);
         if (lock) return { source: 'lock', lock, rule: null, index: -1, shape };
+        const override = JE.core.tagLook.findLock(looks.overrides, facts);
+        if (override) return { source: 'override', lock: override, rule: null, index: -1, shape };
         const rule = JE.core.tagLook.firstMatch(looks.rules, facts);
         return rule ? { source: 'rule', lock: null, rule, index: looks.rules.indexOf(rule), shape } : none;
+    }
+
+    /** @type {WeakMap<HTMLElement, Object>} render target / host → the item editor's draft look */
+    const previewLooks = new WeakMap();
+
+    /**
+     * Give one card (the item editor's sample) a draft look that wins over
+     * every lock, item look and rule, or take it away (null), and re-present it.
+     * @param {HTMLElement} target - Render target.
+     * @param {Object|null} look - A lock document ({ layout, density, slots,
+     *   caps, tagScale, tagGap, edge, locked }), or null.
+     */
+    function setPreviewLook(target, look) {
+        if (!target) return;
+        if (look) previewLooks.set(target, look);
+        else previewLooks.delete(target);
+        refreshPresentation(target);
     }
 
     /**
@@ -2547,6 +2578,7 @@
         invalidateSettings,
         resolveLayout,
         lookSource,
+        setPreviewLook,
         shapeOf,
         shapeOfCard,
         readShapeOverrides,

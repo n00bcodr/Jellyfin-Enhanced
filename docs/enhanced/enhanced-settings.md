@@ -319,7 +319,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | --- | --- | --- |
     | **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. Arrows reorder, **On**/**Off** pauses a rule, **Edit** loads it into the form, **Delete** removes it. |
     | **Otherwise** | Your layout | Every other card uses its shape override, if enabled, or your default layout and density; **Change** goes to the Layout tab. |
-    | **Locked items** | None | The items you locked from their page, each with **Unlock**, plus **Unlock all**. Locks always win. |
+    | **Locked items** | None | The items you gave their own look in their ⋮ menu's **Media Tags** editor, each with **Edit** and **Unlock**, plus **Unlock all**. Locks always win. |
     | **Add a rule** | Library condition, **Caption**, **Compact** | Up to five conditions, each needing a value; **Add rule** adds it at the end of the list. |
 
 === "Colours"
@@ -332,7 +332,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
 
     Shortcuts to the Media Tags settings page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that tab. Other users never get this tab. The page's **Server** tab also exports and imports the server-wide Media Tags settings and lists the **Presets for users** ([Import, export and presets](tags.md#import-export-and-presets)).
 
-See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
+See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, [Rules and locked items](tags.md#rules-and-locked-items) for how rules match, and [One item's look](tags.md#one-items-look) for the per-item editor in an item's ⋮ menu (layout, density, each group's place and limit, size and spacing, **Keep this look for this item**, and for administrators **For everyone**). It starts from the item’s resolved look, including shape-specific size and limits. Saving from the admin Rules list returns keyboard focus to that item’s Edit button, or its series after a scope move.
 
 ### Hidden Content
 
