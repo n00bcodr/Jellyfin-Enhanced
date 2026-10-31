@@ -1,6 +1,6 @@
 # Enhanced settings
 
-Series and season quality can summarize a representative episode (default), the latest aired episode, the best value per category, values shared by every episode, or best quality with a **Mixed** marker (**±** in compact mode). Choose **Media Tags** → **Groups** → **Quality** → **Series and seasons show:**. The admin default seeds new users and **Apply defaults to all users**; personal choices override it. Native Poster Tags use the same policy. See [Quality Tags](tags.md#quality-tags) for missing metadata, language and source/format behavior.
+Series and season quality can summarize a representative episode (default), the latest aired episode, the best value per category, values shared by every episode, or best quality with a **Mixed** marker (**±** in compact mode). Choose **Media Tags** → **Groups** → **Quality** → **Series and seasons show:**. The admin default seeds new users and **Apply defaults to all users**; personal choices override it. **Follow server (…)** keeps following the administrator's later changes, while choosing a policy by name keeps it, even when it is the administrator's current one. Native Poster Tags use the same policy. See [Quality Tags](tags.md#quality-tags) for missing metadata, language and source/format behavior.
 
 Use the Enhanced panel for your preferences, or **Dashboard** → **Plugins** → **Jellyfin Enhanced** for server features and new users' starting values. This page covers Enhanced; [Tags & Badges](tags.md) and specialist settings pages cover their own controls. Defaults below are for plugin 12.12.0.0; your administrator may choose different starting values.
 
@@ -282,6 +282,8 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags, including Status, into posters for native apps. Corners and Bands are supported; Caption, Summary and Minimal use Corners. Bands follows its profile, limits and density. |
     | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
     | **Show Audio Languages** | On | Audio language links on item details. |
+    | **Presets** | Built-in presets | **Apply** previews a preset's changes first; **Share** copies it; **Save as preset** keeps your settings (up to 10, on the server); **Import preset** adds a shared one; administrators can offer more. |
+    | **Import & export** | — | **Export settings** downloads or copies your Media Tags settings; **Import settings** checks a file or pasted text on the server, shows what changes and what is skipped, and applies it with **Undo**. See [Import, export and presets](tags.md#import-export-and-presets). |
 
 === "Groups"
 
@@ -295,6 +297,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | Language **Style** / **Audio count badge** | Flags / Off | Codes show uppercase language codes with full-name tooltips. Dual means two audio languages, Multi three or more. The badge and included audio/subtitle chips share the language limit, audio first. |
     | Language **Priority** → **Follow server policy** | On | Uses the administrator's live language list. Turn off to search by name or ISO code, add up to 12 languages, move them or remove them. An empty personal list has no priorities. Applies to audio/subtitle chips, Dual/Multi counts, Summary and native posters. |
     | Language **Only show priority languages** | Follow server | Inherit the current strict policy, show only prioritized languages, or keep other languages after them. The administrator's regional-merge setting still applies. |
+    | Quality **Follow server settings** | — | Edition, low-quality sources, the quality category order and **Series and seasons show:** follow the administrator again, including later changes. Any change to one of them keeps it as your own, even a change back to the administrator's value. |
     | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
 
     Priority controls pause until their save finishes. A failed save restores the previous policy while keeping other settings changes. Retry the priority edit once the controls become available.
@@ -325,7 +328,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
 
 === "Server (administrators)"
 
-    Shortcuts to the Media Tags settings page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that tab. Other users never get this tab.
+    Shortcuts to the Media Tags settings page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that tab. Other users never get this tab. The page's **Server** tab also exports and imports the server-wide Media Tags settings and lists the **Presets for users** ([Import, export and presets](tags.md#import-export-and-presets)).
 
 See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
 
@@ -813,7 +816,7 @@ Open **Docs** to load **Documentation** from the GitHub Pages site, or choose **
 
 ### Quality stream display
 
-In **Media Tags → Groups → Quality**, the Sound, Video codec and HDR display modes independently choose **Highest only** (the unchanged default) or **All distinct values**. **Minimum resolution to show** filters resolution chips below Off / 720p / 1080p / 4K; **Hide SDR** removes SDR exposed by All HDR mode. Each field offers **Server default**. Administrator defaults live on the dedicated **Media Tags → Groups → Quality** page. The Quality group limit and Compact labels apply to the resulting chips, including the existing layout overflow count. See [quality display and aggregation](tags.md#highest-only-or-every-stream-value).
+In **Media Tags → Groups → Quality**, the Sound, Video codec and HDR display modes independently choose **Highest only** (the unchanged default) or **All distinct values**. **Minimum resolution to show** filters resolution chips below Off / 720p / 1080p / 4K; **Hide SDR** removes SDR exposed by All HDR mode. Each field offers **Server default**; **Follow server settings** also restores these five overrides and the technical category switches/orders. Explicit choices stay personal even if they equal the server defaults. Administrator defaults live on the dedicated **Media Tags → Groups → Quality** page. The Quality group limit and Compact labels apply to the resulting chips, including the existing layout overflow count. See [quality display and aggregation](tags.md#highest-only-or-every-stream-value).
 
 ### Technical poster facts
 

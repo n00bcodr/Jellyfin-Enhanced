@@ -43,6 +43,18 @@
       "category": "Assets"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Assets/TagPresets/1-cinephile.json",
+      "category": "Assets"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Assets/TagPresets/2-minimal.json",
+      "category": "Assets"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Assets/TagPresets/3-kids.json",
+      "category": "Assets"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/CustomTagRuleSet.cs",
       "category": "Configuration"
     },
@@ -204,6 +216,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPageFields.cs",
+      "category": "Helpers"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPortable.cs",
       "category": "Helpers"
     },
     {
@@ -987,6 +1003,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/portable.js",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/quality.js",
       "category": "js"
     },
@@ -1240,6 +1260,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-looks.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-portable.js",
       "category": "js"
     },
     {
@@ -2663,6 +2687,60 @@
       ]
     },
     {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/media-tags/export",
+      "method": "ExportUserMediaTags",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/media-tags/preview",
+      "method": "PreviewUserMediaTags",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(MediaTagsPortable.MaxDocumentBytes)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/media-tags/presets",
+      "method": "GetMediaTagsPresets",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/media-tags/presets",
+      "method": "SaveMediaTagsPreset",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(MediaTagsPortable.MaxDocumentBytes)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "DELETE",
+      "path": "/JellyfinEnhanced/user-settings/{userId}/media-tags/presets/{presetId}",
+      "method": "DeleteMediaTagsPreset",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
       "verb": "POST",
       "path": "/JellyfinEnhanced/user-settings/{userId}/shortcuts.json",
       "method": "SaveUserSettingsShortcuts",
@@ -3115,6 +3193,28 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/admin/configuration",
       "method": "PatchConfiguration",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/admin/media-tags/export",
+      "method": "ExportAdminMediaTags",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize",
+        "ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)",
+        "Produces(\"application/json\")"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/admin/media-tags/preview",
+      "method": "PreviewAdminMediaTags",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize",
@@ -5131,6 +5231,14 @@
     {
       "class": "PluginConfiguration",
       "name": "CustomTagRuleKey",
+      "type": "string",
+      "initializer": "string.Empty",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "TagOfferedPresets",
       "type": "string",
       "initializer": "string.Empty",
       "constructor_assignment": null,
@@ -9215,6 +9323,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MatroskaLanguageCache.cs"
     },
     {
+      "literal": "media-tag-presets.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/MediaTagsPortable.cs"
+    },
+    {
       "literal": "config.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.cs"
     },
@@ -9359,6 +9471,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/elsewhere/reviews.js"
     },
     {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/admintags/sections/portable.js"
+    },
+    {
       "literal": "bookmark.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/bookmarks/bookmarks.js"
     },
@@ -9397,6 +9513,10 @@
     {
       "literal": "settings.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-editor.js"
+    },
+    {
+      "literal": "settings.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/js/enhanced/settingspanel/ui-panel-tag-portable.js"
     },
     {
       "literal": "settings.json",
@@ -9606,10 +9726,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 439,
-    "routes": 185,
-    "configuration_properties": 704,
-    "storage_references": 79,
+    "files": 445,
+    "routes": 192,
+    "configuration_properties": 705,
+    "storage_references": 82,
     "scheduled_tasks": 14,
     "locales": 33
   }

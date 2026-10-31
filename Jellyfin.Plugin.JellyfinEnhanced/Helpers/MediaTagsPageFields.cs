@@ -79,6 +79,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             ["TagCacheExcludedLibraryIds"] = 8192,
             ["LanguageTagsPriority"] = 256,
             ["QualityTagsPreferredAudioLanguage"] = 32,
+            // Characters never outnumber UTF-8 bytes: the byte cap (on the canonical text too) is the real limit.
+            ["TagOfferedPresets"] = MediaTagsPortable.MaxOfferedPresetsBytes,
         };
 
         private static readonly string[] StyleTargets = { "web", "native", "both" };
@@ -235,6 +237,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return false;
                 case "TagGroupOrder":
                     var order = (List<string>?)value;
+                    // No order: the stored configuration reads a cleared order back as an empty list.
+                    if (order is { Count: 0 }) return true;
                     normalized = TagLayoutRules.NormalizeOrder(order);
                     if (order == null || (normalized as List<string>)?.Count == order.Count) return true;
                     error = $"must name distinct groups of {string.Join(", ", TagLayoutRules.DefaultGroupOrder)}";
@@ -250,6 +254,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return true;
                 case "TagShapeOverrides":
                     normalized = TagShapeRules.Normalize((TagShapeOverrides?)value);
+                    return true;
+                case "TagOfferedPresets":
+                    if (!MediaTagsPortable.TryNormalizeOfferedPresets(value as string, out var offered, out error)) return false;
+                    normalized = offered;
                     return true;
                 case "TagLookRules":
                     var rules = (List<TagLookRule>?)value;

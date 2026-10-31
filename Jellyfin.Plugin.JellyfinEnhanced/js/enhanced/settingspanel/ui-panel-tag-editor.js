@@ -296,6 +296,10 @@
                 </label>
             </div>`;
         if (group === 'quality') {
+            // "Follow server" is a choice of its own: picking the administrator's
+            // policy by name keeps it when the administrator changes theirs.
+            const following = JE.isSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation') === true;
+            const serverPolicy = JE.inheritedSettingDefault?.(JE.currentSettings, 'seriesQualityAggregation') || 'representative';
             return `
                 <div class="je-tge-extra" data-quality-display>
                     <p class="je-tge-hint">${escapeHtml(JE.t('quality_display_help'))}</p>
@@ -304,7 +308,7 @@
                         const options = key === 'qualityMinimumResolution' ? [['off', 'quality_resolution_off'], ['720p', '=720p'], ['1080p', '=1080p'], ['4k', '=4K']]
                             : key === 'qualityHideSdr' ? [['false', 'quality_sdr_show'], ['true', 'quality_sdr_hide']]
                             : [['highest', 'quality_display_highest'], ['all', 'quality_display_all']];
-                        const value = JE.currentSettings[key] == null ? '' : String(JE.currentSettings[key]);
+                        const value = JE.isSettingInherited?.(JE.currentSettings, key) || JE.currentSettings[key] == null ? '' : String(JE.currentSettings[key]);
                         return `<label for="${key}Select" class="je-tge-label">${escapeHtml(JE.t(labels[index]))}</label>
                             <select id="${key}Select" data-quality-display-key="${key}" style="width:100%;background:${detailsBackground};color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:6px;">
                                 <option value="" ${value === '' ? 'selected' : ''}>${escapeHtml(JE.t('quality_display_inherit'))}</option>
@@ -316,8 +320,13 @@
                 <div class="je-tge-extra">
                     <label for="seriesQualityAggregationSelect" class="je-tge-label">${escapeHtml(JE.t('series_quality_aggregation_label'))}</label>
                     <select id="seriesQualityAggregationSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
-                        ${['representative', 'latest', 'best', 'shared', 'mixed'].map(policy => `<option value="${policy}" ${JE.currentSettings.seriesQualityAggregation === policy ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_' + policy))}</option>`).join('')}
+                        <option value="" ${following ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_inherit', { policy: JE.t('series_quality_aggregation_' + serverPolicy) }))}</option>
+                        ${['representative', 'latest', 'best', 'shared', 'mixed'].map(policy => `<option value="${policy}" ${!following && JE.currentSettings.seriesQualityAggregation === policy ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_' + policy))}</option>`).join('')}
                     </select>
+                </div>
+                <div class="je-tge-extra">
+                    <button type="button" class="je-tge-reset" id="qualityTagsFollowServer"><span class="material-icons" aria-hidden="true">dns</span><span>${escapeHtml(JE.t('panel_settings_ui_quality_tags_follow_server'))}</span></button>
+                    <div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_quality_tags_follow_server_desc'))}</div>
                 </div>
                 <div class="je-quality-audio-lang je-tge-extra">
                     <label for="qualityTagsAudioLanguageSelect" class="je-tge-label">${escapeHtml(JE.t('panel_settings_ui_quality_tags_audio_language'))}</label>

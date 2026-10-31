@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 173 method/path entries in plugin version **12.12.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 192 method/path entries in plugin version **12.14.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -478,12 +478,12 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `ShowSpecialFormatTag` | Boolean | `true` |
 | `ShowVideoCodecTag` | Boolean | `true` |
 | `ShowAudioInfoTag` | Boolean | `true` |
-| `ResolutionTagOrder` | Nullable integer | `null` |
-| `SourceTagOrder` | Nullable integer | `null` |
-| `DynamicRangeTagOrder` | Nullable integer | `null` |
-| `SpecialFormatTagOrder` | Nullable integer | `null` |
-| `VideoCodecTagOrder` | Nullable integer | `null` |
-| `AudioInfoTagOrder` | Nullable integer | `null` |
+| `ResolutionTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `SourceTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `DynamicRangeTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `SpecialFormatTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `VideoCodecTagOrder` | Nullable integer (inherits the admin default) | `null` |
+| `AudioInfoTagOrder` | Nullable integer (inherits the admin default) | `null` |
 | `GenreTagsEnabled` | Boolean | `false` |
 | `LanguageTagsEnabled` | Boolean | `false` |
 | `RatingTagsEnabled` | Boolean | `false` |
@@ -538,6 +538,34 @@ The table below gives the `UserSettings` **model defaults** used when properties
 `Shapes` on rules and locks uses the same `{Landscape,List}` map as `TagShapeOverrides`; it layers over that rule's or lock's look, independently of the user's shape overrides. Resolution is lock → first matching rule → shape override → default. POST also accepts a shape slot map such as `{"quality":"bottom","status":"top"}`; stored responses use arrays, matching `TagLayouts` and preserving group ids across key-case conversion. `Layout`/`Density` null inherits, and null caps inherit per group. A shape that changes layout uses the profile of the new layout. Portrait and square cards always use the default shape; Native Poster Tags ignore these objects.
 
 `TagScale` and `TagGap` are presentation-only settings, normalized case-insensitively on save. An unknown global value becomes `default`; null inherits the administrator's validated choice, then `default`. Version-0 documents always render at default size/gap. Promotion writes explicit `default` values so changing another layout setting does not adopt new administrator sizing. New-user seeding and reset-all copy the administrator's values. A shape's optional `TagScale`/`TagGap` uses the same choices, with unknown values normalized to null (inherit). Shape fields also round-trip inside rule/lock `Shapes`. Native posters use global size/gap in their rendering metrics and settings digest, with shape overrides still web-only. These fields do not change `TagCacheEntry` or its schema.
+
+The web client keeps these nullable fields null while they inherit: the settings panel shows the administrator's current value for `ShowEditionTag`, `ShowLowQualitySourceTag`, the three technical category switches (`ShowRuntimeTag`, `ShowAspectRatioTag`, `ShowFrameRateTag`), the three display modes, minimum resolution, Hide SDR, the ten `*TagOrder` fields and `SeriesQualityAggregation`, and saves `null` for each one the user has not changed, so a save, an import or its **Undo** never pins today's administrator default. Inheriting is a state, not a value comparison: any change through a panel control (even back to the administrator's value), an imported value (even one equal to the default) and a reorder of the quality categories (all ten orders) are saved as the user's own. Only **Follow server** in the series policy, **Follow server settings** in the Quality group, or an import or **Undo** of a null value makes a field inherit again.
+
+### Media Tags import, export and presets
+
+A user's Media Tags settings travel as a versioned document with the same PascalCase field names as `settings.json`:
+
+```json
+{ "v": 1, "kind": "je-media-tags-user", "settings": { "TagLayout": "bands", "TagLayoutSettingsVersion": 1, "TagScale": "larger", "QualityTagsEnabled": true } }
+```
+
+`settings` holds 84 personal Media Tags fields (`MediaTagsPortable.UserFields`, including the three display modes, minimum resolution, Hide SDR and technical categories): the group switches (`QualityTagsEnabled` … `CustomTagsEnabled`, `PeopleTagsEnabled`, `TagsHideOnHover`, `UseNativePosterTags`), quality includes and orders, `QualityTagsPreferredAudioLanguage`, `SeriesQualityAggregation`, the rating scopes, sources, minimum and colour switch, the language display and priority fields, the seven status families (including Scenes), the nine `*TagsPosition` fields, `TagLayout`, `TagLayoutSettingsVersion`, `TagLayouts`, `TagGroupOrder`, `TagGroupCaps`, `TagLabelDensity`, `TagScale`, `TagGap`, `TagEdgeSpacing`, `TagShapeOverrides` and `TagStylePreset`. Rules and locks (`TagLookRules`, `TagLayoutLocks`) are not part of it: they name the server's libraries and items. A **preset** is the same document with `kind: "je-media-tags-preset"`, an `id` (lower-case letters, digits and hyphens, up to 40), a `name` (1–60 characters) and a `description` (up to 240); its `settings` may name only some fields.
+
+| Method | Path | Access | Request → response |
+|---|---|---|---|
+| GET | `user-settings/{userId}/media-tags/export` | Own/admin | No body → the user document above, every field in `UserFields` order. |
+| POST | `user-settings/{userId}/media-tags/preview` | Own/admin | A user document or a preset (64 KB limit) → `{kind, v, name, description, imported:{Field:value}, changes:[{field, from, to}], skipped:[{field, reason, detail}]}`. Nothing is saved; the client writes the changed fields through `POST settings.json`. `400 {error}` refuses the document as a whole: `not-object`, `kind`, `version` (missing or not a positive integer), `newer` (`v` above the server's), `settings` (not an object). |
+| GET | `user-settings/{userId}/media-tags/presets` | Own/admin | No body → `{max:10, builtIn:[preset], offered:[preset], mine:[preset]}`: the shipped presets (`Assets/TagPresets/*.json`), the administrator's `TagOfferedPresets` and the user's own. |
+| POST | `user-settings/{userId}/media-tags/presets` | Own/admin | A preset, or a user document with a `name` (64 KB limit) → `{preset, skipped}`; the stored preset gets a new id and keeps only the accepted settings. `400 {error}`: a document error above, `name`, `description`, `empty` (no usable setting) or `full` with `max` (10 per user). |
+| DELETE | `user-settings/{userId}/media-tags/presets/{presetId}` | Own/admin | No body → `{success:true}`; `404 {error:"missing"}` for an unknown id. |
+| GET | `admin/media-tags/export` | Administrator | No body → `{v:1, kind:"je-media-tags-admin", settings:{…}}`: every field of the Media Tags page's allowlist (`MediaTagsPageFields.Allowed`) in the configuration API's shape, sorted, except `ClearLocalStorageTimestamp`. Secrets (`CustomTagRuleKey`, API keys, tokens, passwords) are never included. |
+| POST | `admin/media-tags/preview` | Administrator | An administrator document (256 KB limit) → `{kind, v, imported, changes, skipped}`. Each field is read and checked exactly as `POST admin/configuration` reads it (`PluginConfigurationPatch.TryRead`); the page then applies the changes through that patch, with the values it read as `Expected`. |
+
+Each user field is checked on its own: it must be one of `UserFields`, have the property's JSON type, pass the administrator field contract where the configuration has a field of that name and type (positions, orders 1–99, known values, minimum score 0–10, text limits), and come out of the settings save path's normalisation (`MediaTagsPortable.TryNormalizeUser`, the same call `POST settings.json` makes) exactly as given. Anything else is reported in `skipped` and never applied: `reason` is `unknown`, `invalid` (with the validator's `detail`), `secret`, or for administrator documents `signal`. `secret` covers every credential field of the plugin configuration as spelled (`MediaTagsPortable.Secrets`: `TMDB_API_KEY`, the other `*ApiKey` fields, `SonarrInstances`/`RadarrInstances`, `CustomTagRuleKey`, `AnalyticsInstallSecret`) and any other name ending in an API key or token or containing password or secret, ignoring case, `_` and `-`. `null` keeps its meaning (follow the administrator). Saved presets live in `media-tag-presets.json` in the user's directory, read-modify-written under the user's file lock.
+
+The administrator's offered presets are the page field `TagOfferedPresets`: a JSON array text of at most 20 presets with distinct ids, each valid as a whole (no unknown or invalid setting); `""` offers none. The cap is 80 KiB (81,920 UTF-8 bytes, `MediaTagsPortable.MaxOfferedPresetsBytes`) for the text as sent and for its canonical stored form: the presets normalised and serialised the way the server stores them, with non-ASCII and HTML-sensitive characters escaped (`<` becomes `\u003C`), which can be several times longer than the text sent. A value over the cap once normalised is refused (`larger than 81920 bytes once normalised (N bytes)`), so every stored value exports and imports again unchanged. `POST admin/configuration` reads up to 256 KiB for the entire JSON body, including both `Changes` and `Expected`, outer string escaping and any Tag Styles data. Individually valid fields can exceed that aggregate limit together. Such a request is refused before any write; reduce the document and retry. Imports use the existing page conflict handling: each request is atomic, but resolving conflicts can retry the non-conflicting fields separately. There is no guarantee that every maximal old/new document fits one request.
+
+**Versioning.** `v` grows only when a field is renamed, removed or changes meaning. New fields are added without a new version: an older server reports them as `unknown` and applies the rest. A server refuses a document whose `v` is higher than its own (`newer`), and reads an older `v` through that version's migration before checking it. `kind` never changes for an existing document type.
 
 ### Shortcuts and Elsewhere documents
 
@@ -1103,7 +1131,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | Method | Path | Access | Request → response |
 |---|---|---|---|
 | POST | `tag-cache/rebuild` | Administrator | No body → `{success:true,message:"Tag cache rebuild started in the background."}`. |
-| POST | `admin/configuration` | Administrator | `{Changes:{Field:value}, Expected?:{Field:value}}` (PluginConfiguration field names, values as `GET /Plugins/{id}/Configuration` returns them) → `{values:{Field:stored}}`. Writes only these fields on top of the configuration the server holds now, through the normal configuration save and inside its critical section: a full configuration save that lands while the request waits is kept, never put back, and so is the server's own write of a field in place (maintenance toggle clear, translation refresh signal, analytics state), which takes the same lock. A field in `Expected` is the value read before editing it: when the server's value differs from it and from the new value, nothing is written and the answer is `409` `{conflicts:{Field:serverValue}}`. Only the Media Tags page's own fields are accepted (those its section modules declare, `Helpers/MediaTagsPageFields.cs`); any other field, API keys included, is `400` naming it, and nothing is written. Each value is checked with the normalisers the server uses for that field (`TagLayoutRules`, `TagShapeRules`, `LanguageTagDisplay`, `TagLookValidation`, `RatingSourceSettings`, `TagStyleSet`, the anchor positions): an unknown, empty or blank layout, density, position, target, preset or source (none of the server's own values has an empty "inherit"), a number outside its range (day windows and cache lifetime 1–365, order 1–99, minimum score 0–10, caps 0–10), a text over its limit (1024 characters unless the field has its own) or a document the normaliser would drop is `400` `{error:"Invalid value for 'Field': reason."}`; accepted values are stored in their canonical spelling and returned. The body is limited to 64 KB: a larger one is refused while it is read, before anything is checked or written (Jellyfin's exception middleware answers `500` "Request body too large"). Used by the Media Tags settings page. |
+| POST | `admin/configuration` | Administrator | `{Changes:{Field:value}, Expected?:{Field:value}}` (PluginConfiguration field names, values as `GET /Plugins/{id}/Configuration` returns them) → `{values:{Field:stored}}`. Writes only these fields on top of the configuration the server holds now, through the normal configuration save and inside its critical section: a full configuration save that lands while the request waits is kept, never put back, and so is the server's own write of a field in place (maintenance toggle clear, translation refresh signal, analytics state), which takes the same lock. A field in `Expected` is the value read before editing it: when the server's value differs from it and from the new value, nothing is written and the answer is `409` `{conflicts:{Field:serverValue}}`. Only the Media Tags page's own fields are accepted (those its section modules declare, `Helpers/MediaTagsPageFields.cs`); any other field, API keys included, is `400` naming it, and nothing is written. Each value is checked with the normalisers the server uses for that field (`TagLayoutRules`, `TagShapeRules`, `LanguageTagDisplay`, `TagLookValidation`, `RatingSourceSettings`, `TagStyleSet`, the anchor positions): an unknown, empty or blank layout, density, position, target, preset or source (none of the server's own values has an empty "inherit"), a number outside its range (day windows and cache lifetime 1–365, order 1–99, minimum score 0–10, caps 0–10), a text over its limit (1024 characters unless the field has its own) or a document the normaliser would drop is `400` `{error:"Invalid value for 'Field': reason."}`; accepted values are stored in their canonical spelling and returned. The entire body, including `Changes`, `Expected` and JSON escaping, is limited to 256 KiB: a larger one is refused while it is read, before anything is checked or written (Jellyfin's exception middleware answers `500` "Error processing request."). Used by the Media Tags settings page. |
 | GET | `tag-cache/summary` | Administrator | No body → `{enabled, entries, lastModified, rebuilding}`: whether the server tag cache is on, how many items it holds, its last change (Unix ms, `0` = never) and whether a full build is running or a manual one is queued. Counts are `0` while the cache is off. Used by the Media Tags settings page's Overview. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor → cache envelope below; ETag/`304`. |
 | POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>],StripRevision}`. |
@@ -1308,7 +1336,7 @@ Diagnostic headers use the prefix `X-JE-Poster-Tags-`: `Status`, `Artwork` (`ori
 
 ### Audio tags, awards, MDBList, and content warnings
 
-Use these routes to look up language tag names, awards, external ratings, and DoesTheDogDie content warnings. The account-status route lets administrators check MDBList limits.
+Use these routes to look up language tag names, awards, external ratings, AniList reviews, and DoesTheDogDie content warnings. The account-status route lets administrators check MDBList limits.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -1318,6 +1346,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | **Enable MDBList Ratings** | `false` | `MdblistRatingsEnabled`; gates MDBList title responses. |
 | **MDBList API Key** | `""` | `MdblistApiKey`; enables upstream lookups. |
 | **Show Content Warnings** | `false` | `DoesTheDogDieEnabled`; also needs a nonblank `DoesTheDogDieApiKey`. |
+| **Show AniList Reviews** | `false` | `ShowAnilistReviews`; gates the AniList reviews route. |
 | **Enable Review Translation** | `false` | `ReviewTranslationEnabled`; the translate routes also need a nonblank `ReviewTranslationUrl`. `ReviewTranslationApiKey` is optional and never returned to clients. |
 
 | Method | Path | Access | Contract |
@@ -1328,6 +1357,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | GET | `mdblist-ratings/account-status` | Administrator | Optional nonblank query `apiKey` override → live account status. |
 | GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
+| GET | `anilist/reviews` | Authenticated | Query `anilistId` (positive AniList anime id) → `{SiteUrl, Reviews:[{Author,Summary,Content,Score,Rating,RatingAmount,CreatedAt,Url}]}` (PascalCase), the ten highest-rated AniList reviews, cached 12 hours (2 hours when none). `503` when disabled, `400` for a bad id, `502` when AniList fails. |
 | GET | `translate/languages` | Authenticated | `{languages:[...]}`, the target languages the configured LibreTranslate offers for English. |
 | POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. |
 
@@ -1891,7 +1921,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 174 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 192 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 

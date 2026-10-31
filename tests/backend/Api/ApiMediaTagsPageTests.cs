@@ -322,9 +322,10 @@ public class ApiMediaTagsPageTests
             Changes = new() { ["NativePosterTagsWebClientNames"] = StjSerializer.SerializeToElement(new string('a', 4096)) },
         }));
         // The body itself: reading past the action's limit fails before the action runs (Jellyfin then answers 500).
+        // 256 KB: an imported settings document sends every field it changes, with the values read before, in one patch.
         var bodyLimit = typeof(JellyfinEnhancedController).GetMethod(nameof(JellyfinEnhancedController.PatchConfiguration))!
             .GetCustomAttributes(typeof(RequestSizeLimitAttribute), false).Cast<RequestSizeLimitAttribute>().Single();
-        Assert.Equal(64 * 1024, ((Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata)bodyLimit).MaxRequestBodySize);
+        Assert.Equal(256 * 1024, ((Microsoft.AspNetCore.Http.Metadata.IRequestSizeLimitMetadata)bodyLimit).MaxRequestBodySize);
     }
 
     /// <summary>Every field whose value is one of a known set (none of them has an empty "inherit" value).</summary>

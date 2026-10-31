@@ -53,6 +53,8 @@
         document.querySelectorAll(`.${containerClass}`).forEach(el => el.remove());
         restackTagCorners();
     };
+    // An imported Media Tags document turns groups off the same way (ui-panel-tag-portable.js).
+    internal.removeTagGroup = removeTagGroup;
 
     /**
      * @param {Iterable<object>} entries - Server tag-cache entries.
@@ -288,6 +290,8 @@
                 if (!row) return;
                 const settingKey = row.dataset.catKey;
                 if (!settingKey) return;
+                // Any change is the user's own, even back to the administrator's value.
+                JE.setSettingInherited?.(JE.currentSettings, settingKey, false);
                 JE.currentSettings[settingKey] = target.checked;
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 if (typeof JE.reinitializeQualityTags === 'function' && JE.currentSettings.qualityTagsEnabled) {
@@ -314,11 +318,14 @@
 
                 // Normalize order values to 1..N from visual position so any
                 // pre-existing duplicates (e.g. admin set two rows to the same
-                // value via XML) self-heal on the next user reorder.
+                // value via XML) self-heal on the next user reorder. The whole
+                // order is the user's now (none of it follows the admin's).
                 const allRows = qualitySubGroup.querySelectorAll('.je-quality-cat-row');
                 allRows.forEach((r, idx) => {
                     const orderKey = r.dataset.orderKey;
-                    if (orderKey) JE.currentSettings[orderKey] = idx + 1;
+                    if (!orderKey) return;
+                    JE.setSettingInherited?.(JE.currentSettings, orderKey, false);
+                    JE.currentSettings[orderKey] = idx + 1;
                 });
                 JE.saveUserSettings('settings.json', JE.currentSettings);
 
@@ -334,7 +341,13 @@
         document.querySelectorAll('[data-quality-display-key]').forEach(select => {
             select.addEventListener('change', () => {
                 const key = select.dataset.qualityDisplayKey;
-                JE.currentSettings[key] = select.value === '' ? null : key === 'qualityHideSdr' ? select.value === 'true' : select.value;
+                const value = select.value;
+                if (value === '') {
+                    if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
+                } else {
+                    JE.setSettingInherited?.(JE.currentSettings, key, false);
+                    JE.currentSettings[key] = key === 'qualityHideSdr' ? value === 'true' : value;
+                }
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 JE.reinitializeQualityTags?.();
                 JE.reinitializeTagLayout?.();
@@ -345,6 +358,7 @@
         // Low-quality sources are a gate within Source, separate from category ordering.
         const lowSourceToggle = document.getElementById('showLowQualitySourceTagToggle');
         if (lowSourceToggle) lowSourceToggle.addEventListener('change', () => {
+            JE.setSettingInherited?.(JE.currentSettings, 'showLowQualitySourceTag', false);
             JE.currentSettings.showLowQualitySourceTag = lowSourceToggle.checked;
             JE.saveUserSettings('settings.json', JE.currentSettings);
             if (JE.currentSettings.qualityTagsEnabled) JE.reinitializeQualityTags?.();
@@ -356,16 +370,53 @@
         // template; the language list comes from Jellyfin's cultures endpoint,
         // like the display-language dropdown.
         // Series and seasons share a quality policy; the summary supports switching without refetching.
+        // The empty option follows the administrator (saved as null); a named policy is the user's.
         const aggregationSelect = document.getElementById('seriesQualityAggregationSelect');
         if (aggregationSelect) {
-            aggregationSelect.value = JE.currentSettings.seriesQualityAggregation || 'representative';
+            aggregationSelect.value = JE.isSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation')
+                ? '' : (JE.currentSettings.seriesQualityAggregation || 'representative');
             aggregationSelect.addEventListener('change', () => {
-                JE.currentSettings.seriesQualityAggregation = aggregationSelect.value;
+                const policy = aggregationSelect.value;
+                if (!policy) {
+                    if (!JE.setSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation', true)) JE.currentSettings.seriesQualityAggregation = null;
+                } else {
+                    JE.setSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation', false);
+                    JE.currentSettings.seriesQualityAggregation = policy;
+                }
                 JE.saveUserSettings('settings.json', JE.currentSettings);
                 JE.reinitializeQualityTags?.();
                 resetAutoCloseTimer();
             });
         }
+
+        // "Follow server settings": all nullable Quality switches, orders, display
+        // preferences and the series policy follow the administrator again (saved as null).
+        const qualityFollowServer = document.getElementById('qualityTagsFollowServer');
+        if (qualityFollowServer) qualityFollowServer.addEventListener('click', () => {
+            for (const key of JE.inheritedSettingKeys || []) {
+                if (!JE.setSettingInherited?.(JE.currentSettings, key, true)) JE.currentSettings[key] = null;
+            }
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            qualitySubGroup?.querySelectorAll('.je-quality-cat-row').forEach(row => {
+                const input = row.querySelector('input[type="checkbox"]');
+                const value = JE.currentSettings[row.dataset.catKey];
+                if (input && typeof value === 'boolean') input.checked = value;
+            });
+            document.querySelectorAll('[data-quality-display-key]').forEach(select => { select.value = ''; });
+            if (lowSourceToggle && typeof JE.currentSettings.showLowQualitySourceTag === 'boolean') lowSourceToggle.checked = JE.currentSettings.showLowQualitySourceTag;
+            if (aggregationSelect) aggregationSelect.value = '';
+            if (qualitySubGroup) {
+                const orderOf = (r) => Number(JE.currentSettings[r.dataset.orderKey]) || Number(r.dataset.defaultOrder) || 0;
+                const rows = Array.from(qualitySubGroup.querySelectorAll('.je-quality-cat-row'));
+                rows.sort((a, b) => (orderOf(a) - orderOf(b)) || (Number(a.dataset.defaultOrder) - Number(b.dataset.defaultOrder)))
+                    .forEach(r => qualitySubGroup.appendChild(r));
+                refreshQualityCatArrowStates(qualitySubGroup);
+            }
+            if (JE.currentSettings.qualityTagsEnabled) JE.reinitializeQualityTags?.();
+            JE.reinitializeTagLayout?.();
+            JE.toast(JE.t('toast_quality_tags_follow_server'));
+            resetAutoCloseTimer();
+        });
 
         const audioLangSelect = document.getElementById('qualityTagsAudioLanguageSelect');
         if (audioLangSelect) {

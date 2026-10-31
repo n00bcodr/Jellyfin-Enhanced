@@ -336,6 +336,103 @@ test('source and edition settings inherit defaults, save, reorder and reset thro
   assert.equal(h.saved().editionTagOrder, 1);
 });
 
+test('inherited quality settings save as null until changed; a reorder makes the whole order the user\'s', async t => {
+  const h = setup(t, { plugin: { SeriesQualityAggregation: 'best', ShowEditionTag: false, SourceTagOrder: 2 }, stored: { qualityTagsEnabled: true } });
+  const orders = ['resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder', 'editionTagOrder', 'runtimeTagOrder', 'aspectRatioTagOrder', 'frameRateTagOrder'];
+  await h.change(h.$('#showLowQualitySourceTagToggle'), true);
+  assert.equal(h.saved().showLowQualitySourceTag, true, 'a changed field is the user\'s');
+  for (const key of ['seriesQualityAggregation', 'showEditionTag', ...orders]) assert.equal(h.saved()[key], null, `${key} follows the administrator`);
+  assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'best', 'shown as the administrator\'s');
+  await h.click(h.$('[data-cat-key="showSourceTag"]').querySelector('.je-cat-up'));
+  assert.deepEqual(orders.map(key => h.saved()[key]), [2, 1, 3, 4, 5, 6, 7, 8, 9, 10]);
+  // Toggled back to the administrator's value: still the user's choice.
+  await h.change(h.$('#showLowQualitySourceTagToggle'), false);
+  assert.equal(h.saved().showLowQualitySourceTag, false);
+  assert.equal(h.saved().seriesQualityAggregation, null, 'a field nobody touched still follows');
+});
+
+test('choosing another value and then the administrator\'s keeps it the user\'s through an administrator change', async t => {
+  const plugin = { SeriesQualityAggregation: 'representative', ShowEditionTag: true, ShowLowQualitySourceTag: false };
+  const h = setup(t, { plugin, stored: { qualityTagsEnabled: true } });
+  const select = h.$('#seriesQualityAggregationSelect');
+  assert.equal(select.value, '', 'an untouched policy follows the server');
+  await h.change(select, 'best');
+  await h.change(select, 'representative');
+  await h.change(h.$('#showEditionTagToggle'), false);
+  await h.change(h.$('#showEditionTagToggle'), true);
+  await h.change(h.$('#showLowQualitySourceTagToggle'), true);
+  await h.change(h.$('#showLowQualitySourceTagToggle'), false);
+  const saved = h.saved();
+  assert.equal(saved.seriesQualityAggregation, 'representative');
+  assert.equal(saved.showEditionTag, true);
+  assert.equal(saved.showLowQualitySourceTag, false);
+  assert.equal(saved.sourceTagOrder, null, 'untouched orders still follow');
+  for (const key of ['seriesQualityAggregation', 'showEditionTag', 'showLowQualitySourceTag']) assert.equal(h.JE.isSettingInherited(h.JE.currentSettings, key), false, key);
+
+  // The administrator changes every default; the user keeps their choices.
+  const later = setup(t, { plugin: { SeriesQualityAggregation: 'latest', ShowEditionTag: false, ShowLowQualitySourceTag: true }, stored: saved });
+  assert.equal(later.JE.currentSettings.seriesQualityAggregation, 'representative');
+  assert.equal(later.$('#seriesQualityAggregationSelect').value, 'representative');
+  assert.equal(later.$('#showEditionTagToggle').checked, true);
+  assert.equal(later.$('#showLowQualitySourceTagToggle').checked, false);
+  await later.click(later.$('[data-cat-key="showSourceTag"]').querySelector('.je-cat-up'));
+  assert.equal(later.saved().seriesQualityAggregation, 'representative', 'later saves keep it');
+
+  // Across a reopen: the first choice was saved, then the administrator's value is picked.
+  const reopened = setup(t, { plugin, stored: { qualityTagsEnabled: true, seriesQualityAggregation: 'best' } });
+  await reopened.change(reopened.$('#seriesQualityAggregationSelect'), 'representative');
+  assert.equal(reopened.saved().seriesQualityAggregation, 'representative');
+
+  // Both changes before the first save serializes: the choice is still the user's.
+  const quick = setup(t, { plugin, stored: { qualityTagsEnabled: true } });
+  const quickSelect = quick.$('#seriesQualityAggregationSelect');
+  for (const policy of ['best', 'representative']) {
+    quickSelect.value = policy;
+    quickSelect.dispatchEvent(new quick.window.Event('change', { bubbles: true }));
+  }
+  await quick.settle();
+  assert.equal(quick.saved().seriesQualityAggregation, 'representative');
+});
+
+test('the Follow server policy and Follow server settings make the quality fields follow the administrator again', async t => {
+  const orders = ['resolutionTagOrder', 'sourceTagOrder', 'dynamicRangeTagOrder', 'specialFormatTagOrder', 'videoCodecTagOrder', 'audioInfoTagOrder', 'editionTagOrder', 'runtimeTagOrder', 'aspectRatioTagOrder', 'frameRateTagOrder'];
+  const stored = { qualityTagsEnabled: true, seriesQualityAggregation: 'best', showEditionTag: false, showLowQualitySourceTag: true,
+    showRuntimeTag: true, showAspectRatioTag: true, showFrameRateTag: true,
+    qualityAudioDisplayMode: 'all', qualityVideoCodecDisplayMode: 'all', qualityHdrDisplayMode: 'all', qualityMinimumResolution: '4k', qualityHideSdr: true,
+    ...Object.fromEntries(orders.map((key, i) => [key, orders.length - i])) };
+  const h = setup(t, { plugin: { SeriesQualityAggregation: 'latest', EditionTagOrder: 1, ResolutionTagOrder: 2 }, stored });
+  let refreshed = 0; h.JE.reinitializeQualityTags = () => refreshed++;
+  const select = h.$('#seriesQualityAggregationSelect');
+  assert.equal(select.value, 'best');
+  assert.equal(select.options[0].textContent, 'series_quality_aggregation_inherit{"policy":"series_quality_aggregation_latest"}');
+  await h.change(select, '');
+  assert.equal(h.saved().seriesQualityAggregation, null);
+  assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'latest', 'shown as the administrator\'s');
+  assert.equal(h.saved().showEditionTag, false, 'other choices are kept');
+
+  await h.click(h.$('#qualityTagsFollowServer'));
+  const saved = h.saved();
+  assert.equal(h.JE.inheritedSettingKeys.length, 21);
+  for (const key of h.JE.inheritedSettingKeys) assert.equal(saved[key], null, key);
+  for (const key of ['showRuntimeTag', 'showAspectRatioTag', 'showFrameRateTag']) assert.equal(h.$(`[data-cat-key="${key}"] input`).checked, false, key);
+  for (const key of ['qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr']) assert.equal(h.$(`#${key}Select`).value, '', key);
+  assert.equal(h.$('#showEditionTagToggle').checked, true);
+  assert.equal(h.$('#showLowQualitySourceTagToggle').checked, false);
+  assert.equal(select.value, '');
+  const rows = [...h.document.querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row')];
+  assert.deepEqual(rows.map(r => r.dataset.catKey).slice(0, 2), ['showEditionTag', 'showResolutionTag'], 'the administrator\'s order');
+  assert.equal(rows[0].querySelector('.je-cat-up').disabled, true);
+  assert.equal(rows.at(-1).querySelector('.je-cat-down').disabled, true);
+  assert.ok(refreshed >= 2);
+  assert.ok(h.toasts.includes('toast_quality_tags_follow_server'));
+
+  // A later administrator change reaches the user.
+  const later = setup(t, { plugin: { SeriesQualityAggregation: 'mixed', ShowEditionTag: false }, stored: saved });
+  assert.equal(later.JE.currentSettings.seriesQualityAggregation, 'mixed');
+  assert.equal(later.$('#seriesQualityAggregationSelect').value, '');
+  assert.equal(later.$('#showEditionTagToggle').checked, false);
+});
+
 test('rating source order, minimum and colour persist through the real hub and preview', async t => {
   const h = setup(t, { stored: { ratingTagsEnabled: true, ratingTagsSources: ['imdb', 'tmdb', 'rtCritic'], tagLayoutSettingsVersion: 1 } });
   const box = h.row('rating');
@@ -357,8 +454,9 @@ test('quality row exposes all aggregation policies, inherits the admin default, 
   const h = setup(t, { plugin: { SeriesQualityAggregation: 'latest' } });
   let refreshed = 0; h.JE.reinitializeQualityTags = () => refreshed++;
   const select = h.$('#seriesQualityAggregationSelect');
-  assert.equal(select.value, 'latest');
-  assert.deepEqual([...select.options].map(option => option.value), ['representative', 'latest', 'best', 'shared', 'mixed']);
+  assert.equal(select.value, '', 'follows the server');
+  assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'latest');
+  assert.deepEqual([...select.options].map(option => option.value), ['', 'representative', 'latest', 'best', 'shared', 'mixed']);
   assert.equal(select.labels[0].textContent, 'series_quality_aggregation_label');
   await h.change(select, 'mixed');
   assert.equal(h.saved().seriesQualityAggregation, 'mixed');
@@ -582,7 +680,7 @@ test('Quality display fields preserve inheritance, save independently and update
   const h = setup(t, { stored: { qualityTagsEnabled: true }, plugin: { QualityAudioDisplayMode: 'all', QualityMinimumResolution: '4k' } });
   const fields = ['qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr'];
   for (const key of fields) {
-    assert.equal(h.JE.currentSettings[key], null, `${key} follows admin until chosen`);
+    assert.equal(h.JE.isSettingInherited(h.JE.currentSettings, key), true, `${key} follows admin until chosen`);
     assert.equal(h.$(`#${key}Select`).value, '');
   }
   await h.change(h.$('#qualityAudioDisplayModeSelect'), 'highest');
@@ -601,4 +699,37 @@ test('Quality display fields preserve inheritance, save independently and update
   await h.change(h.$('#qualityAudioDisplayModeSelect'), '');
   assert.equal(h.saved().qualityAudioDisplayMode, null);
   assert.equal(h.saved().tagLayoutSettingsVersion, 0, 'display settings do not promote the legacy layout');
+});
+
+
+test('all nullable Quality choices preserve the loaded defaults across an administrator race and pin explicit equal choices', async t => {
+  const h = setup(t, { stored: { qualityTagsEnabled: true }, plugin: { ShowRuntimeTag: false, QualityAudioDisplayMode: 'highest', QualityHideSdr: false } });
+  const fields = h.JE.inheritedSettingKeys;
+  const defaults = Object.fromEntries(fields.map(key => [key, h.JE.inheritedSettingDefault(h.JE.currentSettings, key)]));
+  h.JE.pluginConfig = { ShowRuntimeTag: true, QualityAudioDisplayMode: 'all', QualityHideSdr: true, SeriesQualityAggregation: 'mixed' };
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  for (const key of fields) {
+    assert.equal(h.saved()[key], null, key);
+    assert.equal(h.JE.isSettingInherited(h.JE.currentSettings, key), true, key);
+    assert.equal(h.JE.inheritedSettingDefault(h.JE.currentSettings, key), defaults[key], key);
+  }
+  for (const key of ['showRuntimeTag', 'showAspectRatioTag', 'showFrameRateTag']) {
+    await h.change(h.$(`[data-cat-key="${key}"] input`), true);
+    await h.change(h.$(`[data-cat-key="${key}"] input`), false);
+    assert.equal(h.saved()[key], false, key);
+  }
+  for (const [key, other, original] of [
+    ['qualityAudioDisplayMode', 'all', 'highest'], ['qualityVideoCodecDisplayMode', 'all', 'highest'],
+    ['qualityHdrDisplayMode', 'all', 'highest'], ['qualityMinimumResolution', '4k', 'off'], ['qualityHideSdr', 'true', 'false'],
+  ]) {
+    await h.change(h.$(`#${key}Select`), other);
+    await h.change(h.$(`#${key}Select`), original);
+    assert.equal(h.JE.isSettingInherited(h.JE.currentSettings, key), false, key);
+    assert.equal(h.saved()[key], key === 'qualityHideSdr' ? false : original, key);
+  }
+  const later = setup(t, { stored: h.saved(), plugin: h.JE.pluginConfig });
+  assert.equal(later.JE.currentSettings.showRuntimeTag, false);
+  assert.equal(later.JE.currentSettings.qualityAudioDisplayMode, 'highest');
+  assert.equal(later.JE.currentSettings.qualityHideSdr, false);
+  assert.equal(later.JE.currentSettings.seriesQualityAggregation, 'mixed', 'untouched policy follows new default');
 });

@@ -955,6 +955,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// rules are first saved and kept across saves; admin-only (never in the public config).
         /// </summary>
         public string CustomTagRuleKey { get; set; } = string.Empty;
+
+        // Media Tags presets the administrator offers users (see Helpers/MediaTagsPortable.cs).
+        /// <summary>
+        /// The presets offered to every user's Presets list: a JSON array of preset documents
+        /// (<c>{"v":1,"kind":"je-media-tags-preset","id","name","description","settings":{…}}</c>), at most 20,
+        /// validated on save; empty offers none. Admin-written; users read it through the presets endpoint.
+        /// </summary>
+        public string TagOfferedPresets { get; set; } = string.Empty;
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

@@ -309,6 +309,14 @@
 .je-ta-libs input { width: 18px; height: 18px; accent-color: var(--je-ta-accent); }
 .je-ta-list { margin: 4px 0 0 18px; padding: 0; font-size: 12.5px; line-height: 1.5; color: var(--je-ta-muted); }
 
+/* Presets offered to users (Server). */
+.je-ta-offered-list.je-ta-list { margin: 4px 0 8px; list-style: none; border: 1px solid var(--je-ta-border); border-radius: 8px; color: var(--je-ta-text); }
+.je-ta-offered-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 8px 10px 8px 12px; }
+.je-ta-offered-list li + li { border-top: 1px solid var(--je-ta-border); }
+.je-ta-offered-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 220px; min-width: 0; font-size: 14px; }
+.je-ta-offered-text .je-ta-hint { margin: 0; }
+.je-ta-offered-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /* Undo snackbar and the not-ready notice. */
 .je-ta-snack { position: fixed; left: 50%; bottom: 24px; z-index: 1000; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; max-width: calc(100vw - 32px); padding: 10px 12px 10px 16px; border-radius: 8px; background: #2b2f36; color: #fff; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); font-size: 14px; }
 .je-ta-snack .je-ta-button { min-height: 32px; color: #7fd3ff; border-color: transparent; background: transparent; }
