@@ -90,7 +90,7 @@ public static class StatusRules
                 break;
             case "Series":
                 if (showSchedule && daysToNext == 0) return Badge("airing_today");
-                if (showMilestones && final != null && Ended(facts?.Status) && finalRecently
+                if (showMilestones && final != null && Ended(facts!.Status) && finalRecently
                     && data.LatestEpisodeIndex is { } index && index.Season == final.Season && index.Episode == final.Episode)
                     return Badge("series_finale");
                 if (showMilestones && data.SeasonPremiere is { Season: > 1 } sp && sp.Aired <= now && Within(sp.Aired, now, newReleaseMs)) return Badge("new_season");
@@ -120,7 +120,7 @@ public static class StatusRules
                 var episode = data.EpisodeIndex?.Episode ?? data.EpisodeNumber;
                 if (showMilestones && aired && episode == 1 && episodeSeason is > 0 && Within(data.PremiereDate, now, justAddedMs)) return Badge("season_premiere");
                 if (showMilestones && aired && final != null && finalRecently && episodeSeason == final.Season
-                    && episode == final.Episode && Ended(facts?.Status)) return Badge("series_finale");
+                    && episode == final.Episode && Ended(facts!.Status)) return Badge("series_finale");
                 if (showMilestones && aired && facts?.LastAired is { } lastEpisode && lastRecently
                     && episodeSeason == lastEpisode.Season && episode == lastEpisode.Episode && LastEndsSeason(facts, data.EpisodeIndex?.IsLast == true)) return Badge("season_finale");
                 if (showNew && ((aired && Within(data.PremiereDate, now, justAddedMs)) || addedRecently)) return Badge("new_episode");

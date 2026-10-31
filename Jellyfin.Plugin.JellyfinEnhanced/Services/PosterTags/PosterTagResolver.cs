@@ -167,7 +167,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private static bool HasTopRightOffset(List<PosterTagGroupLayout> groups, PosterTagSettings settings, PosterTagItemContext context)
         {
             if (!ShowsPlayedIndicator(context)) return false;
-            if (settings.Bands || (settings.EdgeInset == 0 && groups.Any(g => g.Corner == PosterTagCorner.TopCenter))) return true;
+            // Flush is an exact zero policy value, not a near-zero distance.
+            if (settings.Bands || (settings.EdgeInset.Equals(0f) && groups.Any(g => g.Corner == PosterTagCorner.TopCenter))) return true;
             foreach (var group in groups)
             {
                 if (string.Equals(settings.PositionOf(group.Group), "top-right", StringComparison.Ordinal)) return true;

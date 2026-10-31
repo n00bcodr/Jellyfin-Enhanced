@@ -226,7 +226,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                     return false;
                 case "RatingTagsMinScore":
                     var minimum = (double)value!;
-                    if (RatingSourceSettings.NormalizeMinimum(minimum) == minimum) return true;
+                    if (double.IsFinite(minimum) && minimum is >= 0 and <= 10) return true;
                     error = "must be between 0 and 10";
                     return false;
                 case "RatingTagsSources":

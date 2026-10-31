@@ -177,9 +177,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 return null;
             }
 
-            if (_logos.TryAdd(logoPath, image)) return image;
-            image.Dispose();
-            return _logos.TryGetValue(logoPath, out var winner) ? winner : null;
+            var retained = false;
+            try
+            {
+                retained = _logos.TryAdd(logoPath, image);
+                return retained ? image : _logos.TryGetValue(logoPath, out var winner) ? winner : null;
+            }
+            finally
+            {
+                // The cache owns successful additions; all other paths release the decode.
+                if (!retained) image.Dispose();
+            }
         }
 
         public void Dispose()

@@ -9285,7 +9285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var state = _whatsNewService.GetState();
             if (state == null)
             {
-                return Ok(new { pluginVersion = (string?)null, newSettings = new Dictionary<string, string>(), mediaTags = new Dictionary<string, object>() });
+                return Ok(new { pluginVersion = default(string), newSettings = new Dictionary<string, string>(), mediaTags = new Dictionary<string, object>() });
             }
 
             // New settings that live on the Media Tags page: where, so the banner can link there.
@@ -9599,10 +9599,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
                         SeriesId = spStripRatings ? (Guid?)null : spEp.SeriesId,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
                         RunTimeTicks = item.RunTimeTicks,
-                        Path = (string?)null,
+                        Path = default(string),
                         MediaStreams = stubStreams,
                         MediaSources = stubSources,
                         SubtitleLanguages = stubSubtitles,
@@ -9646,8 +9646,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LibraryId = TagDataLibraryId(spSeries),
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spSeries),
                         Leaving = spStripGenres ? null : _tagCacheService.GetLeavingForUser(spSeries, user),
-                        SeriesId = (Guid?)null,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        SeriesId = default(Guid?),
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
                         RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,
@@ -9734,13 +9734,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LibraryId = TagDataLibraryId(spMovie),
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spMovie),
                         Leaving = spStripGenres ? null : _tagCacheService.GetLeavingForUser(spMovie, user),
-                        SeriesId = (Guid?)null,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        SeriesId = default(Guid?),
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
                         RunTimeTicks = item.RunTimeTicks,
-                        Path = (string?)null,
+                        Path = default(string),
                         MediaStreams = stubStreams,
-                        MediaSources = (List<object>?)null,
+                        MediaSources = default(List<object>),
                         SubtitleLanguages = stubSubtitles,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
@@ -9783,7 +9783,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spSeason),
                         Leaving = spStripGenres ? null : _tagCacheService.GetLeavingForUser(spSeason, user),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
                         RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,

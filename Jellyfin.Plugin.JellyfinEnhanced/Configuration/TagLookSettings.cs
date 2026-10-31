@@ -308,8 +308,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             var byId = new Dictionary<string, TagLayoutLock?>(StringComparer.Ordinal);
             foreach (var entry in overrides)
             {
-                var id = NormalizeItemId(entry?.ItemId);
-                if (id == null || entry == null) continue;
+                if (entry == null) continue;
+                var id = NormalizeItemId(entry.ItemId);
+                if (id == null) continue;
                 // A repeated id keeps its newest look (NormalizeLocks keeps one per key).
                 if (byId.TryGetValue(id, out var seen) && seen != null && seen.LockedAt >= entry.LockedAt) continue;
                 byId[id] = entry;
@@ -339,7 +340,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         {
             ArgumentNullException.ThrowIfNull(settings);
             settings.TagLookRules = NormalizeRules(settings.TagLookRules);
-            settings.TagLayoutLocks = NormalizeLocks(settings.TagLayoutLocks?.ToDictionary(kv => kv.Key, kv => (TagLayoutLock?)kv.Value));
+            settings.TagLayoutLocks = NormalizeLocks(settings.TagLayoutLocks!);
         }
 
         /// <summary>

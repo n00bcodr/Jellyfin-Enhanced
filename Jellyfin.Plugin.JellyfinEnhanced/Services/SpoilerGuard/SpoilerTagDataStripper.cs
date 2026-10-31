@@ -473,7 +473,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             // Latest policy reads its naming facts from the summary rather than StreamData.
             // Replace the shared summary before filtering; keep technical categories unchanged.
-            if (sanitizeTitleStreams && stripped.QualitySummary is { } summary && !stripGenresEnabled)
+            if (sanitizeTitleStreams && stripped.QualitySummary is { } summary)
             {
                 stripped.QualitySummary = new TagQualitySummary
                 {

@@ -42,7 +42,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 value = Math.Clamp(value, 0, maximum);
                 var score = value * 10 / maximum;
                 if (score < settings.RatingTagsMinScore) continue;
-                var text = id == "community" && value == 0 ? Dash : maximum <= 10
+                // Exact zero is the legacy unrated sentinel, including negative zero.
+                var text = id == "community" && value.Equals(0d) ? Dash : maximum <= 10
                     ? JsText.ToFixed(value, 1)
                     : JsText.MathRound(value).ToString(CultureInfo.InvariantCulture) + (id == "metacritic" ? "" : "%");
                 if (!Enum.TryParse<PosterRatingSource>(id, true, out var source)) continue;

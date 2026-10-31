@@ -142,6 +142,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     /// </summary>
     internal sealed class PosterTagPlanner
     {
+        /// <summary>Exact zero denotes an empty row or Flush edge policy; never use a tolerance.</summary>
+        private static bool IsExactlyZero(float value) => value.Equals(0f);
+
         /// <summary>
         /// Longest tag text measured, in UTF-16 units. Far more than fits on a card (the web's chips overflow it
         /// unwrapped), so it never changes a visible pixel; it bounds shaping work and tile sizes for absurd metadata.
@@ -185,7 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
             Place(groups, css, cardHeight, layout.TopRightOffset, layout.EdgeInset);
             PlaceCentres(groups, css, cardHeight, layout.EdgeInset, layout.TopRightOffset, layout.ProgressBarHeight);
-            if (layout.EdgeInset == 0) ApplyFlushEdges(groups, css.CardWidth, cardHeight - Math.Clamp(layout.ProgressBarHeight, 0, cardHeight));
+            if (IsExactlyZero(layout.EdgeInset)) ApplyFlushEdges(groups, css.CardWidth, cardHeight - Math.Clamp(layout.ProgressBarHeight, 0, cardHeight));
             return new PosterTagPlan(imageWidth, imageHeight, css, groups);
         }
 
@@ -271,9 +274,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             x = 0;
             return widths.Select(width =>
             {
-                if (Fits(x == 0 ? width : x + gap + width, Room(current)))
+                if (Fits(IsExactlyZero(x) ? width : x + gap + width, Room(current)))
                 {
-                    x = x == 0 ? width : x + gap + width;
+                    x = IsExactlyZero(x) ? width : x + gap + width;
                     return true;
                 }
                 if (current < maxRows && x > 0 && Fits(width, Room(current + 1)))
@@ -479,9 +482,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     ? g.IsTop ? g.Y + g.Height + gap : cardHeight - g.Y + gap
                     : g.IsLeft ? g.X + g.Width + gap : css.CardWidth - g.X + gap).DefaultIfEmpty(inset).Max();
                 float top = inset;
-                float bottom = Math.Max(inset, Math.Clamp(progressHeight, 0, cardHeight) + (inset == 0 ? 0 : gap));
+                float bottom = Math.Max(inset, Math.Clamp(progressHeight, 0, cardHeight) + (IsExactlyZero(inset) ? 0 : gap));
                 if (progressHeight <= 0) bottom = inset;
-                if (inset == 0 && corner == PosterTagCorner.TopCenter)
+                if (IsExactlyZero(inset) && corner == PosterTagCorner.TopCenter)
                 {
                     // The native indicator occupies the top-right corner. Try
                     // the symmetric gap first, then move below it if needed.
@@ -536,8 +539,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         foreach (var item in row)
                         {
                             item.X += (width - rowWidth) / 2;
-                            item.Y += inset == 0 && corner == PosterTagCorner.TopCenter ? 0
-                                : inset == 0 && corner == PosterTagCorner.BottomCenter ? tallest - item.Height
+                            item.Y += IsExactlyZero(inset) && corner == PosterTagCorner.TopCenter ? 0
+                                : IsExactlyZero(inset) && corner == PosterTagCorner.BottomCenter ? tallest - item.Height
                                 : (tallest - item.Height) / 2;
                         }
                     }
@@ -546,7 +549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float y = corner == PosterTagCorner.TopCenter ? top : corner == PosterTagCorner.BottomCenter ? cardHeight - bottom - height : (cardHeight - height) / 2;
                 foreach (var g in anchor)
                 {
-                    g.X = x; g.Y = g.NaturalY = y; g.Width = width; g.Height = height; g.Clips = inset != 0;
+                    g.X = x; g.Y = g.NaturalY = y; g.Width = width; g.Height = height; g.Clips = !IsExactlyZero(inset);
                     foreach (var item in g.Items)
                     {
                         item.X = x + (vertical ? right ? width - item.Width : 0 : item.X);

@@ -617,7 +617,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             settings = settings with { _digest = settings.ComputeDigest() };
             if (!itemLooks) return settings;
-            var locks = TagLookValidation.NormalizeLocks(user.TagLayoutLocks?.ToDictionary(kv => kv.Key, kv => (TagLayoutLock?)kv.Value));
+            var locks = TagLookValidation.NormalizeLocks(user.TagLayoutLocks!);
             var adminLooks = TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides);
             if ((locks is null || locks.Count == 0) && adminLooks is null) return settings;
             return settings with

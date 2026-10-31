@@ -375,13 +375,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 if (configuration is PluginConfiguration customTagsConfig)
                 {
                     customTagsConfig.CustomTagRules = CustomTagRuleSet.Normalize(customTagsConfig.CustomTagRules);
-                    customTagsConfig.CustomTagRuleKey = EnsureCustomTagRuleKey(customTagsConfig, Configuration as PluginConfiguration);
+                    customTagsConfig.CustomTagRuleKey = EnsureCustomTagRuleKey(customTagsConfig, Configuration);
                 }
 
                 // Tag Styles: only a valid document is stored (normalised to version 2); anything
                 // else keeps the current one, since a save can come from anywhere (API, restored backup).
                 if (configuration is PluginConfiguration stylesConfig
-                    && !Services.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration as PluginConfiguration, out var styleError))
+                    && !Services.PosterTags.TagStyleSet.ApplyToSave(stylesConfig, Configuration, out var styleError))
                 {
                     _logger.Warning($"Jellyfin Enhanced: Tag Styles not saved ({styleError}); keeping the current styles.");
                 }
