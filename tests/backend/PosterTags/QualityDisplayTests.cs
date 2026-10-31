@@ -33,7 +33,28 @@ public class QualityDisplayTests
     }, new(), null);
 
     private static string[] Labels(TagCacheEntry entry, PosterTagSettings settings) => PosterTagResolver.Resolve(entry, settings,
-        new(entry.Type ?? "Movie", false, null, null, null), false)?.Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.Label).ToArray() ?? [];
+        new(entry.Type ?? "Movie", false, null, null, null), false)?.Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.DisplayText ?? tag.Label).ToArray() ?? [];
+
+    [Fact]
+    public void AudioStreamFactsReachNativeChipsInBothDensities()
+    {
+        using var stream = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioStreamLabels.json")!;
+        using var cases = JsonDocument.Parse(stream);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        foreach (var density in new[] { "full", "compact" })
+        foreach (var mode in new[] { "highest", "all" })
+        {
+            var track = JsonSerializer.Deserialize<TagMediaStream>(row.GetProperty("stream"))!;
+            var data = new TagStreamData { Streams = [track] };
+            var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true,
+                TagLayoutSettingsVersion = 1, TagLayout = "bands", TagLabelDensity = density, QualityAudioDisplayMode = mode }, new(), null);
+            foreach (var cached in new[] { false, true })
+            {
+                data.DistinctQualities = cached ? QualityTagRules.DetectDistinct(data.Streams) : null;
+                Assert.Equal(new[] { row.GetProperty(density).GetString()! }, Labels(new() { Type = "Movie", StreamData = data }, settings));
+            }
+        }
+    }
 
     [Fact]
     public void DistinctFactsKeepActualTrackChannelsAndAreImmutableValueComparedCacheData()

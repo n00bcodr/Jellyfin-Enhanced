@@ -86,8 +86,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HDR", "SDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA" };
-        private static readonly string[] AudioOrder = { "ATMOS", "DTS-X", "TRUEHD", "DTS", "Dolby Digital+", "7.1", "5.1" };
-        private static readonly string[] AudioBases = { "Dolby Digital+", "ATMOS", "DTS-X", "TRUEHD", "DTS" };
+        private static readonly string[] AudioOrder = { "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "DTS-HD HRA", "DTS", "Dolby Digital+", "Dolby Digital", "7.1", "5.1" };
+        private static readonly string[] AudioBases = { "Dolby Digital+", "Dolby Digital", "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "DTS-HD HRA", "DTS" };
 
         // Video codec detection order (first match wins), on the lowercased Codec then DisplayTitle.
         private static readonly (string Needle, string Label)[] CodecNeedles =
@@ -557,9 +557,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 var title = JsText.AsciiLower(stream.DisplayTitle);
                 if (title.Contains("atmos", StringComparison.Ordinal)) return "ATMOS";
                 if (title.Contains("truehd", StringComparison.Ordinal)) return "TRUEHD";
-                if (title.Contains("dts-x", StringComparison.Ordinal)) return "DTS-X";
+                if (title.Contains("dts-x", StringComparison.Ordinal) || title.Contains("dts:x", StringComparison.Ordinal)) return "DTS-X";
+                if (Regex.IsMatch(title, "dts[- ]hd", Options)) return Regex.IsMatch(title, "hra|high resolution", Options) ? "DTS-HD HRA" : "DTS-HD MA";
                 if (DtsRegex.IsMatch(title)) return "DTS";
                 if (DolbyDigitalPlusRegex.IsMatch(title)) return "Dolby Digital+";
+                if (Regex.IsMatch(title, "dolby" + JsSpace + "*digital|" + WordStart + "ac-?3" + WordEnd, Options)) return "Dolby Digital";
             }
 
             // Priority 2: codec / profile metadata.
@@ -574,10 +576,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
                 if (codec.Contains("dts", StringComparison.Ordinal))
                 {
-                    return codec.Contains('x', StringComparison.Ordinal) || profile.Contains('x', StringComparison.Ordinal) ? "DTS-X" : "DTS";
+                    if (codec.Contains('x', StringComparison.Ordinal) || profile.Contains('x', StringComparison.Ordinal)) return "DTS-X";
+                    if (Regex.IsMatch(codec + " " + profile, "dts[- ]hd|master audio|high resolution", Options))
+                        return Regex.IsMatch(codec + " " + profile, "hra|high resolution", Options) ? "DTS-HD HRA" : "DTS-HD MA";
+                    return "DTS";
                 }
 
-                if (codec.Contains("eac3", StringComparison.Ordinal) || codec.Contains("ddp", StringComparison.Ordinal)) return "Dolby Digital+";
+                if (Regex.IsMatch(codec, "e-?ac-?3|ddp", Options) || DolbyDigitalPlusRegex.IsMatch(profile)) return "Dolby Digital+";
+                if (Regex.IsMatch(codec, "^ac-?3$", Options) || Regex.IsMatch(profile, "dolby" + JsSpace + "*digital", Options)) return "Dolby Digital";
             }
 
             return null;

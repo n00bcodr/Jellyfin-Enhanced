@@ -21,7 +21,7 @@
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', 'SDR'];
     const specialFormatOrder = ['IMAX', '3D'];
     const codecOrder = ['AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA'];
-    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS', 'Dolby Digital+', '7.1', '5.1'];
+    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '5.1'];
 
     // showXxxTag = enable, xxxTagOrder = 1..N stack position.
     const CATEGORIES = [
@@ -61,6 +61,9 @@
         'IMAX': { bg: 'rgba(0, 114, 206, 0.9)', text: '#ffffff' },
         'ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
         'DTS-X': { bg: 'rgba(255, 100, 0, 0.9)', text: '#ffffff' },
+        'DTS-HD MA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
+        'DTS-HD HRA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
+        'Dolby Digital': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
         'DTS': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
         'Dolby Digital+': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
         'TRUEHD': { bg: 'rgba(76, 175, 80, 0.9)', text: '#ffffff' },
@@ -254,7 +257,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 3 && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 4 && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -395,7 +398,7 @@
     function normalizeQualityLabel(label) {
         if (!label || typeof label !== 'string') return label;
 
-        const audioBases = ['Dolby Digital+', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS'];
+        const audioBases = ['Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS'];
         for (const base of audioBases) {
             if (label === base || label.startsWith(`${base} `)) {
                 return base;
@@ -764,7 +767,7 @@
 
             const atmosRegex = /atmos/i;
             const truehd = /truehd/i;
-            const dtsxRegex = /dts-x/i;
+            const dtsxRegex = /dts[-:]x/i;
             const dtsRegex = /\bdts\b/i;
             const ddpRegex = /dolby\s*digital\+/i;
 
@@ -783,11 +786,17 @@
             } else if (dtsxMatch) {
                 audioTag = 'DTS-X';
                 break;
+            } else if (/dts[- ]hd/i.test(displayTitle)) {
+                audioTag = /hra|high resolution/i.test(displayTitle) ? 'DTS-HD HRA' : 'DTS-HD MA';
+                break;
             } else if (dtsMatch) {
                 audioTag = 'DTS';
                 break;
             } else if (ddpMatch) {
                 audioTag = 'Dolby Digital+';
+                break;
+            } else if (/dolby\s*digital|\bac-?3\b/i.test(displayTitle)) {
+                audioTag = 'Dolby Digital';
                 break;
             }
         }
@@ -810,12 +819,17 @@
                 } else if (codec.includes('dts')) {
                     if (codec.includes('x') || profile.includes('x')) {
                         audioTag = 'DTS-X';
+                    } else if (/dts[- ]hd|master audio|high resolution/.test(codec + ' ' + profile)) {
+                        audioTag = /hra|high resolution/.test(codec + ' ' + profile) ? 'DTS-HD HRA' : 'DTS-HD MA';
                     } else {
                         audioTag = 'DTS';
                     }
                     break;
-                } else if (codec.includes('eac3') || codec.includes('ddp')) {
+                } else if (/e-?ac-?3|ddp/.test(codec) || /dolby\s*digital\+/.test(profile)) {
                     audioTag = 'Dolby Digital+';
+                    break;
+                } else if (/^ac-?3$/.test(codec) || /dolby\s*digital/.test(profile)) {
+                    audioTag = 'Dolby Digital';
                     break;
                 }
             }
@@ -1300,7 +1314,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 3, displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 4, displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1336,7 +1350,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 3, displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 4, displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

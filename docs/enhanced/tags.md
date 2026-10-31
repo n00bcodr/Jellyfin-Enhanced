@@ -231,8 +231,8 @@ Compact quality vocabulary is shared by web and native rendering. Full labels an
 |---|---|
 | Dolby Digital / Dolby Digital+ | DD / DD+ (keeps channels, for example DD+ 5.1) |
 | DTS-HD MA / DTS-HD HRA | DTS-HD (keeps channels) |
-| Dolby TrueHD / Dolby Atmos | TrueHD / Atmos (keeps channels) |
-| DTS:X | DTS:X (keeps channels) |
+| TRUEHD / ATMOS / DTS-X / DTS | Keeps the canonical codec name; drops channels |
+| AAC / FLAC / Opus | Channel-only fallback: 5.1 or 7.1; stereo has no sound chip |
 | Dolby Vision / HDR10+ / BluRay | DV / HDR+ / BD |
 | ATMOS / DTS-X / TRUEHD / DTS | Same short codec name; existing compact channel suppression |
 
@@ -397,7 +397,7 @@ Administrators configure the same defaults on the Media Tags settings page under
     | Special format | `IMAX`, `3D` |
     | Video codec | `AV1`, `HEVC`, `H265`, `VP9`, `H264`, `VP8`, `XVID`, `DIVX`, `WMV`, `MPEG2`, `MPEG4`, `MJPEG`, `THEORA` |
     | Edition | `Director's Cut`, `Extended`, `Unrated`, `Theatrical`, `IMAX`, `Remastered`, `Criterion`, `Uncut`, `Final Cut`, `Special Edition`, or a custom `{edition-…}` label |
-    | Sound | `ATMOS`, `DTS-X`, `TRUEHD`, `DTS`, `Dolby Digital+`, `7.1`, `5.1`; codec labels can include channels, such as `ATMOS 7.1` |
+    | Sound | `ATMOS`, `DTS-X`, `TRUEHD`, `DTS-HD MA`, `DTS-HD HRA`, `DTS`, `Dolby Digital+`, `Dolby Digital`, `7.1`, `5.1`; codec labels can include channels, such as `Dolby Digital 5.1` |
 
 ![File and folder naming source and edition tags in the jetest movie grid](../images/tags/source-edition-desktop.webp)
 
@@ -1324,3 +1324,5 @@ Other integrations have separate badge systems: see [Seerr](../seerr/seerr-featu
 **Show up to** appears only for groups that can show multiple chips. Status (including Leaving soon and direct play) and Age rating always have a limit of one. Logos hides the control when the administrator permits only one logo, and shows it when the maximum is two. Saved higher limits cannot increase these single-chip groups. The hub and administrator Layout defaults / Groups panels follow the same rule.
 
 Native Flush uses the same touching-edge treatment and centre-row indicator fallback. A native image request does not provide the app's progress-bar geometry; callers with known geometry can supply it to the layout planner. Native apps drawing their own progress overlays still control that placement.
+
+AC-3 tracks now produce **Dolby Digital 5.1** in Full and **DD 5.1** in Compact (E-AC-3 uses **Dolby Digital+ 5.1** / **DD+ 5.1**). DTS-HD Master Audio and High Resolution remain distinct Full facts (**DTS-HD MA** / **DTS-HD HRA**) and both shorten to **DTS-HD**, retaining channels. Dolby TrueHD, Dolby Atmos and DTS:X stream aliases resolve to the established **TRUEHD**, **ATMOS** and **DTS-X** facts. The formatter also accepts their long names from portable or older cached labels; those aliases are not the detector’s canonical output. AAC, FLAC and Opus keep the existing channel-only fallback.

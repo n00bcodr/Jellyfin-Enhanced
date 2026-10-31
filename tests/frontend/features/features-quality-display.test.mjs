@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
@@ -261,3 +262,20 @@ test('returning to details restores the remembered picker option and cancels an 
   await new Promise(resolve => h.window.setTimeout(resolve, 350));
   assert.equal(h.document.querySelector('.selectSource').value, 'first');
 });
+
+
+const audioCases = JSON.parse(readFileSync(new URL('../../fixtures/audio-stream-labels.json', import.meta.url)));
+for (const row of audioCases) for (const density of ['full', 'compact']) {
+  test(`stream-to-chip ${row.name} ${density} in Highest and All`, t => {
+    const h = setup(t, 'representative', density);
+    for (const qualityAudioDisplayMode of ['highest', 'all']) {
+      Object.assign(h.JE.currentSettings, { qualityAudioDisplayMode });
+      const entry = { Type: 'Movie', StreamData: { Streams: [row.stream], Sources: [] } };
+      assert.deepEqual(h.render(entry), [row[density]], qualityAudioDisplayMode);
+      h.JE.core.tagLayout.clearCard(h.card);
+      delete h.document.querySelector('.card').dataset.jeQualityTagged;
+      h.renderers.get('quality').render(h.card, { Id: 'batch-audio', Type: 'Movie', MediaStreams: [row.stream] });
+      assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), [row[density]], 'batch path');
+    }
+  });
+}

@@ -323,7 +323,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Technical stream/subtitle facts, Scenes and Leaving share the integrated shape.
         // v21 adds stream/version identity and version-scoped distinct quality and naming facts;
         // dimension fallback now uses Width for cropped video.
-        internal const int CurrentCacheSchemaVersion = 21;
+        internal const int CurrentCacheSchemaVersion = 22;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
