@@ -178,7 +178,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private static PosterTagGroupLayout? ResolveQuality(TagCacheEntry entry, PosterTagSettings settings)
         {
-            var labels = SeriesQualityAggregation.Resolve(entry, settings.SeriesQualityAggregation, settings.PreferredAudioLanguage, settings.IsQualityCategoryShown, settings.AllQualityValues);
+            var labels = SeriesQualityAggregation.Resolve(entry, settings.SeriesQualityAggregation, settings.PreferredAudioLanguage, settings.IsQualityCategoryShown, settings.AllQualityValues, settings.LegacyAudioFacts);
             if (labels.Count == 0) return null;
             var tags = QualityTagRules.Arrange(labels, settings);
             if (tags.Count == 0) return null;

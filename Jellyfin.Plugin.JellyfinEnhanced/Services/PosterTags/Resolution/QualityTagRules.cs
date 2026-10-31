@@ -125,11 +125,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// <param name="preferredAudioLanguage">Effective preferred audio language, or null.</param>
         /// <param name="releaseSource">Canonical server-derived source, or null for legacy entries.</param>
         /// <param name="edition">Server-derived edition label, or null.</param>
-        public static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource = null, string? edition = null)
-            => Detect(data, preferredAudioLanguage, releaseSource, edition, includeAudio: true);
+        public static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource = null, string? edition = null, bool legacyAudio = false)
+            => Detect(data, preferredAudioLanguage, releaseSource, edition, includeAudio: true, legacyAudio: legacyAudio);
 
         /// <summary>Detect each track independently, deduplicating category/label/language triples.</summary>
-        internal static List<TagStreamQuality> DetectDistinct(IEnumerable<TagMediaStream>? streams)
+        internal static List<TagStreamQuality> DetectDistinct(IEnumerable<TagMediaStream>? streams, bool legacyAudio = false)
         {
             var values = new List<TagStreamQuality>();
             foreach (var stream in streams ?? Array.Empty<TagMediaStream>())
@@ -148,7 +148,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 else if (stream.Type == "Audio")
                 {
                     var track = new List<TagMediaStream> { stream };
-                    var codec = DetectAudioCodec(track);
+                    var codec = DetectAudioCodec(track, legacyAudio);
                     var channels = DetectChannels(track);
                     var label = codec == null ? (channels is "7.1" or "5.1" ? channels : null)
                         : channels != null && !codec.Contains(channels, StringComparison.Ordinal) ? codec + " " + channels : codec;
@@ -178,10 +178,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         }
 
         /// <summary>Read cached distinct facts (or derive fixture/fallback facts) with the existing audio-language tiers.</summary>
-        internal static List<string> DistinctValues(TagStreamData? data, string category, string? preferred, bool allSources = false)
+        internal static List<string> DistinctValues(TagStreamData? data, string category, string? preferred, bool allSources = false, bool legacyAudio = false)
         {
             if (!allSources) data = SelectSource(data);
-            var values = data?.DistinctQualities ?? DetectDistinct(data?.Streams);
+            var values = legacyAudio && category == AudioInfo ? DetectDistinct(data?.Streams, legacyAudio: true) : data?.DistinctQualities ?? DetectDistinct(data?.Streams);
             var candidates = values.Where(value => value.Category == category).ToList();
             if (category == AudioInfo && !string.IsNullOrEmpty(preferred))
             {
@@ -196,7 +196,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         }
 
         /// <summary>Replace only All categories; Highest follows the legacy detector exactly.</summary>
-        internal static List<string> ApplyDisplayModes(TagStreamData? data, List<string> labels, string? preferred, Func<string, bool>? all)
+        internal static List<string> ApplyDisplayModes(TagStreamData? data, List<string> labels, string? preferred, Func<string, bool>? all, bool legacyAudio = false)
         {
             data = SelectSource(data);
             if (all == null || data?.Streams == null || data.Streams.Any(stream => stream == null)) return labels;
@@ -212,7 +212,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             {
                 if (!all(category)) continue;
                 labels.RemoveAll(label => CategoryOf(label) == category);
-                labels.AddRange(DistinctValues(data, category, preferred));
+                labels.AddRange(DistinctValues(data, category, preferred, legacyAudio: legacyAudio));
             }
             return labels;
         }
@@ -221,7 +221,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         internal static List<string> DetectNonAudio(TagStreamData? data)
             => Detect(data, null, null, null, includeAudio: false);
 
-        private static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource, string? edition, bool includeAudio)
+        private static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource, string? edition, bool includeAudio, bool legacyAudio = false)
         {
             data = SelectSource(data);
             var version = data?.Sources?.FirstOrDefault(s => !string.IsNullOrEmpty(s?.Id));
@@ -278,7 +278,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             if (includeAudio)
             {
-                var audio = DetectAudioCodec(audioStreams);
+                var audio = DetectAudioCodec(audioStreams, legacyAudio);
                 var channels = DetectChannels(audioStreams);
                 if (audio is not null)
                 {
@@ -549,7 +549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return null;
         }
 
-        private static string? DetectAudioCodec(List<TagMediaStream> audioStreams)
+        private static string? DetectAudioCodec(List<TagMediaStream> audioStreams, bool legacyAudio = false)
         {
             // Priority 1: the first stream whose display title names a codec.
             foreach (var stream in audioStreams)
@@ -557,11 +557,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 var title = JsText.AsciiLower(stream.DisplayTitle);
                 if (title.Contains("atmos", StringComparison.Ordinal)) return "ATMOS";
                 if (title.Contains("truehd", StringComparison.Ordinal)) return "TRUEHD";
-                if (title.Contains("dts-x", StringComparison.Ordinal) || title.Contains("dts:x", StringComparison.Ordinal)) return "DTS-X";
-                if (Regex.IsMatch(title, "dts[- ]hd", Options)) return Regex.IsMatch(title, "hra|high resolution", Options) ? "DTS-HD HRA" : "DTS-HD MA";
+                if (title.Contains("dts-x", StringComparison.Ordinal) || !legacyAudio && title.Contains("dts:x", StringComparison.Ordinal)) return "DTS-X";
+                if (!legacyAudio && Regex.IsMatch(title, "dts[- ]hd", Options)) return Regex.IsMatch(title, "hra|high resolution", Options) ? "DTS-HD HRA" : "DTS-HD MA";
                 if (DtsRegex.IsMatch(title)) return "DTS";
                 if (DolbyDigitalPlusRegex.IsMatch(title)) return "Dolby Digital+";
-                if (Regex.IsMatch(title, "dolby" + JsSpace + "*digital|" + WordStart + "ac-?3" + WordEnd, Options)) return "Dolby Digital";
+                if (!legacyAudio && Regex.IsMatch(title, "dolby" + JsSpace + "*digital|" + WordStart + "ac-?3" + WordEnd, Options)) return "Dolby Digital";
             }
 
             // Priority 2: codec / profile metadata.
@@ -577,13 +577,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 if (codec.Contains("dts", StringComparison.Ordinal))
                 {
                     if (codec.Contains('x', StringComparison.Ordinal) || profile.Contains('x', StringComparison.Ordinal)) return "DTS-X";
-                    if (Regex.IsMatch(codec + " " + profile, "dts[- ]hd|master audio|high resolution", Options))
+                    if (!legacyAudio && Regex.IsMatch(codec + " " + profile, "dts[- ]hd|master audio|high resolution", Options))
                         return Regex.IsMatch(codec + " " + profile, "hra|high resolution", Options) ? "DTS-HD HRA" : "DTS-HD MA";
                     return "DTS";
                 }
 
-                if (Regex.IsMatch(codec, "e-?ac-?3|ddp", Options) || DolbyDigitalPlusRegex.IsMatch(profile)) return "Dolby Digital+";
-                if (Regex.IsMatch(codec, "^ac-?3$", Options) || Regex.IsMatch(profile, "dolby" + JsSpace + "*digital", Options)) return "Dolby Digital";
+                if (legacyAudio ? codec.Contains("eac3", StringComparison.Ordinal) || codec.Contains("ddp", StringComparison.Ordinal) : Regex.IsMatch(codec, "e-?ac-?3|ddp", Options) || DolbyDigitalPlusRegex.IsMatch(profile)) return "Dolby Digital+";
+                if (!legacyAudio && (Regex.IsMatch(codec, "^ac-?3$", Options) || Regex.IsMatch(profile, "dolby" + JsSpace + "*digital", Options))) return "Dolby Digital";
             }
 
             return null;

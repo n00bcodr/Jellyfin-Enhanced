@@ -36,6 +36,19 @@ public class QualityDisplayTests
         new(entry.Type ?? "Movie", false, null, null, null), false)?.Groups.SelectMany(group => group.Tags).OfType<QualityTag>().Select(tag => tag.DisplayText ?? tag.Label).ToArray() ?? [];
 
     [Fact]
+    public void LegacyFullAudioStreamFactsKeepTheirPreviousChips()
+    {
+        using var stream = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioStreamLabels.json")!;
+        using var cases = JsonDocument.Parse(stream);
+        var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true }, new(), null);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        {
+            var track = JsonSerializer.Deserialize<TagMediaStream>(row.GetProperty("stream"))!;
+            Assert.Equal(new[] { row.GetProperty("legacyFull").GetString()! }, Labels(new() { Type = "Movie", StreamData = new() { Streams = [track] } }, settings));
+        }
+    }
+
+    [Fact]
     public void AudioStreamFactsReachNativeChipsInBothDensities()
     {
         using var stream = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioStreamLabels.json")!;
@@ -212,7 +225,7 @@ public class QualityDisplayTests
     [InlineData("qualityHideSdr", true)]
     public void AdditiveQualitySettingsChangeTheirDigestWithIntegratedResolverIdentity(string key, object value)
     {
-        Assert.Equal("10", PosterTagSettings.ResolverVersion);
+        Assert.Equal("11", PosterTagSettings.ResolverVersion);
         var config = new PluginConfiguration();
         var baseline = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true}", config);
         var explicitDefaults = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true,qualityAudioDisplayMode:'highest',qualityVideoCodecDisplayMode:'highest',qualityHdrDisplayMode:'highest',qualityMinimumResolution:'off',qualityHideSdr:false}", config);

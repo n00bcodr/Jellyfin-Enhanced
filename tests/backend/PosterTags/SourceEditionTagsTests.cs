@@ -222,10 +222,11 @@ public class SourceEditionTagsTests
     public void NewSettingsInheritAdminDefaultsAndParticipateInNativeDigest()
     {
         var config = new PluginConfiguration { ShowEditionTag = false, EditionTagOrder = 3, ShowLowQualitySourceTag = true, QualityTagsEnabled = true };
-        var inherited = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true }, config);
+        var inherited = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLayoutSettingsVersion = 1 }, config);
         Assert.False(inherited.ShowEditionTag); Assert.True(inherited.ShowLowQualitySourceTag); Assert.Equal(3, inherited.EditionTagOrder);
         var seeded = PosterTagSettings.FromSettingsJson(null, config);
         Assert.Equal(inherited.Digest, seeded.Digest);
+        Assert.NotEqual(seeded.Digest, PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true }, config).Digest);
         Assert.NotEqual(inherited.Digest, PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, ShowEditionTag = true, ShowLowQualitySourceTag = false }, config).Digest);
         foreach (var label in new[] { "REMUX", "WEB", "CAM", "TS", "TC", "SCR", "Director's Cut", "Extended", "Unrated", "Theatrical", "Remastered", "Criterion", "Uncut", "Final Cut", "Special Edition" })
             Assert.True(TagStyleCatalog.IsLabel("quality", label), label);

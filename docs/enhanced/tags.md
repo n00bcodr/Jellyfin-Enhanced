@@ -225,7 +225,7 @@ The limit applies after each group's own filtering (quality categories, language
 | Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
-Compact quality vocabulary is shared by web and native rendering. Full labels and colour identities stay unchanged.
+Compact quality vocabulary is shared by web and native rendering. The canonical Full label remains the colour identity; normalized layouts now detect AC-3 and DTS-HD explicitly.
 
 | Full label (optional channel suffix) | Compact |
 |---|---|
@@ -234,7 +234,6 @@ Compact quality vocabulary is shared by web and native rendering. Full labels an
 | TRUEHD / ATMOS / DTS-X / DTS | Keeps the canonical codec name; drops channels |
 | AAC / FLAC / Opus | Channel-only fallback: 5.1 or 7.1; stereo has no sound chip |
 | Dolby Vision / HDR10+ / BluRay | DV / HDR+ / BD |
-| ATMOS / DTS-X / TRUEHD / DTS | Same short codec name; existing compact channel suppression |
 
 Other emitted video codec labels (AV1, HEVC, H265, VP9, H264, VP8, XVID, DIVX, WMV, MPEG2, MPEG4, MJPEG, THEORA) are already short and remain unchanged.
 
@@ -1326,3 +1325,5 @@ Other integrations have separate badge systems: see [Seerr](../seerr/seerr-featu
 Native Flush uses the same touching-edge treatment and centre-row indicator fallback. A native image request does not provide the app's progress-bar geometry; callers with known geometry can supply it to the layout planner. Native apps drawing their own progress overlays still control that placement.
 
 AC-3 tracks now produce **Dolby Digital 5.1** in Full and **DD 5.1** in Compact (E-AC-3 uses **Dolby Digital+ 5.1** / **DD+ 5.1**). DTS-HD Master Audio and High Resolution remain distinct Full facts (**DTS-HD MA** / **DTS-HD HRA**) and both shorten to **DTS-HD**, retaining channels. Dolby TrueHD, Dolby Atmos and DTS:X stream aliases resolve to the established **TRUEHD**, **ATMOS** and **DTS-X** facts. The formatter also accepts their long names from portable or older cached labels; those aliases are not the detector’s canonical output. AAC, FLAC and Opus keep the existing channel-only fallback.
+
+Existing version-0 Full layouts keep their previous audio labels until a layout setting is saved. This preserves their appearance; normalized layouts and Compact presentation use the codec facts above.

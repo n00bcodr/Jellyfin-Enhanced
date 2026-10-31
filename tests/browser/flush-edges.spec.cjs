@@ -177,7 +177,7 @@ test('Flush Rating and Awards keep inner rings at centre and remove only touchin
 from PIL import Image
 im=Image.open(sys.stdin.buffer).convert('RGB');r=json.loads(sys.argv[1]);x,y,w,h=[r[k] for k in ['x','y','w','h']]
 points=[(x,y+h/2),(x+w/2,y),(x+w-1,y+h/2),(x+w/2,y+h-1)]
-print(json.dumps([im.getpixel((round(a),round(b)))[0]>200 and im.getpixel((round(a),round(b)))[1]<60 for a,b in points]))`,JSON.stringify(rect)],{input:await page.screenshot(),encoding:'utf8'});
+print(json.dumps([im.getpixel((round(a),round(b)))[0]>200 and im.getpixel((round(a),round(b)))[1]<60 for a,b in points]))`,JSON.stringify(rect)],{input:await page.screenshot({scale: 'css'}),encoding:'utf8'});
     expect(pixels.status,pixels.stderr).toBe(0);
     const edges={tl:3,tc:2,tr:6,ml:1,c:0,mr:4,bl:9,bc:8,br:12}[slot];
     expect(JSON.parse(pixels.stdout),JSON.stringify({scoped,group,slot,rect})).toEqual([1,2,4,8].map(side=>!(edges&side)));

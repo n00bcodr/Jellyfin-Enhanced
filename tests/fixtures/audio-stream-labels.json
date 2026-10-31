@@ -9,7 +9,8 @@
       "Channels": 6
     },
     "full": "Dolby Digital 5.1",
-    "compact": "DD 5.1"
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
   },
   {
     "name": "ac3-codec",
@@ -21,7 +22,8 @@
       "Channels": 6
     },
     "full": "Dolby Digital 5.1",
-    "compact": "DD 5.1"
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
   },
   {
     "name": "ac3-profile",
@@ -33,7 +35,8 @@
       "Channels": 6
     },
     "full": "Dolby Digital 5.1",
-    "compact": "DD 5.1"
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
   },
   {
     "name": "ac3-title",
@@ -45,7 +48,8 @@
       "Channels": 6
     },
     "full": "Dolby Digital 5.1",
-    "compact": "DD 5.1"
+    "compact": "DD 5.1",
+    "legacyFull": "5.1"
   },
   {
     "name": "eac3",
@@ -57,7 +61,8 @@
       "Channels": 6
     },
     "full": "Dolby Digital+ 5.1",
-    "compact": "DD+ 5.1"
+    "compact": "DD+ 5.1",
+    "legacyFull": "Dolby Digital+ 5.1"
   },
   {
     "name": "eac3-codec",
@@ -69,7 +74,8 @@
       "Channels": 6
     },
     "full": "Dolby Digital+ 5.1",
-    "compact": "DD+ 5.1"
+    "compact": "DD+ 5.1",
+    "legacyFull": "Dolby Digital+ 5.1"
   },
   {
     "name": "truehd",
@@ -81,7 +87,8 @@
       "Channels": 6
     },
     "full": "TRUEHD 5.1",
-    "compact": "TRUEHD"
+    "compact": "TRUEHD",
+    "legacyFull": "TRUEHD 5.1"
   },
   {
     "name": "dts",
@@ -93,7 +100,8 @@
       "Channels": 6
     },
     "full": "DTS 5.1",
-    "compact": "DTS"
+    "compact": "DTS",
+    "legacyFull": "DTS 5.1"
   },
   {
     "name": "dts-hd-ma",
@@ -105,7 +113,8 @@
       "Channels": 6
     },
     "full": "DTS-HD MA 5.1",
-    "compact": "DTS-HD 5.1"
+    "compact": "DTS-HD 5.1",
+    "legacyFull": "DTS 5.1"
   },
   {
     "name": "dts-hd-ma-profile",
@@ -117,7 +126,8 @@
       "Channels": 6
     },
     "full": "DTS-HD MA 5.1",
-    "compact": "DTS-HD 5.1"
+    "compact": "DTS-HD 5.1",
+    "legacyFull": "DTS 5.1"
   },
   {
     "name": "dts-hd-hra",
@@ -129,7 +139,8 @@
       "Channels": 6
     },
     "full": "DTS-HD HRA 5.1",
-    "compact": "DTS-HD 5.1"
+    "compact": "DTS-HD 5.1",
+    "legacyFull": "DTS 5.1"
   },
   {
     "name": "dtsx",
@@ -141,7 +152,8 @@
       "Channels": 6
     },
     "full": "DTS-X 5.1",
-    "compact": "DTS-X"
+    "compact": "DTS-X",
+    "legacyFull": "DTS 5.1"
   },
   {
     "name": "atmos",
@@ -153,7 +165,8 @@
       "Channels": 6
     },
     "full": "ATMOS 5.1",
-    "compact": "ATMOS"
+    "compact": "ATMOS",
+    "legacyFull": "ATMOS 5.1"
   },
   {
     "name": "aac",
@@ -165,7 +178,8 @@
       "Channels": 6
     },
     "full": "5.1",
-    "compact": "5.1"
+    "compact": "5.1",
+    "legacyFull": "5.1"
   },
   {
     "name": "flac",
@@ -177,7 +191,8 @@
       "Channels": 6
     },
     "full": "5.1",
-    "compact": "5.1"
+    "compact": "5.1",
+    "legacyFull": "5.1"
   },
   {
     "name": "opus",
@@ -189,6 +204,7 @@
       "Channels": 6
     },
     "full": "5.1",
-    "compact": "5.1"
+    "compact": "5.1",
+    "legacyFull": "5.1"
   }
 ]

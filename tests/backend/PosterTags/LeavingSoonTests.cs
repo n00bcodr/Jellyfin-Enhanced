@@ -959,7 +959,7 @@ public sealed class LeavingSoonTests : IDisposable
         copy.Leaving = new TagLeaving { DeleteAt = 6 };
         Assert.False(TagCacheEntry.ContentEquals(entry, copy));
         Assert.NotEqual(PosterTagDataProvider.ContentHash(entry), PosterTagDataProvider.ContentHash(copy));
-        Assert.Equal(21, (int)typeof(TagCacheService).GetField("CurrentCacheSchemaVersion", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!);
+        Assert.Equal(TagCacheService.CurrentCacheSchemaVersion, (int)typeof(TagCacheService).GetField("CurrentCacheSchemaVersion", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!);
     }
 
     [Fact]

@@ -279,3 +279,9 @@ for (const row of audioCases) for (const density of ['full', 'compact']) {
     }
   });
 }
+
+for (const row of audioCases) test(`legacy Full stream labels stay unchanged for ${row.name}`, t => {
+  const h = setup(t);
+  h.JE.currentSettings.tagLayoutSettingsVersion = 0;
+  assert.deepEqual(h.render({ Type: 'Movie', StreamData: { Streams: [row.stream] } }), [row.legacyFull]);
+});

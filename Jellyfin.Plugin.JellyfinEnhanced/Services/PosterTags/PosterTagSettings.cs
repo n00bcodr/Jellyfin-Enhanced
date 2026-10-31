@@ -74,6 +74,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Static-friendly active layout; Caption, Summary and Minimal retain the Corners profile.</summary>
         public bool Bands { get; private init; }
         public bool CompactBands { get; private init; }
+
+        /// <summary>Preserve the original audio detector for version-0 Full documents.</summary>
+        public bool LegacyAudioFacts { get; private init; }
         public bool StatusTagsEnabled { get; private init; }
         public string StatusTagsPosition { get; private init; } = "top-right";
         public bool StatusJustAdded { get; private init; }
@@ -475,6 +478,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 UseNativePosterTags = useNative,
                 Bands = layout.Bands,
                 CompactBands = layout.Bands && user.TagLabelDensity == "compact",
+                LegacyAudioFacts = user.TagLayoutSettingsVersion < 1 && user.TagLabelDensity != "compact",
                 StatusTagsEnabled = user.StatusTagsEnabled,
                 StatusTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Status) ?? Position(user.StatusTagsPosition, config.StatusTagsPosition, "top-right"),
                 StatusJustAdded = user.StatusTagsJustAdded,
@@ -947,6 +951,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (Shows(PosterTagGroup.Quality))
             {
                 values["quality.position"] = QualityTagsPosition;
+                values["quality.legacyAudioFacts"] = Bool(LegacyAudioFacts);
                 values["quality.cap"] = Int(QualityCap);
                 values["quality.show.resolution"] = Bool(ShowResolutionTag);
                 values["quality.show.source"] = Bool(ShowSourceTag);

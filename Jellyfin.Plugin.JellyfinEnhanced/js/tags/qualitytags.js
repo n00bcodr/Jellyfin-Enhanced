@@ -257,7 +257,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 4 && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 5 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -756,6 +756,8 @@
             }
         }
 
+        // Version-0 Full documents retain the detector they already used.
+        const legacyAudio = legacyFullAudio();
         // --- AUDIO LOGIC ---
         let audioTag = null;
 
@@ -767,7 +769,7 @@
 
             const atmosRegex = /atmos/i;
             const truehd = /truehd/i;
-            const dtsxRegex = /dts[-:]x/i;
+            const dtsxRegex = legacyAudio ? /dts-x/i : /dts[-:]x/i;
             const dtsRegex = /\bdts\b/i;
             const ddpRegex = /dolby\s*digital\+/i;
 
@@ -786,7 +788,7 @@
             } else if (dtsxMatch) {
                 audioTag = 'DTS-X';
                 break;
-            } else if (/dts[- ]hd/i.test(displayTitle)) {
+            } else if (!legacyAudio && /dts[- ]hd/i.test(displayTitle)) {
                 audioTag = /hra|high resolution/i.test(displayTitle) ? 'DTS-HD HRA' : 'DTS-HD MA';
                 break;
             } else if (dtsMatch) {
@@ -795,7 +797,7 @@
             } else if (ddpMatch) {
                 audioTag = 'Dolby Digital+';
                 break;
-            } else if (/dolby\s*digital|\bac-?3\b/i.test(displayTitle)) {
+            } else if (!legacyAudio && /dolby\s*digital|\bac-?3\b/i.test(displayTitle)) {
                 audioTag = 'Dolby Digital';
                 break;
             }
@@ -819,16 +821,16 @@
                 } else if (codec.includes('dts')) {
                     if (codec.includes('x') || profile.includes('x')) {
                         audioTag = 'DTS-X';
-                    } else if (/dts[- ]hd|master audio|high resolution/.test(codec + ' ' + profile)) {
+                    } else if (!legacyAudio && /dts[- ]hd|master audio|high resolution/.test(codec + ' ' + profile)) {
                         audioTag = /hra|high resolution/.test(codec + ' ' + profile) ? 'DTS-HD HRA' : 'DTS-HD MA';
                     } else {
                         audioTag = 'DTS';
                     }
                     break;
-                } else if (/e-?ac-?3|ddp/.test(codec) || /dolby\s*digital\+/.test(profile)) {
+                } else if (legacyAudio ? codec.includes('eac3') || codec.includes('ddp') : /e-?ac-?3|ddp/.test(codec) || /dolby\s*digital\+/.test(profile)) {
                     audioTag = 'Dolby Digital+';
                     break;
-                } else if (/^ac-?3$/.test(codec) || /dolby\s*digital/.test(profile)) {
+                } else if (!legacyAudio && (/^ac-?3$/.test(codec) || /dolby\s*digital/.test(profile))) {
                     audioTag = 'Dolby Digital';
                     break;
                 }
@@ -916,7 +918,8 @@
             for (const category of ['audio', 'videoCodec', 'dynamicRange']) {
                 if (!allValues(category)) continue;
                 for (const label of qualities) if (categorize(label) === category) qualities.delete(label);
-                let values = distinct.filter(value => value.Category === (category === 'audio' ? 'audioInfo' : category));
+                const facts = category === 'audio' && legacyAudio ? distinctQualities([], audioStreams) : distinct;
+                let values = facts.filter(value => value.Category === (category === 'audio' ? 'audioInfo' : category));
                 if (category === 'audio' && resolvePreferredAudioLanguage()) {
                     // The raw tracks already chose the language tier above, including
                     // unlabelled tracks. No labels in that tier means no sound chip.
@@ -1018,6 +1021,11 @@
         }
         if (policy === 'mixed' && summary.EpisodeCount > 1 && mixed) qualities.push('Mixed');
         return qualities;
+    }
+
+    /** @returns {boolean} Whether Full audio must retain version-0 presentation. */
+    function legacyFullAudio() {
+        return !(JE.currentSettings?.tagLayoutSettingsVersion >= 1) && JE.currentSettings?.tagLabelDensity !== 'compact';
     }
 
     /**
@@ -1314,7 +1322,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 4, displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 5, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1350,7 +1358,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 4, displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 5, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

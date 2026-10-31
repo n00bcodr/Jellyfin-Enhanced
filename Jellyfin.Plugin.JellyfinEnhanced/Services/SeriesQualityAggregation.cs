@@ -120,9 +120,9 @@ internal static class SeriesQualityAggregation
     }
 
     /// <summary>Apply a policy while retaining representative source/format tags, except latest uses its own.</summary>
-    public static List<string> Resolve(TagCacheEntry entry, string policy, string? preferred, Func<string, bool>? shown = null, Func<string, bool>? all = null)
+    public static List<string> Resolve(TagCacheEntry entry, string policy, string? preferred, Func<string, bool>? shown = null, Func<string, bool>? all = null, bool legacyAudio = false)
     {
-        var representative = QualityTagRules.ApplyDisplayModes(entry.StreamData, QualityTagRules.Detect(entry.StreamData, preferred, entry.Source, entry.Edition), preferred, all);
+        var representative = QualityTagRules.ApplyDisplayModes(entry.StreamData, QualityTagRules.Detect(entry.StreamData, preferred, entry.Source, entry.Edition, legacyAudio), preferred, all, legacyAudio);
         if (entry.Type is not ("Series" or "Season") || entry.QualitySummary == null || Normalize(policy) == "representative") return representative;
         var summary = entry.QualitySummary;
         var result = policy == "latest" ? summary.LatestExtras.ToList() : representative.Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToList();

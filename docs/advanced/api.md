@@ -1979,4 +1979,6 @@ Tag group cap normalization only clamps persisted values to 0–10, preserving v
 
 The native renderer pixel version advances to 7 for Flush seams and centre-tab geometry. `PosterTagLayout.ProgressBarHeight` optionally supplies known progress-bar clearance in logical CSS pixels (zero for ordinary native image requests); it adds no stored setting or cache-entry field. Tight, Default and Bands retain their existing pixels.
 
-Audio detection recognizes AC-3 / Dolby Digital and preserves DTS-HD MA/HRA before Compact formatting. Resolver version 11 retires native variants built with the earlier codec facts; the web computed-quality cache uses naming version 4. The cache version also retires derived quality facts and series summaries from the earlier detector; the entry structure is unchanged.
+Audio detection recognizes AC-3 / Dolby Digital and preserves DTS-HD MA/HRA before Compact formatting. Resolver version 11 retires native variants built with the earlier codec facts; the web computed-quality cache uses naming version 5. The cache version also retires derived quality facts and series summaries from the earlier detector; the entry structure is unchanged.
+
+Version-0 Full documents retain the previous audio detector to preserve existing chips. Normalized documents (and Compact web presentation) enable AC-3/DTS-HD detection. This presentation choice enters native settings digests and the web computed-quality cache identity.
