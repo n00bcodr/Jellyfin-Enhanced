@@ -2,20 +2,28 @@ const { test, expect } = require('@playwright/test');
 const { readFileSync, mkdirSync } = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../../Jellyfin.Plugin.JellyfinEnhanced/js');
-// Optional real Jellyfin run (redeploy before invoking):
-// JE_PANEL_LAB_URL=http://127.0.0.1:18520 JE_PANEL_LAB_USER=real-admin \
+// Optional run against an already deployed, authorised Jellyfin test server:
+// JE_PANEL_LAB_URL=http://127.0.0.1:8096 JE_PANEL_LAB_USER=admin JE_PANEL_LAB_PASSWORD=... \
 // npx playwright test -c tests/browser/playwright.config.cjs settings-panel --project=chromium --workers=1
-// The lab password comes from JE_PANEL_LAB_PASSWORD or the local lab accounts file.
+// JE_PANEL_LAB_ACCOUNTS_FILE may name a KEY=value file holding JE_PANEL_LAB_PASSWORD instead.
 const lab = process.env.JE_PANEL_LAB_URL;
-const user = process.env.JE_PANEL_LAB_USER || 'real-admin';
+const user = process.env.JE_PANEL_LAB_USER;
+
+/** The server password from the environment or an explicitly named accounts file; never a default path. */
+function labPassword() {
+  if (process.env.JE_PANEL_LAB_PASSWORD) return process.env.JE_PANEL_LAB_PASSWORD;
+  const file = process.env.JE_PANEL_LAB_ACCOUNTS_FILE;
+  if (!file) throw new Error('JE_PANEL_LAB_URL is set: also set JE_PANEL_LAB_PASSWORD (or JE_PANEL_LAB_ACCOUNTS_FILE)');
+  const password = readFileSync(file, 'utf8').match(/^JE_PANEL_LAB_PASSWORD=(.*)$/m)?.[1];
+  if (!password) throw new Error(`JE_PANEL_LAB_ACCOUNTS_FILE has no JE_PANEL_LAB_PASSWORD= line: ${file}`);
+  return password;
+}
 
 /** Load the production panel host in a fixture, or the deployed bundle in the lab. */
 async function setup(page) {
   if (lab) {
-    const accounts = process.env.JE_PANEL_LAB_PASSWORD ? '' : readFileSync('/home/jake/.config/je-lab/lab-accounts.env', 'utf8');
-    const key = user === 'real-admin' ? 'JE_LAB_ADMIN_PASS' : 'JE_LAB_VIEWER_PASS';
-    const password = process.env.JE_PANEL_LAB_PASSWORD || accounts.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1];
-    if (!password) throw new Error(`Missing lab password for ${user}`);
+    if (!user) throw new Error('JE_PANEL_LAB_URL is set: also set JE_PANEL_LAB_USER');
+    const password = labPassword();
     await page.goto(`${lab}/web/index.html#/login`, { waitUntil: 'domcontentloaded' });
     const manual = page.getByRole('button', { name: 'Manual Login', exact: true });
     // The host renders the button before attaching its handler on some starts.
@@ -55,7 +63,7 @@ async function setup(page) {
 async function shot(page, name, testInfo) {
   if (!process.env.JE_PANEL_SHOTS) return;
   mkdirSync(process.env.JE_PANEL_SHOTS, { recursive: true });
-  await page.screenshot({ path: path.join(process.env.JE_PANEL_SHOTS, `${user}-${testInfo.project.name}-${name}.png`) });
+  await page.screenshot({ path: path.join(process.env.JE_PANEL_SHOTS, `${user || 'fixture'}-${testInfo.project.name}-${name}.png`) });
 }
 
 test('settings dialog keeps focus after real background clicks, late controls and a destinationless blur', async ({ page }, testInfo) => {

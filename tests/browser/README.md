@@ -43,16 +43,15 @@ Commit the reviewed PNG changes with their reason. Do not update them merely to 
 
 Remaining scope: full Enhanced panel wiring, poster-tag interactions, bookmarks, hidden-content/Spoiler Guard browser journeys, playback, real touch hardware, and complete native Jellyfin navigation are not established by this fixture suite. Consult the coverage matrix for their other test layers and gaps.
 
-The settings-panel regression loads the production host in the fixture by default and checks real pointer clicks on native inert content, body-retargeted events, late background controls, and destinationless blur in all three browser projects. It can also exercise the deployed bundle on the layouts lab. Redeploy the worktree before each lab run because that server is shared:
+The settings-panel regression loads the production host in the fixture by default and checks real pointer clicks on native inert content, body-retargeted events, late background controls, and destinationless blur in all three browser projects. It can also exercise the deployed bundle on a Jellyfin test server you are authorised to use. Build and install this checkout's plugin on that server first, then run only this spec, serially:
 
 ```sh
-/home/jake/je-lab/deploy.sh layouts /home/jake/je-wt/tag-layouts
-JE_PANEL_LAB_URL=http://127.0.0.1:18520 JE_PANEL_LAB_USER=real-admin \
-  JE_PANEL_SHOTS=.notes/shots/phase5-fixes-r2 \
+JE_PANEL_LAB_URL=http://127.0.0.1:8096 JE_PANEL_LAB_USER=admin \
+  JE_PANEL_LAB_PASSWORD='…' JE_PANEL_SHOTS=./browser-shots \
   npx playwright test -c tests/browser/playwright.config.cjs settings-panel --project=chromium --workers=1
 ```
 
-Use `real-viewer` to check the non-admin path. Passwords come from the local lab accounts file, or `JE_PANEL_LAB_PASSWORD`. `JE_PANEL_SHOTS` optionally saves successful screenshots. The lab mode fails if the deployed host lacks the focus fix; it never injects the checkout's scripts over Jellyfin's bundle.
+When `JE_PANEL_LAB_URL` is set, `JE_PANEL_LAB_USER` and `JE_PANEL_LAB_PASSWORD` are required; instead of the password variable, `JE_PANEL_LAB_ACCOUNTS_FILE` may name a file containing a `JE_PANEL_LAB_PASSWORD=…` line. A missing input fails with a message naming it. Repeat with a non-administrator account to check the non-admin path. `JE_PANEL_SHOTS` optionally saves successful screenshots to the named directory. The server mode fails if the deployed host lacks the focus fix; it never injects the checkout's scripts over Jellyfin's bundle. Without `JE_PANEL_LAB_URL` the spec uses the fixture host.
 
 Language-chip navigation also has a real-host mode. Run only that spec against
 an authorized disposable lab, serially, with `JE_LANGUAGE_LAB_URL`,
