@@ -89,6 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHostedService(sp => sp.GetRequiredService<NativeStatusRefreshService>());
             // Logos tag group: daily TMDB provider/network/studio lookups and the logo image proxy cache.
             serviceCollection.AddSingleton<TagLogoService>();
+            serviceCollection.AddSingleton<StatusTagsScenesService>();
             // Size / watch-progress of an item subtree in a handful of queries
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();

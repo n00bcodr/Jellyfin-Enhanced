@@ -9,7 +9,7 @@
     if (!A) return;
 
     /** The badge family switches (Status badges tab). */
-    const FAMILIES = ['StatusTagsJustAdded', 'StatusTagsNewRelease', 'StatusTagsTrending', 'StatusTagsSchedule', 'StatusTagsMilestones', 'StatusTagsSeriesStatus'];
+    const FAMILIES = ['StatusTagsJustAdded', 'StatusTagsNewRelease', 'StatusTagsTrending', 'StatusTagsSchedule', 'StatusTagsMilestones', 'StatusTagsSeriesStatus', 'StatusTagsScenes'];
 
     A.registerSection({
         id: 'group-status',

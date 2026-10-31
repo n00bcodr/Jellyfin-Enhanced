@@ -175,7 +175,7 @@ test('rating source checkboxes save ordered sources and re-render rating tags; t
 
   // Quality and the others have nothing (or their own controls) to include.
   assert.ok(h.row('genre').textContent.includes('panel_settings_ui_tag_editor_nothing_to_include'));
-  assert.equal(h.row('quality').querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row').length, 7);
+  assert.equal(h.row('quality').querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row').length, 10);
 });
 
 test('reset restores the administrator\'s layout defaults and keeps the enable toggles and includes', async t => {
@@ -301,7 +301,7 @@ test('expanding a row is a real button with aria-expanded; every editor control 
 test('status badge families live on the Status badges tab with defaults and personal overrides', async t => {
   const h = setup(t, { stored: { statusTagsEnabled: true } });
   h.JE.reinitializeStatusTags = () => h.calls.push('status');
-  assert.equal(h.$('#jeMthPanel-badges').querySelectorAll('#statusTagsSubToggles input').length, 6);
+  assert.equal(h.$('#jeMthPanel-badges').querySelectorAll('#statusTagsSubToggles input').length, 7);
   assert.equal(h.row('status').querySelector('#statusTagsSubToggles'), null, 'not duplicated in the Status row');
   for (const [name, expected] of [['Schedule', true], ['Milestones', true], ['SeriesStatus', false]]) {
     const input = h.$(`#statusTags${name}Toggle`);

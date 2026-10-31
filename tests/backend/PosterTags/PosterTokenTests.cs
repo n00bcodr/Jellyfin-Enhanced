@@ -19,6 +19,22 @@ public class PosterTokenTests : IDisposable
         Assert.True(service.Verify(current, user, item, "mixed-settings", PosterTagComposer.PixelVersion, out _));
     }
 
+    [Fact]
+    public void SdhRetiresExistingSubtitleTokensThroughTheResolverWhileDefaultPixelVersionStaysStable()
+    {
+        // Recorded from f4d7267a with the same document and default plugin configuration.
+        const string version8SubtitleDigest = "61f410f756f0eab9";
+        var settings = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsShowSubtitles\":true,\"LanguageTagsStyle\":\"codes\"}", new());
+        Assert.Equal("9", PosterTagSettings.ResolverVersion);
+        Assert.Equal("6.1", PosterTagComposer.PixelVersion);
+        Assert.NotEqual(version8SubtitleDigest, settings.Digest);
+        var service = Tokens();
+        var old = service.Mint(user, item, version8SubtitleDigest, "6.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.False(service.Verify(old, user, item, settings.Digest, PosterTagComposer.PixelVersion, out _));
+        var current = service.Mint(user, item, settings.Digest, PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, settings.Digest, PosterTagComposer.PixelVersion, out _));
+    }
+
     [Theory]
     [InlineData("4.1")]
     [InlineData("5.1")]

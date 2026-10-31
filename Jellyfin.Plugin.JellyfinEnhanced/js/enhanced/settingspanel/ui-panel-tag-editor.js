@@ -47,6 +47,9 @@
         { id: 'showVideoCodecTagToggle', settingKey: 'showVideoCodecTag', pluginKey: 'ShowVideoCodecTag', orderKey: 'videoCodecTagOrder', orderPluginKey: 'VideoCodecTagOrder', defaultOrder: 5, labelKey: 'panel_settings_ui_quality_tags_video_codec', sample: ['HEVC', 'HEVC', 'video-format'] },
         { id: 'showAudioInfoTagToggle', settingKey: 'showAudioInfoTag', pluginKey: 'ShowAudioInfoTag', orderKey: 'audioInfoTagOrder', orderPluginKey: 'AudioInfoTagOrder', defaultOrder: 6, labelKey: 'panel_settings_ui_quality_tags_audio_info', sample: ['ATMOS 7.1', 'ATMOS', 'audio-codec'] },
         { id: 'showEditionTagToggle', settingKey: 'showEditionTag', pluginKey: 'ShowEditionTag', orderKey: 'editionTagOrder', orderPluginKey: 'EditionTagOrder', defaultOrder: 7, labelKey: 'panel_settings_ui_quality_tags_edition', sample: null },
+        { id: 'showRuntimeTagToggle', settingKey: 'showRuntimeTag', pluginKey: 'ShowRuntimeTag', orderKey: 'runtimeTagOrder', orderPluginKey: 'RuntimeTagOrder', defaultOrder: 8, labelKey: 'panel_settings_ui_quality_tags_runtime', fallback: false, sample: ['1h 52m', '1h 52m', 'other-quality'] },
+        { id: 'showAspectRatioTagToggle', settingKey: 'showAspectRatioTag', pluginKey: 'ShowAspectRatioTag', orderKey: 'aspectRatioTagOrder', orderPluginKey: 'AspectRatioTagOrder', defaultOrder: 9, labelKey: 'panel_settings_ui_quality_tags_aspect_ratio', fallback: false, sample: ['2.39:1', '2.39:1', 'other-quality'] },
+        { id: 'showFrameRateTagToggle', settingKey: 'showFrameRateTag', pluginKey: 'ShowFrameRateTag', orderKey: 'frameRateTagOrder', orderPluginKey: 'FrameRateTagOrder', defaultOrder: 10, labelKey: 'panel_settings_ui_quality_tags_frame_rate', fallback: false, sample: ['24p', '24p', 'other-quality'] },
     ];
 
     const escapeHtml = (value) => JE.escapeHtml(String(value));
@@ -201,7 +204,7 @@
         return `<div id="qualityTagsSubToggles" class="je-tge-cats">${sorted.map((c, idx) => `
             <div class="je-quality-cat-row je-tge-cat" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}">
                 <label class="je-tge-toggle-pill">
-                    <input type="checkbox" id="${c.id}" ${effectiveBool(c.settingKey, c.pluginKey) ? 'checked' : ''}>
+                    <input type="checkbox" id="${c.id}" ${effectiveBool(c.settingKey, c.pluginKey, c.fallback ?? true) ? 'checked' : ''}>
                     <span>${escapeHtml(JE.t(c.labelKey))}</span>
                 </label>
                 <button type="button" class="je-cat-btn je-cat-up" ${idx === 0 ? 'disabled' : ''} aria-label="${up}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>

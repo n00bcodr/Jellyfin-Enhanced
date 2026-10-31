@@ -96,7 +96,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
-            _tagCache.LogosWarmed += OnLogosWarmed;
+            _tagCache.LogosWarmed += OnOwnerFactsChanged;
+            _tagCache.ScenesRefreshed += OnOwnerFactsChanged;
+            _tagCache.CollectNativeScenesChanges += CollectScenesChanges;
         }
 
         /// <summary>
@@ -134,6 +136,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken, bool includeStatus = false)
         {
+            _tagCache.QueueScenesRefresh(new[] { item });
             TagCacheEntry entry;
             if (snapshot != null)
             {
@@ -168,7 +171,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded -= OnItemChanged;
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
-            _tagCache.LogosWarmed -= OnLogosWarmed;
+            _tagCache.LogosWarmed -= OnOwnerFactsChanged;
+            _tagCache.ScenesRefreshed -= OnOwnerFactsChanged;
+            _tagCache.CollectNativeScenesChanges -= CollectScenesChanges;
         }
 
         /// <summary>SHA-256 (hex) of an entry's content, ignoring its build timestamp. Memoized per instance.</summary>
@@ -252,7 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 var entry = await Task.Run(() => _tagCache.BuildEntryOnDemand(item)).ConfigureAwait(false);
                 lock (_memoLock)
                 {
-                    if (generation == _memoGeneration)
+                    // A refresh may finish before this build has a live snapshot to compare.
+                    // Unknown (null) facts must also be rechecked before publication.
+                    if (generation == _memoGeneration && ScenesAreCurrent(item.Id, entry))
                     {
                         if (_memo.Count >= MaxMemoEntries) TrimMemo();
                         _memo[item.Id] = new MemoEntry(entry, DateTime.UtcNow);
@@ -272,6 +279,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
         }
 
+        // The memo entry itself is the baseline. Trimming, item events and rebuilds
+        // therefore retire it without retaining a second, whole-history title map.
+        private bool ScenesAreCurrent(Guid id, TagCacheEntry? entry)
+            => entry?.Type != "Movie" || entry.Scenes == _tagCache.ReadScenes(id, entry.TmdbId);
+
+        private void CollectScenesChanges(ISet<Guid> changedOwners)
+        {
+            lock (_memoLock)
+            {
+                foreach (var pair in _memo)
+                    if (!ScenesAreCurrent(pair.Key, pair.Value.Entry)) changedOwners.Add(pair.Key);
+            }
+        }
+
         private void TrimMemo()
         {
             // Oldest quarter out; rare (only on a full memo).
@@ -281,10 +302,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
         }
 
-        // A background logo warm (queued by an on-demand build) finished: drop the
-        // memoized builds of those movies and series and of their seasons and
-        // episodes, so the next poster request projects the new logos.
-        private void OnLogosWarmed(IReadOnlyCollection<Guid> owners)
+        // A background logo warm or changed Scenes projection: drop only these
+        // owners and their seasons/episodes so the next request projects the new facts.
+        private void OnOwnerFactsChanged(IReadOnlyCollection<Guid> owners)
         {
             if (_memo.IsEmpty && _building.IsEmpty) return;
             var seriesIds = owners.Select(id => id.ToString("N")).ToHashSet(StringComparer.OrdinalIgnoreCase);

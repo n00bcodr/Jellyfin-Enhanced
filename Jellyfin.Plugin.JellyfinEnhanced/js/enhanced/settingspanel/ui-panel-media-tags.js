@@ -43,6 +43,7 @@
         { key: 'statusTagsSchedule', id: 'statusTagsScheduleToggle', fallback: true, nameKey: 'panel_media_tags_badge_schedule', descKey: 'panel_settings_ui_status_tags_schedule', chip: ['schedule', 'airing_today', 'status_tag_airing_today'] },
         { key: 'statusTagsMilestones', id: 'statusTagsMilestonesToggle', fallback: true, nameKey: 'panel_media_tags_badge_milestones', descKey: 'panel_settings_ui_status_tags_milestones', chip: ['milestone', 'season_finale', 'status_tag_season_finale'] },
         { key: 'statusTagsSeriesStatus', id: 'statusTagsSeriesStatusToggle', fallback: false, nameKey: 'panel_media_tags_badge_series_status', descKey: 'panel_settings_ui_status_tags_series_status', chip: ['status', 'returning', 'status_tag_returning'] },
+        { key: 'statusTagsScenes', id: 'statusTagsScenesToggle', fallback: false, nameKey: 'panel_media_tags_badge_scenes', descKey: 'panel_settings_ui_status_tags_scenes', chip: ['scenes', 'post_credits', 'status_tag_post_credits'] },
     ];
 
     /** The admin pointers: the Media Tags admin page tab each one opens. */

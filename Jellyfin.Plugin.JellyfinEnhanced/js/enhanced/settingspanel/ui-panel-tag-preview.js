@@ -62,12 +62,12 @@
         {
             key: 'movie', type: 'Movie', shape: 'poster', titleKey: 'panel_media_tags_preview_title_movie',
             id: 'a11ce0000000000000000000000000a1',
-            facts: { Genres: ['Science Fiction', 'Thriller'], OfficialRating: 'PG-13' },
+            facts: { Genres: ['Science Fiction', 'Thriller'], OfficialRating: 'PG-13', Scenes: { PostCredits: true, MidCredits: false } },
             quality: { showResolutionTag: ['4K', '4K', 'resolution'], showDynamicRangeTag: ['Dolby Vision', 'Dolby Vision', 'video-codec'], showSpecialFormatTag: ['IMAX', 'IMAX', 'video-codec'], showVideoCodecTag: ['HEVC', 'HEVC', 'video-format'], showAudioInfoTag: ['ATMOS 7.1', 'ATMOS', 'audio-codec'] },
             rating: { critic: '92%', community: '8.1' },
             age: 'PG-13', flags: ['fr', 'jp', 'de'], genres: [['Science Fiction', 'science'], ['Thriller', 'psychology']],
             logos: [{ kind: 'provider', name: 'Streamflix', svg: LOGOS.provider }],
-            status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added']],
+            status: [['statusTagsTrending', 'trending', 'status_tag_trending_today', null, { rank: 3 }], ['statusTagsNewRelease', 'new', 'status_tag_new_movie'], ['statusTagsJustAdded', 'added', 'status_tag_just_added', 'status_tag_compact_added'], ['statusTagsScenes', 'scenes', 'status_tag_post_credits']],
             custom: 2,
         },
         {
@@ -135,12 +135,18 @@
             case 'quality': {
                 const cats = internal.tagGroupEditorData?.sortedQualityCats?.() || [];
                 for (const cat of cats) {
-                    const chip = sample.quality[cat.settingKey];
-                    if (!chip || !effectiveBool(cat.settingKey, cat.pluginKey)) continue;
+                    const chip = sample.quality[cat.settingKey] || (cat.fallback === false ? cat.sample : null);
+                    if (!chip || !effectiveBool(cat.settingKey, cat.pluginKey, cat.fallback ?? true)) continue;
                     const [label, key, kind] = chip;
                     const minimum = JE.currentSettings.qualityMinimumResolution ?? JE.pluginConfig?.QualityMinimumResolution;
                     if (cat.settingKey === 'showResolutionTag' && minimum === '4k' && !['4K', '8K'].includes(key)) continue;
-                    add(`quality-overlay-label ${kind}`, label).dataset.quality = key;
+                    const node = add(`quality-overlay-label ${kind}`, label);
+                    node.dataset.quality = key;
+                    if (cat.fallback === false) {
+                        const category = cat.settingKey.slice(4, -3);
+                        node.dataset.jeQualityCategory = category[0].toLowerCase() + category.slice(1);
+                        node.dataset.jeCompact = label.replace(/(\d+)h (\d+)m/, '$1h$2').replace(/:1$/, '');
+                    }
                     const modeKey = { showAudioInfoTag: 'qualityAudioDisplayMode', showVideoCodecTag: 'qualityVideoCodecDisplayMode', showDynamicRangeTag: 'qualityHdrDisplayMode' }[cat.settingKey];
                     const mode = modeKey && (JE.currentSettings[modeKey] ?? JE.pluginConfig?.[modeKey[0].toUpperCase() + modeKey.slice(1)]);
                     const hideSdr = JE.currentSettings.qualityHideSdr ?? JE.pluginConfig?.QualityHideSdr;
@@ -204,7 +210,7 @@
                 break;
             case 'status': {
                 // One badge per card, the first whose family is on (as statustags.js picks).
-                const badge = sample.status.find(([key]) => effectiveBool(key, pluginKeyOf(key), key !== 'statusTagsSeriesStatus'));
+                const badge = sample.status.find(([key]) => effectiveBool(key, pluginKeyOf(key), !['statusTagsSeriesStatus', 'statusTagsScenes'].includes(key)));
                 if (!badge) break;
                 const [, kind, labelKey, compactKey, params] = badge;
                 const tag = add(`status-tag status-tag--${kind}`);

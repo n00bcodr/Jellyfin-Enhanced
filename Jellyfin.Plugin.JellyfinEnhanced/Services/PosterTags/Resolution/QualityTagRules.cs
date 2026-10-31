@@ -29,6 +29,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         /// <summary>Release edition from server-side naming detection.</summary>
         public const string Edition = "edition";
+        public const string Runtime = "runtime";
+        public const string AspectRatio = "aspectRatio";
+        public const string FrameRate = "frameRate";
         internal const string EditionPrefix = "edition:";
 
         /// <summary>Dolby Vision / HDR.</summary>
@@ -99,6 +102,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             new(VideoCodec, CodecOrder, 5),
             new(AudioInfo, AudioOrder, 6),
             new(Edition, Array.Empty<string>(), 7),
+            new(Runtime, Array.Empty<string>(), 8),
+            new(AspectRatio, Array.Empty<string>(), 9),
+            new(FrameRate, Array.Empty<string>(), 10),
         };
 
         /// <summary>
@@ -193,6 +199,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 return qualities;
             }
 
+            if (TechnicalQualityRules.Runtime(data.RunTimeTicks) is { } runtime) Add(qualities, Runtime + ":" + runtime);
             var streams = data.Streams;
             var sources = data.Sources;
 
@@ -223,6 +230,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             if (primaryVideo is not null)
             {
+                if (TechnicalQualityRules.Aspect(primaryVideo) is { } aspect) Add(qualities, AspectRatio + ":" + aspect);
+                if (TechnicalQualityRules.FrameRate(primaryVideo) is { } rate) Add(qualities, FrameRate + ":" + rate);
                 var resolution = DetectResolution(primaryVideo);
                 if (resolution is not null) Add(qualities, resolution);
 
@@ -325,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             foreach (var i in order)
             {
-                foreach (var label in buckets[i]!) result.Add(new QualityTag(label.StartsWith(EditionPrefix, StringComparison.Ordinal) ? label[EditionPrefix.Length..] : label, Categories[i].Key));
+                foreach (var label in buckets[i]!) result.Add(new QualityTag(Categories[i].Items.Length == 0 ? label[(label.IndexOf(':') + 1)..] : label, Categories[i].Key));
             }
 
             if (other is not null)
@@ -401,7 +410,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         private static int CategoryIndex(string label)
         {
-            if (label.StartsWith(EditionPrefix, StringComparison.Ordinal)) return Categories.Length - 1;
+            for (var i = 0; i < Categories.Length; i++)
+                if (Categories[i].Items.Length == 0 && label.StartsWith(Categories[i].Key + ":", StringComparison.Ordinal)) return i;
             var normalized = NormalizeLabel(label);
             for (var i = 0; i < Categories.Length; i++)
             {
@@ -436,7 +446,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             foreach (var stream in streams)
             {
-                yield return stream?.DisplayTitle;
+                if (stream?.Type != "Subtitle") yield return stream?.DisplayTitle;
             }
         }
 
@@ -462,7 +472,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 };
             }
 
-            // Dimension fallback; the tag cache carries no Width (always 0 in the server path).
+            // Width now supplies aspect ratio; preserve the legacy height-only resolution fallback.
             if (height >= 3000) return "8K";
             if (height >= 1550) return "4K";
             if (height >= 1250) return "1440p";

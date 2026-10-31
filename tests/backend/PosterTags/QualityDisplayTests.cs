@@ -173,9 +173,9 @@ public class QualityDisplayTests
     [InlineData("qualityHdrDisplayMode", "all")]
     [InlineData("qualityMinimumResolution", "4k")]
     [InlineData("qualityHideSdr", true)]
-    public void AdditiveQualitySettingsChangeTheirDigestWithoutGlobalResolverBump(string key, object value)
+    public void AdditiveQualitySettingsChangeTheirDigestWithIntegratedResolverIdentity(string key, object value)
     {
-        Assert.Equal("8", PosterTagSettings.ResolverVersion);
+        Assert.Equal("9", PosterTagSettings.ResolverVersion);
         var config = new PluginConfiguration();
         var baseline = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true}", config);
         var explicitDefaults = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true,qualityAudioDisplayMode:'highest',qualityVideoCodecDisplayMode:'highest',qualityHdrDisplayMode:'highest',qualityMinimumResolution:'off',qualityHideSdr:false}", config);

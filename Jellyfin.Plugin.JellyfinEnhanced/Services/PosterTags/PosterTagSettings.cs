@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "8";
+        public const string ResolverVersion = "9";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -82,6 +82,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool StatusSchedule { get; private init; }
         public bool StatusMilestones { get; private init; }
         public bool StatusSeriesStatus { get; private init; }
+        public bool StatusScenes { get; private init; }
         public int StatusJustAddedDays { get; private init; }
         public int StatusNewReleaseDays { get; private init; }
         public bool StatusRemoteEnabled { get; private init; }
@@ -213,8 +214,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // Source and edition effective settings.
         /// <summary>Whether edition chips are shown.</summary>
         public bool ShowEditionTag { get; private init; } = true;
+        public bool ShowRuntimeTag { get; private init; } = false;
+        public bool ShowAspectRatioTag { get; private init; } = false;
+        public bool ShowFrameRateTag { get; private init; } = false;
         /// <summary>Stack order of edition chips.</summary>
         public int EditionTagOrder { get; private init; } = 7;
+        public int RuntimeTagOrder { get; private init; } = 8;
+        public int AspectRatioTagOrder { get; private init; } = 9;
+        public int FrameRateTagOrder { get; private init; } = 10;
         /// <summary>Whether CAM, TS, TC and SCR sources are eligible.</summary>
         public bool ShowLowQualitySourceTag { get; private init; }
 
@@ -474,6 +481,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 StatusSchedule = user.StatusTagsSchedule,
                 StatusMilestones = user.StatusTagsMilestones,
                 StatusSeriesStatus = user.StatusTagsSeriesStatus,
+                StatusScenes = user.StatusTagsScenes,
                 StatusJustAddedDays = Math.Clamp(config.StatusTagsJustAddedDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusNewReleaseDays = Math.Clamp(config.StatusTagsNewReleaseDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusRemoteEnabled = config.StatusTagsEnabled && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY),
@@ -521,7 +529,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowResolutionTag = user.ShowResolutionTag,
                 ShowSourceTag = user.ShowSourceTag,
                 ShowEditionTag = user.ShowEditionTag ?? config.ShowEditionTag,
+                ShowRuntimeTag = user.ShowRuntimeTag ?? config.ShowRuntimeTag,
+                ShowAspectRatioTag = user.ShowAspectRatioTag ?? config.ShowAspectRatioTag,
+                ShowFrameRateTag = user.ShowFrameRateTag ?? config.ShowFrameRateTag,
                 EditionTagOrder = user.EditionTagOrder ?? config.EditionTagOrder,
+                RuntimeTagOrder = user.RuntimeTagOrder ?? config.RuntimeTagOrder,
+                AspectRatioTagOrder = user.AspectRatioTagOrder ?? config.AspectRatioTagOrder,
+                FrameRateTagOrder = user.FrameRateTagOrder ?? config.FrameRateTagOrder,
                 ShowLowQualitySourceTag = user.ShowLowQualitySourceTag ?? config.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = user.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = user.ShowSpecialFormatTag,
@@ -647,6 +661,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             QualityTagRules.Resolution => ShowResolutionTag,
             QualityTagRules.Source => ShowSourceTag,
             QualityTagRules.Edition => ShowEditionTag,
+            QualityTagRules.FrameRate => ShowFrameRateTag,
+            QualityTagRules.AspectRatio => ShowAspectRatioTag,
+            QualityTagRules.Runtime => ShowRuntimeTag,
             QualityTagRules.DynamicRange => ShowDynamicRangeTag,
             QualityTagRules.SpecialFormat => ShowSpecialFormatTag,
             QualityTagRules.VideoCodec => ShowVideoCodecTag,
@@ -660,6 +677,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             QualityTagRules.Resolution => ResolutionTagOrder,
             QualityTagRules.Source => SourceTagOrder,
             QualityTagRules.Edition => EditionTagOrder,
+            QualityTagRules.FrameRate => FrameRateTagOrder,
+            QualityTagRules.AspectRatio => AspectRatioTagOrder,
+            QualityTagRules.Runtime => RuntimeTagOrder,
             QualityTagRules.DynamicRange => DynamicRangeTagOrder,
             QualityTagRules.SpecialFormat => SpecialFormatTagOrder,
             QualityTagRules.VideoCodec => VideoCodecTagOrder,
@@ -821,7 +841,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowResolutionTag = config.ShowResolutionTag,
                 ShowSourceTag = config.ShowSourceTag,
                 ShowEditionTag = config.ShowEditionTag,
+                ShowRuntimeTag = config.ShowRuntimeTag,
+                ShowAspectRatioTag = config.ShowAspectRatioTag,
+                ShowFrameRateTag = config.ShowFrameRateTag,
                 EditionTagOrder = config.EditionTagOrder,
+                RuntimeTagOrder = config.RuntimeTagOrder,
+                AspectRatioTagOrder = config.AspectRatioTagOrder,
+                FrameRateTagOrder = config.FrameRateTagOrder,
                 ShowLowQualitySourceTag = config.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = config.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = config.ShowSpecialFormatTag,
@@ -848,6 +874,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 StatusTagsSchedule = config.StatusTagsSchedule,
                 StatusTagsMilestones = config.StatusTagsMilestones,
                 StatusTagsSeriesStatus = config.StatusTagsSeriesStatus,
+                StatusTagsScenes = config.StatusTagsScenes,
                 DisplayLanguage = config.DefaultLanguage,
                 QualityTagsPosition = config.QualityTagsPosition,
                 SeriesQualityAggregation = config.SeriesQualityAggregation,
@@ -920,6 +947,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["quality.show.source"] = Bool(ShowSourceTag);
                 values["quality.show.edition"] = Bool(ShowEditionTag);
                 values["quality.order.edition"] = Int(EditionTagOrder);
+                values["quality.show.frameRate"] = Bool(ShowFrameRateTag);
+                values["quality.order.frameRate"] = Int(FrameRateTagOrder);
+                values["quality.show.aspectRatio"] = Bool(ShowAspectRatioTag);
+                values["quality.order.aspectRatio"] = Int(AspectRatioTagOrder);
+                values["quality.show.runtime"] = Bool(ShowRuntimeTag);
+                values["quality.order.runtime"] = Int(RuntimeTagOrder);
                 values["quality.show.lowQualitySource"] = Bool(ShowLowQualitySourceTag);
                 values["quality.show.dynamicRange"] = Bool(ShowDynamicRangeTag);
                 values["quality.show.specialFormat"] = Bool(ShowSpecialFormatTag);
@@ -1003,6 +1036,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["status.schedule"] = Bool(StatusSchedule);
                 values["status.milestones"] = Bool(StatusMilestones);
                 values["status.seriesStatus"] = Bool(StatusSeriesStatus);
+                values["status.scenes"] = Bool(StatusScenes);
                 values["status.addedDays"] = Int(StatusJustAddedDays);
                 values["status.newDays"] = Int(StatusNewReleaseDays);
                 values["status.remote"] = Bool(StatusRemoteEnabled);

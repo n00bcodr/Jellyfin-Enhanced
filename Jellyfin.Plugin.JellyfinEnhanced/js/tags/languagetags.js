@@ -54,7 +54,7 @@
             streams.filter(function(s) { return s.Type === type; }).forEach(function(stream) {
                 var langCode = stream.Language;
                 if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
-                    languages.add(JSON.stringify({ name: displayName(langCode), code: langCode }));
+                    languages.add(JSON.stringify({ name: displayName(langCode), code: langCode, sdh: type === 'Subtitle' && (stream.IsHearingImpaired === true || /\b(SDH|CC)\b/i.test(`${stream.Title || ''} ${stream.DisplayTitle || ''}`)) }));
                 }
             });
         };
@@ -70,6 +70,15 @@
         }
 
         return normalizeLanguages(Array.from(languages).map(JSON.parse));
+    }
+
+    /** Merge batch language arrays with accessibility on the already-projected streams. */
+    function subtitleFacts(sourceItem, item) {
+        const tracks = extractLanguagesFromItem(sourceItem, 'Subtitle');
+        const codes = sourceItem.SubtitleLanguages || item.SubtitleLanguages;
+        if (!codes) return tracks;
+        const sdh = sourceItem.SdhSubtitleLanguages || item.SdhSubtitleLanguages || tracks.filter(track => track.sdh).map(track => track.code);
+        return codes.map(code => ({ code, sdh: sdh.some(track => JE.core.mediaLanguage.matchesLanguage(code, track, { requireRegion: true })) }));
     }
 
     // Normalize different shapes of language arrays into [{ name, code, partial }]
@@ -97,11 +106,13 @@
                     // Only the server cache path sets it, so the localStorage
                     // cache (legacy per-page mode) never carries the field.
                     if (entry.partial) obj.partial = true;
+                    if (entry.sdh) obj.sdh = true;
                 }
             }
             if (!obj) continue;
             const key = `${obj.code.toLowerCase()}|${(obj.name || '').toLowerCase()}`;
             if (!seen.has(key)) { seen.add(key); norm.push(obj); }
+            else if (obj.sdh) norm.find(lang => `${lang.code.toLowerCase()}|${(lang.name || '').toLowerCase()}` === key).sdh = true;
         }
         return norm;
     }
@@ -181,9 +192,10 @@
             if (!key || (style === 'codes' && !code)) continue;
             const name = lang.name || lang.code.toUpperCase();
             const existing = unique.get(key);
-            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, allCodes: [lang.code], allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
+            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, sdh: !!lang.sdh, allCodes: [lang.code], allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
             else {
                 existing.partial = existing.partial && !!lang.partial;
+                existing.sdh ||= !!lang.sdh;
                 if (!existing.allCodes.includes(lang.code)) existing.allCodes.push(lang.code);
                 if (!existing.allLanguages.includes(name)) existing.allLanguages.push(name);
                 const label = languageLabel({ name, partial: lang.partial });
@@ -230,13 +242,14 @@
                 chip.title = `${JE.t('language_tags_count_tooltip', { count })}: ${counted.flatMap(chip => chip.labels).join(', ')}`;
             } else {
                 const label = info.labels.join(', ');
-                chip.title = `${JE.t(info.subtitle ? 'language_tags_subtitles' : 'language_tags_audio')}: ${label}`;
+                chip.title = `${JE.t(info.subtitle ? info.sdh ? 'language_tags_subtitles_sdh' : 'language_tags_subtitles' : 'language_tags_audio')}: ${label}`;
                 chip.dataset.langName = info.allLanguages.join(', ');
                 chip.dataset.lang = conf.style === 'codes' ? info.text.toLowerCase() : info.countryCode.toLowerCase();
                 if (info.subtitle) {
                     const cc = document.createElement('span');
                     cc.className = 'language-cc';
-                    cc.textContent = 'CC';
+                    cc.textContent = info.sdh ? 'SDH' : 'CC';
+                    if (info.sdh) chip.dataset.jeSdh = 'true';
                     cc.setAttribute('aria-hidden', 'true');
                     chip.appendChild(cc);
                 }
@@ -283,8 +296,8 @@
             // stripped entries can't pin the wrong flag for the 30-day TTL.
             // Both prior generations are listed — dropping the ancient
             // un-namespaced stem would leave its keys orphaned forever.
-            key: 'JellyfinEnhanced-languageTagsCache-v3',
-            legacyPrefix: ['JellyfinEnhanced-languageTagsCache-v2', 'JellyfinEnhanced-languageTagsCache', 'languageTagsCache'],
+            key: 'JellyfinEnhanced-languageTagsCache-v4',
+            legacyPrefix: ['JellyfinEnhanced-languageTagsCache-v3', 'JellyfinEnhanced-languageTagsCache-v2', 'JellyfinEnhanced-languageTagsCache', 'languageTagsCache'],
             hotBucket: 'language',
         },
         buildCss() {
@@ -380,7 +393,7 @@
                     }
                 }
 
-                var languages = { audio: extractLanguagesFromItem(sourceItem), subtitles: sourceItem.SubtitleLanguages || item.SubtitleLanguages || extractLanguagesFromItem(sourceItem, 'Subtitle') };
+                var languages = { audio: extractLanguagesFromItem(sourceItem), subtitles: subtitleFacts(sourceItem, item) };
 
                 {
                     ctx.setPersistent(itemId, languages);
@@ -414,7 +427,7 @@
                 var languages = codes.map(function(code) {
                     return { name: displayName(code), code: code, partial: partial.has(code) };
                 });
-                insertLanguageTags(ctx, el, { audio: languages, subtitles: entry.SubtitleLanguages || [] });
+                insertLanguageTags(ctx, el, { audio: languages, subtitles: (entry.SubtitleLanguages || []).map(code => ({ code, sdh: (entry.SdhSubtitleLanguages || []).some(sdh => JE.core.mediaLanguage.matchesLanguage(code, sdh, { requireRegion: true })) })) });
             },
         },
     };

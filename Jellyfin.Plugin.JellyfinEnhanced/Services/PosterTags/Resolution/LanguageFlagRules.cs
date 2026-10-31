@@ -327,7 +327,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 foreach (var flag in flags ?? new List<FlagInfo>())
                 {
                     tags.Add(new LanguageTag(ToFlagCode(flag.CountryCode), string.Join(", ", flag.AllLanguages), flag.Partial)
-                    { Subtitle = subtitle, Code = codes ? ShortCode(flag.Code) : null });
+                    { Subtitle = subtitle, Sdh = subtitle && flag.AllCodes.Any(code => (entry.SdhSubtitleLanguages ?? Array.Empty<string>()).Any(sdh => MatchesLanguage(code, sdh, requireRegion: true))), Code = codes ? ShortCode(flag.Code) : null });
                 }
             }
             if (!badge || settings.LanguageCountBadge != "only") Add(audio, false);

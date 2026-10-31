@@ -107,7 +107,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
             // Source and edition defaults.
             ShowEditionTag = true;
+            ShowRuntimeTag = false;
+            ShowAspectRatioTag = false;
+            ShowFrameRateTag = false;
             EditionTagOrder = 7;
+            RuntimeTagOrder = 8;
+            AspectRatioTagOrder = 9;
+            FrameRateTagOrder = 10;
             ShowLowQualitySourceTag = false;
 
             ShowDynamicRangeTag = true;
@@ -182,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             StatusTagsSchedule = true;
             StatusTagsMilestones = true;
             StatusTagsSeriesStatus = false;
+            StatusTagsScenes = false;
             StatusTagsJustAddedDays = 7;
             StatusTagsNewReleaseDays = 30;
             TagLayout = "corners";
@@ -685,7 +692,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
 
         // Source and edition defaults.
         public bool ShowEditionTag { get; set; } = true;
+        public bool ShowRuntimeTag { get; set; } = false;
+        public bool ShowAspectRatioTag { get; set; } = false;
+        public bool ShowFrameRateTag { get; set; } = false;
         public int EditionTagOrder { get; set; } = 7;
+        public int RuntimeTagOrder { get; set; } = 8;
+        public int AspectRatioTagOrder { get; set; } = 9;
+        public int FrameRateTagOrder { get; set; } = 10;
         public bool ShowLowQualitySourceTag { get; set; } = false;
 
         public bool ShowDynamicRangeTag { get; set; } = true;
@@ -896,6 +909,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool StatusTagsMilestones { get; set; } = true;
         /// <summary>Default for the lowest-priority series status badge (Returning, Ended, Cancelled).</summary>
         public bool StatusTagsSeriesStatus { get; set; } = false;
+        public bool StatusTagsScenes { get; set; } = false;
         /// <summary>Admin-only: days an item counts as "Just Added" (or a series/season's latest episode as "New Episode"). 1-365.</summary>
         public int StatusTagsJustAddedDays { get; set; } = 7;
         /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>

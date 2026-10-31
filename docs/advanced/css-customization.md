@@ -1199,3 +1199,7 @@ The Awards wrapper is `.awards-overlay-container`, placed by the shared tag layo
 ### Quality stream display
 
 All-mode chips reuse `.quality-overlay-label`, `.audio-codec`, `.video-format` and `.video-codec` inside `.quality-overlay-container`. Each distinct sound codec/channel combination is a separate chip; `data-quality` retains its base codec for existing colour selectors. SDR uses `.video-codec[data-quality="SDR"]` and is also an editable Tag Styles label. There is no new wrapper or per-card layout measurement. Minimum-resolution and Hide SDR filtering remove chips before layout and overflow fitting, so CSS does not need to hide them.
+
+### Technical quality, SDH and Scenes hooks
+
+Technical chips retain `.quality-overlay-label.other-quality` with `data-je-quality-category="runtime"`, `"aspectRatio"` or `"frameRate"`; `data-quality` uses the same stable category id. `data-je-compact` contains the shortened display text. They inherit Quality Tag Styles. SDH subtitle chips keep `.language-chip`, `.language-cc` and `data-je-language="subtitles"`, and add `data-je-sdh="true"`; the marker and accessible tooltip survive Summary presentation. Status scene chips use `.status-tag--scenes` and `data-je-status="post_credits"` / `"mid_credits"`, available as Status labels in Tag Styles. These hooks exist only when the corresponding chips are shown.

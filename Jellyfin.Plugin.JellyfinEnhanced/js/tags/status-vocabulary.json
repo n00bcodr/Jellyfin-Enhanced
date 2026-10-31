@@ -108,6 +108,16 @@
       "kind": "status",
       "style": "cancelled",
       "label": "status_tag_cancelled"
+    },
+    "post_credits": {
+      "kind": "scenes",
+      "style": "post_credits",
+      "label": "status_tag_post_credits"
+    },
+    "mid_credits": {
+      "kind": "scenes",
+      "style": "mid_credits",
+      "label": "status_tag_mid_credits"
     }
   }
 }

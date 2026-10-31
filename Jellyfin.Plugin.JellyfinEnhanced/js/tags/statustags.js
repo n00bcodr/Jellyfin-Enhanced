@@ -53,7 +53,7 @@
     // the persistent cache only answers for this long before a re-fetch.
     const CACHE_FRESH_MS = 60 * 60 * 1000;
     // Shape of the fallback cache entries; older entries count as misses.
-    const CACHE_ENTRY_VERSION = 2;
+    const CACHE_ENTRY_VERSION = 3;
     const TRENDING_TTL_MS = 30 * 60 * 1000;
     // A failed or empty trending fetch is retried sooner than a good list expires.
     const TRENDING_RETRY_MS = 5 * 60 * 1000;
@@ -91,6 +91,7 @@
         justAdded: { userKey: 'statusTagsJustAdded', pluginKey: 'StatusTagsJustAdded', fallback: true },
         schedule: { userKey: 'statusTagsSchedule', pluginKey: 'StatusTagsSchedule', fallback: true },
         milestones: { userKey: 'statusTagsMilestones', pluginKey: 'StatusTagsMilestones', fallback: true },
+        scenes: { userKey: 'statusTagsScenes', pluginKey: 'StatusTagsScenes', fallback: false },
         seriesStatus: { userKey: 'statusTagsSeriesStatus', pluginKey: 'StatusTagsSeriesStatus', fallback: false },
     };
 
@@ -298,6 +299,7 @@
         const premiere = src.SeasonPremiere;
         const span = src.SeasonAddedSpan;
         return {
+            scenes: src.Scenes || null,
             status: typeof src.Status === 'string' && src.Status ? src.Status : null,
             latestAired: toMs(src.LatestEpisodeAired),
             isLast: typeof src.EpisodeIndex?.IsLast === 'boolean' ? src.EpisodeIndex.IsLast : null,
@@ -648,6 +650,10 @@
                 return null;
         }
         if (showAdded && addedRecently) return makeBadge('added', 'just_added');
+        if (data.type === 'Movie' && isScopeEnabled(BADGE_SCOPES.scenes)) {
+            if (data.scenes?.PostCredits === true) return makeBadge('scenes', 'post_credits');
+            if (data.scenes?.MidCredits === true) return makeBadge('scenes', 'mid_credits');
+        }
         if (data.type === 'Series' && showStatus) return seriesStatusBadge(data, facts);
         return null;
     }
@@ -690,6 +696,7 @@
             premiere: entry.p ?? null,
             latest: entry.l ?? null,
             status: entry.st ?? null,
+            scenes: entry.sc ?? null,
             latestAired: entry.la ?? null,
             isLast: entry.il ?? null,
             latestIndex: Array.isArray(entry.li) ? { s: entry.li[0], e: entry.li[1], isLast: entry.li[2] === true } : null,
@@ -718,6 +725,7 @@
         if (data.premiere !== null) entry.p = data.premiere;
         if (data.latest !== null) entry.l = data.latest;
         if (data.status) entry.st = data.status;
+        if (data.scenes) entry.sc = data.scenes;
         if (data.latestAired !== null) entry.la = data.latestAired;
         if (data.isLast !== null) entry.il = data.isLast;
         if (data.latestIndex) entry.li = [data.latestIndex.s, data.latestIndex.e, data.latestIndex.isLast];

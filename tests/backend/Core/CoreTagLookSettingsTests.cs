@@ -218,6 +218,7 @@ public class CoreTagLookSettingsTests
     [InlineData(16)]
     [InlineData(17)]
     [InlineData(18)]
+    [InlineData(19)]
     public void OlderSnapshotsAreDiscardedForRebuild(int oldSchema)
     {
         using var f = new ApiPluginFixture();

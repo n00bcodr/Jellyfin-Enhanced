@@ -13,6 +13,7 @@
         ['ShowResolutionTag', 'ResolutionTagOrder'], ['ShowSourceTag', 'SourceTagOrder'], ['ShowDynamicRangeTag', 'DynamicRangeTagOrder'],
         ['ShowSpecialFormatTag', 'SpecialFormatTagOrder'], ['ShowVideoCodecTag', 'VideoCodecTagOrder'], ['ShowAudioInfoTag', 'AudioInfoTagOrder'],
         ['ShowEditionTag', 'EditionTagOrder'],
+        ['ShowRuntimeTag', 'RuntimeTagOrder'], ['ShowAspectRatioTag', 'AspectRatioTagOrder'], ['ShowFrameRateTag', 'FrameRateTagOrder'],
     ];
 
     A.registerSection({
@@ -41,6 +42,9 @@
             { id: 'showVideoCodecTag', key: 'ShowVideoCodecTag', type: 'ordered', orderKey: 'VideoCodecTagOrder', defaultOrder: 5, label: 'panel_settings_ui_quality_tags_video_codec' },
             { id: 'showAudioInfoTag', key: 'ShowAudioInfoTag', type: 'ordered', orderKey: 'AudioInfoTagOrder', defaultOrder: 6, label: 'panel_settings_ui_quality_tags_audio_info' },
             { id: 'showEditionTag', key: 'ShowEditionTag', type: 'ordered', orderKey: 'EditionTagOrder', defaultOrder: 7, label: 'panel_settings_ui_quality_tags_edition' },
+            { id: 'showRuntimeTag', key: 'ShowRuntimeTag', type: 'ordered', orderKey: 'RuntimeTagOrder', defaultOrder: 8, label: 'panel_settings_ui_quality_tags_runtime' },
+            { id: 'showAspectRatioTag', key: 'ShowAspectRatioTag', type: 'ordered', orderKey: 'AspectRatioTagOrder', defaultOrder: 9, label: 'panel_settings_ui_quality_tags_aspect_ratio' },
+            { id: 'showFrameRateTag', key: 'ShowFrameRateTag', type: 'ordered', orderKey: 'FrameRateTagOrder', defaultOrder: 10, label: 'panel_settings_ui_quality_tags_frame_rate' },
             { id: 'showLowQualitySourceTag', key: 'ShowLowQualitySourceTag', type: 'switch', label: 'panel_settings_ui_quality_tags_low_source', desc: 'admin_tags_quality_low_source_desc' },
             { id: 'qualityAudioDisplayMode', key: 'QualityAudioDisplayMode', type: 'select', label: 'quality_display_audio', fallback: 'highest', options: [['highest', 'quality_display_highest'], ['all', 'quality_display_all']] },
             { id: 'qualityVideoCodecDisplayMode', key: 'QualityVideoCodecDisplayMode', type: 'select', label: 'quality_display_video', fallback: 'highest', options: [['highest', 'quality_display_highest'], ['all', 'quality_display_all']] },

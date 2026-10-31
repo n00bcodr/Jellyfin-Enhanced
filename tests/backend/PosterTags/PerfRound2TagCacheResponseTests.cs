@@ -388,7 +388,7 @@ public class PerfRound2TagCacheResponseTests
         Assert.NotEqual(FilterRevision(open.Body), FilterRevision(guarded.Body));
 
         // /tag-data: one language per subtitle track language (forced / SDH / external
-        // tracks count once, untagged ones not at all); streams stay audio/video only.
+        // tracks count once, untagged ones not at all); streams retain subtitle accessibility facts.
         var movie = new TagCacheSubtitleLanguagesTests.Movie
         {
             Id = Guid.NewGuid(), Name = "Subbed",
@@ -406,7 +406,8 @@ public class PerfRound2TagCacheResponseTests
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
         var item = json.RootElement.GetProperty("Items")[0];
         Assert.Equal(["eng", "fre"], item.GetProperty("SubtitleLanguages").EnumerateArray().Select(v => v.GetString()!).ToArray());
-        Assert.DoesNotContain(item.GetProperty("MediaStreams").EnumerateArray(), s => s.GetProperty("Type").GetString() == "Subtitle");
+        Assert.Contains(item.GetProperty("MediaStreams").EnumerateArray(), s => s.GetProperty("Type").GetString() == "Subtitle" && s.GetProperty("IsHearingImpaired").GetBoolean());
+        Assert.Equal(new[] { "eng" }, item.GetProperty("SdhSubtitleLanguages").EnumerateArray().Select(v => v.GetString()!).ToArray());
     }
 
     [Fact]

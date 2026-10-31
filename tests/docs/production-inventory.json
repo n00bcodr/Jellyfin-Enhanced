@@ -219,6 +219,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/SubtitleAccessibility.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/TagEpisodeSelector.cs",
       "category": "Helpers"
     },
@@ -615,6 +619,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/TechnicalQualityRules.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStylePalettes.cs",
       "category": "Services"
     },
@@ -719,6 +727,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsScenesService.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsSeriesService.cs",
       "category": "Services"
     },
@@ -748,6 +760,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheResponseBody.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheScenes.cs",
       "category": "Services"
     },
     {
@@ -4202,10 +4218,58 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ShowRuntimeTag",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ShowAspectRatioTag",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "ShowFrameRateTag",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "EditionTagOrder",
       "type": "int",
       "initializer": "7",
       "constructor_assignment": "7",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "RuntimeTagOrder",
+      "type": "int",
+      "initializer": "8",
+      "constructor_assignment": "8",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "AspectRatioTagOrder",
+      "type": "int",
+      "initializer": "9",
+      "constructor_assignment": "9",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "FrameRateTagOrder",
+      "type": "int",
+      "initializer": "10",
+      "constructor_assignment": "10",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -4931,6 +4995,14 @@
     {
       "class": "PluginConfiguration",
       "name": "StatusTagsSeriesStatus",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "StatusTagsScenes",
       "type": "bool",
       "initializer": "false",
       "constructor_assignment": "false",
@@ -7490,7 +7562,55 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "ShowRuntimeTag",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "ShowAspectRatioTag",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "ShowFrameRateTag",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "EditionTagOrder",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "RuntimeTagOrder",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "AspectRatioTagOrder",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "FrameRateTagOrder",
       "type": "int?",
       "initializer": null,
       "constructor_assignment": null,
@@ -7971,6 +8091,14 @@
     {
       "class": "JellyfinEnhancedUserSettings",
       "name": "StatusTagsSeriesStatus",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "StatusTagsScenes",
       "type": "bool",
       "initializer": "false",
       "constructor_assignment": null,
@@ -9478,9 +9606,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 435,
+    "files": 439,
     "routes": 185,
-    "configuration_properties": 690,
+    "configuration_properties": 704,
     "storage_references": 79,
     "scheduled_tasks": 14,
     "locales": 33

@@ -224,7 +224,7 @@ test('every hub control keeps writing the setting it always did', async t => {
     assert.equal(h.saved()[key], box.checked, key);
   }
   assert.ok(reinit);
-  assert.equal(h.document.querySelectorAll('.je-mth-badge-sample .status-tag').length, 6, 'the badge samples survive it');
+  assert.equal(h.document.querySelectorAll('.je-mth-badge-sample .status-tag').length, 7, 'the badge samples survive it');
   assert.equal(h.$('.je-mtp-sample[data-sample="series"] .status-tag')?.textContent, 'status_tag_returning', 'and the preview redraws its badge (Series status is on now)');
   assert.equal(h.$('.je-mtp-sample[data-sample="movie"] .status-tag'), null, 'the movie\'s three families are all off');
   // The Status master switch is the Status row's box on Groups: the badges tab says when it is off.
@@ -694,4 +694,23 @@ test('a legacy document promoted by the Edge Spacing pills keeps everything else
   assert.equal(saved.tagLayoutSettingsVersion, 1);
   assert.equal(saved.tagLayout, 'corners');
   assert.equal(saved.tagGroupCaps.genre, 3, 'the built-in caps are pinned, not the admin\'s');
+});
+
+
+test('Scenes-only hub preview shows the movie post-credits badge and removes it when disabled', async t => {
+  const h = setup(t, { plugin: { StatusTagsEnabled: true, StatusTagsScenes: true }, stored: {
+    statusTagsEnabled: true, statusTagsScenes: true, statusTagsTrending: false, statusTagsNewRelease: false,
+    statusTagsJustAdded: false, statusTagsSchedule: false, statusTagsMilestones: false, statusTagsSeriesStatus: false,
+  } });
+  h.JE.t = key => en[key] || key;
+  await h.open();
+  const movie = () => h.$('.je-mtp-sample[data-sample="movie"] .status-tag');
+  assert.equal(movie()?.textContent, 'Post-credits');
+  assert.equal(h.document.querySelectorAll('.je-mtp-sample .status-tag').length, 1, 'only the movie has a Scenes fact');
+  await h.change(h.$('#statusTagsScenesToggle'), false);
+  assert.equal(movie(), null);
+  await h.change(h.$('#statusTagsScenesToggle'), true);
+  assert.equal(movie()?.textContent, 'Post-credits');
+  await h.change(h.$('#statusTagsJustAddedToggle'), true);
+  assert.equal(movie()?.textContent, en.status_tag_just_added, 'higher-priority families still win');
 });

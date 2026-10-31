@@ -87,7 +87,11 @@
     "qualityVideoCodecDisplayMode": "QualityVideoCodecDisplayMode",
     "qualityHdrDisplayMode": "QualityHdrDisplayMode",
     "qualityMinimumResolution": "QualityMinimumResolution",
-    "qualityHideSdr": "QualityHideSdr"
+    "qualityHideSdr": "QualityHideSdr",
+    "showRuntimeTag": "ShowRuntimeTag",
+    "showAspectRatioTag": "ShowAspectRatioTag",
+    "showFrameRateTag": "ShowFrameRateTag",
+    "statusTagsScenes": "StatusTagsScenes"
   },
   "unmapped": [
     "ratingTagsSources",

@@ -172,7 +172,7 @@
     "panel_settings_ui_status_tags_milestones": "New Season / Premiere / Finale / Complete Season",
     "panel_settings_ui_status_tags_series_status": "Returning / Ended / Cancelled",
     "admin_status_tags_description": "Badge posters with what is new, trending, airing next or a season milestone, without replacing the poster image. Web client only; Native Poster Tags do not draw them.",
-    "admin_status_tags_priority": "One badge per poster, first match wins (the order per card type is in the documentation). Users can override the six switches in their personal settings; the day windows apply to everyone.",
+    "admin_status_tags_priority": "One badge per poster, first match wins (the order per card type is in the documentation). Users can override the family switches in their personal settings; the day windows apply to everyone.",
     "admin_status_tags_schedule": "Show Airing Today / Airs / Returns / Coming Soon",
     "admin_status_tags_schedule_description": "When a series’ next episode airs (needs the TMDB API key), and Coming Soon for movies and series that have not premiered yet.",
     "admin_status_tags_milestones": "Show New Season / Premiere / Finale / Complete Season",
@@ -1518,5 +1518,14 @@
   "quality_hide_sdr": "Hide SDR",
   "quality_display_help": "All shows distinct values in rank order. Sound follows your audio language. Show up to limits the whole Quality group.",
   "quality_sdr_show": "Show SDR",
-  "quality_sdr_hide": "Hide SDR"
+  "quality_sdr_hide": "Hide SDR",
+    "panel_settings_ui_quality_tags_runtime": "Runtime",
+    "panel_settings_ui_quality_tags_aspect_ratio": "Aspect ratio",
+    "panel_settings_ui_quality_tags_frame_rate": "Frame rate",
+    "language_tags_subtitles_sdh": "Subtitles (SDH)",
+    "panel_media_tags_badge_scenes": "Scenes",
+    "panel_settings_ui_status_tags_scenes": "Post-credits / Mid-credits",
+    "admin_status_tags_scenes_description": "Show a movie’s post-credits or mid-credits marker from TMDB keywords. Requires a TMDB key; refreshed daily.",
+    "status_tag_post_credits": "Post-credits",
+    "status_tag_mid_credits": "Mid-credits"
 }

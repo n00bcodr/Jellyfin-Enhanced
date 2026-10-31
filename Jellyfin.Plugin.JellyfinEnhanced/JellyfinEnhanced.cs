@@ -411,6 +411,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
             // The Logos switch, modes, region or maximum may have changed what cache entries carry.
             Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+            Services.TagCacheService.Instance?.OnScenesSettingsChanged();
             // Custom tag rules that match differently re-match the cache in the background.
             Services.TagCacheService.Instance?.QueueCustomTagRefreshIfStale();
 
