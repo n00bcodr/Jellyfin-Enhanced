@@ -35,7 +35,7 @@ Use **Search settings…** to filter sections by their contents, then select a s
 
     On desktop, the panel restores your last-opened section. A new account starts at **Shortcuts**, or the first available section if shortcuts are disabled. At widths up to 760 pixels, the panel fills the screen and starts with the section list. Tap a section to open it.
 
-    The panel can close automatically when the pointer is outside it. The administrator controls the delay, initially 15 seconds.
+    The panel can close automatically when the pointer is outside it. The administrator controls the delay, initially 15 seconds. A panel opened from the keyboard, a remote or a screen reader stays open until you close it, and so does one that receives a key press or focus that no mouse or touch press gave it.
 
     Modern layout has a mobile drawer rather than a desktop sidebar. Legacy layout has the sidebar. Jellyfin's user preferences menu uses `#/mypreferencesmenu`.
 
@@ -265,7 +265,7 @@ Choose where your saved hidden items disappear and where hide buttons appear. Th
 
 1. Open **Hidden Content** and choose the filters and buttons you want.
 2. Click an item's open-eye **Hide** button to hide it.
-3. Use **Manage Hidden Content** to review or restore entries and see your hidden-item count.
+3. Use **Manage Hidden Content** to review or restore entries and see your hidden-item count. When Hidden Content is a native Home tab, the button opens that tab.
 
 All controls below are per-user preferences. The matching admin defaults are under **Pages** → **Hidden Content**.
 
@@ -480,7 +480,7 @@ Under **Playback** → **Shortcuts Panel & Toast Timing**, set these server timi
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| **Shortcuts Panel Autoclose Delay (ms)** | 15000 | Sets how long the Enhanced panel stays open with the pointer outside it. |
+| **Shortcuts Panel Autoclose Delay (ms)** | 15000 | Sets how long the Enhanced panel stays open with the pointer outside it. Keyboard and remote use turns the auto-close off for that open. |
 | **Toast Notification Duration (ms)** | 1500 | Sets JE toast duration. |
 
 ??? note "Details"

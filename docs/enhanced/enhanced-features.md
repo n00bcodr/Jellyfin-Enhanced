@@ -317,7 +317,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 | Setting | Default | What it does |
 |---|---|---|
 | **Disable Keyboard Shortcuts** — admin **Keyboard** | Off | Disables ordinary JE shortcuts and hides **Shortcuts**. The ++question++ panel shortcut still works outside text fields. |
-| **Shortcuts Panel Autoclose Delay (ms)** — admin **Playback** | 15000 | Closes the panel after the configured delay while the pointer is outside it. |
+| **Shortcuts Panel Autoclose Delay (ms)** — admin **Playback** | 15000 | Closes the panel after the configured delay while the pointer is outside it. A panel opened or used with the keyboard or a remote stays open. |
 
 ??? info "Shortcut behavior and admin bindings"
 
