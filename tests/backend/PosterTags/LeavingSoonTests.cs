@@ -642,6 +642,81 @@ public sealed class LeavingSoonTests : IDisposable
         Assert.Equal(new TagLeaving { DeleteAt = 3 }, LeavingSoonService.Visible(new TagLeaving { DeleteAt = 3 }, access));
     }
 
+    [Fact]
+    public async Task A_publish_cancelled_after_the_answer_was_saved_is_repaired_by_the_next_run_even_when_nothing_changed()
+    {
+        using var f = new ApiPluginFixture();
+        var library = new Mock<ILibraryManager>();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie" };
+        var items = new List<BaseItem> { movie };
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(items, q).Select(i => i.Id).ToArray());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(items, q).ToArray());
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => items.SingleOrDefault(i => i.Id == id));
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Object;
+        using var server = new MaintainerrFixture();
+        var days = 10;
+        server.Answer = r => MaintainerrFixture.Json(r, Collections((true, days, "movie", new Media[] { new(movie.Id.ToString(), null, "2026-10-25T10:00:00Z") })));
+        try
+        {
+            f.Plugin.Configuration.TagCacheServerMode = true;
+            f.Plugin.Configuration.LeavingSoonMaintainerrUrl = server.Url;
+            var service = Service(library.Object);
+            using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger,
+                new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), leavingSoonService: service);
+            cache.BuildFullCache(null, CancellationToken.None);
+            await cache.RefreshLeavingAsync(force: true, CancellationToken.None);
+            Leaving(cache, movie).Should(Added.AddDays(10).ToUnixTimeMilliseconds());
+            Assert.False(service.PublishPending);
+
+            // A changed answer is saved, then the publish is cancelled while it waits for the cache.
+            days = 20;
+            var rebuild = (SemaphoreSlim)typeof(TagCacheService).GetField("_rebuildLock", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(cache)!;
+            await rebuild.WaitAsync();
+            using (var cancel = new CancellationTokenSource())
+            {
+                var run = cache.RefreshLeavingAsync(force: true, cancel.Token);
+                // Saved: the refresh now waits for the cache.
+                while (service.Get(movie.Id, f.Plugin.Configuration)?.DeleteAt != Added.AddDays(20).ToUnixTimeMilliseconds()) await Task.Delay(10);
+                await Task.Delay(50);
+                cancel.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+            }
+
+            rebuild.Release();
+            Assert.Equal(Added.AddDays(20).ToUnixTimeMilliseconds(), service.Get(movie.Id, f.Plugin.Configuration)?.DeleteAt); // saved
+            Leaving(cache, movie).Should(Added.AddDays(10).ToUnixTimeMilliseconds()); // not published
+            Assert.True(service.PublishPending);
+            // The marker survives a restart.
+            Assert.True(Service(library.Object).PublishPending);
+
+            // The next scheduled run is not due and asks nothing, yet publishes.
+            var asked = server.Requests;
+            await cache.RefreshLeavingAsync(force: false, CancellationToken.None);
+            Assert.Equal(asked, server.Requests);
+            Leaving(cache, movie).Should(Added.AddDays(20).ToUnixTimeMilliseconds());
+            Assert.False(service.PublishPending);
+
+            // Same again with a forced refresh that gets the same (unchanged) answer.
+            days = 30;
+            await rebuild.WaitAsync();
+            using (var cancel = new CancellationTokenSource())
+            {
+                var run = cache.RefreshLeavingAsync(force: true, cancel.Token);
+                while (service.Get(movie.Id, f.Plugin.Configuration)?.DeleteAt != Added.AddDays(30).ToUnixTimeMilliseconds()) await Task.Delay(10);
+                await Task.Delay(50);
+                cancel.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run);
+            }
+
+            rebuild.Release();
+            await cache.RefreshLeavingAsync(force: true, CancellationToken.None);
+            Leaving(cache, movie).Should(Added.AddDays(30).ToUnixTimeMilliseconds());
+            Assert.False(service.PublishPending);
+        }
+        finally { BaseItem.LibraryManager = previous; }
+    }
+
     private static IEnumerable<BaseItem> Select(List<BaseItem> items, InternalItemsQuery q)
     {
         IEnumerable<BaseItem> selected = items;

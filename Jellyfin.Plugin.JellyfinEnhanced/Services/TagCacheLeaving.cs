@@ -74,12 +74,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return count == 0 ? string.Empty : ";l" + count.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + sum.ToString("x16", System.Globalization.CultureInfo.InvariantCulture);
         }
 
-        /// <summary>The scheduled refresh (when due) or a forced one; a changed answer is published to the cache.</summary>
+        /// <summary>
+        /// The scheduled refresh (when due) or a forced one; a changed answer is published to the
+        /// cache, and so is one an earlier run saved but did not publish (cancelled while waiting
+        /// for the cache, or the server stopped), even when this run asks nothing.
+        /// </summary>
         public async Task RefreshLeavingAsync(bool force, CancellationToken token)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (_leavingSoonService == null || config == null) return;
-            if (!await _leavingSoonService.RefreshAsync(config, force, token).ConfigureAwait(false)) return;
+            if (!await _leavingSoonService.RefreshAsync(config, force, token).ConfigureAwait(false) && !_leavingSoonService.PublishPending) return;
             await _rebuildLock.WaitAsync(token).ConfigureAwait(false);
             try { PublishLeaving(); }
             finally { _rebuildLock.Release(); }
@@ -103,7 +107,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void PublishLeaving()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            var items = _leavingSoonService?.Items(config) ?? new Dictionary<string, TagLeaving>();
+            long revision = 0;
+            var items = _leavingSoonService?.Items(config, out revision) ?? new Dictionary<string, TagLeaving>();
             TagLeaving? Of(string? key) => key != null && items.TryGetValue(key, out var leaving) ? leaving : null;
             var seasons = new Dictionary<(string, int), string>();
             foreach (var pair in _cache)
@@ -139,6 +144,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 ScheduleDebouncedSave();
             }
+
+            _leavingSoonService?.MarkPublished(revision);
         }
     }
 }

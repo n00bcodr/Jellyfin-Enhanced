@@ -203,15 +203,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Collection ids (N format) as one sorted, comma-separated value.</summary>
         private static string JoinIds(IEnumerable<string> ids) => string.Join(",", ids.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
 
-        /// <summary>A copy of the current item map (N-format id → facts with their provenance), for publishing to the cache.</summary>
-        internal IReadOnlyDictionary<string, TagLeaving> Items(PluginConfiguration? config)
+        /// <summary>
+        /// A copy of the current item map (N-format id → facts with their provenance), for
+        /// publishing to the cache, and the snapshot revision it belongs to (for <see cref="MarkPublished"/>).
+        /// </summary>
+        internal IReadOnlyDictionary<string, TagLeaving> Items(PluginConfiguration? config, out long revision)
         {
-            if (!Configured(config)) return new Dictionary<string, TagLeaving>();
-            var signature = Signature(config!);
             lock (_sync)
             {
-                return _snapshot.Signature != signature ? new Dictionary<string, TagLeaving>() : Merge(_snapshot);
+                revision = _snapshot.Revision;
+                if (!Configured(config) || _snapshot.Signature != Signature(config!)) return new Dictionary<string, TagLeaving>();
+                return Merge(_snapshot);
             }
+        }
+
+        /// <summary>
+        /// Whether a changed answer is saved but not yet published to the cache (a publish was
+        /// cancelled or failed, or the server stopped in between). Persisted, so the next run
+        /// publishes it even when nothing is due and the answer is unchanged.
+        /// </summary>
+        internal bool PublishPending
+        {
+            get { lock (_sync) return _snapshot.PublishedRevision != _snapshot.Revision; }
+        }
+
+        /// <summary>Record that the cache now carries the facts of <paramref name="revision"/> (see <see cref="Items"/>).</summary>
+        internal void MarkPublished(long revision)
+        {
+            lock (_sync)
+            {
+                if (revision <= _snapshot.PublishedRevision) return;
+                _snapshot.PublishedRevision = Math.Min(revision, _snapshot.Revision);
+            }
+
+            Save();
         }
 
         /// <summary>The leaving collections found by the last read (N-format ids), for the per-user access revision.</summary>
@@ -263,9 +288,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (!Configured(config))
                 {
                     if (before.Api.Count == 0 && before.Named.Count == 0 && before.Signature.Length == 0) return false;
-                    lock (_sync) _snapshot = new Snapshot();
+                    var cleared = Merge(before).Count > 0;
+                    lock (_sync) _snapshot = new Snapshot { Revision = before.Revision + (cleared ? 1 : 0), PublishedRevision = before.PublishedRevision };
                     Save();
-                    return Merge(before).Count > 0;
+                    return cleared;
                 }
 
                 var signature = Signature(config);
@@ -273,7 +299,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var sameSource = before.Signature == signature;
                 if (!force && sameSource && before.NextRefresh is { } due && now < due) return false;
 
-                var next = new Snapshot { Signature = signature, LastAttempt = now, Failures = sameSource ? before.Failures : 0 };
+                var next = new Snapshot { Signature = signature, LastAttempt = now, Failures = sameSource ? before.Failures : 0, Revision = before.Revision, PublishedRevision = before.PublishedRevision };
                 string? error = null;
                 if (IsMaintainerrUrl(config.LeavingSoonMaintainerrUrl))
                 {
@@ -324,9 +350,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     next.NextRefresh = now + (long)RetryDelay(next.Failures, cadence).TotalMilliseconds;
                 }
 
-                lock (_sync) _snapshot = next;
+                var changed = !SameItems(sameSource ? Merge(before) : new Dictionary<string, TagLeaving>(), Merge(next)) || !sameSource;
+                // A changed answer is a new revision, published by the caller (see PublishPending).
+                if (changed) next.Revision++;
+                lock (_sync)
+                {
+                    // A publish that finished while this refresh ran.
+                    next.PublishedRevision = Math.Max(next.PublishedRevision, _snapshot.PublishedRevision);
+                    _snapshot = next;
+                }
+
                 Save();
-                return !SameItems(sameSource ? Merge(before) : new Dictionary<string, TagLeaving>(), Merge(next)) || !sameSource;
+                return changed;
             }
             finally
             {
@@ -662,6 +697,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             public long? NextRefresh { get; set; }
             public int Failures { get; set; }
             public string? LastError { get; set; }
+            /// <summary>Counts changed answers.</summary>
+            public long Revision { get; set; }
+            /// <summary>The last revision published to the tag cache.</summary>
+            public long PublishedRevision { get; set; }
         }
     }
 
