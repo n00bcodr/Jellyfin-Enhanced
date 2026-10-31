@@ -81,3 +81,32 @@ test('Flush mixed-height centre rows align chips on the touching edge', async ({
     for (const row of rows) expect(slot==='tc'?row.top:row.bottom).toBeCloseTo(0,2);
   }
 });
+
+
+test('scoped presets, Poster, group and label colours keep only inward Flush borders', async ({ page }) => {
+  test.setTimeout(60000);
+  await setup(page);
+  await page.addScriptTag({ path: path.join(root, 'tags/tag-styles.js') });
+  await page.evaluate(() => {
+    const card = document.querySelector('.card'); card.id = 'jeTaPreviewBody'; card.setAttribute('data-je-tag-styles-scope', '');
+    card.setAttribute('data-je-poster-colour', ''); card.style.setProperty('--je-tag-border', 'rgb(0, 255, 0)');
+  });
+  for (const model of [
+    { quality: { '*': { border: 'rgba(255, 0, 0, 1)' } } }, // resolved bordered preset / group
+    { preset: 'poster' },
+    { preset: 'poster', quality: { '*': { border: 'rgba(255, 0, 0, 1)' } } },
+    { quality: { '4K': { border: 'rgba(255, 0, 0, 1)' } } },
+  ]) for (const order of ['before', 'after']) {
+    await page.evaluate(({ model, order }) => {
+      document.getElementById('scoped-colours')?.remove();
+      const sheet = document.createElement('style'); sheet.id = 'scoped-colours';
+      sheet.textContent = JellyfinEnhanced.tagStyles.buildCss(model, '#jeTaPreviewBody');
+      if (order === 'before') document.head.prepend(sheet); else document.head.append(sheet);
+    }, {model,order});
+    for (const slot of ['tc', 'bc', 'tl', 'tr', 'bl', 'br']) {
+      const row = {slot,indicator:false,progress:0,edges: {tc:2,bc:8,tl:3,tr:6,bl:9,br:12}[slot]};
+      const result = await place(page, row);
+      expect(result.edges, JSON.stringify({model,order,slot,result})).toBe(row.edges);
+    }
+  }
+});

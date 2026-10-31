@@ -24,6 +24,45 @@
     const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
 
     /**
+     * Flush paint rules, repeated in scoped Tag Styles so their !important
+     * colours cannot restore a touching border in the admin preview.
+     * @param {string} [scope] Validated Tag Styles scope prefix.
+     * @returns {string} CSS text.
+     */
+    function buildFlushStyles(scope = '') {
+        const F = scope ? `${scope} ${FLUSH}` : FLUSH;
+        return `
+            /* Flush removes the visible edge seam while preserving the chip's
+               border-box metrics. Clip only the touching sides of its shadow;
+               the inward sides keep the group's original border and shadow. */
+            ${F} > [data-je-group] > ${BOX_CHIP} {
+                --je-flush-clip-top: -12px; --je-flush-clip-right: -12px;
+                --je-flush-clip-bottom: -12px; --je-flush-clip-left: -12px;
+                outline-offset: 0px !important;
+                clip-path: inset(var(--je-flush-clip-top) var(--je-flush-clip-right) var(--je-flush-clip-bottom) var(--je-flush-clip-left));
+            }
+            ${F}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) > [data-je-group] > ${BOX_CHIP} {
+                border-left-color: transparent !important; --je-flush-clip-left: 0px;
+                border-top-left-radius: 0; border-bottom-left-radius: 0;
+            }
+            ${F}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) > [data-je-group] > ${BOX_CHIP} {
+                border-right-color: transparent !important; --je-flush-clip-right: 0px;
+                border-top-right-radius: 0; border-bottom-right-radius: 0;
+            }
+            ${F}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${BOX_CHIP}:first-child,
+            ${F}[data-je-slot="tc"] > [data-je-group] > ${BOX_CHIP}[data-je-flush-top] {
+                border-top-color: transparent !important; --je-flush-clip-top: 0px;
+                border-top-left-radius: 0; border-top-right-radius: 0;
+            }
+            ${F}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${BOX_CHIP}:last-child,
+            ${F}[data-je-slot="bc"] > [data-je-group] > ${BOX_CHIP}[data-je-flush-bottom] {
+                border-bottom-color: transparent !important; --je-flush-clip-bottom: 0px;
+                border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+            }
+        `;
+    }
+
+    /**
      * Build the shared layout stylesheet.
      * @returns {string} CSS text.
      */
@@ -174,33 +213,7 @@
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
                 top: calc(var(--je-edge) + ${INDICATOR_OFFSET});
             }
-            /* Flush removes the visible edge seam while preserving the chip's
-               border-box metrics. Clip only the touching sides of its shadow;
-               the inward sides keep the group's original border and shadow. */
-            ${FLUSH} > [data-je-group] > ${BOX_CHIP} {
-                --je-flush-clip-top: -12px; --je-flush-clip-right: -12px;
-                --je-flush-clip-bottom: -12px; --je-flush-clip-left: -12px;
-                outline-offset: 0px !important;
-                clip-path: inset(var(--je-flush-clip-top) var(--je-flush-clip-right) var(--je-flush-clip-bottom) var(--je-flush-clip-left));
-            }
-            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) > [data-je-group] > ${BOX_CHIP} {
-                border-left-color: transparent !important; --je-flush-clip-left: 0px;
-                border-top-left-radius: 0; border-bottom-left-radius: 0;
-            }
-            ${FLUSH}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) > [data-je-group] > ${BOX_CHIP} {
-                border-right-color: transparent !important; --je-flush-clip-right: 0px;
-                border-top-right-radius: 0; border-bottom-right-radius: 0;
-            }
-            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${BOX_CHIP}:first-child,
-            ${FLUSH}[data-je-slot="tc"] > [data-je-group] > ${BOX_CHIP}[data-je-flush-top] {
-                border-top-color: transparent !important; --je-flush-clip-top: 0px;
-                border-top-left-radius: 0; border-top-right-radius: 0;
-            }
-            ${FLUSH}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${BOX_CHIP}:last-child,
-            ${FLUSH}[data-je-slot="bc"] > [data-je-group] > ${BOX_CHIP}[data-je-flush-bottom] {
-                border-bottom-color: transparent !important; --je-flush-clip-bottom: 0px;
-                border-bottom-left-radius: 0; border-bottom-right-radius: 0;
-            }
+            ${buildFlushStyles()}
             ${FLUSH}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
             ${FLUSH}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 0px); align-items: flex-end; overflow: visible; }
 
@@ -509,6 +522,9 @@
         return JE.core.tagLayout?.preserveLegacySizing?.(css) || css;
     }
 
-    if (JE.core?.tagLayout) JE.core.tagLayout.buildStyles = buildStyles;
+    if (JE.core?.tagLayout) {
+        JE.core.tagLayout.buildStyles = buildStyles;
+        JE.core.tagLayout.buildFlushStyles = buildFlushStyles;
+    }
 
 })(window.JellyfinEnhanced);

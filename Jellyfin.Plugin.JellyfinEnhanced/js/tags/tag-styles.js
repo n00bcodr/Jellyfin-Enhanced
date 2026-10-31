@@ -237,6 +237,7 @@
             const c = logos[key];
             if (c) add(`${P}.logo-overlay-container .je-logo-chip[data-je-logo-style="${key}"]`, box(c));
         }
+        if (scope && rules.length && JE.core?.tagLayout?.buildFlushStyles) rules.push(JE.core.tagLayout.buildFlushStyles(scope));
         return rules.join('\n');
     }
 
