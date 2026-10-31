@@ -369,6 +369,7 @@ Administrators configure the same defaults on the Media Tags settings page under
 | Admin: **Show sound (Atmos, DTS, 5.1, 7.1, ...)** / personal: **Sound (Atmos, DTS, 5.1, 7.1, ...)** | On; sixth | Shows recognized audio format/channel information |
 | **Edition (Director’s Cut, Extended, …)** | On; seventh, after sound | Shows the edition from file/folder naming; its order is configurable |
 | **Include low-quality sources (CAM, TS, TC, SCR)** | Off | Allows those source labels when the Source category is on |
+| Personal: **Follow server settings** | — | Makes edition, low-quality sources, the category order and the series policy follow the administrator again. Until then, any change you make to one of them stays yours, even a change back to the administrator's value |
 | Admin: **Preferred Audio Language for Sound Tags** | **No preference (best track overall)** | Chooses a fixed language whose audio tracks determine the sound tag |
 | Admin: **Use Each User's Jellyfin Audio Language** | Off | Uses each user's Jellyfin preferred audio language; users without one retain the fixed admin language |
 | Personal: **Preferred audio language for the sound tag** | **Server default** | Inherits server policy, uses **My Jellyfin audio language**, selects **No preference (best track overall)**, or chooses a specific language |
@@ -395,7 +396,7 @@ Administrators configure the same defaults on the Media Tags settings page under
 
 ### Detection limits
 
-Series and seasons share the **Series and seasons show:** setting in **Media Tags** → **Groups** → **Quality**. The administrator sets its starting default on the Media Tags settings page under **Groups** → **Quality** → **Series and season quality**. Each user can choose:
+Series and seasons share the **Series and seasons show:** setting in **Media Tags** → **Groups** → **Quality**. The administrator sets its starting default on the Media Tags settings page under **Groups** → **Quality** → **Series and season quality**. **Follow server (…)**, the starting choice, follows the administrator's later changes. Each user can instead choose one of these, which then stays theirs even when it matches the administrator's:
 
 | Policy | What appears |
 |---|---|

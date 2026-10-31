@@ -293,13 +293,22 @@
                 </label>
             </div>`;
         if (group === 'quality') {
+            // "Follow server" is a choice of its own: picking the administrator's
+            // policy by name keeps it when the administrator changes theirs.
+            const following = JE.isSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation') === true;
+            const serverPolicy = JE.inheritedSettingDefault?.(JE.currentSettings, 'seriesQualityAggregation') || 'representative';
             return `
                 ${scopeRow('showLowQualitySourceTagToggle', 'showLowQualitySourceTag', 'ShowLowQualitySourceTag', 'panel_settings_ui_quality_tags_low_source', false)}
                 <div class="je-tge-extra">
                     <label for="seriesQualityAggregationSelect" class="je-tge-label">${escapeHtml(JE.t('series_quality_aggregation_label'))}</label>
                     <select id="seriesQualityAggregationSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
-                        ${['representative', 'latest', 'best', 'shared', 'mixed'].map(policy => `<option value="${policy}" ${JE.currentSettings.seriesQualityAggregation === policy ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_' + policy))}</option>`).join('')}
+                        <option value="" ${following ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_inherit', { policy: JE.t('series_quality_aggregation_' + serverPolicy) }))}</option>
+                        ${['representative', 'latest', 'best', 'shared', 'mixed'].map(policy => `<option value="${policy}" ${!following && JE.currentSettings.seriesQualityAggregation === policy ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_' + policy))}</option>`).join('')}
                     </select>
+                </div>
+                <div class="je-tge-extra">
+                    <button type="button" class="je-tge-reset" id="qualityTagsFollowServer"><span class="material-icons" aria-hidden="true">dns</span><span>${escapeHtml(JE.t('panel_settings_ui_quality_tags_follow_server'))}</span></button>
+                    <div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_quality_tags_follow_server_desc'))}</div>
                 </div>
                 <div class="je-quality-audio-lang je-tge-extra">
                     <label for="qualityTagsAudioLanguageSelect" class="je-tge-label">${escapeHtml(JE.t('panel_settings_ui_quality_tags_audio_language'))}</label>
