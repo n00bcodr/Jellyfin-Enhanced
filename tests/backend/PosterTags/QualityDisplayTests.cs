@@ -167,6 +167,26 @@ public class QualityDisplayTests
         return controller;
     }
 
+    [Theory]
+    [InlineData("qualityAudioDisplayMode", "all")]
+    [InlineData("qualityVideoCodecDisplayMode", "all")]
+    [InlineData("qualityHdrDisplayMode", "all")]
+    [InlineData("qualityMinimumResolution", "4k")]
+    [InlineData("qualityHideSdr", true)]
+    public void AdditiveQualitySettingsChangeTheirDigestWithoutGlobalResolverBump(string key, object value)
+    {
+        Assert.Equal("8", PosterTagSettings.ResolverVersion);
+        var config = new PluginConfiguration();
+        var baseline = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true}", config);
+        var explicitDefaults = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true,qualityAudioDisplayMode:'highest',qualityVideoCodecDisplayMode:'highest',qualityHdrDisplayMode:'highest',qualityMinimumResolution:'off',qualityHideSdr:false}", config);
+        Assert.Equal(baseline.Digest, explicitDefaults.Digest);
+        var changed = new Dictionary<string, object> { ["qualityTagsEnabled"] = true, [key] = value };
+        Assert.NotEqual(baseline.Digest, PosterTagSettings.FromSettingsJson(JsonSerializer.Serialize(changed), config).Digest);
+        changed["qualityTagsEnabled"] = false;
+        Assert.Equal(PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:false}", config).Digest,
+            PosterTagSettings.FromSettingsJson(JsonSerializer.Serialize(changed), config).Digest);
+    }
+
     [Fact]
     public void SettingsSeedValidateRoundTripInheritAndApplyDefaults()
     {
