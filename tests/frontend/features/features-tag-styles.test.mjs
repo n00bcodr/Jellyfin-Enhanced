@@ -255,3 +255,21 @@ test('Poster includes Awards and lets explicit Award colours override sampled fi
   assert.match(css.slice(own), /background: rgba\(0, 0, 255, 1\) !important;color: rgba\(0, 255, 0, 1\) !important/);
 });
 
+test('Poster and explicit Tier 2 colours leave the admin preview to its scoped stylesheet', t => {
+  const h = setup(t);
+  const chips = '<div data-je-poster-colour><div class="awards-overlay-container"><span class="awards-tag" data-je-award="oscar"></span></div><div class="logo-overlay-container"><span class="je-logo-chip" data-je-logo-style="company"></span></div><div class="custom-overlay-container"><span class="custom-tag" data-je-custom="Remaster"></span></div></div>';
+  h.document.body.innerHTML = `<div id="ordinary">${chips}</div><div id="adminPreview" data-je-tag-styles-scope>${chips}</div>`;
+  const model = { preset: 'poster', awards: { oscar: c('rgba(1, 2, 3, 1)', null, null) }, logos: { company: c('rgba(1, 2, 3, 1)', null, null) }, custom: { Remaster: c('rgba(1, 2, 3, 1)', null, null) } };
+  for (const rule of h.JE.tagStyles.buildCss(model).split('\n')) {
+    const selector = rule.slice(0, rule.indexOf(' {'));
+    assert.equal(h.document.querySelector('#adminPreview').querySelectorAll(selector).length, 0, selector);
+  }
+  const ordinary = h.JE.tagStyles.buildCss(model).split('\n').filter(r => /awards-tag|je-logo-chip|custom-tag/.test(r));
+  assert.equal(ordinary.length, 6, 'both sampled and explicit colours for all three groups');
+  for (const rule of ordinary) assert.equal(h.document.querySelectorAll(rule.slice(0, rule.indexOf(' {'))).length, 1);
+  for (const rule of h.JE.tagStyles.buildCss(model, '#adminPreview').split('\n').filter(r => /awards-tag|je-logo-chip|custom-tag/.test(r))) {
+    const matches = h.document.querySelectorAll(rule.slice(0, rule.indexOf(' {')));
+    assert.equal(matches.length, 1);
+    assert.ok(matches[0].closest('#adminPreview'));
+  }
+});

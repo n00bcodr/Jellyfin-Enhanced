@@ -1288,3 +1288,19 @@ test('each section module is a self-contained file the page loads, and every dec
   }
 });
 
+for (const action of ['#jeTaApplyAll', '#rebuildTagCacheBtn']) {
+  test(`a session switch while ${action} flushes pending fields prevents its POST`, async t => {
+    let user = 'admin-a';
+    const held = deferred();
+    const h = setup(t, { apiClient: { getCurrentUserId: () => user }, patch: () => held.promise });
+    h.ctx.set('TagsHideOnHover', true);
+    h.$(action).click();
+    await h.settle();
+    assert.equal(h.patches.length, 1, 'action is waiting for its save');
+    user = 'admin-b';
+    held.resolve({ values: { TagsHideOnHover: true } });
+    await h.settle(); await h.settle();
+    assert.deepEqual(h.posts, []);
+    assert.equal(h.ctx.isCurrent(), false);
+  });
+}
