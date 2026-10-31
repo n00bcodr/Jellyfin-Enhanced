@@ -454,3 +454,17 @@ test('the phone landing puts the form before saved rules, and restores desktop o
   assert.equal(side.parentElement.lastElementChild, side);
   assert.equal(h.document.activeElement, field);
 });
+
+test('a lock kept or changed elsewhere (the item editor) shows in the locked list at once', async t => {
+  const h = setup(t, { settings: { tagLayoutLocks: { [MOVIE]: { layout: 'bands', density: 'compact', lockedAt: 1 } } } });
+  await h.open();
+  const text = () => Array.from(h.mount().querySelectorAll('.je-tag-looks-locked-list li'), (li) => li.textContent);
+  assert.match(text()[0], /tag_looks_layout_bands\|panel_settings_ui_tag_density_compact/);
+  await h.JE.core.tagLook.lockItem(MOVIE, { layout: 'minimal', density: 'full' });
+  await h.settle(); await h.settle();
+  assert.match(text()[0], /tag_looks_layout_minimal\|panel_settings_ui_tag_density_full/);
+  await h.JE.core.tagLook.lockItem(SERIES, { layout: 'caption', density: 'full' });
+  await h.settle(); await h.settle();
+  assert.equal(text().length, 2);
+  assert.equal(h.mount().querySelector('[data-je-row="locked"] .je-tag-looks-count').textContent, '2');
+});

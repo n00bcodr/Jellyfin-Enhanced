@@ -971,10 +971,14 @@
                 renderLists();
             },
         };
-        // Reinitialization also covers Reset and programmatic changes. Update
-        // only the Otherwise outcome so the form keeps its input and focus.
+        // Reinitialization also covers Reset and programmatic changes (the
+        // item editor keeping or releasing a look). Update the Otherwise
+        // outcome and the locked items (focus kept by key), never the form,
+        // so it keeps its input and focus.
         const refreshDefault = () => {
-            if (mount.isConnected) renderOtherwise();
+            if (!mount.isConnected) return;
+            renderOtherwise();
+            renderLocks(view, state, touch, renderLists);
         };
         document.addEventListener('je:tag-layout-changed', refreshDefault);
         const stopWatching = () => {
