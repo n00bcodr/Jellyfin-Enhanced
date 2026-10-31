@@ -663,6 +663,7 @@ Use this index to find validation and asset-generation scripts and their mainten
 | `scripts/material-symbols/subset.py` | Builds the two Material Symbols subsets from bundled full fonts. Add every new runtime icon name to `ICONS`, install fonttools/Brotli, regenerate and include both subset outputs. Literal scanning cannot cover dynamically constructed names. |
 | `scripts/build_poster_assets.py` | Downloads pinned upstream inputs, verifies checksums and generates `Assets/PosterTags/`. Outputs are committed and do not regenerate during `dotnet build`. |
 | `scripts/poster-assets/package.json`, `package-lock.json`, `rasterize_flags.mjs` | Pinned Node/Playwright tooling for Chromium flag rasterization used by the poster asset generator. |
+| `scripts/capture-web-device-profile.mjs` | Captures jellyfin-web's own browser device profile and the `canPlayType` answers it read in headless Chromium into `tests/fixtures/direct-play-web-12.1-chromium.json`. Needs an authorised Jellyfin test server with the plugin installed (`--server`, `--user`, `JE_CAPTURE_PASSWORD`); `--cases-from` reuses the fixture's cases. Not run by CI. |
 
 `js/fonts/` contains `materialsymbolsrounded.woff2`, `materialsymbolsoutlined.woff2`, `materialsymbolsrounded-subset.woff2` and `materialsymbolsoutlined-subset.woff2`. Full fonts use the public Material Symbols family names for themes/custom CSS; subsets use private `JE Material Symbols …` families and `.je-msym-*` classes for JE's own icons. Keep those families separate so a subset does not shadow a theme's full font.
 

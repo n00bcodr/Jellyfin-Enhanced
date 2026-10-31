@@ -1,5 +1,5 @@
 {
-  "source": "jellyfin-web 12.1 (jellyfin/jellyfin:12.1 image) webpack module 57634 (scripts/browserDeviceProfile.js) called in headless Chromium on the je-lab-t3-leaving lab with the app host options for a video; canPlayType answers recorded per element type during that call. Regenerate with .notes/shots/t3-leaving-r1/web-profile-capture.mjs.",
+  "source": "jellyfin-web 12.1 (jellyfin/jellyfin:12.1 image) webpack module 57634 (scripts/browserDeviceProfile.js) called in headless Chromium 145.0.7632.6 on a Jellyfin 12.1 test server with this plugin installed, with the app host options for a video; canPlayType answers recorded per element type during that call. Regenerate with scripts/capture-web-device-profile.mjs --cases-from this file (see its --help).",
   "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/145.0.7632.6 Safari/537.36",
   "maxTouchPoints": 0,
   "env": {
