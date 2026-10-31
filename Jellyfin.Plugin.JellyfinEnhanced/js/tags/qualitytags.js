@@ -266,17 +266,26 @@
     const SOURCE_PREF_KEY = 'je-quality-source';
     const SOURCE_PREF_MAX = 500;
 
+    /** @returns {string} Lowercase hexadecimal item id, or '' when unusable. */
     function normItemId(id) {
-        return String(id || '').replace(/-/g, '').toLowerCase();
+        return String(id || '').toLowerCase().replace(/[^0-9a-f]/g, '');
     }
 
-    let sourcePrefs = {};
+    let sourcePrefs = new Map();
     let sourcePrefsMemoryOnly = false;
+    /** @returns {Map<string, string>} Valid picks from the existing JSON object format. */
     function readSourcePrefs() {
         if (sourcePrefsMemoryOnly) return sourcePrefs;
         try {
             const parsed = JSON.parse(localStorage.getItem(SOURCE_PREF_KEY) || '{}');
-            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) sourcePrefs = parsed;
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                sourcePrefs = new Map();
+                for (const [key, value] of Object.entries(parsed)) {
+                    if (typeof value !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key.toLowerCase())) continue;
+                    const id = normItemId(key);
+                    if (id) sourcePrefs.set(id, value);
+                }
+            }
             return sourcePrefs;
         } catch {
             return sourcePrefs;
@@ -285,19 +294,20 @@
 
     /** @returns {string} The remembered media source id, or '' for the default. */
     function selectedSourceFor(itemId) {
-        const value = readSourcePrefs()[normItemId(itemId)];
-        return typeof value === 'string' ? value : '';
+        const id = normItemId(itemId);
+        return id ? readSourcePrefs().get(id) || '' : '';
     }
 
+    /** Remember a pick as the newest entry, keeping the stored JSON object format. */
     function rememberSource(itemId, sourceId) {
-        const prefs = readSourcePrefs();
         const id = normItemId(itemId);
-        delete prefs[id]; // re-insert so the newest pick sits last
-        prefs[id] = sourceId;
-        const keys = Object.keys(prefs);
-        keys.slice(0, Math.max(0, keys.length - SOURCE_PREF_MAX)).forEach((k) => delete prefs[k]);
+        if (!id) return;
+        const prefs = readSourcePrefs();
+        prefs.delete(id); // re-insert so the newest pick sits last
+        prefs.set(id, sourceId);
+        while (prefs.size > SOURCE_PREF_MAX) prefs.delete(prefs.keys().next().value);
         try {
-            localStorage.setItem(SOURCE_PREF_KEY, JSON.stringify(prefs));
+            localStorage.setItem(SOURCE_PREF_KEY, JSON.stringify(Object.fromEntries(prefs)));
         } catch { sourcePrefsMemoryOnly = true; /* the pick lasts until reload */ }
     }
 

@@ -181,6 +181,9 @@ for (const [width, height, expected] of [[1920, 800, '1080p'], [2560, 1080, '144
   });
 }
 
+const movieId = 'aabbccdd00112233445566778899aaff';
+const dashedMovieId = 'AABBCCDD-0011-2233-4455-66778899AAFF';
+
 const mergedMovie = () => ({ Type: 'Movie', StreamData: {
   Streams: [
     { Type: 'Video', SourceId: 'first', Width: 1920, Height: 800, Codec: 'h264', VideoRangeType: 'SDR' },
@@ -202,61 +205,108 @@ const mergedMovie = () => ({ Type: 'Movie', StreamData: {
 for (const cachedFacts of [true, false]) test(`merged selection filters every category together (${cachedFacts ? 'cached' : 'derived'} All facts)`, t => {
   const h = setup(t); Object.assign(h.JE.currentSettings, all, { showSourceTag: true, showEditionTag: true });
   const entry = mergedMovie(); if (!cachedFacts) delete entry.StreamData.DistinctQualities;
-  assert.deepEqual(h.render(entry, 'movie'), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
-  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ movie: 'second' }));
-  assert.deepEqual(h.render(entry, 'movie'), ['4K', 'REMUX', 'HDR10', 'IMAX', 'HEVC', 'ATMOS 7.1', 'Extended']);
-  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ movie: 'removed-version' }));
-  assert.deepEqual(h.render(entry, 'movie'), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
+  assert.deepEqual(h.render(entry, movieId), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'second' }));
+  assert.deepEqual(h.render(entry, movieId), ['4K', 'REMUX', 'HDR10', 'IMAX', 'HEVC', 'ATMOS 7.1', 'Extended']);
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'removed-version' }));
+  assert.deepEqual(h.render(entry, movieId), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
 });
 
 test('batch hot and persistent caches miss on version changes and recompute using nested source streams', t => {
   const h = setup(t); Object.assign(h.JE.currentSettings, all);
   const entry = mergedMovie();
-  const item = { Id: 'movie', Type: 'Movie', MediaStreams: entry.StreamData.Streams,
+  const item = { Id: movieId, Type: 'Movie', MediaStreams: entry.StreamData.Streams,
     MediaSources: entry.StreamData.Sources.map(s => ({ ...s, MediaStreams: entry.StreamData.Streams.filter(st => st.SourceId === s.Id) })) };
   const renderer = h.renderers.get('quality'), clear = () => { h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged; };
   renderer.render(h.card, item);
   assert.ok(h.document.querySelector('[data-quality="H264"]'));
-  clear(); h.window.localStorage.setItem('je-quality-source', '{"movie":"second"}');
-  assert.equal(renderer.renderFromCache(h.card, 'movie'), false);
+  clear(); h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'second' }));
+  assert.equal(renderer.renderFromCache(h.card, movieId), false);
   renderer.render(h.card, item);
   assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), ['4K', 'REMUX', 'HDR10', 'IMAX', 'HEVC', 'ATMOS 7.1', 'Extended']);
-  clear(); renderer.renderFromCache(h.card, 'movie');
+  clear(); renderer.renderFromCache(h.card, movieId);
   assert.ok(h.document.querySelector('[data-quality="HEVC"]'));
-  clear(); h.window.localStorage.setItem('je-quality-source', '{"movie":"first"}');
-  assert.equal(renderer.renderFromCache(h.card, 'movie'), false);
+  clear(); h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'first' }));
+  assert.equal(renderer.renderFromCache(h.card, movieId), false);
   renderer.render(h.card, { ...item, MediaStreams: undefined });
   assert.ok(h.document.querySelector('[data-quality="H264"]'));
   assert.equal(h.document.querySelector('[data-quality="HEVC"]'), null);
 });
 
 test('version picker changes are normalized, remembered, and idempotently watched', t => {
-  const h = setup(t); h.window.location.hash = '#/details?id=MO-VIE';
+  const h = setup(t); h.window.location.hash = `#/details?id=${dashedMovieId}`;
   h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="first">First</option><option value="second">Second</option></select>');
   const select = h.document.querySelector('.selectSource');
   h.JE.initializeQualityTags(); select.value = 'second'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
-  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('je-quality-source')), { movie: 'second' });
-  assert.ok(h.render(mergedMovie(), 'movie').includes('HEVC'));
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('je-quality-source')), { [movieId]: 'second' });
+  assert.ok(h.render(mergedMovie(), movieId).includes('HEVC'));
+  const reloaded = setup(t);
+  reloaded.window.localStorage.setItem('je-quality-source', h.window.localStorage.getItem('je-quality-source'));
+  assert.ok(reloaded.render(mergedMovie(), dashedMovieId).includes('HEVC'), 'the JSON object survives a fresh module load');
   select.value = 'first'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
-  assert.ok(h.render(mergedMovie(), 'movie').includes('H264'));
+  assert.ok(h.render(mergedMovie(), movieId).includes('H264'));
+});
+
+test('stored source preferences ignore hostile keys and non-string values while keeping valid picks', t => {
+  const h = setup(t);
+  const stored = JSON.parse('{"__proto__":"second","constructor":"second","prototype":"second","":"second"}');
+  Object.assign(stored, { [movieId]: 'second', a1: null, a2: 42, a3: true, a4: {}, a5: ['second'] });
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify(stored));
+  for (const id of ['cc', 'e', 'a1', 'a2', 'a3', 'a4', 'a5']) {
+    assert.ok(h.render(mergedMovie(), id).includes('H264'), `no pick from a hostile key or non-string value for ${id}`);
+  }
+  assert.ok(h.render(mergedMovie(), movieId).includes('HEVC'), 'the existing object format still supplies valid picks');
+  h.window.location.hash = `#/details?id=${movieId}`;
+  h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="first">First</option></select>');
+  h.document.querySelector('.selectSource').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('je-quality-source')), { [movieId]: 'first' });
+});
+
+test('item ids with no hexadecimal characters neither select nor remember a source', t => {
+  const h = setup(t);
+  const stored = '{"":"second"}';
+  h.window.localStorage.setItem('je-quality-source', stored);
+  for (const id of ['', 'XYZ-!_']) assert.ok(h.render(mergedMovie(), id).includes('H264'));
+  h.window.location.hash = '#/details?id=XYZ-!_';
+  h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="second">Second</option></select>');
+  h.document.querySelector('.selectSource').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.equal(h.window.localStorage.getItem('je-quality-source'), stored, 'no preference write for an empty normalized id');
+});
+
+test('source preferences trim the oldest pick and keep a refreshed pick among the newest 500', t => {
+  const h = setup(t);
+  const ids = Array.from({ length: 501 }, (_, n) => `a${n.toString(16).padStart(31, '0')}`);
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify(Object.fromEntries(ids.slice(0, 500).map(id => [id, 'first']))));
+  h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="second">Second</option></select>');
+  const select = h.document.querySelector('.selectSource');
+  for (const id of [ids[0], ids[500]]) {
+    h.window.location.hash = `#/details?id=${id}`;
+    select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  }
+  const stored = JSON.parse(h.window.localStorage.getItem('je-quality-source'));
+  assert.deepEqual(Object.keys(stored), [...ids.slice(2, 500), ids[0], ids[500]]);
+  assert.equal(stored[ids[0]], 'second');
+  assert.equal(stored[ids[500]], 'second');
+  assert.ok(h.render(mergedMovie(), ids[1]).includes('H264'), 'the oldest unrefreshed pick is gone');
+  assert.ok(h.render(mergedMovie(), ids[0]).includes('HEVC'), 'the refreshed pick is retained');
 });
 
 for (const stored of ['null', '[]', '42', '"invalid"', '{broken']) test(`invalid version preference document ${stored} falls back safely`, t => {
   const h = setup(t); h.window.localStorage.setItem('je-quality-source', stored);
-  assert.ok(h.render(mergedMovie(), 'movie').includes('H264'));
+  assert.ok(h.render(mergedMovie(), movieId).includes('H264'));
 });
 
 test('an unavailable preference write retains the chosen version in memory', t => {
-  const h = setup(t); h.window.location.hash = '#/details?id=movie';
+  const h = setup(t); h.window.location.hash = `#/details?id=${movieId}`;
   h.window.Storage.prototype.setItem = () => { throw new Error('quota'); };
   h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="second">Second</option></select>');
   h.document.querySelector('.selectSource').dispatchEvent(new h.window.Event('change', { bubbles: true }));
-  assert.ok(h.render(mergedMovie(), 'movie').includes('HEVC'));
+  assert.ok(h.render(mergedMovie(), movieId).includes('HEVC'));
 });
 
 test('returning to details restores the remembered picker option and cancels an obsolete page restore', async t => {
-  const h = setup(t); h.window.location.hash = '#/details?id=movie';
-  h.window.localStorage.setItem('je-quality-source', '{"movie":"second"}');
+  const h = setup(t); h.window.location.hash = `#/details?id=${movieId}`;
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'second' }));
   h.document.body.insertAdjacentHTML('beforeend', '<div id="itemDetailPage"><select class="selectSource"><option value="first">First</option><option value="second">Second</option></select></div>');
   h.document.dispatchEvent(new h.window.Event('viewshow'));
   await new Promise(resolve => h.window.setTimeout(resolve, 350));
