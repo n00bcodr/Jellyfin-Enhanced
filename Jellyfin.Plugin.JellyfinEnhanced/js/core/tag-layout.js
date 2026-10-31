@@ -2210,6 +2210,10 @@
                     chip.toggleAttribute('data-je-flush-top', slot === 'tc' && !row.slot.hasAttribute('data-je-flush-detached') && row.shown[i] && row.fittedRows?.[i] === 1);
                     chip.toggleAttribute('data-je-flush-bottom', slot === 'bc' && row.shown[i] && row.fittedRows?.[i] === last);
                 });
+                const more = moreChipOf(row.slot);
+                const visible = row.more && row.shown.includes(false);
+                more?.toggleAttribute('data-je-flush-top', visible && slot === 'tc' && !row.slot.hasAttribute('data-je-flush-detached') && row.fittedMoreRow === 1);
+                more?.toggleAttribute('data-je-flush-bottom', visible && slot === 'bc' && row.fittedMoreRow === last);
             }
         }
         if (plan.pillFacts >= 0 && ctrl.pill) {

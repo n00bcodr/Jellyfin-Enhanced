@@ -110,3 +110,41 @@ test('scoped presets, Poster, group and label colours keep only inward Flush bor
     }
   }
 });
+
+// More chips sit directly in the slot; they have no group wrapper.
+test('Flush overflow-only and mixed centre rows treat +N as a visible edge chip', async ({ page }) => {
+  await setup(page);
+  for (const slot of ['tc', 'bc']) for (const mixed of [false, true]) for (const progress of [0, 4]) {
+    await place(page, {slot,progress,indicator:false});
+    const result = await page.evaluate(async ({slot,mixed}) => {
+      const L=JellyfinEnhanced.core.tagLayout, host=document.querySelector('.je-tag-host');
+      const group=document.createElement('div');group.className='quality-overlay-container';
+      group.innerHTML=(mixed?'<span class="quality-overlay-label">4K</span>':'')+'<span class="quality-overlay-label">'+ 'W'.repeat(100)+'</span>';
+      L.commitGroup(host,'quality',group);
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
+      const more=host.querySelector('.je-tag-more'),s=getComputedStyle(more),b=more.getBoundingClientRect(),h=host.getBoundingClientRect();
+      return {text:more.textContent,hidden:more.hasAttribute('data-je-overflow'),top:b.top-h.top,bottom:h.bottom-b.bottom,
+        border:slot==='tc'?s.borderTopColor:s.borderBottomColor, radius:slot==='tc'?s.borderTopLeftRadius:s.borderBottomLeftRadius,clip:s.clipPath};
+    },{slot,mixed});
+    expect(result.text).toBe('+1');expect(result.hidden).toBe(false);
+    expect(result.border).toBe('rgba(0, 0, 0, 0)');expect(result.radius).toBe('0px');expect(result.clip).not.toBe('none');
+    expect(slot==='tc'?result.top:result.bottom).toBeCloseTo(slot==='tc'?0:progress,2);
+  }
+});
+
+test('Flush direct overflow chips at corners keep the same side treatment as group chips', async ({page}) => {
+  await setup(page);
+  for(const slot of ['tl','tr','bl','br']) for(const mixed of [false,true]) {
+    await place(page,{slot,progress:0,indicator:false});
+    const result=await page.evaluate(({slot,mixed})=>{
+      const container=document.querySelector(`[data-je-slot="${slot}"]`);
+      if(!mixed)container.replaceChildren();
+      const more=document.createElement('span');more.className='je-tag-more';more.textContent='+1';container.append(more);
+      const s=getComputedStyle(more);
+      return {side:slot.endsWith('l')?s.borderLeftColor:s.borderRightColor,
+        edge:slot.startsWith('t')?s.borderTopColor:s.borderBottomColor,clip:s.clipPath};
+    },{slot,mixed});
+    expect(result.side).toBe('rgba(0, 0, 0, 0)');expect(result.clip).not.toBe('none');
+    expect(result.edge==='rgba(0, 0, 0, 0)').toBe(!mixed);
+  }
+});
