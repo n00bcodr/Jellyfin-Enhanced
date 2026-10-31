@@ -469,6 +469,15 @@
      */
 
     /**
+     * Whether this document predates normalized layouts and must retain legacy facts.
+     * @param {Object} [settings] Defaults to the current personal document.
+     * @returns {boolean} The version alone controls legacy presentation.
+     */
+    function isLegacySettings(settings) {
+        return !(Number((settings || JE.currentSettings || {}).tagLayoutSettingsVersion) >= 1);
+    }
+
+    /**
      * Resolve the effective layout settings from a user document and the
      * administrator defaults. A legacy document (no tagLayoutSettingsVersion)
      * keeps corners with its position settings, arrival ordering, full labels
@@ -486,7 +495,7 @@
     function normalizeSettings(settings, plugin) {
         const s = settings || JE.currentSettings || {};
         const p = plugin || JE.pluginConfig || {};
-        const legacy = !(Number(s.tagLayoutSettingsVersion) >= 1);
+        const legacy = isLegacySettings(s);
         const layout = legacy ? 'corners' : normalizeLayout(s.tagLayout);
         const densityRaw = legacy ? 'full' : String(s.tagLabelDensity || '').toLowerCase();
         const density = densityRaw === 'compact' ? 'compact' : 'full';
@@ -563,7 +572,7 @@
      */
     function promoteLegacySettings(settings) {
         const s = settings || JE.currentSettings;
-        if (!s || Number(s.tagLayoutSettingsVersion) >= 1) return false;
+        if (!s || !isLegacySettings(s)) return false;
         s.tagLayout = 'corners';
         s.tagLabelDensity = 'full';
         s.tagScale = 'default';
@@ -2574,6 +2583,7 @@
     });
 
     const api = {
+        isLegacySettings,
         GROUPS: DEFAULT_ORDER.slice(),
         LAYOUT_SLOTS,
         DEFAULT_ORDER: DEFAULT_ORDER.slice(),

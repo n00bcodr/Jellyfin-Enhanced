@@ -240,6 +240,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : result;
         }
 
+        /// <summary>The document version alone decides whether legacy presentation and facts apply.</summary>
+        public static bool IsLegacy(JellyfinEnhancedUserSettings settings) => settings.TagLayoutSettingsVersion < 1;
+
         /// <summary>Normalize the layout settings of a user document in place.</summary>
         public static void Normalize(JellyfinEnhancedUserSettings settings)
         {

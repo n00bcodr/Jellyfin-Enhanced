@@ -756,7 +756,7 @@
             }
         }
 
-        // Version-0 Full documents retain the detector they already used.
+        // Version-0 documents retain the detector they already used.
         const legacyAudio = legacyFullAudio();
         // --- AUDIO LOGIC ---
         let audioTag = null;
@@ -1023,9 +1023,9 @@
         return qualities;
     }
 
-    /** @returns {boolean} Whether Full audio must retain version-0 presentation. */
+    /** @returns {boolean} Whether audio must retain version-0 presentation. */
     function legacyFullAudio() {
-        return !(JE.currentSettings?.tagLayoutSettingsVersion >= 1) && JE.currentSettings?.tagLabelDensity !== 'compact';
+        return JE.core.tagLayout?.isLegacySettings() ?? true;
     }
 
     /**

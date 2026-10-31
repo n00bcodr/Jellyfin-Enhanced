@@ -195,8 +195,9 @@ public class SeriesQualityAggregationTests
             var summary = SeriesQualityAggregation.Build(episodes, 100);
             foreach (var expected in row.GetProperty("expected").EnumerateArray())
             foreach (var type in new[] { "Series", "Season" })
+            foreach (var density in expected.GetProperty("legacy").GetBoolean() ? new string?[] { null, "full", "compact" } : new[] { "full" })
             {
-                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true,
+                var settings = PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLabelDensity = density,
                     TagLayoutSettingsVersion = expected.GetProperty("legacy").GetBoolean() ? 0 : 1,
                     SeriesQualityAggregation = expected.GetProperty("policy").GetString(),
                     QualityAudioDisplayMode = expected.GetProperty("mode").GetString(),

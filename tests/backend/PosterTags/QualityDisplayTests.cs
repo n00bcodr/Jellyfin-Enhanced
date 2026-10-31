@@ -49,6 +49,43 @@ public class QualityDisplayTests
     }
 
     [Fact]
+    public void AudioGateUsesTheLayoutVersionInTheSharedDocuments()
+    {
+        using var fixture = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioLegacyDocuments.json")!;
+        using var cases = JsonDocument.Parse(fixture);
+        foreach (var row in cases.RootElement.EnumerateArray())
+        {
+            var settings = PosterTagSettings.FromSettingsJson(row.GetProperty("settings").GetRawText(), new());
+            Assert.Equal(row.GetProperty("legacy").GetBoolean(), settings.LegacyAudioFacts);
+            Assert.Equal(row.GetProperty("density").GetString() == "compact", settings.CompactBands);
+            Assert.Equal(new[] { row.GetProperty("label").GetString() }, Labels(new() { Type = "Movie", StreamData = new() {
+                Streams = [new() { Type = "Audio", Codec = "ac3", Channels = 6 }] } }, settings));
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("full")]
+    [InlineData("compact")]
+    public void VersionTransitionChangesTheNativeVariantEvenWhenBothLayoutsHaveFullLabels(string? density)
+    {
+        var document = new JellyfinEnhancedUserSettings { QualityTagsEnabled = true, TagLabelDensity = density };
+        var legacy = PosterTagSettings.FromUserSettings(document, new(), null);
+        document.TagLayoutSettingsVersion = 1; document.TagLabelDensity = "full";
+        var current = PosterTagSettings.FromUserSettings(document, new(), null);
+        Assert.NotEqual(legacy.Digest, current.Digest);
+        var directory = Path.Combine(Path.GetTempPath(), "je-audio-token-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(directory, "secret"), _ => { });
+            var user = Guid.NewGuid(); var item = Guid.NewGuid();
+            var token = tokens.Mint(user, item, legacy.Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+            Assert.False(tokens.Verify(token, user, item, current.Digest, "7.1", out _));
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
+    [Fact]
     public void AudioStreamFactsReachNativeChipsInBothDensities()
     {
         using var stream = typeof(QualityDisplayTests).Assembly.GetManifestResourceStream("AudioStreamLabels.json")!;

@@ -324,6 +324,8 @@ for (const version of [0, 1]) for (const mode of ['highest', 'all'])
         synth(`audio-aggregate-v${version}-${mode}-${policy}-${language}`, { QualityTagsEnabled: true,
             TagLayoutSettingsVersion: version, QualityAudioDisplayMode: mode, SeriesQualityAggregation: policy,
             QualityTagsPreferredAudioLanguage: language });
+for (const row of JSON.parse(readFileSync(join(here, '../../fixtures/audio-legacy-documents.json'), 'utf8')))
+    synth(`audio-gate-${row.name}`, row.settings);
 // Display modes independently, inherited defaults, native caps/density and all container policies.
 const displayAll = { QualityTagsEnabled: true, QualityAudioDisplayMode: 'all', QualityVideoCodecDisplayMode: 'all', QualityHdrDisplayMode: 'all' };
 for (const field of ['QualityAudioDisplayMode', 'QualityVideoCodecDisplayMode', 'QualityHdrDisplayMode'])

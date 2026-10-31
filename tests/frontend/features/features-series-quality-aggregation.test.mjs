@@ -134,8 +134,8 @@ const audioAggregation = JSON.parse(readFileSync(new URL('../../fixtures/audio-a
 for (const row of audioAggregation) for (const type of ['Series', 'Season']) {
   test(`${type} ${row.name} audio preserves every aggregation policy, language tier and display mode under the caller gate`, t => {
     const h = setup(t);
-    for (const expected of row.expected) {
-      Object.assign(h.JE.currentSettings, { tagLayoutSettingsVersion: expected.legacy ? 0 : 1,
+    for (const expected of row.expected) for (const density of expected.legacy ? [undefined, 'full', 'compact'] : ['full']) {
+      Object.assign(h.JE.currentSettings, { tagLabelDensity: density, tagLayoutSettingsVersion: expected.legacy ? 0 : 1,
         seriesQualityAggregation: expected.policy, qualityAudioDisplayMode: expected.mode,
         qualityTagsPreferredAudioLanguage: expected.preferred });
       assert.deepEqual(h.render({ ...row.entry, Type: type }), expected.labels, JSON.stringify(expected));

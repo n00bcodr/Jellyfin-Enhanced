@@ -75,7 +75,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool Bands { get; private init; }
         public bool CompactBands { get; private init; }
 
-        /// <summary>Preserve the original audio detector for version-0 Full documents.</summary>
+        /// <summary>Preserve the original audio detector for version-0 documents.</summary>
         public bool LegacyAudioFacts { get; private init; }
         public bool StatusTagsEnabled { get; private init; }
         public string StatusTagsPosition { get; private init; } = "top-right";
@@ -478,7 +478,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 UseNativePosterTags = useNative,
                 Bands = layout.Bands,
                 CompactBands = layout.Bands && user.TagLabelDensity == "compact",
-                LegacyAudioFacts = user.TagLayoutSettingsVersion < 1 && user.TagLabelDensity != "compact",
+                LegacyAudioFacts = TagLayoutRules.IsLegacy(user),
                 StatusTagsEnabled = user.StatusTagsEnabled,
                 StatusTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Status) ?? Position(user.StatusTagsPosition, config.StatusTagsPosition, "top-right"),
                 StatusJustAdded = user.StatusTagsJustAdded,
@@ -516,8 +516,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 LanguageTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Language) ?? Position(user.LanguageTagsPosition, config.LanguageTagsPosition, "bottom-left"),
                 RatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Rating) ?? Position(user.RatingTagsPosition, config.RatingTagsPosition, "bottom-right"),
                 AgeRatingTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.AgeRating) ?? Position(user.AgeRatingTagsPosition, config.AgeRatingTagsPosition, "bottom-right"),
-                TagScale = user.TagLayoutSettingsVersion < 1 ? "default" : TagLayoutRules.NormalizeScale(user.TagScale ?? config.TagScale),
-                TagGap = user.TagLayoutSettingsVersion < 1 ? "default" : TagLayoutRules.NormalizeGap(user.TagGap ?? config.TagGap),
+                TagScale = TagLayoutRules.IsLegacy(user) ? "default" : TagLayoutRules.NormalizeScale(user.TagScale ?? config.TagScale),
+                TagGap = TagLayoutRules.IsLegacy(user) ? "default" : TagLayoutRules.NormalizeGap(user.TagGap ?? config.TagGap),
                 LogoTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Logos) ?? Position(user.LogoTagsPosition, config.LogoTagsPosition, "bottom-left"),
                 CustomTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Custom) ?? Position(user.CustomTagsPosition, config.CustomTagsPosition, "top-left"),
                 OffGroups = layout.Off,
@@ -583,7 +583,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowUserReviews = config.ShowUserReviews,
                 ShowUserRatingOnPosters = config.ShowUserRatingOnPosters,
                 ShowUserRatingDash = config.ShowUserRatingDash,
-                EdgeSpacing = user.TagLayoutSettingsVersion < 1
+                EdgeSpacing = TagLayoutRules.IsLegacy(user)
                     ? "default"
                     : TagLayoutRules.NormalizeEdgeSpacing(user.TagEdgeSpacing) ?? TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
                 Styles = config.TagStylesEnabled && config.TagStyleTarget is "native" or "both"
@@ -739,7 +739,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         private static NativeLayout ResolveLayout(JellyfinEnhancedUserSettings user, PluginConfiguration config)
         {
-            var legacy = user.TagLayoutSettingsVersion < 1;
+            var legacy = TagLayoutRules.IsLegacy(user);
             var bands = !legacy && TagLayoutRules.NormalizeLayout(user.TagLayout) == "bands";
             var corners = new Dictionary<PosterTagGroup, string>();
             var off = new HashSet<PosterTagGroup>();
