@@ -330,6 +330,18 @@
             });
         }
 
+        // Nullable display preferences retain live admin inheritance until explicitly chosen.
+        document.querySelectorAll('[data-quality-display-key]').forEach(select => {
+            select.addEventListener('change', () => {
+                const key = select.dataset.qualityDisplayKey;
+                JE.currentSettings[key] = select.value === '' ? null : key === 'qualityHideSdr' ? select.value === 'true' : select.value;
+                JE.saveUserSettings('settings.json', JE.currentSettings);
+                JE.reinitializeQualityTags?.();
+                JE.reinitializeTagLayout?.();
+                resetAutoCloseTimer();
+            });
+        });
+
         // Low-quality sources are a gate within Source, separate from category ordering.
         const lowSourceToggle = document.getElementById('showLowQualitySourceTagToggle');
         if (lowSourceToggle) lowSourceToggle.addEventListener('change', () => {

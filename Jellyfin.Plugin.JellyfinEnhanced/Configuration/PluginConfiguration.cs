@@ -142,6 +142,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             QualityTagsPosition = "top-left";
             // Series/season quality aggregation default.
             SeriesQualityAggregation = "representative";
+            QualityAudioDisplayMode = "highest";
+            QualityVideoCodecDisplayMode = "highest";
+            QualityHdrDisplayMode = "highest";
+            QualityMinimumResolution = "off";
+            QualityHideSdr = false;
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
             LanguageTagsPriority = string.Empty;
@@ -757,6 +762,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DisableCustomSubtitleStyles { get; set; }
         [AnalyticsInclude]
         public string QualityTagsPosition { get; set; } = "top-left";
+
+        // Stream-derived quality display defaults.
+        /// <summary>QualityAudioDisplayMode: highest or all distinct stream values.</summary>
+        [AnalyticsInclude]
+        public string QualityAudioDisplayMode { get; set; } = "highest";
+        /// <summary>QualityVideoCodecDisplayMode: highest or all distinct stream values.</summary>
+        [AnalyticsInclude]
+        public string QualityVideoCodecDisplayMode { get; set; } = "highest";
+        /// <summary>QualityHdrDisplayMode: highest or all distinct stream values.</summary>
+        [AnalyticsInclude]
+        public string QualityHdrDisplayMode { get; set; } = "highest";
+        /// <summary>QualityMinimumResolution: minimum resolution threshold.</summary>
+        [AnalyticsInclude]
+        public string QualityMinimumResolution { get; set; } = "off";
+        /// <summary>QualityHideSdr: hide SDR in All mode.</summary>
+        [AnalyticsInclude]
+        public bool QualityHideSdr { get; set; } = false;
 
         // Series/season quality aggregation default (independent of poster layout).
         [AnalyticsInclude]

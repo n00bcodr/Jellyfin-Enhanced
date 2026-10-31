@@ -764,3 +764,10 @@ The layout, settings hub, Tag Styles and native resolver/plan/renderer use the s
 `scripts/generate_status_dates.mjs` generates `js/tags/status-short-dates.json` from browser Intl data for native Status month/day labels, with deduplicated formats and locale-to-format mappings for every shipped language and named territory. It also generates `tests/fixtures/native-status-dates.json` for four-date regional regressions; `generate_status_vocabulary.py --check` checks both tables.
 
 `Configuration/NativePosterDateContext.cs` validates and bounds saved native locale/timezone context on assignment and document load.
+
+
+### Quality stream display modes
+
+`Configuration/QualityDisplaySettings.cs` validates Highest/All modes and the inclusive minimum-resolution buckets. Nullable personal overrides in `UserConfiguration.cs` inherit live admin defaults; the controller seeds, validates and resets them. The existing admin `sections/quality.js` declares all five controls, with validators in `Helpers/MediaTagsPageFields.cs` and independent fixture/binding entries. Personal controls remain in the Quality group editor.
+
+`TagStreamData.DistinctQualities` carries distinct track category/label/language triples computed by `QualityTagRules.DetectDistinct` when `TagCacheService.BuildStreamData` creates stream facts. `TagQualityCategory` carries full union, intersection and latest sets independently of its bounded legacy samples. `SeriesQualityAggregation` builds these from the existing episode walk and applies each policy per category. `qualitytags.js` reads the persisted sets or derives identical batch sets; `PosterTagResolver` uses the same native rules. The current tag cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`) also gates both browser snapshot readers. Regression coverage is in `QualityDisplayTests.cs`, `features-quality-display.test.mjs`, the group editor tests and offline native parity profiles.

@@ -79,6 +79,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // "auto" = the user's Jellyfin audio language, "none" = no preference,
         // otherwise an ISO 639 code.
         public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
+        // Stream-derived quality display; nullable personal values follow the administrator.
+        /// <summary>QualityAudioDisplayMode: highest or all distinct stream values.</summary>
+        public string? QualityAudioDisplayMode { get; set; }
+        /// <summary>QualityVideoCodecDisplayMode: highest or all distinct stream values.</summary>
+        public string? QualityVideoCodecDisplayMode { get; set; }
+        /// <summary>QualityHdrDisplayMode: highest or all distinct stream values.</summary>
+        public string? QualityHdrDisplayMode { get; set; }
+        /// <summary>QualityMinimumResolution: minimum resolution threshold.</summary>
+        public string? QualityMinimumResolution { get; set; }
+        /// <summary>QualityHideSdr: hide SDR in All mode.</summary>
+        public bool? QualityHideSdr { get; set; }
+
         // Series/season quality aggregation. Null inherits the administrator's default.
         public string? SeriesQualityAggregation { get; set; }
 

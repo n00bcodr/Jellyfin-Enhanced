@@ -84,3 +84,7 @@ The old main form contains only the Media Tags summary card. Its legacy section 
 | Status badges | Existing family switches and day windows, plus the TMDB dependency note; no user-only date-context field is added to the patch allowlist. |
 
 All nine poster groups share the layout editor and preview. Page-wide Tag Styles, including Poster variables, skip scoped previews. The page seeds size/gap/edge and new-group defaults without changing the signed-in user's document. The current cache schema (`CurrentCacheSchemaVersion` in `Services/TagCacheService.cs`) and the resolver, renderer and pixel versions are unchanged by the admin page.
+
+## Quality stream display fields
+
+The existing `sections/quality.js` declares `QualityAudioDisplayMode`, `QualityVideoCodecDisplayMode`, `QualityHdrDisplayMode`, `QualityMinimumResolution` and `QualityHideSdr`. They appear below the category list in **Groups → Quality**. The three modes accept `highest`/`all`; the threshold accepts `off`/`720p`/`1080p`/`4k`, and Hide SDR is Boolean. `QualityDisplayRules` supplies shared read-time/user-save normalization; the patch validators reject unrecognized choices. These fields are present in the admin fixture and independent binding map and seed the preview's new-user document. All and visibility filtering also affect the live sample chips.

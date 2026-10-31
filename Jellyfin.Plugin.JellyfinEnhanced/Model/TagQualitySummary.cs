@@ -34,7 +34,13 @@ public sealed class TagQualityCategory
     public string?[] Values { get; init; } = System.Array.Empty<string?>();
     /// <summary>Computed over every episode, independently of the bounded distinct set.</summary>
     public bool AllAgree { get; init; }
+    /// <summary>Ranked union, intersection and latest-episode sets for All display mode.</summary>
+    public string[] All { get; init; } = System.Array.Empty<string>();
+    public string[] Shared { get; init; } = System.Array.Empty<string>();
+    public string[] LatestAll { get; init; } = System.Array.Empty<string>();
+    public bool AllSetsAgree { get; init; }
 
     internal static bool ContentEquals(TagQualityCategory a, TagQualityCategory b) =>
-        a.Best == b.Best && a.Latest == b.Latest && a.AllAgree == b.AllAgree && a.Values.SequenceEqual(b.Values);
+        a.Best == b.Best && a.Latest == b.Latest && a.AllAgree == b.AllAgree && a.Values.SequenceEqual(b.Values)
+        && a.All.SequenceEqual(b.All) && a.Shared.SequenceEqual(b.Shared) && a.LatestAll.SequenceEqual(b.LatestAll) && a.AllSetsAgree == b.AllSetsAgree;
 }

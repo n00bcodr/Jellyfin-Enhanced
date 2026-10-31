@@ -138,7 +138,17 @@
                     const chip = sample.quality[cat.settingKey];
                     if (!chip || !effectiveBool(cat.settingKey, cat.pluginKey)) continue;
                     const [label, key, kind] = chip;
+                    const minimum = JE.currentSettings.qualityMinimumResolution ?? JE.pluginConfig?.QualityMinimumResolution;
+                    if (cat.settingKey === 'showResolutionTag' && minimum === '4k' && !['4K', '8K'].includes(key)) continue;
                     add(`quality-overlay-label ${kind}`, label).dataset.quality = key;
+                    const modeKey = { showAudioInfoTag: 'qualityAudioDisplayMode', showVideoCodecTag: 'qualityVideoCodecDisplayMode', showDynamicRangeTag: 'qualityHdrDisplayMode' }[cat.settingKey];
+                    const mode = modeKey && (JE.currentSettings[modeKey] ?? JE.pluginConfig?.[modeKey[0].toUpperCase() + modeKey.slice(1)]);
+                    const hideSdr = JE.currentSettings.qualityHideSdr ?? JE.pluginConfig?.QualityHideSdr;
+                    if (mode === 'all') {
+                        const extra = cat.settingKey === 'showAudioInfoTag' ? ['DTS 5.1', 'DTS']
+                            : cat.settingKey === 'showVideoCodecTag' ? ['H264', 'H264'] : !hideSdr ? ['SDR', 'SDR'] : null;
+                        if (extra) add(`quality-overlay-label ${kind}`, extra[0]).dataset.quality = extra[1];
+                    }
                 }
                 break;
             }

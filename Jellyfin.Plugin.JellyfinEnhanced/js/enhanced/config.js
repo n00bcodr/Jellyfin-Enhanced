@@ -233,6 +233,13 @@
             }
         }
 
+        // Quality display: null follows the live administrator defaults.
+        mergedSettings.qualityAudioDisplayMode = typeof userSettings.qualityAudioDisplayMode === 'string' ? userSettings.qualityAudioDisplayMode : null;
+        mergedSettings.qualityVideoCodecDisplayMode = typeof userSettings.qualityVideoCodecDisplayMode === 'string' ? userSettings.qualityVideoCodecDisplayMode : null;
+        mergedSettings.qualityHdrDisplayMode = typeof userSettings.qualityHdrDisplayMode === 'string' ? userSettings.qualityHdrDisplayMode : null;
+        mergedSettings.qualityMinimumResolution = typeof userSettings.qualityMinimumResolution === 'string' ? userSettings.qualityMinimumResolution : null;
+        mergedSettings.qualityHideSdr = typeof userSettings.qualityHideSdr === 'boolean' ? userSettings.qualityHideSdr : null;
+
         // Personal language policy: retain null inheritance and intentional empty arrays.
         // Do not resolve admin values here, or an unrelated save would pin today's policy.
         mergedSettings.languageTagsPriority = JE.core?.mediaLanguage?.priorityList(userSettings.languageTagsPriority) ?? null;

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -68,7 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD" };
         private static readonly string[] SourceOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "Physical", "CAM", "TS", "TC", "SCR" };
-        private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HDR" };
+        private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HDR", "SDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA" };
         private static readonly string[] AudioOrder = { "ATMOS", "DTS-X", "TRUEHD", "DTS", "Dolby Digital+", "7.1", "5.1" };
@@ -109,6 +111,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// <param name="edition">Server-derived edition label, or null.</param>
         public static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource = null, string? edition = null)
             => Detect(data, preferredAudioLanguage, releaseSource, edition, includeAudio: true);
+
+        /// <summary>Detect each track independently, deduplicating category/label/language triples.</summary>
+        internal static List<TagStreamQuality> DetectDistinct(IEnumerable<TagMediaStream>? streams)
+        {
+            var values = new List<TagStreamQuality>();
+            foreach (var stream in streams ?? Array.Empty<TagMediaStream>())
+            {
+                if (stream == null) continue;
+                if (stream.Type == "Video")
+                {
+                    var codec = DetectCodec(stream);
+                    if (codec != null) values.Add(new(VideoCodec, codec));
+                    // An unprobed track is unknown, not evidence of SDR.
+                    var range = DetectDynamicRange(stream);
+                    if (range != null) values.Add(new(DynamicRange, range));
+                    else if (!string.IsNullOrEmpty(stream.VideoRangeType) || !string.IsNullOrEmpty(stream.Codec) || stream.Height > 0)
+                        values.Add(new(DynamicRange, "SDR"));
+                }
+                else if (stream.Type == "Audio")
+                {
+                    var track = new List<TagMediaStream> { stream };
+                    var codec = DetectAudioCodec(track);
+                    var channels = DetectChannels(track);
+                    var label = codec == null ? (channels is "7.1" or "5.1" ? channels : null)
+                        : channels != null && !codec.Contains(channels, StringComparison.Ordinal) ? codec + " " + channels : codec;
+                    if (label != null) values.Add(new(AudioInfo, label, stream.Language));
+                }
+            }
+            return values.Distinct().ToList();
+        }
+
+        /// <summary>Read cached distinct facts (or derive fixture/fallback facts) with the existing audio-language tiers.</summary>
+        internal static List<string> DistinctValues(TagStreamData? data, string category, string? preferred)
+        {
+            var values = data?.DistinctQualities ?? DetectDistinct(data?.Streams);
+            var candidates = values.Where(value => value.Category == category).ToList();
+            if (category == AudioInfo && !string.IsNullOrEmpty(preferred))
+            {
+                // Availability includes tracks with no displayable label. Once a tier is
+                // selected, an empty label set must not fall back to another language.
+                var tracks = data?.Streams?.FindAll(stream => stream?.Type == "Audio") ?? new List<TagMediaStream>();
+                var languages = SelectAudioStreamsForLanguage(tracks, preferred).Select(stream => stream.Language).ToHashSet(StringComparer.Ordinal);
+                candidates = candidates.FindAll(value => languages.Contains(value.Language));
+            }
+            return candidates.Select(value => value.Label).Distinct(StringComparer.Ordinal)
+                .OrderBy(label => AggregationRank(label, category)).ThenBy(label => label, StringComparer.Ordinal).ToList();
+        }
+
+        /// <summary>Replace only All categories; Highest follows the legacy detector exactly.</summary>
+        internal static List<string> ApplyDisplayModes(TagStreamData? data, List<string> labels, string? preferred, Func<string, bool>? all)
+        {
+            if (all == null || data?.Streams == null || data.Streams.Any(stream => stream == null)) return labels;
+            // Preserve the web detector's malformed-source failure boundary. The
+            // 3D search stops after its first match, so a later null is not read.
+            foreach (var source in data.Sources ?? new List<TagMediaSource>())
+            {
+                if (source == null) return labels;
+                var path = JsText.ToLower(source.Path ?? string.Empty);
+                if (path.Contains("3d", StringComparison.Ordinal) && ContainsAny(path, "hsbs", "fsbs", "htab", "ftab", "mvc")) break;
+            }
+            foreach (var category in new[] { AudioInfo, VideoCodec, DynamicRange })
+            {
+                if (!all(category)) continue;
+                labels.RemoveAll(label => CategoryOf(label) == category);
+                labels.AddRange(DistinctValues(data, category, preferred));
+            }
+            return labels;
+        }
 
         /// <summary>Detect video and source labels without computing audio that aggregation ranks per track.</summary>
         internal static List<string> DetectNonAudio(TagStreamData? data)
@@ -214,6 +284,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             List<string>? other = null;
             foreach (var label in qualities)
             {
+                if (label == "SDR" && settings.QualityHideSdr) continue;
+                if (CategoryOf(label) == Resolution && !QualityDisplayRules.MeetsMinimum(label, settings.QualityMinimumResolution)) continue;
                 if (!settings.ShowLowQualitySourceTag && label is "CAM" or "TS" or "TC" or "SCR") continue;
                 if (label == EditionPrefix + "IMAX" && qualities.Contains("IMAX") && settings.ShowSpecialFormatTag) continue;
                 var index = CategoryIndex(label);
@@ -224,7 +296,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 }
 
                 if (!settings.IsQualityCategoryShown(Categories[index].Key)) continue;
-                (buckets[index] ??= new List<string>()).Add(label);
+                var target = buckets[index] ??= new List<string>();
+                if (!target.Contains(label)) target.Add(label);
             }
 
             var order = new List<int>(Categories.Length);
@@ -235,6 +308,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 var items = Categories[i].Items;
                 StableSortBy(bucket, label =>
                 {
+                    if (settings.AllQualityValues(Categories[i].Key)) return AggregationRank(label, Categories[i].Key);
                     var idx = Array.IndexOf(items, NormalizeLabel(label));
                     return idx == -1 ? 999 : idx;
                 });

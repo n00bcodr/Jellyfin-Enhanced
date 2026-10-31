@@ -1194,3 +1194,8 @@ Saved size and gap choices also affect native posters; custom web CSS does not a
 ### Awards chips
 
 The Awards wrapper is `.awards-overlay-container`, placed by the shared tag layout controller. Each `.awards-tag[data-je-award]` contains `.awards-tag-logo` (decorative bundled SVG) and a text span. Stable ids are `imdbTop250`, `certifiedFresh`, `oscar`, `emmy`, `letterboxdTop250`. The chip's title and accessible label include rank/year when known. On linked posters the layout wraps chips in `.awards-link` anchors (`tabindex="-1"`) so hover titles and poster navigation remain reachable. Layout slots, caption outlets, caps and hover suppression apply as for other groups. Tag Styles supplies Awards group and per-label background/text/inner-border colours. SVG source colours remain their identifying colours; CSS cannot change native image pixels.
+
+
+### Quality stream display
+
+All-mode chips reuse `.quality-overlay-label`, `.audio-codec`, `.video-format` and `.video-codec` inside `.quality-overlay-container`. Each distinct sound codec/channel combination is a separate chip; `data-quality` retains its base codec for existing colour selectors. SDR uses `.video-codec[data-quality="SDR"]` and is also an editable Tag Styles label. There is no new wrapper or per-card layout measurement. Minimum-resolution and Hide SDR filtering remove chips before layout and overflow fitting, so CSS does not need to hide them.

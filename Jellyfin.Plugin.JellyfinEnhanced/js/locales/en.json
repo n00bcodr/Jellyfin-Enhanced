@@ -1506,5 +1506,17 @@
     "admin_tags_custom_title": "Custom",
     "admin_tags_custom_desc": "Match existing tags or collections to labels and icons. Up to 20 rules; labels up to 24 characters. Collections require the server cache.",
     "admin_tags_customTagsPosition": "Custom position",
-    "panel_settings_ui_tag_group_awards": "Awards"
+    "panel_settings_ui_tag_group_awards": "Awards",
+  "quality_display_audio": "Sound display mode",
+  "quality_display_video": "Video codec display mode",
+  "quality_display_hdr": "HDR display mode",
+  "quality_display_highest": "Highest only",
+  "quality_display_all": "All distinct values",
+  "quality_display_inherit": "Server default",
+  "quality_minimum_resolution": "Minimum resolution to show",
+  "quality_resolution_off": "Off",
+  "quality_hide_sdr": "Hide SDR",
+  "quality_display_help": "All shows distinct values in rank order. Sound follows your audio language. Show up to limits the whole Quality group.",
+  "quality_sdr_show": "Show SDR",
+  "quality_sdr_hide": "Hide SDR"
 }
