@@ -4,7 +4,7 @@ Use Jellyfin Enhanced (JE)'s API to manage bookmarks, reviews, and personal sett
 
 To use these APIs from a custom Jellyfin client, you need an HTTP client and a Jellyfin credential. You do not need the injected JE scripts.
 
-This reference covers the 173 method/path entries in plugin version **12.12.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
+This reference covers the 192 method/path entries in plugin version **12.12.0.0**. Use the endpoint tables to check access requirements, inputs, responses, and limits.
 
 Paths in endpoint tables are relative to `/JellyfinEnhanced/`. Braces mark path parameters; replace them before making a request. The catch-all routes serve only the resources described below.
 
@@ -1336,7 +1336,7 @@ Diagnostic headers use the prefix `X-JE-Poster-Tags-`: `Status`, `Artwork` (`ori
 
 ### Audio tags, awards, MDBList, and content warnings
 
-Use these routes to look up language tag names, awards, external ratings, and DoesTheDogDie content warnings. The account-status route lets administrators check MDBList limits.
+Use these routes to look up language tag names, awards, external ratings, AniList reviews, and DoesTheDogDie content warnings. The account-status route lets administrators check MDBList limits.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -1346,6 +1346,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | **Enable MDBList Ratings** | `false` | `MdblistRatingsEnabled`; gates MDBList title responses. |
 | **MDBList API Key** | `""` | `MdblistApiKey`; enables upstream lookups. |
 | **Show Content Warnings** | `false` | `DoesTheDogDieEnabled`; also needs a nonblank `DoesTheDogDieApiKey`. |
+| **Show AniList Reviews** | `false` | `ShowAnilistReviews`; gates the AniList reviews route. |
 | **Enable Review Translation** | `false` | `ReviewTranslationEnabled`; the translate routes also need a nonblank `ReviewTranslationUrl`. `ReviewTranslationApiKey` is optional and never returned to clients. |
 
 | Method | Path | Access | Contract |
@@ -1356,6 +1357,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | GET | `mdblist-ratings/account-status` | Administrator | Optional nonblank query `apiKey` override → live account status. |
 | GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
+| GET | `anilist/reviews` | Authenticated | Query `anilistId` (positive AniList anime id) → `{SiteUrl, Reviews:[{Author,Summary,Content,Score,Rating,RatingAmount,CreatedAt,Url}]}` (PascalCase), the ten highest-rated AniList reviews, cached 12 hours (2 hours when none). `503` when disabled, `400` for a bad id, `502` when AniList fails. |
 | GET | `translate/languages` | Authenticated | `{languages:[...]}`, the target languages the configured LibreTranslate offers for English. |
 | POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. |
 
@@ -1919,7 +1921,7 @@ These are resource URLs, separate from Jellyfin web hash navigation or placement
 
 ## Full Endpoint Index
 
-The endpoint tables above enumerate all 181 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
+The endpoint tables above enumerate all 192 controller method/path entries, including the three catch-all templates. Each group documents effective access, inputs, response shape, and limits; shared proxy rows intentionally retain the configured upstream service's JSON contract.
 
 For implementation details, [JellyfinEnhancedController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs) implements all indexed routes except `catchup/*`, which is in [CatchUpController.cs](https://github.com/n00bcodr/Jellyfin-Enhanced/blob/main/Jellyfin.Plugin.JellyfinEnhanced/Controllers/CatchUpController.cs). These upstream source links may advance beyond this versioned reference.
 
