@@ -640,7 +640,11 @@
             L.clearCard(target);
             backdrop.remove();
             if (current?.backdrop === backdrop) current = null;
-            if (opener?.isConnected) opener.focus({ preventScroll: true });
+            // A list redrawn meanwhile (the hub's locked items) has a new button with the opener's focus key.
+            const key = opener?.dataset?.jeFocusKey;
+            const back = opener?.isConnected ? opener
+                : (key ? /** @type {HTMLElement|undefined} */ (Array.from(document.querySelectorAll('[data-je-focus-key]')).find((el) => /** @type {HTMLElement} */ (el).dataset.jeFocusKey === key)) : null);
+            back?.focus({ preventScroll: true });
         };
         current = { close: finish, backdrop };
         dialog.addEventListener('keydown', (e) => {

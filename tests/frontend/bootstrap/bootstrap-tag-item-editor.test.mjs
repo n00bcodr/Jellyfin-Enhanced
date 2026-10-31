@@ -425,3 +425,13 @@ test('groups that draw for the user come first; groups switched off in their set
   assert.ok(rows.slice(2).every(([, off]) => off), 'the rest are off for this user');
   assert.ok(rows.some(([g]) => g === 'quality'), 'still editable for the item');
 });
+
+test('focus goes back to the redrawn control when the opener was replaced meanwhile', async t => {
+  const h = setup(t, { html: '<div id="list"><button data-je-focus-key="edit-x">Edit</button></div>' });
+  const opener = h.$('[data-je-focus-key="edit-x"]');
+  await h.open(MOVIE, { opener });
+  h.$('#list').innerHTML = '<button data-je-focus-key="edit-x">Edit</button>';
+  h.click(h.$('[data-tie-close]'));
+  assert.equal(h.document.activeElement, h.$('[data-je-focus-key="edit-x"]'));
+  assert.notEqual(h.document.activeElement, opener);
+});
