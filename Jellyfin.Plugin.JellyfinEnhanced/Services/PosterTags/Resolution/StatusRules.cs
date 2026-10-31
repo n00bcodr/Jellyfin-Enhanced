@@ -142,9 +142,13 @@ public static class StatusRules
     /// "Leaving in {days}d" by local calendar days (DST-safe), "Leaving tomorrow", "Leaving today",
     /// and "Leaving soon" without a date or once the date has passed (Maintainerr removes it on its next run).
     /// </summary>
+    private static readonly long MinLeavingMs = DateTimeOffset.MinValue.AddDays(2).ToUnixTimeMilliseconds();
+    private static readonly long MaxLeavingMs = DateTimeOffset.MaxValue.AddDays(-2).ToUnixTimeMilliseconds();
+
     internal static StatusTag LeavingBadge(TagLeaving leaving, PosterTagSettings settings, DateTimeOffset now)
     {
-        if (leaving.DeleteAt is not { } at) return Make("leaving_soon", settings);
+        // A time no zone conversion can hold (never stored by the refresh, which bounds it) reads as undated.
+        if (leaving.DeleteAt is not { } at || at < MinLeavingMs || at > MaxLeavingMs) return Make("leaving_soon", settings);
         var days = LocalDate(DateTimeOffset.FromUnixTimeMilliseconds(at), settings.StatusTimeZone).DayNumber - LocalDate(now, settings.StatusTimeZone).DayNumber;
         return days switch
         {

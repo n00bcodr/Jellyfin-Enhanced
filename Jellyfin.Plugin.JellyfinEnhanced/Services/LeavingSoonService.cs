@@ -50,6 +50,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>First retry delay after a failed Maintainerr request.</summary>
         internal static readonly TimeSpan FirstRetry = TimeSpan.FromMinutes(15);
         private const long DayMs = 86_400_000L;
+        /// <summary>How far from now a computed delete time may be (10 years); further is a bad answer.</summary>
+        internal const long MaxDateDistanceMs = 3653 * DayMs;
         /// <summary>The snapshot layout (2: collection facts keep their collections).</summary>
         private const int SnapshotSchema = 2;
 
@@ -345,6 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             HttpRequestException { StatusCode: { } code } => "HTTP " + ((int)code).ToString(CultureInfo.InvariantCulture),
             HttpRequestException => "not reachable",
             TaskCanceledException or TimeoutException => "timed out",
+            DateRangeException => "a delete date is out of range",
             JsonException => "not a Maintainerr collections answer",
             InvalidDataException => "answer too large",
             UnauthorizedAccessException => "address not allowed",
@@ -387,8 +390,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             using var document = JsonDocument.Parse(buffer.ToArray());
-            var parsed = ParseCollections(document.RootElement);
+            var parsed = ParseCollections(document.RootElement, Now());
             return ToItems(parsed, TmdbLookup);
+        }
+
+        /// <summary>A computed delete time too far from now to be real (and possibly beyond what a renderer can show).</summary>
+        internal sealed class DateRangeException : JsonException
+        {
+            public DateRangeException() : base("Delete date out of range")
+            {
+            }
         }
 
         /// <summary>A 3xx answer: never followed.</summary>
@@ -421,10 +432,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// "nothing is leaving". Entries that are not collections, and members without a usable
         /// id, are skipped while others are usable; an answer with entries but no collection, or
         /// with members but none usable, is refused with <see cref="JsonException"/> (so the
-        /// last good answer stays), as is any other shape.
+        /// last good answer stays), as is any other shape. A delete time more than
+        /// <see cref="MaxDateDistanceMs"/> from <paramref name="now"/> refuses the answer with
+        /// <see cref="DateRangeException"/>.
         /// </summary>
-        internal static IReadOnlyList<MaintainerrMember> ParseCollections(JsonElement root)
+        internal static IReadOnlyList<MaintainerrMember> ParseCollections(JsonElement root, DateTimeOffset? now = null)
         {
+            var nowMs = (now ?? DateTimeOffset.UtcNow).ToUnixTimeMilliseconds();
             var collections = root;
             if (root.ValueKind == JsonValueKind.Object)
             {
@@ -474,7 +488,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     long? deleteAt = null;
                     if (days != null && item.TryGetProperty("addDate", out var added) && TryReadDate(added, out var addedAt))
                     {
-                        deleteAt = addedAt.ToUnixTimeMilliseconds() + days.Value * DayMs;
+                        // No overflow: |addDate| < 2.6e14 ms and days * DayMs < 3.2e12.
+                        var at = addedAt.ToUnixTimeMilliseconds() + days.Value * DayMs;
+                        if (Math.Abs(at - nowMs) > MaxDateDistanceMs) throw new DateRangeException();
+                        deleteAt = at;
                     }
 
                     members.Add(new MaintainerrMember(id, tmdb, type, deleteAt));
@@ -516,7 +533,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal static bool TryReadDate(JsonElement value, out DateTimeOffset date)
         {
             date = default;
-            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var ms) && ms > 0)
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var ms) && ms > 0 && ms <= DateTimeOffset.MaxValue.ToUnixTimeMilliseconds())
             {
                 date = DateTimeOffset.FromUnixTimeMilliseconds(ms);
                 return true;

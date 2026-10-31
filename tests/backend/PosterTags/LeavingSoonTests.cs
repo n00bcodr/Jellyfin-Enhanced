@@ -408,6 +408,51 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
+    public async Task A_delete_date_beyond_ten_years_from_now_refuses_the_answer_and_keeps_the_last_good_one()
+    {
+        var now = DateTimeOffset.Parse("2026-10-31T00:00:00Z");
+        string One(string added, int days) => Collections((true, days, "movie", new Media[] { new(Guid.NewGuid().ToString(), null, added) }));
+        JsonElement Root(string json) => JsonDocument.Parse(json).RootElement;
+        // Near the maximum plus days, a far-past addDate, an epoch beyond any DateTimeOffset.
+        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseCollections(Root(One("9999-12-31T00:00:00Z", 36500)), now));
+        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseCollections(Root(One("9999-12-31T00:00:00Z", 0)), now));
+        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseCollections(Root(One("0001-01-01T00:00:00Z", 30)), now));
+        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseCollections(Root(One("1900-01-01T00:00:00Z", 36500)), now));
+        var epoch = "[{\"isActive\":true,\"deleteAfterDays\":1,\"media\":[{\"mediaServerId\":\"" + Guid.NewGuid() + "\",\"addDate\":";
+        Assert.Throws<LeavingSoonService.DateRangeException>(() => LeavingSoonService.ParseCollections(Root(epoch + "1}]}]"), now));
+        // An epoch no DateTimeOffset holds is not a date (the member stays, undated).
+        Assert.Null(Assert.Single(LeavingSoonService.ParseCollections(Root(epoch + "999999999999999999}]}]"), now)).DeleteAt);
+        // Inside the window: kept.
+        Assert.Equal(now.AddDays(3650).ToUnixTimeMilliseconds(), Assert.Single(LeavingSoonService.ParseCollections(Root(One("2026-10-31T00:00:00Z", 3650)), now)).DeleteAt);
+        Assert.Equal(now.AddDays(-3600).ToUnixTimeMilliseconds(), Assert.Single(LeavingSoonService.ParseCollections(Root(One(now.AddDays(-3600).ToString("o"), 0)), now)).DeleteAt);
+
+        using var server = new MaintainerrFixture();
+        var item = Guid.NewGuid();
+        var body = Collections((true, 10, "movie", new Media[] { new(item.ToString(), null, "2026-10-25T10:00:00Z") }));
+        server.Answer = r => MaintainerrFixture.Json(r, body);
+        var service = Service();
+        var config = Config(server.Url);
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        var good = service.Get(item, config);
+        Assert.NotNull(good?.DeleteAt);
+        body = Collections((true, 36500, "movie", new Media[] { new(item.ToString(), null, "9999-12-31T00:00:00Z") }));
+        Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.Equal("a delete date is out of range", service.Status(config).LastError);
+        Assert.Equal(good, service.Get(item, config));
+    }
+
+    [Fact]
+    public void The_native_badge_reads_an_unrepresentable_stored_time_as_undated()
+    {
+        var now = DateTimeOffset.Parse("2026-10-30T12:00:00Z");
+        foreach (var at in new[] { long.MaxValue, long.MinValue, DateTimeOffset.MaxValue.ToUnixTimeMilliseconds() + 1, DateTimeOffset.MaxValue.ToUnixTimeMilliseconds(), DateTimeOffset.MinValue.ToUnixTimeMilliseconds() })
+        {
+            foreach (var zone in new[] { "UTC", "Pacific/Kiritimati", "Pacific/Pago_Pago" })
+                Assert.Equal("Leaving soon", StatusRules.LeavingBadge(new TagLeaving { DeleteAt = at }, Native(zone), now).Text);
+        }
+    }
+
+    [Fact]
     public async Task Cancellation_stops_a_refresh_without_recording_a_failure()
     {
         using var server = new MaintainerrFixture();

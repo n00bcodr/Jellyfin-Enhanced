@@ -102,6 +102,8 @@
     };
     /** Item types the Leaving soon badge shows on (Maintainerr collects movies, shows, seasons and episodes). */
     const LEAVING_TYPES = new Set(['Movie', 'Series', 'Season', 'Episode']);
+    /** The largest distance from 1970 a Date holds (ms). */
+    const MAX_DATE_MS = 8.64e15;
     /** Item types that play, and so can have a direct-play warning. */
     const PLAYABLE_TYPES = new Set(['Movie', 'Episode', 'Video', 'MusicVideo']);
 
@@ -255,7 +257,9 @@
      */
     function readLeaving(raw) {
         if (!raw || typeof raw !== 'object') return null;
-        return { deleteAt: toMs(raw.DeleteAt ?? raw.deleteAt ?? null) };
+        const deleteAt = toMs(raw.DeleteAt ?? raw.deleteAt ?? null);
+        // A time no Date can hold reads as undated (the server bounds what it stores).
+        return { deleteAt: deleteAt !== null && Math.abs(deleteAt) <= MAX_DATE_MS ? deleteAt : null };
     }
 
     /**
@@ -778,7 +782,7 @@
             seriesId: entry.si ?? null,
             // Stored only when known (null and undefined both mean "unknown" here).
             seriesTmdb: entry.stm ?? (entry.t === 'Series' ? null : undefined),
-            leaving: Array.isArray(entry.lv) ? { deleteAt: typeof entry.lv[0] === 'number' ? entry.lv[0] : null } : null,
+            leaving: Array.isArray(entry.lv) ? readLeaving({ DeleteAt: typeof entry.lv[0] === 'number' ? entry.lv[0] : null }) : null,
         };
     }
 

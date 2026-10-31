@@ -116,6 +116,7 @@ for (const [name, entry, expected] of [
   ['today', episode(leaving(NOW + 3600000)), ['leaving', 'Leaving today']],
   ['no date', movie(leaving()), ['leaving', 'Leaving soon']],
   ['date passed', movie(leaving(NOW - DAY)), ['leaving', 'Leaving soon']],
+  ['a time no Date holds reads as undated', movie(leaving(9e15)), ['leaving', 'Leaving soon']],
   ['before every other badge', movie({ ...leaving(NOW + 2 * DAY), DateCreated: NOW - DAY, PremiereDate: NOW - 2 * DAY }), ['leaving', 'Leaving in 2d']],
   ['not on a collection', { Type: 'BoxSet', DateCreated: OLD, ...leaving(NOW + 2 * DAY) }, null],
 ]) {
