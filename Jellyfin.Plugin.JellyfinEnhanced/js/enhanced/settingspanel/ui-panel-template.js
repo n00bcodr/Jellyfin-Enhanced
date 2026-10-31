@@ -113,7 +113,7 @@
                     #jellyfin-enhanced-panel .je-panel-dock .je-panel-search-results { position: absolute; top: 100%; left: 12px; right: 12px; max-height: 45dvh; background: rgb(24,24,24); }
 
                     #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
-                    #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: hidden; }
+                    #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: clip; }
                     #jellyfin-enhanced-panel .je-panel-nav { position: absolute; inset: 0; border-right: none; z-index: 1; }
                     /* The closed pane is parked off-screen by the transform alone —
                        deliberately untransitioned so opening a section swaps the

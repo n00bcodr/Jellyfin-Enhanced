@@ -825,3 +825,5 @@ In **Media Tags → Groups → Quality**, the Sound, Video codec and HDR display
 **Media Tags → Groups → Quality → Include** adds **Runtime**, **Aspect ratio** and **Frame rate**, all off initially, with the usual stacking-order controls. The administrator sets their new-user defaults on the Media Tags admin page, **Groups → Quality**. Full/Compact density changes duration and ratio labels. **Media Tags → Status badges → Scenes** is also off initially and allows Post-credits/Mid-credits movie badges once the administrator enables the family and configures TMDB. Language subtitle chips automatically use **SDH** for hearing-impaired tracks when **Include → Subtitles** is on; no extra language switch is required. See [Tags & badges](tags.md#runtime-aspect-ratio-and-frame-rate).
 
 The Media Tags group editor hides **Show up to** for Status and Age rating, and for Logos when the administrator allows only one logo. Other groups keep their limit control.
+
+Changing Quality includes or display modes in Media Tags keeps the dialog frame and preview in place, preserving the inner pane scroll and the changed control's focus.

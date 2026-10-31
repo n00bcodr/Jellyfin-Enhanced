@@ -724,3 +724,44 @@ for (const maximum of [1, 2]) test(`search omits hidden single-chip cap controls
     assert.equal(results.some(r => r.label.includes('show_up_to')), !fixed, group);
   }
 });
+
+test('Quality includes and display modes keep the dialog body, preview, scroll and control focus in place', async t => {
+  const h = setup(t);
+  await h.open();
+  h.click(h.$('.tab-button[data-tab="media-tags"]'));
+  h.click(h.tab('groups'));
+  h.click(h.$('.je-tge-row[data-group="quality"] .je-tge-expand'));
+  const dialog = h.$('#jellyfin-enhanced-panel'), body = h.$('.je-panel-body');
+  const main = h.$('.je-panel-main'), preview = h.$('#jeMthPreview');
+  // Model the browser's outer scroll-container geometry: ordinary focus
+  // restoration on a moved control scrolls its overflow:hidden ancestor.
+  // The production Quality renderer broadcasts a layout refresh on an include edit.
+  h.JE.reinitializeQualityTags = () => h.JE.reinitializeTagLayout();
+  const originalFocus = h.window.HTMLElement.prototype.focus;
+  h.window.HTMLElement.prototype.focus = function(options) {
+    if (this.closest('.je-tge-row') && !options?.preventScroll) { dialog.scrollTop = 514; main.scrollTop = 636; }
+    return originalFocus.call(this, options);
+  };
+  body.getBoundingClientRect = () => ({ top: 96 - dialog.scrollTop, height: 579 });
+  preview.getBoundingClientRect = () => ({ top: 108 - dialog.scrollTop, height: 623 });
+  assert.equal(dialog.style.overflow, 'clip', 'only the inner pane is a scroll container');
+  const list = h.$('#jeTagGroupRows') || h.$('.je-tge-row').parentElement;
+  const moves = [];
+  const observer = new h.window.MutationObserver(records => moves.push(...records));
+  observer.observe(list, { childList: true });
+  for (const [selector, value] of [['#showAudioInfoTagToggle', false], ['#qualityAudioDisplayModeSelect', 'all']]) {
+    const control = h.$(selector);
+    if (control.type === 'checkbox') assert.equal(h.window.getComputedStyle(control.closest('.je-tge-toggle-pill')).position, 'relative', 'the hidden focus target belongs to the pill, inside the scrolling pane');
+    originalFocus.call(control); dialog.scrollTop = 0; main.scrollTop = 702;
+    const before = { body: body.getBoundingClientRect(), preview: preview.getBoundingClientRect() };
+    await h.change(control, value);
+    await h.settle();
+    assert.equal(h.document.activeElement, control);
+    assert.equal(dialog.scrollTop, 0);
+    assert.equal(main.scrollTop, 702);
+    assert.deepEqual(body.getBoundingClientRect(), before.body);
+    assert.deepEqual(preview.getBoundingClientRect(), before.preview);
+  }
+  assert.equal(moves.length, 0, 'refreshing unchanged group order never detaches the focused row');
+  observer.disconnect();
+});

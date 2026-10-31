@@ -637,7 +637,10 @@
         #jellyfin-enhanced-panel .je-tge-pills, #jellyfin-enhanced-panel .je-tge-includes, #jellyfin-enhanced-panel .je-tge-cats { display: flex; flex-wrap: wrap; gap: 6px; }
         #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 4px 12px; background: transparent; color: rgba(255,255,255,0.85); font: inherit; font-size: 12px; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-pill[aria-pressed="true"], #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:checked) { background: var(--je-tge-accent); border-color: var(--je-tge-accent); color: #fff; }
-        #jellyfin-enhanced-panel .je-tge-toggle-pill input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+        /* Keep the hidden focus target inside its scrolling pill, rather
+           than absolutely positioning it against the fixed dialog frame. */
+        #jellyfin-enhanced-panel .je-tge-toggle-pill { position: relative; }
+        #jellyfin-enhanced-panel .je-tge-toggle-pill input { position: absolute; top: 50%; left: 50%; opacity: 0; width: 1px; height: 1px; margin: 0; }
         #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-tge-cat { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; }
         #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 24px; height: 24px; padding: 0; justify-content: center; }
@@ -808,12 +811,18 @@
             const order = displayOrder(conf);
             const focusedRow = /** @type {HTMLElement|null} */ (document.activeElement)?.closest?.('.je-tge-row');
             const focused = focusedRow && list.contains(focusedRow) ? /** @type {HTMLElement} */ (document.activeElement) : null;
+            let previous = null;
             for (const group of order) {
                 const row = list.querySelector(`.je-tge-row[data-group="${group}"]`);
-                if (row && list.lastElementChild !== row) list.appendChild(row);
+                if (!row) continue;
+                const expected = previous ? previous.nextElementSibling : list.firstElementChild;
+                // Keep an unchanged row connected: moving a focused control's
+                // ancestor drops focus and can scroll the entire dialog frame.
+                if (row !== expected) list.insertBefore(row, expected);
+                previous = row;
             }
-            // appendChild moves the node, which drops its focus: put it back.
-            if (focused && document.activeElement !== focused && focused.isConnected) focused.focus();
+            // A real order change can detach the focused row: restore focus without scrolling.
+            if (focused && document.activeElement !== focused && focused.isConnected) focused.focus({ preventScroll: true });
             const rows = Array.from(list.querySelectorAll('.je-tge-row'));
             rows.forEach((row, index) => {
                 const group = /** @type {HTMLElement} */ (row).dataset.group || '';

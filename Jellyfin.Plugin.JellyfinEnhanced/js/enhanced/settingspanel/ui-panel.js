@@ -119,7 +119,9 @@
             maxHeight: '90vh',
             boxShadow: '0 10px 30px rgba(0,0,0,0.7)',
             border: '1px solid rgba(255,255,255,0.1)',
-            overflow: 'hidden',
+            // The dialog clips its rounded frame but must never become an
+            // extra scroll container when a focused control is re-presented.
+            overflow: 'clip',
             display: 'flex',
             fontFamily: 'inherit',
             flexDirection: 'column'

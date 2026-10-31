@@ -781,7 +781,7 @@
             shapeMount.innerHTML = shapesHtml();
             if (focus) {
                 const selector = `[data-shape="${focus.shape}"] ${focus.group ? `[data-shape-group="${focus.group}"] ` : ''}[data-shape-action="${focus.action}"]${focus.value ? `[data-value="${focus.value}"]` : ''}`;
-                shapeMount.querySelector(selector)?.focus();
+                shapeMount.querySelector(selector)?.focus({ preventScroll: true });
             }
         };
         document.addEventListener('je:tag-layout-changed', syncShapes);
