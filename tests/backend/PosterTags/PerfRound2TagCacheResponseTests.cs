@@ -462,7 +462,7 @@ public class PerfRound2TagCacheResponseTests
             return item.GetProperty("CustomTags").ValueKind == JsonValueKind.Array ? item.GetProperty("CustomTags").EnumerateArray().Select(t => t.GetString()!).ToArray() : null;
         }
 
-        Assert.Equal([twist], Batch());
+        Assert.Equal([twist], Assert.IsType<string[]>(Batch()));
         endpoint.Fixture.Plugin.Configuration.SpoilerStripTags = true;
         Assert.Null(Batch());
     }
