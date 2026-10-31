@@ -1,5 +1,5 @@
 {
-  "_about": "Per-genre Tag Styles: one stored document, the web model the server hands out for it (genre), and per drawn genre its label, glyph and the colours web chips and native posters draw (label, then group, then the built-in colour). Read by tests/backend/PosterTags/GenreStyleTests.cs, tests/frontend/features/features-genre-styles.test.mjs and tests/browser/genre-styles.spec.cjs.",
+  "_about": "Per-genre Tag Styles: one stored document, the web model the server hands out for it (genre), and per drawn genre its label, glyph and the colours web chips and native posters draw (label, then group, then the built-in colour). Read by tests/backend/PosterTags/GenreStyleTests.cs, tests/frontend/features/features-genre-styles.test.mjs and tests/browser/genre-styles.spec.cjs. Its legacy list holds documents saved before genres had colours of their own (and every preset), the genre web model the server hands out for each, and the stylesheet 15f03d8a's tag-styles.js built for them, genre names included: whole-group and preset colours must keep drawing it byte for byte.",
   "document": {
     "v": 2,
     "preset": "default",
@@ -169,6 +169,125 @@
         "border": "rgba(255, 255, 255, 0.6)",
         "text": "rgba(224, 224, 224, 1)"
       }
+    }
+  ],
+  "legacy": [
+    {
+      "name": "v1 genre colour",
+      "document": "{\"genre\":{\"background\":\"#111111\"}}",
+      "preset": "default",
+      "genre": {
+        "*": {
+          "background": "rgba(17, 17, 17, 1)",
+          "border": "rgba(255, 255, 255, 0.2)",
+          "color": "rgba(224, 224, 224, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(17, 17, 17, 1) !important;color: rgba(224, 224, 224, 1) !important;border-color: rgba(255, 255, 255, 0.2) !important; }"
+    },
+    {
+      "name": "v2 old single genre label",
+      "document": "{\"v\":2,\"preset\":\"default\",\"labels\":{\"genre:genre\":{\"background\":\"#ff0000\",\"text\":\"#ffffff\"}}}",
+      "preset": "default",
+      "genre": {
+        "*": {
+          "background": "rgba(255, 0, 0, 1)",
+          "border": null,
+          "color": "rgba(255, 255, 255, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(255, 0, 0, 1) !important;color: rgba(255, 255, 255, 1) !important; }"
+    },
+    {
+      "name": "v2 whole-group genre colours",
+      "document": "{\"v\":2,\"preset\":\"default\",\"groups\":{\"genre\":{\"background\":\"rgba(40, 53, 147, 1)\",\"border\":\"rgba(197, 202, 233, 1)\",\"text\":\"rgba(255, 255, 255, 1)\"}}}",
+      "preset": "default",
+      "genre": {
+        "*": {
+          "background": "rgba(40, 53, 147, 1)",
+          "border": "rgba(197, 202, 233, 1)",
+          "color": "rgba(255, 255, 255, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(40, 53, 147, 1) !important;color: rgba(255, 255, 255, 1) !important;border-color: rgba(197, 202, 233, 1) !important; }"
+    },
+    {
+      "name": "glass",
+      "document": "{\"v\":2,\"preset\":\"glass\"}",
+      "preset": "glass",
+      "genre": {
+        "*": {
+          "background": "rgba(255, 255, 255, 0.161)",
+          "border": "rgba(255, 255, 255, 0.349)",
+          "color": "rgba(255, 255, 255, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(255, 255, 255, 0.161) !important;color: rgba(255, 255, 255, 1) !important;border-color: rgba(255, 255, 255, 0.349) !important; }"
+    },
+    {
+      "name": "outline",
+      "document": "{\"v\":2,\"preset\":\"outline\"}",
+      "preset": "outline",
+      "genre": {
+        "*": {
+          "background": "rgba(0, 0, 0, 0.349)",
+          "border": "rgba(255, 255, 255, 0.6)",
+          "color": "rgba(255, 255, 255, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(0, 0, 0, 0.349) !important;color: rgba(255, 255, 255, 1) !important;border-color: rgba(255, 255, 255, 0.6) !important; }"
+    },
+    {
+      "name": "dark",
+      "document": "{\"v\":2,\"preset\":\"dark\"}",
+      "preset": "dark",
+      "genre": {
+        "*": {
+          "background": "rgba(0, 0, 0, 0.82)",
+          "border": "rgba(0, 0, 0, 0)",
+          "color": "rgba(255, 255, 255, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(0, 0, 0, 0.82) !important;color: rgba(255, 255, 255, 1) !important;border-color: rgba(0, 0, 0, 0) !important; }"
+    },
+    {
+      "name": "light",
+      "document": "{\"v\":2,\"preset\":\"light\"}",
+      "preset": "light",
+      "genre": {
+        "*": {
+          "background": "rgba(255, 255, 255, 0.922)",
+          "border": "rgba(0, 0, 0, 0)",
+          "color": "rgba(17, 17, 17, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(255, 255, 255, 0.922) !important;color: rgba(17, 17, 17, 1) !important;border-color: rgba(0, 0, 0, 0) !important; }"
+    },
+    {
+      "name": "mono",
+      "document": "{\"v\":2,\"preset\":\"mono\"}",
+      "preset": "mono",
+      "genre": {
+        "*": {
+          "background": "rgba(20, 20, 20, 0.749)",
+          "border": "rgba(255, 255, 255, 0.2)",
+          "color": "rgba(224, 224, 224, 1)"
+        }
+      },
+      "css": ".genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(20, 20, 20, 0.749) !important;color: rgba(224, 224, 224, 1) !important;border-color: rgba(255, 255, 255, 0.2) !important; }"
+    },
+    {
+      "name": "poster with whole-group genre colours",
+      "document": "{\"v\":2,\"preset\":\"poster\",\"groups\":{\"genre\":{\"background\":\"rgba(40, 53, 147, 1)\",\"text\":\"rgba(255, 255, 255, 1)\"}}}",
+      "preset": "poster",
+      "genre": {
+        "*": {
+          "background": "rgba(40, 53, 147, 1)",
+          "border": null,
+          "color": "rgba(255, 255, 255, 1)"
+        }
+      },
+      "css": "[data-je-poster-colour] .quality-overlay-container.quality-overlay-container .quality-overlay-label:where(:not([data-je-tag-styles-scope] *)) { background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; border-color: var(--je-tag-border) !important; }\n[data-je-poster-colour] .age-rating-overlay-container .age-rating-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; border-color: var(--je-tag-border) !important; }\n[data-je-poster-colour] .rating-overlay-container .rating-tag:where(:not([data-je-tag-styles-scope] *)) { background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; outline: 1px solid var(--je-tag-border) !important; outline-offset: -1px !important; }\n[data-je-poster-colour] .rating-overlay-container .rating-tag :is(.rating-star-icon, .je-userreview-icon):where(:not([data-je-tag-styles-scope] *)) { color: var(--je-tag-fg) !important; }\n[data-je-poster-colour] .awards-overlay-container .awards-tag:where(:not([data-je-tag-styles-scope] *)) { background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; outline: 1px solid var(--je-tag-border) !important; outline-offset: -1px !important; }\n[data-je-poster-colour] .logo-overlay-container .je-logo-chip[data-je-logo-style]:where(:not([data-je-tag-styles-scope] *)) { background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; border-color: var(--je-tag-border) !important; }\n[data-je-poster-colour] .custom-overlay-container.custom-overlay-container .custom-tag:where(:not([data-je-tag-styles-scope] *)) { background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; border-color: var(--je-tag-border) !important; }\n[data-je-poster-colour] .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; border-color: var(--je-tag-border) !important; }\n[data-je-poster-colour] .status-overlay-container .status-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; border-color: var(--je-tag-border) !important; }\n[data-je-poster-colour] .status-overlay-container .status-tag .status-tag-rank:where(:not([data-je-tag-styles-scope] *)) { color: var(--je-tag-fg) !important; }\n[data-je-poster-colour] .je-tag-pill:where(:not([data-je-tag-styles-scope] *)) { background: var(--je-tag-bg); border-color: var(--je-tag-border); color: var(--je-tag-fg); }\n[data-je-poster-colour] .je-tag-pill .je-tag-pill-glyph:where(:not([data-je-tag-styles-scope] *)) { color: inherit; }\n.genre-overlay-container .genre-tag:where(:not([data-je-tag-styles-scope] *)) { background-color: rgba(40, 53, 147, 1) !important;color: rgba(255, 255, 255, 1) !important; }"
     }
   ]
 }

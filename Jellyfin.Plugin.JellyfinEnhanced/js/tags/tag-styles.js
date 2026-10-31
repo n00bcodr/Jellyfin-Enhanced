@@ -110,8 +110,6 @@
             `${M} .logo-overlay-container .je-logo-chip[data-je-logo-style] { ${fill} ${edge} }`,
             `${M} .custom-overlay-container.custom-overlay-container .custom-tag { ${fill} ${edge} }`,
             `${M} .genre-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
-            `${M} .genre-tag .genre-text { color: var(--je-tag-fg) !important; }`,
-            `${M} .genre-tag .genre-text${GENRE_NAME_FLOATS} { background-color: var(--je-tag-bg) !important; }`,
             `${M} .status-overlay-container .status-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
             `${M} .status-overlay-container .status-tag .status-tag-rank { color: var(--je-tag-fg) !important; }`,
             `${M} .je-tag-pill { background: var(--je-tag-bg); border-color: var(--je-tag-border); color: var(--je-tag-fg); }`,
@@ -181,19 +179,25 @@
             add(`${R}[data-je-rating-source="${attr(id)}"]`, decl('background', c.background) + decl('color', c.color) + ring(c.border));
         }
 
-        // Genre: "*" is every chip, then each genre label (data-je-genre); the
-        // name beside the icon (hover, reveal) takes the chip's colours.
+        // Genre: "*" is every chip, then each genre label (data-je-genre). Only a
+        // genre with colours of its own colours its name (hover float, caption
+        // strip, Summary/Minimal reveal): group and preset colours leave the
+        // names as they always were, so existing documents draw unchanged.
         const genre = genreMap(styles.genre);
         const G = `${P}.genre-overlay-container .genre-tag`;
-        const addGenre = (selector, c) => {
-            add(selector, box(c));
-            add(`${selector} .genre-text`, decl('color', c.color));
-            add(`${selector} .genre-text${GENRE_NAME_FLOATS}`, decl('background-color', c.background));
-        };
-        if (genre['*']) addGenre(G, genre['*']);
+        if (genre['*']) add(G, box(genre['*']));
         for (const [label, c] of Object.entries(genre)) {
             if (label === '*' || !c) continue;
-            addGenre(`${G}[data-je-genre="${attr(label)}"]`, c);
+            const L = `[data-je-genre="${attr(label)}"]`;
+            add(`${G}${L}`, box(c));
+            // Under Poster the name first takes the artwork colours its chip
+            // has (same specificity as the rules below, which win field by field).
+            if (styles.preset === 'poster') {
+                add(`${P}[data-je-poster-colour] .genre-tag${L} .genre-text`, 'color: var(--je-tag-fg) !important;');
+                add(`${P}[data-je-poster-colour] .genre-tag${L} .genre-text${GENRE_NAME_FLOATS}`, 'background-color: var(--je-tag-bg) !important;');
+            }
+            add(`${G}${L} .genre-text`, decl('color', c.color));
+            add(`${G}${L} .genre-text${GENRE_NAME_FLOATS}`, decl('background-color', c.background));
         }
 
         for (const [id, color] of Object.entries(styles.awards || {})) {

@@ -84,10 +84,42 @@ test('the stylesheet colours each genre by its label, over the group colour and 
   });
   const css = h.JE.tagStyles.buildCss({ genre: fixture.web });
   assert.match(css, /\.genre-overlay-container \.genre-tag\[data-je-genre="horror"\]:where\(:not\(\[data-je-tag-styles-scope\] \*\)\) \{ background-color: rgba\(198, 40, 40, 1\) !important;/);
-  // The name beside the icon takes the chip's colours where it floats; inline in the hover reveal only the text colour.
+  // A genre with colours of its own colours its name too: where it floats both, inline in the hover reveal only the text.
   assert.match(css, /\[data-je-genre="horror"\] \.genre-text:where\(:not\(\[data-je-tag-styles-scope\] \*\)\) \{ color: rgba\(255, 255, 255, 1\) !important; \}/);
   assert.match(css, /\[data-je-genre="horror"\] \.genre-text:not\(\[data-je-slot="hover"\] \*\):where\(:not\(\[data-je-tag-styles-scope\] \*\)\) \{ background-color: rgba\(198, 40, 40, 1\) !important; \}/);
+  assert.doesNotMatch(css, /\.genre-tag(:where\([^)]*\)\))? \.genre-text/, 'the every-genre colours leave the names alone');
   assert.doesNotMatch(css, /data-je-genre="science fiction"/, 'genres without colours of their own get no rule');
+});
+
+test('documents without colours of a single genre draw exactly the stylesheet 15f03d8a drew, genre names included', t => {
+  // fixture.legacy: the server's genre model for each (GenreStyleTests checks it) and 15f03d8a's stylesheet for it.
+  assert.equal(fixture.legacy.length, 9);
+  for (const entry of fixture.legacy) {
+    assert.equal(client(t).JE.tagStyles.buildCss({ preset: entry.preset, genre: entry.genre }), entry.css, entry.name);
+  }
+  const h = client(t);
+  const [horror] = h.render(['Horror']);
+  const name = horror.querySelector('.genre-text');
+  for (const entry of fixture.legacy.filter(e => e.preset !== 'poster')) {
+    h.JE.core.ui.injectCss('je-tag-style-overrides', h.JE.tagStyles.buildCss({ preset: entry.preset, genre: entry.genre }));
+    assert.equal(h.window.getComputedStyle(horror).backgroundColor, rgb(entry.genre['*'].background), `${entry.name}: the chip`);
+    assert.equal(h.window.getComputedStyle(name).color, 'rgb(224, 224, 224)', `${entry.name}: the name`);
+    assert.equal(h.window.getComputedStyle(name).backgroundColor, 'rgba(10, 10, 10, 0.85)', `${entry.name}: the name`);
+  }
+});
+
+test('colours of one genre colour that genre\'s name only', t => {
+  const h = client(t);
+  const [horror] = h.render(['Horror']);
+  const [comedy] = h.render(['Comedy']);
+  const group = pal('rgba(40, 53, 147, 1)', null, 'rgba(255, 255, 255, 1)');
+  h.JE.core.ui.injectCss('je-tag-style-overrides', h.JE.tagStyles.buildCss({ genre: { '*': group, horror: pal('rgba(198, 40, 40, 1)', null, 'rgba(255, 235, 59, 1)') } }));
+  const style = el => h.window.getComputedStyle(el.querySelector('.genre-text'));
+  assert.equal(style(horror).backgroundColor, 'rgb(198, 40, 40)');
+  assert.equal(style(horror).color, 'rgb(255, 235, 59)');
+  assert.equal(h.window.getComputedStyle(comedy).backgroundColor, 'rgb(40, 53, 147)', 'the group still colours every chip');
+  assert.equal(style(comedy).backgroundColor, 'rgba(10, 10, 10, 0.85)');
+  assert.equal(style(comedy).color, 'rgb(224, 224, 224)');
 });
 
 test('an older single genre colour still styles every genre chip', t => {
@@ -99,15 +131,17 @@ test('an older single genre colour still styles every genre chip', t => {
   assert.equal(h.JE.tagStyles.buildCss({ genre: {} }), '');
 });
 
-test('under the Poster preset the genre name takes the sampled colours, and genre colours still win', t => {
+test('under the Poster preset only a genre with colours of its own gives its name the sampled colours, which its own still beat', t => {
   const h = client(t);
-  const css = h.JE.tagStyles.buildCss({ preset: 'poster', genre: { horror: { background: 'rgba(198, 40, 40, 1)', border: null, color: null } } });
+  const css = h.JE.tagStyles.buildCss({ preset: 'poster', genre: { '*': pal('rgba(40, 53, 147, 1)', null, null), horror: pal('rgba(198, 40, 40, 1)', null, null) } });
   const lines = css.split('\n');
-  const poster = lines.findIndex(l => l.startsWith('[data-je-poster-colour] .genre-tag .genre-text:not'));
-  const label = lines.findIndex(l => l.includes('[data-je-genre="horror"] .genre-text:not'));
+  assert.ok(!lines.some(l => /^\[data-je-poster-colour\] \.genre-tag \.genre-text/.test(l)), 'every other genre name keeps its built-in look');
+  const poster = lines.findIndex(l => l.startsWith('[data-je-poster-colour] .genre-tag[data-je-genre="horror"] .genre-text:not'));
+  const label = lines.findIndex(l => l.startsWith('.genre-overlay-container .genre-tag[data-je-genre="horror"] .genre-text:not'));
   assert.ok(poster >= 0 && label > poster, 'the label rule comes after the sampled one of the same specificity');
   assert.match(lines[poster], /background-color: var\(--je-tag-bg\) !important/);
-  assert.ok(lines.some(l => l.startsWith('[data-je-poster-colour] .genre-tag .genre-text:where') && l.includes('color: var(--je-tag-fg) !important')));
+  assert.ok(lines.some(l => l.startsWith('[data-je-poster-colour] .genre-tag[data-je-genre="horror"] .genre-text:where') && l.includes('color: var(--je-tag-fg) !important')));
+  assert.ok(!lines.some(l => l.startsWith('.genre-overlay-container .genre-tag[data-je-genre="horror"] .genre-text:where')), 'no text colour of its own: the sampled one stays');
 });
 
 // ── The admin editor ──

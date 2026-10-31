@@ -117,6 +117,22 @@ public class GenreStyleTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Documents_without_colours_of_a_single_genre_hand_out_only_the_every_genre_entry()
+    {
+        // The web suite checks these models still draw 15f03d8a's stylesheet byte for byte, genre names included.
+        foreach (var entry in Fixture["legacy"]!.AsArray())
+        {
+            var name = (string)entry!["name"]!;
+            var model = JsonNode.Parse(JsonSerializer.Serialize(TagStyleSet.Parse((string)entry["document"]!).ToWebModel()))!;
+            Assert.Equal((string)entry["preset"]!, (string)model["preset"]!);
+            Assert.True(JsonNode.DeepEquals(entry["genre"], model["genre"]), $"{name}: {model["genre"]!.ToJsonString()}");
+            Assert.Equal("*", Assert.Single(model["genre"]!.AsObject()).Key);
+        }
+
+        Assert.Equal(9, Fixture["legacy"]!.AsArray().Count);
+    }
+
+    [Fact]
     public void A_document_with_the_old_single_genre_label_reads_it_as_the_group_and_draws_the_same()
     {
         // As the per-label editor saved it before each genre had its own label.

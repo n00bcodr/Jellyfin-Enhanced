@@ -46,11 +46,37 @@ test('each genre chip draws the colours native posters resolve for its label', a
     await expect(chip, c.genre).toHaveCSS('border-top-color', rgb(c.drawn.border));
     await expect(chip, c.genre).toHaveCSS('color', rgb(c.drawn.text));
   }
-  // The name that floats out on hover takes the chip's colours.
+  // The name that floats out on hover takes the chip's colours when its genre has colours of its own.
   const horror = fixture.cases.findIndex(c => c.label === 'horror');
   const name = page.locator(`#c${horror} .genre-text`);
   await expect(name).toHaveCSS('background-color', rgb(fixture.cases[horror].drawn.background));
   await expect(name).toHaveCSS('color', rgb(fixture.cases[horror].drawn.text));
+  // Science fiction has none: the every-genre border only, and its name as it always was.
+  const scifi = page.locator(`#c${fixture.cases.findIndex(c => c.label === 'science fiction')} .genre-text`);
+  await expect(scifi).toHaveCSS('background-color', 'rgba(10, 10, 10, 0.85)');
+  await expect(scifi).toHaveCSS('color', 'rgb(224, 224, 224)');
+});
+
+test('whole-group genre colours and presets colour every chip but leave the names as they were', async ({ page }) => {
+  for (const entry of fixture.legacy.filter(e => e.preset !== 'poster')) {
+    // The chip colour as the browser rounds it (0.161 alpha reads back as 0.16).
+    const background = await page.evaluate(({ preset, genre }) => {
+      const JE = window.JellyfinEnhanced;
+      JE.core.ui.injectCss('je-tag-style-overrides', JE.tagStyles.buildCss({ preset, genre }));
+      const probe = document.createElement('i');
+      probe.style.backgroundColor = genre['*'].background;
+      document.body.appendChild(probe);
+      const drawn = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return drawn;
+    }, entry);
+    for (const [i] of fixture.cases.entries()) {
+      const chip = page.locator(`#c${i} .genre-tag`);
+      await expect(chip, entry.name).toHaveCSS('background-color', background);
+      await expect(chip.locator('.genre-text'), entry.name).toHaveCSS('color', 'rgb(224, 224, 224)');
+      await expect(chip.locator('.genre-text'), entry.name).toHaveCSS('background-color', 'rgba(10, 10, 10, 0.85)');
+    }
+  }
 });
 
 test('without Tag Styles the genre chips keep their built-in colours', async ({ page }) => {

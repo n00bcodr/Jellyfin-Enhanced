@@ -1227,7 +1227,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Quality** | Every quality label (4K, HDR10, ATMOS, HEVC…) | Combined labels such as ATMOS 7.1 follow their base label |
 | **Age** | One chip per age rating colour board, shown with a sample rating | Hover a chip to see every rating it covers |
 | **Rating** | **Community**, **Critic**, **User review** | Rating chips have no border of their own: a border colour draws a thin inner ring |
-| **Genre** | Every genre with an icon of its own and **Other** (see [Genre colours](#genre-colours)) | **Text** colours the icon; the name beside it on hover takes the tag's colours |
+| **Genre** | Every genre with an icon of its own and **Other** (see [Genre colours](#genre-colours)) | **Text** colours the icon; a genre with colours of its own also colours its name beside it on hover |
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending**, schedule, milestone and series-state badges | Applies to web and native posters. A Trending text colour also recolours the rank |
 | **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar winner**, **Emmy winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
 | **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
@@ -1272,7 +1272,7 @@ Each genre the icons know is its own tag on the **Genre** tab, shown as its icon
 | Reality TV | `reality-tv` | `live_tv` | télé-réalité, telerrealidad, reality tv, valóság-tv, реалити-шоу |
 | Other | `other` | `theaters` | Every genre not listed above |
 
-The genre's colours apply to its icon on web cards and native posters alike; on the web, the name that appears beside the icon on hover, and in the Summary and Minimal hover lists, takes them too. The preview shows a Horror, a Comedy and an Animation icon. Documents saved before genres had their own tags (one colour for every genre) open with that colour as the **Whole group** colour, so nothing changes until you colour a genre.
+The genre's colours apply to its icon on web cards and native posters alike; on the web, the name that appears beside the icon on hover, in the caption strip and in the Summary and Minimal hover lists, takes them too. Only a genre you colour on its own does that: **Whole group** colours and presets colour every icon but leave the names in their usual dark pill. The preview shows a Horror, a Comedy and an Animation icon. Documents saved before genres had their own tags (one colour for every genre) open with that colour as the **Whole group** colour, so nothing changes until you colour a genre.
 
 ### Contrast check
 
