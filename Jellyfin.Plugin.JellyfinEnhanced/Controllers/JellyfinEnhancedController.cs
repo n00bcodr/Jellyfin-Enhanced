@@ -9235,7 +9235,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .Where(item => item != null).Select(item => item!).ToArray();
             _tagCacheService.WarmSourceRatingsForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
             _tagCacheService.WarmLogosForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
-            _tagCacheService.WarmScenesForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
+            _tagCacheService.QueueScenesRefresh(accessibleItems);
             var results = new List<object>(accessibleItems.Length);
 
             // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources).

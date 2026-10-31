@@ -97,6 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
             _tagCache.LogosWarmed += OnLogosWarmed;
+            _tagCache.ScenesRefreshed += InvalidateScenes;
         }
 
         /// <summary>
@@ -134,6 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public async Task<PosterTagRenderData?> GetRenderDataAsync(HttpContext httpContext, BaseItem item, JUser user, PosterTagDataSnapshot? snapshot, CancellationToken cancellationToken, bool includeStatus = false)
         {
+            _tagCache.QueueScenesRefresh(new[] { item });
             TagCacheEntry entry;
             if (snapshot != null)
             {
@@ -163,12 +165,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return new PosterTagRenderData(entry, DataKey(entry, reviews), stripped, reviews);
         }
 
+        /// <summary>Discard on-demand snapshots after confirmed keyword facts change.</summary>
+        private void InvalidateScenes()
+        {
+            lock (_memoLock) { _memoGeneration++; _memo.Clear(); }
+        }
+
         public void Dispose()
         {
             _libraryManager.ItemAdded -= OnItemChanged;
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
             _tagCache.LogosWarmed -= OnLogosWarmed;
+            _tagCache.ScenesRefreshed -= InvalidateScenes;
         }
 
         /// <summary>SHA-256 (hex) of an entry's content, ignoring its build timestamp. Memoized per instance.</summary>

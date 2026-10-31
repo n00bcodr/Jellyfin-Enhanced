@@ -9,11 +9,13 @@ public sealed class StatusTagsScenesService
 {
     private sealed record Snapshot(TagScenes? Facts, DateTimeOffset Until);
     private readonly ConcurrentDictionary<string, Snapshot> _snapshots = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, DateTimeOffset> _providerRetry = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _providerRetry = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly TmdbResponseCache _responses;
     private readonly Logger _logger;
     private readonly TimeProvider _clock;
+    private DateTimeOffset _nextRequest;
+    internal TimeSpan RequestInterval { get; set; } = TimeSpan.FromMilliseconds(250);
 
     public StatusTagsScenesService(TmdbResponseCache responses, Logger logger) : this(responses, logger, TimeProvider.System) { }
 
@@ -40,6 +42,15 @@ public sealed class StatusTagsScenesService
     /// <summary>Cache-only lookup, retaining the last confirmed value during a transient failure.</summary>
     public TagScenes? Get(string apiKey, string id) => _snapshots.TryGetValue(apiKey + ":" + id, out var value) ? value.Facts : null;
 
+    /// <summary>Whether a background refresh is due; the provider pause applies to daily passes too.</summary>
+    internal bool IsDue(string apiKey, string id)
+    {
+        var now = _clock.GetUtcNow();
+        return !string.IsNullOrWhiteSpace(apiKey)
+            && (!_providerRetry.TryGetValue(apiKey, out var retry) || retry <= now)
+            && (!_snapshots.TryGetValue(apiKey + ":" + id, out var snapshot) || snapshot.Until <= now);
+    }
+
     /// <summary>One bounded server-side pass; shared response caching deduplicates concurrent lookups.</summary>
     public async Task WarmAsync(string apiKey, IEnumerable<string> ids, CancellationToken cancellationToken)
     {
@@ -58,6 +69,10 @@ public sealed class StatusTagsScenesService
                 if (old?.Until > now) continue;
                 try
                 {
+                    var delay = _nextRequest - _clock.GetUtcNow();
+                    if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _nextRequest = _clock.GetUtcNow() + RequestInterval;
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     timeout.CancelAfter(TimeSpan.FromSeconds(10));
                     var day = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);

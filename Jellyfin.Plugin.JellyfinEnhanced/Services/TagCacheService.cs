@@ -1406,7 +1406,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 && RefreshStatusSiblings(season.Id, episodeScans);
             WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
             WarmLogosForItems(new[] { item }, CancellationToken.None);
-            WarmScenesForItems(new[] { item }, CancellationToken.None);
+            QueueScenesRefresh(new[] { item });
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return siblingsChanged;
 
@@ -2548,6 +2548,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // (ArmFlushTimer and ScheduleDebouncedSave both bail on _disposed) instead of
             // resurrecting a timer after teardown.
             _disposed = true;
+            StopScenesRefresh();
 
             if (ReferenceEquals(Instance, this))
             {
