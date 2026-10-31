@@ -417,7 +417,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <c>deleteAfterDays</c>, <c>type</c> and <c>media</c> (<c>mediaServerId</c> or
         /// <c>plexId</c>, <c>tmdbId</c>, <c>addDate</c>). Inactive collections are skipped; a
         /// member without a usable date (or a collection without <c>deleteAfterDays</c>)
-        /// leaves undated. Anything else about the shape is refused with <see cref="JsonException"/>.
+        /// leaves undated. An empty list (or only inactive or empty collections) is a real
+        /// "nothing is leaving". Entries that are not collections, and members without a usable
+        /// id, are skipped while others are usable; an answer with entries but no collection, or
+        /// with members but none usable, is refused with <see cref="JsonException"/> (so the
+        /// last good answer stays), as is any other shape.
         /// </summary>
         internal static IReadOnlyList<MaintainerrMember> ParseCollections(JsonElement root)
         {
@@ -433,9 +437,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (collections.ValueKind != JsonValueKind.Array) throw new JsonException("Expected a list of collections");
             var members = new List<MaintainerrMember>();
+            int entries = 0, recognised = 0, listed = 0;
             foreach (var collection in collections.EnumerateArray())
             {
-                if (collection.ValueKind != JsonValueKind.Object) continue;
+                entries++;
+                if (!IsCollection(collection)) continue;
+                recognised++;
                 if (collection.TryGetProperty("isActive", out var active) && active.ValueKind == JsonValueKind.False) continue;
                 int? days = collection.TryGetProperty("deleteAfterDays", out var d) && d.ValueKind == JsonValueKind.Number && d.TryGetInt32(out var n) && n is >= 0 and <= 36500 ? n : null;
                 var type = CollectionType(collection);
@@ -448,6 +455,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (media.ValueKind != JsonValueKind.Array) continue;
                 foreach (var item in media.EnumerateArray())
                 {
+                    listed++;
                     if (item.ValueKind != JsonValueKind.Object) continue;
                     Guid? id = null;
                     foreach (var name in new[] { "mediaServerId", "jellyfinId", "plexId" })
@@ -473,7 +481,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
+            if (entries > 0 && recognised == 0) throw new JsonException("No Maintainerr collection in the answer");
+            if (listed > 0 && members.Count == 0) throw new JsonException("No usable collection member in the answer");
             return members;
+        }
+
+        /// <summary>A Maintainerr collection: an object with its media list, its active flag or its delete delay.</summary>
+        private static bool IsCollection(JsonElement collection)
+        {
+            if (collection.ValueKind != JsonValueKind.Object) return false;
+            foreach (var name in new[] { "media", "collectionMedia" })
+            {
+                if (collection.TryGetProperty(name, out var media) && media.ValueKind == JsonValueKind.Array) return true;
+            }
+
+            return (collection.TryGetProperty("isActive", out var active) && active.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                || (collection.TryGetProperty("deleteAfterDays", out var days) && days.ValueKind is JsonValueKind.Number or JsonValueKind.Null);
         }
 
         /// <summary>movie, show, season or episode, from Maintainerr's text or numeric (Plex data type) form.</summary>

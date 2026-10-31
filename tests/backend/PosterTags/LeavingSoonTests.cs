@@ -354,6 +354,60 @@ public sealed class LeavingSoonTests : IDisposable
     }
 
     [Fact]
+    public async Task An_unrecognisable_list_is_a_failure_that_keeps_the_last_good_answer_but_a_real_empty_answer_clears_it()
+    {
+        using var server = new MaintainerrFixture();
+        var item = Guid.NewGuid();
+        var valid = Collections((true, 10, "movie", new Media[] { new(item.ToString(), null, "2026-10-25T10:00:00Z") }));
+        var body = valid;
+        server.Answer = r => MaintainerrFixture.Json(r, body);
+        var service = Service();
+        var config = Config(server.Url);
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        Assert.Equal((1, 1), (service.Status(config).Items, service.Status(config).Dated));
+        var lastSuccess = service.Status(config).LastSuccess;
+
+        // No collection at all, wrong scalar types, members without a usable id: failures.
+        foreach (var malformed in new[]
+        {
+            "[{\"error\":\"unexpected API payload\"}]", "[1,2,3]", "[\"a\",\"b\"]", "{\"data\":[{\"message\":\"nope\"}]}",
+            "[{\"isActive\":true,\"deleteAfterDays\":5,\"media\":[{\"foo\":1},{\"mediaServerId\":\"not-a-guid\"},7]}]",
+        })
+        {
+            body = malformed;
+            Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
+            var s = service.Status(config);
+            Assert.Equal("not a Maintainerr collections answer", s.LastError);
+            Assert.Equal((1, 1), (s.Items, s.Dated));
+            Assert.Equal(lastSuccess, s.LastSuccess);
+            Assert.NotNull(service.Get(item, config));
+        }
+
+        // Mixed: the unrecognisable entries and members are skipped, the usable ones count.
+        body = "[{\"error\":\"x\"}," + valid.TrimStart('[').TrimEnd(']') + ",{\"isActive\":true,\"media\":[{\"foo\":1}]}]";
+        Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.Null(service.Status(config).LastError);
+        Assert.NotNull(service.Get(item, config));
+
+        // A reachable server that lists nothing (or only inactive or empty collections) really has nothing leaving.
+        foreach (var empty in new[] { "[]", "{\"data\":[]}", "[{\"isActive\":false,\"title\":\"Paused\"}]", "[{\"isActive\":true,\"deleteAfterDays\":30,\"media\":[]}]" })
+        {
+            body = valid;
+            await service.RefreshAsync(config, true, CancellationToken.None);
+            body = empty;
+            Assert.True(await service.RefreshAsync(config, true, CancellationToken.None));
+            Assert.Null(service.Status(config).LastError);
+            Assert.Equal(0, service.Status(config).Items);
+            Assert.Null(service.Get(item, config));
+        }
+
+        // Recovery.
+        body = valid;
+        Assert.True(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.NotNull(service.Get(item, config));
+    }
+
+    [Fact]
     public async Task Cancellation_stops_a_refresh_without_recording_a_failure()
     {
         using var server = new MaintainerrFixture();
