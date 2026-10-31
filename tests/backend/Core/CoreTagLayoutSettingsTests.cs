@@ -20,14 +20,14 @@ public class CoreTagLayoutSettingsTests
         new() { Groups = entries.Select(e => new TagLayoutGroupSlot { Group = e.Group, Slot = e.Slot }).ToList() };
 
     [Fact]
-    public void SingleChipCapsNormalizeStoredHigherOrUnlimitedValues()
+    public void SingleChipCapsPreserveStoredValuesAndOnlyLimitPresentation()
     {
-        var caps = TagLayoutRules.NormalizeCaps(new TagGroupCaps { Status = 9, AgeRating = 0, Logos = 10, Quality = 8 }, 1)!;
-        Assert.Equal(1, caps.Status);
-        Assert.Equal(1, caps.AgeRating);
-        Assert.Equal(1, caps.Logos);
+        var caps = TagLayoutRules.NormalizeCaps(new TagGroupCaps { Status = 9, AgeRating = 0, Logos = 10, Quality = 8 })!;
+        Assert.Equal(9, caps.Status);
+        Assert.Equal(0, caps.AgeRating);
+        Assert.Equal(10, caps.Logos);
         Assert.Equal(8, caps.Quality);
-        Assert.Equal(10, TagLayoutRules.NormalizeCaps(new TagGroupCaps { Logos = 10 }, 2)!.Logos);
+        Assert.Equal(10, TagLayoutRules.NormalizeCaps(new TagGroupCaps { Logos = 10 })!.Logos);
         foreach (var max in new[] { 1, 2 })
         {
             var settings = PosterTagSettings.FromUserSettings(new() { TagLayoutSettingsVersion = 1,

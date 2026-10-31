@@ -218,7 +218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         }
 
         /// <summary>Caps clamped to 0..<see cref="MaxCap"/>; null when no cap is set.</summary>
-        public static TagGroupCaps? NormalizeCaps(TagGroupCaps? caps, int maxLogos = 2)
+        public static TagGroupCaps? NormalizeCaps(TagGroupCaps? caps)
         {
             if (caps == null) return null;
             static int? Clamp(int? value) => value.HasValue ? Math.Clamp(value.Value, 0, MaxCap) : null;
@@ -228,10 +228,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 Genre = Clamp(caps.Genre),
                 Language = Clamp(caps.Language),
                 Rating = Clamp(caps.Rating),
-                AgeRating = caps.AgeRating.HasValue ? 1 : null,
-                Status = caps.Status.HasValue ? 1 : null,
+                AgeRating = Clamp(caps.AgeRating),
+                Status = Clamp(caps.Status),
                 Awards = Clamp(caps.Awards),
-                Logos = caps.Logos.HasValue && maxLogos < 2 ? 1 : Clamp(caps.Logos),
+                Logos = Clamp(caps.Logos),
                 Custom = Clamp(caps.Custom),
             };
             return result.Quality == null && result.Genre == null && result.Language == null
@@ -270,7 +270,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             settings.TagGap = NormalizeGap(config.TagGap);
             settings.TagLayouts = NormalizeProfiles(config.TagLayouts);
             settings.TagGroupOrder = NormalizeOrder(config.TagGroupOrder);
-            settings.TagGroupCaps = NormalizeCaps(config.TagGroupCaps, config.LogoTagsMaxLogos);
+            settings.TagGroupCaps = NormalizeCaps(config.TagGroupCaps);
             settings.TagEdgeSpacing = NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default";
             settings.TagLayoutSettingsVersion = CurrentVersion;
         }

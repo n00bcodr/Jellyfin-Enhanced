@@ -1385,3 +1385,11 @@ for (const maximum of [1, 2]) test(`admin layout and Groups omit single-chip ste
     assert.equal(!!h.$(`.je-ta-lrow[data-group="${group}"] [data-act="cap"]`), !fixed, group);
   }
 });
+
+
+test('editing Genre cap carries stored single-chip limits through the admin layout editor', async t => {
+  const h = setup(t, { config: { TagGroupCaps: { Status: 9, AgeRating: 0, Genre: 2 } } });
+  h.$('.je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]').click();
+  await h.save();
+  assert.deepEqual(plain(h.server.TagGroupCaps), { Status: 9, AgeRating: 0, Genre: 3 });
+});
