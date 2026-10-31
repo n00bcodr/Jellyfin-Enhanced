@@ -300,6 +300,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             bool sourceRatingsWereConfigured;
             bool analyticsWasEnabled;
             string awardsBefore;
+            string leavingBefore;
 
             // The Analytics* identity/bookkeeping fields are server-minted and
             // never editable on the config page, but a save replaces the whole
@@ -327,6 +328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 sourceRatingsWereConfigured = Services.TagCacheService.SourceRatingsConfigured;
                 analyticsWasEnabled = stored.AnalyticsEnabled;
                 awardsBefore = Services.AwardTagsService.ConfigurationIdentity(stored);
+                leavingBefore = Services.LeavingSoonService.ConfigurationIdentity(stored);
 
                 var configuration = build(stored);
                 if (configuration == null) return false;
@@ -422,6 +424,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
 
             if (awardsBefore != Services.AwardTagsService.ConfigurationIdentity(Configuration))
                 Services.TagCacheService.Instance?.RefreshAwardAvailability();
+
+            // A new Leaving soon source (URL, key or names) is read in the background.
+            if (leavingBefore != Services.LeavingSoonService.ConfigurationIdentity(Configuration))
+                Services.TagCacheService.Instance?.QueueLeavingRefresh();
 
             // ON->OFF: flag this install as opted out on the backend so it
             // drops out of every public view without deleting its history.

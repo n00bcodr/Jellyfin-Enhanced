@@ -98,6 +98,7 @@
         'RatingTagsOnSeasons', 'RatingTagsOnEpisodes', 'RatingTagsOnContinueWatching', 'RatingTagsOnNextUp', 'RatingTagsShowCommunity',
         'RatingTagsShowCritic', 'RatingTagsSources', 'RatingTagsMinScore', 'RatingTagsColorByScore', 'AgeRatingTagsPosition', 'StatusTagsPosition',
         'StatusTagsJustAdded', 'StatusTagsNewRelease', 'StatusTagsTrending', 'StatusTagsSchedule', 'StatusTagsMilestones', 'StatusTagsSeriesStatus',
+        'StatusTagsLeaving', 'StatusTagsDirectPlay',
         'AwardsTagsEnabled', 'AwardsTagsPosition', 'LogoTagsEnabled', 'LogoTagsPosition', 'CustomTagsEnabled', 'CustomTagsPosition',
         'ShowRatingInPlayer', 'TagLayout', 'TagLabelDensity', 'TagScale', 'TagGap', 'TagEdgeSpacing', 'TagLayouts', 'TagGroupOrder', 'TagGroupCaps',
         'LanguageTagsShowAudio', 'LanguageTagsShowSubtitles', 'LanguageTagsStyle', 'LanguageTagsCountBadge',
@@ -251,7 +252,7 @@
             case 'number':
             case 'text':
                 return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${tx(f.label)}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
-                    + `<span class="je-ta-field-control"><input type="${f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
+                    + `<span class="je-ta-field-control"><input type="${f.secret ? 'password' : f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.secret ? ' autocomplete="new-password" spellcheck="false"' : ''}${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
             case 'textarea':
                 return `<div class="je-ta-field je-ta-field--block" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${tx(f.label)}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><textarea id="${esc(f.id)}" ${data} rows="${f.rows || 4}" spellcheck="false"${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${esc(value)}</textarea></span></div>`;

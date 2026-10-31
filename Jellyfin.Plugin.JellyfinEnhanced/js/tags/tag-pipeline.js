@@ -77,8 +77,8 @@
     // Shape of the stored entries (the server's tag cache schema they were
     // written under). A stored copy of another shape is dropped on restore and
     // downloaded in full, so new entry fields never wait for a server rebuild
-    // that happens to change the cache version. Current schema: Awards, Logos and Custom matches.
-    const STORED_ENTRY_SCHEMA = 18;
+    // that happens to change the cache version. Current schema adds Leaving soon facts.
+    const STORED_ENTRY_SCHEMA = 19;
     const MEMORY_SOFT_CAP = 20000;
     const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled', 'customTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 

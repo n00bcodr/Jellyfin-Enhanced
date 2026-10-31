@@ -26,19 +26,21 @@
 // load, held in memory only.
 //
 // It also keeps the Poster Tag Styles preset's artwork colours
-// (tags/tag-poster-colours.js): one small record per artwork, in the same
-// scopes, capped, and cleared with the other scopes' data.
+// (tags/tag-poster-colours.js) and the direct-play answers
+// (tags/tag-direct-play.js): one small record per artwork or item and device
+// profile, in the same scopes, capped, and cleared with the other scopes' data.
 //
 // Public surface: JE.tagCacheStore { ENTRY_SCHEMA, available, getMeta, getMany,
 // beginFullWrite, putManyIfOwner, commitFullWrite, applyDelta, clearScope,
-// clearOtherScopes, getPosterColours, putPosterColours }.
+// clearOtherScopes, getPosterColours, putPosterColours, getDirectPlay,
+// putDirectPlay }.
 (function(JE) {
     'use strict';
 
     const logPrefix = '🪼 Jellyfin Enhanced [TagCacheStore]:';
     const DB_NAME = 'JellyfinEnhanced';
-    // 2 added the poster colour store (version 1 databases upgrade in place).
-    const DB_VERSION = 2;
+    // 2 added the poster colour store, 3 the direct-play store (older databases upgrade in place).
+    const DB_VERSION = 3;
     // One record per scope: { scope, version, timestamp, filterRevision, count,
     // clearStamp, servedAt, savedAt } once complete, or { scope, pending,
     // servedAt } while a full rewrite owns it (never restored).
@@ -48,11 +50,14 @@
     // Poster preset colours: { d: [r, g, b] | null, t: savedAt }, keyed
     // `${scope}|${algorithm}|${artwork key}`.
     const COLOUR_STORE = 'posterColours';
+    // Direct-play answers: { r: result, t: savedAt }, keyed
+    // `${scope}|${profile hash}|${itemId}`.
+    const DIRECT_PLAY_STORE = 'directPlay';
     const KEY_SEP = '|';
     // The server's tag-cache entry schema (TagCacheService
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
-    // from another schema is never restored. The current schema includes Awards, Logos and Custom matches.
-    const ENTRY_SCHEMA = 18;
+    // from another schema is never restored. The current schema adds Leaving soon facts.
+    const ENTRY_SCHEMA = 19;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;
@@ -104,6 +109,7 @@
                 if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'scope' });
                 if (!db.objectStoreNames.contains(ITEM_STORE)) db.createObjectStore(ITEM_STORE);
                 if (!db.objectStoreNames.contains(COLOUR_STORE)) db.createObjectStore(COLOUR_STORE);
+                if (!db.objectStoreNames.contains(DIRECT_PLAY_STORE)) db.createObjectStore(DIRECT_PLAY_STORE);
             };
             request.onsuccess = () => {
                 const db = request.result;
@@ -346,14 +352,14 @@
      */
     async function clearOtherScopes(scope) {
         const db = await openDb();
-        const tx = db.transaction([META_STORE, ITEM_STORE, COLOUR_STORE], 'readwrite');
+        const tx = db.transaction([META_STORE, ITEM_STORE, COLOUR_STORE, DIRECT_PLAY_STORE], 'readwrite');
         const meta = tx.objectStore(META_STORE);
         const keys = await settle(meta.getAllKeys());
         for (const key of keys) {
             if (key !== scope) meta.delete(key);
         }
         // Everything before and after this scope's own key range.
-        for (const store of [tx.objectStore(ITEM_STORE), tx.objectStore(COLOUR_STORE)]) {
+        for (const store of [tx.objectStore(ITEM_STORE), tx.objectStore(COLOUR_STORE), tx.objectStore(DIRECT_PLAY_STORE)]) {
             store.delete(IDBKeyRange.upperBound(scope + KEY_SEP, true));
             store.delete(IDBKeyRange.lowerBound(scope + KEY_SEP + '￿', true));
         }
@@ -411,6 +417,56 @@
         await committed(tx);
     }
 
+    /**
+     * The direct-play answers stored for a scope and device profile.
+     * @param {string} scope
+     * @param {string} hash - tags/tag-direct-play.js profile hash.
+     * @returns {Promise<Map<string, {r: Object, t: number}>>} Item id → answer.
+     */
+    async function getDirectPlay(scope, hash) {
+        const prefix = `${scope}${KEY_SEP}${hash}${KEY_SEP}`;
+        const db = await openDb();
+        const tx = db.transaction(DIRECT_PLAY_STORE, 'readonly');
+        const range = IDBKeyRange.bound(prefix, prefix + '￿');
+        const store = tx.objectStore(DIRECT_PLAY_STORE);
+        const keysRequest = store.getAllKeys(range);
+        const valuesRequest = store.getAll(range);
+        await committed(tx);
+        const out = new Map();
+        keysRequest.result.forEach((key, i) => {
+            const value = valuesRequest.result[i];
+            if (value && value.r && typeof value.r === 'object' && typeof value.t === 'number') out.set(String(key).slice(prefix.length), value);
+        });
+        return out;
+    }
+
+    /**
+     * Store direct-play answers, then drop the oldest of the scope beyond the
+     * cap (one transaction).
+     * @param {string} scope
+     * @param {string} hash
+     * @param {Map<string, {r: Object, t: number}>} answers - Item id → answer.
+     * @param {number} cap - Most records kept for the scope.
+     * @returns {Promise<void>}
+     */
+    async function putDirectPlay(scope, hash, answers, cap) {
+        const prefix = `${scope}${KEY_SEP}${hash}${KEY_SEP}`;
+        const db = await openDb();
+        const tx = db.transaction(DIRECT_PLAY_STORE, 'readwrite');
+        const store = tx.objectStore(DIRECT_PLAY_STORE);
+        for (const [id, value] of answers) store.put({ r: value.r, t: value.t }, prefix + id);
+        const range = scopeRange(scope);
+        const keys = await settle(store.getAllKeys(range));
+        if (keys.length > cap) {
+            const values = await settle(store.getAll(range));
+            keys.map((key, i) => ({ key, t: values[i]?.t || 0 }))
+                .sort((a, b) => a.t - b.t)
+                .slice(0, keys.length - cap)
+                .forEach(({ key }) => store.delete(key));
+        }
+        await committed(tx);
+    }
+
     JE.tagCacheStore = {
         ENTRY_SCHEMA,
         available,
@@ -424,6 +480,8 @@
         clearOtherScopes,
         getPosterColours,
         putPosterColours,
+        getDirectPlay,
+        putDirectPlay,
     };
 
 })(window.JellyfinEnhanced);

@@ -12,6 +12,8 @@ for (const row of rows) {
     const settings = { statusTagsEnabled: true, statusTagsSeriesStatus: false, ...pascalToCamel(row.settings || {}) };
     const plugin = { StatusTagsEnabled: true, StatusTagsTrending: true, TmdbEnabled: true, TMDB_API_KEY: 'fixture', ...row.plugin };
     if (!plugin.TMDB_API_KEY) plugin.TmdbEnabled = false;
+    // The public flag the server derives from a Leaving soon source (never the source itself).
+    plugin.LeavingSoonAvailable = !!(plugin.LeavingSoonCollections || plugin.LeavingSoonMaintainerrUrl);
     const translate = (key, params = {}) => Object.entries(params).reduce((text, [k,v]) => text.replaceAll(`{${k}}`, String(v)), en[key] || key);
     const h = createHarness({
         html: '<div class="card" data-id="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div><div class="cardText">Title</div></div></div>',
@@ -33,7 +35,8 @@ for (const row of rows) {
         await new Promise(resolve=>setTimeout(resolve,80));
         const chip = host.querySelector('.status-tag');
         row.web = chip ? { key: chip.dataset.jeStatus, text: chip.textContent } : null;
-        const aliases = {just_added:'added',new_movie:'newMovie',new_series:'newSeries',new_episode:'newEpisode',trending_today:'trending'};
+        const aliases = {just_added:'added',new_movie:'newMovie',new_series:'newSeries',new_episode:'newEpisode',trending_today:'trending',
+            leaving_soon:'leaving',leaving_today:'leaving',leaving_tomorrow:'leaving',leaving_days:'leaving'};
         const expected = row.expected ? { key:aliases[row.expected.key] || row.expected.key, text:row.expected.text } : null;
         assert.deepEqual(row.web, expected, row.name);
     } finally { h.close(); }

@@ -74,6 +74,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
             serviceCollection.AddSingleton<AwardTagsService>();
+            // Leaving soon facts (Maintainerr API or collection names), refreshed by RefreshLeavingSoonTagsTask.
+            serviceCollection.AddSingleton<LeavingSoonService>();
             serviceCollection.AddSingleton<AnilistReviewsService>();
             serviceCollection.AddSingleton<ReviewTranslationService>();
             serviceCollection.AddSingleton<MdblistService>();

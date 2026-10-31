@@ -3935,6 +3935,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsSchedule,
                 config.StatusTagsMilestones,
                 config.StatusTagsSeriesStatus,
+                // Leaving soon / direct-play families: starting values, and whether a
+                // Leaving soon source is set (never its URL, key or collection names).
+                config.StatusTagsLeaving,
+                config.StatusTagsDirectPlay,
+                LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
                 // Poster tag layout starting defaults (normalized; null = built-in)
@@ -5490,6 +5495,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
                         StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
                         StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
+                        StatusTagsLeaving = defaultConfig.StatusTagsLeaving,
+                        StatusTagsDirectPlay = defaultConfig.StatusTagsDirectPlay,
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8539,6 +8546,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
                 StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
                 StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
+                StatusTagsLeaving = defaultConfig.StatusTagsLeaving,
+                StatusTagsDirectPlay = defaultConfig.StatusTagsDirectPlay,
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8677,6 +8686,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 lastModified = enabled ? _tagCacheService.LastModified : 0,
                 rebuilding = enabled && _tagCacheService.IsRebuilding,
             });
+        }
+
+        /// <summary>
+        /// The Leaving soon source state for the Media Tags page (counts, times, last failure). Never the URL,
+        /// key or names. Admin only.
+        /// </summary>
+        /// <param name="leavingSoon">The Leaving soon service.</param>
+        /// <returns>The status.</returns>
+        [HttpGet("admin/leaving-soon")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon)
+        {
+            if (!IsAdminUser()) return Forbid();
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+        }
+
+        /// <summary>Refresh the Leaving soon facts now (the Media Tags page's Refresh), then answer the status. Admin only.</summary>
+        /// <param name="leavingSoon">The Leaving soon service.</param>
+        /// <param name="cancellationToken">The request's cancellation.</param>
+        /// <returns>The status after the refresh.</returns>
+        [HttpPost("admin/leaving-soon/refresh")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, CancellationToken cancellationToken)
+        {
+            if (!IsAdminUser()) return Forbid();
+            await _tagCacheService.RefreshLeavingAsync(force: true, cancellationToken).ConfigureAwait(false);
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
         }
 
         /// <summary>
@@ -9306,6 +9344,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spEp),
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spEp),
+                        Leaving = _tagCacheService.GetLeaving(spEp),
                         // Suppress the parent-series rating fallback only when the
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
@@ -9355,6 +9394,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
                         LibraryId = TagDataLibraryId(spSeries),
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spSeries),
+                        Leaving = _tagCacheService.GetLeaving(spSeries),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9431,6 +9471,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
                         LibraryId = TagDataLibraryId(spMovie),
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spMovie),
+                        Leaving = _tagCacheService.GetLeaving(spMovie),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9477,6 +9518,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
                         LibraryId = TagDataLibraryId(spSeason),
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spSeason),
+                        Leaving = _tagCacheService.GetLeaving(spSeason),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
@@ -9580,6 +9622,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     OfficialRating = ResolveTagDataOfficialRating(item),
                     LibraryId = TagDataLibraryId(item),
                     CustomTags = TagDataCustomTags(item),
+                    Leaving = _tagCacheService.GetLeaving(item),
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,

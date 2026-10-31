@@ -161,6 +161,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public string[]? CustomTags { get; set; }
 
+        /// <summary>
+        /// Leaving soon (Status group, schema v19): from the Maintainerr API or the
+        /// administrator's leaving collections. A Season/Episode takes its own, else its
+        /// Season's or Series' (whichever leaves first). Null when not leaving or no source is set.
+        /// </summary>
+        public TagLeaving? Leaving { get; set; }
+
         // Shallow copy required by per-user mutators (spoiler tag-strip): the
         // TagCacheService stores ONE shared instance per item across ALL users,
         // so mutating in place would leak one user's strip into every other user's
@@ -221,7 +228,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && SequencesEqual(a.QualityEpisodeIds, b.QualityEpisodeIds)
                 && a.SeriesId == b.SeriesId
                 && a.LibraryId == b.LibraryId
-                && SequencesEqual(a.CustomTags, b.CustomTags);
+                && SequencesEqual(a.CustomTags, b.CustomTags)
+                && a.Leaving == b.Leaving;
         }
 
         /// <summary>
@@ -299,6 +307,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             SeriesId = SeriesId,
             LibraryId = LibraryId,
             CustomTags = CustomTags,
+            Leaving = Leaving,
         };
     }
 

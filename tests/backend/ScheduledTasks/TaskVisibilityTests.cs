@@ -19,6 +19,7 @@ public class TaskVisibilityTests
         (typeof(MdblistRatingsFetchTask), (c, on) => { c.MdblistRatingsEnabled = on; c.MdblistRatingsFetchEnabled = on; }),
         (typeof(MdblistRatingsSyncTask), (c, on) => { c.MdblistRatingsEnabled = on; c.MdblistRatingsAutoSyncEnabled = on; }),
         (typeof(RefreshAwardTagsTask), (c, on) => c.AwardsTagsEnabled = on),
+        (typeof(RefreshLeavingSoonTagsTask), (c, on) => c.LeavingSoonCollections = on ? "Leaving Soon" : string.Empty),
         (typeof(BuildTagCacheTask), (c, on) => c.TagCacheServerMode = on),
         (typeof(SpoilerApplyExistingTitlesTask), (c, on) => c.SpoilerBlurEnabled = on),
         (typeof(AnalyticsReportTask), (c, on) => c.AnalyticsEnabled = on),

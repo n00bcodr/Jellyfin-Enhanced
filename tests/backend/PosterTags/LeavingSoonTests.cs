@@ -1,0 +1,550 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
+using Jellyfin.Data.Enums;
+using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
+using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
+using Microsoft.AspNetCore.Mvc;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
+using Moq;
+
+namespace JE.Tests;
+
+/// <summary>
+/// Leaving soon: Maintainerr's collections answer (against a fixture HTTP server), the
+/// refresh interval and retry delays, failures that keep the last good answer, the
+/// collection-name fallback, the cache projection and the badge's calendar-day maths.
+/// </summary>
+[Collection("Plugin singleton")]
+public sealed class LeavingSoonTests : IDisposable
+{
+    private static readonly DateTimeOffset Added = DateTimeOffset.Parse("2026-10-25T10:00:00Z");
+    private const long DayMs = 86_400_000L;
+    private readonly CoreFixture _core = new();
+
+    public void Dispose() => _core.Dispose();
+
+    /// <summary>A loopback HTTP server that answers like Maintainerr's <c>GET /api/collections</c>.</summary>
+    private sealed class MaintainerrFixture : IDisposable
+    {
+        private readonly HttpListener _listener = new();
+        private readonly CancellationTokenSource _stop = new();
+        public string Url { get; }
+        public List<(string Path, string? Key)> Seen { get; } = new();
+        public Func<HttpListenerResponse, Task> Answer { get; set; } = r => Json(r, "[]");
+
+        public MaintainerrFixture(string basePath = "")
+        {
+            var probe = new TcpListener(IPAddress.Loopback, 0);
+            probe.Start();
+            var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+            Url = $"http://127.0.0.1:{port}{basePath}";
+            _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            _listener.Start();
+            _ = Task.Run(async () =>
+            {
+                while (!_stop.IsCancellationRequested)
+                {
+                    HttpListenerContext context;
+                    try { context = await _listener.GetContextAsync(); }
+                    catch { return; }
+                    lock (Seen) Seen.Add((context.Request.Url!.AbsolutePath, context.Request.Headers["X-Api-Key"]));
+                    try { await Answer(context.Response); }
+                    catch { /* the client gave up (timeout tests) */ }
+                    finally { try { context.Response.Close(); } catch { } }
+                }
+            });
+        }
+
+        public int Requests { get { lock (Seen) return Seen.Count; } }
+
+        public static async Task Json(HttpListenerResponse response, string body, int status = 200)
+        {
+            response.StatusCode = status;
+            response.ContentType = "application/json";
+            var bytes = Encoding.UTF8.GetBytes(body);
+            response.ContentLength64 = bytes.Length;
+            await response.OutputStream.WriteAsync(bytes);
+        }
+
+        public void Dispose()
+        {
+            _stop.Cancel();
+            _listener.Close();
+        }
+    }
+
+    private sealed class Clients : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new();
+    }
+
+    private static string Collections(params (bool Active, int? Days, object Type, Media[] Media)[] collections)
+        => JsonSerializer.Serialize(collections.Select(c => new Dictionary<string, object?>
+        {
+            ["id"] = 1, ["title"] = "Leaving Soon", ["isActive"] = c.Active, ["deleteAfterDays"] = c.Days, ["type"] = c.Type,
+            ["media"] = c.Media.Select(m => new Dictionary<string, object?> { ["mediaServerId"] = m.Id, ["tmdbId"] = m.Tmdb, ["addDate"] = m.Added }).ToArray(),
+        }));
+
+    /// <summary>One collection member as Maintainerr lists it.</summary>
+    private sealed record Media(string? Id, string? Tmdb, string? Added);
+
+    private LeavingSoonService Service(ILibraryManager? library = null, DateTimeOffset? now = null)
+    {
+        var service = new LeavingSoonService(new Clients(), Path.Combine(_core.Root, "leaving-soon.json"), library, _core.Logger);
+        var clock = now ?? Added.AddDays(1);
+        service.Now = () => clock;
+        return service;
+    }
+
+    private static PluginConfiguration Config(string? url = null, string key = "", string names = "", int hours = 6)
+        => new() { LeavingSoonMaintainerrUrl = url ?? string.Empty, LeavingSoonMaintainerrApiKey = key, LeavingSoonCollections = names, LeavingSoonRefreshHours = hours };
+
+    [Fact]
+    public void Parses_dated_undated_inactive_wrapped_and_numeric_type_answers()
+    {
+        var a = Guid.NewGuid(); var b = Guid.NewGuid(); var c = Guid.NewGuid();
+        var json = Collections(
+            (true, 30, "movie", new Media[] { new(a.ToString(), "550", "2026-10-25T10:00:00.000Z"), new(b.ToString("N"), null, null) }),
+            (false, 1, "movie", new Media[] { new(c.ToString(), null, "2026-10-25T10:00:00Z") }),
+            (true, null, 2, new Media[] { new(c.ToString("D").ToUpperInvariant(), null, "2026-10-25T10:00:00Z") }));
+        var members = LeavingSoonService.ParseCollections(JsonDocument.Parse(json).RootElement);
+        Assert.Equal(3, members.Count);
+        Assert.Equal(Added.AddDays(30).ToUnixTimeMilliseconds(), members[0].DeleteAt);
+        Assert.Null(members[1].DeleteAt); // no addDate
+        Assert.Equal(c, members[2].ItemId); // the inactive collection is skipped
+        Assert.Equal("show", members[2].Type);
+        Assert.Null(members[2].DeleteAt); // no deleteAfterDays
+
+        var wrapped = LeavingSoonService.ParseCollections(JsonDocument.Parse("{\"data\":" + json + "}").RootElement);
+        Assert.Equal(members, wrapped);
+        Assert.Throws<JsonException>(() => LeavingSoonService.ParseCollections(JsonDocument.Parse("{\"error\":\"nope\"}").RootElement));
+        Assert.Throws<JsonException>(() => LeavingSoonService.ParseCollections(JsonDocument.Parse("\"text\"").RootElement));
+    }
+
+    [Fact]
+    public void A_plex_backed_answer_matches_movies_and_shows_by_tmdb_id_and_the_earliest_date_wins()
+    {
+        var movie = Guid.NewGuid(); var show = Guid.NewGuid(); var episode = Guid.NewGuid();
+        var members = new List<LeavingSoonService.MaintainerrMember>
+        {
+            new(null, "550", "movie", 100), new(null, "1399", "show", 300), new(null, "1399", "episode", 50),
+            new(movie, null, "movie", 200), new(episode, null, "episode", null), new(episode, null, "episode", 40),
+        };
+        var items = LeavingSoonService.ToItems(members, (type, tmdb) => (type, tmdb) switch { ("movie", "550") => new[] { movie }, ("show", "1399") => new[] { show }, _ => Array.Empty<Guid>() });
+        Assert.Equal(100, items[movie.ToString("N")]);
+        Assert.Equal(300, items[show.ToString("N")]); // an episode-type TMDB id is never taken as the show's
+        Assert.Equal(40, items[episode.ToString("N")]); // a date beats no date
+        Assert.Equal(3, items.Count);
+        Assert.Equal(new TagLeaving { DeleteAt = 5 }, LeavingSoonService.Earliest(new TagLeaving(), new TagLeaving { DeleteAt = 5 }));
+        Assert.Equal(new TagLeaving { DeleteAt = 5 }, LeavingSoonService.Earliest(new TagLeaving { DeleteAt = 9 }, new TagLeaving { DeleteAt = 5 }));
+    }
+
+    [Theory]
+    [InlineData("http://maintainerr:6246", true)]
+    [InlineData("https://host/maintainerr/", true)]
+    [InlineData("ftp://host", false)]
+    [InlineData("http://user:pass@host", false)]
+    [InlineData("http://host/?apikey=x", false)]
+    [InlineData("http://host/#x", false)]
+    [InlineData("maintainerr:6246", false)]
+    [InlineData("", false)]
+    public void Only_plain_http_base_urls_are_accepted(string url, bool ok) => Assert.Equal(ok, LeavingSoonService.IsMaintainerrUrl(url));
+
+    [Fact]
+    public async Task Requests_the_collections_with_the_key_header_and_never_logs_or_persists_the_key()
+    {
+        using var server = new MaintainerrFixture("/maintainerr");
+        var item = Guid.NewGuid();
+        server.Answer = r => MaintainerrFixture.Json(r, Collections((true, 10, "movie", new Media[] { new(item.ToString(), null, "2026-10-25T10:00:00Z") })));
+        var service = Service();
+        var config = Config(server.Url + "/", key: "secret-key-123");
+        Assert.True(await service.RefreshAsync(config, false, CancellationToken.None));
+        Assert.Equal(("/maintainerr/api/collections", "secret-key-123"), Assert.Single(server.Seen));
+        Assert.Equal(new TagLeaving { DeleteAt = Added.AddDays(10).ToUnixTimeMilliseconds() }, service.Get(item, config));
+        var disk = File.ReadAllText(Path.Combine(_core.Root, "leaving-soon.json"));
+        Assert.DoesNotContain("secret-key-123", disk);
+        Assert.DoesNotContain("127.0.0.1", disk);
+
+        // No key: no header. The snapshot is read back after a restart.
+        var reloaded = Service();
+        Assert.Equal(service.Get(item, config), reloaded.Get(item, config));
+        var keyless = Config(server.Url);
+        Assert.True(await reloaded.RefreshAsync(keyless, false, CancellationToken.None));
+        Assert.Null(server.Seen[^1].Key);
+        // Another source's facts never answer for this one.
+        Assert.Null(reloaded.Get(item, config));
+        Assert.NotNull(reloaded.Get(item, keyless));
+    }
+
+    [Fact]
+    public async Task Refreshes_only_when_due_and_backs_off_after_failures_keeping_the_last_good_answer()
+    {
+        using var server = new MaintainerrFixture();
+        var item = Guid.NewGuid();
+        var status = 200;
+        server.Answer = r => status == 200
+            ? MaintainerrFixture.Json(r, Collections((true, 10, "movie", new Media[] { new(item.ToString(), null, "2026-10-25T10:00:00Z") })))
+            : MaintainerrFixture.Json(r, "{\"message\":\"boom\"}", status);
+        var now = Added.AddDays(1);
+        var service = Service();
+        service.Now = () => now;
+        var config = Config(server.Url, key: "k-should-not-leak", hours: 6);
+        await service.RefreshAsync(config, false, CancellationToken.None);
+        Assert.Equal(1, server.Requests);
+        // Card reads never ask; a run before the interval does nothing.
+        for (var i = 0; i < 5; i++) Assert.NotNull(service.Get(item, config));
+        now = now.AddHours(5);
+        Assert.False(await service.RefreshAsync(config, false, CancellationToken.None));
+        Assert.Equal(1, server.Requests);
+        // A forced refresh (the admin page) asks at once.
+        Assert.False(await service.RefreshAsync(config, true, CancellationToken.None));
+        Assert.Equal(2, server.Requests);
+
+        // Failures: the previous answer stays, the retry waits 15, 30, 60 minutes… at most the interval.
+        status = 500;
+        now = now.AddHours(7);
+        Assert.False(await service.RefreshAsync(config, false, CancellationToken.None));
+        Assert.NotNull(service.Get(item, config));
+        var s = service.Status(config);
+        Assert.Equal("HTTP 500", s.LastError);
+        Assert.Equal(now.AddMinutes(15).ToUnixTimeMilliseconds(), s.NextRefresh);
+        now = now.AddMinutes(15);
+        await service.RefreshAsync(config, false, CancellationToken.None);
+        Assert.Equal(now.AddMinutes(30).ToUnixTimeMilliseconds(), service.Status(config).NextRefresh);
+        Assert.Equal(TimeSpan.FromHours(6), LeavingSoonService.RetryDelay(9, TimeSpan.FromHours(6)));
+        Assert.Equal(TimeSpan.FromMinutes(60), LeavingSoonService.RetryDelay(3, TimeSpan.FromHours(6)));
+        Assert.DoesNotContain("k-should-not-leak", File.ReadAllText(_core.Logger.CurrentLogFilePath));
+        Assert.DoesNotContain(server.Url, File.ReadAllText(_core.Logger.CurrentLogFilePath));
+
+        // Recovery resets the delay.
+        status = 200;
+        now = now.AddMinutes(30);
+        await service.RefreshAsync(config, false, CancellationToken.None);
+        s = service.Status(config);
+        Assert.Null(s.LastError);
+        Assert.Equal(now.AddHours(6).ToUnixTimeMilliseconds(), s.NextRefresh);
+        Assert.Equal(1, s.Items);
+        Assert.Equal(1, s.Dated);
+    }
+
+    [Fact]
+    public async Task Malformed_slow_oversized_and_unreachable_answers_are_failures_with_a_short_reason()
+    {
+        using var server = new MaintainerrFixture();
+        var service = Service();
+        service.Timeout = TimeSpan.FromMilliseconds(300);
+        var config = Config(server.Url);
+
+        server.Answer = r => MaintainerrFixture.Json(r, "<html>login</html>");
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        Assert.Equal("not a Maintainerr collections answer", service.Status(config).LastError);
+
+        server.Answer = r => MaintainerrFixture.Json(r, "{\"unexpected\":true}");
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        Assert.Equal("not a Maintainerr collections answer", service.Status(config).LastError);
+
+        server.Answer = async r => { await Task.Delay(2000); await MaintainerrFixture.Json(r, "[]"); };
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        Assert.Equal("timed out", service.Status(config).LastError);
+
+        server.Answer = async r =>
+        {
+            r.StatusCode = 200;
+            r.SendChunked = true;
+            var chunk = new byte[1024 * 1024];
+            for (var i = 0; i < 17; i++) await r.OutputStream.WriteAsync(chunk);
+        };
+        service.Timeout = TimeSpan.FromSeconds(20);
+        await service.RefreshAsync(config, true, CancellationToken.None);
+        Assert.Equal("answer too large", service.Status(config).LastError);
+
+        var probe = new TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var closed = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        var gone = Config($"http://127.0.0.1:{closed}");
+        await service.RefreshAsync(gone, true, CancellationToken.None);
+        Assert.Equal("not reachable", service.Status(gone).LastError);
+
+        // A metadata address is refused before any request.
+        var metadata = Config("http://169.254.169.254");
+        await service.RefreshAsync(metadata, true, CancellationToken.None);
+        Assert.Equal("address not allowed", service.Status(metadata).LastError);
+    }
+
+    [Fact]
+    public async Task Cancellation_stops_a_refresh_without_recording_a_failure()
+    {
+        using var server = new MaintainerrFixture();
+        server.Answer = async r => { await Task.Delay(3000); await MaintainerrFixture.Json(r, "[]"); };
+        var service = Service();
+        var config = Config(server.Url);
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RefreshAsync(config, true, cancel.Token));
+        Assert.Null(service.Status(config).LastAttempt);
+    }
+
+    [Fact]
+    public async Task Existing_collections_named_by_the_administrator_mark_their_members_without_a_date()
+    {
+        var library = new Mock<ILibraryManager>();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Member" };
+        var other = new Movie { Id = Guid.NewGuid(), Name = "Other" };
+        var box = new BoxSet { Id = Guid.NewGuid(), Name = "Leaving Soon", LinkedChildren = [new LinkedChild { ItemId = movie.Id }] };
+        var unrelated = new BoxSet { Id = Guid.NewGuid(), Name = "Favourites", LinkedChildren = [new LinkedChild { ItemId = other.Id }] };
+        var items = new List<BaseItem> { movie, other, box, unrelated };
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => items.Where(i => q.IncludeItemTypes == null || q.IncludeItemTypes.Length == 0 || q.IncludeItemTypes.Contains(i.GetBaseItemKind())).ToArray());
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => items.SingleOrDefault(i => i.Id == id));
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Object;
+        try
+        {
+            var service = Service(library.Object);
+            var config = Config(names: " leaving soon \nMissing collection, Leaving Soon");
+            Assert.Equal(new[] { "leaving soon", "Missing collection" }, LeavingSoonService.CollectionNames(config.LeavingSoonCollections));
+            Assert.True(await service.RefreshAsync(config, false, CancellationToken.None));
+            Assert.Equal(new TagLeaving(), service.Get(movie.Id, config));
+            Assert.Null(service.Get(other.Id, config));
+            var s = service.Status(config);
+            Assert.Equal((2, 1, 1, 0), (s.Collections, s.CollectionsFound, s.Items, s.Dated));
+            // Removing the names clears the facts.
+            var none = Config();
+            Assert.True(await service.RefreshAsync(none, false, CancellationToken.None));
+            Assert.Null(service.Get(movie.Id, none));
+            Assert.False(LeavingSoonService.Configured(none));
+        }
+        finally { BaseItem.LibraryManager = previous; }
+    }
+
+    [Fact]
+    public async Task The_cache_carries_leaving_onto_seasons_and_episodes_and_hides_it_once_the_source_is_removed()
+    {
+        using var f = new ApiPluginFixture();
+        var library = new Mock<ILibraryManager>();
+        var series = new Series { Id = Guid.NewGuid(), Name = "Show" };
+        var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+        var episode = new Episode { Id = Guid.NewGuid(), Name = "Pilot", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id, IndexNumber = 1, ParentIndexNumber = 1 };
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie" };
+        var items = new List<BaseItem> { series, season, episode, movie };
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(items, q).Select(i => i.Id).ToArray());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(items, q).ToArray());
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => items.SingleOrDefault(i => i.Id == id));
+        library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => items.SingleOrDefault(i => i.Id == id));
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Object;
+        using var server = new MaintainerrFixture();
+        var seasonDelete = Added.AddDays(20).ToUnixTimeMilliseconds();
+        server.Answer = r => MaintainerrFixture.Json(r, Collections(
+            (true, 40, "show", new Media[] { new(series.Id.ToString(), null, "2026-10-25T10:00:00Z") }),
+            (true, 20, "season", new Media[] { new(season.Id.ToString(), null, "2026-10-25T10:00:00Z") })));
+        try
+        {
+            f.Plugin.Configuration.TagCacheServerMode = true;
+            f.Plugin.Configuration.LeavingSoonMaintainerrUrl = server.Url;
+            var service = Service(library.Object);
+            using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger,
+                new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), leavingSoonService: service);
+            cache.BuildFullCache(null, CancellationToken.None);
+            Assert.True(cache.TryGetEntry(movie.Id, out var before));
+            Assert.Null(before.Leaving);
+
+            await cache.RefreshLeavingAsync(force: true, CancellationToken.None);
+            Leaving(cache, series).Should(Added.AddDays(40).ToUnixTimeMilliseconds());
+            Leaving(cache, season).Should(seasonDelete);
+            Leaving(cache, episode).Should(seasonDelete); // its season goes first
+            Assert.Null(Leaving(cache, movie).Value);
+            Assert.Equal(seasonDelete, cache.GetLeaving(episode)?.DeleteAt); // /tag-data and on-demand entries agree
+            Assert.Equal(seasonDelete, cache.BuildEntryOnDemand(episode)?.Leaving?.DeleteAt);
+
+            // The source removed: served entries drop the facts before the next publish.
+            Assert.True(cache.TryGetEntry(series.Id, out var stored));
+            f.Plugin.Configuration.LeavingSoonMaintainerrUrl = string.Empty;
+            Assert.Null(TagCacheService.ApplySourceRatingAvailability(stored).Leaving);
+            Assert.NotNull(stored.Leaving); // the shared entry is never changed in place
+        }
+        finally { BaseItem.LibraryManager = previous; }
+    }
+
+    private static IEnumerable<BaseItem> Select(List<BaseItem> items, InternalItemsQuery q)
+    {
+        IEnumerable<BaseItem> selected = items;
+        if (q.ItemIds?.Length > 0) selected = selected.Where(i => q.ItemIds.Contains(i.Id));
+        else if (q.IncludeItemTypes?.Length > 0) selected = selected.Where(i => q.IncludeItemTypes.Contains(i.GetBaseItemKind()));
+        if (q.ParentId != Guid.Empty) selected = selected.Where(i => i.ParentId == q.ParentId || (i is Episode e && e.SeriesId == q.ParentId));
+        return selected.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue).ToArray();
+    }
+
+    private readonly record struct LeavingProbe(long? Value, bool Present)
+    {
+        public void Should(long expected)
+        {
+            Assert.True(Present);
+            Assert.Equal(expected, Value);
+        }
+    }
+
+    private static LeavingProbe Leaving(TagCacheService cache, BaseItem item)
+        => cache.TryGetEntry(item.Id, out var entry) ? new(entry.Leaving?.DeleteAt, entry.Leaving != null) : throw new InvalidOperationException(item.Name);
+
+    private static PosterTagSettings Native(string zone, string density = "full", string locale = "en-US")
+    {
+        var config = new PluginConfiguration { StatusTagsEnabled = true, LeavingSoonCollections = "Leaving Soon" };
+        var user = new JellyfinEnhancedUserSettings
+        {
+            StatusTagsEnabled = true, StatusTagsLeaving = true, NativePosterTimeZone = zone, NativePosterDateLocale = locale,
+            TagLayoutSettingsVersion = density == "compact" ? 1 : 0, TagLayout = density == "compact" ? "bands" : "corners", TagLabelDensity = density,
+        };
+        return PosterTagSettings.FromUserSettings(user, config);
+    }
+
+    [Theory]
+    // Calendar days in the viewer's zone, not 24-hour blocks.
+    [InlineData("UTC", "2026-10-30T23:30:00Z", "2026-10-31T00:30:00Z", "Leaving tomorrow")]
+    [InlineData("Australia/Perth", "2026-10-30T23:30:00Z", "2026-10-31T15:30:00Z", "Leaving today")]
+    [InlineData("UTC", "2026-10-30T23:30:00Z", "2026-10-31T15:30:00Z", "Leaving tomorrow")]
+    // New York leaves daylight time on 1 November 2026: a 25-hour day still counts once.
+    [InlineData("America/New_York", "2026-11-01T03:30:00Z", "2026-11-02T05:00:00Z", "Leaving in 2d")]
+    [InlineData("America/New_York", "2026-11-01T03:30:00Z", "2026-11-02T04:59:00Z", "Leaving tomorrow")]
+    // London left daylight time on 25 October 2026.
+    [InlineData("Europe/London", "2026-10-24T22:30:00Z", "2026-10-29T23:30:00Z", "Leaving in 5d")]
+    [InlineData("UTC", "2026-10-30T12:00:00Z", "2026-10-29T12:00:00Z", "Leaving soon")]
+    public void The_badge_counts_local_calendar_days_across_time_zones_and_dst(string zone, string now, string deleteAt, string expected)
+    {
+        var badge = StatusRules.LeavingBadge(new TagLeaving { DeleteAt = DateTimeOffset.Parse(deleteAt).ToUnixTimeMilliseconds() }, Native(zone), DateTimeOffset.Parse(now));
+        Assert.Equal(expected, badge.Text);
+        Assert.Equal("leaving", badge.StyleKey);
+    }
+
+    [Fact]
+    public void The_badge_text_comes_from_the_status_vocabulary_per_locale_and_density()
+    {
+        var now = DateTimeOffset.Parse("2026-10-30T12:00:00Z");
+        var leaving = new TagLeaving { DeleteAt = now.AddDays(5).ToUnixTimeMilliseconds() };
+        Assert.Equal("Leaving in 5d", StatusRules.LeavingBadge(leaving, Native("UTC"), now).Text);
+        Assert.Equal("5d left", StatusRules.LeavingBadge(leaving, Native("UTC", "compact"), now).Text);
+        Assert.Equal("Leaving soon", StatusRules.LeavingBadge(new TagLeaving(), Native("UTC"), now).Text);
+        // A locale without the new strings yet falls back to English, as JE.t() does.
+        Assert.Equal("Leaving in 5d", StatusRules.LeavingBadge(leaving, Native("UTC", locale: "de-DE"), now).Text);
+        Assert.Contains(StatusRules.StyleLabels, l => l.Key == "leaving" && l.Name == "Leaving soon");
+    }
+
+    [Fact]
+    public void Native_leaving_needs_the_user_switch_and_a_source_and_comes_first()
+    {
+        var now = DateTimeOffset.Parse("2026-10-30T12:00:00Z");
+        var entry = new TagCacheEntry { Type = "Movie", TmdbId = "1", DateCreated = now.AddDays(-1).ToUnixTimeMilliseconds(), Leaving = new TagLeaving { DeleteAt = now.AddDays(3).ToUnixTimeMilliseconds() } };
+        var context = new PosterStatusContext(now, Rank: 3);
+        Assert.Equal("leaving_days", StatusRules.Resolve(entry, Native("UTC"), context)?.Key);
+        var noSource = PosterTagSettings.FromUserSettings(new JellyfinEnhancedUserSettings { StatusTagsEnabled = true, StatusTagsLeaving = true }, new PluginConfiguration { StatusTagsEnabled = true });
+        Assert.False(noSource.StatusLeaving);
+        Assert.Equal("just_added", StatusRules.Resolve(entry, noSource, context)?.Key);
+        var off = PosterTagSettings.FromUserSettings(new JellyfinEnhancedUserSettings { StatusTagsEnabled = true }, new PluginConfiguration { StatusTagsEnabled = true, LeavingSoonCollections = "x" });
+        Assert.Equal("just_added", StatusRules.Resolve(entry, off, context)?.Key);
+        // Only an opted-in user's settings token changes.
+        Assert.NotEqual(Native("UTC").DigestAt(now), off.DigestAt(now));
+        Assert.Equal(noSource.DigestAt(now), PosterTagSettings.FromUserSettings(new JellyfinEnhancedUserSettings { StatusTagsEnabled = true }, new PluginConfiguration { StatusTagsEnabled = true }).DigestAt(now));
+    }
+
+    [Fact]
+    public void Cache_clone_compare_and_native_hash_include_leaving()
+    {
+        var entry = new TagCacheEntry { Type = "Movie", Leaving = new TagLeaving { DeleteAt = 5 } };
+        var copy = entry.Clone();
+        Assert.True(TagCacheEntry.ContentEquals(entry, copy));
+        copy.Leaving = new TagLeaving { DeleteAt = 6 };
+        Assert.False(TagCacheEntry.ContentEquals(entry, copy));
+        Assert.NotEqual(PosterTagDataProvider.ContentHash(entry), PosterTagDataProvider.ContentHash(copy));
+        Assert.Equal(19, (int)typeof(TagCacheService).GetField("CurrentCacheSchemaVersion", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!);
+    }
+
+    [Fact]
+    public void Configuration_identity_follows_only_the_source()
+    {
+        var config = Config(names: "Leaving Soon");
+        var before = LeavingSoonService.ConfigurationIdentity(config);
+        config.LeavingSoonRefreshHours = 12;
+        config.StatusTagsLeaving = true;
+        Assert.Equal(before, LeavingSoonService.ConfigurationIdentity(config));
+        config.LeavingSoonMaintainerrApiKey = "new";
+        Assert.NotEqual(before, LeavingSoonService.ConfigurationIdentity(config));
+        Assert.Equal(string.Empty, LeavingSoonService.ConfigurationIdentity(Config()));
+    }
+
+    [Theory]
+    [InlineData("LeavingSoonMaintainerrUrl", "http://maintainerr:6246", true)]
+    [InlineData("LeavingSoonMaintainerrUrl", "", true)]
+    [InlineData("LeavingSoonMaintainerrUrl", "javascript:alert(1)", false)]
+    [InlineData("LeavingSoonMaintainerrUrl", "http://a:b@host", false)]
+    [InlineData("LeavingSoonMaintainerrApiKey", "abc123-XYZ", true)]
+    [InlineData("LeavingSoonMaintainerrApiKey", "has space", false)]
+    [InlineData("LeavingSoonCollections", "Leaving Soon\nGone Next Week", true)]
+    [InlineData("LeavingSoonCollections", "", true)]
+    public void Page_fields_are_validated(string field, string value, bool ok)
+    {
+        Assert.Contains(field, MediaTagsPageFields.Allowed);
+        Assert.Equal(ok, MediaTagsPageFields.TryNormalize(field, value, out _, out var error));
+        Assert.Equal(ok, error == null);
+    }
+
+    [Fact]
+    public void Page_number_and_list_limits_are_validated()
+    {
+        Assert.True(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 6, out _, out _));
+        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 0, out _, out _));
+        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonRefreshHours", 169, out _, out _));
+        var many = string.Join("\n", Enumerable.Range(1, 21).Select(i => "Collection " + i));
+        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonCollections", many, out _, out _));
+        Assert.False(MediaTagsPageFields.TryNormalize("LeavingSoonCollections", new string('x', 201), out _, out _));
+        foreach (var field in new[] { "StatusTagsLeaving", "StatusTagsDirectPlay" }) Assert.Contains(field, MediaTagsPageFields.Allowed);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void The_public_configuration_says_only_whether_a_source_is_set(bool authenticated, bool admin)
+    {
+        using var fixture = new ApiPluginFixture();
+        fixture.Plugin.UpdateConfiguration(new PluginConfiguration
+        {
+            StatusTagsLeaving = true, LeavingSoonMaintainerrUrl = "http://maintainerr.invalid:6246",
+            LeavingSoonMaintainerrApiKey = "maintainerr-secret-key", LeavingSoonCollections = "Private Collection Name",
+        });
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance);
+        var privateController = ApiAssetTests.Controller(fixture.Core, Mock.Of<IUserManager>());
+        foreach (var c in new[] { controller, privateController })
+        {
+            c.HttpContext.User = new ClaimsPrincipal(authenticated
+                ? new ClaimsIdentity([new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test")
+                : new ClaimsIdentity());
+        }
+
+        foreach (var json in new[] { JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value), JsonSerializer.Serialize(Assert.IsType<JsonResult>(privateController.GetPrivateConfig()).Value) })
+        {
+            Assert.DoesNotContain("maintainerr-secret-key", json);
+            Assert.DoesNotContain("maintainerr.invalid", json);
+            Assert.DoesNotContain("Private Collection Name", json);
+        }
+
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+        Assert.True(document.RootElement.GetProperty("LeavingSoonAvailable").GetBoolean());
+        Assert.True(document.RootElement.GetProperty("StatusTagsLeaving").GetBoolean());
+        Assert.False(document.RootElement.GetProperty("StatusTagsDirectPlay").GetBoolean());
+    }
+}

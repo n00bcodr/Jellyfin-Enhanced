@@ -318,8 +318,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // A schema mismatch discards the stale cache so it can be rebuilt.
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
-        // Current schema includes Awards, Logos and Custom rule matches.
-        internal const int CurrentCacheSchemaVersion = 18;
+        // v18 includes Awards, Logos and Custom rule matches.
+        // Current schema adds Leaving (Leaving soon facts).
+        internal const int CurrentCacheSchemaVersion = 19;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -490,7 +491,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null, TagLogoService? logoService = null)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null, TagLogoService? logoService = null, LeavingSoonService? leavingSoonService = null)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
@@ -500,6 +501,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _mdblistService = mdblistService;
             _awardTagsService = awardTagsService;
             _logoService = logoService;
+            _leavingSoonService = leavingSoonService;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -2666,6 +2668,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 entry.Logos = GetLogos(item, series);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
                 entry.CustomTags = CustomTagsFor(item, series);
+                entry.Leaving = GetLeaving(item);
 
                 if (isContainer)
                 {

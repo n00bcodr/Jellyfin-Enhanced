@@ -225,7 +225,8 @@ public class TagStyleTests
 
         Assert.Equal(new TagColors("rgba(0, 0, 0, 0.851)", "rgba(0, 0, 0, 0)", "rgba(255, 193, 7, 1)"), TagStylePalettes.Builtin("rating", "community"));
         Assert.Equal("rgba(255, 0, 0, 1)", TagStylePalettes.Builtin("ageRating", "14").Background); // "red" in the colour sheet
-        Assert.Equal(17, TagStyleCatalog.Labels("status").Count);
+        // Leaving soon and the web-only direct-play warning add one style each.
+        Assert.Equal(19, TagStyleCatalog.Labels("status").Count);
         Assert.Equal("PG-13", TagStyleCatalog.AgeGroups.Single(a => a.Id == "9").Sample);
     }
 

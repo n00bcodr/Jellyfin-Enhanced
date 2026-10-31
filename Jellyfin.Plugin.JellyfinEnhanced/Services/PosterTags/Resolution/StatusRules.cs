@@ -77,6 +77,9 @@ public static class StatusRules
         var finalRecently = RecentDay(AirDate(final?.Date), today, newReleaseMs);
         StatusTag Badge(string key, string? date = null) => Make(key, settings, date);
 
+        // Leaving soon outranks everything: the item is about to go.
+        if (settings.StatusLeaving && data.Leaving is { } leaving && data.Type is "Movie" or "Series" or "Season" or "Episode")
+            return LeavingBadge(leaving, settings, context.Now);
         if (data.Type is "Movie" or "Series" && settings.StatusTrending && context.Rank is > 0)
             return Make("trending_today", settings, rank: context.Rank);
         switch (data.Type)
@@ -135,6 +138,23 @@ public static class StatusRules
         return facts?.Status switch { "Returning Series" => Badge("returning"), "Ended" => Badge("ended"), "Canceled" => Badge("cancelled"), _ => null };
     }
 
+    /// <summary>
+    /// "Leaving in {days}d" by local calendar days (DST-safe), "Leaving tomorrow", "Leaving today",
+    /// and "Leaving soon" without a date or once the date has passed (Maintainerr removes it on its next run).
+    /// </summary>
+    internal static StatusTag LeavingBadge(TagLeaving leaving, PosterTagSettings settings, DateTimeOffset now)
+    {
+        if (leaving.DeleteAt is not { } at) return Make("leaving_soon", settings);
+        var days = LocalDate(DateTimeOffset.FromUnixTimeMilliseconds(at), settings.StatusTimeZone).DayNumber - LocalDate(now, settings.StatusTimeZone).DayNumber;
+        return days switch
+        {
+            < 0 => Make("leaving_soon", settings),
+            0 => Make("leaving_today", settings),
+            1 => Make("leaving_tomorrow", settings),
+            _ => Make("leaving_days", settings, days: days),
+        };
+    }
+
     private static bool Ended(string? status) => status is "Ended" or "Canceled";
     private static bool Within(long? value, long now, long window) => value is { } ms && ms <= now + Thresholds.DayMs && now - ms <= window;
     private static bool RecentDay(DateOnly? value, DateOnly today, long window) => value is { } day && day <= today && (today.DayNumber - day.DayNumber) * Thresholds.DayMs <= window;
@@ -188,12 +208,13 @@ public static class StatusRules
         return month.Template.Replace("{month}", month.Month, StringComparison.Ordinal).Replace("{day}", digits, StringComparison.Ordinal);
     }
 
-    private static StatusTag Make(string key, PosterTagSettings settings, string? date = null, int? rank = null)
+    private static StatusTag Make(string key, PosterTagSettings settings, string? date = null, int? rank = null, int? days = null)
     {
         var definition = Table.Badges[key];
         var label = settings.CompactBands && definition.Compact != null ? definition.Compact : definition.Label;
         var text = Translate(label, settings.StatusCulture).Replace("{date}", date ?? string.Empty, StringComparison.Ordinal)
-            .Replace("{rank}", rank?.ToString(settings.StatusCulture) ?? string.Empty, StringComparison.Ordinal);
+            .Replace("{rank}", rank?.ToString(settings.StatusCulture) ?? string.Empty, StringComparison.Ordinal)
+            .Replace("{days}", days?.ToString(settings.StatusCulture) ?? string.Empty, StringComparison.Ordinal);
         return new(key, text, definition.Style);
     }
 

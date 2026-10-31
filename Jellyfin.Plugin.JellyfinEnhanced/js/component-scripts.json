@@ -206,6 +206,7 @@
     "tags/ratingtags.js",
     "tags/ageratingtags.js",
   "tags/awardstags.js",
+    "tags/tag-direct-play.js",
     "tags/status-vocabulary.js",
     "tags/statustags.js",
     "// Poster preset colours (read by tag-styles.js and core/tag-layout.js at call time).",

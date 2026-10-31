@@ -82,6 +82,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool StatusSchedule { get; private init; }
         public bool StatusMilestones { get; private init; }
         public bool StatusSeriesStatus { get; private init; }
+        /// <summary>Leaving soon family: the user's switch, while a Leaving soon source is set.</summary>
+        public bool StatusLeaving { get; private init; }
         public int StatusJustAddedDays { get; private init; }
         public int StatusNewReleaseDays { get; private init; }
         public bool StatusRemoteEnabled { get; private init; }
@@ -450,6 +452,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 StatusSchedule = user.StatusTagsSchedule,
                 StatusMilestones = user.StatusTagsMilestones,
                 StatusSeriesStatus = user.StatusTagsSeriesStatus,
+                StatusLeaving = user.StatusTagsLeaving && LeavingSoonService.Configured(config),
                 StatusJustAddedDays = Math.Clamp(config.StatusTagsJustAddedDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusNewReleaseDays = Math.Clamp(config.StatusTagsNewReleaseDays, StatusRules.Thresholds.MinWindowDays, StatusRules.Thresholds.MaxWindowDays),
                 StatusRemoteEnabled = config.StatusTagsEnabled && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY),
@@ -819,6 +822,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 StatusTagsSchedule = config.StatusTagsSchedule,
                 StatusTagsMilestones = config.StatusTagsMilestones,
                 StatusTagsSeriesStatus = config.StatusTagsSeriesStatus,
+                StatusTagsLeaving = config.StatusTagsLeaving,
+                StatusTagsDirectPlay = config.StatusTagsDirectPlay,
                 DisplayLanguage = config.DefaultLanguage,
                 QualityTagsPosition = config.QualityTagsPosition,
                 SeriesQualityAggregation = config.SeriesQualityAggregation,
@@ -967,6 +972,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["status.addedDays"] = Int(StatusJustAddedDays);
                 values["status.newDays"] = Int(StatusNewReleaseDays);
                 values["status.remote"] = Bool(StatusRemoteEnabled);
+                // Only when on, so every existing variant keeps its token.
+                if (StatusLeaving) values["status.leaving"] = Bool(StatusLeaving);
                 values["status.locale"] = StatusCulture.Name;
                 values["status.timeZone"] = StatusTimeZone.Id;
             }
