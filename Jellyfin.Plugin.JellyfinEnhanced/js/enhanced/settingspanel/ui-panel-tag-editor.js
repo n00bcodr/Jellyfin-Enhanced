@@ -106,7 +106,7 @@
      * @returns {number} 0 = all.
      */
     function capOf(conf, group) {
-        return GROUP_META[group].capFixed ? 1 : conf.caps[group];
+        return layoutApi().singleChipGroup(group) ? 1 : conf.caps[group];
     }
 
     /**
@@ -119,7 +119,7 @@
         const slot = conf.profiles[conf.layout][group];
         if (slot === 'off') return slotLabel(conf.layout, slot);
         const where = slotLabel(conf.layout, slot);
-        if (GROUP_META[group].capFixed) return where;
+        if (layoutApi().singleChipGroup(group)) return where;
         const cap = capOf(conf, group);
         const count = cap === 0
             ? JE.t('panel_settings_ui_tag_editor_summary_all')
@@ -184,7 +184,7 @@
     function stepperState(conf, group) {
         const meta = GROUP_META[group];
         const cap = capOf(conf, group);
-        if (meta.capFixed) return { text: '1', canDown: false, canUp: false };
+        if (layoutApi().singleChipGroup(group)) return { text: '1', canDown: false, canUp: false };
         return {
             text: cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap),
             canDown: stepCap(cap, -1, meta) !== null,
@@ -409,7 +409,7 @@
                         <div class="je-tge-label" aria-hidden="true">${escapeHtml(JE.t('panel_settings_ui_tag_editor_position'))}</div>
                         <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
                     </div>
-                    <div class="je-tge-field">
+                    <div class="je-tge-field" data-je-cap-control ${layoutApi().singleChipGroup(group) ? 'hidden' : ''}>
                         <div class="je-tge-label" id="jeTgeCapLabel-${group}">${escapeHtml(JE.t('panel_settings_ui_tag_editor_show_up_to'))}</div>
                         <div class="je-tge-stepper" role="group" aria-labelledby="jeTgeCapLabel-${group}">
                             <button type="button" class="je-tge-step" data-step="-1" ${step.canDown ? '' : 'disabled'} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_cap_decrease', { group: name }))}"><span class="material-icons" aria-hidden="true">remove</span></button>
@@ -555,7 +555,7 @@
      * @returns {number|null}
      */
     function nextCap(group, cap, dir) {
-        return stepCap(cap, dir, GROUP_META[group]);
+        return layoutApi().singleChipGroup(group) ? null : stepCap(cap, dir, GROUP_META[group]);
     }
 
     /**
@@ -824,6 +824,7 @@
                 pills.dataset.layout = conf.layout;
                 pills.innerHTML = pillsHtml(conf, group);
                 if (pillFocus) /** @type {HTMLElement|null} */ (pills.querySelector(`[data-slot="${pillFocus}"]`))?.focus();
+                row.querySelector('[data-je-cap-control]').hidden = layoutApi().singleChipGroup(group);
                 const step = stepperState(conf, group);
                 /** @type {HTMLElement} */ (row.querySelector('.je-tge-cap')).textContent = step.text;
                 /** @type {HTMLButtonElement} */ (row.querySelector('.je-tge-step[data-step="-1"]')).disabled = !step.canDown;

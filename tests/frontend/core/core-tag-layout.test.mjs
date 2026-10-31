@@ -101,7 +101,7 @@ test('a legacy document keeps corners, its positions, arrival order and the orig
   assert.equal(s.layout, 'corners');
   assert.equal(s.density, 'full');
   assert.equal(s.order, null, 'legacy documents keep arrival order');
-  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0, custom: 3 });
+  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 1, custom: 3 });
   assert.deepEqual(plain(s.slots), { status: 'tr', quality: 'br', rating: 'tl', ageRating: 'br', language: 'bl', genre: 'bl', awards: 'tl', logos: 'bl', custom: 'tl' },
     'positions map user → admin → built-in (genre inherits the admin bottom-left)');
 });
@@ -122,7 +122,7 @@ test('a normalized document inherits admin profiles and caps, overrides them per
   assert.deepEqual(plain(s.slots), { status: 'top', quality: 'bottom', rating: 'top', ageRating: 'bottom', language: 'bottom', genre: 'top', awards: 'bottom', logos: 'top', custom: 'bottom' },
     'own valid slots win, the admin profile fills in, then the built-in profile (invalid "middle" ignored)');
   assert.deepEqual(plain(s.order), ['genre', 'status', 'quality', 'rating', 'ageRating', 'language', 'awards', 'logos', 'custom'], 'own order wins and is completed in default order');
-  assert.deepEqual(plain(s.caps), { quality: 0, genre: 2, language: 10, rating: 0, ageRating: 1, status: 0, awards: 2, logos: 0, custom: 3 }, 'clamped 0..10; admin caps fill gaps');
+  assert.deepEqual(plain(s.caps), { quality: 0, genre: 2, language: 10, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 1, custom: 3 }, 'clamped 0..10; admin caps fill gaps');
   // The admin order only reaches users by being copied in (seeding, apply to all, Reset).
   h.JE.currentSettings.tagGroupOrder = null;
   h.layout.invalidateSettings();
@@ -1283,4 +1283,16 @@ test('compact codec vocabulary retains DD channels and audits long aliases', t =
     ['Dolby Vision', 'DV'], ['HDR10+', 'HDR+'], ['BluRay', 'BD'],
     ['MPEG2', 'MPEG2'], ['THEORA', 'THEORA'], ['ATMOS 7.1', 'ATMOS'],
   ]) assert.equal(h.layout.compactQualityLabel(full), compact, full);
+});
+
+test('single-chip caps ignore stored caps and look overrides, while two-logo policy stays adjustable', async t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagGroupCaps: { status: 9, ageRating: 0, logos: 7 } } });
+  let conf = h.layout.normalizeSettings();
+  assert.equal(conf.caps.status, 1);
+  assert.equal(conf.caps.ageRating, 1);
+  assert.equal(conf.caps.logos, 1);
+  h.JE.pluginConfig.LogoTagsMaxLogos = 2;
+  conf = h.layout.normalizeSettings();
+  assert.equal(conf.caps.logos, 7);
+  for (const group of ['quality', 'genre', 'language', 'rating', 'awards', 'custom']) assert.equal(h.layout.singleChipGroup(group), false);
 });

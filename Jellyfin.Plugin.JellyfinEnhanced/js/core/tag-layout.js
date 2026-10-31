@@ -319,6 +319,22 @@
     }
 
     /**
+     * Whether a group can produce only one chip, independent of its saved cap.
+     * @param {string} group
+     * @param {Object} [config] Administrator policy (the admin preview passes its draft).
+     * @returns {boolean}
+     */
+    function singleChipGroup(group, config = JE.pluginConfig || {}) {
+        return group === 'status' || group === 'ageRating'
+            || (group === 'logos' && Number(pick(config, 'logoTagsMaxLogos') ?? 1) < 2);
+    }
+
+    /** @param {Object<string, number>} caps @returns {Object<string, number>} Effective limits, including look overrides. */
+    function normalizeGroupCaps(caps) {
+        return Object.fromEntries(DEFAULT_ORDER.map(group => [group, singleChipGroup(group) ? 1 : caps[group]]));
+    }
+
+    /**
      * @typedef {Object} TagShapeLook
      * @property {string|null} layout - null keeps the default layout.
      * @property {string|null} density - null keeps the default density.
@@ -511,7 +527,7 @@
         for (const group of DEFAULT_ORDER) {
             const own = legacy ? undefined : readCap(pick(s.tagGroupCaps, group));
             const admin = legacy ? undefined : readCap(pick(pick(p, 'tagGroupCaps'), group));
-            caps[group] = own ?? admin ?? DEFAULT_CAPS[group];
+            caps[group] = singleChipGroup(group) ? 1 : own ?? admin ?? DEFAULT_CAPS[group];
         }
 
         // Only a group that is switched on can still fill the caption strip.
@@ -680,7 +696,7 @@
             density: look.density ? (look.density === 'compact' ? 'compact' : 'full') : base.density,
             tagScale: readScale(look.tagScale) || base.tagScale,
             tagGap: readGap(look.tagGap) || base.tagGap,
-            caps: look.caps ? { ...base.caps, ...look.caps } : base.caps,
+            caps: look.caps ? normalizeGroupCaps({ ...base.caps, ...look.caps }) : base.caps,
             // A chosen order applies everywhere; otherwise corners keeps
             // arrival order and the other layouts the built-in order.
             order: base.orderChosen ? base.order : (layout === 'corners' ? null : DEFAULT_ORDER),
@@ -2569,6 +2585,7 @@
         removeGroupEverywhere,
         prepareCard,
         compactQualityLabel,
+        singleChipGroup,
         reinitialize,
         /** Run the pending fitting pass now (tests; the page runs it after the next paint). */
         flushFit,

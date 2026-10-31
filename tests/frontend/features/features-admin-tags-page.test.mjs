@@ -854,7 +854,7 @@ test('Layout defaults: tiles, density, order, limits, nine anchors and per-layou
   h.$('.je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]').click();
   await h.save();
   assert.deepEqual(plain(h.server.TagGroupCaps), { Genre: 4 });
-  assert.ok(h.$('.je-ta-lrow[data-group="status"] [data-act="cap"][data-dir="1"]').disabled);
+  assert.equal(h.$('.je-ta-lrow[data-group="status"] [data-act="cap"]'), null);
   // Corners: an anchor writes the old position setting; Hidden is the only stored corners entry.
   h.change(h.$('input[name="jeTaLayout"][value="corners"]'), true);
   h.$('.je-ta-lrow[data-group="genre"] .je-ta-anchor[data-slot="bc"]').click();
@@ -1375,4 +1375,13 @@ test('Scenes-only admin preview follows saved server defaults without changing p
   await h.settle();
   assert.equal(movie()?.textContent, 'Post-credits');
   assert.equal(h.JE.currentSettings, own);
+});
+
+for (const maximum of [1, 2]) test(`admin layout and Groups omit single-chip steppers with maximum ${maximum}`, async t => {
+  const h = setup(t, { config: { LogoTagsMaxLogos: maximum } });
+  await h.settle();
+  for (const group of ['status', 'ageRating', 'logos', 'quality', 'genre', 'language', 'rating', 'awards', 'custom']) {
+    const fixed = ['status', 'ageRating'].includes(group) || (group === 'logos' && maximum === 1);
+    assert.equal(!!h.$(`.je-ta-lrow[data-group="${group}"] [data-act="cap"]`), !fixed, group);
+  }
 });

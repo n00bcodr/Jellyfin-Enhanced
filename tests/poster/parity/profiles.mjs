@@ -310,6 +310,8 @@ synth('display-all-admin', { QualityTagsEnabled: true }, displayAll);
 synth('display-user-highest', { QualityTagsEnabled: true, QualityAudioDisplayMode: 'highest', QualityVideoCodecDisplayMode: 'highest', QualityHdrDisplayMode: 'highest' }, displayAll);
 for (const minimum of ['off', '720p', '1080p', '4k'])
     synth('display-minimum-' + minimum, { ...displayAll, QualityMinimumResolution: minimum, QualityHideSdr: true });
+for (const max of [1, 2]) synth(`single-chip-caps-${max}`, { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1,
+    TagGroupCaps: { Status: 9, AgeRating: 9, Logos: 9 } }, { LogoTagsMaxLogos: max });
 synth('display-compact-cap', { ...displayAll, TagLayout: 'bands', TagLabelDensity: 'compact', TagLayoutSettingsVersion: 1, TagGroupCaps: { Quality: 3 } });
 synth('aggregate-admin-default', { QualityTagsEnabled: true }, { SeriesQualityAggregation: 'best' });
 for (const policy of ['latest', 'mixed']) {

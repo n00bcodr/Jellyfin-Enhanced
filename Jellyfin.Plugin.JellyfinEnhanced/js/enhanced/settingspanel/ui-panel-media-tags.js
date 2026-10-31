@@ -193,7 +193,7 @@
                     <div class="je-mth-shape-positions" role="group" aria-label="${tx('tag_shapes_position_for', { group: groupName, shape: shapeName })}">
                         ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : `panel_settings_ui_tag_slot_${conf.layout}_${slot}`)}</button>`).join('')}
                     </div>
-                    <div class="je-mth-shape-cap" role="group" aria-label="${tx('tag_shapes_cap_for', { group: groupName, shape: shapeName })}">
+                    <div class="je-mth-shape-cap" data-je-cap-control ${L.singleChipGroup(group) ? 'hidden' : ''} role="group" aria-label="${tx('tag_shapes_cap_for', { group: groupName, shape: shapeName })}">
                         <button type="button" data-shape-action="cap" data-value="-1" ${internal.tagGroupEditorData.stepCap(cap, -1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_fewer', { group: groupName })}">−</button>
                         <output aria-live="polite">${cap === 0 ? tx('panel_settings_ui_tag_editor_summary_all') : cap}</output>
                         <button type="button" data-shape-action="cap" data-value="1" ${internal.tagGroupEditorData.stepCap(cap, 1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_more', { group: groupName })}">+</button>
@@ -960,7 +960,7 @@
                 const controls = panel.querySelectorAll('input:not([type="hidden"]), select, button, a[href], [role="group"][aria-labelledby], [role="radiogroup"][aria-labelledby]');
                 for (const node of controls) {
                     const el = /** @type {HTMLElement} */ (node);
-                    if (el.closest('datalist')) continue;
+                    if (el.closest('datalist, [data-je-cap-control][hidden]')) continue;
                     const label = controlLabel(el);
                     if (!label) continue;
                     const row = /** @type {HTMLElement|null} */ (el.closest('.je-tge-row'));

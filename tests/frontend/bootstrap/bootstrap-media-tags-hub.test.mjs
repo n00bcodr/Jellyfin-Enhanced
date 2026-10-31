@@ -714,3 +714,13 @@ test('Scenes-only hub preview shows the movie post-credits badge and removes it 
   await h.change(h.$('#statusTagsJustAddedToggle'), true);
   assert.equal(movie()?.textContent, en.status_tag_just_added, 'higher-priority families still win');
 });
+
+for (const maximum of [1, 2]) test(`search omits hidden single-chip cap controls at logo maximum ${maximum}`, async t => {
+  const h = setup(t, { plugin: { LogoTagsMaxLogos: maximum } });
+  await h.open();
+  for (const group of ['status', 'age_rating', 'logos']) {
+    const results = await h.search(`show up to ${group}`);
+    const fixed = group !== 'logos' || maximum === 1;
+    assert.equal(results.some(r => r.label.includes('show_up_to')), !fixed, group);
+  }
+});
