@@ -318,7 +318,7 @@ test('shape looks reject inherited fields and prototype names throughout rules a
   const shape = Object.create({ layout: 'bands', slots: { quality: 'tc' }, caps: { quality: 1 } });
   assert.deepEqual(plain(h.layout.readShapeOverrides({ landscape: shape }).landscape), { layout: null, density: null, slots: null, caps: null });
   for (const layout of ['constructor', '__proto__', 'toString']) {
-    const raw = { landscape: { layout, slots: { quality: 'tc', constructor: 'c', __proto__: 'ml' } } };
+    const raw = { landscape: { layout, slots: JSON.parse('{"quality":"tc","constructor":"c","__proto__":"ml"}') } };
     const normalized = h.layout.readShapeOverrides(raw).landscape;
     assert.equal(normalized.layout, null);
     assert.deepEqual(plain(normalized.slots), { quality: 'tc' });

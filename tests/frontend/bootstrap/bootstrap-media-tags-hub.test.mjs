@@ -164,8 +164,8 @@ test('a user with presets allowed gets Colours with eight tiles painted from eac
   await h.settle();
   const styleRequests = h.requests.filter(u => u.includes('/tag-styles'));
   assert.equal(styleRequests.length, 8);
-  assert.ok(styleRequests.includes('http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=glass'));
-  assert.ok(styleRequests.includes('http://jellyfin.test/JellyfinEnhanced/tag-styles'), 'the server default tile asks for the admin\'s');
+  assert.ok(styleRequests.some(u => u === 'http://jellyfin.test/JellyfinEnhanced/tag-styles?preset=glass'));
+  assert.ok(styleRequests.some(u => u === 'http://jellyfin.test/JellyfinEnhanced/tag-styles'), 'the server default tile asks for the admin\'s');
   const chip = h.$('.je-mth-preset-chips[data-preset="glass"] [data-chip="quality"]');
   assert.equal(chip.style.getPropertyValue('background'), 'rgba(1, 2, 3, 0.5)');
   assert.equal(chip.style.getPropertyPriority('background'), 'important', 'the user\'s own preset stylesheet cannot bleed into another tile');

@@ -10,7 +10,7 @@ const EPISODE = 'dddddddddddddddddddddddddddddddd';
 const PERSON = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
 const ITEMS = {
-  [MOVIE]: { Id: MOVIE, Name: 'Movie <b>One</b>', Type: 'Movie' },
+  [MOVIE]: { Id: MOVIE, Name: 'Movie <b>One</b><img src=x onerror=alert(1)>', Type: 'Movie' },
   [SERIES]: { Id: SERIES, Name: 'Series One', Type: 'Series' },
   [EPISODE]: { Id: EPISODE, Name: 'Pilot', Type: 'Episode', SeriesId: 'cccccccc-cccc-cccc-cccc-cccccccccccc' },
   [PERSON]: { Id: PERSON, Name: 'Someone', Type: 'Person' },
@@ -203,7 +203,9 @@ test('the editor starts from the look the item has now, shows it live and keeps 
   assert.equal(dialog.getAttribute('role'), 'dialog');
   assert.equal(dialog.getAttribute('aria-modal'), 'true');
   assert.match(h.$('.je-tie-title').textContent, /^tag_item_editor_title:Movie <b>One<\/b>/, 'the name is text');
-  assert.equal(h.$('.je-tie-title b'), null);
+  assert.equal(h.$('.je-tie-title b, .je-tie-title img'), null);
+  assert.ok(h.$('.je-tie-title').textContent.includes('<img src=x onerror=alert(1)>'));
+  assert.equal(h.$('.je-tie-card-title').textContent, ITEMS[MOVIE].Name);
   assert.equal(h.checked('Layout'), 'caption', 'the library rule\'s look (found through /tag-data)');
   assert.equal(h.checked('Density'), 'compact');
   assert.match(h.$('[data-tie-source]').textContent, /panel_media_tags_preview_source_rule:1/);
@@ -253,7 +255,7 @@ test('Keep saves layout, density, every slot, hidden groups, Show up to, size, g
   assert.equal(slots.quality, 'top');
   assert.deepEqual(lock.caps, { quality: 2 });
   assert.deepEqual([lock.tagScale, lock.tagGap, lock.edgeSpacing, lock.scope], ['largest', 'tight', 'flush', null]);
-  assert.deepEqual(h.toasts, ['tag_item_editor_kept:Movie &lt;b&gt;One&lt;/b&gt;'], 'the toast is escaped');
+  assert.deepEqual(h.toasts, ['tag_item_editor_kept:Movie &lt;b&gt;One&lt;/b&gt;&lt;img src=x onerror=alert(1)&gt;'], 'the toast is escaped');
   assert.equal(h.editor(), null);
   // The editor opens again on the kept look.
   await h.open(MOVIE);
@@ -324,7 +326,7 @@ test('administrators also keep the look for everyone, through the field patch wi
   assert.deepEqual(last.Changes.TagLookItemOverrides.Expected, { [MOVIE]: null });
   assert.deepEqual(last.Changes.TagLookItemOverrides.Set.map((o) => [o.ItemId, o.Layout]), [[MOVIE, 'summary']]);
   assert.deepEqual(plain(h.JE.pluginConfig.TagLookItemOverrides.map((o) => o.ItemId)), [MOVIE, SERIES], 'the page uses it at once');
-  assert.deepEqual(h.toasts, ['tag_item_editor_everyone_saved:Movie &lt;b&gt;One&lt;/b&gt;']);
+  assert.deepEqual(h.toasts, ['tag_item_editor_everyone_saved:Movie &lt;b&gt;One&lt;/b&gt;&lt;img src=x onerror=alert(1)&gt;']);
 
   // Off again removes it, with Undo.
   await h.open(MOVIE);

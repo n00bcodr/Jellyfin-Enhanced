@@ -87,7 +87,7 @@ test('nothing but a colour reaches the stylesheet', async t => {
   }) });
   await h.JE.initializeTagStyles();
   const css = h.css();
-  assert.doesNotMatch(css, /display: none|javascript|x: y|<script>/);
+  assert.doesNotMatch(css, /display: none|javascript|x: y|<script/i);
   assert.match(css, /\[data-quality="4K\\"\] , body, \[x=\\""\]/, 'quotes in a label stay inside the attribute string');
   assert.doesNotMatch(css, /HDR/, 'a chip whose every value is rejected gets no rule');
   const sheet = h.document.getElementById('je-tag-style-overrides').sheet;

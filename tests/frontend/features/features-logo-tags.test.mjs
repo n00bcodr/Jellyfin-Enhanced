@@ -35,7 +35,7 @@ test('a provider logo is a proxied image on its pill with the name as alt and ti
   const img = chip.querySelector('img.je-logo-img');
   assert.equal(img.alt, 'Netflix');
   assert.equal(img.getAttribute('src'), 'http://jf/JellyfinEnhanced/logo/w92/pbpMk2JmcoNnQwx5JGpXngfoWtp.jpg');
-  assert.doesNotMatch(h.host.innerHTML, /tmdb\.org/);
+  assert.ok(!h.host.innerHTML.includes('tmdb.org'));
   assert.equal(chip.closest('.je-tag-slot').dataset.jeSlot, 'bl', 'the default corner is bottom left');
 });
 

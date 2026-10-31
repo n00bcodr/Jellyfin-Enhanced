@@ -16,7 +16,7 @@
     --je-ta-good: #66bb6a;
     --je-ta-warn: #ffd166;
     --je-ta-bad: #ef5350;
-    /* Contrast-checked pairs (tests/frontend/features/features-admin-tags-page.test.mjs):
+    /* Contrast-checked pairs (tests/frontend/features/features-admin-tags-page-colours-status.test.mjs):
        text ≥ 4.5:1 on the page and its cards, selected controls ≥ 3:1 against them. */
     --je-ta-page-bg: rgb(16, 16, 16);
     --je-ta-accent-text: #00a4dc;

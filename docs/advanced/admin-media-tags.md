@@ -68,7 +68,7 @@ These declarations are the page's whole field list. `JE.adminTags.pageFields()` 
 1. Declare the field in the section that owns it, with the old id, and add its key to `tests/fixtures/admin-tags-page-fields.json`.
 2. Delete its markup, load/save lines, `PARENT_DEPS` entry and any helper from `configPage.html`. `buildConfigFromForm` starts from the saved configuration, so a field the main page no longer touches keeps its value.
 3. Run `python3 scripts/generate_config_flag_groups.py` and `python3 tests/inventory/generate.py`; commit the regenerated files.
-4. Add the field's behaviour to `tests/frontend/features/features-admin-tags-page.test.mjs` (the first test exercises every declared field automatically).
+4. Add the field's behaviour to the appropriate `tests/frontend/features/features-admin-tags-page-*.test.mjs` concern file (the Groups file exercises every declared field automatically).
 
 ## Integrated Tier 2 controls
 
