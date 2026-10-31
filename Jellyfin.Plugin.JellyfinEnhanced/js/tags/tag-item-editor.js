@@ -86,7 +86,7 @@
         .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
         .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
         .je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-        .je-tie-group { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 2fr) auto; align-items: center; gap: 6px 10px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
+        .je-tie-group { display: grid; grid-template-columns: 150px minmax(0, 1fr) 176px; align-items: center; gap: 6px 10px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
         .je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; pointer-events: none; }
         .je-tie-gname { display: flex; flex-direction: column; min-width: 0; }
         .je-tie-gname small { font-size: 11px; color: #ffd699; font-weight: 400; }
@@ -99,7 +99,7 @@
         .je-tie-anchor:has(input:checked) { border-color: #00a4dc; background: rgba(0,164,220,0.25); }
         .je-tie-anchor:has(input:checked)::after { background: #00a4dc; }
         .je-tie-anchor:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
-        .je-tie-cap { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; }
+        .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 12px; white-space: nowrap; }
         .je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
         .je-tie-cap button { width: 32px; padding: 0; }
         .je-tie-cap button:disabled { opacity: 0.35; cursor: default; }

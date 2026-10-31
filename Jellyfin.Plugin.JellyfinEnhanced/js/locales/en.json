@@ -452,7 +452,7 @@
     "tag_item_editor_cap_fewer": "Fewer {group}",
     "tag_item_editor_cap_more": "More {group}",
     "tag_item_editor_spacing": "Size and spacing",
-    "tag_item_editor_same_as_default": "Same as default ({value})",
+    "tag_item_editor_same_as_default": "Your default: {value}",
     "tag_item_editor_keep": "Keep this look for this item",
     "tag_item_editor_keep_hint": "Changes here are kept only while this is on: rule and default changes never alter a kept look. Turn it off to let them decide again.",
     "tag_item_editor_everyone": "For everyone (server-wide)",
