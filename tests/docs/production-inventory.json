@@ -1783,11 +1783,15 @@
       "category": "js"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-layout-styles.js",
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-item-editor.js",
       "category": "js"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-look-lock.js",
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-item-menu.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/tag-layout-styles.js",
       "category": "js"
     },
     {
@@ -5286,6 +5290,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagLookItemOverrides",
+      "type": "List<TagLookItemOverride>?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagShapeOverrides",
       "type": "TagShapeOverrides?",
       "initializer": null,
@@ -7414,9 +7426,57 @@
     },
     {
       "class": "TagLayoutLock",
+      "name": "Caps",
+      "type": "TagGroupCaps?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "TagScale",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "TagGap",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "EdgeSpacing",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
+      "name": "Scope",
+      "type": "string?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLayoutLock",
       "name": "LockedAt",
       "type": "long",
       "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
+    },
+    {
+      "class": "TagLookItemOverride",
+      "name": "ItemId",
+      "type": "string",
+      "initializer": "string.Empty",
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLookSettings.cs"
     },
@@ -9839,9 +9899,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 450,
+    "files": 451,
     "routes": 194,
-    "configuration_properties": 713,
+    "configuration_properties": 720,
     "storage_references": 83,
     "scheduled_tasks": 15,
     "locales": 33

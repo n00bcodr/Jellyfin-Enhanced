@@ -7,8 +7,7 @@ const MOVIE = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const SERIES = 'cccccccccccccccccccccccccccccccc';
 
 /**
- * The real "Where each look applies" section (and the detail-page lock
- * button) over the real layout controller and tag look module, with the
+ * The real "Where each look applies" section over the real layout controller and tag look module, with the
  * Jellyfin API mocked: /UserViews, /Genres, /Users/{id}/Items and the
  * tag pipeline's /tag-data (batch mode: no server tag cache). With realSave
  * the real JE.saveUserSettings posts the settings, failing with HTTP 500
@@ -48,7 +47,7 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
     },
   });
   t.after(() => h.close());
-  const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-pipeline.js', 'tags/tag-look-lock.js'];
+  const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-pipeline.js', 'tags/tag-item-editor.js'];
   if (realSave) files.unshift('tags/rating-sources.js', 'enhanced/config.js');
   for (const file of files) h.load(file);
   h.JE.toast = message => toasts.push(message);
@@ -335,9 +334,19 @@ test('the locked list loads titles once its tab shows, in batches of 50, and unl
   const all = h.buttonIn(h.mount(), 'tag_looks_unlock_all');
   assert.ok(body.contains(all), 'bulk unlock lives in the unfolded list, reachable on a phone');
 
-  const second = items()[1].querySelector('button');
-  items()[0].querySelector('button').focus();
-  h.click(items()[0].querySelector('button'));
+  // Edit opens the item's Media Tags editor on the lock; Unlock removes it.
+  const opened = [];
+  h.JE.tagItemEditor.open = (id, options) => { opened.push([id, options.opener]); return Promise.resolve(true); };
+  const edit = items()[0].querySelector('[data-je-focus-key^="edit-"]');
+  assert.equal(edit.textContent, 'tag_looks_edit');
+  assert.equal(edit.getAttribute('aria-label'), 'tag_looks_edit_lock_named:Title 3b');
+  h.click(edit);
+  assert.deepEqual(opened.map(([id]) => id), [Object.keys(locks).find((id) => locks[id].lockedAt === 59)]);
+  assert.equal(opened[0][1], edit, 'focus comes back to Edit');
+  const unlockOf = (li) => li.querySelector('[data-je-focus-key^="unlock-"]');
+  const second = unlockOf(items()[1]);
+  unlockOf(items()[0]).focus();
+  h.click(unlockOf(items()[0]));
   await h.settle();
   assert.equal(Object.keys(h.writes.at(-1).tagLayoutLocks).length, 59);
   assert.equal(h.toasts.at(-1), 'tag_look_unlocked_toast');
@@ -360,92 +369,8 @@ test('names from the server are text, never markup', async t => {
   assert.match(h.mount().textContent, /<img src=x/);
 });
 
-const detailPage = (id = MOVIE) => `<div id="itemDetailPage"><div class="detailButtons"><button class="btnMoreCommands"></button></div></div>`;
-
-test('the detail-page button locks the item with its current look and unlocks it again', async t => {
-  const h = setup(t, { html: detailPage(), settings: { tagLayout: 'bands', tagLookRules: [{ ...kidsRule, when: [{ field: 'genre', value: 'drama' }], layout: 'caption' }] } });
-  const page = h.document.getElementById('itemDetailPage');
-  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
-  const button = page.querySelector('.je-tag-look-lock-btn');
-  assert.ok(button);
-  assert.equal(button.nextElementSibling.className, 'btnMoreCommands', 'before the overflow menu');
-  assert.equal(button.getAttribute('aria-label'), 'tag_look_lock_button');
-  assert.equal(button.querySelector('.detailButton-icon').textContent, 'lock_open');
-
-  h.click(button);
-  await h.settle(); await h.settle();
-  const lock = h.writes.at(-1).tagLayoutLocks[MOVIE];
-  assert.equal(lock.layout, 'caption', 'the look the matching rule gives the item now');
-  assert.equal(lock.density, 'compact');
-  assert.ok(Array.isArray(lock.slots) && lock.slots.length === 9, 'the whole slot profile');
-  assert.equal(button.getAttribute('aria-pressed'), 'true');
-  assert.equal(button.querySelector('.detailButton-icon').textContent, 'lock');
-  assert.match(h.toasts.at(-1), /^tag_look_locked_toast:/);
-
-  h.click(button);
-  await h.settle(); await h.settle();
-  assert.equal(h.writes.at(-1).tagLayoutLocks, null);
-  assert.equal(button.getAttribute('aria-pressed'), 'false');
-  assert.equal(h.toasts.at(-1), 'tag_look_unlocked_toast');
-});
-
-test('the detail-page button is absent with every poster tag off or for non-media items', t => {
-  const h = setup(t, { html: detailPage(), settings: { qualityTagsEnabled: false } });
-  const page = h.document.getElementById('itemDetailPage');
-  h.JE.tagLookLock.addLockButton(SERIES, page, 'Series');
-  assert.equal(page.querySelector('.je-tag-look-lock-btn'), null);
-  h.JE.currentSettings.qualityTagsEnabled = true;
-  h.JE.tagLookLock.addLockButton(SERIES, page, 'Person');
-  assert.equal(page.querySelector('.je-tag-look-lock-btn'), null);
-  h.JE.tagLookLock.addLockButton(SERIES, page, 'Series');
-  assert.ok(page.querySelector('.je-tag-look-lock-btn'));
-  h.JE.tagLookLock.addLockButton('not-an-id', page, 'Series');
-  assert.equal(page.querySelector('.je-tag-look-lock-btn'), null);
-});
-
-test('locking without a cached entry waits for /tag-data and stores the library rule\'s look, not the default', async t => {
-  const answer = deferred();
-  const h = setup(t, {
-    html: detailPage(),
-    settings: { tagLayout: 'corners', tagLookRules: [{ ...kidsRule, when: [{ field: 'library', value: KIDS }] }] },
-    tagData: () => answer.promise,
-  });
-  const page = h.document.getElementById('itemDetailPage');
-  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
-  const button = page.querySelector('.je-tag-look-lock-btn');
-  h.click(button);
-  await h.settle();
-  assert.equal(button.disabled, true, 'disabled while the item data loads');
-  assert.equal(button.getAttribute('aria-label'), 'tag_looks_loading');
-  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
-  assert.equal(button.getAttribute('aria-label'), 'tag_looks_loading', 'a details re-run keeps the busy state');
-  assert.equal(h.writes.length, 0, 'nothing saved before the data is known');
-  assert.ok(h.requests.some(u => u.includes(`/JellyfinEnhanced/tag-data/`)), 'fetched through the tag pipeline');
-
-  answer.resolve({ Id: MOVIE, Type: 'Movie', LibraryId: KIDS, Genres: [] });
-  await h.settle(); await h.settle();
-  const lock = h.writes.at(-1).tagLayoutLocks[MOVIE];
-  assert.equal(lock.layout, 'caption', 'the library rule\'s look (the grid shows caption)');
-  assert.equal(lock.density, 'compact');
-  assert.equal(button.disabled, false);
-  assert.equal(button.getAttribute('aria-label'), 'tag_look_unlock_button');
-});
-
-test('locking an item the server has no tag data for saves nothing and says it failed', async t => {
-  const h = setup(t, { html: detailPage(), tagData: () => null });
-  const page = h.document.getElementById('itemDetailPage');
-  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
-  const button = page.querySelector('.je-tag-look-lock-btn');
-  h.click(button);
-  await h.settle(); await h.settle();
-  assert.equal(h.writes.length, 0);
-  assert.equal(h.toasts.at(-1), 'tag_look_error_toast');
-  assert.equal(button.getAttribute('aria-pressed'), 'false');
-  assert.equal(button.disabled, false);
-});
-
 test('a save that fails with HTTP 500 resolves false, restores the locks and rules and says so', async t => {
-  const h = setup(t, { html: detailPage(), realSave: true, settings: { tagLookRules: [kidsRule] } });
+  const h = setup(t, { realSave: true, settings: { tagLookRules: [kidsRule] } });
   h.io.saveStatus = 500;
   const before = plain(h.JE.currentSettings);
 
@@ -457,16 +382,6 @@ test('a save that fails with HTTP 500 resolves false, restores the locks and rul
   assert.ok(h.reinit.length >= reinitBefore + 2, 'presented with the lock, then without it');
   assert.equal(await h.JE.core.tagLook.saveRules([]), false);
   assert.deepEqual(plain(h.JE.currentSettings.tagLookRules), before.tagLookRules);
-
-  // The detail-page button: no "locked" toast, an error one, still unlocked.
-  const page = h.document.getElementById('itemDetailPage');
-  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
-  const button = page.querySelector('.je-tag-look-lock-btn');
-  h.click(button);
-  await h.settle(); await h.settle(); await h.settle();
-  assert.deepEqual(h.toasts, ['tag_look_error_toast']);
-  assert.equal(button.getAttribute('aria-pressed'), 'false');
-  assert.equal(h.JE.core.tagLook.read().locks.size, 0);
 
   // The panel: deleting the rule shows at once, then comes back with a toast.
   await h.open();
@@ -484,43 +399,6 @@ test('a save that fails with HTTP 500 resolves false, restores the locks and rul
   await h.settle(); await h.settle();
   assert.deepEqual(h.writes.at(-1).TagLookRules ?? h.writes.at(-1).tagLookRules, []);
   assert.equal(h.rows().length, 0);
-});
-
-for (const switchedBack of [false, true]) test(`a detail lock drops facts and saves nothing after a session change (back=${switchedBack})`, async t => {
-  const answer = deferred();
-  const h = setup(t, { html: detailPage(), tagData: () => answer.promise });
-  h.JE.pluginConfig.TagCacheServerMode = false;
-  const page = h.document.getElementById('itemDetailPage');
-  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
-  h.click(page.querySelector('.je-tag-look-lock-btn'));
-  await h.settle();
-  h.io.user = switchedBack ? 'user-a' : 'user-b';
-  h.io.epoch += switchedBack ? 2 : 1;
-  h.JE.currentSettings = { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true };
-  answer.resolve({ Id: MOVIE, Type: 'Movie', Genres: ['private'] });
-  await h.settle(); await h.settle();
-  assert.equal(h.writes.length, 0, 'no lock saved for the incoming session');
-  assert.equal(h.JE.currentSettings.tagLayoutLocks, undefined);
-  assert.equal(h.toasts.length, 0, 'no stale-session toast');
-  // A fresh request must still reach the API: the old response was not remembered.
-  await h.JE.tagPipeline.itemLookFacts(MOVIE);
-  assert.equal(h.requests.filter(u => u.includes('/tag-data/')).length, 2);
-});
-
-for (const available of [true, false]) for (const explicitSource of [false, true]) test(`a plain remembered DTO cannot freeze the default look (retry available=${available}, source=${explicitSource})`, async t => {
-  const h = setup(t, { html: detailPage(), tagData: () => available ? { Id: MOVIE, Type: 'Movie', LibraryId: KIDS } : null,
-    settings: { tagLookRules: [{ ...kidsRule, when: [{ field: 'library', value: KIDS }] }] } });
-  h.JE.pluginConfig.TagCacheServerMode = false;
-  h.window.localStorage.setItem('JE_tagLookFacts:identity-owner', ':user-a');
-  // Also covers persisted facts written before source provenance was recorded.
-  h.window.localStorage.setItem('JE_tagLookFacts', JSON.stringify({ [MOVIE]: { Type: 'Movie', Genres: ['Drama'], at: Date.now(), ...(explicitSource ? { source: 'item', LibraryId: '33333333333333333333333333333333' } : {}) } }));
-  const page = h.document.getElementById('itemDetailPage');
-  h.JE.tagLookLock.addLockButton(MOVIE, page, 'Movie');
-  h.click(page.querySelector('.je-tag-look-lock-btn'));
-  await h.settle(); await h.settle();
-  assert.equal(h.requests.filter(u => u.includes('/tag-data/')).length, 1, 'plain facts require an enriched retry');
-  if (available) assert.equal(h.writes.at(-1).tagLayoutLocks[MOVIE].layout, 'caption');
-  else { assert.equal(h.writes.length, 0); assert.equal(h.toasts.at(-1), 'tag_look_error_toast'); }
 });
 
 test('rule actions only stick when the entire form fits in the visible scroller', async t => {

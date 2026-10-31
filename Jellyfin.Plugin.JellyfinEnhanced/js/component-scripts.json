@@ -218,8 +218,10 @@
     "tags/customtags.js",
     "tags/tag-styles.js",
     "tags/userreviewtags.js",
-    "// Detail-page Lock tag look button (reads JE.core.tagLook at call time).",
-    "tags/tag-look-lock.js",
+    "// Per-item Media Tags editor (a dialog) and its \"Media Tags\" row in",
+    "// Jellyfin's item menu; both read JE.core.tagLook / tagLayout at call time.",
+    "tags/tag-item-editor.js",
+    "tags/tag-item-menu.js",
 
     "// arr",
     "arr/arr-links.js",
