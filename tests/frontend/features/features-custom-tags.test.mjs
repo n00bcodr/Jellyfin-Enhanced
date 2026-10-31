@@ -328,9 +328,9 @@ test('Tag Styles colour every custom chip and each label', t => {
 });
 
 test('the icon list is the bundled genre icon set, the same on the server and the configuration page', () => {
-  const genre = readFileSync(`${jsRoot}/tags/genretags.js`, 'utf8');
-  const map = genre.slice(genre.indexOf('const genreIconMap = {'), genre.indexOf('};', genre.indexOf('const genreIconMap = {')));
-  const genreIcons = [...new Set([...map.matchAll(/:\s*'([a-z_]+)'/g)].map(m => m[1]))].sort();
+  // The genre table genretags.js is generated from (scripts/generate_genre_labels.py).
+  const table = JSON.parse(readFileSync(`${jsRoot}/tags/genre-icons.json`, 'utf8'));
+  const genreIcons = [...new Set([table.defaultIcon, ...Object.values(table.names).flatMap(names => Object.values(names))])].sort();
   const list = source => JSON.parse(`[${/ICONS = \[([^\]]+)\]/.exec(source)[1].replace(/'/g, '"')}]`).sort();
   assert.deepEqual(list(readFileSync(`${jsRoot}/tags/customtags.js`, 'utf8')), genreIcons);
   assert.deepEqual(list(readFileSync(`${jsRoot}/enhanced/admintags/custom-rules-editor.js`, 'utf8')), genreIcons);

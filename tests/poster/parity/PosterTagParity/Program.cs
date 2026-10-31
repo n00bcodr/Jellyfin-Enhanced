@@ -423,7 +423,7 @@ static string ShortName(string name) => (string)typeof(PosterTagSettings).Assemb
 static string Describe(PosterTag tag) => tag switch
 {
     QualityTag q => $"{q.DisplayText ?? q.Label}|{q.Category}",
-    GenreTag g => $"{g.Genre}|{g.Icon}",
+    GenreTag g => $"{g.Genre}|{g.Icon}|{TagStyleCatalog.GenreKey(g.Genre)}",
     LanguageTag l when l.CountBadge is not null => $"badge|{l.CountBadge}",
     LanguageTag l when l.Code is not null => $"code|{l.Code}|{l.Language}|{(l.Partial ? "true" : "false")}|{(l.Subtitle ? "true" : "false")}{(l.Sdh ? "|sdh" : string.Empty)}",
     LanguageTag l => $"{l.FlagCode}|{l.Language}|{(l.Partial ? "true" : "false")}{(l.Subtitle ? "|true" : string.Empty)}{(l.Sdh ? "|sdh" : string.Empty)}",

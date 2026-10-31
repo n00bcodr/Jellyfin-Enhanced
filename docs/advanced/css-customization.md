@@ -264,7 +264,7 @@ Processing markers such as `data-je-quality-tagged`, `data-je-genre-tagged`, `da
 
 Use the built-in [Tag Styles editor](../enhanced/tags.md#tag-styles-and-css) for supported colors; that guide covers presets, tabs, scope, opacity, and bulk controls. See [Native Poster Tags](../enhanced/tags.md#native-poster-tags-experimental) for native-client setup and refresh requirements. CSS remains useful for web shape, sizing, visibility, and other surfaces.
 
-Web overrides use important selectors. Their specificity is `(0,4,0)` for quality, `(0,3,0)` for age and rating chips, and `(0,2,0)` for genre. These beat simple color recipes; more specific important Custom CSS can override them.
+Web overrides use important selectors. Their specificity is `(0,4,0)` for quality, `(0,3,0)` for age and rating chips, and `(0,2,0)` for the whole genre group (`(0,3,0)` for one genre, through `data-je-genre`). These beat simple color recipes; more specific important Custom CSS can override them.
 
 Critic styles also match user-review chips because those share `.rating-tag-critic`.
 
@@ -388,7 +388,8 @@ Use these hooks to style genre icons and their hover labels. Up to three genres 
 
 - Icons use `.genre-tag > .je-msym-outlined`.
 - Text uses `.genre-text` inside `.genre-overlay-container`.
-- Target a particular genre through its original title, such as `.genre-tag[title="Drama"]`. JE does not emit `data-genre`.
+- `data-je-genre` holds the genre's [Tag Styles label](../enhanced/tags.md#genre-colours): the canonical English genre its icon stands for (`horror`, `science fiction`, `game-show`…), the same for every spelling and translation (*Sci-Fi* and *Ciencia ficción* are both `science fiction`), or `other`. Tag Styles colour one genre through it: `.genre-tag[data-je-genre="horror"]`.
+- Target the exact name the item has through its title, such as `.genre-tag[title="Drama"]`.
 
 By default, text appears on hover and floats inward from the selected corner. To keep labels visible inside wider chips:
 

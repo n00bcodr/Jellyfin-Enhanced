@@ -1278,6 +1278,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // The Poster preset's colours depend on each artwork: the editor's contrast badge shows the worst
                 // case its normalisation band allows, and its preview the example artwork's colours (palettes.poster).
                 poster = new { worstContrast = Math.Round(PosterColour.WorstCaseContrast, 2), example = Web(PosterColour.Example) },
+                // The glyph each genre label's tile shows (Other: the default one).
+                genreIcons = TagStyleCatalog.Labels(TagStyleKeys.Genre).ToDictionary(l => l.Key, l => TagStyleCatalog.GenreIcon(l.Key), StringComparer.Ordinal),
             });
         }
 

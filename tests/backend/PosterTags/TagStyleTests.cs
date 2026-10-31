@@ -361,7 +361,7 @@ public class TagStyleTests
         var empty = JsonNode.Parse(JsonSerializer.Serialize(TagStyleSet.Empty.ToWebModel()))!;
         Assert.Empty(empty["quality"]!.AsObject());
         Assert.Empty(empty["age"]!.AsArray());
-        Assert.Null(empty["genre"]);
+        Assert.Empty(empty["genre"]!.AsObject());
     }
 
     [Fact]

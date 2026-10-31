@@ -561,7 +561,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         {
             var icon = _assets.GetIcon(tag.Icon ?? string.Empty) is null ? "theaters" : tag.Icon!;
             float size = PosterTagCss.Lu(css.GenreSize) + 2f;
-            return new PlannedItem(PosterTagTileKind.Genre, tag, icon, StyleKey(styles.Resolve(TagStyleKeys.Genre, "genre")), size, size);
+            // Each genre takes its own label's colours: the canonical genre of the glyph the web draws, else Other.
+            var label = GenreIcons.LabelOfIcon(tag.Icon ?? string.Empty);
+            return new PlannedItem(PosterTagTileKind.Genre, tag, icon, StyleKey(styles.Resolve(TagStyleKeys.Genre, label)), size, size);
         }
 
         private PlannedItem MeasureRating(RatingTag tag, PosterTagCss css, bool keepEnd, TagStyleSet styles)

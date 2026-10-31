@@ -169,8 +169,8 @@ public class PosterColourTests
         var model = JsonSerializer.SerializeToElement(TagStyleSet.Parse("{\"v\":2,\"groups\":{\"genre\":{\"text\":\"#ff0000\"}}}", "poster").ToWebModel());
         Assert.Equal("poster", model.GetProperty("preset").GetString());
         Assert.Empty(model.GetProperty("quality").EnumerateObject());
-        Assert.Equal("rgba(255, 0, 0, 1)", model.GetProperty("genre").GetProperty("color").GetString());
-        Assert.Equal(JsonValueKind.Null, model.GetProperty("genre").GetProperty("background").ValueKind);
+        Assert.Equal("rgba(255, 0, 0, 1)", model.GetProperty("genre").GetProperty("*").GetProperty("color").GetString());
+        Assert.Equal(JsonValueKind.Null, model.GetProperty("genre").GetProperty("*").GetProperty("background").ValueKind);
     }
 
     [Fact]

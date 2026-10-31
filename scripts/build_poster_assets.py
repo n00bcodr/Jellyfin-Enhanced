@@ -15,7 +15,7 @@ Outputs (relative to the output directory):
                               merged and Brotli-compressed. Every tag text is
                               bold (CSS 600 resolves to the 700 face).
   icons.json                  Material Symbols Outlined genre glyphs (the names in
-                              js/tags/genretags.js), Material Symbols Rounded
+                              js/tags/genre-icons.json), Material Symbols Rounded
                               person_heart and Material Icons star, as SVG path data
                               in font units (y down from hhea.ascent) plus metrics.
   vector-icons.json           jellyfin-web's Rotten Tomatoes fresh/rotten SVGs as
@@ -34,7 +34,7 @@ Outputs (relative to the output directory):
                               Not embedded in the plugin.
 
 Pinned inputs are downloaded once into the cache directory and verified by sha256;
-in-repo inputs (genretags.js, media-language.js, qualitytags.js, css/ratings.css,
+in-repo inputs (genre-icons.json, genretags.js, media-language.js, qualitytags.js, css/ratings.css,
 js/fonts/materialsymbols*.woff2) are versioned by git.
 
 Requirements (output is byte-reproducible with these versions; manifest.json
@@ -127,7 +127,10 @@ IN_REPO = {
 NOTO_SUBSETS = ["latin", "latin-ext", "cyrillic", "greek"]
 FLAG_WIDTH, FLAG_HEIGHT = 160, 120
 
-# Icons outside genretags.js's map; the genre icons are read from the module itself.
+# The genre table genretags.js is generated from (scripts/generate_genre_labels.py), which native code reads too.
+GENRE_TABLE = PLUGIN / "js/tags/genre-icons.json"
+
+# Icons outside the genre table; the genre icons are read from the table itself.
 EXTRA_ICONS = {
     "MaterialSymbolsRounded": ["person_heart"],  # userreviewtags.js
     "MaterialIcons": ["star"],                   # ratingtags.js (TMDB chip, jellyfin-web's Material Icons)
@@ -191,13 +194,10 @@ def read_repo(name: str) -> str:
 # ── Data derived from the repo's JS/CSS (standard library only: used by --check) ──
 
 def genre_icon_names() -> list:
-    js = read_repo("genretags")
-    m = re.search(r"const genreIconMap = \{(.*?)\n\s*\};", js, re.S)
-    if not m:
-        sys.exit("genretags.js: genreIconMap not found")
-    names = sorted(set(re.findall(r":\s*'([a-z0-9_]+)'", m.group(1))))
+    table = json.loads(GENRE_TABLE.read_text(encoding="utf-8"))
+    names = sorted({table["defaultIcon"], *(icon for names in table["names"].values() for icon in names.values())})
     if "theaters" not in names:
-        sys.exit("genretags.js: default icon 'theaters' missing from genreIconMap")
+        sys.exit("genre-icons.json: default icon 'theaters' missing")
     return names
 
 
@@ -629,7 +629,7 @@ def check(out: Path, full: bool, cache: Path, keep_tmp: bool) -> int:
         if not p.is_file() or p.read_text(encoding="utf-8") != text:
             problems.append(f"{name}: stale, its in-repo source (js/css) changed")
     if manifest.get("genreIcons") != genre_icon_names():
-        problems.append("genre icon list in js/tags/genretags.js changed: icons.json is stale")
+        problems.append("genre icon list in js/tags/genre-icons.json changed: icons.json is stale")
     codes, zxx = flag_codes()
     if manifest.get("flagCodes") != codes + ["zxx"]:
         problems.append("flag codes in js/core/media-language.js changed: flags/ are stale")

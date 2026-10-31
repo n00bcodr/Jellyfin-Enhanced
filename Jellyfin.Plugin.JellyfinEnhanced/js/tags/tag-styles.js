@@ -70,6 +70,22 @@
         if (body) rules.push(`${selector} { ${body} }`);
     }
 
+    // A genre name that floats beside its chip on hover, not one written
+    // inline in the hover reveal (which keeps the chip's own background).
+    const GENRE_NAME_FLOATS = ':not([data-je-slot="hover"] *)';
+
+    /**
+     * The genre colours keyed by label: `*` (every genre chip), then the
+     * canonical genres (data-je-genre). An older single colour object counts
+     * as `*`.
+     * @param {Object|undefined} genre
+     * @returns {Object<string, Object>}
+     */
+    function genreMap(genre) {
+        if (!genre || typeof genre !== 'object') return {};
+        return ['background', 'border', 'color'].some((f) => typeof genre[f] === 'string') ? { '*': genre } : genre;
+    }
+
     /**
      * The Poster preset's static rules: chips on a card marked
      * data-je-poster-colour take its --je-tag-bg / --je-tag-border /
@@ -103,7 +119,8 @@
 
     /**
      * Builds the stylesheet from the server's web model (GET tag-styles).
-     * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language, awards, logos, custom}`.
+     * @param {Object} styles - `{quality, age, ageDefault, rating, genre, status, language, awards, logos, custom}`
+     *   (`genre` is keyed by label like `quality`: `*`, then canonical genres).
      * @param {string} [scope] - The id selector of one element every rule is
      *   limited to (`#tagStylePreview` for the config page's live preview);
      *   omitted, the rules style the whole page. Anything but a single `#id`
@@ -162,7 +179,26 @@
             add(`${R}[data-je-rating-source="${attr(id)}"]`, decl('background', c.background) + decl('color', c.color) + ring(c.border));
         }
 
-        if (styles.genre) add(`${P}.genre-overlay-container .genre-tag`, box(styles.genre));
+        // Genre: "*" is every chip, then each genre label (data-je-genre). Only a
+        // genre with colours of its own colours its name (hover float, caption
+        // strip, Summary/Minimal reveal): group and preset colours leave the
+        // names as they always were, so existing documents draw unchanged.
+        const genre = genreMap(styles.genre);
+        const G = `${P}.genre-overlay-container .genre-tag`;
+        if (genre['*']) add(G, box(genre['*']));
+        for (const [label, c] of Object.entries(genre)) {
+            if (label === '*' || !c) continue;
+            const L = `[data-je-genre="${attr(label)}"]`;
+            add(`${G}${L}`, box(c));
+            // Under Poster the name first takes the artwork colours its chip
+            // has (same specificity as the rules below, which win field by field).
+            if (styles.preset === 'poster') {
+                add(`${P}[data-je-poster-colour] .genre-tag${L} .genre-text`, 'color: var(--je-tag-fg) !important;');
+                add(`${P}[data-je-poster-colour] .genre-tag${L} .genre-text${GENRE_NAME_FLOATS}`, 'background-color: var(--je-tag-bg) !important;');
+            }
+            add(`${G}${L} .genre-text`, decl('color', c.color));
+            add(`${G}${L} .genre-text${GENRE_NAME_FLOATS}`, decl('background-color', c.background));
+        }
 
         for (const [id, color] of Object.entries(styles.awards || {})) {
             if (color) add(`${P}.awards-overlay-container .awards-tag[data-je-award="${attr(id)}"]`, decl('background', color.background) + decl('color', color.color) + ring(color.border));

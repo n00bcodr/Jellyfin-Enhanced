@@ -40,6 +40,7 @@ if (offline) run('node', ['offline-inputs.mjs']);
 else if (!skipFetch) run('node', ['fetch-inputs.mjs', ...passThrough]);
 run('node', ['profiles.mjs']);
 run('python3', ['../../../scripts/generate_status_vocabulary.py', '--check']);
+run('python3', ['../../../scripts/generate_genre_labels.py', '--check']);
 run('dotnet', ['build', 'PosterTagParity/PosterTagParity.csproj', '-c', 'Release', '-nologo', '-v', 'q']);
 const harness = join(here, 'PosterTagParity', 'bin', 'Release', 'net10.0', 'PosterTagParity.dll');
 run('dotnet', [harness, 'prepare', data]);

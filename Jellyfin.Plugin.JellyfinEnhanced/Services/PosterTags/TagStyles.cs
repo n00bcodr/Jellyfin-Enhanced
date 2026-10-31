@@ -50,11 +50,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// <remarks>
     /// Stored document (version 2):
     /// <c>{"v":2,"preset":"glass","groups":{"quality":{"background":"rgba(..)","border":"..","text":".."}},
-    /// "labels":{"quality:4K":{..},"ageRating:7":{..},"rating:community":{..},"status:trending":{..}}}</c>.
+    /// "labels":{"quality:4K":{..},"ageRating:7":{..},"rating:community":{..},"status:trending":{..},"genre:horror":{..}}}</c>.
     /// Version 1 (no <c>v</c>) is still read: <c>{"quality":{"4K":{"background":"..","color":".."}},"age":{"&lt;board id&gt;":{..}},
-    /// "rating":{"community":{..},"critic":{..}},"genre":{..}}</c>, migrated onto <see cref="Labels"/> as the colours it
-    /// drew, under the default preset. Anything that is not a colour <see cref="CssColor"/> understands is dropped, so a
-    /// value can never reach generated CSS unchecked.
+    /// "rating":{"community":{..},"critic":{..}},"genre":{..}}</c>, migrated onto <see cref="Labels"/> (its genre colours
+    /// onto the genre group) as the colours it drew, under the default preset. Anything that is not a colour
+    /// <see cref="CssColor"/> understands is dropped, so a value can never reach generated CSS unchecked.
     /// </remarks>
     public sealed class TagStyleSet
     {
@@ -63,6 +63,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private const int MaxEntries = 400;
         private const int MaxKeyLength = 64;
+
+        /// <summary>
+        /// The one genre label documents held before each genre had its own (<c>genre:genre</c>, every genre chip):
+        /// read as the genre group's colours under any group colours stored with it, so nothing is recoloured.
+        /// </summary>
+        private const string LegacyGenreLabel = TagStyleKeys.Genre + ":genre";
         private static readonly string[] V2Keys = { "v", "preset", "groups", "labels" };
         private static readonly Dictionary<string, TagColors> NoEntries = new(StringComparer.Ordinal);
 
@@ -310,9 +316,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 if (!c.IsEmpty) age.Add(new { ratings = board.Ratings, background = c.Background, border = c.Border, color = c.Text });
             }
 
-            TagColors Single(string group, string label) => Resolve(group, label);
-            var genre = Single(TagStyleKeys.Genre, "genre");
-            var language = Single(TagStyleKeys.Language, "flag");
+            var language = Resolve(TagStyleKeys.Language, "flag");
             return new
             {
                 v = 2,
@@ -322,7 +326,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ageDefault = Resolve(TagStyleKeys.AgeRating, TagStyleKeys.AnyLabel) is { IsEmpty: false } d ? Web(d) : null,
                 rating = Map(TagStyleKeys.Rating, TagStyleKeys.RatingLabels.Select(l => l.Key)),
                 awards = Map(TagStyleKeys.Awards, TagStyleKeys.AwardLabels.Select(l => l.Key)),
-                genre = genre.IsEmpty ? null : Web(genre),
+                // Every genre chip ("*"), then each genre label with an override of its own (the preset and
+                // group colours are the same for every genre).
+                genre = Map(TagStyleKeys.Genre, GenreLabelKeys().Where(k => Labels.ContainsKey(TagStyleKeys.Genre + ":" + k)).Prepend(TagStyleKeys.AnyLabel)),
                 status = Map(TagStyleKeys.Status, TagStyleKeys.StatusLabels.Select(l => l.Key)),
                 language = language.IsEmpty ? null : Web(language),
                 languageLabels = Map(TagStyleKeys.Language, TagStyleCatalog.Labels(TagStyleKeys.Language).Select(l => l.Key)),
@@ -335,6 +341,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     .Prepend(TagStyleKeys.AnyLabel)),
             };
         }
+
+        private static IEnumerable<string> GenreLabelKeys() => TagStyleCatalog.Labels(TagStyleKeys.Genre).Select(l => l.Key);
 
         private static TagStyleSet Create(string preset, Dictionary<string, TagColors> groups, Dictionary<string, TagColors> labels) =>
             preset == TagStyleKeys.DefaultPreset && groups.Count == 0 && labels.Count == 0 ? Empty : new TagStyleSet(preset, groups, labels);
@@ -367,6 +375,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             error = null;
             var labels = new Dictionary<string, TagColors>(StringComparer.Ordinal);
+            var groups = new Dictionary<string, TagColors>(StringComparer.Ordinal);
 
             // One label entry; false (with error) stops a strict read.
             bool Entry(string group, string label, JsonElement value, out string? problem)
@@ -378,7 +387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     return !strict;
                 }
 
-                if (label.Length is 0 or > MaxKeyLength || IsReservedKey(label) || !IsV1Label(group, label))
+                if (label.Length is 0 or > MaxKeyLength || IsReservedKey(label) || (group != TagStyleKeys.Genre && !IsV1Label(group, label)))
                 {
                     problem = strict ? (IsReservedKey(label) ? $"reserved key '{label}'" : $"unknown label '{Clip(label)}'") : null;
                     return !strict;
@@ -388,10 +397,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 if (problem is not null) return false;
                 if (stored is null) return true;
                 var builtin = TagStylePalettes.Builtin(group, label);
-                labels[group + ":" + label] = new TagColors(
+                var drawn = new TagColors(
                     stored.Background ?? builtin.Background,
                     group == TagStyleKeys.Rating ? null : stored.Border ?? builtin.Border,
                     stored.Text ?? builtin.Text);
+                // Version 1 coloured every genre chip alike: that is the genre group now.
+                if (group == TagStyleKeys.Genre) groups[group] = drawn;
+                else labels[group + ":" + label] = drawn;
                 return true;
             }
 
@@ -431,7 +443,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 }
             }
 
-            return Create(TagStyleKeys.DefaultPreset, new Dictionary<string, TagColors>(StringComparer.Ordinal), labels);
+            return Create(TagStyleKeys.DefaultPreset, groups, labels);
         }
 
         /// <summary>Version 2; strict mode returns null with an error at the first problem, lenient mode skips it.</summary>
@@ -495,6 +507,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
 
             var labels = new Dictionary<string, TagColors>(StringComparer.Ordinal);
+            TagColors? legacyGenre = null;
             if (root.TryGetProperty("labels", out var ls))
             {
                 if (ls.ValueKind != JsonValueKind.Object)
@@ -516,6 +529,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                         var sep = entry.Name.IndexOf(':', StringComparison.Ordinal);
                         var group = sep > 0 ? entry.Name[..sep] : string.Empty;
                         var label = sep > 0 ? entry.Name[(sep + 1)..] : string.Empty;
+                        if (entry.Name == LegacyGenreLabel)
+                        {
+                            legacyGenre = ReadColorsV2(entry.Value, group, strict, out error);
+                            if (error is not null) return null;
+                            continue;
+                        }
+
                         if (entry.Name.Length > MaxKeyLength || !TagStyleCatalog.IsLabel(group, label))
                         {
                             error = Fail($"unknown label '{Clip(entry.Name)}'");
@@ -530,6 +550,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 }
             }
 
+            // The old single genre label sat above the group colours for every genre chip.
+            if (legacyGenre is not null) groups[TagStyleKeys.Genre] = legacyGenre.Over(groups.GetValueOrDefault(TagStyleKeys.Genre));
             return Create(preset ?? TagStyleKeys.KnownPreset(docPreset) ?? TagStyleKeys.DefaultPreset, groups, labels);
         }
 
@@ -659,6 +681,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private static readonly Lazy<IReadOnlyList<AgeColorGroup>> AgeList = new(LoadAge);
         private static readonly Lazy<IReadOnlyList<string>> CompositeBaseList = new(LoadCompositeBases);
 
+        /// <summary>The Tag Styles label a drawn genre chip takes its colours from (its canonical genre, else Other).</summary>
+        /// <param name="genre">The drawn genre.</param>
+        /// <returns>The genre label key.</returns>
+        public static string GenreKey(string genre) => Resolution.GenreIcons.LabelFor(genre);
+
+        /// <summary>The glyph a genre label stands for (the default glyph for Other).</summary>
+        /// <param name="label">A genre label key.</param>
+        /// <returns>The Material Symbols glyph name, or null for an unknown key.</returns>
+        public static string? GenreIcon(string label) => Resolution.GenreIcons.IconOfLabel(label);
+
         /// <summary>Quality labels with their default colours.</summary>
         public static IReadOnlyList<(string Label, string Background, string Text)> Quality => QualityList.Value;
 
@@ -674,7 +706,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             TagStyleKeys.AgeRating => AgeGroups.Select(a => (a.Id, a.Sample)).ToList(),
             TagStyleKeys.Rating => TagStyleKeys.RatingLabels,
             TagStyleKeys.Awards => TagStyleKeys.AwardLabels,
-            TagStyleKeys.Genre => new[] { ("genre", "Genre") },
+            TagStyleKeys.Genre => Resolution.GenreIcons.Labels,
             TagStyleKeys.Status => TagStyleKeys.StatusLabels,
             TagStyleKeys.Logos => TagStyleKeys.LogoLabels,
             TagStyleKeys.Language => new[] { ("flag", "Flag / code"), ("subtitles", "Subtitles"), ("countBadge", "Dual / Multi") },

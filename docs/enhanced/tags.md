@@ -57,7 +57,7 @@ Every personal poster tag setting lives in one section of the panel, **Media Tag
 | **Groups** | The [tag groups](#tag-groups-order-position-limits) in priority order: move buttons, the on/off switch, and per group its position, **Show up to** and **Include** choices, plus **Reset to defaults**. The Status row's **Badges** button opens the next tab. |
 | **Status badges** | Which [status badges](#status-tags) the Status group may show: **Just Added**, **New releases**, **Trending**, **Schedule**, **Milestones**, **Series status**, **Leaving soon** and **Direct-play warning**, each with a sample badge. The two time windows the administrator chose are shown beside Just Added and New releases. **Status position and limit in Groups** goes back to the Status row. |
 | **Rules & locks** | Your [rules and locked items](#rules-and-locked-items) on the left, the **Add a rule** form on the right. |
-| **Colours** | Your [Tag Colours](#tag-styles-and-css) preset, one tile per preset with three sample chips in its real colours. Only shown while the administrator lets users pick a preset. |
+| **Colours** | Your [Tag Colours](#tag-styles-and-css) preset, one tile per preset with sample chips in its real colours (a quality, a status and a rating chip, and a genre icon: the first genre the administrator coloured). Only shown while the administrator lets users pick a preset. |
 | **Server** | Administrators only: shortcuts to **Server defaults for new users**, the **Tag colours editor**, the **Tag cache** and **Native poster tags**, each opening its tab of the Media Tags settings page. Other users never get this tab. |
 
 **The live preview** draws four sample cards with the same layout code and tag styles as your library: a movie poster, a series poster, an episode still and a 92px list row. Each says where its look comes from (**Default**, **🔒 Locked**, **Rule N** or a shape look), decided the same way as for real cards: the series stands in for your most recently locked item and the episode for the first enabled rule, so a lock or rule change shows at once. **Resting** / **Hover** switches to what Summary and Minimal reveal on hover. While you edit a group, its chips are outlined and the others dimmed. Overflowing chips show as `+N`, as on real cards.
@@ -497,7 +497,7 @@ The server stores policy-independent summaries, so changing the policy does not 
 
 ## Genre Tags
 
-Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) as compact Material Design icons, so you can recognize them while browsing. You can hover to see names beside the icons.
+Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) as compact Material Design icons, so you can recognize them while browsing. You can hover to see names beside the icons. Administrators can give each genre its own colours in [Tag Styles](#genre-colours).
 
 ![Genre icons and expanded genre names on posters](../images/tags/genre-tags.webp)
 
@@ -1227,7 +1227,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Quality** | Every quality label (4K, HDR10, ATMOS, HEVC…) | Combined labels such as ATMOS 7.1 follow their base label |
 | **Age** | One chip per age rating colour board, shown with a sample rating | Hover a chip to see every rating it covers |
 | **Rating** | **Community**, **Critic**, **User review** | Rating chips have no border of their own: a border colour draws a thin inner ring |
-| **Genre** | **Genre** | **Text** colours the genre icon |
+| **Genre** | Every genre with an icon of its own and **Other** (see [Genre colours](#genre-colours)) | **Text** colours the icon; a genre with colours of its own also colours its name beside it on hover |
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending**, schedule, milestone and series-state badges | Applies to web and native posters. A Trending text colour also recolours the rank |
 | **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar winner**, **Emmy winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
 | **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
@@ -1236,6 +1236,43 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Custom** | Each label of the **Custom tag rules** | The labels follow the rules table as you edit it; rules that share a label share its colours. The icon takes the text colour |
 
 A tag's colours are worked out field by field: its own colour if you set one, else the group colour, else the preset. **Default** on a row removes that one colour from what you are editing, so it falls back to the group or the preset.
+
+#### Genre colours
+
+Each genre the icons know is its own tag on the **Genre** tab, shown as its icon (with its name where there is room; hover a tile for the name). **Find a genre** narrows the list. With the keyboard the tiles are a single stop: the arrow keys move the selection, **Home** and **End** jump to the first and last tile. A genre and its other spellings and translations share one tag, so colouring **Comedy** also colours *Comédie* and *Komödie*. Genres without an icon of their own (for example *Anime* or *Children*) use **Other**. Genre names are matched without regard to case.
+
+![The Genre tab of the Tag Styles editor: Whole group, then one icon tile per genre, with Horror, Comedy and Animation coloured](../images/admin/tag-styles-genre.webp)
+
+| Tag | Key | Icon | Also covers |
+|---|---|---|---|
+| Action | `action` | `sports_martial_arts` | acción, azione, akció, боевик |
+| Adventure | `adventure` | `explore` | aventure, aventura, abenteuer, avventura, eventyr, äventyr, kaland, приключения |
+| Animation | `animation` | `animation` | animación, animazione, animációs, мультфильм |
+| Comedy | `comedy` | `mood` | comédie, comedia, komödie, commedia, komedie, komedi, vígjáték, комедия |
+| Crime | `crime` | `local_police` | crimen, krimi, crimine, brott, bűnügyi, криминал |
+| Documentary | `documentary` | `article` | documental, dokumentarfilm, documentario, dokumentar, dokumentär, dokumentum, документальный |
+| Drama | `drama` | `theater_comedy` | drame, drammatico, dráma, драма |
+| Family | `family` | `family_restroom` | familial, familiar, familienfilm, famiglia, familie, familj, családi, семейный |
+| Fantasy | `fantasy` | `auto_awesome` | fantastique, fantasía, fantastico, фэнтези |
+| History | `history` | `history_edu` | histoire, historique, historia, geschichte, storico, historie, történelmi, история |
+| Horror | `horror` | `skull` | horreur, terror, orrore, gyser, skräck, ужасы |
+| Music | `music` | `music_note` | musique, música, musica, musik, zenei, музыка |
+| Mystery | `mystery` | `psychology_alt` | mystère, misterio, mistero, mysterie, mysterium, misztikus, детектив |
+| Romance | `romance` | `favorite` | liebesfilm, romantico, romantik, romantikus, мелодрама |
+| Science Fiction | `science fiction` | `science` | sci-fi, science-fiction, ciencia ficción, fantascienza, фантастика |
+| TV Movie | `tv movie` | `tv` | téléfilm, película de tv, fernsehfilm, film per la tv, tv-film, tv film, телевизионный фильм |
+| Thriller | `thriller` | `psychology` | suspense, триллер |
+| War | `war` | `military_tech` | guerre, bélica, kriegsfilm, guerra, krig, krigs, háborús, военный |
+| Western | `western` | `landscape` | вестерн |
+| Superhero | `superhero` | `domino_mask` | superhéroes |
+| Musical | `musical` | `music_video` | comédie musicale, musikfilm |
+| Biography | `biography` | `menu_book` | biographie, biografía, biografico, életrajzi |
+| Sport | `sport` | `sports_soccer` | deporte, sportivo |
+| Game Show | `game-show` | `quiz` | jeu-concours, concurso, spielshow, game show, spilshow, spelshow, játékshow |
+| Reality TV | `reality-tv` | `live_tv` | télé-réalité, telerrealidad, reality tv, valóság-tv, реалити-шоу |
+| Other | `other` | `theaters` | Every genre not listed above |
+
+The genre's colours apply to its icon on web cards and native posters alike; on the web, the name that appears beside the icon on hover, in the caption strip and in the Summary and Minimal hover lists, takes them too. Only a genre you colour on its own does that: **Whole group** colours and presets colour every icon but leave the names in their usual dark pill. The preview shows a Horror, a Comedy and an Animation icon. Documents saved before genres had their own tags (one colour for every genre) open with that colour as the **Whole group** colour, so nothing changes until you colour a genre.
 
 ### Contrast check
 

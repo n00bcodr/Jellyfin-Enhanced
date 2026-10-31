@@ -1731,6 +1731,10 @@
       "category": "js"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genre-icons.json",
+      "category": "js"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js",
       "category": "js"
     },
@@ -9511,6 +9515,14 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagAssets.cs"
     },
     {
+      "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.tags.genre-icons.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/GenreIcons.cs"
+    },
+    {
+      "literal": "Missing resource js/tags/genre-icons.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/GenreIcons.cs"
+    },
+    {
       "literal": "age-rating-colours.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs"
     },
@@ -9839,10 +9851,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 450,
+    "files": 451,
     "routes": 194,
     "configuration_properties": 713,
-    "storage_references": 83,
+    "storage_references": 85,
     "scheduled_tasks": 15,
     "locales": 33
   }
