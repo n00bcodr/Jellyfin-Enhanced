@@ -22,7 +22,7 @@ for (const oldVersion of [1, 2]) test(`v${oldVersion} tag cache upgrades in plac
     });
     const tx = db.transaction(['tagCacheMeta', 'tagCacheItems'], 'readwrite');
     tx.objectStore('tagCacheMeta').put({ scope: 'server:A', version: 42, timestamp: 20, entrySchema: schema, filterRevision: 'unchanged', servedAt: 10 });
-    tx.objectStore('tagCacheItems').put({ Type: 'Movie', Awards: ['oscar'], Logos: [{ kind: 'studio', name: 'Oracle' }], CustomTags: ['tag:oracle'], Leaving: { DeleteAt: 1793491200000 }, sentinel: 'survives' }, 'server:A|item');
+    tx.objectStore('tagCacheItems').put({ Type: 'Movie', Awards: ['oscar'], Logos: [{ kind: 'studio', name: 'Oracle' }], CustomTags: ['tag:oracle'], Leaving: { DeleteAt: 1793491200000 }, StreamData: { Streams: [{ Type: 'Video', SourceId: 'version-a', Width: 1920, Height: 800 }], DistinctQualities: [{ Category: 'videoCodec', Label: 'H264', SourceId: 'version-a' }], Sources: [{ Id: 'version-a', Source: 'WEB', RunTimeTicks: 36000000000 }] }, sentinel: 'survives' }, 'server:A|item');
     await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
     db.close();
   }, {schema: currentSchema,oldVersion});
@@ -49,6 +49,7 @@ for (const oldVersion of [1, 2]) test(`v${oldVersion} tag cache upgrades in plac
   expect(result.stores).toEqual(['directPlay', 'posterColours', 'tagCacheItems', 'tagCacheMeta']);
   expect(result.meta).toMatchObject({ version: 42, entrySchema: currentSchema, timestamp: 20, filterRevision: 'unchanged' });
   expect(result.entry).toMatchObject({ sentinel: 'survives', Awards: ['oscar'], Logos: [{ kind: 'studio', name: 'Oracle' }], CustomTags: ['tag:oracle'] });
+  expect(result.entry.StreamData).toEqual({ Streams: [{ Type: 'Video', SourceId: 'version-a', Width: 1920, Height: 800 }], DistinctQualities: [{ Category: 'videoCodec', Label: 'H264', SourceId: 'version-a' }], Sources: [{ Id: 'version-a', Source: 'WEB', RunTimeTicks: 36000000000 }] });
   expect(result.directPlay).toEqual({r:{kind:'transcode'},t:100});
   expect(result.directPlay2).toEqual({r:{kind:'direct'},t:101});
   expect(result.otherDirectPlay).toBe(0);

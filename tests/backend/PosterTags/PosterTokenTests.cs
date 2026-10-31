@@ -25,7 +25,7 @@ public class PosterTokenTests : IDisposable
         // Recorded from f4d7267a with the same document and default plugin configuration.
         const string version8SubtitleDigest = "61f410f756f0eab9";
         var settings = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsShowSubtitles\":true,\"LanguageTagsStyle\":\"codes\"}", new());
-        Assert.Equal("9", PosterTagSettings.ResolverVersion);
+        Assert.Equal("10", PosterTagSettings.ResolverVersion);
         Assert.Equal("6.1", PosterTagComposer.PixelVersion);
         Assert.NotEqual(version8SubtitleDigest, settings.Digest);
         var service = Tokens();

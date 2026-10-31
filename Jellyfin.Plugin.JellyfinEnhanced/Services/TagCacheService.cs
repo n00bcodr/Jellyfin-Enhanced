@@ -321,7 +321,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // Current schema includes Awards, Logos, Custom rule matches, per-track distinct
         // quality values and full union/shared/latest sets for container display modes.
         // Technical stream/subtitle facts, Scenes and Leaving share the integrated shape.
-        internal const int CurrentCacheSchemaVersion = 20;
+        // v21 adds stream/version identity and version-scoped distinct quality and naming facts;
+        // dimension fallback now uses Width for cropped video.
+        internal const int CurrentCacheSchemaVersion = 21;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2966,8 +2968,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         sourceName = null;
                     }
 
+                    var versionNaming = MediaNamingTags.Detect(item.Path, new[] { source }, item.Name);
                     sources.Add(new TagMediaSource
                     {
+                        Id = source.Id,
+                        Source = versionNaming.Source,
+                        Edition = versionNaming.Edition,
+                        RunTimeTicks = source.RunTimeTicks,
                         Path = string.IsNullOrEmpty(source.Path) ? null : MediaNamingTags.FileName(source.Path),
                         Name = sourceName
                     });
@@ -2999,6 +3006,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         streams.Add(new TagMediaStream
                         {
                             Type = s.Type.ToString(),
+                            SourceId = source.Id,
                             Language = effectiveLanguage,
                             Codec = s.Codec,
                             CodecTag = s.CodecTag,

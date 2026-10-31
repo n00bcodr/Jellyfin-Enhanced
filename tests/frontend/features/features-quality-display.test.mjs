@@ -6,7 +6,7 @@ import { createHarness } from '../helpers/harness.mjs';
 function setup(t, policy = 'representative', density = 'full') {
   const renderers = new Map();
   const h = createHarness({ html: '<div class="card"><div class="cardBox"><div class="cardScalable"><div class="cardImageContainer"></div></div><div class="cardText">Show</div></div></div>',
-    JE: { t: key => ({ series_quality_mixed: 'Mixed', series_quality_mixed_compact: '±' }[key] || key),
+    JE: { t: key => ({ series_quality_mixed: 'Mixed', series_quality_mixed_compact: '±', quality_edition_extended: 'Extended' }[key] || key),
       currentSettings: { qualityTagsEnabled: true, qualityTagsPreferredAudioLanguage: 'none', seriesQualityAggregation: policy,
         tagLabelDensity: density, tagLayoutSettingsVersion: 1, tagLayout: 'corners' },
       pluginConfig: { TagCacheServerMode: true },
@@ -163,4 +163,101 @@ test('Bands overflow counts every eligible extra stream value after compact pres
   const hidden = h.document.querySelectorAll('.quality-overlay-label[data-je-overflow]');
   assert.ok(hidden.length > 0);
   assert.equal(h.document.querySelector('.je-tag-more').textContent, `+${hidden.length}`);
+});
+
+for (const [width, height, expected] of [[1920, 800, '1080p'], [2560, 1080, '1440p'], [3840, 1600, '4K'], [7680, 2160, '8K'], [1280, 544, '720p'], [0, 800, '720p']]) {
+  test(`cropped dimensions ${width}x${height} agree in cached and batch quality paths`, t => {
+    const h = setup(t), raw = [{ Type: 'Video', Width: width, Height: height }];
+    assert.deepEqual(h.render({ Type: 'Movie', StreamData: { Streams: raw } }), [expected]);
+    h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged;
+    h.renderers.get('quality').render(h.card, { Id: 'batch', Type: 'Movie', MediaStreams: raw });
+    assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), [expected]);
+  });
+}
+
+const mergedMovie = () => ({ Type: 'Movie', StreamData: {
+  Streams: [
+    { Type: 'Video', SourceId: 'first', Width: 1920, Height: 800, Codec: 'h264', VideoRangeType: 'SDR' },
+    { Type: 'Audio', SourceId: 'first', Language: 'eng', Codec: 'dts', DisplayTitle: 'DTS 5.1', Channels: 6 },
+    { Type: 'Video', SourceId: 'second', Width: 3840, Height: 1600, Codec: 'hevc', VideoRangeType: 'HDR10' },
+    { Type: 'Audio', SourceId: 'second', Language: 'eng', DisplayTitle: 'ATMOS 7.1', Channels: 8 },
+  ],
+  DistinctQualities: [
+    { Category: 'videoCodec', Label: 'H264', SourceId: 'first' },
+    { Category: 'dynamicRange', Label: 'SDR', SourceId: 'first' },
+    { Category: 'audioInfo', Label: 'DTS 5.1', Language: 'eng', SourceId: 'first' },
+    { Category: 'videoCodec', Label: 'HEVC', SourceId: 'second' },
+    { Category: 'dynamicRange', Label: 'HDR10', SourceId: 'second' },
+    { Category: 'audioInfo', Label: 'ATMOS 7.1', Language: 'eng', SourceId: 'second' },
+  ],
+  Sources: [{ Id: 'first', Source: 'WEB', Path: 'Film.mkv' }, { Id: 'second', Source: 'REMUX', Edition: 'Extended', Path: 'Film.IMAX.mkv' }],
+} });
+
+for (const cachedFacts of [true, false]) test(`merged selection filters every category together (${cachedFacts ? 'cached' : 'derived'} All facts)`, t => {
+  const h = setup(t); Object.assign(h.JE.currentSettings, all, { showSourceTag: true, showEditionTag: true });
+  const entry = mergedMovie(); if (!cachedFacts) delete entry.StreamData.DistinctQualities;
+  assert.deepEqual(h.render(entry, 'movie'), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ movie: 'second' }));
+  assert.deepEqual(h.render(entry, 'movie'), ['4K', 'REMUX', 'HDR10', 'IMAX', 'HEVC', 'ATMOS 7.1', 'Extended']);
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ movie: 'removed-version' }));
+  assert.deepEqual(h.render(entry, 'movie'), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
+});
+
+test('batch hot and persistent caches miss on version changes and recompute using nested source streams', t => {
+  const h = setup(t); Object.assign(h.JE.currentSettings, all);
+  const entry = mergedMovie();
+  const item = { Id: 'movie', Type: 'Movie', MediaStreams: entry.StreamData.Streams,
+    MediaSources: entry.StreamData.Sources.map(s => ({ ...s, MediaStreams: entry.StreamData.Streams.filter(st => st.SourceId === s.Id) })) };
+  const renderer = h.renderers.get('quality'), clear = () => { h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged; };
+  renderer.render(h.card, item);
+  assert.ok(h.document.querySelector('[data-quality="H264"]'));
+  clear(); h.window.localStorage.setItem('je-quality-source', '{"movie":"second"}');
+  assert.equal(renderer.renderFromCache(h.card, 'movie'), false);
+  renderer.render(h.card, item);
+  assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), ['4K', 'REMUX', 'HDR10', 'IMAX', 'HEVC', 'ATMOS 7.1', 'Extended']);
+  clear(); renderer.renderFromCache(h.card, 'movie');
+  assert.ok(h.document.querySelector('[data-quality="HEVC"]'));
+  clear(); h.window.localStorage.setItem('je-quality-source', '{"movie":"first"}');
+  assert.equal(renderer.renderFromCache(h.card, 'movie'), false);
+  renderer.render(h.card, { ...item, MediaStreams: undefined });
+  assert.ok(h.document.querySelector('[data-quality="H264"]'));
+  assert.equal(h.document.querySelector('[data-quality="HEVC"]'), null);
+});
+
+test('version picker changes are normalized, remembered, and idempotently watched', t => {
+  const h = setup(t); h.window.location.hash = '#/details?id=MO-VIE';
+  h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="first">First</option><option value="second">Second</option></select>');
+  const select = h.document.querySelector('.selectSource');
+  h.JE.initializeQualityTags(); select.value = 'second'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('je-quality-source')), { movie: 'second' });
+  assert.ok(h.render(mergedMovie(), 'movie').includes('HEVC'));
+  select.value = 'first'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.ok(h.render(mergedMovie(), 'movie').includes('H264'));
+});
+
+for (const stored of ['null', '[]', '42', '"invalid"', '{broken']) test(`invalid version preference document ${stored} falls back safely`, t => {
+  const h = setup(t); h.window.localStorage.setItem('je-quality-source', stored);
+  assert.ok(h.render(mergedMovie(), 'movie').includes('H264'));
+});
+
+test('an unavailable preference write retains the chosen version in memory', t => {
+  const h = setup(t); h.window.location.hash = '#/details?id=movie';
+  h.window.Storage.prototype.setItem = () => { throw new Error('quota'); };
+  h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="second">Second</option></select>');
+  h.document.querySelector('.selectSource').dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.ok(h.render(mergedMovie(), 'movie').includes('HEVC'));
+});
+
+test('returning to details restores the remembered picker option and cancels an obsolete page restore', async t => {
+  const h = setup(t); h.window.location.hash = '#/details?id=movie';
+  h.window.localStorage.setItem('je-quality-source', '{"movie":"second"}');
+  h.document.body.insertAdjacentHTML('beforeend', '<div id="itemDetailPage"><select class="selectSource"><option value="first">First</option><option value="second">Second</option></select></div>');
+  h.document.dispatchEvent(new h.window.Event('viewshow'));
+  await new Promise(resolve => h.window.setTimeout(resolve, 350));
+  assert.equal(h.document.querySelector('.selectSource').value, 'second');
+  h.document.querySelector('.selectSource').value = 'first';
+  h.document.dispatchEvent(new h.window.Event('viewshow'));
+  h.window.location.hash = '#/details?id=another';
+  await new Promise(resolve => h.window.setTimeout(resolve, 350));
+  assert.equal(h.document.querySelector('.selectSource').value, 'first');
 });

@@ -516,23 +516,33 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var sd = stripped.StreamData;
                 var clonedSd = new TagStreamData
                 {
+                    RunTimeTicks = sd.RunTimeTicks,
                     ItemName = null,
                     ItemPath = null,
                     Streams = sd.Streams?.Select(st => new TagMediaStream
                     {
                         Type = st.Type,
+                        SourceId = st.SourceId,
                         Language = st.Language,
                         Codec = st.Codec,
                         CodecTag = st.CodecTag,
                         Profile = st.Profile,
                         Height = st.Height,
+                        Width = st.Width,
+                        AspectRatio = st.AspectRatio,
+                        RealFrameRate = st.RealFrameRate,
+                        AverageFrameRate = st.AverageFrameRate,
+                        IsInterlaced = st.IsInterlaced,
+                        IsHearingImpaired = st.IsHearingImpaired,
                         Channels = st.Channels,
                         ChannelLayout = st.ChannelLayout,
                         VideoRangeType = st.VideoRangeType,
                         DisplayTitle = null,
                     }).ToList(),
-                    Sources = sd.Sources?.Select(_ => new TagMediaSource
+                    Sources = sd.Sources?.Select(source => new TagMediaSource
                     {
+                        Id = source.Id,
+                        RunTimeTicks = source.RunTimeTicks,
                         Path = null,
                         Name = null,
                     }).ToList(),

@@ -211,6 +211,8 @@ public class CoreTagLookSettingsTests
     }
 
     [Theory]
+    [InlineData(9)]
+    [InlineData(20)]
     [InlineData(10)]
     [InlineData(13)]
     [InlineData(14)]

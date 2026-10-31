@@ -9514,18 +9514,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             SelectTagDataMediaSources(spEp.GetMediaSources(false));
                         stubSubtitles = TagDataSubtitleLanguages(stubMediaSources);
                         stubStreams = stubMediaSources
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache))
+                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                             .Where(resolved =>
-                                resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio
-                                || resolved.Stream.Type == MediaStreamType.Subtitle)
+                                resolved.Resolved.Stream.Type == MediaStreamType.Video
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Subtitle)
                             .Select(resolved =>
                             {
-                                var s = resolved.Stream;
+                                var s = resolved.Resolved.Stream;
                                 return (object)new
                                 {
                                     Type = s.Type.ToString(),
-                                    Language = resolved.Language,
+                                    SourceId = resolved.SourceId,
+                                    Language = resolved.Resolved.Language,
                                     Codec = s.Codec,
                                     CodecTag = s.CodecTag,
                                     Profile = s.Profile,
@@ -9661,18 +9662,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             SelectTagDataMediaSources(spMovie.GetMediaSources(false));
                         stubSubtitles = TagDataSubtitleLanguages(stubMs);
                         stubStreams = stubMs
-                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache))
+                            .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                             .Where(resolved =>
-                                resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio
-                                || resolved.Stream.Type == MediaStreamType.Subtitle)
+                                resolved.Resolved.Stream.Type == MediaStreamType.Video
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Subtitle)
                             .Select(resolved =>
                             {
-                                var s = resolved.Stream;
+                                var s = resolved.Resolved.Stream;
                                 return (object)new
                                 {
                                     Type = s.Type.ToString(),
-                                    Language = resolved.Language,
+                                    SourceId = resolved.SourceId,
+                                    Language = resolved.Resolved.Language,
                                     Codec = s.Codec,
                                     CodecTag = s.CodecTag,
                                     Profile = s.Profile,
@@ -9792,18 +9794,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         .Select(stream => Services.TagCacheService.NormalizeStreamLanguage(stream.Language)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
-                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache))
+                        .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                         .Where(resolved =>
-                            resolved.Stream.Type == MediaStreamType.Video
-                            || resolved.Stream.Type == MediaStreamType.Audio
-                            || resolved.Stream.Type == MediaStreamType.Subtitle)
+                            resolved.Resolved.Stream.Type == MediaStreamType.Video
+                            || resolved.Resolved.Stream.Type == MediaStreamType.Audio
+                            || resolved.Resolved.Stream.Type == MediaStreamType.Subtitle)
                         .Select(resolved =>
                         {
-                            var s = resolved.Stream;
+                            var s = resolved.Resolved.Stream;
                             return (object)new
                             {
                                 Type = s.Type.ToString(),
-                                Language = resolved.Language,
+                                SourceId = resolved.SourceId,
+                                Language = resolved.Resolved.Language,
                                 Codec = s.Codec,
                                 CodecTag = s.CodecTag,
                                 Profile = s.Profile,
@@ -9825,10 +9828,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Include filenames only (not full paths) for IMAX/3D/media-stub detection.
                     // Full server paths are not exposed to avoid disclosing filesystem layout.
                     trimmedSources = mediaSources
-                        .Select(s => (object)new
+                        .Select(s =>
                         {
-                            Path = Services.MediaNamingTags.FileName(s.Path),
-                            Name = Services.MediaNamingTags.FileName(s.Name),
+                            var versionNaming = Services.MediaNamingTags.Detect(item.Path, new[] { s }, item.Name);
+                            return (object)new
+                            {
+                                Id = s.Id,
+                                Source = versionNaming.Source,
+                                Edition = versionNaming.Edition,
+                                RunTimeTicks = s.RunTimeTicks,
+                                Path = Services.MediaNamingTags.FileName(s.Path),
+                                Name = Services.MediaNamingTags.FileName(s.Name),
+                            };
                         })
                         .ToList();
                 }

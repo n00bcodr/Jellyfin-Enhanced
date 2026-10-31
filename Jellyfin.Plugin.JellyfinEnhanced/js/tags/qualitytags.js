@@ -254,7 +254,59 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 2 && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 3 && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+    }
+
+    // The version (media source) the user last picked for an item, remembered
+    // per browser. Library posters and the details poster show that version's
+    // badges; an item with no pick keeps showing its first version.
+    const SOURCE_PREF_KEY = 'je-quality-source';
+    const SOURCE_PREF_MAX = 500;
+
+    function normItemId(id) {
+        return String(id || '').replace(/-/g, '').toLowerCase();
+    }
+
+    let sourcePrefs = {};
+    let sourcePrefsMemoryOnly = false;
+    function readSourcePrefs() {
+        if (sourcePrefsMemoryOnly) return sourcePrefs;
+        try {
+            const parsed = JSON.parse(localStorage.getItem(SOURCE_PREF_KEY) || '{}');
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) sourcePrefs = parsed;
+            return sourcePrefs;
+        } catch {
+            return sourcePrefs;
+        }
+    }
+
+    /** @returns {string} The remembered media source id, or '' for the default. */
+    function selectedSourceFor(itemId) {
+        const value = readSourcePrefs()[normItemId(itemId)];
+        return typeof value === 'string' ? value : '';
+    }
+
+    function rememberSource(itemId, sourceId) {
+        const prefs = readSourcePrefs();
+        const id = normItemId(itemId);
+        delete prefs[id]; // re-insert so the newest pick sits last
+        prefs[id] = sourceId;
+        const keys = Object.keys(prefs);
+        keys.slice(0, Math.max(0, keys.length - SOURCE_PREF_MAX)).forEach((k) => delete prefs[k]);
+        try {
+            localStorage.setItem(SOURCE_PREF_KEY, JSON.stringify(prefs));
+        } catch { sourcePrefsMemoryOnly = true; /* the pick lasts until reload */ }
+    }
+
+    /**
+     * Whether a cached entry matches both the audio preference and the item's
+     * remembered version.
+     * @param {{audioLang?: string, srcId?: string}} entry
+     * @param {string} itemId
+     * @returns {boolean}
+     */
+    function matchesCache(entry, itemId) {
+        return matchesAudioPreference(entry) && (entry.srcId || '') === selectedSourceFor(itemId);
     }
 
     /**
@@ -437,11 +489,26 @@
      * @param {Array} mediaSources - The MediaSources array from the Jellyfin item.
      * @param {Object} [itemData] - Optional item metadata for filename/title signals.
      * @param {boolean} [singleTrack=false] Internal per-track detection without display-mode expansion.
-     * @param {boolean} [useWidthForResolution=true] Preserve legacy cache/batch resolution with new width facts.
+     * @param {string} [sourceId] Remembered merged version, or the first version.
      * @returns {Array<string>} A list of detected quality tags.
      */
-    function getEnhancedQuality(mediaStreams, mediaSources, itemData = null, singleTrack = false, useWidthForResolution = true) {
+    function getEnhancedQuality(mediaStreams, mediaSources, itemData = null, singleTrack = false, sourceId = '') {
         if (!mediaStreams && !mediaSources && !itemData?.Source && !itemData?.Edition) return [];
+
+        // Narrow raw streams, cached per-track sets and filename/technical facts together.
+        const versionId = sourceId && (mediaStreams?.some(s => s?.SourceId === sourceId) || mediaSources?.some(s => s?.Id === sourceId))
+            ? sourceId : mediaStreams?.find(s => s?.SourceId)?.SourceId || mediaSources?.[0]?.Id;
+        if (versionId) {
+            const version = mediaSources?.find(s => s?.Id === versionId);
+            const tagged = mediaStreams?.some(s => s?.SourceId);
+            if (tagged) mediaStreams = mediaStreams.filter(s => s?.SourceId === versionId);
+            else if (version?.MediaStreams) mediaStreams = version.MediaStreams;
+            if (version) mediaSources = [version];
+            itemData = { ...itemData,
+                ...(version ? { Path: version.Path, RunTimeTicks: version.RunTimeTicks ?? itemData?.RunTimeTicks,
+                    Source: version.Source, Edition: version.Edition } : {}),
+                DistinctQualities: itemData?.DistinctQualities?.filter(q => q.SourceId === versionId) };
+        }
 
         const qualities = new Set();
         let videoStreams = [];
@@ -540,17 +607,16 @@
             } else {
                 // Priority 2: Dimension Fallback
                 const height = primaryVideoStream.Height || 0;
-                // Cache/batch widths are new aspect facts; keep their legacy resolution result.
-                const width = useWidthForResolution ? primaryVideoStream.Width || 0 : 0;
+                const width = primaryVideoStream.Width || 0;
                 if (height >= 3000 || width >= 7000) {
                     resolutionTag = '8K';
                 } else if (height >= 1550 || width >= 3500) {
                     resolutionTag = '4K';
-                } else if (height >= 1250) {
+                } else if (height >= 1250 || width >= 2400) {
                     resolutionTag = '1440p';
-                } else if (height >= 1000) {
+                } else if (height >= 1000 || width >= 1800) {
                     resolutionTag = '1080p';
-                } else if (height >= 700) {
+                } else if (height >= 700 || width >= 1200) {
                     resolutionTag = '720p';
                 } else if (height >= 528) {
                     // PAL DVD is 720x576; NTSC DVD is 720x480. 528 splits the two evenly.
@@ -954,8 +1020,8 @@
      * @param {Object|null} cached - A computed local/hot cache record.
      * @returns {string[]|null} Resolved labels, including a known empty result, or a cache miss.
      */
-    function qualitiesFromCache(cached) {
-        if (!cached || !matchesAudioPreference(cached)) return null;
+    function qualitiesFromCache(cached, itemId) {
+        if (!cached || !matchesCache(cached, itemId)) return null;
         if ((cached.aggregationPolicy === aggregationPolicy() && cached.aggregationCategories === aggregationCategoriesKey()) || (cached.type && !['Series', 'Season'].includes(cached.type))) return cached.qualities;
         if (!cached.qualitySummary) return null;
         return aggregateQualities({ Type: cached.type, QualitySummary: cached.qualitySummary }, cached.representativeQualities || []);
@@ -1213,19 +1279,20 @@
                 const itemId = item.Id;
                 // Check hot cache first
                 const hot = ctx.hot?.get(itemId);
-                const hotQualities = hot && (Date.now() - hot.timestamp) < ctx.cacheTtl ? qualitiesFromCache(hot) : null;
+                const hotQualities = hot && (Date.now() - hot.timestamp) < ctx.cacheTtl ? qualitiesFromCache(hot, itemId) : null;
                 if (hotQualities) {
                     if (hotQualities.length) insertOverlay(ctx, el, hotQualities);
                     return;
                 }
 
                 let qualities = [];
+                const srcId = selectedSourceFor(itemId);
                 if (item.Type === 'Series' || item.Type === 'Season') {
                     if (extras.firstEpisode) {
-                        qualities = getEnhancedQuality(extras.firstEpisode.MediaStreams, extras.firstEpisode.MediaSources, extras.firstEpisode, false, false);
+                        qualities = getEnhancedQuality(extras.firstEpisode.MediaStreams, extras.firstEpisode.MediaSources, extras.firstEpisode);
                     }
                 } else {
-                    qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item, false, false);
+                    qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item, false, srcId);
                 }
 
                 const representativeQualities = qualities;
@@ -1233,7 +1300,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 2, displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 3, displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1247,7 +1314,7 @@
                 if (isAudioPreferencePending()) return true;
                 const hot = ctx.hot?.get(itemId);
                 const cached = hot || ctx.getPersistent(itemId);
-                const qualities = qualitiesFromCache(cached);
+                const qualities = qualitiesFromCache(cached, itemId);
                 if (qualities) {
                     if (qualities.length) insertOverlay(ctx, el, qualities);
                     return true;
@@ -1260,15 +1327,16 @@
                 if (isAudioPreferencePending()) return;
                 // Check local computed cache first (avoids re-running quality detection)
                 const cached = serverQualityCache.get(itemId);
-                if (cached && cached.entry === entry && matchesAudioPreference(cached) && cached.aggregationPolicy === aggregationPolicy() && cached.aggregationCategories === aggregationCategoriesKey()) {
+                if (cached && cached.entry === entry && matchesCache(cached, itemId) && cached.aggregationPolicy === aggregationPolicy() && cached.aggregationCategories === aggregationCategoriesKey()) {
                     if (cached.qualities.length > 0) insertOverlay(ctx, el, cached.qualities);
                     return;
                 }
                 const audioLang = audioPreferenceKey();
+                const srcId = selectedSourceFor(itemId);
                 const sd = entry.StreamData;
-                const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, false);
+                const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, qualities, entry, namingVersion: 2, displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 3, displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {
@@ -1290,11 +1358,57 @@
         primeJellyfinAudioPreference().then(render);
     }
 
+    let versionPickerWatched = false;
+    let versionPickerTimer;
+
+    /**
+     * Makes the details page's version picker drive the badges: a pick is
+     * remembered (so library posters follow it) and re-renders the poster, and
+     * on opening the page the remembered version is selected again.
+     */
+    function watchVersionPicker() {
+        if (versionPickerWatched) return;
+        versionPickerWatched = true;
+        const detailId = () => new URLSearchParams(location.hash.split('?')[1] || '').get('id');
+
+        document.addEventListener('change', (e) => {
+            const select = e.target;
+            if (!select?.classList?.contains('selectSource') || !select.value) return;
+            const id = detailId();
+            if (!id || selectedSourceFor(id) === select.value) return;
+            rememberSource(id, select.value);
+            JE.core.tagRenderer.reinitialize('quality', spec);
+        });
+
+        document.addEventListener('viewshow', () => {
+            clearInterval(versionPickerTimer);
+            const id = detailId();
+            const want = id && selectedSourceFor(id);
+            if (!want) return;
+            // Jellyfin fills the picker after the page shows.
+            let tries = 0;
+            const timer = versionPickerTimer = setInterval(() => {
+                if (detailId() !== id) { clearInterval(timer); return; }
+                const select = document.querySelector('#itemDetailPage:not(.hide) .selectSource');
+                if (select && select.options.length > 1) {
+                    clearInterval(timer);
+                    if (select.value !== want && [...select.options].some((o) => o.value === want)) {
+                        select.value = want;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                } else if (++tries > 20) {
+                    clearInterval(timer);
+                }
+            }, 300);
+        });
+    }
+
     /**
      * Initializes the Quality Tags feature.
      */
     JE.initializeQualityTags = function() {
         watchPlaybackPreferencesPage();
+        watchVersionPicker();
         withJellyfinAudioPreference(() => JE.core.tagRenderer.register('quality', spec));
     };
 

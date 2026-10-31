@@ -56,12 +56,12 @@ test('technical categories default off, reorder independently, and batch uses th
   assert.deepEqual(h.labels(), ['24p', '1h 52m']);
 });
 
-test('new technical fields leave legacy resolution and special-format chips unchanged', t => {
+test('cropped width corrects resolution while subtitle titles remain excluded from special-format signals', t => {
   const h = setup(t);
   h.renderer.renderFromServerCache(h.host, { StreamData: { Streams: [
     { Type: 'Video', Width: 3840, Height: 1200 }, { Type: 'Subtitle', Language: 'en', Title: 'IMAX subtitles', DisplayTitle: 'IMAX subtitles' }
   ] } }, 'a');
-  assert.deepEqual(h.labels(), ['1080p']);
+  assert.deepEqual(h.labels(), ['4K']);
 });
 
 
@@ -78,8 +78,8 @@ test('technical metadata coexists with All display modes in cached and batch pat
   ];
   const ticks = 112 * 60 * 10000000;
   h.renderer.renderFromServerCache(h.host, { Type: 'Movie', StreamData: { Streams: streams, RunTimeTicks: ticks } }, 'a');
-  assert.deepEqual(h.labels(), ['1080p', 'HEVC', 'H264', '1h 52m', '2.39:1', '24p']);
+  assert.deepEqual(h.labels(), ['4K', 'HEVC', 'H264', '1h 52m', '2.39:1', '24p']);
   h.JE.reinitializeQualityTags();
   h.renderer.render(h.host, { Id: 'b', Type: 'Movie', MediaStreams: streams, RunTimeTicks: ticks }, { stripRevision: 'none' });
-  assert.deepEqual(h.labels(), ['1080p', 'HEVC', 'H264', '1h 52m', '2.39:1', '24p']);
+  assert.deepEqual(h.labels(), ['4K', 'HEVC', 'H264', '1h 52m', '2.39:1', '24p']);
 });

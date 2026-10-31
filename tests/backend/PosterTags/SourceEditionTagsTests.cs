@@ -117,6 +117,7 @@ public class SourceEditionTagsTests
         var movie = new Movie { Id = Guid.NewGuid(), Name = "Film", Path = "/private/library/Film.WEB-DL.mkv" };
         movie.Sources = [Version(movie.Path, 720), Version("/private/library/Film.{edition-Extended}/Film.REMUX.mkv", 2160)];
         movie.Sources[0].Id = "low"; movie.Sources[1].Id = "best";
+        movie.Sources[0].MediaStreams[0].Width = 1920; movie.Sources[1].MediaStreams[0].Width = 3840;
         var users = new Mock<IUserManager>(); users.Setup(x => x.GetUserById(user.Id)).Returns(user);
         var library = new Mock<ILibraryManager>(); library.Setup(x => x.GetItemById<BaseItem>(movie.Id, user)).Returns(movie);
         using var cache = new TagCacheService(library.Object, fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), fixture.Core.Logger,
@@ -131,7 +132,28 @@ public class SourceEditionTagsTests
             return JsonDocument.Parse(json).RootElement.GetProperty("Items")[0];
         }
         var best = Read(null); Assert.Equal("REMUX", best.GetProperty("Source").GetString()); Assert.Equal("Extended", best.GetProperty("Edition").GetString());
-        var selected = Read("low"); Assert.Equal("WEB", selected.GetProperty("Source").GetString()); Assert.Equal(JsonValueKind.Null, selected.GetProperty("Edition").ValueKind);
+        Assert.Equal("low", best.GetProperty("MediaStreams")[0].GetProperty("SourceId").GetString());
+        Assert.Equal("best", best.GetProperty("MediaSources")[1].GetProperty("Id").GetString());
+        var selected = Read("low"); Assert.Equal(1920, selected.GetProperty("MediaStreams")[0].GetProperty("Width").GetInt32()); Assert.Equal("WEB", selected.GetProperty("Source").GetString()); Assert.Equal(JsonValueKind.Null, selected.GetProperty("Edition").ValueKind);
+    }
+
+    [Fact]
+    public void CacheBuildRetainsVersionIdentityWidthAndDistinctTrackSets()
+    {
+        using var fixture = new ApiPluginFixture();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Film", Path = "/private/Film.WEB-DL.mkv" };
+        movie.Sources = [Version(movie.Path, 800), Version("/private/Film.REMUX.{edition-Extended}.mkv", 1600)];
+        movie.Sources[0].Id = "first"; movie.Sources[1].Id = "second";
+        movie.Sources[0].MediaStreams[0].Width = 1920; movie.Sources[1].MediaStreams[0].Width = 3840;
+        using var cache = new TagCacheService(Mock.Of<ILibraryManager>(), fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), fixture.Core.Logger,
+            new Jellyfin.Plugin.JellyfinEnhanced.Helpers.MatroskaLanguageCache(fixture.Core.Paths.Object, fixture.Core.Logger));
+        var entry = cache.BuildEntryOnDemand(movie)!;
+        var data = entry.StreamData!;
+        Assert.Equal(new[] { "first", "second" }, data.Streams!.Select(s => s.SourceId));
+        Assert.Equal(new int?[] { 1920, 3840 }, data.Streams!.Select(s => s.Width));
+        Assert.Equal("WEB", data.Sources![0].Source); Assert.Equal("Extended", data.Sources[1].Edition);
+        Assert.All(data.DistinctQualities!, q => Assert.Contains(q.SourceId, new[] { "first", "second" }));
+        Assert.DoesNotContain("/private", JsonSerializer.Serialize(entry));
     }
 
     [Fact]

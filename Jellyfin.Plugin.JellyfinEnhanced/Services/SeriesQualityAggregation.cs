@@ -67,7 +67,7 @@ internal static class SeriesQualityAggregation
         }
         var labels = episodes.Select(e => Labels(e.Streams)).ToArray();
         var categories = Categories.ToDictionary(key => key, key => Summarize(key == QualityTagRules.AudioInfo ? episodes.Select(e => Audio(e.Streams, null)).ToArray()
-            : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, key, null)).ToArray()));
+            : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, key, null, allSources: true)).ToArray()));
         var languages = new HashSet<string>(StringComparer.Ordinal);
         foreach (var episode in episodes)
         {
@@ -83,11 +83,11 @@ internal static class SeriesQualityAggregation
         foreach (var language in languages.OrderBy(l => l, StringComparer.Ordinal))
         {
             var values = episodes.Select(e => Audio(e.Streams, language)).ToArray();
-            audio[language] = Summarize(values, QualityTagRules.AudioInfo, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language)).ToArray());
+            audio[language] = Summarize(values, QualityTagRules.AudioInfo, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language, allSources: true)).ToArray());
         }
         var regionFallback = new Dictionary<string, TagQualityCategory>(StringComparer.Ordinal);
         foreach (var language in languages.Where(code => !code.Contains('-') && languages.Any(variant => variant.StartsWith(code + "-", StringComparison.Ordinal))).OrderBy(code => code, StringComparer.Ordinal))
-            regionFallback[language] = Summarize(episodes.Select(e => Audio(e.Streams, language + "-ZZ")).ToArray(), QualityTagRules.AudioInfo, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language + "-ZZ")).ToArray());
+            regionFallback[language] = Summarize(episodes.Select(e => Audio(e.Streams, language + "-ZZ")).ToArray(), QualityTagRules.AudioInfo, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, QualityTagRules.AudioInfo, language + "-ZZ", allSources: true)).ToArray());
         return new TagQualitySummary
         {
             NextPremiere = episodes.Select(e => e.Aired).Where(date => date > boundary).Min(),

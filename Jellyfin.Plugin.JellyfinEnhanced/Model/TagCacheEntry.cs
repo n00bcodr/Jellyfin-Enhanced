@@ -347,7 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
     }
 
     /// <summary>One distinct per-track quality value; audio retains its language for personal filtering.</summary>
-    public sealed record TagStreamQuality(string Category, string Label, string? Language = null);
+    public sealed record TagStreamQuality(string Category, string Label, string? Language = null, string? SourceId = null);
 
     /// <summary>Raw stream facts and precomputed per-track quality sets shared by web and native resolution.</summary>
     public class TagStreamData
@@ -406,6 +406,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
     public class TagMediaStream
     {
         public string? Type { get; set; }
+        public string? SourceId { get; set; }
         public string? Language { get; set; }
         public string? Codec { get; set; }
         public string? CodecTag { get; set; }
@@ -429,6 +430,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// </summary>
         public static bool ContentEquals(TagMediaStream a, TagMediaStream b) =>
             a.Type == b.Type
+            && a.SourceId == b.SourceId
             && a.Language == b.Language
             && a.Codec == b.Codec
             && a.CodecTag == b.CodecTag
@@ -452,6 +454,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
 
     public class TagMediaSource
     {
+        public string? Id { get; set; }
+        public string? Source { get; set; }
+        public string? Edition { get; set; }
+        public long? RunTimeTicks { get; set; }
         public string? Path { get; set; }
         public string? Name { get; set; }
 
@@ -460,6 +466,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// Compares EVERY property — an omitted field hides real changes from clients.
         /// </summary>
         public static bool ContentEquals(TagMediaSource a, TagMediaSource b) =>
-            a.Path == b.Path && a.Name == b.Name;
+            a.Id == b.Id && a.Source == b.Source && a.Edition == b.Edition
+            && a.RunTimeTicks == b.RunTimeTicks && a.Path == b.Path && a.Name == b.Name;
     }
 }

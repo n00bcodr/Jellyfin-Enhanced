@@ -128,12 +128,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 if (stream.Type == "Video")
                 {
                     var codec = DetectCodec(stream);
-                    if (codec != null) values.Add(new(VideoCodec, codec));
+                    if (codec != null) values.Add(new(VideoCodec, codec, SourceId: stream.SourceId));
                     // An unprobed track is unknown, not evidence of SDR.
                     var range = DetectDynamicRange(stream);
-                    if (range != null) values.Add(new(DynamicRange, range));
+                    if (range != null) values.Add(new(DynamicRange, range, SourceId: stream.SourceId));
                     else if (!string.IsNullOrEmpty(stream.VideoRangeType) || !string.IsNullOrEmpty(stream.Codec) || stream.Height > 0)
-                        values.Add(new(DynamicRange, "SDR"));
+                        values.Add(new(DynamicRange, "SDR", SourceId: stream.SourceId));
                 }
                 else if (stream.Type == "Audio")
                 {
@@ -142,15 +142,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                     var channels = DetectChannels(track);
                     var label = codec == null ? (channels is "7.1" or "5.1" ? channels : null)
                         : channels != null && !codec.Contains(channels, StringComparison.Ordinal) ? codec + " " + channels : codec;
-                    if (label != null) values.Add(new(AudioInfo, label, stream.Language));
+                    if (label != null) values.Add(new(AudioInfo, label, stream.Language, stream.SourceId));
                 }
             }
             return values.Distinct().ToList();
         }
 
-        /// <summary>Read cached distinct facts (or derive fixture/fallback facts) with the existing audio-language tiers.</summary>
-        internal static List<string> DistinctValues(TagStreamData? data, string category, string? preferred)
+        /// <summary>Use one merged version throughout detection and display modes. Native uses the first version.</summary>
+        internal static TagStreamData? SelectSource(TagStreamData? data, string? sourceId = null)
         {
+            if (data?.Streams == null) return data;
+            var id = !string.IsNullOrEmpty(sourceId) && data.Streams.Any(s => s?.SourceId == sourceId)
+                ? sourceId : data.Streams.FirstOrDefault(s => !string.IsNullOrEmpty(s?.SourceId))?.SourceId;
+            if (id == null) return data;
+            var source = data.Sources?.FirstOrDefault(s => s?.Id == id);
+            return new TagStreamData
+            {
+                Streams = data.Streams.Where(s => s?.SourceId == id).ToList(),
+                DistinctQualities = data.DistinctQualities?.Where(q => q.SourceId == id).ToList(),
+                Sources = source == null ? data.Sources : new List<TagMediaSource> { source },
+                ItemName = data.ItemName,
+                ItemPath = source == null ? data.ItemPath : source.Path,
+                RunTimeTicks = source?.RunTimeTicks ?? data.RunTimeTicks,
+            };
+        }
+
+        /// <summary>Read cached distinct facts (or derive fixture/fallback facts) with the existing audio-language tiers.</summary>
+        internal static List<string> DistinctValues(TagStreamData? data, string category, string? preferred, bool allSources = false)
+        {
+            if (!allSources) data = SelectSource(data);
             var values = data?.DistinctQualities ?? DetectDistinct(data?.Streams);
             var candidates = values.Where(value => value.Category == category).ToList();
             if (category == AudioInfo && !string.IsNullOrEmpty(preferred))
@@ -168,6 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// <summary>Replace only All categories; Highest follows the legacy detector exactly.</summary>
         internal static List<string> ApplyDisplayModes(TagStreamData? data, List<string> labels, string? preferred, Func<string, bool>? all)
         {
+            data = SelectSource(data);
             if (all == null || data?.Streams == null || data.Streams.Any(stream => stream == null)) return labels;
             // Preserve the web detector's malformed-source failure boundary. The
             // 3D search stops after its first match, so a later null is not read.
@@ -192,6 +213,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         private static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource, string? edition, bool includeAudio)
         {
+            data = SelectSource(data);
+            var version = data?.Sources?.FirstOrDefault(s => !string.IsNullOrEmpty(s?.Id));
+            if (version != null) { releaseSource = version.Source; edition = version.Edition; }
             var qualities = new List<string>(6);
             if (data?.Streams is null)
             {
@@ -454,6 +478,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         {
             var displayTitle = JsText.AsciiLower(video.DisplayTitle);
             var height = video.Height ?? 0;
+            var width = video.Width ?? 0;
             var match = ResolutionRegex.Match(displayTitle);
             var found = match.Success ? match.Groups[1].Value : null;
             var falsely4K = found is "4k" or "2160p" && height > 0 && height < 1250;
@@ -472,12 +497,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 };
             }
 
-            // Width now supplies aspect ratio; preserve the legacy height-only resolution fallback.
-            if (height >= 3000) return "8K";
-            if (height >= 1550) return "4K";
-            if (height >= 1250) return "1440p";
-            if (height >= 1000) return "1080p";
-            if (height >= 700) return "720p";
+            // Width covers cropped scope encodes (1920x800 is 1080p).
+            if (height >= 3000 || width >= 7000) return "8K";
+            if (height >= 1550 || width >= 3500) return "4K";
+            if (height >= 1250 || width >= 2400) return "1440p";
+            if (height >= 1000 || width >= 1800) return "1080p";
+            if (height >= 700 || width >= 1200) return "720p";
             if (height >= 528) return "576p";
             if (height >= 400) return "480p";
             return height > 0 ? "LOW-RES" : null;

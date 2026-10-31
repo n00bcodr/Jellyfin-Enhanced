@@ -28,6 +28,12 @@ const sd = (streams, sources = [{ Path: 'Movie (2020).mkv', Name: 'Movie (2020)'
 const movie = (o) => ({ Type: 'Movie', TmdbId: '1000', Genres: ['Drama'], CommunityRating: 7.1, CriticRating: 81, OfficialRating: 'PG-13', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]), ...o });
 
 const synthetic = {
+    upstreamCropped1080: movie({ StreamData: sd([video({ Width: 1920, Height: 800, DisplayTitle: '' })]) }),
+    upstreamCropped1440: movie({ StreamData: sd([video({ Width: 2560, Height: 1080, DisplayTitle: '' })]) }),
+    upstreamMerged: movie({ StreamData: sd([
+        video({ SourceId: 'first', Width: 1920, Height: 800, DisplayTitle: '' }), audio({ SourceId: 'first', Codec: 'ac3', Channels: 6, DisplayTitle: 'AC3 5.1' }),
+        video({ SourceId: 'second', Width: 3840, Height: 1600, Codec: 'hevc', VideoRangeType: 'HDR10', DisplayTitle: '' }), audio({ SourceId: 'second', DisplayTitle: 'ATMOS 7.1', Channels: 8 }),
+    ], [{ Id: 'first', Path: 'first.mkv', Source: 'WEB' }, { Id: 'second', Path: 'second.IMAX.mkv', Source: 'REMUX', Edition: 'IMAX' }]) }),
     // Quality detection
     q01: movie({ StreamData: sd([video({ DisplayTitle: '4K HEVC Dolby Vision Profile 8', Codec: 'hevc', Height: 2160, VideoRangeType: 'DOVIWithHDR10' }), audio({ DisplayTitle: 'English - TrueHD Atmos 7.1', Codec: 'truehd', Channels: 8, ChannelLayout: '7.1' })]) }),
     q02: movie({ StreamData: sd([video({ DisplayTitle: '4K HEVC HDR10', Codec: 'hevc', Height: 1080, VideoRangeType: 'HDR10' }), audio({ DisplayTitle: 'DTS-HD MA 5.1', Codec: 'dts', Profile: 'DTS-HD MA', Channels: 6, ChannelLayout: '5.1(side)' })]) }), // falsely 4K
