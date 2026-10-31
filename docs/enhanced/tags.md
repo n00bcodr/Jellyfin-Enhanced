@@ -1239,7 +1239,7 @@ A tag's colours are worked out field by field: its own colour if you set one, el
 
 #### Genre colours
 
-Each genre the icons know is its own tag on the **Genre** tab, shown as its icon (with its name where there is room; hover a tile for the name). **Find a genre** narrows the list. A genre and its other spellings and translations share one tag, so colouring **Comedy** also colours *Comédie* and *Komödie*. Genres without an icon of their own (for example *Anime* or *Children*) use **Other**. Genre names are matched without regard to case.
+Each genre the icons know is its own tag on the **Genre** tab, shown as its icon (with its name where there is room; hover a tile for the name). **Find a genre** narrows the list. With the keyboard the tiles are a single stop: the arrow keys move the selection, **Home** and **End** jump to the first and last tile. A genre and its other spellings and translations share one tag, so colouring **Comedy** also colours *Comédie* and *Komödie*. Genres without an icon of their own (for example *Anime* or *Children*) use **Other**. Genre names are matched without regard to case.
 
 ![The Genre tab of the Tag Styles editor: Whole group, then one icon tile per genre, with Horror, Comedy and Animation coloured](../images/admin/tag-styles-genre.webp)
 

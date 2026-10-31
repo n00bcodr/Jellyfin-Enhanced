@@ -210,6 +210,73 @@ test('the genre tab shows Whole group then one named icon tile per genre, with a
   assert.equal(h.$$('#tagStyleTargets .je-ts-target:not([hidden])').length, genreLabels.length + 1);
 });
 
+test('the genre strip is one radio group: focus stays on the selected tile and arrow keys move the selection', async t => {
+  const h = await editor(t);
+  const strip = h.$('#tagStyleTargets');
+  const tile = label => h.$(`.je-ts-target[data-label="${label}"]`);
+  const active = () => h.document.activeElement;
+  const press = key => active().dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  const selected = () => h.$$('#tagStyleTargets .je-ts-target[aria-checked="true"]').map(n => n.dataset.label);
+  assert.equal(strip.getAttribute('role'), 'radiogroup');
+  assert.ok(h.$$('#tagStyleTargets .je-ts-target').every(n => n.getAttribute('role') === 'radio'));
+  // One tab stop for the strip: the selected tile (Whole group to start with).
+  assert.deepEqual(h.$$('#tagStyleTargets .je-ts-target').filter(n => n.tabIndex === 0).map(n => n.dataset.label), ['*']);
+
+  // Selecting rebuilds the strip; focus lands on the new selected tile, not on the page.
+  tile('horror').focus();
+  tile('horror').click();
+  assert.deepEqual(selected(), ['horror']);
+  assert.equal(active(), tile('horror'), 'focus stays on the selected tile');
+  assert.equal(tile('horror').tabIndex, 0);
+  assert.equal(tile('*').tabIndex, -1);
+
+  const order = ['*', ...genreLabels.map(l => l.key)];
+  const after = order[order.indexOf('horror') + 1];
+  press('ArrowRight');
+  assert.deepEqual(selected(), [after]);
+  assert.equal(active(), tile(after));
+  assert.equal(h.$('.je-ts-tab.active').dataset.group, 'genre');
+  press('ArrowUp');
+  assert.equal(active(), tile('horror'));
+  press('ArrowDown');
+  assert.equal(active(), tile(after));
+  press('ArrowLeft');
+  assert.deepEqual(selected(), ['horror']);
+  press('End');
+  assert.deepEqual(selected(), ['other']);
+  assert.equal(active(), tile('other'));
+  press('ArrowRight');
+  assert.deepEqual(selected(), ['*'], 'wraps around');
+  press('Home');
+  assert.equal(active(), tile('*'));
+  press('ArrowLeft');
+  assert.equal(active(), tile('other'));
+  // Other keys are left alone.
+  const tab = new h.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+  active().dispatchEvent(tab);
+  assert.equal(tab.defaultPrevented, false);
+  assert.deepEqual(selected(), ['other']);
+
+  // The filter box is a tab stop of its own, outside the group; arrows skip the tiles it hides.
+  const filter = h.$('#tagStyleTargetFilter');
+  assert.ok(!strip.contains(filter));
+  assert.equal(filter.tabIndex, 0);
+  filter.value = 'SCI';
+  filter.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.deepEqual(h.$$('#tagStyleTargets .je-ts-target:not([hidden])').map(n => n.dataset.label), ['*', 'science fiction', 'other']);
+  tile('other').focus();
+  press('ArrowRight');
+  assert.deepEqual(selected(), ['*']);
+  press('ArrowRight');
+  assert.deepEqual(selected(), ['science fiction']);
+  assert.equal(active(), tile('science fiction'));
+  assert.equal(filter.value, 'SCI', 'the filter stays');
+  // A pointer selection with focus elsewhere does not pull focus into the strip.
+  filter.focus();
+  tile('*').click();
+  assert.equal(active(), filter);
+});
+
 test('one genre takes its own colours, its own contrast badge and its preview chips', async t => {
   const h = await editor(t);
   h.$('.je-ts-target[data-label="horror"]').click();

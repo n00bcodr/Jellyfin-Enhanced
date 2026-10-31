@@ -436,10 +436,36 @@
             });
         }
 
+        /**
+         * Arrow keys move the selection along the visible tiles (wrapping), Home and End
+         * to the first and last; selecting rebuilds the strip, which keeps focus on the
+         * selected tile.
+         * @param {KeyboardEvent} e
+         * @returns {void}
+         */
+        function onTargetKey(e) {
+            const box = e.currentTarget;
+            const cells = Array.from(box.querySelectorAll('.je-ts-target:not([hidden])'));
+            const at = cells.indexOf(e.target.closest('.je-ts-target'));
+            if (at < 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+            const back = getComputedStyle(box).direction === 'rtl' ? 1 : -1;
+            const step = { ArrowLeft: back, ArrowRight: -back, ArrowUp: -1, ArrowDown: 1 }[e.key];
+            let next;
+            if (step) next = cells[(at + step + cells.length) % cells.length];
+            else if (e.key === 'Home') next = cells[0];
+            else if (e.key === 'End') next = cells[cells.length - 1];
+            else return;
+            e.preventDefault();
+            next.click();
+        }
+
         /** @returns {void} */
         function renderTargets() {
             const box = root.querySelector('#tagStyleTargets');
+            // Rebuilding drops focus: a keyboard user keeps it on the selected tile.
+            const focused = box.contains(document.activeElement);
             box.textContent = '';
+            box.onkeydown = onTargetKey;
             const tiles = TILE_GROUPS.includes(current);
             box.classList.toggle('je-ts-targets-tiles', tiles);
             const search = root.querySelector('#tagStyleTargetFilter');
@@ -468,6 +494,16 @@
                 box.appendChild(cell);
             });
             applyFilter();
+            // One tab stop for the strip (the filter box is its own): the selected tile.
+            let selected = null;
+            box.querySelectorAll('.je-ts-target').forEach((cell) => {
+                const on = cell.getAttribute('aria-checked') === 'true';
+                cell.tabIndex = on ? 0 : -1;
+                if (on) selected = cell;
+            });
+            selected = selected || box.querySelector('.je-ts-target');
+            if (selected) selected.tabIndex = 0;
+            if (focused && selected) selected.focus();
         }
 
         /** @returns {void} */
