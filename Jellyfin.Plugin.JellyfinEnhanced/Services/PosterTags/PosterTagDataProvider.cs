@@ -96,8 +96,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemAdded += OnItemChanged;
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
-            _tagCache.LogosWarmed += OnLogosWarmed;
-            _tagCache.ScenesRefreshed += InvalidateScenes;
+            _tagCache.LogosWarmed += OnOwnerFactsChanged;
+            _tagCache.ScenesRefreshed += OnOwnerFactsChanged;
         }
 
         /// <summary>
@@ -165,19 +165,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return new PosterTagRenderData(entry, DataKey(entry, reviews), stripped, reviews);
         }
 
-        /// <summary>Discard on-demand snapshots after confirmed keyword facts change.</summary>
-        private void InvalidateScenes()
-        {
-            lock (_memoLock) { _memoGeneration++; _memo.Clear(); }
-        }
-
         public void Dispose()
         {
             _libraryManager.ItemAdded -= OnItemChanged;
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
-            _tagCache.LogosWarmed -= OnLogosWarmed;
-            _tagCache.ScenesRefreshed -= InvalidateScenes;
+            _tagCache.LogosWarmed -= OnOwnerFactsChanged;
+            _tagCache.ScenesRefreshed -= OnOwnerFactsChanged;
         }
 
         /// <summary>SHA-256 (hex) of an entry's content, ignoring its build timestamp. Memoized per instance.</summary>
@@ -290,10 +284,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
         }
 
-        // A background logo warm (queued by an on-demand build) finished: drop the
-        // memoized builds of those movies and series and of their seasons and
-        // episodes, so the next poster request projects the new logos.
-        private void OnLogosWarmed(IReadOnlyCollection<Guid> owners)
+        // A background logo warm or changed Scenes projection: drop only these
+        // owners and their seasons/episodes so the next request projects the new facts.
+        private void OnOwnerFactsChanged(IReadOnlyCollection<Guid> owners)
         {
             if (_memo.IsEmpty && _building.IsEmpty) return;
             var seriesIds = owners.Select(id => id.ToString("N")).ToHashSet(StringComparer.OrdinalIgnoreCase);

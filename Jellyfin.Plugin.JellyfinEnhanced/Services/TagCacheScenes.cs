@@ -16,23 +16,38 @@ public partial class TagCacheService
     private readonly CancellationTokenSource _scenesLifetime = new();
     private readonly ConcurrentDictionary<string, byte> _pendingScenes = new(StringComparer.Ordinal);
     private bool _scenesQueued;
+    private sealed record ScenesProjection(string? TmdbId, TagScenes? Facts);
+    // Includes native on-demand reads when there is no published server cache.
+    private readonly ConcurrentDictionary<Guid, ScenesProjection> _scenesProjections = new();
 
     /// <summary>Gather card reads before one background pass.</summary>
     internal TimeSpan ScenesRefreshDelay { get; set; } = TimeSpan.FromSeconds(2);
     internal int PendingScenesRefreshes => _pendingScenes.Count;
     internal Task ScenesWorkQueue { get { lock (_scenesLock) return _scenesWork; } }
-    internal event Action? ScenesRefreshed;
+    internal event Action<IReadOnlyCollection<Guid>>? ScenesRefreshed;
 
     /// <summary>Movie-only, cache-only facts for web batch and native resolution.</summary>
     public TagScenes? GetScenes(BaseItem item)
     {
-        var config = JellyfinEnhanced.Instance?.Configuration;
-        if (item is not Movie || config?.StatusTagsEnabled != true || !config.StatusTagsScenes || string.IsNullOrWhiteSpace(config.TMDB_API_KEY)) return null;
-        var id = TmdbIdOf(item);
-        if (id == null) return null;
+        if (item is not Movie) return null;
+        var scenes = ReadScenes(item);
+        var tmdbId = TmdbIdOf(item);
+        _scenesProjections.AddOrUpdate(item.Id, new ScenesProjection(tmdbId, scenes),
+            (_, old) => old.TmdbId == tmdbId ? old : new(tmdbId, scenes));
         QueueScenesRefresh(new[] { item });
+        return scenes;
+    }
+
+    /// <summary>Read the current projection without queuing work or replacing its publication baseline.</summary>
+    private TagScenes? ReadScenes(BaseItem item) => item is Movie ? ReadScenes(item.Id, TmdbIdOf(item)) : null;
+
+    private TagScenes? ReadScenes(Guid movieId, string? id)
+    {
+        var config = JellyfinEnhanced.Instance?.Configuration;
+        if (config?.StatusTagsEnabled != true || !config.StatusTagsScenes || string.IsNullOrWhiteSpace(config.TMDB_API_KEY)) return null;
+        if (id == null) return null;
         return _scenesService?.Get(config.TMDB_API_KEY, id)
-            ?? (_cache.TryGetValue(item.Id.ToString("N"), out var old) && old.TmdbId == id ? old.Scenes : null);
+            ?? (_cache.TryGetValue(movieId.ToString("N"), out var old) && old.TmdbId == id ? old.Scenes : null);
     }
 
     /// <summary>Cache-only reads gather due movie ids; the worker owns cancellation, never the card request.</summary>
@@ -78,10 +93,9 @@ public partial class TagCacheService
     private async Task PublishScenesAsync(CancellationToken token)
     {
         await _rebuildLock.WaitAsync(token).ConfigureAwait(false);
-        try { if (!_disposed && !_cacheReleased) RefreshScenes(); }
+        try { if (!_disposed) RefreshScenes(); }
         finally { _rebuildLock.Release(); }
         token.ThrowIfCancellationRequested();
-        ScenesRefreshed?.Invoke();
     }
 
     private void StopScenesRefresh()
@@ -115,7 +129,7 @@ public partial class TagCacheService
                 var token = _scenesLifetime.Token;
                 try
                 {
-                    if (_disposed || _cacheReleased || !ServerModeEnabled) return;
+                    if (_disposed) return;
                     WarmScenes(token);
                     await PublishScenesAsync(token).ConfigureAwait(false);
                 }
@@ -128,12 +142,21 @@ public partial class TagCacheService
     private void RefreshScenes()
     {
         using var writes = BeginInPlaceWrites();
+        var changedOwners = new HashSet<Guid>();
+        foreach (var pair in _scenesProjections)
+        {
+            var scenes = ReadScenes(pair.Key, pair.Value.TmdbId);
+            if (scenes == pair.Value.Facts) continue;
+            _scenesProjections[pair.Key] = pair.Value with { Facts = scenes };
+            changedOwners.Add(pair.Key);
+        }
+
         bool changed = false;
         foreach (var pair in _cache)
         {
             if (pair.Value.Type != "Movie" || !Guid.TryParse(pair.Key, out var id)) continue;
             var movie = _libraryManager.GetItemById(id);
-            var scenes = movie == null ? null : GetScenes(movie);
+            var scenes = movie == null ? null : ReadScenes(movie);
             if (scenes == pair.Value.Scenes) continue;
             var updated = pair.Value.Clone();
             updated.Scenes = scenes;
@@ -141,10 +164,14 @@ public partial class TagCacheService
             RaiseMaxLastUpdated(updated.LastUpdated);
             StoreEntry(pair.Key, updated);
             changed = true;
+            changedOwners.Add(id);
         }
-        if (!changed) return;
-        Interlocked.Increment(ref _version);
-        Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        ScheduleDebouncedSave();
+        if (changed)
+        {
+            Interlocked.Increment(ref _version);
+            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            ScheduleDebouncedSave();
+        }
+        if (changedOwners.Count > 0) ScenesRefreshed?.Invoke(changedOwners);
     }
 }
