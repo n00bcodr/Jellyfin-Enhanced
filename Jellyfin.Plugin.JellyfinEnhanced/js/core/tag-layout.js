@@ -2274,6 +2274,15 @@
         for (const row of plan.rows) {
             if (row.width !== undefined) row.slot.style.setProperty('--je-anchor-width', `${row.width}px`);
             if (row.firstWidth !== undefined) {
+                // Linked code chips have anonymous flex text; give that text
+                // a shrinking box without altering the master or its icons.
+                const language = row.chips[0].querySelector('.language-chip');
+                if (language) for (const node of Array.from(language.childNodes)) {
+                    if (node.nodeType !== 3) continue;
+                    const text = document.createElement('span');
+                    text.className = 'je-tag-fit-text';
+                    node.replaceWith(text); text.append(node);
+                }
                 row.chips[0].setAttribute('data-je-fit-width', '');
                 row.chips[0].style.setProperty('--je-chip-fit-width', `${row.firstWidth}px`);
             }

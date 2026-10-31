@@ -23,8 +23,11 @@
     /** Chips with a box of their own (not the genre circle or a flag image). */
     const BOX_CHIP = ':is(.quality-overlay-label, .rating-tag, .age-rating-tag, .status-tag, .awards-tag, .je-logo-chip, .custom-tag, .language-chip)';
 
+    /** Transparent links pass sizing and Flush paint through to the chip. */
+    const CHIP_LINK = ':is(.awards-link, .language-link)';
+
     /** Group chips and the slot's direct overflow chip share Flush paint. */
-    const FLUSH_CHIP = `:is([data-je-group] > ${BOX_CHIP}, .je-tag-more)`;
+    const FLUSH_CHIP = `:is([data-je-group] > ${BOX_CHIP}, [data-je-group] > ${CHIP_LINK} > ${BOX_CHIP}, .je-tag-more)`;
 
     /**
      * Flush paint rules, repeated in scoped Tag Styles so their !important
@@ -54,14 +57,18 @@
                 border-top-right-radius: 0; border-bottom-right-radius: 0;
             }
             ${F}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${BOX_CHIP}:first-child,
+            ${F}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${CHIP_LINK}:first-child > ${BOX_CHIP},
             ${F}[data-je-slot="tc"] ${FLUSH_CHIP}[data-je-flush-top],
+            ${F}[data-je-slot="tc"] ${CHIP_LINK}[data-je-flush-top] > ${BOX_CHIP},
             ${F}:is([data-je-slot="tl"], [data-je-slot="tr"]) > .je-tag-more:only-child {
                 border-top-color: transparent !important; --je-flush-clip-top: 0px;
                 --je-flush-ring-top: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
                 border-top-left-radius: 0; border-top-right-radius: 0;
             }
             ${F}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${BOX_CHIP}:last-child,
+            ${F}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${CHIP_LINK}:last-child > ${BOX_CHIP},
             ${F}[data-je-slot="bc"] ${FLUSH_CHIP}[data-je-flush-bottom],
+            ${F}[data-je-slot="bc"] ${CHIP_LINK}[data-je-flush-bottom] > ${BOX_CHIP},
             ${F}:is([data-je-slot="bl"], [data-je-slot="br"]) > .je-tag-more:only-child {
                 border-bottom-color: transparent !important; --je-flush-clip-bottom: 0px;
                 --je-flush-ring-bottom: 0px; --je-flush-ring-content: ''; --je-tag-ring-outline: transparent;
@@ -168,6 +175,19 @@
                 max-width: var(--je-chip-fit-width); min-width: 0;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
                 display: block;
+            }
+
+            /* A link is transparent to chip sizing and paint: clip the label,
+               not the rounded chip or its inward border/ring/shadow. */
+            ${host('corners')} > [data-je-group] > ${CHIP_LINK}[data-je-fit-width] {
+                display: inline-flex; overflow: visible;
+            }
+            ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > ${BOX_CHIP} {
+                max-width: var(--je-chip-fit-width); min-width: 0; box-sizing: border-box;
+            }
+            ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > .awards-tag > span:last-child,
+            ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > .language-chip > .je-tag-fit-text {
+                min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             }
 
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
