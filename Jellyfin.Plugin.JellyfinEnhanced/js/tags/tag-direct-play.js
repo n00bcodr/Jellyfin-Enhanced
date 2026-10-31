@@ -27,7 +27,8 @@
 // applied in one pass per slice. Answers are kept per item and profile hash
 // for a day, in memory and in the tag cache store (IndexedDB, per server and
 // user, capped); a failed lookup is retried after RETRY_MS. A user switch
-// drops everything in flight.
+// (or any reset) drops every answer in flight; their requests keep their
+// slots until they settle, so a reset never raises the two-request cap.
 //
 // Public surface: JE.tagDirectPlay { track, untrack, peek, describe,
 // profile, profileHash, bitrate, webProfile, setProfile, reset, stats,
@@ -93,8 +94,15 @@
     const memory = new Map();
     /** @type {Map<string, {cards: Set<HTMLElement>, id: string}>} queued lookups by memory key */
     const queue = new Map();
-    /** @type {Set<string>} memory keys in flight */
-    const inFlight = new Set();
+    /** @type {Map<string, {id: string, cards: Set<HTMLElement>}>} this session's lookups in flight, by memory key (their jobs) */
+    const inFlight = new Map();
+    /**
+     * Every request still on the network, this session's or an earlier one's:
+     * a reset forgets lookups but cannot cancel ApiClient requests, so their
+     * slots stay taken until they settle (MAX_IN_FLIGHT counts these).
+     * @type {Set<Object>}
+     */
+    const network = new Set();
     /** @type {WeakMap<HTMLElement, {id: string, onResult: Function}>} tracked cards */
     const tracked = new WeakMap();
     /** @type {Set<HTMLElement>} tracked cards currently on screen */
@@ -842,7 +850,7 @@
         const entry = tracked.get(card);
         if (!entry) return;
         const key = `${current().hash}|${entry.id}`;
-        if (inFlight.has(key)) { queue.get(key)?.cards.add(card); return; }
+        if (inFlight.has(key)) { inFlight.get(key).cards.add(card); return; }
         if (!due(key)) { counters.fromMemory++; return; }
         const job = queue.get(key) || { id: entry.id, cards: new Set() };
         job.cards.add(card);
@@ -925,7 +933,7 @@
         }
         let launched = 0;
         for (const [key, job] of queue) {
-            if (inFlight.size >= MAX_IN_FLIGHT || launched >= SLICE_LAUNCHES) break;
+            if (network.size >= MAX_IN_FLIGHT || launched >= SLICE_LAUNCHES) break;
             if (!(left() >= STEP_MIN_MS || (late && launched === 0))) break;
             queue.delete(key);
             for (const card of [...job.cards]) if (!card.isConnected || !visible.has(card) || tracked.get(card)?.id !== job.id) job.cards.delete(card);
@@ -935,12 +943,14 @@
         }
         counters.slices++;
         counters.maxSliceMs = Math.max(counters.maxSliceMs, performance.now() - started);
-        if (pendingNotify.size || (queue.size && inFlight.size < MAX_IN_FLIGHT)) scheduleSlice();
+        if (pendingNotify.size || (queue.size && network.size < MAX_IN_FLIGHT)) scheduleSlice();
     }
 
     /**
      * Ask Jellyfin about one item (in a slice); the answer is applied by the
-     * next slice. An answer for an earlier session is dropped.
+     * next slice. An answer for an earlier session is dropped, but its
+     * request holds a slot until it settles, and its end never touches a
+     * later session's lookup of the same item.
      * @param {string} key
      * @param {{id: string, cards: Set<HTMLElement>}} job
      */
@@ -949,7 +959,9 @@
         const gen = generation;
         const { profile, bitrate } = current();
         const userId = ApiClient.getCurrentUserId?.() || JE.session?.getUserId?.() || '';
-        inFlight.add(key);
+        const request = {};
+        inFlight.set(key, job);
+        network.add(request);
         counters.launched++;
         let value;
         try {
@@ -966,9 +978,11 @@
             value = { r: null, t: Date.now() };
             counters.failed++;
         } finally {
-            inFlight.delete(key);
+            network.delete(request);
+            if (gen === generation && inFlight.get(key) === job) inFlight.delete(key);
         }
-        if (gen !== generation) return;
+        // A freed slot: queued lookups (of this session) may go now.
+        if (gen !== generation) { if (queue.size) scheduleSlice(); return; }
         remember(key, value);
         if (value.r) { unsaved.set(key, value.t); persistSoon(); } else armRetry();
         for (const card of job.cards) {
@@ -988,7 +1002,11 @@
         }, RETRY_MS);
     }
 
-    /** Forget every card and in-flight answer (a user switch, a renderer teardown). Answers stay. */
+    /**
+     * Forget every card and in-flight answer (a user switch, a renderer
+     * teardown). Answers stay; requests still on the network keep their slots
+     * until they settle.
+     */
     function reset() {
         generation++;
         for (const card of [...visible]) untrack(card);
@@ -1047,6 +1065,6 @@
             primed = null;
         },
         /** @returns {Object} Slice and request counters. */
-        stats: () => ({ ...counters, queued: queue.size, inFlight: inFlight.size, memory: memory.size }),
+        stats: () => ({ ...counters, queued: queue.size, inFlight: network.size, memory: memory.size }),
     };
 })(window.JellyfinEnhanced);

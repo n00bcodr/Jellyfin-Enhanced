@@ -39,6 +39,7 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
   const userChange = new Map();
   const requests = [];
   const pending = [];
+  const network = { open: 0, peak: 0 };
   const idle = [];
   const observers = [];
   class Observer {
@@ -68,10 +69,14 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
         assert.ok(id, `unexpected request ${request.url}`);
         assert.equal(request.type, 'POST');
         requests.push({ id, body: JSON.parse(request.data), url: request.url });
-        if (hold) await new Promise(resolve => pending.push(resolve));
-        const kind = answer(id);
-        if (kind instanceof Error) throw kind;
-        return playback(kind);
+        network.open++;
+        network.peak = Math.max(network.peak, network.open);
+        try {
+          if (hold) await new Promise(resolve => pending.push(resolve));
+          const kind = answer(id);
+          if (kind instanceof Error) throw kind;
+          return playback(kind);
+        } finally { network.open--; }
       },
     },
   });
@@ -85,7 +90,7 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
   const renderer = renderers.get('status');
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
   return Object.assign(h, {
-    hosts, requests, idle, observers, userChange, renderer,
+    hosts, requests, idle, observers, userChange, renderer, network,
     setNow(ms) { now = ms; },
     show(entry, host = hosts[0], id = 'item1') {
       delete host.closest('.card').dataset.jeStatusTagged;
@@ -104,6 +109,8 @@ function setup(t, { settings = {}, plugin = {}, cards = 3, answer = () => 'trans
     },
     /** Answer every held request. */
     async release() { pending.splice(0).forEach(r => r()); await settle(); await settle(); },
+    /** Answer the oldest held request. */
+    async releaseOne() { pending.shift()?.(); await settle(); await settle(); },
     settle,
   });
 }
@@ -390,6 +397,45 @@ test('direct play: answers are kept a day per item and profile, failures retry l
   await held.slice();
   assert.equal(held.JE.tagDirectPlay.peek('x1'), null);
   assert.equal(held.chip(), null);
+});
+
+test('direct play: a reset (renderer teardown, user switch) keeps the requests still on the network in their slots until they settle', async t => {
+  const h = setup(t, { cards: 6, settings: { statusTagsDirectPlay: true }, hold: true });
+  const dp = h.JE.tagDirectPlay;
+  h.show(movie(), h.hosts[0], 'x1');
+  h.show(movie(), h.hosts[1], 'y1');
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['x1', 'y1']);
+  // Torn down while both are held; the next renderer tracks new cards (and x1 again).
+  dp.reset();
+  h.show(movie(), h.hosts[2], 'z1');
+  h.show(movie(), h.hosts[3], 'x1');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2, 'no third request while the two old ones are on the network');
+  assert.equal(dp.stats().inFlight, 2);
+  // A user switch on top of that changes nothing about the budget either.
+  h.userChange.get('direct-play')();
+  h.show(movie(), h.hosts[2], 'z1');
+  h.show(movie(), h.hosts[3], 'x1');
+  await h.slice();
+  assert.equal(h.requests.length, 2);
+  // The oldest settles: one slot, one new request; its stale answer is dropped.
+  await h.releaseOne();
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['x1', 'y1', 'z1']);
+  assert.equal(dp.peek('x1'), null, 'an answer from before the reset is never used');
+  await h.releaseOne(); // y1 (stale): the second slot frees
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['x1', 'y1', 'z1', 'x1']);
+  // x1 is asked once in this session: another card of it joins the lookup in flight.
+  h.show(movie(), h.hosts[4], 'x1');
+  await h.slice();
+  assert.equal(h.requests.filter(r => r.id === 'x1').length, 2);
+  await h.release(); await h.slice(); await h.slice();
+  assert.equal(h.badge(h.hosts[3]), 'Transcode');
+  assert.equal(h.badge(h.hosts[4]), 'Transcode', 'the joining card gets the answer too');
+  assert.equal(h.network.peak, 2, 'never more than two requests on the network');
+  assert.equal(dp.stats().inFlight, 0);
 });
 
 test('direct play: stored answers are restored before any request, and new ones are written per scope and profile', async t => {
