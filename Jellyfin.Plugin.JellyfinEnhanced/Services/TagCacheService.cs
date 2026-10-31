@@ -2324,6 +2324,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     RefreshDueStatusContainers();
                     // A snapshot written under other Custom tag rules is re-matched in the background.
                     QueueCustomTagRefreshIfStale();
+                    // A Leaving answer published just before a crash may be newer than this snapshot.
+                    ReconcileLeaving();
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }

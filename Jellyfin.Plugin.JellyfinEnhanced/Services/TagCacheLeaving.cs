@@ -100,6 +100,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// After a disk load (rebuild lock held): restamp entries whose Leaving facts differ from
+        /// the snapshot's. <see cref="LeavingSoonService.MarkPublished"/> acknowledges the
+        /// in-memory publish, and the tag cache saves it later (debounced), so a crash or a failed
+        /// save in between leaves an older cache on disk beside an acknowledged snapshot; the
+        /// snapshot is the authority, so a load always re-applies it. One pass over the loaded
+        /// entries; only differing entries are written.
+        /// </summary>
+        private void ReconcileLeaving()
+        {
+            if (_leavingSoonService != null) PublishLeaving();
+        }
+
+        /// <summary>
         /// Stamp every cache entry with its current facts (rebuild lock held), without library
         /// reads: an Episode finds its Season through the cached Season entries (series id and
         /// season number).

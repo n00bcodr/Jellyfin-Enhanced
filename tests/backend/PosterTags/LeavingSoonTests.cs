@@ -717,6 +717,89 @@ public sealed class LeavingSoonTests : IDisposable
         finally { BaseItem.LibraryManager = previous; }
     }
 
+    [Fact]
+    public async Task A_restart_after_a_publish_that_never_reached_the_cache_file_reapplies_the_snapshot()
+    {
+        using var f = new ApiPluginFixture();
+        var library = new Mock<ILibraryManager>();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie" };
+        var gone = new Movie { Id = Guid.NewGuid(), Name = "Gone" };
+        var items = new List<BaseItem> { movie, gone };
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(items, q).Select(i => i.Id).ToArray());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(items, q).ToArray());
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => items.SingleOrDefault(i => i.Id == id));
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Object;
+        using var server = new MaintainerrFixture();
+        var days = 10;
+        var members = new[] { movie, gone };
+        server.Answer = r => MaintainerrFixture.Json(r, Collections((true, days, "movie", members.Select(m => new Media(m.Id.ToString(), null, "2026-10-25T10:00:00Z")).ToArray())));
+        var cachePath = Path.Combine(f.Core.Root, "configurations", "Jellyfin.Plugin.JellyfinEnhanced", "tag-cache.json");
+        TagCacheService Restart(LeavingSoonService service)
+        {
+            var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger,
+                new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), leavingSoonService: service);
+            cache.LoadFromDisk();
+            return cache;
+        }
+
+        string? OnDisk(BaseItem item) => JsonDocument.Parse(File.ReadAllText(cachePath)).RootElement.GetProperty("Items")
+            .GetProperty(item.Id.ToString("N")).TryGetProperty("Leaving", out var leaving) ? leaving.GetRawText() : null;
+        var crashed = new List<TagCacheService>();
+        try
+        {
+            f.Plugin.Configuration.TagCacheServerMode = true;
+            f.Plugin.Configuration.LeavingSoonMaintainerrUrl = server.Url;
+            var service = Service(library.Object);
+            var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger,
+                new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), leavingSoonService: service);
+            crashed.Add(cache);
+            cache.BuildFullCache(null, CancellationToken.None);
+            await cache.RefreshLeavingAsync(force: true, CancellationToken.None);
+            cache.SaveToDisk();
+            var old = Added.AddDays(10).ToUnixTimeMilliseconds();
+            Assert.Contains(old.ToString(), OnDisk(movie));
+
+            // A changed answer (later date, one member gone) is published in memory and
+            // acknowledged; the process dies before the debounced cache save.
+            days = 20;
+            members = new[] { movie };
+            await cache.RefreshLeavingAsync(force: true, CancellationToken.None);
+            Leaving(cache, movie).Should(Added.AddDays(20).ToUnixTimeMilliseconds());
+            Assert.False(service.PublishPending);
+            Assert.Contains(old.ToString(), OnDisk(movie)); // the cache file is still the older one
+            Assert.NotNull(OnDisk(gone));
+
+            // Restart over the two files: the snapshot is re-applied, no request is made.
+            var asked = server.Requests;
+            var restartedService = Service(library.Object);
+            var restarted = Restart(restartedService);
+            crashed.Add(restarted);
+            Leaving(restarted, movie).Should(Added.AddDays(20).ToUnixTimeMilliseconds());
+            Assert.False(Leaving(restarted, gone).Present);
+            await restarted.RefreshLeavingAsync(force: false, CancellationToken.None); // not due
+            Assert.Equal(asked, server.Requests);
+            Leaving(restarted, movie).Should(Added.AddDays(20).ToUnixTimeMilliseconds());
+
+            // A cache save that fails (the temp path is taken) leaves the file older too;
+            // the next restart repairs it the same way.
+            days = 30;
+            Directory.CreateDirectory(cachePath + ".tmp");
+            await restarted.RefreshLeavingAsync(force: true, CancellationToken.None);
+            restarted.SaveToDisk();
+            Assert.DoesNotContain(Added.AddDays(30).ToUnixTimeMilliseconds().ToString(), OnDisk(movie));
+            Directory.Delete(cachePath + ".tmp");
+            var again = Restart(Service(library.Object));
+            crashed.Add(again);
+            Leaving(again, movie).Should(Added.AddDays(30).ToUnixTimeMilliseconds());
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+            foreach (var cache in crashed) cache.Dispose();
+        }
+    }
+
     private static IEnumerable<BaseItem> Select(List<BaseItem> items, InternalItemsQuery q)
     {
         IEnumerable<BaseItem> selected = items;
