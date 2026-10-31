@@ -254,6 +254,8 @@ In the Corners layout, containers carry `data-je-corner` with one of the nine st
 
 A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards.
 
+The Media Tags import, export and preset dialogs (in the settings panel and on the Media Tags settings page) are `.je-pt-backdrop > .je-pt-dialog[role="dialog"]`, with `.je-pt-change` / `.je-pt-skip` rows (`.je-pt-from`, `.je-pt-to`, `.je-pt-reason`) and `.je-pt-btn` buttons (`[data-primary]` for the main action). The panel's preset rows are `.je-mth-tp-item` inside `[data-tp-source="builtIn" | "offered" | "mine"]`.
+
 Poster tags generally ignore pointer input. Container-query sizing adapts badges to card width, with separate mobile rules. Fixed sizes can crowd small posters.
 
 Processing markers such as `data-je-quality-tagged`, `data-je-genre-tagged`, `data-je-language-tagged`, `data-je-rating-tagged`, and `data-je-age-rating-tagged` record processing. They do not guarantee a visible badge.

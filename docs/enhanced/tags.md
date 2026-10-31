@@ -304,6 +304,46 @@ Each card gets its look from the first of these that applies:
     - Changing a rule or a lock updates the cards on screen at once, without reloading their tags.
     - Locked cards carry `data-je-locked="1"` on their tag host for [custom CSS](../advanced/css-customization.md). Nothing else marks them by default.
 
+### Import, export and presets
+
+Your Media Tags settings can be saved as a file, moved to another server or shared as a preset. Every import is checked by the server first and shows exactly what will change before anything is applied.
+
+**How to use:**
+
+1. In **Media Tags**, stay on **Layout** and scroll to the bottom: **Presets** and **Import & export**.
+2. **Export settings** shows your settings as a document; **Download** saves it as a `.json` file and **Copy** puts it on the clipboard.
+3. **Import settings** takes a file or pasted text. **Check** lists every setting that would change (old value → new value) and every setting that is skipped, with the reason. **Apply** saves the changes; the panel opens again on the new settings with **Undo** for 10 seconds.
+4. Under **Presets**, **Apply** previews a preset the same way. **Share** copies a preset so someone else can import it. **Save as preset** keeps your current settings under a name and description; **Import preset** adds a shared preset to your list. **Delete** removes one of yours.
+
+![Presets on the Layout tab: the three built-in presets, one offered by the administrator and your own list](../images/tags/media-tags-presets.webp)
+
+![Import preview: three settings change, two are skipped with their reasons, and Apply 3 changes](../images/tags/media-tags-import-preview.webp)
+
+| Preset list | Where it comes from |
+|---|---|
+| **Built in** | **Cinephile** (quality, critics' scores and awards up front, ratings coloured by score), **Minimal** (resolution and one score in small compact chips) and **Kids' profile** (big tags: age rating, genre and what's new). |
+| **From your administrator** | Presets the administrator offers on the Media Tags settings page (up to 20). |
+| **Yours** | Up to 10 presets you saved or imported. They are kept on the server, so they follow you to every device. |
+
+A document carries your layout and its profiles, group order, limits and positions, card-shape looks, density, size, gap and edge spacing, group switches and what each group includes, rating sources, language display and priority, status badge families and your colour preset. Rules and locked items are left out: they name this server's libraries and titles. A preset can carry only some of these; applying it changes those and keeps the rest.
+
+??? info "What is skipped, and why"
+    - **Not a Media Tags setting**: a field this version does not know (from a newer version, or a typo).
+    - **Not a valid value**: a value the settings save would not accept as given (an unknown layout, a cap over 10, a position that does not exist, a language that is not an ISO code). The reason is shown next to it.
+    - **A secret, never imported**: API keys and the custom rule key never travel in a document.
+    - A document from a newer version of Jellyfin Enhanced is refused as a whole; update the plugin first.
+    - Settings saved before layouts existed export as they are (their layout version travels with them), so importing them elsewhere gives the same look. The built-in presets switch to the current layout system.
+
+**Administrators** export and import the server-wide settings on the **Server** tab of the Media Tags settings page: every setting on that page (defaults, groups, Tag Styles, custom rules, award lists, logo choices, status windows, cache options and offered presets), never an API key or the custom rule key. An import shows the changes, asks for a confirmation and saves them like any edit on that page: a setting another administrator changed meanwhile waits for **Keep mine** or **Take theirs**, and the snackbar offers **Undo** for 10 seconds. **Presets for users** lists the presets offered in every user's Presets list: **Offer my settings** uses your own Media Tags settings, **Offer from a file** a preset or settings file; each can be shared or removed.
+
+![The Server tab: Import & export, and Presets for users with one offered preset](../images/tags/media-tags-admin-portable.webp)
+
+| Setting | Default | What it does |
+|---|---|---|
+| Personal: **Presets** / **Import & export** | Built-in presets only | Apply, share, save and import presets; export or import your settings with a preview and Undo |
+| Admin: **Server** → **Import & export** | — | Export or import the server-wide Media Tags settings; secrets never included |
+| Admin: **Server** → **Presets for users** | None | Up to 20 presets every user sees under **From your administrator** |
+
 ## Quality Tags
 
 Quality badges help you identify a file's picture and sound format before opening it. They read Jellyfin's media metadata and naming signals.

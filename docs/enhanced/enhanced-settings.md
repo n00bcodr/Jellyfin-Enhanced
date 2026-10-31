@@ -282,6 +282,8 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags, including Status, into posters for native apps. Corners and Bands are supported; Caption, Summary and Minimal use Corners. Bands follows its profile, limits and density. |
     | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
     | **Show Audio Languages** | On | Audio language links on item details. |
+    | **Presets** | Built-in presets | **Apply** previews a preset's changes first; **Share** copies it; **Save as preset** keeps your settings (up to 10, on the server); **Import preset** adds a shared one; administrators can offer more. |
+    | **Import & export** | — | **Export settings** downloads or copies your Media Tags settings; **Import settings** checks a file or pasted text on the server, shows what changes and what is skipped, and applies it with **Undo**. See [Import, export and presets](tags.md#import-export-and-presets). |
 
 === "Groups"
 
@@ -325,7 +327,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
 
 === "Server (administrators)"
 
-    Shortcuts to the Media Tags settings page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that tab. Other users never get this tab.
+    Shortcuts to the Media Tags settings page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that tab. Other users never get this tab. The page's **Server** tab also exports and imports the server-wide Media Tags settings and lists the **Presets for users** ([Import, export and presets](tags.md#import-export-and-presets)).
 
 See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, and [Rules and locked items](tags.md#rules-and-locked-items) for how rules match.
 
