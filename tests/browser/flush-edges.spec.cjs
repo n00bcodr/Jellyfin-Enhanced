@@ -192,7 +192,6 @@ test('Flush direct overflow chips at corners keep the same side treatment as gro
 
 test('Flush Rating and Awards keep inner rings at centre and remove only touching sides', async ({page}) => {
   test.setTimeout(45000);
-  const { spawnSync } = require('node:child_process');
   await setup(page);
   await page.addScriptTag({path:path.join(root,'tags/tag-styles.js')});
   await page.addStyleTag({content:'.rating-tag,.awards-tag{display:block;box-sizing:border-box;width:80px;height:24px;position:relative;border-radius:4px;background:#000}'});
@@ -214,13 +213,27 @@ test('Flush Rating and Awards keep inner rings at centre and remove only touchin
       return {x:r.x,y:r.y,w:r.width,h:r.height,offset:getComputedStyle(chip).outlineOffset};
     },{scoped,group,slot});
     expect(rect.offset).toBe('-1px');
-    const pixels=spawnSync('python3',['-c',`import sys,json
-from PIL import Image
-im=Image.open(sys.stdin.buffer).convert('RGB');r=json.loads(sys.argv[1]);x,y,w,h=[r[k] for k in ['x','y','w','h']]
-points=[(x,y+h/2),(x+w/2,y),(x+w-1,y+h/2),(x+w/2,y+h-1)]
-print(json.dumps([im.getpixel((round(a),round(b)))[0]>200 and im.getpixel((round(a),round(b)))[1]<60 for a,b in points]))`,JSON.stringify(rect)],{input:await page.screenshot({scale: 'css'}),encoding:'utf8'});
-    expect(pixels.status,pixels.stderr).toBe(0);
+    const screenshot = (await page.screenshot({scale: 'css'})).toString('base64');
+    const pixels = await page.evaluate(async ({screenshot, rect}) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${screenshot}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      context.drawImage(image, 0, 0);
+      const {x, y, w, h} = rect;
+      // Match Python's ties-to-even rounding at fractional chip boundaries.
+      const round = value => {
+        const floor = Math.floor(value);
+        return value - floor === 0.5 ? floor + (floor % 2) : Math.round(value);
+      };
+      return [[x,y+h/2],[x+w/2,y],[x+w-1,y+h/2],[x+w/2,y+h-1]].map(([a,b]) => {
+        const [red, green] = context.getImageData(round(a), round(b), 1, 1).data;
+        return red > 200 && green < 60;
+      });
+    }, {screenshot, rect});
     const edges={tl:3,tc:2,tr:6,ml:1,c:0,mr:4,bl:9,bc:8,br:12}[slot];
-    expect(JSON.parse(pixels.stdout),JSON.stringify({scoped,group,slot,rect})).toEqual([1,2,4,8].map(side=>!(edges&side)));
+    expect(pixels,JSON.stringify({scoped,group,slot,rect})).toEqual([1,2,4,8].map(side=>!(edges&side)));
   }
 });
