@@ -135,10 +135,16 @@
             case 'quality': {
                 const cats = internal.tagGroupEditorData?.sortedQualityCats?.() || [];
                 for (const cat of cats) {
-                    const chip = sample.quality[cat.settingKey];
-                    if (!chip || !effectiveBool(cat.settingKey, cat.pluginKey)) continue;
+                    const chip = sample.quality[cat.settingKey] || (cat.fallback === false ? cat.sample : null);
+                    if (!chip || !effectiveBool(cat.settingKey, cat.pluginKey, cat.fallback ?? true)) continue;
                     const [label, key, kind] = chip;
-                    add(`quality-overlay-label ${kind}`, label).dataset.quality = key;
+                    const node = add(`quality-overlay-label ${kind}`, label);
+                    node.dataset.quality = key;
+                    if (cat.fallback === false) {
+                        const category = cat.settingKey.slice(4, -3);
+                        node.dataset.jeQualityCategory = category[0].toLowerCase() + category.slice(1);
+                        node.dataset.jeCompact = label.replace(/(\d+)h (\d+)m/, '$1h$2').replace(/:1$/, '');
+                    }
                 }
                 break;
             }
@@ -194,7 +200,7 @@
                 break;
             case 'status': {
                 // One badge per card, the first whose family is on (as statustags.js picks).
-                const badge = sample.status.find(([key]) => effectiveBool(key, pluginKeyOf(key), key !== 'statusTagsSeriesStatus'));
+                const badge = sample.status.find(([key]) => effectiveBool(key, pluginKeyOf(key), !['statusTagsSeriesStatus', 'statusTagsScenes'].includes(key)));
                 if (!badge) break;
                 const [, kind, labelKey, compactKey, params] = badge;
                 const tag = add(`status-tag status-tag--${kind}`);

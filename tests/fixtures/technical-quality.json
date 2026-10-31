@@ -1,0 +1,12 @@
+[
+  { "name": "cinema", "ticks": 67200000000, "video": { "Type": "Video", "AspectRatio": "2.39:1", "RealFrameRate": 23.976 }, "labels": ["1h 52m", "2.39:1", "24p"], "compact": ["1h52", "2.39", "24p"] },
+  { "name": "dimensions", "ticks": 27000000000, "video": { "Type": "Video", "Width": 1920, "Height": 1080, "AverageFrameRate": 59.94 }, "labels": ["45m", "16:9", "60p"], "compact": ["45m", "16:9", "60p"] },
+  { "name": "pal-interlaced", "video": { "Type": "Video", "AspectRatio": "4:3", "RealFrameRate": 25, "IsInterlaced": true }, "labels": ["4:3", "50i"], "compact": ["4:3", "50i"] },
+  { "name": "imax", "video": { "Type": "Video", "AspectRatio": "1.43", "RealFrameRate": 24 }, "labels": ["IMAX 1.43", "24p"], "compact": ["1.43", "24p"] },
+  { "name": "high-rate", "video": { "Type": "Video", "AspectRatio": "1.90:1", "RealFrameRate": 119.88 }, "labels": ["IMAX 1.90", "120p"], "compact": ["1.90", "120p"] },
+  { "name": "distinct-235", "video": { "Type": "Video", "AspectRatio": "2.35", "RealFrameRate": 29.97 }, "labels": ["2.35:1", "30p"], "compact": ["2.35", "30p"] },
+  { "name": "snap-240", "video": { "Type": "Video", "AspectRatio": "2.40", "RealFrameRate": 30 }, "labels": ["2.39:1", "30p"], "compact": ["2.39", "30p"] },
+  { "name": "unusual", "ticks": 39000000000, "video": { "Type": "Video", "AspectRatio": "2.51", "RealFrameRate": 27.5 }, "labels": ["1h 05m", "2.51:1", "27.5p"], "compact": ["1h05", "2.51", "27.5p"] },
+  { "name": "invalid-fallback", "ticks": -1, "video": { "Type": "Video", "AspectRatio": "broken", "Width": 1440, "Height": 1080, "RealFrameRate": -1, "AverageFrameRate": 25 }, "labels": ["4:3", "25p"], "compact": ["4:3", "25p"] },
+  { "name": "missing", "video": { "Type": "Video" }, "labels": [], "compact": [] }
+]

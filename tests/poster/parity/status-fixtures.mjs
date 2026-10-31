@@ -13,6 +13,11 @@ const schedule = (lastAired = null, nextAired = null, status = 'Returning Series
 const ep = (date, season = 2, episode = 5, type = 'finale') => ({ date, season, episode, type });
 const rows = [];
 const add = (name, entry, key, text, extra = {}) => rows.push({ name, now, entry, expected: key ? { key, text } : null, ...extra });
+add('post-credits-default-off', movie({ Scenes: { PostCredits: true, MidCredits: true } }), null, null);
+add('post-credits', movie({ Scenes: { PostCredits: true, MidCredits: true } }), 'post_credits', 'Post-credits', { settings: { StatusTagsScenes: true } });
+add('mid-credits', movie({ Scenes: { PostCredits: false, MidCredits: true } }), 'mid_credits', 'Mid-credits', { settings: { StatusTagsScenes: true } });
+add('scenes-after-added', movie({ DateCreated: ago(1), Scenes: { PostCredits: true } }), 'just_added', 'Just Added', { settings: { StatusTagsScenes: true } });
+add('scenes-movie-only', show({ Scenes: { PostCredits: true } }), null, null, { settings: { StatusTagsScenes: true } });
 add('added-video', { Type: 'Video', DateCreated: ago(1) }, 'just_added', 'Just Added');
 add('added-collection', { Type: 'BoxSet', DateCreated: ago(1) }, 'just_added', 'Just Added');
 add('new-movie', movie({ PremiereDate: ago(2), DateCreated: ago(1) }), 'new_movie', 'New Movie');

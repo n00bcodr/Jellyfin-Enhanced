@@ -1506,5 +1506,14 @@
     "admin_tags_custom_title": "Custom",
     "admin_tags_custom_desc": "Match existing tags or collections to labels and icons. Up to 20 rules; labels up to 24 characters. Collections require the server cache.",
     "admin_tags_customTagsPosition": "Custom position",
-    "panel_settings_ui_tag_group_awards": "Awards"
+    "panel_settings_ui_tag_group_awards": "Awards",
+    "panel_settings_ui_quality_tags_runtime": "Runtime",
+    "panel_settings_ui_quality_tags_aspect_ratio": "Aspect ratio",
+    "panel_settings_ui_quality_tags_frame_rate": "Frame rate",
+    "language_tags_subtitles_sdh": "Subtitles (SDH)",
+    "panel_media_tags_badge_scenes": "Scenes",
+    "panel_settings_ui_status_tags_scenes": "Post-credits / Mid-credits",
+    "admin_status_tags_scenes_description": "Show a movie’s post-credits or mid-credits marker from TMDB keywords. Requires a TMDB key; refreshed daily.",
+    "status_tag_post_credits": "Post-credits",
+    "status_tag_mid_credits": "Mid-credits"
 }

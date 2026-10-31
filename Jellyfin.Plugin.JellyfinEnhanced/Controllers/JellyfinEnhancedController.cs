@@ -3855,7 +3855,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.ShowSourceTag,
                 // Source and edition defaults.
                 config.ShowEditionTag,
+                config.ShowRuntimeTag,
+                config.ShowAspectRatioTag,
+                config.ShowFrameRateTag,
                 config.EditionTagOrder,
+                config.RuntimeTagOrder,
+                config.AspectRatioTagOrder,
+                config.FrameRateTagOrder,
                 config.ShowLowQualitySourceTag,
                 config.ShowDynamicRangeTag,
                 config.ShowSpecialFormatTag,
@@ -3935,6 +3941,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.StatusTagsSchedule,
                 config.StatusTagsMilestones,
                 config.StatusTagsSeriesStatus,
+                config.StatusTagsScenes,
                 config.StatusTagsJustAddedDays,
                 config.StatusTagsNewReleaseDays,
                 // Poster tag layout starting defaults (normalized; null = built-in)
@@ -5437,7 +5444,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         ShowSourceTag = defaultConfig.ShowSourceTag,
                         // Source and edition defaults.
                         ShowEditionTag = defaultConfig.ShowEditionTag,
+                        ShowRuntimeTag = defaultConfig.ShowRuntimeTag,
+                        ShowAspectRatioTag = defaultConfig.ShowAspectRatioTag,
+                        ShowFrameRateTag = defaultConfig.ShowFrameRateTag,
                         EditionTagOrder = defaultConfig.EditionTagOrder,
+                        RuntimeTagOrder = defaultConfig.RuntimeTagOrder,
+                        AspectRatioTagOrder = defaultConfig.AspectRatioTagOrder,
+                        FrameRateTagOrder = defaultConfig.FrameRateTagOrder,
                         ShowLowQualitySourceTag = defaultConfig.ShowLowQualitySourceTag,
                         ShowDynamicRangeTag = defaultConfig.ShowDynamicRangeTag,
                         ShowSpecialFormatTag = defaultConfig.ShowSpecialFormatTag,
@@ -5490,6 +5503,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
                         StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
                         StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
+                        StatusTagsScenes = defaultConfig.StatusTagsScenes,
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8486,7 +8500,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 ShowSourceTag = defaultConfig.ShowSourceTag,
                 // Source and edition defaults.
                 ShowEditionTag = defaultConfig.ShowEditionTag,
+                ShowRuntimeTag = defaultConfig.ShowRuntimeTag,
+                ShowAspectRatioTag = defaultConfig.ShowAspectRatioTag,
+                ShowFrameRateTag = defaultConfig.ShowFrameRateTag,
                 EditionTagOrder = defaultConfig.EditionTagOrder,
+                RuntimeTagOrder = defaultConfig.RuntimeTagOrder,
+                AspectRatioTagOrder = defaultConfig.AspectRatioTagOrder,
+                FrameRateTagOrder = defaultConfig.FrameRateTagOrder,
                 ShowLowQualitySourceTag = defaultConfig.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = defaultConfig.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = defaultConfig.ShowSpecialFormatTag,
@@ -8539,6 +8559,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
                 StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
                 StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
+                StatusTagsScenes = defaultConfig.StatusTagsScenes,
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -9214,6 +9235,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 .Where(item => item != null).Select(item => item!).ToArray();
             _tagCacheService.WarmSourceRatingsForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
             _tagCacheService.WarmLogosForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
+            _tagCacheService.WarmScenesForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
             var results = new List<object>(accessibleItems.Length);
 
             // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources).
@@ -9262,7 +9284,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache))
                             .Where(resolved =>
                                 resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio)
+                                || resolved.Stream.Type == MediaStreamType.Audio
+                                || resolved.Stream.Type == MediaStreamType.Subtitle)
                             .Select(resolved =>
                             {
                                 var s = resolved.Stream;
@@ -9274,6 +9297,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     CodecTag = s.CodecTag,
                                     Profile = s.Profile,
                                     Height = s.Height,
+                                    Width = s.Width,
+                                    AspectRatio = s.AspectRatio,
+                                    RealFrameRate = s.RealFrameRate,
+                                    AverageFrameRate = s.AverageFrameRate,
+                                    IsInterlaced = s.IsInterlaced,
+                                    IsHearingImpaired = SubtitleAccessibility.IsSdh(s.IsHearingImpaired, s.Title, s.DisplayTitle),
+                                    Title = default(string?),
                                     Channels = s.Channels,
                                     ChannelLayout = s.ChannelLayout,
                                     VideoRangeType = s.VideoRangeType,
@@ -9312,6 +9342,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         SeriesId = spStripRatings ? (Guid?)null : spEp.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
+                        RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,
                         MediaStreams = stubStreams,
                         MediaSources = stubSources,
@@ -9358,6 +9389,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
+                        RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,
                         MediaStreams = (List<object>?)null,
                         MediaSources = (List<object>?)null,
@@ -9397,7 +9429,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache))
                             .Where(resolved =>
                                 resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Stream.Type == MediaStreamType.Audio)
+                                || resolved.Stream.Type == MediaStreamType.Audio
+                                || resolved.Stream.Type == MediaStreamType.Subtitle)
                             .Select(resolved =>
                             {
                                 var s = resolved.Stream;
@@ -9409,6 +9442,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     CodecTag = s.CodecTag,
                                     Profile = s.Profile,
                                     Height = s.Height,
+                                    Width = s.Width,
+                                    AspectRatio = s.AspectRatio,
+                                    RealFrameRate = s.RealFrameRate,
+                                    AverageFrameRate = s.AverageFrameRate,
+                                    IsInterlaced = s.IsInterlaced,
+                                    IsHearingImpaired = SubtitleAccessibility.IsSdh(s.IsHearingImpaired, s.Title, s.DisplayTitle),
+                                    Title = default(string?),
                                     Channels = s.Channels,
                                     ChannelLayout = s.ChannelLayout,
                                     VideoRangeType = s.VideoRangeType,
@@ -9428,12 +9468,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spMovie),
                         Awards = spStripRatings ? null : _tagCacheService.GetAwards(spMovie),
                         Logos = spStripGenres ? null : _tagCacheService.GetLogos(spMovie),
+                        Scenes = spStripGenres ? null : _tagCacheService.GetScenes(spMovie),
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
                         LibraryId = TagDataLibraryId(spMovie),
                         CustomTags = spStripGenres ? null : TagDataCustomTags(spMovie),
                         SeriesId = (Guid?)null,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
+                        RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,
                         MediaStreams = stubStreams,
                         MediaSources = (List<object>?)null,
@@ -9480,6 +9522,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
                         ProviderIds = (IDictionary<string, string>?)null,
                         Name = stubName,
+                        RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,
                         MediaStreams = (List<object>?)null,
                         MediaSources = (List<object>?)null,
@@ -9500,18 +9543,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 List<object>? trimmedSources = null;
                 var namingTags = new Services.MediaNamingTags();
                 string[]? subtitleLanguages = null;
+                string[]? sdhSubtitleLanguages = null;
                 if (!isContainer)
                 {
                     var mediaSources =
                         SelectTagDataMediaSources(item.GetMediaSources(false));
                     namingTags = Services.MediaNamingTags.Detect(item.Path, mediaSources, item.Name);
                     subtitleLanguages = TagDataSubtitleLanguages(mediaSources);
+                    sdhSubtitleLanguages = mediaSources.SelectMany(source => source.MediaStreams ?? new List<MediaStream>())
+                        .Where(stream => stream.Type == MediaStreamType.Subtitle && SubtitleAccessibility.IsSdh(stream.IsHearingImpaired, stream.Title, stream.DisplayTitle))
+                        .Select(stream => Services.TagCacheService.NormalizeStreamLanguage(stream.Language)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
                         .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache))
                         .Where(resolved =>
                             resolved.Stream.Type == MediaStreamType.Video
-                            || resolved.Stream.Type == MediaStreamType.Audio)
+                            || resolved.Stream.Type == MediaStreamType.Audio
+                            || resolved.Stream.Type == MediaStreamType.Subtitle)
                         .Select(resolved =>
                         {
                             var s = resolved.Stream;
@@ -9523,6 +9571,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 CodecTag = s.CodecTag,
                                 Profile = s.Profile,
                                 Height = s.Height,
+                                Width = s.Width,
+                                AspectRatio = s.AspectRatio,
+                                RealFrameRate = s.RealFrameRate,
+                                AverageFrameRate = s.AverageFrameRate,
+                                IsInterlaced = s.IsInterlaced,
+                                IsHearingImpaired = s.IsHearingImpaired,
+                                Title = s.Title,
                                 Channels = s.Channels,
                                 ChannelLayout = s.ChannelLayout,
                                 VideoRangeType = s.VideoRangeType,
@@ -9583,12 +9638,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,
+                    RunTimeTicks = item.RunTimeTicks,
                     Path = Services.MediaNamingTags.FileName(item.Path),
                     Source = namingTags.Source,
                     Edition = namingTags.Edition,
                     MediaStreams = trimmedStreams,
                     MediaSources = trimmedSources,
                     SubtitleLanguages = subtitleLanguages,
+                    SdhSubtitleLanguages = sdhSubtitleLanguages,
+                    Scenes = _tagCacheService.GetScenes(item),
                     FirstEpisode = firstEpisodeData,
                     QualitySummary = isContainer ? _tagCacheService.GetQualitySummaryForUser(item, user) : null,
                     DateCreated = Services.TagCacheService.ToUnixMilliseconds(item.DateCreated),

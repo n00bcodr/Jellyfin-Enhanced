@@ -809,3 +809,7 @@ Open **Docs** to load **Documentation** from the GitHub Pages site, or choose **
 ### Awards poster group
 
 **Media Tags → Groups → Awards** enables chart and winner chips, with the usual position, priority and cap controls (default two). Existing users start off. Administrators first enable Awards under **Display → Media Tags → Awards Tags**, choose ribbons, configure the two MDBList lists and a freshness interval (24 hours), and run **Refresh Awards Tags**. IMDb/Letterboxd charts and Certified Fresh require the server MDBList key; Wikidata Oscar/Emmy wins do not. Native posters follow the same group preference. See [Awards Tags](tags.md#awards-tags).
+
+### Technical poster facts
+
+**Media Tags → Groups → Quality → Include** adds **Runtime**, **Aspect ratio** and **Frame rate**, all off initially, with the usual stacking-order controls. The administrator sets their new-user defaults on the Media Tags admin page, **Groups → Quality**. Full/Compact density changes duration and ratio labels. **Media Tags → Status badges → Scenes** is also off initially and allows Post-credits/Mid-credits movie badges once the administrator enables the family and configures TMDB. Language subtitle chips automatically use **SDH** for hearing-impaired tracks when **Include → Subtitles** is on; no extra language switch is required. See [Tags & badges](tags.md#runtime-aspect-ratio-and-frame-rate).

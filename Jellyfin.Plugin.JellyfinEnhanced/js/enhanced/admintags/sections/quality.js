@@ -13,6 +13,7 @@
         ['ShowResolutionTag', 'ResolutionTagOrder'], ['ShowSourceTag', 'SourceTagOrder'], ['ShowDynamicRangeTag', 'DynamicRangeTagOrder'],
         ['ShowSpecialFormatTag', 'SpecialFormatTagOrder'], ['ShowVideoCodecTag', 'VideoCodecTagOrder'], ['ShowAudioInfoTag', 'AudioInfoTagOrder'],
         ['ShowEditionTag', 'EditionTagOrder'],
+        ['ShowRuntimeTag', 'RuntimeTagOrder'], ['ShowAspectRatioTag', 'AspectRatioTagOrder'], ['ShowFrameRateTag', 'FrameRateTagOrder'],
     ];
 
     A.registerSection({
@@ -41,6 +42,9 @@
             { id: 'showVideoCodecTag', key: 'ShowVideoCodecTag', type: 'ordered', orderKey: 'VideoCodecTagOrder', defaultOrder: 5, label: 'panel_settings_ui_quality_tags_video_codec' },
             { id: 'showAudioInfoTag', key: 'ShowAudioInfoTag', type: 'ordered', orderKey: 'AudioInfoTagOrder', defaultOrder: 6, label: 'panel_settings_ui_quality_tags_audio_info' },
             { id: 'showEditionTag', key: 'ShowEditionTag', type: 'ordered', orderKey: 'EditionTagOrder', defaultOrder: 7, label: 'panel_settings_ui_quality_tags_edition' },
+            { id: 'showRuntimeTag', key: 'ShowRuntimeTag', type: 'ordered', orderKey: 'RuntimeTagOrder', defaultOrder: 8, label: 'panel_settings_ui_quality_tags_runtime' },
+            { id: 'showAspectRatioTag', key: 'ShowAspectRatioTag', type: 'ordered', orderKey: 'AspectRatioTagOrder', defaultOrder: 9, label: 'panel_settings_ui_quality_tags_aspect_ratio' },
+            { id: 'showFrameRateTag', key: 'ShowFrameRateTag', type: 'ordered', orderKey: 'FrameRateTagOrder', defaultOrder: 10, label: 'panel_settings_ui_quality_tags_frame_rate' },
             { id: 'showLowQualitySourceTag', key: 'ShowLowQualitySourceTag', type: 'switch', label: 'panel_settings_ui_quality_tags_low_source', desc: 'admin_tags_quality_low_source_desc' },
             { id: 'seriesQualityAggregation', key: 'SeriesQualityAggregation', type: 'select', label: 'admin_tags_quality_aggregation', desc: 'admin_tags_quality_aggregation_desc', fallback: 'representative', options: [['representative', 'series_quality_aggregation_representative'], ['latest', 'series_quality_aggregation_latest'], ['best', 'series_quality_aggregation_best'], ['shared', 'series_quality_aggregation_shared'], ['mixed', 'series_quality_aggregation_mixed']] },
             { id: 'qualityTagsPreferredAudioLanguage', key: 'QualityTagsPreferredAudioLanguage', type: 'select', label: 'admin_tags_quality_audio_language', desc: 'admin_tags_quality_audio_language_desc', fallback: '', options: [['', 'panel_settings_ui_quality_tags_audio_language_none']] },

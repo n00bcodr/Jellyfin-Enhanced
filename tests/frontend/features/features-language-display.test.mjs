@@ -295,3 +295,28 @@ test('language editor searches equivalent names and keeps full ISO names on brow
     assert.ok(norwegian.aliases.some(name => name.includes('Nynorsk')));
   } finally { h.window.Intl.DisplayNames = original; }
 });
+
+for (const style of ['flags', 'codes']) test(`SDH subtitle flag/title and grouped aliases survive cache and Summary: ${style}`, async t => {
+  const h = setup(t, { languageTagsShowAudio: false, languageTagsShowSubtitles: true, languageTagsStyle: style, tagLayoutSettingsVersion: 1, tagLayout: 'summary', tagGroupOrder: ['language'], tagLayouts: { summary: { groups: [{ group: 'language', slot: 'pill' }] } } });
+  h.renderer.render(h.target, { Id: 'a', Type: 'Movie', MediaStreams: [
+    { Type: 'Subtitle', Language: 'en', Title: 'English' },
+    { Type: 'Subtitle', Language: 'eng', IsHearingImpaired: true },
+    { Type: 'Subtitle', Language: 'fr', Title: 'French SDH' },
+    { Type: 'Subtitle', Language: 'ja', DisplayTitle: 'Japanese CC' },
+  ] }, {});
+  const chips = [...h.target.querySelectorAll('[data-je-sdh]')];
+  assert.ok(chips.length >= 3);
+  assert.equal(chips[0].querySelector('.language-cc').textContent, 'SDH');
+  assert.match(chips[0].title, /Subtitles \(SDH\): English/);
+  assert.match(h.target.querySelector('.je-tag-pill')?.textContent || h.target.textContent, /SDH/);
+  h.JE.reinitializeLanguageTags();
+  h.renderer.renderFromCache(h.target, 'a');
+  assert.ok(h.target.querySelector('[data-je-sdh]'));
+});
+
+test('bulk SDH facts are subtitle-only and malformed title substrings do not qualify', t => {
+  const h = setup(t, { languageTagsShowSubtitles: true });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['en'], SubtitleLanguages: ['eng'], SdhSubtitleLanguages: ['en'] });
+  assert.equal(h.chips()[0].dataset.jeSdh, undefined);
+  assert.equal(h.chips()[1].dataset.jeSdh, 'true');
+});

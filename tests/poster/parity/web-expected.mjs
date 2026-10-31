@@ -262,7 +262,7 @@ function readTags(group, container) {
     for (const child of container.children) {
         switch (group) {
             case 'Quality':
-                tags.push(`${child.textContent}|${child.dataset.jeEdition ? 'edition' : qualityCategory(child.dataset.quality, child.textContent)}`);
+                tags.push(`${child.textContent}|${child.dataset.jeQualityCategory || (child.dataset.jeEdition ? 'edition' : qualityCategory(child.dataset.quality, child.textContent))}`);
                 break;
             case 'Genre': {
                 const icon = child.querySelector('.je-msym-outlined');
@@ -296,8 +296,8 @@ function readTags(group, container) {
             case 'Language': {
                 const flag = child.dataset.lang === 'zxx' ? 'no-dialogue' : child.dataset.lang;
                 if (child.classList.contains('language-count-badge')) tags.push(`badge|${child.textContent}`);
-                else if (child.classList.contains('language-code')) tags.push(`code|${child.dataset.lang.toUpperCase()}|${child.dataset.langName}|${child.dataset.partial === 'true'}|${child.dataset.jeLanguage === 'subtitles'}`);
-                else tags.push(`${flag}|${child.dataset.langName}|${child.dataset.partial === 'true'}${child.dataset.jeLanguage === 'subtitles' ? '|true' : ''}`);
+                else if (child.classList.contains('language-code')) tags.push(`code|${child.dataset.lang.toUpperCase()}|${child.dataset.langName}|${child.dataset.partial === 'true'}|${child.dataset.jeLanguage === 'subtitles'}${child.dataset.jeSdh ? '|sdh' : ''}`);
+                else tags.push(`${flag}|${child.dataset.langName}|${child.dataset.partial === 'true'}${child.dataset.jeLanguage === 'subtitles' ? '|true' : ''}${child.dataset.jeSdh ? '|sdh' : ''}`);
                 break;
             }
         }
@@ -431,6 +431,12 @@ async function runProfile(profile) {
         showEditionTag: typeof s.showEditionTag === 'boolean' ? s.showEditionTag : (pluginConfig.ShowEditionTag ?? true),
         showLowQualitySourceTag: typeof s.showLowQualitySourceTag === 'boolean' ? s.showLowQualitySourceTag : (pluginConfig.ShowLowQualitySourceTag ?? false),
         editionTagOrder: readInt('editionTagOrder', pluginConfig.EditionTagOrder ?? 7),
+        showFrameRateTag: typeof s.showFrameRateTag === 'boolean' ? s.showFrameRateTag : (pluginConfig.ShowFrameRateTag ?? false),
+        frameRateTagOrder: readInt('frameRateTagOrder', pluginConfig.FrameRateTagOrder ?? 10),
+        showAspectRatioTag: typeof s.showAspectRatioTag === 'boolean' ? s.showAspectRatioTag : (pluginConfig.ShowAspectRatioTag ?? false),
+        aspectRatioTagOrder: readInt('aspectRatioTagOrder', pluginConfig.AspectRatioTagOrder ?? 9),
+        showRuntimeTag: typeof s.showRuntimeTag === 'boolean' ? s.showRuntimeTag : (pluginConfig.ShowRuntimeTag ?? false),
+        runtimeTagOrder: readInt('runtimeTagOrder', pluginConfig.RuntimeTagOrder ?? 8),
         showDynamicRangeTag: typeof s.showDynamicRangeTag === 'boolean' ? s.showDynamicRangeTag : true,
         showSpecialFormatTag: typeof s.showSpecialFormatTag === 'boolean' ? s.showSpecialFormatTag : true,
         showVideoCodecTag: typeof s.showVideoCodecTag === 'boolean' ? s.showVideoCodecTag : true,

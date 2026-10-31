@@ -88,8 +88,9 @@ public class TagCacheSubtitleLanguagesTests
         Assert.True(cache.TryGetEntry(episodes[0].Id, out var first));
         Assert.Equal(new[] { "eng" }, first.SubtitleLanguages);
         Assert.Equal(new[] { "jpn" }, first.AudioLanguages);
-        // Subtitle streams never enter the stream data the quality tags read.
-        Assert.DoesNotContain(first.StreamData!.Streams!, s => s.Type == "Subtitle");
+        // Accessibility metadata is retained without duplicating language chips.
+        Assert.Contains(first.StreamData!.Streams!, s => s.Type == "Subtitle" && s.IsHearingImpaired == true);
+        Assert.Equal(new[] { "eng" }, first.SdhSubtitleLanguages);
         Assert.True(cache.TryGetEntry(episodes[1].Id, out var second));
         Assert.Equal(new[] { "fre", "eng" }, second.SubtitleLanguages);
 
@@ -99,6 +100,8 @@ public class TagCacheSubtitleLanguagesTests
             Assert.Equal(new[] { "eng", "fre" }, built.SubtitleLanguages);
             // The full build's memo and an on-demand build (which reads every episode itself) agree.
             Assert.Equal(built.SubtitleLanguages, cache.BuildEntryOnDemand(container)!.SubtitleLanguages);
+            Assert.Equal(new[] { "eng" }, built.SdhSubtitleLanguages);
+            Assert.Equal(built.SdhSubtitleLanguages, cache.BuildEntryOnDemand(container)!.SdhSubtitleLanguages);
         }
     }
 

@@ -199,6 +199,10 @@ synthetic.custom1 = movie({ CustomTags: [customId('tag', '4K Remaster')] });
 synthetic.custom2 = movie({ CustomTags: [customId('collection', 'Criterion')] });
 synthetic.custom3 = movie({ CustomTags: [customId('tag', 'Signed'), customId('collection', 'Criterion'), 'tag:0000000000000000', customId('tag', '4K Remaster')] });
 synthetic.custom4 = { ...movie({ CustomTags: [customId('collection', 'Criterion'), customId('tag', 'Signed')] }), Type: 'Series' };
+// Shared technical formatting cases also run through the real web/native resolver harness.
+for (const row of JSON.parse(readFileSync(new URL('../../fixtures/technical-quality.json', import.meta.url), 'utf8'))) {
+    synthetic['technical-' + row.name] = movie({ SubtitleLanguages: ['eng'], SdhSubtitleLanguages: ['en'], StreamData: { Streams: [row.video], RunTimeTicks: row.ticks } });
+}
 const syntheticEntries = {};
 const syntheticUserData = {};
 const syntheticReviews = {};
@@ -486,6 +490,14 @@ for (const TagEdgeSpacing of ['tight', 'flush']) {
         TagScale, TagGap, TagLayout, TagEdgeSpacing, TagGroupOrder: ['logos', 'custom'],
     }, customRules);
 }
+
+for (const density of ['full', 'compact']) for (const LanguageTagsStyle of ['flags', 'codes']) {
+    synth(`technical-${density}-${LanguageTagsStyle}`, { QualityTagsEnabled: true, LanguageTagsEnabled: true,
+        LanguageTagsShowSubtitles: true, LanguageTagsStyle, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
+        TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: density, TagGroupCaps: { Quality: 0 } });
+}
+synth('technical-reordered', { QualityTagsEnabled: true, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
+    RuntimeTagOrder: 1, FrameRateTagOrder: 2, AspectRatioTagOrder: 3, TagLayoutSettingsVersion: 1, TagGroupCaps: { Quality: 0 } });
 
 writeFileSync(join(dataDir, 'profiles.json'), JSON.stringify(profiles, null, 1));
 console.log(`${profiles.length} profiles (${users.length} real users), ${Object.keys(syntheticEntries).length} synthetic entries, ${Object.keys(syntheticReviews).length} synthetic review keys`);

@@ -906,7 +906,7 @@ test('Groups › Quality: reordering writes every order key, and the saved audio
   assert.equal(h.server.AudioInfoTagOrder, 5);
   assert.equal(h.server.VideoCodecTagOrder, 6);
   assert.equal(h.server.ResolutionTagOrder, 1);
-  assert.match(h.$('.je-ta-grow[data-group="quality"] .je-ta-grow-sum').textContent, /admin_tags_quality_summary:6\|7/);
+  assert.match(h.$('.je-ta-grow[data-group="quality"] .je-ta-grow-sum').textContent, /admin_tags_quality_summary:6\|10/);
   h.change(h.$('#qualityTagsEnabled'), false);
   await h.save();
   assert.equal(h.server.QualityTagsEnabled, false);

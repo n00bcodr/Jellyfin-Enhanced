@@ -176,7 +176,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 case "VideoCodecTagOrder":
                 case "AudioInfoTagOrder":
                 case "EditionTagOrder":
+                case "RuntimeTagOrder":
+                case "AspectRatioTagOrder":
+                case "FrameRateTagOrder":
+
                     return InRange((int)value!, 1, MaxTagOrder, out error);
+                case "ShowRuntimeTag":
+                case "ShowAspectRatioTag":
+                case "ShowFrameRateTag":
+                case "StatusTagsScenes":
+                    if (value is bool) return true;
+                    error = "must be a boolean";
+                    return false;
                 case "ClearLocalStorageTimestamp":
                     if ((long)value! >= 0) return true;
                     error = "must not be negative";

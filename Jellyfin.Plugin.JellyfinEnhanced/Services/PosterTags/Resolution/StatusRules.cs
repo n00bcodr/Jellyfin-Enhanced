@@ -129,6 +129,11 @@ public static class StatusRules
                 return null;
         }
         if (showAdded && addedRecently) return Badge("just_added");
+        if (data.Type == "Movie" && settings.StatusScenes)
+        {
+            if (data.Scenes?.PostCredits == true) return Badge("post_credits");
+            if (data.Scenes?.MidCredits == true) return Badge("mid_credits");
+        }
         if (data.Type != "Series" || !settings.StatusSeriesStatus) return null;
         if (data.Status == "Continuing") return Badge("returning");
         if (data.Status == "Ended") return Badge(facts?.Status == "Canceled" ? "cancelled" : "ended");

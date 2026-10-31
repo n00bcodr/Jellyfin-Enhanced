@@ -90,14 +90,14 @@
      * the ApplyDefaults helpers it calls), PascalCase on the server.
      */
     const SEEDED_KEYS = [
-        'QualityTagsEnabled', 'ShowResolutionTag', 'ShowSourceTag', 'ShowEditionTag', 'EditionTagOrder', 'ShowLowQualitySourceTag',
+        'QualityTagsEnabled', 'ShowResolutionTag', 'ShowSourceTag', 'ShowEditionTag', 'EditionTagOrder', 'ShowRuntimeTag', 'RuntimeTagOrder', 'ShowAspectRatioTag', 'AspectRatioTagOrder', 'ShowFrameRateTag', 'FrameRateTagOrder', 'ShowLowQualitySourceTag',
         'ShowDynamicRangeTag', 'ShowSpecialFormatTag', 'ShowVideoCodecTag', 'ShowAudioInfoTag', 'ResolutionTagOrder', 'SourceTagOrder',
         'DynamicRangeTagOrder', 'SpecialFormatTagOrder', 'VideoCodecTagOrder', 'AudioInfoTagOrder', 'GenreTagsEnabled', 'LanguageTagsEnabled',
         'RatingTagsEnabled', 'AgeRatingTagsEnabled', 'StatusTagsEnabled', 'PeopleTagsEnabled', 'TagsHideOnHover', 'QualityTagsPosition',
         'SeriesQualityAggregation', 'GenreTagsPosition', 'LanguageTagsPosition', 'RatingTagsPosition', 'RatingTagsOnMovies', 'RatingTagsOnSeries',
         'RatingTagsOnSeasons', 'RatingTagsOnEpisodes', 'RatingTagsOnContinueWatching', 'RatingTagsOnNextUp', 'RatingTagsShowCommunity',
         'RatingTagsShowCritic', 'RatingTagsSources', 'RatingTagsMinScore', 'RatingTagsColorByScore', 'AgeRatingTagsPosition', 'StatusTagsPosition',
-        'StatusTagsJustAdded', 'StatusTagsNewRelease', 'StatusTagsTrending', 'StatusTagsSchedule', 'StatusTagsMilestones', 'StatusTagsSeriesStatus',
+        'StatusTagsJustAdded', 'StatusTagsNewRelease', 'StatusTagsTrending', 'StatusTagsSchedule', 'StatusTagsMilestones', 'StatusTagsSeriesStatus', 'StatusTagsScenes',
         'AwardsTagsEnabled', 'AwardsTagsPosition', 'LogoTagsEnabled', 'LogoTagsPosition', 'CustomTagsEnabled', 'CustomTagsPosition',
         'ShowRatingInPlayer', 'TagLayout', 'TagLabelDensity', 'TagScale', 'TagGap', 'TagEdgeSpacing', 'TagLayouts', 'TagGroupOrder', 'TagGroupCaps',
         'LanguageTagsShowAudio', 'LanguageTagsShowSubtitles', 'LanguageTagsStyle', 'LanguageTagsCountBadge',

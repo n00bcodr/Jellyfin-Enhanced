@@ -353,6 +353,24 @@ Administrators configure the same defaults on the Media Tags settings page under
 
     ![Edition category in the Quality group's Include controls](../images/tags/source-edition-settings.webp)
 
+### Runtime, aspect ratio and frame rate
+
+![Runtime, aspect ratio and frame rate chips on the movie grid](../images/tags/technical-chips-desktop.webp)
+
+![Technical quality, SDH subtitle and Post-credits chips on a 420px movie grid](../images/tags/technical-chips-mobile.webp)
+
+Under **Media Tags → Groups → Quality → Include**, enable **Runtime**, **Aspect ratio** or **Frame rate**. All three start off. Administrators choose defaults and stacking order on the Media Tags admin page’s **Groups → Quality** section; existing personal choices remain in effect.
+
+| Category | Full / Compact example | Source |
+|---|---|---|
+| Runtime | `1h 52m` / `1h52` | Jellyfin RunTimeTicks, truncated to whole minutes; unknown/zero values are omitted |
+| Aspect ratio | `2.39:1` / `2.39`; `16:9`, `4:3`, `IMAX 1.43` | Video display aspect, falling back to width/height |
+| Frame rate | `24p`, `25p`, `30p`, `50i`, `60p`, `120p` | Real frame rate, otherwise average; interlaced rates display fields per second |
+
+Aspect ratios snap to the nearest supported ratio within an absolute tolerance: 4:3 and 16:9 ±0.025; IMAX 1.43 ±0.015; 1.66 and IMAX 1.90 ±0.02; 1.85, 2.00, 2.20, 2.39 and 2.76 ±0.025; 2.35 ±0.019. Other usable ratios show two decimal places. This is a format hint derived from metadata, not a certification that a title was filmed in IMAX. Fractional rates such as 23.976, 29.97 and 59.94 snap to their familiar integer labels within 0.15; other rates retain up to two decimal places.
+
+Series and seasons use the representative episode for these three facts under Representative, Best, Shared and Mixed policies. Latest uses the latest episode’s facts, just like Source and Edition. They follow the quality group’s order, cap, density and Tag Styles, including Native Poster Tags. Missing data leaves the chip out.
+
 ### Detection limits
 
 Series and seasons share the **Series and seasons show:** setting in **Media Tags** → **Groups** → **Quality**. The administrator sets its starting default on the Media Tags settings page under **Groups** → **Quality** → **Series and season quality**. Each user can choose:
@@ -428,7 +446,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
 ## Language Tags
 
-Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a small **CC** prefix. Hover a chip for Audio or Subtitles and the full language name; partial dubs identify missing episode coverage. Dual/Multi tooltips include the distinct count and represented audio languages in priority order. A language fact assigned to the Summary pill keeps the CC prefix and full-name tooltip. Language chips follow the poster link, including Ctrl/Command-click and middle-click to open a new tab. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
+Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a small **CC** prefix, or **SDH** when a hearing-impaired subtitle flag or a whole-word SDH/CC title marker is present. Hover a chip for Audio or Subtitles and the full language name; partial dubs identify missing episode coverage. Dual/Multi tooltips include the distinct count and represented audio languages in priority order. A language fact assigned to the Summary pill keeps the CC prefix and full-name tooltip. Language chips follow the poster link, including Ctrl/Command-click and middle-click to open a new tab. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
 
 ![Subtitle language chips with CC markers on library posters](../images/tags/language-subtitles.webp)
 
@@ -487,7 +505,7 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 
     Server-list matching uses the flag's language code, its base code, or its displayed language names; personal ISO priorities match every represented language canonically. The legacy server matcher does not equate two- and three-letter codes: `ja` does not match `jpn`, but `Japanese` matches the displayed name.
 
-    Cached audio and subtitle languages use the union across episodes. Subtitle tracks use the same access and Spoiler Guard stripping paths as audio. With the server cache off, container cards use their representative episode instead of the full union. Forced and SDH subtitle variants share one language chip.
+    Cached audio and subtitle languages use the union across episodes. Subtitle tracks use the same access and Spoiler Guard stripping paths as audio. With the server cache off, container cards use their representative episode instead of the full union. Forced and SDH subtitle variants share one language chip; a grouped subtitle chip carries SDH if any represented track is SDH. The tooltip reads, for example, **Subtitles (SDH): English**. Flags, Codes, the Summary pill and native posters preserve the marker. It appears only while Subtitles is enabled.
 
     The cached audio flags use the union of audio languages across episodes. Full-coverage flags normally come first, but administrator priorities can put a partial flag ahead of them. A grouped flag is partial only when all its represented languages are partial.
 
@@ -677,7 +695,7 @@ First match wins, with one badge per card:
 
 | Card | Badge order |
 |---|---|
-| Movie | Trending → Coming Soon → New Movie → Just Added |
+| Movie | Trending → Coming Soon → New Movie → Just Added → Post-credits / Mid-credits |
 | Series | Trending → Airing Today → Series Finale → New Season → Airs {date} → Returns {date} → New Episode → Coming Soon → New Series → Just Added → Returning / Ended / Cancelled |
 | Season | Complete Season → Season Premiere → Season Finale → New Episode → Just Added |
 | Episode | Season Premiere → Series Finale / Season Finale → New Episode → Just Added |
@@ -703,6 +721,15 @@ First match wins, with one badge per card:
 Dates read **Tomorrow**, then a localized weekday for two to five days ahead, then a localized short date such as **Nov 6**. The user's Jellyfin display language is preferred, followed by the JE language and browser locale.
 
 With **Compact** density, Season Premiere becomes **Premiere**; Season Finale and Series Finale become **Finale**; Complete Season becomes **Complete**; Airing Today becomes **Today**; Coming Soon becomes **Soon**; Just Added becomes **Added**; New Episode becomes **New Ep**. Other labels retain their full text.
+
+### Scenes
+
+![Native poster with runtime, aspect ratio, frame rate, SDH subtitles and a Post-credits badge](../images/tags/technical-chips-native.webp)
+*Administrator native-poster preview using cached Jellyfin streams and TMDB keywords; not a physical-client capture.*
+
+On **Media Tags → Status badges**, **Scenes** enables **Post-credits** and **Mid-credits** for movies. It starts off for both administrators and users. An administrator must enable the family on the Media Tags admin page’s **Status badges** tab and configure the existing TMDB key. Then users can enable Scenes for their account.
+
+TMDB’s exact `aftercreditsstinger` and `duringcreditsstinger` keywords supply the facts. The server resolves them daily through its shared response cache and keeps the result in the tag cache; no browser or native poster request contacts TMDB per card. A failed lookup omits an unknown marker and keeps previously confirmed facts for later retry. No keyword is not a guarantee that a movie has no extra scene. Scenes follows the usual one-badge priority, after Just Added; Post-credits wins when both keywords exist. Native posters and the batch fallback use the same facts and switches.
 
 ### TMDB and trending
 

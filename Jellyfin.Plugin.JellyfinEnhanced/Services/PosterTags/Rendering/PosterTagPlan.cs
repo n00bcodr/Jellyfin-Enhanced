@@ -554,7 +554,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             var layout = _text.Layout(label, css.QualityFontSize, smallCaps: true, letterSpacing: 0f);
             float width = PosterTagCss.LuCeil(layout.Width) + (2 * PosterTagCss.Lu(css.QualityPaddingH)) + 2f;
             float height = PosterTagCss.Lu(1.2f * css.QualityFontSize) + (2 * PosterTagCss.Lu(css.QualityPaddingV)) + 2f;
-            return new PlannedItem(PosterTagTileKind.Quality, tag, label, StyleKey(styles.ResolveQuality(tag.Label)), width, height) { TextLayout = layout };
+            return new PlannedItem(PosterTagTileKind.Quality, tag, label, StyleKey(styles.ResolveQuality(tag.Category is "runtime" or "aspectRatio" or "frameRate" ? tag.Category : tag.Label)), width, height) { TextLayout = layout };
         }
 
         private PlannedItem MeasureGenre(GenreTag tag, PosterTagCss css, TagStyleSet styles)
@@ -683,7 +683,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         {
             if (tag.Code is not null || tag.CountBadge is not null || tag.Subtitle)
             {
-                var text = tag.CountBadge ?? (tag.Subtitle ? "CC " : string.Empty) + (tag.Code ?? string.Empty);
+                var text = tag.CountBadge ?? (tag.Subtitle ? tag.Sdh ? "SDH " : "CC " : string.Empty) + (tag.Code ?? string.Empty);
                 var layout = _text.Layout(text, css.ChipFontSize, smallCaps: false, letterSpacing: 0f);
                 float flagWidth = tag.Code is null && tag.CountBadge is null ? PosterTagCss.Lu(css.FlagWidth) : 0;
                 var flagCode = PosterTagRenderer.FlagAssetCode(tag.FlagCode);

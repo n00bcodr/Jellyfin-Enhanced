@@ -319,7 +319,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v15 combines naming labels, source ratings and series quality summaries.
         // v16 adds subtitle languages to the deployed combined v15 shape.
         // Current schema includes Awards, Logos and Custom rule matches.
-        internal const int CurrentCacheSchemaVersion = 18;
+        internal const int CurrentCacheSchemaVersion = 19;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -490,7 +490,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private static bool IsContainerKind(BaseItemKind kind) => kind == BaseItemKind.Series || kind == BaseItemKind.Season;
 
-        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null, TagLogoService? logoService = null)
+        public TagCacheService(ILibraryManager libraryManager, IApplicationPaths applicationPaths, ILocalizationManager localizationManager, Logger logger, MatroskaLanguageCache languageCache, MdblistService? mdblistService = null, AwardTagsService? awardTagsService = null, TagLogoService? logoService = null, StatusTagsScenesService? scenesService = null)
         {
             _libraryManager = libraryManager;
             _applicationPaths = applicationPaths;
@@ -500,6 +500,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _mdblistService = mdblistService;
             _awardTagsService = awardTagsService;
             _logoService = logoService;
+            _scenesService = scenesService;
 
             // The service is a DI singleton; expose it so the plugin's
             // UpdateConfiguration override can reach the running instance when the
@@ -651,6 +652,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             WarmSourceRatings(cancellationToken);
             NoteLogoBaseline();
             WarmLogos(cancellationToken);
+            WarmScenes(cancellationToken);
             var customTagsFingerprint = PrepareCustomTagsForBuild();
             _logger.Info("[TagCache] Starting full cache build...");
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -887,7 +889,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             WarmSourceRatings(cancellationToken);
             RefreshSourceRatings();
             WarmLogos(cancellationToken);
+            WarmScenes(cancellationToken);
             RefreshLogos();
+            RefreshScenes();
             var changedSinceUtc = new DateTime(previousTicks, DateTimeKind.Utc).Subtract(TimeSpan.FromMinutes(2));
             _logger.Info($"[TagCache] Reconciling changes since {changedSinceUtc:O}");
             var languageCacheAtStart = LanguageCacheCounters();
@@ -1402,6 +1406,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 && RefreshStatusSiblings(season.Id, episodeScans);
             WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
             WarmLogosForItems(new[] { item }, CancellationToken.None);
+            WarmScenesForItems(new[] { item }, CancellationToken.None);
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return siblingsChanged;
 
@@ -1731,6 +1736,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var scan = ScanContainerEpisodes(container, null, user);
                 filtered.QualitySummary = scan.QualitySummary;
+                filtered.SdhSubtitleLanguages = scan.SdhSubtitles;
                 filtered.StreamData = scan.FirstEpisode?.StreamData;
                 filtered.Source = scan.FirstEpisode?.NamingTags?.Source;
                 filtered.Edition = scan.FirstEpisode?.NamingTags?.Edition;
@@ -1741,6 +1747,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var representative = visible.FirstOrDefault(episode => episode.StreamData?.Streams?.Count > 0 && (entry.Type == "Season" || episode.SeasonNumber != 0))
                     ?? visible.FirstOrDefault(episode => episode.StreamData?.Streams?.Count > 0);
                 filtered.StreamData = representative?.StreamData;
+                filtered.SdhSubtitleLanguages = visible.SelectMany(e => e.SdhSubtitleLanguages ?? Array.Empty<string>()).Distinct(StringComparer.Ordinal).ToArray();
                 filtered.Source = representative?.Source;
                 filtered.Edition = representative?.Edition;
             }
@@ -2663,13 +2670,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var series = kind == BaseItemKind.Season || kind == BaseItemKind.Episode ? GetParentSeries(item) : null;
                 entry.Ratings = GetSourceRatings(series ?? item);
                 entry.Awards = GetAwards(item);
+                entry.Scenes = GetScenes(item);
                 entry.Logos = GetLogos(item, series);
                 entry.LibraryId = ItemLibraryResolver.Resolve(_libraryManager, item, series, episodeScans?.LibraryBySeries);
                 entry.CustomTags = CustomTagsFor(item, series);
 
                 if (isContainer)
                 {
-                    var (firstEp, languages, partialLanguages, latestEpisodeAdded, latestEpisodeId, statusFacts, qualitySummary, qualityIds, subtitleLanguages) = ScanContainerEpisodes(item, episodeScans);
+                    var (firstEp, languages, partialLanguages, latestEpisodeAdded, latestEpisodeId, statusFacts, qualitySummary, qualityIds, subtitleLanguages, sdhLanguages) = ScanContainerEpisodes(item, episodeScans);
                     entry.QualitySummary = qualitySummary;
                     entry.QualityEpisodeIds = qualityIds;
                     entry.LatestEpisodeAdded = latestEpisodeAdded;
@@ -2704,6 +2712,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         entry.AudioLanguages = languages;
                         entry.PartialAudioLanguages = partialLanguages;
                         entry.SubtitleLanguages = subtitleLanguages;
+                        entry.SdhSubtitleLanguages = sdhLanguages;
                     }
 
                     if (kind == BaseItemKind.Season && entry.CommunityRating == null)
@@ -2737,7 +2746,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     // A BoxSet has no media streams of its own; derive its language
                     // tags from the union of its manually-linked movie members instead.
-                    (entry.AudioLanguages, entry.SubtitleLanguages) = GetCollectionLanguages(item);
+                    (entry.AudioLanguages, entry.SubtitleLanguages, entry.SdhSubtitleLanguages) = GetCollectionLanguages(item);
                 }
                 else
                 {
@@ -2753,12 +2762,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     entry.StreamData = BuildStreamData(item, streams, sources);
                     entry.AudioLanguages = languages;
                     entry.SubtitleLanguages = subtitles;
+                    entry.SdhSubtitleLanguages = SubtitleAccessibility.Languages(streams);
 
                     if (kind == BaseItemKind.Episode && episodeScans != null && item is MediaBrowser.Controller.Entities.TV.Episode scanned)
                     {
                         // Same "has streams" rule as ExtractEpisodeLanguages: the
                         // stream list only ever holds audio/video streams.
-                        episodeScans[item.Id] = new EpisodeScan(streams.Count > 0 ? languages : null, entry.StreamData, EpisodePlacement.Of(scanned), namingTags, subtitles);
+                        episodeScans[item.Id] = new EpisodeScan(streams.Any(s => s.Type is "Video" or "Audio") ? languages : null, entry.StreamData, EpisodePlacement.Of(scanned), namingTags, subtitles);
                     }
 
                     if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
@@ -2917,6 +2927,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 Streams = streams,
                 Sources = sources,
                 ItemName = item.Name,
+                RunTimeTicks = item.RunTimeTicks,
                 ItemPath = itemPath
             };
         }
@@ -2963,10 +2974,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (s.Type == MediaStreamType.Subtitle)
                         {
                             if (NormalizeAudioLanguage(effectiveLanguage) is { } subtitle) subtitles.Add(subtitle);
-                            continue;
                         }
 
-                        if (s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
+                        if (s.Type != MediaStreamType.Subtitle && s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
                             continue;
 
                         // Only a video stream's range is read (for the HDR /
@@ -2986,6 +2996,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             CodecTag = s.CodecTag,
                             Profile = s.Profile,
                             Height = s.Height,
+                            Width = s.Width,
+                            AspectRatio = s.AspectRatio,
+                            RealFrameRate = s.RealFrameRate,
+                            AverageFrameRate = s.AverageFrameRate,
+                            IsInterlaced = s.IsInterlaced,
+                            IsHearingImpaired = s.IsHearingImpaired,
+                            Title = s.Title,
                             Channels = s.Channels,
                             ChannelLayout = s.ChannelLayout,
                             VideoRangeType = videoRangeType,
@@ -3090,7 +3107,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// containers); both walks feed the same per-episode step in the same
         /// order, so they produce the same entry.
         /// </summary>
-        private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial, long? LatestAdded, string? LatestEpisodeId, StatusTagsEpisodeFacts? StatusFacts, TagQualitySummary? QualitySummary, string[]? QualityIds, string[] Subtitles) ScanContainerEpisodes(
+        private (RepresentativeEpisode? FirstEpisode, string[] Languages, string[]? Partial, long? LatestAdded, string? LatestEpisodeId, StatusTagsEpisodeFacts? StatusFacts, TagQualitySummary? QualitySummary, string[]? QualityIds, string[] Subtitles, string[] SdhSubtitles) ScanContainerEpisodes(
             BaseItem container,
             EpisodeScanMemo? episodeScans, JUser? user = null)
         {
@@ -3191,7 +3208,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             // Same "has streams" rule as the episode's own build: its
                             // stream list only ever holds audio/video streams.
-                            languages = cached.StreamData?.Streams?.Count > 0 ? cached.AudioLanguages ?? Array.Empty<string>() : null;
+                            languages = cached.StreamData?.Streams?.Any(s => s.Type is "Video" or "Audio") == true ? cached.AudioLanguages ?? Array.Empty<string>() : null;
                             subtitles = cached.SubtitleLanguages;
                             qualityStreams = cached.StreamData;
                             qualityNaming = new(cached.Source, cached.Edition);
@@ -3200,7 +3217,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         else
                         {
                             var (streams, sources, audioLanguages, namingTags, extractedSubtitles) = ExtractMediaData(episode);
-                            languages = streams.Count > 0 ? audioLanguages : null;
+                            languages = streams.Any(s => s.Type is "Video" or "Audio") ? audioLanguages : null;
                             subtitles = extractedSubtitles;
                             qualityStreams = BuildStreamData(episode, streams, sources);
                             qualityNaming = namingTags;
@@ -3246,12 +3263,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     })
                     .ToArray();
                 return (firstEp, union.ToArray(), partial.Length > 0 ? partial : null, ToUnixMilliseconds(latestAdded), latestAdded == null ? null : latestId.ToString("N"), statusFacts,
-                    SeriesQualityAggregation.Build(qualityEpisodes), qualityEpisodes.Select(episode => episode.Id).ToArray(), subtitleUnion.ToArray());
+                    SeriesQualityAggregation.Build(qualityEpisodes), qualityEpisodes.Select(episode => episode.Id).ToArray(), subtitleUnion.ToArray(),
+                    qualityEpisodes.SelectMany(episode => SubtitleAccessibility.Languages(episode.Streams?.Streams)).Distinct(StringComparer.Ordinal).ToArray());
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[TagCache] Failed to scan episodes for {container.Id}: {ex.Message}");
-                return (null, Array.Empty<string>(), null, null, null, null, null, null, Array.Empty<string>());
+                return (null, Array.Empty<string>(), null, null, null, null, null, null, Array.Empty<string>(), Array.Empty<string>());
             }
         }
 
@@ -3281,7 +3299,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // The index only lists episodes that have a placement or a Late item.
             var episode = late ?? throw new InvalidOperationException($"Episode {id} is missing from the container index");
             var (streams, sources, audioLanguages, namingTags, subtitles) = ExtractMediaData(episode);
-            var languages = streams.Count > 0 ? audioLanguages : null;
+            var languages = streams.Any(s => s.Type is "Video" or "Audio") ? audioLanguages : null;
             var streamData = BuildStreamData(episode, streams, sources);
             episodeScans[id] = new EpisodeScan(languages, streamData, EpisodePlacement.Of(episode), namingTags, subtitles);
             return new IndexedEpisode(id, episode.ParentIndexNumber, languages, episode.Genres, streamData, episode, episode.DateCreated, episode.PremiereDate, episode.IndexNumber, namingTags, subtitles);
@@ -3616,22 +3634,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// edits already re-enqueue the BoxSet itself (see TagCacheMonitor), and a
         /// member's own file changes are picked up by the next reconciliation.
         /// </summary>
-        private (string[] Audio, string[] Subtitles) GetCollectionLanguages(BaseItem collection)
+        private (string[] Audio, string[] Subtitles, string[] SdhSubtitles) GetCollectionLanguages(BaseItem collection)
         {
             try
             {
-                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>());
+                if (collection is not Folder folder) return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
 
                 var languages = new HashSet<string>();
                 var subtitles = new HashSet<string>();
+                var sdh = new HashSet<string>();
                 foreach (var member in folder.GetLinkedChildren())
                 {
                     var memberKind = member.GetBaseItemKind();
                     if (memberKind == BaseItemKind.Movie)
                     {
-                        var (_, _, memberLanguages, _, memberSubtitles) = ExtractMediaData(member);
+                        var (memberStreams, _, memberLanguages, _, memberSubtitles) = ExtractMediaData(member);
                         foreach (var lang in memberLanguages) languages.Add(lang);
                         foreach (var lang in memberSubtitles) subtitles.Add(lang);
+                        foreach (var lang in SubtitleAccessibility.Languages(memberStreams)) sdh.Add(lang);
                     }
                     else if (memberKind == BaseItemKind.Series)
                     {
@@ -3642,6 +3662,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             foreach (var lang in seriesEntry.AudioLanguages) languages.Add(lang);
                             foreach (var lang in seriesEntry.SubtitleLanguages ?? Array.Empty<string>()) subtitles.Add(lang);
+                            foreach (var lang in seriesEntry.SdhSubtitleLanguages ?? Array.Empty<string>()) sdh.Add(lang);
                             continue;
                         }
 
@@ -3654,19 +3675,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         });
                         foreach (var episode in episodes)
                         {
-                            var (episodeLanguages, episodeSubtitles) = ExtractEpisodeLanguages(episode);
+                            var (episodeStreams, _, episodeLanguages, _, episodeSubtitles) = ExtractMediaData(episode);
+                            foreach (var lang in SubtitleAccessibility.Languages(episodeStreams)) sdh.Add(lang);
                             foreach (var lang in episodeLanguages ?? Array.Empty<string>()) languages.Add(lang);
                             foreach (var lang in episodeSubtitles) subtitles.Add(lang);
                         }
                     }
                 }
 
-                return (languages.ToArray(), subtitles.ToArray());
+                return (languages.ToArray(), subtitles.ToArray(), sdh.ToArray());
             }
             catch (Exception ex)
             {
                 _logger.Warning($"[TagCache] Failed to get collection languages for {collection.Id}: {ex.Message}");
-                return (Array.Empty<string>(), Array.Empty<string>());
+                return (Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
             }
         }
 

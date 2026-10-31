@@ -68,6 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     {
         /// <summary>A subtitle chip, with a CC prefix.</summary>
         public bool Subtitle { get; init; }
+        public bool Sdh { get; init; }
         /// <summary>Uppercase ISO code for Codes style; null for a flag.</summary>
         public string? Code { get; init; }
         /// <summary>Dual/Multi audio count label, or null for a language chip.</summary>

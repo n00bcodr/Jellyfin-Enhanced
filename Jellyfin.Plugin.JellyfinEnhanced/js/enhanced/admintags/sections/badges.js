@@ -18,6 +18,7 @@
         statusTagsSchedule: ['schedule', 'airing_today', 'status_tag_airing_today'],
         statusTagsMilestones: ['milestone', 'season_finale', 'status_tag_season_finale'],
         statusTagsSeriesStatus: ['status', 'returning', 'status_tag_returning'],
+        statusTagsScenes: ['scenes', 'post_credits', 'status_tag_post_credits'],
     };
 
     /**
@@ -39,6 +40,7 @@
         { id: 'statusTagsSchedule', key: 'StatusTagsSchedule', type: 'switch', place: 'section', label: 'panel_media_tags_badge_schedule', desc: 'admin_status_tags_schedule_description' },
         { id: 'statusTagsMilestones', key: 'StatusTagsMilestones', type: 'switch', place: 'section', label: 'panel_media_tags_badge_milestones', desc: 'admin_status_tags_milestones_description' },
         { id: 'statusTagsSeriesStatus', key: 'StatusTagsSeriesStatus', type: 'switch', place: 'section', label: 'panel_media_tags_badge_series_status', desc: 'admin_status_tags_series_status_description' },
+        { id: 'statusTagsScenes', key: 'StatusTagsScenes', type: 'switch', place: 'section', label: 'panel_media_tags_badge_scenes', desc: 'admin_status_tags_scenes_description' },
     ];
 
     A.registerSection({

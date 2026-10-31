@@ -82,7 +82,11 @@
     "customTagRules": "CustomTagRules",
     "awardsTagsPosition": "AwardsTagsPosition",
     "logoTagsPosition": "LogoTagsPosition",
-    "customTagsPosition": "CustomTagsPosition"
+    "customTagsPosition": "CustomTagsPosition",
+    "showRuntimeTag": "ShowRuntimeTag",
+    "showAspectRatioTag": "ShowAspectRatioTag",
+    "showFrameRateTag": "ShowFrameRateTag",
+    "statusTagsScenes": "StatusTagsScenes"
   },
   "unmapped": [
     "ratingTagsSources",

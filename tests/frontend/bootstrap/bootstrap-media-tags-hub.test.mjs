@@ -224,7 +224,7 @@ test('every hub control keeps writing the setting it always did', async t => {
     assert.equal(h.saved()[key], box.checked, key);
   }
   assert.ok(reinit);
-  assert.equal(h.document.querySelectorAll('.je-mth-badge-sample .status-tag').length, 6, 'the badge samples survive it');
+  assert.equal(h.document.querySelectorAll('.je-mth-badge-sample .status-tag').length, 7, 'the badge samples survive it');
   assert.equal(h.$('.je-mtp-sample[data-sample="series"] .status-tag')?.textContent, 'status_tag_returning', 'and the preview redraws its badge (Series status is on now)');
   assert.equal(h.$('.je-mtp-sample[data-sample="movie"] .status-tag'), null, 'the movie\'s three families are all off');
   // The Status master switch is the Status row's box on Groups: the badges tab says when it is off.

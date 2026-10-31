@@ -54,6 +54,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// tag strip drops it together with <see cref="AudioLanguages"/>.
         /// </summary>
         public string[]? SubtitleLanguages { get; set; }
+        /// <summary>Languages with an SDH/hearing-impaired subtitle track; same union and filtering as subtitles.</summary>
+        public string[]? SdhSubtitleLanguages { get; set; }
+        /// <summary>Daily TMDB movie keyword facts; null means unresolved.</summary>
+        public TagScenes? Scenes { get; set; }
 
         public TagStreamData? StreamData { get; set; }
 
@@ -202,6 +206,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
                 && SequencesEqual(a.AudioLanguages, b.AudioLanguages)
                 && SequencesEqual(a.PartialAudioLanguages, b.PartialAudioLanguages)
                 && SequencesEqual(a.SubtitleLanguages, b.SubtitleLanguages)
+                && SequencesEqual(a.SdhSubtitleLanguages, b.SdhSubtitleLanguages)
+                && a.Scenes == b.Scenes
                 && TagStreamData.ContentEquals(a.StreamData, b.StreamData)
                 && a.Source == b.Source
                 && a.Edition == b.Edition
@@ -278,6 +284,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             AudioLanguages = AudioLanguages,
             PartialAudioLanguages = PartialAudioLanguages,
             SubtitleLanguages = SubtitleLanguages,
+            SdhSubtitleLanguages = SdhSubtitleLanguages,
+            Scenes = Scenes,
             StreamData = StreamData,
             Source = Source,
             Edition = Edition,
@@ -339,6 +347,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public List<TagMediaSource>? Sources { get; set; }
         public string? ItemName { get; set; }
         public string? ItemPath { get; set; }
+        public long? RunTimeTicks { get; set; }
 
         /// <summary>
         /// Value-compare for the no-op-rebuild check (see TagCacheEntry.ContentEquals).
@@ -351,6 +360,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
 
             return a.ItemName == b.ItemName
                 && a.ItemPath == b.ItemPath
+                && a.RunTimeTicks == b.RunTimeTicks
                 && ListsEqual(a.Streams, b.Streams, TagMediaStream.ContentEquals)
                 && ListsEqual(a.Sources, b.Sources, TagMediaSource.ContentEquals);
         }
@@ -389,6 +399,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string? CodecTag { get; set; }
         public string? Profile { get; set; }
         public int? Height { get; set; }
+        public int? Width { get; set; }
+        public string? AspectRatio { get; set; }
+        public float? RealFrameRate { get; set; }
+        public float? AverageFrameRate { get; set; }
+        public bool? IsInterlaced { get; set; }
+        public bool? IsHearingImpaired { get; set; }
+        public string? Title { get; set; }
         public int? Channels { get; set; }
         public string? ChannelLayout { get; set; }
         public string? VideoRangeType { get; set; }
@@ -405,11 +422,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             && a.CodecTag == b.CodecTag
             && a.Profile == b.Profile
             && a.Height == b.Height
+            && a.Width == b.Width
+            && a.AspectRatio == b.AspectRatio
+            && a.RealFrameRate == b.RealFrameRate
+            && a.AverageFrameRate == b.AverageFrameRate
+            && a.IsInterlaced == b.IsInterlaced
+            && a.IsHearingImpaired == b.IsHearingImpaired
+            && a.Title == b.Title
             && a.Channels == b.Channels
             && a.ChannelLayout == b.ChannelLayout
             && a.VideoRangeType == b.VideoRangeType
             && a.DisplayTitle == b.DisplayTitle;
     }
+
+    /// <summary>Immutable public movie keyword facts, refreshed daily.</summary>
+    public sealed record TagScenes(bool PostCredits, bool MidCredits);
 
     public class TagMediaSource
     {

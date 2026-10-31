@@ -147,12 +147,13 @@
             qualityTagsEnabled: false, genreTagsEnabled: false, languageTagsEnabled: false, ratingTagsEnabled: false, ageRatingTagsEnabled: false, statusTagsEnabled: false, logoTagsEnabled: false, awardsTagsEnabled: false, awardsTagsPosition: 'top-left', peopleTagsEnabled: false, tagsHideOnHover: false,
             showResolutionTag: true, showSourceTag: true, showDynamicRangeTag: true, showSpecialFormatTag: true, showVideoCodecTag: true, showAudioInfoTag: true,
             // Source and edition preferences.
-            showEditionTag: true, editionTagOrder: 7, showLowQualitySourceTag: false,
+            showEditionTag: true, editionTagOrder: 7,
+            showRuntimeTag: false, runtimeTagOrder: 8, showAspectRatioTag: false, aspectRatioTagOrder: 9, showFrameRateTag: false, frameRateTagOrder: 10, showLowQualitySourceTag: false,
             resolutionTagOrder: 1, sourceTagOrder: 2, dynamicRangeTagOrder: 3, specialFormatTagOrder: 4, videoCodecTagOrder: 5, audioInfoTagOrder: 6,
             qualityTagsPosition: 'top-left', genreTagsPosition: 'top-right', languageTagsPosition: 'bottom-left', ratingTagsPosition: 'bottom-right', ageRatingTagsPosition: 'bottom-right', logoTagsPosition: 'bottom-left', statusTagsPosition: 'top-right',
             ratingTagsOnMovies: true, ratingTagsOnSeries: true, ratingTagsOnSeasons: true, ratingTagsOnEpisodes: true, ratingTagsOnContinueWatching: true, ratingTagsOnNextUp: true, ratingTagsShowCommunity: true, ratingTagsShowCritic: true,
             statusTagsJustAdded: true, statusTagsNewRelease: true, statusTagsTrending: true,
-            statusTagsSchedule: true, statusTagsMilestones: true, statusTagsSeriesStatus: false,
+            statusTagsSchedule: true, statusTagsMilestones: true, statusTagsSeriesStatus: false, statusTagsScenes: false,
             // Custom tag group (the administrator's tag/collection rules, tags/customtags.js).
             customTagsEnabled: false, customTagsPosition: 'top-left',
             // Language Tags display (normalized in tags/languagetags.js).

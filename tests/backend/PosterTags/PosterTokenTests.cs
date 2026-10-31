@@ -25,7 +25,7 @@ public class PosterTokenTests : IDisposable
     public void TierTwoPixelsRejectTierOneAndRoundOneTokens(string historicalVersion)
     {
         var service = Tokens();
-        Assert.Equal("6.1", PosterTagComposer.PixelVersion);
+        Assert.Equal("7.1", PosterTagComposer.PixelVersion);
         var old = service.Mint(user, item, "settings", historicalVersion, PosterTagVariantFlags.None, "abcdef");
         Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
     }

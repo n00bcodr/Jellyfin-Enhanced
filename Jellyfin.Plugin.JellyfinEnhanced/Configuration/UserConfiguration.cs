@@ -44,8 +44,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Source and edition preferences.
         /// <summary>Show the edition quality category; absent values inherit the admin default.</summary>
         public bool? ShowEditionTag { get; set; }
+        public bool? ShowRuntimeTag { get; set; }
+        public bool? ShowAspectRatioTag { get; set; }
+        public bool? ShowFrameRateTag { get; set; }
         /// <summary>Edition stack position after the six existing quality categories.</summary>
         public int? EditionTagOrder { get; set; }
+        public int? RuntimeTagOrder { get; set; }
+        public int? AspectRatioTagOrder { get; set; }
+        public int? FrameRateTagOrder { get; set; }
         /// <summary>Allow CAM, TS, TC and SCR source tags; absent values inherit the admin default.</summary>
         public bool? ShowLowQualitySourceTag { get; set; }
 
@@ -122,6 +128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool StatusTagsSchedule { get; set; } = true;
         public bool StatusTagsMilestones { get; set; } = true;
         public bool StatusTagsSeriesStatus { get; set; } = false;
+        public bool StatusTagsScenes { get; set; } = false;
         // Poster tag layout (see TagLayoutRules). Version 0 marks a document
         // written before layouts existed: it keeps the corners layout, its
         // position settings above, arrival ordering and the original limits
