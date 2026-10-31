@@ -1175,12 +1175,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 catch (ObjectDisposedException) { }
             }
 
-            var timer = new Timer(_ => FlushPending(), null, due, Timeout.InfiniteTimeSpan);
-            var old = Interlocked.Exchange(ref _flushTimer, timer);
-            if (old != null && !ReferenceEquals(old, timer))
-            {
-                old.Dispose();
-            }
+            var old = Interlocked.Exchange(ref _flushTimer, new Timer(_ => FlushPending(), null, due, Timeout.InfiniteTimeSpan));
+            old?.Dispose();
 
             // Close the check-then-create race with Dispose: if Dispose set _disposed after we
             // passed the guard above but our timer was already published, reclaim and dispose it
@@ -2532,12 +2528,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
                 catch (ObjectDisposedException) { }
             }
-            var timer = new Timer(_ => OnSaveTimer(), null, due, Timeout.InfiniteTimeSpan);
-            var old = Interlocked.Exchange(ref _debounceSaveTimer, timer);
-            if (old != null && !ReferenceEquals(old, timer))
-            {
-                old.Dispose();
-            }
+            var old = Interlocked.Exchange(ref _debounceSaveTimer, new Timer(_ => OnSaveTimer(), null, due, Timeout.InfiniteTimeSpan));
+            old?.Dispose();
 
             // Same check-then-create/Dispose race guard as ArmFlushTimer: reclaim a timer
             // published concurrently with Dispose so none is left live after teardown, and
