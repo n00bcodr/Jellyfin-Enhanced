@@ -408,7 +408,7 @@ test('editLocks moves a season\'s own look to its series in one save', async t =
   assert.equal(h.writes.length, 1);
 });
 
-test('saveItemOverride writes the whole list with the value it read, retries once on a conflict and re-presents', async t => {
+test('saveItemOverride sends only affected entries, retries once on a conflict and re-presents', async t => {
   const h = setup(t, { plugin: { TagLookItemOverrides: null } });
   h.render();
   const stored = [{ ItemId: OTHER, Layout: 'caption', Density: 'full', LockedAt: 5 }];
@@ -419,20 +419,21 @@ test('saveItemOverride writes the whole list with the value it read, retries onc
     patch: async (changes, expected) => {
       patches.push(plain({ changes, expected }));
       if (conflicts-- > 0) throw Object.assign(new Error('conflict'), { status: 409 });
-      return { values: { TagLookItemOverrides: changes.TagLookItemOverrides } };
+      return { values: { TagLookItemOverrides: [...changes.TagLookItemOverrides.Set, ...stored] } };
     },
   };
   assert.equal(await h.look.saveItemOverride(MOVIE, { layout: 'bands', density: 'compact', caps: { quality: 2 } }, { api }), true);
   assert.equal(patches.length, 2, 'once more after the conflict');
-  const list = patches[1].changes.TagLookItemOverrides;
-  assert.deepEqual(patches[1].expected.TagLookItemOverrides, stored);
-  assert.deepEqual(list.map((o) => o.ItemId), [MOVIE, OTHER], 'newest first, the other item kept');
+  const mutation = patches[1].changes.TagLookItemOverrides;
+  const list = mutation.Set;
+  assert.deepEqual(mutation.Expected, { [MOVIE]: null });
+  assert.deepEqual(list.map((o) => o.ItemId), [MOVIE], 'unrelated entries never sent');
   assert.deepEqual(list[0].Caps, { Quality: 2 }, 'the configuration\'s casing');
   assert.ok(list[0].LockedAt > 5);
   await h.settle();
   assert.equal(h.layoutOf(MOVIE), 'bands', 'the stored list is in the plugin configuration now');
 
-  assert.equal(await h.look.saveItemOverride(MOVIE, null, { api: { get: async () => ({ TagLookItemOverrides: h.JE.pluginConfig.TagLookItemOverrides }), patch: async (c) => ({ values: c }) } }), true);
+  assert.equal(await h.look.saveItemOverride(MOVIE, null, { api: { get: async () => ({ TagLookItemOverrides: h.JE.pluginConfig.TagLookItemOverrides }), patch: async () => ({ values: { TagLookItemOverrides: stored } }) } }), true);
   await h.settle();
   assert.equal(h.layoutOf(MOVIE), 'corners');
   assert.equal(await h.look.saveItemOverride(MOVIE, { layout: 'bands' }, { api: { get: async () => ({}), patch: async () => { throw Object.assign(new Error('forbidden'), { status: 403 }); } } }), false);

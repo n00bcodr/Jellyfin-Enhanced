@@ -357,6 +357,7 @@ async function runProfile(profile) {
     const legacyOffsetSlots = new Set([...layoutCss.matchAll(/:has\(\.countIndicator, \.playedIndicator\) > \.je-tag-host\[data-je-legacy\] > \.je-tag-slot\[data-je-slot="([a-z]+)"\] > \[data-je-indicator-gap\](?=\s*[,{])/g)].map((m) => m[1]));
 
     const hosts = [];
+    const nativeItemConfs = new Map();
     for (const [id, entry] of Object.entries(entries)) {
         const host = new Element('div');
         host.className = 'je-tag-host';
@@ -369,7 +370,9 @@ async function runProfile(profile) {
                 // The native fallback policy: the real resolved item's caps/size/
                 // spacing and explicit off-groups over the user's Corners profile.
                 const off = Object.fromEntries(Object.entries(conf.slots).filter(([, slot]) => slot === 'off'));
-                L.setPreviewLook(host, { ...conf, layout: 'corners', density: 'full', slots: { ...L.normalizeSettings().profiles.corners, ...off } });
+                const fallback = { ...conf, layout: 'corners', density: 'full', slots: { ...L.normalizeSettings().profiles.corners, ...off } };
+                nativeItemConfs.set(id, fallback);
+                L.setPreviewLook(host, fallback);
             }
         }
         for (const [, renderer] of order) {
@@ -390,7 +393,7 @@ async function runProfile(profile) {
     for (const [id, host] of hosts) {
         const indicator = showsIndicator(userData[id]);
         // An item with a look of its own is laid out (and compared) with that look.
-        const conf = profile.itemLooks ? JE.core.tagLayout.resolveLayout(host) : layoutConf;
+        const conf = nativeItemConfs.get(id) || (profile.itemLooks ? JE.core.tagLayout.resolveLayout({ ...entries[id], Id: id, itemId: id, cardType: entries[id].Type }) : layoutConf);
         const itemBands = profile.itemLooks ? conf.layout === 'bands' : nativeBands;
         const itemRank = (d) => (conf.order ? conf.order.indexOf(d.group) : 0);
         items[id] = JE.core.tagLayout.describe(host)

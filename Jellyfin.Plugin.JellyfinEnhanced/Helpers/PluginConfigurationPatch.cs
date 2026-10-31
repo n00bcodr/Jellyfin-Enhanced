@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Jellyfin.Extensions.Json;
@@ -23,7 +24,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         /// imported settings document (<see cref="MediaTagsPortable"/>) sends every field it changes in one patch,
         /// with the values read before, so the import is written or refused as a whole.
         /// </summary>
-        public const int MaxRequestBytes = 256 * 1024;
+        public const int MaxRequestBytes = 8 * 1024 * 1024;
 
         private static readonly MethodInfo MemberwiseCloneMethod = typeof(object).GetMethod("MemberwiseClone", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
@@ -71,9 +72,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             }
 
             // The values do not depend on the stored configuration: read them before taking the write lock.
+            ItemOverrideMutation? itemMutation = null;
             var values = new Dictionary<string, object?>(StringComparer.Ordinal);
             foreach (var (key, property) in properties)
             {
+                if (key == nameof(PluginConfiguration.TagLookItemOverrides) && changes[key].ValueKind == JsonValueKind.Object)
+                {
+                    if (!TryReadItemMutation(changes[key], property, out itemMutation))
+                        return new Result { Error = "Invalid per-item mutation for 'TagLookItemOverrides'." };
+                    continue;
+                }
+
                 if (!TryRead(property, changes[key], out var normalized, out var problem))
                 {
                     return new Result { Error = problem == null ? $"Invalid value for '{key}'." : $"Invalid value for '{key}': {problem}." };
@@ -87,11 +96,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             // the configuration as it is at that moment, never from one another save has replaced since.
             var conflicts = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
             var stored = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+            string? mutationError = null;
             plugin.UpdateConfiguration(
                 current =>
                 {
                     foreach (var (key, property) in properties)
                     {
+                        if (key == nameof(PluginConfiguration.TagLookItemOverrides) && itemMutation != null) continue;
                         if (MediaTagsPortable.IsSecret(key) || expected == null || !expected.TryGetValue(key, out var before)) continue;
                         var now = ToNode(property.GetValue(current), property.PropertyType, options);
                         if (!JsonNode.DeepEquals(now, JsonNode.Parse(before.GetRawText()))
@@ -99,6 +110,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                         {
                             conflicts[key] = now;
                         }
+                    }
+
+                    if (itemMutation != null)
+                    {
+                        var now = TagLookValidation.NormalizeItemOverrides(current.TagLookItemOverrides) ?? new List<TagLookItemOverride>();
+                        var targets = itemMutation.Set!.Select(e => e.ItemId).Concat(itemMutation.Remove!).ToHashSet(StringComparer.Ordinal);
+                        foreach (var id in targets)
+                        {
+                            var entry = now.Find(e => e.ItemId == id);
+                            var desired = itemMutation.Set!.Find(e => e.ItemId == id);
+                            var node = ToNode(entry, typeof(TagLookItemOverride), options);
+                            if (!JsonNode.DeepEquals(node, JsonNode.Parse(itemMutation.Expected![id].GetRawText()))
+                                && !JsonNode.DeepEquals(node, ToNode(desired, typeof(TagLookItemOverride), options)))
+                            {
+                                conflicts[nameof(PluginConfiguration.TagLookItemOverrides)] = ToNode(current.TagLookItemOverrides, typeof(List<TagLookItemOverride>), options);
+                            }
+                        }
+
+                        var merged = now.Where(e => !targets.Contains(e.ItemId)).Concat(itemMutation.Set!).ToList();
+                        if (merged.Count > TagLookValidation.MaxItemOverrides)
+                        {
+                            mutationError = "The item look list is full (500 entries). Remove an entry before adding one.";
+                            return null;
+                        }
+
+                        values[nameof(PluginConfiguration.TagLookItemOverrides)] = TagLookValidation.NormalizeItemOverrides(merged);
                     }
 
                     if (conflicts.Count > 0) return null;
@@ -114,9 +151,40 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 {
                     foreach (var (key, property) in properties) stored[key] = MediaTagsPortable.IsSecret(key) ? JsonValue.Create(string.Empty) : ToNode(property.GetValue(saved), property.PropertyType, options);
                 });
+            if (mutationError != null) return new Result { Error = mutationError };
             if (conflicts.Count > 0) return new Result { Conflicts = conflicts };
 
             return new Result { Values = stored };
+        }
+
+        /// <summary>Atomic per-entry updates; Expected names every affected id (null means absent).</summary>
+        public sealed class ItemOverrideMutation
+        {
+            public List<TagLookItemOverride>? Set { get; set; }
+            public List<string>? Remove { get; set; }
+            public Dictionary<string, JsonElement>? Expected { get; set; }
+        }
+
+        /// <summary>Validate a bounded item mutation before entering the configuration write lock.</summary>
+        private static bool TryReadItemMutation(JsonElement raw, PropertyInfo property, out ItemOverrideMutation? mutation)
+        {
+            mutation = null;
+            try
+            {
+                var read = raw.Deserialize<ItemOverrideMutation>(new JsonSerializerOptions(JsonDefaults.Options) { PropertyNameCaseInsensitive = true });
+                if (read?.Set == null || read.Remove == null || read.Expected == null || read.Set.Count + read.Remove.Count is < 1 or > TagLookValidation.MaxItemOverrides) return false;
+                var ids = read.Set.Select(e => e?.ItemId).Concat(read.Remove).ToList();
+                if (ids.Any(id => id == null || TagLookValidation.NormalizeItemId(id) != id) || ids.Distinct(StringComparer.Ordinal).Count() != ids.Count) return false;
+                if (read.Expected.Count != ids.Count || ids.Any(id => !read.Expected.ContainsKey(id!))) return false;
+                if (!TryRead(property, JsonSerializer.SerializeToElement(read.Set, JsonDefaults.Options), out var normalized, out _)) return false;
+                read.Set = (List<TagLookItemOverride>?)normalized ?? new();
+                mutation = read;
+                return true;
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException or ArgumentException or InvalidOperationException)
+            {
+                return false;
+            }
         }
 
         /// <summary>

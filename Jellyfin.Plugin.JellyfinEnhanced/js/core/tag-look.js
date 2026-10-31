@@ -542,7 +542,7 @@
         represent();
         if (!isCurrent()) return Promise.resolve(false);
         if (typeof JE.saveUserSettings !== 'function') return Promise.resolve(true);
-        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', settings, { throwOnError: true })))
+        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent })))
             .then(() => isCurrent(), (err) => {
                 if (!isCurrent()) return false;
                 console.warn('🪼 Jellyfin Enhanced [TagLook]: saving the tag looks failed:', err);
@@ -757,9 +757,31 @@
     }
 
     /**
+     * A per-entry mutation with expectations only for the ids that changed.
+     * Full-list replacement remains available for portable imports.
+     * @param {*} before - The configuration list read before editing.
+     * @param {*} after - The edited list.
+     * @returns {{Set: Array<Object>, Remove: string[], Expected: Object}}
+     */
+    function itemOverrideMutation(before, after) {
+        const previous = normalizeItemOverrides(before);
+        const next = normalizeItemOverrides(after);
+        const sets = new Map();
+        const remove = [];
+        const expected = {};
+        for (const id of new Set([...previous.keys(), ...next.keys()])) {
+            if (JSON.stringify(previous.get(id)) === JSON.stringify(next.get(id))) continue;
+            if (next.has(id)) sets.set(id, next.get(id));
+            else remove.push(id);
+            expected[id] = (Array.isArray(before) ? before.find((e) => normalizeId(pick(e, 'itemId')) === id) : null) || null;
+        }
+        return { Set: itemOverridesToWire(sets) || [], Remove: remove, Expected: expected };
+    }
+
+    /**
      * Change one server-wide item look (administrators only): set it to a
      * look, or remove it (look null). Reads the stored list fresh, writes it
-     * through the Media Tags field patch with that list as the expected value
+     * through an atomic per-entry patch with the affected entries as Expected
      * (including removal of a child when its look moves to its series)
      * (once more on a conflict), then puts the stored list into
      * JE.pluginConfig and re-presents the cards.
@@ -795,7 +817,7 @@
                 next = itemOverridesWith(next, id, look);
                 if (next === undefined) return false;
                 if (!isCurrent()) return false;
-                const result = await api.patch({ TagLookItemOverrides: next }, { TagLookItemOverrides: before });
+                const result = await api.patch({ TagLookItemOverrides: itemOverrideMutation(before, next) }, {});
                 if (!isCurrent()) return false;
                 const stored = result?.values?.TagLookItemOverrides ?? result?.Values?.TagLookItemOverrides ?? next;
                 if (JE.pluginConfig) JE.pluginConfig.TagLookItemOverrides = stored;
@@ -839,6 +861,7 @@
         editLocks,
         restoreLocks,
         saveItemOverride,
+        itemOverrideMutation,
         restoreItemOverrides,
         itemOverridesWith,
         itemOverridesToWire,

@@ -57,9 +57,17 @@ function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagDat
           patches.push(body);
           if (io.patch) return io.patch(body);
           if (io.conflict-- > 0) throw Object.assign(new Error('Conflict'), { status: 409 });
-          io.config = { ...io.config, ...body.Changes };
-          return { values: body.Changes };
+          const values = { ...body.Changes };
+          const mutation = values.TagLookItemOverrides;
+          if (mutation && !Array.isArray(mutation)) {
+            const ids = new Set([...mutation.Remove, ...mutation.Set.map(e => e.ItemId)]);
+            values.TagLookItemOverrides = [...(io.config.TagLookItemOverrides || []).filter(e => !ids.has(e.ItemId)), ...mutation.Set].sort((a,b) => b.LockedAt - a.LockedAt);
+            if (!values.TagLookItemOverrides.length) values.TagLookItemOverrides = null;
+          }
+          io.config = { ...io.config, ...values };
+          return { values };
         }
+        if (u.pathname.includes('/user-settings/')) { writes.push(JSON.parse(data)); return io.userSave?.() || {}; }
         throw new Error(`unexpected ${target}`);
       },
     },
@@ -289,8 +297,8 @@ test('administrators also keep the look for everyone, through the field patch wi
   assert.equal(h.patches.length, 2, 'a conflict is read again and written once more');
   const last = h.patches.at(-1);
   assert.deepEqual(Object.keys(last.Changes), ['TagLookItemOverrides']);
-  assert.deepEqual(last.Expected.TagLookItemOverrides.map((o) => o.ItemId), [SERIES]);
-  assert.deepEqual(last.Changes.TagLookItemOverrides.map((o) => [o.ItemId, o.Layout]), [[MOVIE, 'summary'], [SERIES, 'caption']]);
+  assert.deepEqual(last.Changes.TagLookItemOverrides.Expected, { [MOVIE]: null });
+  assert.deepEqual(last.Changes.TagLookItemOverrides.Set.map((o) => [o.ItemId, o.Layout]), [[MOVIE, 'summary']]);
   assert.deepEqual(plain(h.JE.pluginConfig.TagLookItemOverrides.map((o) => o.ItemId)), [MOVIE, SERIES], 'the page uses it at once');
   assert.deepEqual(h.toasts, ['tag_item_editor_everyone_saved:Movie &lt;b&gt;One&lt;/b&gt;']);
 
@@ -301,10 +309,10 @@ test('administrators also keep the look for everyone, through the field patch wi
   h.change(h.$('[data-tie-everyone]'), false);
   h.click(h.$('[data-tie-save]'));
   await h.settle(6);
-  assert.deepEqual(h.patches.at(-1).Changes.TagLookItemOverrides.map((o) => o.ItemId), [SERIES]);
+  assert.deepEqual(h.patches.at(-1).Changes.TagLookItemOverrides.Remove, [MOVIE]);
   h.click(h.$('.je-tie-toast button'));
   await h.settle(6);
-  assert.deepEqual(h.patches.at(-1).Changes.TagLookItemOverrides.map((o) => [o.ItemId, o.Layout]), [[MOVIE, 'summary'], [SERIES, 'caption']]);
+  assert.deepEqual(h.patches.at(-1).Changes.TagLookItemOverrides.Set.map((o) => [o.ItemId, o.Layout]), [[MOVIE, 'summary']]);
 });
 
 test('a failed save keeps the dialog open and says so; nothing changed', async t => {
@@ -563,4 +571,45 @@ for (const source of ['shape', 'rule', 'lock', 'override']) test(`opening and lo
   await h.settle();
   L.invalidateSettings();
   assert.deepEqual(appearance(L.resolveLayout(context)), before, 'the saved lock has the same effective appearance');
+});
+
+for (const phase of ['queued', 'post']) test(`real settings transport abandons stale lock work during ${phase}`, async t => {
+  const h = setup(t);
+  h.load('enhanced/config.js');
+  const answer = deferred();
+  h.io.userSave = () => answer.promise;
+  let earlier;
+  if (phase === 'queued') {
+    earlier = h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+    await h.settle();
+  }
+  const saving = h.JE.core.tagLook.lockItem(MOVIE, { layout: 'bands' });
+  await h.settle();
+  h.io.epoch++;
+  h.io.server = 'incoming';
+  answer.resolve({});
+  await earlier; await saving;
+  assert.equal(h.writes.length, 1, 'no stale queued POST');
+  h.io.server = 'server-a'; h.io.epoch++;
+  h.io.userSave = null;
+  // A stale successful POST must not populate the shared deduplication cache.
+  await h.JE.core.tagLook.restoreLocks({});
+  assert.equal(h.writes.length, 2, 'the incoming session does not inherit a stale successful-save cache');
+});
+
+test('500-entry editor operations send only the affected entries', async t => {
+  const h = setup(t, { admin: true });
+  const entries = Array.from({ length: 499 }, (_, i) => ({ ItemId: (i + 1).toString(16).padStart(32, '0'), Layout: 'bands', LockedAt: i + 1 }));
+  h.io.config.TagLookItemOverrides = [...entries, { ItemId: MOVIE, Layout: 'caption', LockedAt: 900 }];
+  const look = h.JE.core.tagLook;
+  for (const next of [{ layout: 'summary' }, null, { layout: 'caption' }]) {
+    assert.equal(await look.saveItemOverride(MOVIE, next), true);
+    const patch = h.patches.at(-1);
+    const mutation = patch.Changes.TagLookItemOverrides;
+    assert.deepEqual(Object.keys(mutation.Expected), [MOVIE]);
+    assert.equal(mutation.Set.length + mutation.Remove.length, 1);
+    assert.ok(Buffer.byteLength(JSON.stringify(patch)) < 4096);
+    assert.equal(h.io.config.TagLookItemOverrides.length, next ? 500 : 499);
+    assert.equal(h.io.config.TagLookItemOverrides.find(e => e.ItemId === entries[0].ItemId).Layout, 'bands');
+  }
 });

@@ -50,6 +50,12 @@ const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
  * @param {{Changes: object, Expected?: object}} body
  */
 function serverPatch(server, body) {
+  const mutation = body.Changes.TagLookItemOverrides;
+  if (mutation && !Array.isArray(mutation)) {
+    const ids = new Set([...mutation.Remove, ...mutation.Set.map(e => e.ItemId)]);
+    body = { Changes: { ...body.Changes, TagLookItemOverrides: [...(server.TagLookItemOverrides || []).filter(e => !ids.has(e.ItemId)), ...mutation.Set].sort((a,b) => b.LockedAt - a.LockedAt) }, Expected: body.Expected };
+    if (!body.Changes.TagLookItemOverrides.length) body.Changes.TagLookItemOverrides = null;
+  }
   const conflicts = {};
   for (const [key, before] of Object.entries(body.Expected || {})) {
     if (!same(server[key], before) && !same(server[key], body.Changes[key])) conflicts[key] = structuredClone(server[key] ?? null);
@@ -1409,10 +1415,10 @@ test('Rules: server-wide item looks are listed with titles; Remove saves and can
   await h.save();
   assert.deepEqual(plain(h.server.TagLookItemOverrides.map((o) => o.ItemId)), [SERIES]);
   assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['TagLookItemOverrides']);
-  assert.deepEqual(plain(h.patches.at(-1).Expected.TagLookItemOverrides), stored, 'with the list read before');
+  assert.deepEqual(plain(h.patches.at(-1).Changes.TagLookItemOverrides.Expected), { [MOVIE]: stored[0] }, 'only the removed entry is expected');
   h.$('.je-ta-snack .je-ta-button').click();
   await h.save();
-  assert.deepEqual(plain(h.server.TagLookItemOverrides), stored, 'undo puts it back');
+  assert.deepEqual(plain([...h.JE.core.tagLook.normalizeItemOverrides(h.server.TagLookItemOverrides)]), plain([...h.JE.core.tagLook.normalizeItemOverrides(stored)]), 'undo puts it back');
 
   // Edit: the item editor in its server mode hands the look back to the page.
   const opened = [];

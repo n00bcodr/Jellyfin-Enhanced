@@ -610,7 +610,11 @@
             patch: (changes, expected) => ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl('/JellyfinEnhanced/admin/configuration'),
-                data: JSON.stringify({ Changes: changes, Expected: expected }),
+                data: JSON.stringify({
+                    Changes: 'TagLookItemOverrides' in changes && JE.core.tagLook
+                        ? { ...changes, TagLookItemOverrides: JE.core.tagLook.itemOverrideMutation(expected.TagLookItemOverrides, changes.TagLookItemOverrides) } : changes,
+                    Expected: Object.fromEntries(Object.entries(expected).filter(([key]) => key !== 'TagLookItemOverrides')),
+                }),
                 contentType: 'application/json',
                 dataType: 'json',
             }),

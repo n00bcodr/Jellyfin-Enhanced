@@ -139,10 +139,11 @@
      * and its onError callback finish. Other files retain call-time snapshots.
      * @param {string} fileName Per-user settings file, e.g. 'settings.json'.
      * @param {object} settings The whole document to save.
-     * @param {{throwOnError?: boolean, beforeSave?: () => void, onError?: (error: Error) => void | Promise<void>}} [options]
+     * @param {{throwOnError?: boolean, beforeSave?: () => void, onError?: (error: Error) => void | Promise<void>, isCurrent?: () => boolean}} [options]
      *   throwOnError: reject without logging. beforeSave: apply an edit at its queue
      *   turn, before serialization. onError: restore an optimistic edit
-     *   before the next queued save reads the document.
+     *   before the next queued save reads the document. isCurrent: discard work
+     *   whose originating session changed before its queue turn or response.
      * @returns {Promise<void>}
      */
     JE.saveUserSettings = async (fileName, settings, options = {}) => {
@@ -150,6 +151,7 @@
         const throwOnError = options?.throwOnError === true;
         /** Finish failure handling before releasing this document's save queue. */
         const handleError = async e => {
+            if (options.isCurrent && !options.isCurrent()) return;
             await options.onError?.(e);
             if (throwOnError) throw e;
             console.error(`🪼 Jellyfin Enhanced: Failed to save ${fileName}:`, e);
@@ -190,7 +192,9 @@
             const cacheKey = `${userId}:${fileName}`;
 
             const post = async () => {
+                if (options.isCurrent && !options.isCurrent()) return;
                 options.beforeSave?.();
+                if (options.isCurrent && !options.isCurrent()) return;
                 const serialized = fileName === 'settings.json' ? serialize() : snapshot;
                 // Skip the POST if nothing has changed since the last save this session.
                 if (_lastSavedJson[cacheKey] === serialized) {
@@ -204,6 +208,7 @@
                     contentType: 'application/json'
                 });
 
+                if (options.isCurrent && !options.isCurrent()) return;
                 // Update the cache on success so subsequent identical saves are skipped
                 _lastSavedJson[cacheKey] = serialized;
             };
