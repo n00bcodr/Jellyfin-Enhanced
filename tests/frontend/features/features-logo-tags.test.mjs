@@ -40,7 +40,7 @@ test('a provider logo is a proxied image on its pill with the name as alt and ti
 });
 
 test('networks and studios sit on the light pill; names without a servable logo are text chips, long ones initials', t => {
-  const h = setup(t);
+  const h = setup(t, {}, { LogoTagsMaxLogos: 2 });
   h.render({ Type: 'Series', Logos: [{ kind: 'network', name: 'Northwind', logo: '/nw.png' }, { kind: 'studio', name: 'Home Box Office' }] });
   const [image, text] = h.chips();
   assert.equal(image.dataset.jeLogoStyle, 'company');

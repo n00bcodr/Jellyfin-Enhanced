@@ -16,6 +16,61 @@ public class PosterEdgeSpacingTests
         PosterTagCorner.BottomLeft, PosterTagCorner.BottomCenter, PosterTagCorner.BottomRight,
     };
 
+    [Fact]
+    public void Flush_edges_match_browser_at_every_anchor_with_indicators_and_progress()
+    {
+        using var json = System.Text.Json.JsonDocument.Parse(typeof(PosterEdgeSpacingTests).Assembly.GetManifestResourceStream("FlushEdges.json")!);
+        using var renderer = new PosterTagRenderer();
+        var anchors = new Dictionary<string, PosterTagCorner> {
+            ["tl"] = PosterTagCorner.TopLeft, ["tc"] = PosterTagCorner.TopCenter, ["tr"] = PosterTagCorner.TopRight,
+            ["ml"] = PosterTagCorner.CenterLeft, ["c"] = PosterTagCorner.Center, ["mr"] = PosterTagCorner.CenterRight,
+            ["bl"] = PosterTagCorner.BottomLeft, ["bc"] = PosterTagCorner.BottomCenter, ["br"] = PosterTagCorner.BottomRight };
+        foreach (var row in json.RootElement.EnumerateArray())
+        {
+            var slot = row.GetProperty("slot").GetString()!;
+            var layout = new PosterTagLayout([new(PosterTagGroup.Quality, anchors[slot], [new QualityTag("4K", "resolution")])],
+                row.GetProperty("indicator").GetBoolean(), false) { EdgeInset = 0, ProgressBarHeight = row.GetProperty("progress").GetInt32() };
+            var plan = renderer.Plan(180, 270, layout);
+            var item = Assert.Single(Assert.Single(plan.Groups).Items);
+            Assert.Equal(row.GetProperty("edges").GetInt32(), (int)item.FlushEdges);
+            if (slot == "tc") Assert.Equal(0, item.Y);
+            if (slot == "bc") Assert.Equal(270 - layout.ProgressBarHeight, item.Y + item.Height, 3);
+        }
+    }
+
+    [Fact]
+    public void Flush_top_center_uses_indicator_gap_and_falls_back_only_for_a_wide_first_chip()
+    {
+        using var renderer = new PosterTagRenderer();
+        var layout = new PosterTagLayout([new(PosterTagGroup.Quality, PosterTagCorner.TopCenter,
+            [new QualityTag("WWWWWWWWWW", "audioInfo")])], true, false) { EdgeInset = 0 };
+        var plan = renderer.Plan(180, 270, layout);
+        var item = Assert.Single(Assert.Single(plan.Groups).Items);
+        Assert.False(item.Hidden);
+        Assert.True(item.Y > 0);
+        Assert.False(item.FlushEdges.HasFlag(FlushEdges.Top));
+    }
+
+    [Fact]
+    public void Flush_mixed_height_rows_align_every_chip_to_the_touching_edge()
+    {
+        using var renderer = new PosterTagRenderer();
+        foreach (var corner in new[] { PosterTagCorner.TopCenter, PosterTagCorner.BottomCenter })
+        {
+            var layout = new PosterTagLayout([
+                new(PosterTagGroup.Quality, corner, [new QualityTag("4K", "resolution")]),
+                new(PosterTagGroup.Status, corner, [new StatusTag("added", "Added", "added")])], false, false) { EdgeInset = 0 };
+            var items = renderer.Plan(180, 270, layout).Groups.SelectMany(g => g.Items).ToList();
+            Assert.Equal(2, items.Count);
+            Assert.NotEqual(items[0].Height, items[1].Height);
+            foreach (var item in items)
+            {
+                if (corner == PosterTagCorner.TopCenter) Assert.Equal(0, item.Y);
+                else Assert.Equal(270, item.Y + item.Height, 3);
+            }
+        }
+    }
+
     [Theory]
     [InlineData(null, null)]
     [InlineData("default", "default")]

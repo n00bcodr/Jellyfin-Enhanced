@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using System.Linq;
 using SkiaSharp;
 
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
@@ -18,8 +19,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     public sealed class PosterTagRenderer : IDisposable
     {
         /// <summary>Output version. Bump whenever the pixels change; it is part of the image URL token.</summary>
-        // Optional technical chips and SDH retire via ResolverVersion; default pixels remain unchanged.
-        public const string Version = "6";
+        // Flush edge treatment changes pixels; Default, Tight and Bands retain their painting path.
+        public const string Version = "7";
 
         /// <summary>Largest image side, in pixels, the renderer accepts; larger images are left untouched.</summary>
         public const int MaxImageDimension = 4096;
@@ -454,7 +455,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     return;
                 }
 
-                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, item.Tag is QualityTag q ? q.Category + (q.DisplayText == null ? string.Empty : "|" + q.Label) : string.Empty, plan.Css.Scale, plan.Css.Gap);
+                var key = new PosterTagTileKey(item.Kind, item.Text, item.Style + "|flush=" + (int)item.FlushEdges, s, plan.CardWidth, box.Width, box.Height, phaseX, phaseY, crop, item.Tag is QualityTag q ? q.Category + (q.DisplayText == null ? string.Empty : "|" + q.Label) : string.Empty, plan.Css.Scale, plan.Css.Gap);
                 var state = (Engine: this, Plan: plan, Item: item, Box: box, Margin: margin, PhaseX: phaseX / 16f, PhaseY: phaseY / 16f, Crop: crop);
                 using var lease = Tiles.Rent(key, state, static st => st.Engine.RenderTile(st.Plan, st.Item, st.Box, st.Margin, st.PhaseX, st.PhaseY, st.Crop));
                 if (lease.Image is not { } tile)
@@ -548,7 +549,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             {
                 using var shape = new SKRoundRect(local, PosterTagCss.OverflowRadius);
                 PaintBox(canvas, shape, new SKColor(0, 0, 0, CssColor.AlphaByte(0.72f)),
-                    new SKColor(255, 255, 255, CssColor.AlphaByte(0.22f)), border, default);
+                    new SKColor(255, 255, 255, CssColor.AlphaByte(0.22f)), border, default, item.FlushEdges);
                 float x = 1 + PosterTagCss.Lu(plan.Css.OverflowPaddingH);
                 float top = 1 + PosterTagCss.Lu(plan.Css.OverflowPaddingV);
                 // The anonymous flex text box floors its leading before align-items: center.
@@ -563,7 +564,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var colors = TagColors.Decode(item.Style[(item.Style.IndexOf('\n') + 1)..]);
                 using var shape = new SKRoundRect(local, Math.Clamp(plan.CardWidth * 0.03f, 4, 6));
                 PaintBox(canvas, shape, colors.Background ?? new SKColor(15, 15, 15, CssColor.AlphaByte(0.72f)),
-                    colors.Border ?? new SKColor(255, 255, 255, CssColor.AlphaByte(0.18f)), border, ChipShadow);
+                    colors.Border ?? new SKColor(255, 255, 255, CssColor.AlphaByte(0.18f)), border, ChipShadow, item.FlushEdges);
                 float x = 1 + PosterTagCss.Lu(Math.Clamp(plan.CardWidth * 0.05f, 5, 10) * plan.Css.Scale);
                 float fontSize = plan.Css.ChipFontSize;
                 float top = 1 + PosterTagCss.Lu(plan.Css.ChipPaddingV);
@@ -589,7 +590,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
 
                 using var rrect = new SKRoundRect(local, css.QualityRadius);
-                PaintBox(canvas, rrect, background, edge, border, QualityShadow);
+                PaintBox(canvas, rrect, background, edge, border, QualityShadow, item.FlushEdges);
 
                 float fontSize = css.QualityFontSize;
                 float lineHeight = PosterTagCss.Lu(1.2f * fontSize);
@@ -605,7 +606,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var o = item.Style.Length > 0 ? TagColors.Decode(item.Style) : default;
                 var glyph = o.Text ?? GenreGlyph;
                 using var rrect = new SKRoundRect(local, local.Width / 2f, local.Height / 2f);
-                PaintBox(canvas, rrect, o.Background ?? GenreBackground, o.Border ?? GenreBorder, border, GenreShadow);
+                PaintBox(canvas, rrect, o.Background ?? GenreBackground, o.Border ?? GenreBorder, border, GenreShadow, item.FlushEdges);
 
                 var icon = Assets.GetIcon(item.Text) ?? Assets.GetIcon("theaters");
                 if (icon is null)
@@ -652,7 +653,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
                 using var rrect = new SKRoundRect(local, 4f);
                 // Rating chips have no border; a Tag Styles border is an inner ring (outline-offset: -1px on the web).
-                PaintBox(canvas, rrect, background, ring, ring is null ? 0f : border, ChipShadow);
+                PaintBox(canvas, rrect, background, ring, ring is null ? 0f : border, ChipShadow, item.FlushEdges);
 
                 float fontSize = css.ChipFontSize;
                 float x = PosterTagCss.Lu(css.ChipPaddingH);
@@ -720,7 +721,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     ring = over.Border;
                 }
                 using var box = new SKRoundRect(local, 4f);
-                PaintBox(canvas, box, background, ring, ring == null ? 0 : border, ChipShadow);
+                PaintBox(canvas, box, background, ring, ring == null ? 0 : border, ChipShadow, item.FlushEdges);
                 var x = PosterTagCss.Lu(css.ChipPaddingH);
                 if (Assets.GetVectorIcon("award-" + tag.Id) is { } icon)
                     DrawVectorContain(canvas, icon, SKRect.Create(x, (local.Height - item.IconHeight) / 2, item.IconWidth, item.IconHeight));
@@ -742,7 +743,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
 
                 using var rrect = new SKRoundRect(local, 4f);
-                PaintBox(canvas, rrect, style.Background, style.Border, border, ChipShadow);
+                PaintBox(canvas, rrect, style.Background, style.Border, border, ChipShadow, item.FlushEdges);
 
                 float fontSize = css.ChipFontSize;
                 float lineHeight = PosterTagCss.Lu(fontSize);
@@ -761,7 +762,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var o = nl >= 0 ? TagColors.Decode(item.Style[(nl + 1)..]) : default;
                 var textColor = o.Text ?? SKColors.White;
                 using var rrect = new SKRoundRect(local, 4f);
-                PaintBox(canvas, rrect, o.Background ?? CustomBackground, o.Border ?? CustomBorder, border, ChipShadow);
+                PaintBox(canvas, rrect, o.Background ?? CustomBackground, o.Border ?? CustomBorder, border, ChipShadow, item.FlushEdges);
 
                 float fontSize = css.ChipFontSize;
                 float x = 1f + PosterTagCss.Lu(css.ChipPaddingH);
@@ -789,7 +790,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 using var opacity = new SKPaint { Color = new SKColor(0, 0, 0, tag.Partial ? CssColor.AlphaByte(0.55f) : (byte)255) };
                 canvas.SaveLayer(opacity);
                 using var shape = new SKRoundRect(local, 3f);
-                PaintBox(canvas, shape, colors.Background ?? new SKColor(0, 0, 0, 191), colors.Border ?? SKColors.White, border, ChipShadow);
+                PaintBox(canvas, shape, colors.Background ?? new SKColor(0, 0, 0, 191), colors.Border ?? SKColors.White, border, ChipShadow, item.FlushEdges);
                 var fontSize = plan.Css.ChipFontSize;
                 DrawText(canvas, item.TextLayout!, 5f * plan.Css.Scale, (3f * plan.Css.Scale) + Assets.TextMetrics.BaselineOffset(fontSize, local.Height - (6f * plan.Css.Scale)), colors.Text ?? SKColors.White, null, space);
                 if (item.IconWidth > 0 && Assets.GetFlag(parts[0]) is { } image)
@@ -822,7 +823,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var text = over.Text ?? CssColor.Parse(builtin.Text, SKColors.White);
 
                 using var rrect = new SKRoundRect(local, 4f);
-                PaintBox(canvas, rrect, background, borderColor, border, ChipShadow);
+                PaintBox(canvas, rrect, background, borderColor, border, ChipShadow, item.FlushEdges);
 
                 if (label == "text")
                 {
@@ -947,8 +948,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 return (SKColors.Transparent, SKColors.White);
             }
 
-            private static void PaintBox(SKCanvas canvas, SKRoundRect rrect, SKColor background, SKColor? border, float borderWidth, BoxShadow shadow)
+            private static void PaintBox(SKCanvas canvas, SKRoundRect rrect, SKColor background, SKColor? border, float borderWidth, BoxShadow shadow, FlushEdges edges = FlushEdges.None)
             {
+                if (edges != FlushEdges.None)
+                {
+                    var radii = rrect.Radii;
+                    if ((edges & (FlushEdges.Left | FlushEdges.Top)) != 0) radii[0] = default;
+                    if ((edges & (FlushEdges.Right | FlushEdges.Top)) != 0) radii[1] = default;
+                    if ((edges & (FlushEdges.Right | FlushEdges.Bottom)) != 0) radii[2] = default;
+                    if ((edges & (FlushEdges.Left | FlushEdges.Bottom)) != 0) radii[3] = default;
+                    rrect.SetRectRadii(rrect.Rect, radii);
+                    // Keep the original shadow only on inward sides.
+                    var clip = rrect.Rect;
+                    clip.Left -= edges.HasFlag(FlushEdges.Left) ? 0 : 12;
+                    clip.Top -= edges.HasFlag(FlushEdges.Top) ? 0 : 12;
+                    clip.Right += edges.HasFlag(FlushEdges.Right) ? 0 : 12;
+                    clip.Bottom += edges.HasFlag(FlushEdges.Bottom) ? 0 : 12;
+                    canvas.Save();
+                    canvas.ClipRect(clip);
+                }
                 PaintShadow(canvas, rrect, shadow);
                 using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill, Color = background };
                 // background-clip: border-box: the background runs under the (translucent) border.
@@ -956,10 +974,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 if (border is { } borderColor && borderWidth > 0f)
                 {
                     using var inner = new SKRoundRect(rrect.Rect, rrect.Radii[0].X, rrect.Radii[0].Y);
-                    inner.Deflate(borderWidth, borderWidth);
+                    if (edges == FlushEdges.None) inner.Deflate(borderWidth, borderWidth);
+                    else
+                    {
+                        var rect = rrect.Rect;
+                        rect.Left += edges.HasFlag(FlushEdges.Left) ? 0 : borderWidth;
+                        rect.Top += edges.HasFlag(FlushEdges.Top) ? 0 : borderWidth;
+                        rect.Right -= edges.HasFlag(FlushEdges.Right) ? 0 : borderWidth;
+                        rect.Bottom -= edges.HasFlag(FlushEdges.Bottom) ? 0 : borderWidth;
+                        inner.SetRectRadii(rect, rrect.Radii.Select(r => new SKPoint(Math.Max(0, r.X - borderWidth), Math.Max(0, r.Y - borderWidth))).ToArray());
+                    }
                     paint.Color = borderColor;
                     canvas.DrawRoundRectDifference(rrect, inner, paint);
                 }
+                if (edges != FlushEdges.None) canvas.Restore();
             }
 
             /// <summary>An outer box-shadow: drawn only outside the border box, so translucent chips stay clean.</summary>

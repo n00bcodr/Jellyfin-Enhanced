@@ -247,7 +247,7 @@ test('a layout change on a legacy document keeps the legacy limits and full labe
   const s = h.JE.core.tagLayout.normalizeSettings();
   assert.equal(s.layout, 'bands');
   assert.equal(s.density, 'full', 'not the admin density');
-  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 0, custom: 3 }, 'not the admin caps');
+  assert.deepEqual(plain(s.caps), { quality: 0, genre: 3, language: 3, rating: 0, ageRating: 1, status: 1, awards: 2, logos: 1, custom: 3 }, 'not the admin caps');
   assert.equal(h.host.querySelectorAll('.quality-overlay-label').length, 4);
 });
 

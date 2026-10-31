@@ -1957,15 +1957,34 @@
         const height = (slots) => Math.max(edge, ...slots.flatMap((s) => (boxes[s] || []).map((b) => s.startsWith('t') ? b.bottom - host.top + gap : host.bottom - b.top + gap)));
         const scalable = ctrl.host.parentElement;
         const progress = scalable?.querySelector('.itemProgressBar, .cardProgressBar, .cardProgress');
-        const bottom = progress ? Math.max(edge, host.bottom - progress.getBoundingClientRect().top + gap) : edge;
+        const flush = conf.edge === 'flush';
+        const bottom = progress ? Math.max(edge, host.bottom - progress.getBoundingClientRect().top + (flush ? 0 : gap)) : edge;
         let top = edge;
-        let topReserve = width(['tl', 'tr']);
+        const cornerReserve = width(['tl', 'tr']);
+        let topReserve = cornerReserve;
+        let overlayBottom = 0;
         for (const overlay of scalable?.querySelectorAll('.cardIndicators > *, .countIndicator, .playedIndicator') || []) {
+            // Jellyfin sometimes wraps a tiny indicator in a full-width box.
+            // Its leaf supplies the actual obstruction, rather than that box.
+            if (flush && overlay.querySelector('.countIndicator, .playedIndicator')) continue;
             const b = overlay.getBoundingClientRect();
+            if (flush && (!b.width || !b.height)) continue;
             if (b.bottom <= host.top || b.top >= host.top + host.height / 3) continue;
+            overlayBottom = Math.max(overlayBottom, b.bottom - host.top + gap);
             const middle = host.left + host.width / 2;
             if (b.left < middle && b.right > middle) top = Math.max(top, b.bottom - host.top + gap);
             else topReserve = Math.max(topReserve, b.right <= middle ? b.right - host.left + gap : host.right - b.left + gap);
+        }
+        if (flush) {
+            const row = centres.find(el => el.dataset.jeSlot === 'tc');
+            const first = row && slotChips(row)[0];
+            const firstWidth = first?.getBoundingClientRect().width || 0;
+            // Prefer the gap between corner indicators. Only a first chip that
+            // cannot fit there moves below the obstructions and gets full width.
+            if (top > 0 || firstWidth > host.width - 2 * topReserve + 0.01) {
+                top = Math.max(overlayBottom, height(['tl', 'tr']));
+                topReserve = 0;
+            } else top = 0;
         }
         return centres.map((el) => {
             const slot = el.dataset.jeSlot;
@@ -1979,6 +1998,7 @@
             el.style.setProperty('--je-anchor-reserve', `${reserve}px`);
             el.style.setProperty('--je-anchor-top', `${top}px`);
             el.style.setProperty('--je-anchor-bottom', `${bottom}px`);
+            el.toggleAttribute('data-je-flush-detached', el.dataset.jeSlot === 'tc' && top > 0);
         }
     }
 
@@ -2008,7 +2028,7 @@
     /**
      * @typedef {Object} FitPlan
      * @property {number} pillFacts - Pill facts to keep (-1 = no pill).
-     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[], more: boolean}>} rows -
+     * @property {Array<{slot: HTMLElement, chips: HTMLElement[], shown: boolean[], more: boolean, fittedRows?: number[], fittedMoreRow?: number}>} rows -
      *   Wrapping slots; `more` is false when not even the "+N" chip has room.
      * @property {Array<{el: HTMLElement, before: number|null}>} indicator - Exact top-right containers
      *   of a corners card saved before layouts, with how far down their slot they sit unmoved
@@ -2093,6 +2113,8 @@
                 const heights = rects.map((r) => r.height);
                 const rowGap = parseFloat(style.rowGap) || 0;
                 let shown = null;
+                let fittedRows = [];
+                let fittedMoreRow = 0;
                 if (vertical) {
                     // A column needs both height and width for a whole chip.
                     shown = chipsThatFit(heights.map((height, i) => widths[i] <= available + 0.01 ? height : Infinity), limit, rowGap, 1, moreRect.height);
@@ -2100,10 +2122,10 @@
                     for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
                         const rows = [], moreRow = { row: 0 };
                         const fit = chipsThatFit(widths, available, gap, n, moreRect.width, rows, moreRow);
-                        if (rowsHeight(fit, rows, heights, moreRect.height, rowGap, moreRow.row) <= limit) shown = fit;
+                        if (rowsHeight(fit, rows, heights, moreRect.height, rowGap, moreRow.row) <= limit) { shown = fit; fittedRows = rows; fittedMoreRow = moreRow.row; }
                     }
                 }
-                plan.rows.push({ slot: slotEl, chips, shown: shown || chips.map(() => false), more: !!shown && limit >= moreRect.height && available >= moreRect.width });
+                plan.rows.push({ slot: slotEl, chips, shown: shown || chips.map(() => false), fittedRows, fittedMoreRow, more: !!shown && limit >= moreRect.height && available >= moreRect.width });
                 continue;
             }
             const room = rowRoom(ctrl, style);
@@ -2179,6 +2201,17 @@
      * @param {FitPlan} plan
      */
     function applyFit(ctrl, plan) {
+        if (ctrl.layout === 'corners' && resolveLayout(ctrl).edge === 'flush') {
+            for (const row of plan.rows) {
+                const slot = row.slot.dataset.jeSlot;
+                if (!['tc', 'bc'].includes(slot)) continue;
+                const last = Math.max(0, ...row.chips.map((chip, i) => row.shown[i] ? row.fittedRows?.[i] || 0 : 0), row.shown.includes(false) && row.more ? row.fittedMoreRow || 0 : 0);
+                row.chips.forEach((chip, i) => {
+                    chip.toggleAttribute('data-je-flush-top', slot === 'tc' && !row.slot.hasAttribute('data-je-flush-detached') && row.shown[i] && row.fittedRows?.[i] === 1);
+                    chip.toggleAttribute('data-je-flush-bottom', slot === 'bc' && row.shown[i] && row.fittedRows?.[i] === last);
+                });
+            }
+        }
         if (plan.pillFacts >= 0 && ctrl.pill) {
             Array.from(ctrl.pill.querySelectorAll('.je-tag-pill-fact')).slice(plan.pillFacts).forEach((fact) => {
                 fact.setAttribute('data-je-overflow', '');

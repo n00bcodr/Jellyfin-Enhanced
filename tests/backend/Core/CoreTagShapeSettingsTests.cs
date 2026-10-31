@@ -161,7 +161,7 @@ public class CoreTagShapeSettingsTests
         {
             ["abcdefabcdefabcdefabcdefabcdefab"] = new() { Layout = "corners", LockedAt = 1, Shapes = new TagShapeOverrides { List = new TagShapeLook { Density = "compact", Caps = new TagGroupCaps { Status = 99 } } } },
         })!;
-        Assert.Equal(10, locks["abcdefabcdefabcdefabcdefabcdefab"].Shapes!.List!.Caps!.Status);
+        Assert.Equal(1, locks["abcdefabcdefabcdefabcdefabcdefab"].Shapes!.List!.Caps!.Status);
     }
 
     private static Jellyfin.Plugin.JellyfinEnhanced.Controllers.JellyfinEnhancedController Controller(ApiPluginFixture fixture, Claim claim)

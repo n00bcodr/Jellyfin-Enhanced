@@ -174,12 +174,35 @@
             .cardIndicators ~ .je-tag-host[data-je-indicator-gap][data-je-edge] > .je-tag-slot[data-je-slot="tr"] {
                 top: calc(var(--je-edge) + ${INDICATOR_OFFSET});
             }
-            /* Flush: the chip corners that touch an edge are square, like a tab
-               hanging off the card (the corner itself follows the card's curve). */
-            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) > [data-je-group] > ${BOX_CHIP} { border-top-left-radius: 0; border-bottom-left-radius: 0; }
-            ${FLUSH}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) > [data-je-group] > ${BOX_CHIP} { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="tr"]) > [data-je-group]:first-child > ${BOX_CHIP}:first-child { border-top-left-radius: 0; border-top-right-radius: 0; }
-            ${FLUSH}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${BOX_CHIP}:last-child { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+            /* Flush removes the visible edge seam while preserving the chip's
+               border-box metrics. Clip only the touching sides of its shadow;
+               the inward sides keep the group's original border and shadow. */
+            ${FLUSH} > [data-je-group] > ${BOX_CHIP} {
+                --je-flush-clip-top: -12px; --je-flush-clip-right: -12px;
+                --je-flush-clip-bottom: -12px; --je-flush-clip-left: -12px;
+                outline-offset: 0px !important;
+                clip-path: inset(var(--je-flush-clip-top) var(--je-flush-clip-right) var(--je-flush-clip-bottom) var(--je-flush-clip-left));
+            }
+            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"]) > [data-je-group] > ${BOX_CHIP} {
+                border-left-color: transparent !important; --je-flush-clip-left: 0px;
+                border-top-left-radius: 0; border-bottom-left-radius: 0;
+            }
+            ${FLUSH}:is([data-je-slot="tr"], [data-je-slot="br"], [data-je-slot="mr"]) > [data-je-group] > ${BOX_CHIP} {
+                border-right-color: transparent !important; --je-flush-clip-right: 0px;
+                border-top-right-radius: 0; border-bottom-right-radius: 0;
+            }
+            ${FLUSH}:is([data-je-slot="tl"], [data-je-slot="tr"]):not(.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"], .cardIndicators ~ .je-tag-host[data-je-indicator-gap] > [data-je-slot="tr"]) > [data-je-group]:first-child > ${BOX_CHIP}:first-child,
+            ${FLUSH}[data-je-slot="tc"] > [data-je-group] > ${BOX_CHIP}[data-je-flush-top] {
+                border-top-color: transparent !important; --je-flush-clip-top: 0px;
+                border-top-left-radius: 0; border-top-right-radius: 0;
+            }
+            ${FLUSH}:is([data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group]:first-child > ${BOX_CHIP}:last-child,
+            ${FLUSH}[data-je-slot="bc"] > [data-je-group] > ${BOX_CHIP}[data-je-flush-bottom] {
+                border-bottom-color: transparent !important; --je-flush-clip-bottom: 0px;
+                border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+            }
+            ${FLUSH}[data-je-slot="tc"] { top: var(--je-anchor-top, 0px); align-items: flex-start; overflow: visible; }
+            ${FLUSH}[data-je-slot="bc"] { bottom: var(--je-anchor-bottom, 0px); align-items: flex-end; overflow: visible; }
 
             /* Genre names float toward the inside of the card. */
             .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="bl"], [data-je-slot="ml"], [data-je-slot="poster"], [data-je-slot="top"]) .genre-tag .genre-text {
