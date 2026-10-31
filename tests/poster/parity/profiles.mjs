@@ -246,6 +246,10 @@ synthetic.custom4 = { ...movie({ CustomTags: [customId('collection', 'Criterion'
 for (const row of JSON.parse(readFileSync(new URL('../../fixtures/technical-quality.json', import.meta.url), 'utf8'))) {
     synthetic['technical-' + row.name] = movie({ SubtitleLanguages: ['eng'], SdhSubtitleLanguages: ['en'], StreamData: { Streams: [row.video], RunTimeTicks: row.ticks } });
 }
+// The same text-logo cases feed browser/native typography regressions.
+for (const [i, row] of JSON.parse(readFileSync(new URL('../../fixtures/first-chip-text-fit.json', import.meta.url), 'utf8')).entries()) {
+    synthetic['sideTextLogo' + i] = movie({ Logos: [{ kind: 'studio', name: row.name }], DateCreated: Date.UTC(2026, 9, 31) });
+}
 const syntheticEntries = {};
 const syntheticUserData = {};
 const syntheticReviews = {};
@@ -363,6 +367,14 @@ synth('rating-sources-all', { RatingTagsEnabled: true, RatingTagsSources: ['trak
 synth('rating-sources-minimum-cap', { RatingTagsEnabled: true, RatingTagsSources: ['metacritic', 'letterboxd', 'imdb', 'tmdb', 'rtCritic'], RatingTagsMinScore: 8, RatingTagsColorByScore: true, TagGroupCaps: { Rating: 2 }, TagLayoutSettingsVersion: 1 });
 synth('rating-sources-empty', { RatingTagsEnabled: true, RatingTagsSources: [] });
 synth('rating-sources-unknown', { RatingTagsEnabled: true, RatingTagsSources: ['invalid', 'imdb', 'imdb', 'trakt'] });
+for (const [i, row] of JSON.parse(readFileSync(new URL('../../fixtures/first-chip-text-fit.json', import.meta.url), 'utf8')).entries()) {
+    synth(`text-logo-side-${row.slot}-${row.scale}`, {
+        LogoTagsEnabled: true, StatusTagsEnabled: true, TagLayoutSettingsVersion: 1,
+        TagScale: row.scale, TagGap: 'tight', TagEdgeSpacing: 'flush',
+        TagLayouts: { Corners: { Groups: [{ Group: 'logos', Slot: row.slot }, { Group: 'status', Slot: row.slot === 'ml' ? 'mr' : 'ml' }] } },
+    });
+    profiles.at(-1).now = Date.UTC(2026, 9, 31);
+}
 synth('logos-defaults', { LogoTagsEnabled: true });
 synth('logos-with-groups', { ...allOn, LogoTagsEnabled: true, LogoTagsPosition: 'top-right' });
 synth('logos-capped-ordered', { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Logos: 1 },

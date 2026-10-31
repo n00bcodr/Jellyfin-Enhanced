@@ -141,4 +141,90 @@ public class PosterCentreAnchorTests
         }
     }
 
+
+    [Fact]
+    public void First_text_logo_keeps_its_original_font_and_letter_spacing_when_ellipsized()
+    {
+        using var json = System.Text.Json.JsonDocument.Parse(typeof(PosterCentreAnchorTests).Assembly.GetManifestResourceStream("FirstChipTextFit.json")!);
+        using var assets = PosterTagAssets.Load();
+        using var text = new PosterTagText(assets.TextTypeface);
+        var planner = new PosterTagPlanner(assets, text);
+        foreach (var row in json.RootElement.EnumerateArray())
+        {
+            string slot = row.GetProperty("slot").GetString()!;
+            var user = new JellyfinEnhancedUserSettings
+            {
+                LogoTagsEnabled = true, StatusTagsEnabled = true, StatusTagsJustAdded = true,
+                TagLayoutSettingsVersion = 1, TagScale = row.GetProperty("scale").GetString()!, TagGap = "tight", TagEdgeSpacing = "flush",
+                TagLayouts = new() { Corners = new() { Groups = [new() { Group = "logos", Slot = slot }, new() { Group = "status", Slot = slot == "ml" ? "mr" : "ml" }] } },
+            };
+            var now = new DateTimeOffset(2026, 10, 31, 0, 0, 0, TimeSpan.Zero);
+            var entry = new Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry
+            {
+                Type = "Movie", DateCreated = now.ToUnixTimeMilliseconds(),
+                Logos = [new() { Kind = "studio", Name = row.GetProperty("name").GetString()! }],
+            };
+            var settings = PosterTagSettings.FromUserSettings(user, new PluginConfiguration());
+            var layout = PosterTagResolver.Resolve(entry, settings, new("Movie", false, null, null, null, new(now)), false)!;
+            var plan = planner.Plan(180, 270, layout);
+            var item = plan.Groups.Single(g => g.Group == PosterTagGroup.Logos).Items.Single();
+            Assert.False(item.Hidden);
+            Assert.EndsWith("…", item.Text);
+            Assert.True(item.Text.Length < 12); // More truncation than the name-shortening rule alone.
+            Assert.Equal(row.GetProperty("fontSize").GetSingle(), plan.Css.LogoFontSize, 3);
+            Assert.Equal(row.GetProperty("letterSpacing").GetSingle(), .02f * plan.Css.LogoFontSize, 3);
+            var expected = text.Layout(item.Text, plan.Css.LogoFontSize, false, .02f * plan.Css.LogoFontSize);
+            Assert.Equal(expected.Width, item.TextLayout!.Width, 3);
+            Assert.Equal(expected.Runs.Select(r => r.FontSize), item.TextLayout.Runs.Select(r => r.FontSize));
+            Assert.Equal(expected.Runs.SelectMany(r => r.Positions), item.TextLayout.Runs.SelectMany(r => r.Positions));
+            var natural = planner.Plan(180, 270, layout with { Groups = layout.Groups.Select(g => g with { Corner = PosterTagCorner.TopLeft }).ToArray() })
+                .Groups.Single(g => g.Group == PosterTagGroup.Logos).Items.Single();
+            Assert.Equal(natural.Height, item.Height);
+            Assert.Equal(slot == "ml" ? FlushEdges.Left : FlushEdges.Right, item.FlushEdges);
+        }
+    }
+
+
+    [Theory]
+    [InlineData("quality")]
+    [InlineData("rating")]
+    [InlineData("ageRating")]
+    [InlineData("status")]
+    [InlineData("awards")]
+    [InlineData("custom")]
+    [InlineData("language")]
+    public void Every_text_tile_kind_retains_its_builder_metrics_when_first_in_a_side_slot(string kind)
+    {
+        using var assets = PosterTagAssets.Load();
+        using var text = new PosterTagText(assets.TextTypeface);
+        var planner = new PosterTagPlanner(assets, text);
+        string label = "Wide label with lowercase " + new string('W', 40);
+        (PosterTagGroup group, PosterTag tag) = kind switch
+        {
+            "quality" => (PosterTagGroup.Quality, (PosterTag)new QualityTag(label, "audio")),
+            "rating" => (PosterTagGroup.Rating, (PosterTag)new RatingTag(PosterRatingSource.Imdb, label, false)),
+            "ageRating" => (PosterTagGroup.AgeRating, (PosterTag)new AgeRatingTag(label, "")),
+            "status" => (PosterTagGroup.Status, (PosterTag)new StatusTag("just_added", label, "added")),
+            "awards" => (PosterTagGroup.Awards, (PosterTag)new AwardTag("certifiedFresh", label)),
+            "custom" => (PosterTagGroup.Custom, (PosterTag)new CustomTag(label, "theaters", "fixture")),
+            _ => (PosterTagGroup.Language, (PosterTag)new LanguageTag("gb", "English", false) { Code = label }),
+        };
+        foreach (string scale in new[] { "default", "smaller" })
+        {
+            var other = group == PosterTagGroup.Status ? PosterTagGroup.Awards : PosterTagGroup.Status;
+            PosterTag opposite = other == PosterTagGroup.Status ? new StatusTag("just_added", "Just Added", "added") : new AwardTag("certifiedFresh", "Certified Fresh");
+            var layout = new PosterTagLayout([new(group, PosterTagCorner.CenterLeft, [tag]), new(other, PosterTagCorner.CenterRight, [opposite])], false, false) { EdgeInset = 0, TagScale = scale };
+            var plan = planner.Plan(180, 270, layout);
+            var fitted = plan.Groups.Single(g => g.Group == group).Items.Single();
+            Assert.False(fitted.Hidden);
+            Assert.EndsWith("…", fitted.Text);
+            float size = kind == "quality" ? plan.Css.QualityFontSize : plan.Css.ChipFontSize;
+            float spacing = kind is "status" or "custom" ? size * .01f : kind == "ageRating" ? size * .02f : 0;
+            var expected = text.Layout(fitted.Text, size, kind == "quality", spacing);
+            Assert.Equal(expected.Width, fitted.TextLayout!.Width);
+            Assert.Equal(expected.Runs.Select(r => r.FontSize), fitted.TextLayout.Runs.Select(r => r.FontSize));
+            Assert.Equal(expected.Runs.SelectMany(r => r.Positions), fitted.TextLayout.Runs.SelectMany(r => r.Positions));
+        }
+    }
+
 }

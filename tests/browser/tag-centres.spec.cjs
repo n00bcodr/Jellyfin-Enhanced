@@ -82,7 +82,9 @@ for (const slot of ['tc', 'bc', 'c', 'ml', 'mr']) {
     await expect(chip).toHaveText('Dolby Vision');
     await expect(chip).toBeVisible();
     await expect(chip).toHaveAttribute('data-je-fit-width', '');
-    await expect(chip).toHaveCSS('text-overflow', 'ellipsis');
+    const text = chip.locator('.je-tag-fit-text');
+    await expect(text).toHaveCSS('text-overflow', 'ellipsis');
+    expect(await text.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
     await expect(page.locator('.je-tag-more')).toBeHidden();
   });
 }

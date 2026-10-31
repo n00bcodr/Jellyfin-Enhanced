@@ -161,3 +161,27 @@ for(const kind of ['custom','rating','status','quality','genre','language','lang
     }
   });
 }
+
+const textLogoCases = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../fixtures/first-chip-text-fit.json')));
+test('text-logo side fixtures keep web/native font size and letter spacing while ellipsizing',async ({page})=>{
+  await setup(page);
+  await page.addScriptTag({path:path.join(root,'tags/logotags.js')});
+  const noto=require('node:zlib').brotliDecompressSync(fs.readFileSync(path.resolve(root,'../Assets/PosterTags/fonts/NotoSans-Bold.ttf.br'))).toString('base64');
+  await page.addStyleTag({content:`@font-face{font-family:FitNoto;src:url(data:font/ttf;base64,${noto});font-weight:700}body{font-family:FitNoto,sans-serif}`});
+  await page.evaluate(()=>JellyfinEnhanced.initializeLogoTags());
+  for(const row of textLogoCases){
+    const r=await page.evaluate(async row=>{
+      const JE=JellyfinEnhanced,L=JE.core.tagLayout,h=document.querySelector('.je-tag-host');
+      for(const g of ['logos','status'])L.removeGroup(h,g);
+      Object.assign(JE.currentSettings,{tagScale:row.scale,tagGap:'tight',tagLayouts:{corners:{groups:[{group:'logos',slot:row.slot},{group:'status',slot:row.slot==='ml'?'mr':'ml'}]}}});L.invalidateSettings();
+      const w=document.createElement('div');w.className='logo-overlay-container';w.append(JE.logoTags.buildChip({kind:'studio',name:row.name,logo:null}));L.commitGroup(h,'logos',w);
+      JE.tagPipeline.status.renderFromServerCache(h,{Type:'Movie',DateCreated:new Date().toISOString()});
+      await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
+      const c=h.querySelector('.je-logo-chip'),s=getComputedStyle(c),t=c.querySelector('.je-tag-fit-text'),ts=getComputedStyle(t||c);
+      return {fontSize:parseFloat(s.fontSize),spacing:parseFloat(s.letterSpacing),textFontSize:parseFloat(ts.fontSize),textSpacing:parseFloat(ts.letterSpacing),ellipsis:ts.textOverflow,overflow:t?t.scrollWidth>t.clientWidth:false,html:h.outerHTML};
+    },row);
+    expect(r.fontSize).toBeCloseTo(row.fontSize,3);expect(r.textFontSize).toBeCloseTo(row.fontSize,3);
+    expect(r.spacing).toBeCloseTo(row.letterSpacing,3);expect(r.textSpacing).toBeCloseTo(row.letterSpacing,3);
+    expect(r.ellipsis,r.html).toBe('ellipsis');expect(r.overflow,r.html).toBe(true);
+  }
+});

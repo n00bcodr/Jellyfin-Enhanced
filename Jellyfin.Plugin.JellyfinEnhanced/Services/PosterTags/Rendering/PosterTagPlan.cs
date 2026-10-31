@@ -509,7 +509,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var items = anchor.SelectMany(g => g.Items).ToList();
                 // The first fact is useful even when a whole chip cannot fit.
                 // Constrain its text instead of replacing the slot with a count.
-                if (items.Count > 0 && items[0].Width > width) EllipsizeFirst(items[0], width, css);
+                if (items.Count > 0 && items[0].Width > width) EllipsizeFirst(items[0], width);
                 var rows = new List<List<PlannedItem>>();
                 float used = 0, rowHeight = 0, height = 0;
                 foreach (var item in items)
@@ -571,14 +571,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         }
 
         /// <summary>Keep the first centre chip within its budget with a shaped ellipsis, preserving its label/style identity.</summary>
-        private void EllipsizeFirst(PlannedItem item, float width, PosterTagCss css)
+        private void EllipsizeFirst(PlannedItem item, float width)
         {
             if (item.TextLayout is { } original)
             {
-                float fontSize = item.Kind == PosterTagTileKind.Quality ? css.QualityFontSize : css.ChipFontSize;
-                bool smallCaps = item.Kind == PosterTagTileKind.Quality;
-                float spacing = item.Kind is PosterTagTileKind.Status or PosterTagTileKind.Custom ? 0.01f * fontSize
-                    : item.Kind == PosterTagTileKind.AgeRating ? 0.02f * fontSize : 0;
+                // Reuse the builder's shaping parameters for every tile kind,
+                // including text logos whose font and tracking differ from chips.
+                float fontSize = original.FontSize;
+                bool smallCaps = original.SmallCaps;
+                float spacing = original.LetterSpacing;
                 float available = Math.Max(0, width - (item.Width - PosterTagCss.LuCeil(original.Width)));
                 var boundaries = StringInfo.ParseCombiningCharacters(item.Text);
                 int low = 0, high = boundaries.Length;

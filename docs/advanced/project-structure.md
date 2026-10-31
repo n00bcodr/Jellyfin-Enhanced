@@ -792,3 +792,5 @@ Compact quality labels use `js/tags/quality-compact.json`, projected into the we
 `tests/fixtures/audio-stream-labels.json` checks real audio stream facts through the web renderer and native resolver in Full and Compact; the parity profiles include the same streams.
 
 `tests/fixtures/side-status-fit.json` shares smaller-scale Status side-anchor budgets between the browser and native planner regressions (both sides, with and without an opposite group, across Default/Tight/Flush).
+
+`tests/fixtures/first-chip-text-fit.json` shares fitted text-logo font size and letter spacing between the production-markup browser regressions, native planner tests and offline side-logo parity profiles. `PosterTagTextLayout` retains its builder’s shaping parameters so ellipsizing every tile kind uses its original typography. Pixel identity 8.2 invalidates previously fitted text logos; renderer version stays 8.

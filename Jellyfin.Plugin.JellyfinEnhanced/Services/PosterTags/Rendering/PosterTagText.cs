@@ -159,7 +159,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 runs.Add(new PosterTagTextRun(face, size, shaped.Glyphs, positions, offsetsY));
             }
 
-            return new PosterTagTextLayout(runs, pen);
+            return new PosterTagTextLayout(runs, pen, fontSize, smallCaps, letterSpacing);
         }
 
         /// <summary>Splits text into runs of one typeface and one small-caps state, uppercasing small-caps runs.</summary>
@@ -411,5 +411,5 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
     internal sealed record PosterTagTextRun(SKTypeface Typeface, float FontSize, ushort[] Glyphs, float[] Positions, float[]? OffsetsY = null);
 
     /// <summary>Laid-out text: runs plus the advance width in CSS px.</summary>
-    internal sealed record PosterTagTextLayout(IReadOnlyList<PosterTagTextRun> Runs, float Width);
+    internal sealed record PosterTagTextLayout(IReadOnlyList<PosterTagTextRun> Runs, float Width, float FontSize, bool SmallCaps, float LetterSpacing);
 }

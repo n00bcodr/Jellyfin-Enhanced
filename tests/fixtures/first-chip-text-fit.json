@@ -1,0 +1,30 @@
+[
+  {
+    "name": "WarnerBrosPictures",
+    "slot": "ml",
+    "scale": "default",
+    "fontSize": 11.52,
+    "letterSpacing": 0.2304
+  },
+  {
+    "name": "WWWWWWWWWWWWW",
+    "slot": "ml",
+    "scale": "smaller",
+    "fontSize": 9.792,
+    "letterSpacing": 0.19584
+  },
+  {
+    "name": "WarnerBrosPictures",
+    "slot": "mr",
+    "scale": "default",
+    "fontSize": 11.52,
+    "letterSpacing": 0.2304
+  },
+  {
+    "name": "WWWWWWWWWWWWW",
+    "slot": "mr",
+    "scale": "smaller",
+    "fontSize": 9.792,
+    "letterSpacing": 0.19584
+  }
+]

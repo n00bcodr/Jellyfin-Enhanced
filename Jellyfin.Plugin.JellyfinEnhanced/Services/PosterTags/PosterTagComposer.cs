@@ -50,8 +50,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     //     PosterTagResolver.Resolve, PosterTagRenderer.RenderEncoded.
     public sealed class PosterTagComposer
     {
-        /// <summary>Bumped when this class's composition rules change (part of every composite key).</summary>
-        public const string CompositionVersion = "1";
+        /// <summary>Composition/pixel revision within the renderer version (part of every composite key).</summary>
+        // 8.2 retires fitted text logos shaped with chip rather than logo metrics.
+        public const string CompositionVersion = "2";
 
         /// <summary>
         /// Every version that changes a composite's pixels and is not already part of

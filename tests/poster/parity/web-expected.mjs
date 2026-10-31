@@ -41,6 +41,7 @@ const SCRIPTS = [
     'tags/qualitytags.js',
     'tags/ratingtags.js',
     'tags/ageratingtags.js',
+    'tags/status-vocabulary.js', 'tags/statustags.js',
     'tags/awardstags.js',
     'tags/logotags.js',
     'tags/customtags.js',
@@ -219,7 +220,9 @@ function createSandbox(profile, pluginConfig, webSettings, reviews) {
         localStorage: { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 },
         MutationObserver: class { observe() {} disconnect() {} },
         fetch: async () => { throw new Error('no network'); },
-        setTimeout, clearTimeout, setInterval, clearInterval, Promise, Intl, Map, Set, WeakSet, WeakMap, JSON, Math, Date, Object, Array, String, Number, RegExp, Error,
+        setTimeout, clearTimeout, setInterval, clearInterval, Promise, Intl, Map, Set, WeakSet, WeakMap, JSON, Math,
+        Date: profile.now ? class extends Date { static now() { return profile.now; } } : Date,
+        Object, Array, String, Number, RegExp, Error,
         encodeURIComponent, decodeURIComponent, AbortController, URL, URLSearchParams,
         addEventListener() {},
         removeEventListener() {},
@@ -245,6 +248,7 @@ const CONTAINERS = {
     'genre-overlay-container': 'Genre',
     'rating-overlay-container': 'Rating',
     'age-rating-overlay-container': 'AgeRating',
+    'status-overlay-container': 'Status',
     'language-overlay-container': 'Language',
     'awards-overlay-container': 'Awards',
     'logo-overlay-container': 'Logos',
@@ -279,6 +283,9 @@ function readTags(group, container) {
                 else tags.push(`Community|${text}`);
                 break;
             }
+            case 'Status':
+                tags.push(`${child.dataset.jeStatus}|${child.textContent}`);
+                break;
             case 'Awards':
                 tags.push(`${child.dataset.jeAward}|${child.textContent}`);
                 break;
@@ -334,6 +341,7 @@ async function runProfile(profile) {
     if (s?.genreTagsEnabled) JE.initializeGenreTags();
     if (s?.ratingTagsEnabled) JE.initializeRatingTags();
     if (s?.ageRatingTagsEnabled) JE.initializeAgeRatingTags();
+    if (s?.statusTagsEnabled) JE.initializeStatusTags();
     if (s?.customTagsEnabled) JE.initializeCustomTags();
     if (JE.pluginConfig?.ShowUserReviews && JE.pluginConfig?.ShowUserRatingOnPosters && s?.ratingTagsEnabled) JE.initializeUserReviewTags();
     if (s?.languageTagsEnabled) JE.initializeLanguageTags();
@@ -488,6 +496,7 @@ async function runProfile(profile) {
         edgeSpacing: layoutConf.edge,
     };
 
+    order.get('status')?.cleanup?.();
     writeFileSync(join(outDir, `web-${profile.name}.json`), JSON.stringify({ settings, items }));
     return Object.keys(items).length;
 }

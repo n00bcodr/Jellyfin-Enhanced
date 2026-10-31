@@ -284,7 +284,7 @@ void ResolveAll()
             }
 
             var played = ud is not null && (ud.Played || ud.PlayedPercentage >= 100);
-            contexts.Add((id, entry, new PosterTagItemContext(entry.Type ?? string.Empty, played, ud?.UnplayedItemCount, average, count)));
+            contexts.Add((id, entry, new PosterTagItemContext(entry.Type ?? string.Empty, played, ud?.UnplayedItemCount, average, count, profile["now"] is JsonValue clock ? new PosterStatusContext(DateTimeOffset.FromUnixTimeMilliseconds(clock.GetValue<long>())) : null)));
         }
 
         // Warm-up passes (JIT tiering, regex, memo), then the timed pass that also records results.
@@ -336,6 +336,7 @@ void ResolveAll()
         if (settings.GenreTagsEnabled) groupOrder.Add("genre");
         if (settings.RatingTagsEnabled) groupOrder.Add("rating");
         if (settings.AgeRatingTagsEnabled) groupOrder.Add("agerating");
+        if (settings.StatusTagsEnabled) groupOrder.Add("status");
         if (settings.CustomTagsEnabled) groupOrder.Add("custom");
         if (settings.LanguageTagsEnabled) groupOrder.Add("language");
         if (settings.AwardsTagsEnabled) groupOrder.Add("awards");
@@ -446,6 +447,7 @@ static string Describe(PosterTag tag) => tag switch
     RatingTag r when r.Source == PosterRatingSource.Critic => $"Critic|{r.Text}|{(r.Fresh ? "fresh" : "rotten")}",
     RatingTag r when r.IsSource => $"{r.SourceId}|{r.Text}",
     RatingTag r => $"{r.Source}|{r.Text}",
+    StatusTag s => $"{s.StyleKey}|{s.Text}",
     AwardTag a => $"{a.Id}|{a.Text}",
     AgeRatingTag a => $"{a.Text}|{a.ColorKey}",
     LogoTag l => $"{l.Kind}|{l.Name}|{l.Logo ?? string.Empty}|{(l.Logo is null ? ShortName(l.Name) : string.Empty)}",
