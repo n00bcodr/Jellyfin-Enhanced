@@ -1,3 +1,5 @@
+using Jellyfin.Database.Implementations.Entities;
+using MediaBrowser.Controller.Entities;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Xml.Serialization;
@@ -75,7 +77,7 @@ public class CoreTagItemLooksTests
     }
 
     [Fact]
-    public void ItemLooksRoundTripTheXmlAndArePublishedOnlyToSignedInCallers()
+    public void ItemLooksRoundTripTheXmlAndAreNotPublishedWithoutAUser()
     {
         var config = new PluginConfiguration
         {
@@ -96,8 +98,7 @@ public class CoreTagItemLooksTests
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, "User")], "test"));
         using (var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value)))
         {
-            var published = Assert.Single(document.RootElement.GetProperty("TagLookItemOverrides").EnumerateArray());
-            Assert.Equal(Movie, published.GetProperty("ItemId").GetString());
+            Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("TagLookItemOverrides").ValueKind);
         }
 
         controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
@@ -105,6 +106,37 @@ public class CoreTagItemLooksTests
         {
             Assert.Equal(JsonValueKind.Null, anonymous.RootElement.GetProperty("TagLookItemOverrides").ValueKind);
         }
+    }
+
+    [Theory]
+    [InlineData("alice", false)]
+    [InlineData("bob", false)]
+    [InlineData("admin", true)]
+    public void PublicItemLooksAreFilteredByLibraryAccessForEveryCaller(string name, bool admin)
+    {
+        using var fixture = new ApiPluginFixture();
+        var user = new User(name, "test", "test") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(m => m.GetUserById(user.Id)).Returns(user);
+        var library = new Mock<ILibraryManager>();
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { Id = Guid.Parse(Movie) };
+        var series = new MediaBrowser.Controller.Entities.TV.Series { Id = Guid.Parse(Series) };
+        library.Setup(m => m.GetItemById<BaseItem>(movie.Id, user)).Returns(name != "bob" ? movie : null);
+        library.Setup(m => m.GetItemById<BaseItem>(series.Id, user)).Returns(name != "alice" ? series : null);
+        fixture.Plugin.Configuration.TagLookItemOverrides =
+        [
+            new() { ItemId = Movie, Layout = "bands", LockedAt = 1 },
+            new() { ItemId = Series, Layout = "caption", LockedAt = 2 },
+            new() { ItemId = Other, Layout = "minimal", LockedAt = 3 }, // deleted or inaccessible
+        ];
+        var maintenance = new MaintenanceModeService(users.Object, Mock.Of<ISessionManager>(), fixture.Core.Paths.Object, fixture.Core.Logger);
+        var controller = ApiAssetTests.Controller(fixture.Core, maintenance, users.Object, library.Object);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("Jellyfin-UserId", user.Id.ToString()), new Claim(ClaimTypes.Role, admin ? "Administrator" : "User")], "test"));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Assert.IsType<JsonResult>(controller.GetPublicConfig()).Value));
+        var ids = document.RootElement.GetProperty("TagLookItemOverrides").EnumerateArray().Select(e => e.GetProperty("ItemId").GetString()).ToArray();
+        Assert.Equal(admin ? [Series, Movie] : name == "alice" ? [Movie] : new[] { Series }, ids);
+        library.Verify(m => m.GetItemById<BaseItem>(It.IsAny<Guid>(), user), Times.Exactly(3));
     }
 
     private static PluginConfiguration Config(params TagLookItemOverride[] looks) => new()

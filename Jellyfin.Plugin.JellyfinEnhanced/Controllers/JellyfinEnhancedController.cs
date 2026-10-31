@@ -3725,6 +3725,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // EnableLoginImage. Authenticated callers (any Jellyfin user) get the full
         // payload so client-side "Open in Seerr" deep links still work.
         [HttpGet("public-config")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public ActionResult GetPublicConfig()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -3734,6 +3735,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return new JsonResult(BuildPublicConfig(config));
+        }
+
+        /// <summary>
+        /// Publish item looks only for targets the caller can see. The library's
+        /// user-aware lookup applies Jellyfin's library and parental access checks,
+        /// including series targets whose scoped look is inherited by children.
+        /// No shared response cache or ETag is used for this per-request projection.
+        /// </summary>
+        private List<TagLookItemOverride>? VisibleItemLooks(PluginConfiguration config)
+        {
+            if (User?.Identity?.IsAuthenticated != true) return null;
+            var looks = TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides);
+            if (looks is null) return null;
+            var id = UserHelper.GetCurrentUserId(User);
+            var user = id.HasValue ? _userManager?.GetUserById(id.Value) : null;
+            if (user is null || _libraryManager is null) return null;
+            var visible = looks.Where(look => _libraryManager.GetItemById<BaseItem>(Guid.Parse(look.ItemId), user) is not null).ToList();
+            return visible.Count == 0 ? null : visible;
         }
 
         /// <summary>
@@ -3967,7 +3986,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
                 // Server-wide per-item looks (normalized; null = none): ids and looks only,
                 // and only for signed-in callers (item ids are not for the login page).
-                TagLookItemOverrides = isAuthed ? TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides) : null,
+                TagLookItemOverrides = VisibleItemLooks(config),
                 // Per-shape tag looks starting default (normalized; null = none)
                 TagShapeOverrides = TagShapeRules.NormalizeDefaults(config.TagShapeOverrides),
                 config.ShowRatingInPlayer,
