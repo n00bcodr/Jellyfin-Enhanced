@@ -19,21 +19,21 @@
         id: 'colours',
         tab: 'colours',
         order: 10,
-        title: 'admin_tags_colours_title',
+        title: 'admin_tags_overview_colours',
         hint: 'admin_tags_colours_desc',
         writes: ['TagStyleOverrides', 'TagStylePreset'],
         fields: [
             { id: 'tagStylesEnabled', key: 'TagStylesEnabled', type: 'switch', label: 'admin_tags_colours_enabled', desc: 'admin_tags_colours_enabled_desc' },
-            { id: 'tagStyleTarget', key: 'TagStyleTarget', type: 'pills', label: 'admin_tags_colours_target', desc: 'admin_tags_colours_target_desc', options: [['web', 'admin_tags_style_target_web'], ['native', 'admin_tags_style_target_native'], ['both', 'admin_tags_style_target_both']], read: (v) => (['web', 'native', 'both'].includes(v) ? v : 'both'), when: (c) => c.TagStylesEnabled === true },
+            { id: 'tagStyleTarget', key: 'TagStyleTarget', type: 'pills', label: 'tag_item_editor_scope', desc: 'admin_tags_colours_target_desc', options: [['web', 'admin_tags_style_target_web'], ['native', 'admin_tags_style_target_native'], ['both', 'admin_tags_style_target_both']], read: (v) => (['web', 'native', 'both'].includes(v) ? v : 'both'), when: (c) => c.TagStylesEnabled === true },
             { id: 'tagStylesAllowUserPreset', key: 'TagStylesAllowUserPreset', type: 'switch', label: 'admin_tags_colours_allow_preset', desc: 'admin_tags_colours_allow_preset_desc', break: true },
         ],
         render(ctx, body) {
             body.innerHTML = `<div id="tagStylesBody" style="margin-top:14px">${A.EDITOR_HTML}
                 <div class="je-ta-actions"><button type="button" class="je-ta-button je-ta-button--danger" id="tagStyleResetAll"><span class="material-icons" aria-hidden="true">restart_alt</span>${ctx.tx('admin_tags_colours_reset')}</button></div></div>`;
-            body.querySelector('#tagStylePresetLabel').textContent = JE.t('admin_tags_colours_preset');
+            body.querySelector('#tagStylePresetLabel').textContent = JE.t('admin_tags_overview_preset');
             body.querySelector('#tagStyleTargetsLabel').textContent = JE.t('admin_tags_colours_editing');
-            body.querySelector('#tagStylePreviewLabel').textContent = JE.t('admin_tags_colours_preview');
-            body.querySelector('#tagStylePresets').textContent = JE.t('admin_tags_loading');
+            body.querySelector('#tagStylePreviewLabel').textContent = JE.t('common_preview');
+            body.querySelector('#tagStylePresets').textContent = JE.t('hidden_content_admin_loading');
             body.querySelector('#tagStyleTabs').setAttribute('aria-label', JE.t('admin_tags_colours_group'));
             editor = A.createTagStylesEditor(ctx.root, () => [...new Set((ctx.config.CustomTagRules || []).map((r) => r.Label || r.label).filter(Boolean))], () => ctx.isCurrent());
             ctx.root.addEventListener('je-custom-labels', () => { if (ctx.isCurrent()) editor.refreshLabels(); }, { signal: ctx.signal });

@@ -19,7 +19,7 @@
         id: 'server-cache',
         tab: 'server',
         order: 10,
-        title: 'admin_tags_server_cache',
+        title: 'admin_tags_overview_cache',
         hint: 'admin_tags_server_cache_desc',
         writes: ['ClearLocalStorageTimestamp', 'TagCacheExcludedLibraryIds'],
         fields: [
@@ -30,7 +30,7 @@
             { id: 'tagsCacheTtlDays', key: 'TagsCacheTtlDays', type: 'number', min: 1, max: 365, fallback: 30, unit: 'admin_tags_days', label: 'admin_tags_server_ttl', desc: 'admin_tags_server_ttl_desc', read: (v) => Number(v) || 30 },
         ],
         render(ctx, body) {
-            body.innerHTML = `<div class="je-ta-libs" data-libs role="group" aria-label="${ctx.tx('admin_tags_server_exclude_list')}"><p class="je-ta-hint">${ctx.tx('admin_tags_loading')}</p></div>
+            body.innerHTML = `<div class="je-ta-libs" data-libs role="group" aria-label="${ctx.tx('admin_tags_server_exclude_list')}"><p class="je-ta-hint">${ctx.tx('hidden_content_admin_loading')}</p></div>
                 <div class="je-ta-actions">
                     <button type="button" class="je-ta-button" id="rebuildTagCacheBtn"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx('admin_tags_rebuild')}</button>
                     <button type="button" class="je-ta-button" id="clearTagsCacheBtn"><span class="material-icons" aria-hidden="true">delete_sweep</span>${ctx.tx('admin_tags_server_clear')}</button>
@@ -81,7 +81,7 @@
         id: 'server-native',
         tab: 'server',
         order: 20,
-        title: 'admin_tags_server_native',
+        title: 'panel_media_tags_server_native',
         hint: 'admin_tags_server_native_desc',
         fields: [
             { id: 'nativePosterTagsEnabled', key: 'NativePosterTagsEnabled', type: 'switch', label: 'admin_tags_server_native_on', desc: 'admin_tags_server_native_on_desc' },

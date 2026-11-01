@@ -24,15 +24,15 @@
      * groups always show one.
      */
     const GROUP_META = {
-        awards: { toggleId: 'awardsTagsToggle', settingKey: 'awardsTagsEnabled', nameKey: 'awards_tags_group', descKey: 'awards_tags_description', color: '#d7ae52', capAll: true },
-        status: { toggleId: 'statusTagsToggle', settingKey: 'statusTagsEnabled', nameKey: 'panel_settings_ui_tag_group_status', descKey: 'panel_settings_ui_status_tags_desc', color: '#e53935', capFixed: true },
+        awards: { toggleId: 'awardsTagsToggle', settingKey: 'awardsTagsEnabled', nameKey: 'awards_label', descKey: 'awards_tags_description', color: '#d7ae52', capAll: true },
+        status: { toggleId: 'statusTagsToggle', settingKey: 'statusTagsEnabled', nameKey: 'jellyseerr_modal_status', descKey: 'panel_settings_ui_status_tags_desc', color: '#e53935', capFixed: true },
         quality: { toggleId: 'qualityTagsToggle', settingKey: 'qualityTagsEnabled', nameKey: 'panel_settings_ui_tag_group_quality', descKey: 'panel_settings_ui_quality_tags_desc', color: '#1e88e5', capAll: true },
         rating: { toggleId: 'ratingTagsToggle', settingKey: 'ratingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_rating', descKey: 'panel_settings_ui_rating_tags_desc', color: '#ffb300', capAll: true },
         ageRating: { toggleId: 'ageRatingTagsToggle', settingKey: 'ageRatingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_age_rating', descKey: 'panel_settings_ui_age_rating_tags_desc', color: '#8e24aa', capFixed: true },
         language: { toggleId: 'languageTagsToggle', settingKey: 'languageTagsEnabled', nameKey: 'panel_settings_ui_tag_group_language', descKey: 'panel_settings_ui_language_tags_desc', color: '#43a047' },
-        genre: { toggleId: 'genreTagsToggle', settingKey: 'genreTagsEnabled', nameKey: 'panel_settings_ui_tag_group_genre', descKey: 'panel_settings_ui_genre_tags_desc', color: '#00897b' },
-        logos: { toggleId: 'logoTagsToggle', settingKey: 'logoTagsEnabled', nameKey: 'panel_settings_ui_tag_group_logos', descKey: 'panel_settings_ui_logo_tags_desc', color: '#5e35b1', capAll: true },
-        custom: { toggleId: 'customTagsToggle', settingKey: 'customTagsEnabled', nameKey: 'panel_settings_ui_tag_group_custom', descKey: 'panel_settings_ui_custom_tags_desc', color: '#78909c' },
+        genre: { toggleId: 'genreTagsToggle', settingKey: 'genreTagsEnabled', nameKey: 'common_genre', descKey: 'panel_settings_ui_genre_tags_desc', color: '#00897b' },
+        logos: { toggleId: 'logoTagsToggle', settingKey: 'logoTagsEnabled', nameKey: 'common_logos', descKey: 'panel_settings_ui_logo_tags_desc', color: '#5e35b1', capAll: true },
+        custom: { toggleId: 'customTagsToggle', settingKey: 'customTagsEnabled', nameKey: 'common_custom', descKey: 'panel_settings_ui_custom_tags_desc', color: '#78909c' },
     };
     const GROUP_IDS = Object.keys(GROUP_META);
     const LAYOUTS = ['corners', 'bands', 'caption', 'summary', 'minimal'];
@@ -85,8 +85,8 @@
      */
     function slotLabel(layout, slot) {
         return slot === 'off'
-            ? JE.t('panel_settings_ui_tag_slot_off')
-            : JE.t(`panel_settings_ui_tag_slot_${layout}_${slot}`);
+            ? JE.t('hidden_content_already_hidden')
+            : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`${layout}_${slot}`]);
     }
 
     /**
@@ -186,7 +186,7 @@
         const cap = capOf(conf, group);
         if (layoutApi().singleChipGroup(group)) return { text: '1', canDown: false, canUp: false };
         return {
-            text: cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap),
+            text: cap === 0 ? JE.t('jellyseerr_discover_all') : String(cap),
             canDown: stepCap(cap, -1, meta) !== null,
             canUp: stepCap(cap, 1, meta) !== null,
         };
@@ -218,14 +218,14 @@
         const conf = JE.ratingSources.settings();
         const order = conf.sources.concat(JE.ratingSources.IDS.filter(id => !conf.sources.includes(id)));
         return `<div class="je-tge-rating-includes">${order.map((id, index) => {
-            const source = JE.t('rating_source_' + id);
+            const source = JE.ratingSources.name(id);
             return `<div class="je-rating-source-row" data-source="${id}">
                 <label><input type="checkbox" data-rating-source="${id}" ${conf.sources.includes(id) ? 'checked' : ''}>${escapeHtml(source)}</label>
                 <button type="button" data-rating-move="-1" ${index === 0 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('rating_sources_up', { source }))}">↑</button>
                 <button type="button" data-rating-move="1" ${index === order.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('rating_sources_down', { source }))}">↓</button>
             </div>`;
         }).join('')}
-        <label>${escapeHtml(JE.t('rating_sources_minimum'))} <select data-rating-minimum>${[0,5,6,7,8].map(n => `<option value="${n}" ${conf.minimum === n ? 'selected' : ''}>${n || escapeHtml(JE.t('rating_sources_off'))}</option>`).join('')}</select></label>
+        <label>${escapeHtml(JE.t('rating_sources_minimum'))} <select data-rating-minimum>${[0,5,6,7,8].map(n => `<option value="${n}" ${conf.minimum === n ? 'selected' : ''}>${n || escapeHtml(JE.t('track_off'))}</option>`).join('')}</select></label>
         <label><input type="checkbox" data-rating-color ${conf.color ? 'checked' : ''}>${escapeHtml(JE.t('rating_sources_color'))}</label>
         <div class="je-tge-hint">${escapeHtml(JE.t('rating_sources_help'))}</div></div>`;
     }
@@ -239,9 +239,9 @@
         };
         const select = (key, label, current, values) => `<label class="je-tge-extra"><span class="je-tge-label">${escapeHtml(JE.t(label))}</span>
             <select data-language-key="${key}" style="background:#222;color:#fff;padding:6px;border-radius:6px;">${values.map(([value, text]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${escapeHtml(JE.t(text))}</option>`).join('')}</select></label>`;
-        return `<div class="je-tge-includes">${[['Audio', conf.audio], ['Subtitles', conf.subtitles]].map(([kind, on]) => `<label class="je-tge-toggle-pill"><input type="checkbox" data-language-key="languageTagsShow${kind}" ${on ? 'checked' : ''}><span>${escapeHtml(JE.t('language_tags_' + kind.toLowerCase()))}</span></label>`).join('')}</div>
-            ${select('languageTagsStyle', 'language_tags_style', conf.style, [['flags', 'language_tags_flags'], ['codes', 'language_tags_codes']])}
-            ${select('languageTagsCountBadge', 'language_tags_count_badge', conf.badge, [['off', 'language_tags_badge_off'], ['only', 'language_tags_badge_only'], ['both', 'language_tags_badge_both']])}
+        return `<div class="je-tge-includes">${[['Audio', conf.audio], ['Subtitles', conf.subtitles]].map(([kind, on]) => `<label class="je-tge-toggle-pill"><input type="checkbox" data-language-key="languageTagsShow${kind}" ${on ? 'checked' : ''}><span>${escapeHtml(JE.t(JE.core.tagLayout.VOCABULARY_KEYS.language[kind.toLowerCase()]))}</span></label>`).join('')}</div>
+            ${select('languageTagsStyle', 'panel_settings_subtitles_style', conf.style, [['flags', 'language_tags_flags'], ['codes', 'language_tags_codes']])}
+            ${select('languageTagsCountBadge', 'language_tags_count_badge', conf.badge, [['off', 'track_off'], ['only', 'language_tags_badge_only'], ['both', 'language_tags_badge_both']])}
             ${languagePriorityHtml()}`;
     }
 
@@ -305,13 +305,13 @@
                     <p class="je-tge-hint">${escapeHtml(JE.t('quality_display_help'))}</p>
                     ${['qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr'].map((key, index) => {
                         const labels = ['quality_display_audio', 'quality_display_video', 'quality_display_hdr', 'quality_minimum_resolution', 'quality_hide_sdr'];
-                        const options = key === 'qualityMinimumResolution' ? [['off', 'quality_resolution_off'], ['720p', '=720p'], ['1080p', '=1080p'], ['4k', '=4K']]
-                            : key === 'qualityHideSdr' ? [['false', 'quality_sdr_show'], ['true', 'quality_sdr_hide']]
+                        const options = key === 'qualityMinimumResolution' ? [['off', 'track_off'], ['720p', '=720p'], ['1080p', '=1080p'], ['4k', '=4K']]
+                            : key === 'qualityHideSdr' ? [['false', 'quality_sdr_show'], ['true', 'quality_hide_sdr']]
                             : [['highest', 'quality_display_highest'], ['all', 'quality_display_all']];
                         const value = JE.isSettingInherited?.(JE.currentSettings, key) || JE.currentSettings[key] == null ? '' : String(JE.currentSettings[key]);
                         return `<label for="${key}Select" class="je-tge-label">${escapeHtml(JE.t(labels[index]))}</label>
                             <select id="${key}Select" data-quality-display-key="${key}" style="width:100%;background:${detailsBackground};color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:6px;padding:6px;">
-                                <option value="" ${value === '' ? 'selected' : ''}>${escapeHtml(JE.t('quality_display_inherit'))}</option>
+                                <option value="" ${value === '' ? 'selected' : ''}>${escapeHtml(JE.t('panel_settings_ui_quality_tags_audio_language_default'))}</option>
                                 ${options.map(([v, label]) => `<option value="${v}" ${value === v ? 'selected' : ''}>${escapeHtml(label.startsWith('=') ? label.slice(1) : JE.t(label))}</option>`).join('')}
                             </select>`;
                     }).join('')}
@@ -320,7 +320,7 @@
                 <div class="je-tge-extra">
                     <label for="seriesQualityAggregationSelect" class="je-tge-label">${escapeHtml(JE.t('series_quality_aggregation_label'))}</label>
                     <select id="seriesQualityAggregationSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
-                        <option value="" ${following ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_inherit', { policy: JE.t('series_quality_aggregation_' + serverPolicy) }))}</option>
+                        <option value="" ${following ? 'selected' : ''}>${escapeHtml(JE.t('language_priority_inherit', { policy: JE.t('series_quality_aggregation_' + serverPolicy) }))}</option>
                         ${['representative', 'latest', 'best', 'shared', 'mixed'].map(policy => `<option value="${policy}" ${!following && JE.currentSettings.seriesQualityAggregation === policy ? 'selected' : ''}>${escapeHtml(JE.t('series_quality_aggregation_' + policy))}</option>`).join('')}
                     </select>
                 </div>
@@ -383,7 +383,7 @@
         else include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_nothing_to_include'))}</div>`;
         // The Status row opens the hub's Status badges tab (its include list).
         const badges = group === 'status'
-            ? `<button type="button" class="je-tge-badges" data-je-goto="badges">${escapeHtml(JE.t('panel_media_tags_badges_link'))}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>`
+            ? `<button type="button" class="je-tge-badges" data-je-goto="badges">${escapeHtml(JE.t('common_badges'))}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>`
             : '';
         return `
             <li class="je-tge-row" data-group="${group}" style="--je-tge-swatch:${meta.color};">
@@ -405,8 +405,8 @@
                 </div>
                 <div class="je-tge-body" id="${bodyId}" hidden>
                     <div class="je-tge-hint">${escapeHtml(JE.t(meta.descKey))}</div>
-                    <div class="je-tge-field" role="group" aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_position'))}">
-                        <div class="je-tge-label" aria-hidden="true">${escapeHtml(JE.t('panel_settings_ui_tag_editor_position'))}</div>
+                    <div class="je-tge-field" role="group" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position'))}">
+                        <div class="je-tge-label" aria-hidden="true">${escapeHtml(JE.t('panel_settings_subtitles_position'))}</div>
                         <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
                     </div>
                     <div class="je-tge-field" data-je-cap-control ${layoutApi().singleChipGroup(group) ? 'hidden' : ''}>

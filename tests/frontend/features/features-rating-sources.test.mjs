@@ -28,7 +28,7 @@ test('all seven sources keep configured order, native units, bundled logos and s
     assert.ok(el.matches('.rating-tag.rating-tag--source'));
     assert.ok(el.querySelector('svg path'));
     assert.equal(el.querySelector('img'), null);
-    assert.match(el.getAttribute('aria-label'), /^rating_source_/);
+    assert.equal(el.getAttribute('aria-label'), h.facts.name(el.dataset.jeRatingSource) + ': ' + el.querySelector('.rating-text').textContent);
   }
 });
 

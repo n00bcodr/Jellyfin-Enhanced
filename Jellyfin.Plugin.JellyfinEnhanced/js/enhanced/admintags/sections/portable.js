@@ -72,7 +72,7 @@
         id: 'server-portable',
         tab: 'server',
         order: 30,
-        title: 'admin_tags_portable_title',
+        title: 'tag_portable_title',
         hint: 'admin_tags_portable_desc',
         render(ctx, body) {
             const P = tools();
@@ -95,7 +95,7 @@
             body.querySelector('#jeTaExport')?.addEventListener('click', async () => {
                 const d = show('admin_tags_portable_export_title');
                 d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p>`;
-                d.foot.innerHTML = P.buttonHtml('close', 'tag_portable_close');
+                d.foot.innerHTML = P.buttonHtml('close', 'awards_close');
                 d.foot.onclick = () => d.close();
                 d.focusFirst();
                 let document;
@@ -114,7 +114,7 @@
                 d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p>
                     <label class="je-pt-label" for="jeTaExportText">${ctx.tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
                     <textarea id="jeTaExportText" class="je-pt-text" rows="12" readonly spellcheck="false">${ctx.esc(text)}</textarea>`;
-                d.foot.innerHTML = P.buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + P.buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + P.buttonHtml('close', 'tag_portable_close');
+                d.foot.innerHTML = P.buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + P.buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + P.buttonHtml('close', 'awards_close');
                 d.foot.onclick = async (e) => {
                     const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
                     if (action === 'download') {
@@ -154,7 +154,7 @@
                 const d = show('admin_tags_portable_import_title');
                 const step = () => {
                     d.body.innerHTML = P.sourceHtml('admin_tags_portable_import_desc');
-                    d.foot.innerHTML = P.buttonHtml('cancel', 'tag_portable_cancel') + P.buttonHtml('next', 'tag_portable_preview', { primary: true });
+                    d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('next', 'tag_portable_preview', { primary: true });
                     P.wireSource(d);
                     d.foot.onclick = async (e) => {
                         const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
@@ -175,7 +175,7 @@
                         d.status('');
                         const changes = preview?.changes || [];
                         d.body.innerHTML = P.previewHtml(preview || {});
-                        d.foot.innerHTML = P.buttonHtml('back', 'tag_portable_back') + P.buttonHtml('cancel', 'tag_portable_cancel')
+                        d.foot.innerHTML = P.buttonHtml('back', 'tag_portable_back') + P.buttonHtml('cancel', 'jellyseerr_modal_cancel')
                             + (changes.length ? P.buttonHtml('apply', 'tag_portable_apply_count', { primary: true, params: { count: changes.length } }) : '');
                         d.foot.onclick = async (ev) => {
                             const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (ev.target).closest('[data-pt-action]'));
@@ -251,7 +251,7 @@
                     <label class="je-pt-label" for="jeTaOfferDesc">${ctx.tx('tag_presets_description')}</label>
                     <textarea id="jeTaOfferDesc" class="je-pt-input" rows="2" maxlength="${MAX_DESCRIPTION}">${ctx.esc(checked.description || '')}</textarea>
                     ${checked.skipped.length ? P.previewHtml({ skipped: checked.skipped }, { summary: false }) : ''}`;
-                d.foot.innerHTML = P.buttonHtml('cancel', 'tag_portable_cancel') + P.buttonHtml('offer', 'admin_tags_presets_offer', { primary: true });
+                d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('offer', 'admin_tags_presets_offer', { primary: true });
                 d.foot.onclick = async (e) => {
                     const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-pt-action]'));
                     if (button?.dataset.ptAction === 'cancel') { d.close(); return; }
@@ -300,8 +300,8 @@
 
             body.querySelector('#jeTaOfferMine')?.addEventListener('click', async () => {
                 const d = show('admin_tags_presets_add_title');
-                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('tag_portable_loading')}</p>`;
-                d.foot.innerHTML = P.buttonHtml('cancel', 'tag_portable_cancel');
+                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('hidden_content_admin_loading')}</p>`;
+                d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel');
                 d.foot.onclick = () => d.close();
                 d.focusFirst();
                 try {
@@ -319,7 +319,7 @@
             body.querySelector('#jeTaOfferImport')?.addEventListener('click', () => {
                 const d = show('admin_tags_presets_add_title');
                 d.body.innerHTML = P.sourceHtml('admin_tags_presets_import_desc');
-                d.foot.innerHTML = P.buttonHtml('cancel', 'tag_portable_cancel') + P.buttonHtml('next', 'tag_portable_preview', { primary: true });
+                d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('next', 'tag_portable_preview', { primary: true });
                 P.wireSource(d);
                 d.foot.onclick = (e) => {
                     const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
@@ -344,7 +344,7 @@
                     ctx.snack(JE.t(copied ? 'tag_presets_shared' : 'tag_portable_copy_failed', { name: preset.name }));
                     return;
                 }
-                const ok = await ctx.confirm(JE.t('admin_tags_presets_remove_confirm', { name: preset.name }), JE.t('admin_tags_presets_remove'));
+                const ok = await ctx.confirm(JE.t('admin_tags_presets_remove_confirm', { name: preset.name }), JE.t('remove_button_text'));
                 if (!ok) return;
                 const rest = list.filter((p) => p !== preset);
                 ctx.set('TagOfferedPresets', rest.length ? JSON.stringify(rest) : '');
@@ -362,7 +362,7 @@
                     <span class="je-ta-offered-text"><strong>${ctx.esc(p.name)}</strong>${p.description ? `<span class="je-ta-hint">${ctx.esc(p.description)}</span>` : ''}</span>
                     <span class="je-ta-offered-buttons">
                         <button type="button" class="je-ta-button" data-offer-action="share" aria-label="${ctx.tx('tag_presets_share_named', { name: p.name })}">${ctx.tx('tag_presets_share')}</button>
-                        <button type="button" class="je-ta-button" data-offer-action="remove" aria-label="${ctx.tx('admin_tags_presets_remove_named', { name: p.name })}">${ctx.tx('admin_tags_presets_remove')}</button>
+                        <button type="button" class="je-ta-button" data-offer-action="remove" aria-label="${ctx.tx('admin_tags_presets_remove_named', { name: p.name })}">${ctx.tx('remove_button_text')}</button>
                     </span></li>`).join('')}</ul>` : `<p class="je-ta-hint">${ctx.tx('admin_tags_presets_none')}</p>`);
             const full = list.length >= MAX_OFFERED;
             for (const id of ['#jeTaOfferMine', '#jeTaOfferImport']) {

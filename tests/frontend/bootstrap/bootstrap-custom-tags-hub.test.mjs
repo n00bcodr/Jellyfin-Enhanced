@@ -66,7 +66,7 @@ test('the Groups tab has a Custom row: last by default, its switch, slot pills a
   const row = h.row('custom');
   assert.ok(row, 'a row for the group');
   assert.equal([...h.document.querySelectorAll('.je-tge-row')].at(-1), row, 'last in the default order');
-  assert.equal(row.querySelector('.je-tge-name').textContent, 'panel_settings_ui_tag_group_custom');
+  assert.equal(row.querySelector('.je-tge-name').textContent, 'common_custom');
   assert.match(row.querySelector('.je-tge-body').textContent, /panel_settings_ui_custom_tags_include/);
   assert.equal(row.querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_corners_tl · panel_settings_ui_tag_editor_summary_up_to{"count":3}');
   const toggle = h.$('#customTagsToggle');

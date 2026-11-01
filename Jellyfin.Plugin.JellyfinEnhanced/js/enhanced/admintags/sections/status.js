@@ -15,7 +15,7 @@
         id: 'group-status',
         tab: 'groups',
         order: 60,
-        title: 'panel_settings_ui_tag_group_status',
+        title: 'jellyseerr_modal_status',
         hint: 'admin_status_tags_description',
         group: {
             id: 'status',

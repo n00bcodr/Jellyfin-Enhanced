@@ -89,3 +89,5 @@ Merged translations normally reach your installed plugin with a plugin release. 
 See [How do I change the plugin's language?](faq.md#how-do-i-change-the-plugins-language) for administrator defaults and personal overrides.
 
 If a translated string is wrong, report it through Weblate. Include the language, affected screen, English source or string key, and suggested correction. Use [Support & Community](support.md) if you need help finding the string.
+
+Media Tags reuses existing keys for repeated UI words. Its enum tables reference the shared keys directly; compact codec/edition codes and proper rating-source names remain literals. Tag size choices are the numeric percentages `85%`, `100%`, `115%`, and `130%`. Translate descriptive words (including **Mixed** and full edition names), rather than adding keys for numbers or codes.

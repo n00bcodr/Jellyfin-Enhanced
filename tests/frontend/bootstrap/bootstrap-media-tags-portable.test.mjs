@@ -138,7 +138,7 @@ test('the Layout tab lists built-in, offered and own presets and the import and 
   assert.deepEqual(h.names('builtIn'), ['tag_presets_builtin_cinephile']);
   assert.deepEqual(h.names('offered'), ['Family']);
   assert.deepEqual(h.names('mine'), ['Mine']);
-  assert.match(h.$('[data-tp-source="mine"] .je-mth-tp-count').textContent, /tag_presets_mine_count:1\|10/);
+  assert.match(h.$('[data-tp-source="mine"] .je-mth-tp-count').textContent, /tag_looks_condition_count:1\|10/);
   assert.equal(h.$('[data-tp-source="builtIn"] [data-tp="delete"]'), null, 'only your own presets can be deleted');
   assert.ok(h.$('[data-tp-source="mine"] [data-tp="delete"]'));
   assert.equal(h.$('[data-tp-source="builtIn"] [data-tp="apply"]').getAttribute('aria-label'), 'tag_presets_apply_named:tag_presets_builtin_cinephile');

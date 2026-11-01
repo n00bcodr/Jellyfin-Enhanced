@@ -28,7 +28,7 @@
     /** @returns {Object} The settings panel editor's cap rules (stepCap, GROUP_META). */
     const editorData = () => JE.internals?.enhancedUi?.tagGroupEditorData || null;
     /** @param {string} g @returns {string} */
-    const groupName = (g) => JE.t(`panel_settings_ui_tag_group_${g === 'ageRating' ? 'age_rating' : g}`);
+    const groupName = (g) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.group[`${g === 'ageRating' ? 'age_rating' : g}`]);
     /** @param {string} g @returns {string} The group's enable setting. */
     const enabledKey = (g) => `${g === 'logos' ? 'Logo' : pascal(g)}TagsEnabled`;
 
@@ -146,16 +146,16 @@
         let slots;
         if (state.layout === 'corners') {
             const anchors = ANCHORS.map((a) => {
-                const label = JE.t(`panel_settings_ui_tag_slot_corners_${a}`);
+                const label = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`]);
                 return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" aria-label="${ctx.esc(JE.t('admin_tags_position_aria', { group: name, slot: label }))}" title="${ctx.esc(label)}"></button>`;
             }).join('');
-            const where = slot === 'off' ? JE.t('panel_settings_ui_tag_slot_off') : JE.t(`panel_settings_ui_tag_slot_corners_${slot}`);
+            const where = slot === 'off' ? JE.t('hidden_content_already_hidden') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${slot}`]);
             slots = `<span class="je-ta-anchors" role="group" id="${L().POSITION_SETTINGS[g].userKey}" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${anchors}</span>`
                 + `<span class="je-ta-slot-name">${ctx.esc(where)}</span>`
-                + `<button type="button" class="je-ta-pill" data-slot="off" aria-pressed="${slot === 'off'}">${ctx.tx('panel_settings_ui_tag_slot_off')}</button>`;
+                + `<button type="button" class="je-ta-pill" data-slot="off" aria-pressed="${slot === 'off'}">${ctx.tx('hidden_content_already_hidden')}</button>`;
         } else {
             slots = `<span class="je-ta-pills" role="group" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${L().LAYOUT_SLOTS[state.layout].filter((s) => s !== 'dots' || g === 'quality').map((s) => {
-                const label = JE.t(s === 'off' ? 'panel_settings_ui_tag_slot_off' : `panel_settings_ui_tag_slot_${state.layout}_${s}`);
+                const label = JE.t(s === 'off' ? 'hidden_content_already_hidden' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${s}`]);
                 return `<button type="button" class="je-ta-pill" data-slot="${s}" aria-pressed="${slot === s}">${ctx.esc(label)}</button>`;
             }).join('')}</span>`;
         }
@@ -178,12 +178,12 @@
         id: 'layout-look',
         tab: 'layout',
         order: 10,
-        title: 'admin_tags_layout_look',
+        title: 'admin_tags_overview_look',
         hint: 'admin_tags_layout_look_desc',
         fields: [
             { id: 'tagLayout', key: 'TagLayout', type: 'custom', label: 'admin_tags_layout_default' },
             { id: 'tagLabelDensity', key: 'TagLabelDensity', type: 'pills', label: 'panel_settings_ui_tag_density', desc: 'panel_settings_ui_tag_density_desc', options: [['full', 'panel_settings_ui_tag_density_full'], ['compact', 'panel_settings_ui_tag_density_compact']], read: (v) => (String(v || '').toLowerCase() === 'compact' ? 'compact' : 'full') },
-            { id: 'tagScale', key: 'TagScale', type: 'select', label: 'admin_tags_tagScale', options: [['smaller', '=Smaller'], ['default', '=Default'], ['larger', '=Larger'], ['largest', '=Largest']] },
+            { id: 'tagScale', key: 'TagScale', type: 'select', label: 'admin_tags_tagScale', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
             { id: 'tagGap', key: 'TagGap', type: 'select', label: 'admin_tags_tagGap', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
             { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'select', label: 'admin_tags_tagEdgeSpacing', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
         ],
@@ -192,7 +192,7 @@
             const tiles = document.createElement('div');
             tiles.innerHTML = `<span class="je-ta-label" id="tagLayoutLabel">${ctx.tx('admin_tags_layout_default')}</span>
                 <div class="je-ta-tiles" role="radiogroup" id="tagLayout" data-je-setting-id="tagLayout" aria-labelledby="tagLayoutLabel" aria-describedby="tagLayoutDesc">${LAYOUTS.map((id) => `
-                    <label class="je-ta-tile"><input type="radio" name="jeTaLayout" value="${id}"><span class="je-ta-tile-art" data-layout="${id}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="je-ta-tile-name">${ctx.tx(`tag_looks_layout_${id}`)}</span></label>`).join('')}</div>
+                    <label class="je-ta-tile"><input type="radio" name="jeTaLayout" value="${id}"><span class="je-ta-tile-art" data-layout="${id}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="je-ta-tile-name">${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[id])}</span></label>`).join('')}</div>
                 <p class="je-ta-hint" id="tagLayoutDesc" aria-live="polite" style="margin-top:8px"></p>`;
             card.querySelector('.je-ta-hint')?.after(tiles);
             tiles.addEventListener('change', (e) => {
@@ -278,7 +278,7 @@
             const order = state.order || L().DEFAULT_ORDER;
             list.innerHTML = order.map((g, i) => rowHtml(ctx, state, g, i, order.length)).join('');
             const note = body.querySelector('[data-layout-note]');
-            if (note) note.textContent = JE.t('admin_tags_layout_groups_for', { layout: JE.t(`tag_looks_layout_${state.layout}`) });
+            if (note) note.textContent = JE.t('admin_tags_layout_groups_for', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[state.layout]) });
         },
     });
 

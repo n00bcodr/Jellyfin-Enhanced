@@ -58,13 +58,13 @@
       "kind": "milestone",
       "style": "season_finale",
       "label": "status_tag_season_finale",
-      "compact": "status_tag_compact_finale"
+      "compact": "calendar_finale"
     },
     "series_finale": {
       "kind": "milestone",
       "style": "series_finale",
       "label": "status_tag_series_finale",
-      "compact": "status_tag_compact_finale"
+      "compact": "calendar_finale"
     },
     "complete_season": {
       "kind": "milestone",
@@ -76,7 +76,7 @@
       "kind": "schedule",
       "style": "airing_today",
       "label": "status_tag_airing_today",
-      "compact": "status_tag_compact_today"
+      "compact": "calendar_today"
     },
     "airs_date": {
       "kind": "schedule",
@@ -91,7 +91,7 @@
     "coming_soon": {
       "kind": "schedule",
       "style": "coming_soon",
-      "label": "status_tag_coming_soon",
+      "label": "requests_coming_soon",
       "compact": "status_tag_compact_soon"
     },
     "returning": {
@@ -122,7 +122,7 @@
     "leaving_soon": {
       "kind": "leaving",
       "style": "leaving",
-      "label": "status_tag_leaving_soon"
+      "label": "common_leaving_soon"
     },
     "leaving_today": {
       "kind": "leaving",

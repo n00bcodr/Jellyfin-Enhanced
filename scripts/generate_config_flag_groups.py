@@ -44,7 +44,7 @@ ENGLISH_LABELS = json.loads((REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "j
 OUTPUT = REPO_ROOT / "docs" / "advanced" / "config-flag-groups.json"
 MEDIA_TAGS_SECTIONS = REPO_ROOT / "Jellyfin.Plugin.JellyfinEnhanced" / "js" / "enhanced" / "admintags" / "sections"
 # The Media Tags page's tab in the output, and its icon (the main page card's).
-MEDIA_TAGS_TAB = ENGLISH_LABELS["admin_tags_title"]
+MEDIA_TAGS_TAB = ENGLISH_LABELS["common_media_tags"]
 MEDIA_TAGS_TAB_ICON = {"type": "material", "value": "sell"}
 
 # "overview-*" fieldsets are read-only dashboard status widgets, not admin

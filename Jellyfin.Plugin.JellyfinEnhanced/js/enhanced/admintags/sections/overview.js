@@ -13,14 +13,14 @@
     /** The groups and the switch that turns each on for new users. */
     const GROUPS = [
         ['quality', 'QualityTagsEnabled', 'panel_settings_ui_tag_group_quality'],
-        ['genre', 'GenreTagsEnabled', 'panel_settings_ui_tag_group_genre'],
+        ['genre', 'GenreTagsEnabled', 'common_genre'],
         ['language', 'LanguageTagsEnabled', 'panel_settings_ui_tag_group_language'],
         ['rating', 'RatingTagsEnabled', 'panel_settings_ui_tag_group_rating'],
         ['ageRating', 'AgeRatingTagsEnabled', 'panel_settings_ui_tag_group_age_rating'],
-        ['status', 'StatusTagsEnabled', 'panel_settings_ui_tag_group_status'],
-        ['awards', 'AwardsTagsEnabled', 'panel_settings_ui_tag_group_awards'],
-        ['logos', 'LogoTagsEnabled', 'panel_settings_ui_tag_group_logos'],
-        ['custom', 'CustomTagsEnabled', 'panel_settings_ui_tag_group_custom'],
+        ['status', 'StatusTagsEnabled', 'jellyseerr_modal_status'],
+        ['awards', 'AwardsTagsEnabled', 'awards_label'],
+        ['logos', 'LogoTagsEnabled', 'common_logos'],
+        ['custom', 'CustomTagsEnabled', 'common_custom'],
         ['people', 'PeopleTagsEnabled', 'admin_tags_group_people'],
     ];
     A.GROUP_SWITCHES = GROUPS;
@@ -112,12 +112,12 @@
                 <section class="je-ta-card je-ta-ov-wide"><h3 class="je-ta-card-title">${ctx.tx('admin_tags_overview_groups')}</h3><p class="je-ta-hint">${ctx.tx('admin_tags_overview_groups_desc')}</p><div class="je-ta-ov-groups" data-ov="groups"></div></section>
                 <section class="je-ta-card"><h3 class="je-ta-card-title">${ctx.tx('admin_tags_overview_look')}</h3><dl class="je-ta-ov-dl" data-ov="look"></dl><div class="je-ta-actions"><a class="je-ta-link" href="#" data-je-goto="layout">${ctx.tx('admin_tags_overview_change_layout')}<span class="material-icons" aria-hidden="true">arrow_forward</span></a></div></section>
                 <section class="je-ta-card"><div class="je-ta-card-head"><h3 class="je-ta-card-title">${ctx.tx('admin_tags_overview_cache')}</h3><span class="je-ta-state" data-ov="cache-state"></span></div><div data-ov="cache"></div><div class="je-ta-actions"><button type="button" class="je-ta-button" data-ov="rebuild"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx('admin_tags_rebuild')}</button></div></section>
-                <section class="je-ta-card"><div class="je-ta-card-head"><h3 class="je-ta-card-title">${ctx.tx('admin_tags_overview_native')}</h3><span class="je-ta-state" data-ov="native-state"></span></div><p class="je-ta-hint">${ctx.tx('admin_tags_overview_native_desc')}</p><div class="je-ta-actions"><a class="je-ta-link" href="#" data-je-goto="server">${ctx.tx('admin_tags_overview_server_link')}<span class="material-icons" aria-hidden="true">arrow_forward</span></a></div></section>
+                <section class="je-ta-card"><div class="je-ta-card-head"><h3 class="je-ta-card-title">${ctx.tx('panel_media_tags_server_native')}</h3><span class="je-ta-state" data-ov="native-state"></span></div><p class="je-ta-hint">${ctx.tx('admin_tags_overview_native_desc')}</p><div class="je-ta-actions"><a class="je-ta-link" href="#" data-je-goto="server">${ctx.tx('panel_media_tags_server_title')}<span class="material-icons" aria-hidden="true">arrow_forward</span></a></div></section>
                 <section class="je-ta-card"><div class="je-ta-card-head"><h3 class="je-ta-card-title">${ctx.tx('admin_tags_overview_colours')}</h3><span class="je-ta-state" data-ov="colours-state"></span></div><dl class="je-ta-ov-dl" data-ov="colours"></dl><div class="je-ta-actions"><a class="je-ta-link" href="#" data-je-goto="colours">${ctx.tx('admin_tags_overview_edit_colours')}<span class="material-icons" aria-hidden="true">arrow_forward</span></a></div></section>
                 <section class="je-ta-card je-ta-ov-wide"><h3 class="je-ta-card-title">${ctx.tx('admin_tags_overview_quick')}</h3><div class="je-ta-quick">
                     <button type="button" class="je-ta-button" data-je-goto="layout"><span class="material-icons" aria-hidden="true">view_quilt</span>${ctx.tx('admin_tags_quick_layout')}</button>
                     <button type="button" class="je-ta-button" data-je-goto="rules"><span class="material-icons" aria-hidden="true">rule</span>${ctx.tx('admin_tags_quick_rules')}</button>
-                    <button type="button" class="je-ta-button" data-je-goto="badges"><span class="material-icons" aria-hidden="true">new_releases</span>${ctx.tx('admin_tags_quick_badges')}</button>
+                    <button type="button" class="je-ta-button" data-je-goto="badges"><span class="material-icons" aria-hidden="true">new_releases</span>${ctx.tx('panel_media_tags_tab_badges')}</button>
                     <button type="button" class="je-ta-button" data-je-goto="layout:apply"><span class="material-icons" aria-hidden="true">group</span>${ctx.tx('admin_tags_apply_all')}</button>
                 </div></section>
             </div>`;
@@ -141,20 +141,20 @@
                 const el = /** @type {HTMLElement|null} */ (grid.querySelector(`[data-ov="${name}"]`));
                 if (el) { el.dataset.state = on; el.textContent = text; }
             };
-            set('groups', GROUPS.map(([id, key, name]) => `<button type="button" class="je-ta-ov-group" data-group="${id}" data-on="${c[key] === true}" aria-label="${ctx.esc(t('admin_tags_overview_group_aria', { name: t(name), state: t(c[key] === true ? 'admin_tags_on' : 'admin_tags_off') }))}">${ctx.esc(t(name))}</button>`).join(''));
+            set('groups', GROUPS.map(([id, key, name]) => `<button type="button" class="je-ta-ov-group" data-group="${id}" data-on="${c[key] === true}" aria-label="${ctx.esc(t('admin_tags_overview_group_aria', { name: t(name), state: t(c[key] === true ? 'common_on' : 'track_off') }))}">${ctx.esc(t(name))}</button>`).join(''));
             const L = ctx.layout;
             const conf = L ? L.normalizeSettings(A.seedUser(c), c) : null;
             const order = conf?.order || L?.DEFAULT_ORDER || [];
-            const groupName = (g) => t(`panel_settings_ui_tag_group_${g === 'ageRating' ? 'age_rating' : g}`);
+            const groupName = (g) => t(JE.core.tagLayout.VOCABULARY_KEYS.group[`${g === 'ageRating' ? 'age_rating' : g}`]);
             const rules = Array.isArray(c.TagLookRules) ? c.TagLookRules.length : 0;
             set('look', [
-                [t('admin_tags_overview_layout'), t(`tag_looks_layout_${conf?.layout || 'corners'}`)],
+                [t('common_layout'), t(JE.core.tagLayout.VOCABULARY_KEYS.layout[conf?.layout || 'corners'])],
                 [t('admin_tags_overview_labels'), t(`panel_settings_ui_tag_density_${conf?.density || 'full'}`)],
                 [t('admin_tags_overview_order'), order.map(groupName).join(', ')],
-                [t('admin_tags_overview_rules'), rules ? t('admin_tags_overview_rules_n', { n: rules }) : t('admin_tags_none')],
+                [t('common_rules'), rules ? t('admin_tags_overview_rules_n', { n: rules }) : t('admin_tags_none')],
             ].map(([k, v]) => `<dt>${ctx.esc(k)}</dt><dd>${ctx.esc(v)}</dd>`).join(''));
             const cacheOn = c.TagCacheServerMode !== false;
-            state('cache-state', cacheOn ? (summary?.rebuilding ? 'warn' : 'on') : 'off', t(cacheOn ? (summary?.rebuilding ? 'admin_tags_rebuilding' : 'admin_tags_on') : 'admin_tags_off'));
+            state('cache-state', cacheOn ? (summary?.rebuilding ? 'warn' : 'on') : 'off', t(cacheOn ? (summary?.rebuilding ? 'admin_tags_rebuilding' : 'common_on') : 'track_off'));
             const excluded = c.TagCacheExcludeLibraries === true ? String(c.TagCacheExcludedLibraryIds || '').split(',').filter(Boolean).length : 0;
             set('cache', !cacheOn ? `<p class="je-ta-hint">${ctx.tx('admin_tags_overview_cache_off')}</p>`
                 : summaryError ? `<p class="je-ta-hint">${ctx.tx('admin_tags_overview_cache_unknown')}</p>`
@@ -163,12 +163,12 @@
                     + `<dt>${ctx.tx('admin_tags_overview_excluded')}</dt><dd>${ctx.esc(excluded ? t('admin_tags_overview_excluded_n', { n: excluded }) : t('admin_tags_none'))}</dd></dl>`);
             const rebuild = /** @type {HTMLButtonElement|null} */ (grid.querySelector('[data-ov="rebuild"]'));
             if (rebuild) rebuild.disabled = !cacheOn || !!summary?.rebuilding;
-            state('native-state', c.NativePosterTagsEnabled === true ? 'on' : 'off', t(c.NativePosterTagsEnabled === true ? 'admin_tags_on' : 'admin_tags_off'));
+            state('native-state', c.NativePosterTagsEnabled === true ? 'on' : 'off', t(c.NativePosterTagsEnabled === true ? 'common_on' : 'track_off'));
             const styles = c.TagStylesEnabled === true;
-            state('colours-state', styles ? 'on' : 'off', t(styles ? 'admin_tags_on' : 'admin_tags_off'));
+            state('colours-state', styles ? 'on' : 'off', t(styles ? 'common_on' : 'track_off'));
             const target = ['web', 'native', 'both'].includes(c.TagStyleTarget) ? c.TagStyleTarget : 'both';
             set('colours', [
-                [t('admin_tags_overview_preset'), t(`panel_settings_ui_tag_style_preset_${c.TagStylePreset || 'default'}`)],
+                [t('admin_tags_overview_preset'), t(JE.core.tagLayout.VOCABULARY_KEYS.preset[c.TagStylePreset || 'default'])],
                 [t('admin_tags_overview_applies'), t(`admin_tags_style_target_${target}`)],
                 [t('admin_tags_overview_users_pick'), t(c.TagStylesAllowUserPreset === true ? 'admin_tags_allowed' : 'admin_tags_not_allowed')],
             ].map(([k, v]) => `<dt>${ctx.esc(k)}</dt><dd>${ctx.esc(v)}</dd>`).join(''));

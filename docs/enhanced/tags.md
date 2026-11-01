@@ -1390,3 +1390,5 @@ AC-3 tracks now produce **Dolby Digital 5.1** in Full and **DD 5.1** in Compact 
 Existing version-0 Full layouts keep their previous audio labels until a layout setting is saved. This preserves their appearance; normalized layouts and Compact presentation use the codec facts above.
 
 The live preview samples respond to pointer hover and keyboard focus using the same genre expansion, reveal lists and hide-on-hover behavior as library cards. **Hover** pins all samples in that state, including on touch screens; **Resting** releases the pin while the pointed or focused sample stays active. This applies to the hub, administrator preview and item editor.
+
+Tag size choices are **85%**, **100%**, **115%**, and **130%**. The inherited **Same as default look** option still follows the default size.

@@ -38,14 +38,14 @@
      * admin's time window it is limited by.
      */
     const BADGE_FAMILIES = [
-        { key: 'statusTagsJustAdded', id: 'statusTagsJustAddedToggle', fallback: true, nameKey: 'panel_media_tags_badge_just_added', descKey: 'panel_media_tags_badge_just_added_desc', chip: ['added', 'added', 'status_tag_just_added'], windowKey: 'panel_media_tags_badge_window_added', windowSetting: 'StatusTagsJustAddedDays', windowFallback: 7 },
+        { key: 'statusTagsJustAdded', id: 'statusTagsJustAddedToggle', fallback: true, nameKey: 'status_tag_just_added', descKey: 'panel_media_tags_badge_just_added_desc', chip: ['added', 'added', 'status_tag_just_added'], windowKey: 'panel_media_tags_badge_window_added', windowSetting: 'StatusTagsJustAddedDays', windowFallback: 7 },
         { key: 'statusTagsNewRelease', id: 'statusTagsNewReleaseToggle', fallback: true, nameKey: 'panel_media_tags_badge_new_release', descKey: 'panel_settings_ui_status_tags_new_release', chip: ['new', 'newMovie', 'status_tag_new_movie'], windowKey: 'panel_media_tags_badge_window_new', windowSetting: 'StatusTagsNewReleaseDays', windowFallback: 30 },
-        { key: 'statusTagsTrending', id: 'statusTagsTrendingToggle', fallback: true, nameKey: 'panel_media_tags_badge_trending', descKey: 'panel_media_tags_badge_trending_desc', chip: ['trending', 'trending', 'status_tag_trending_today'] },
+        { key: 'statusTagsTrending', id: 'statusTagsTrendingToggle', fallback: true, nameKey: 'recommendations_trending', descKey: 'panel_media_tags_badge_trending_desc', chip: ['trending', 'trending', 'status_tag_trending_today'] },
         { key: 'statusTagsSchedule', id: 'statusTagsScheduleToggle', fallback: true, nameKey: 'panel_media_tags_badge_schedule', descKey: 'panel_settings_ui_status_tags_schedule', chip: ['schedule', 'airing_today', 'status_tag_airing_today'] },
         { key: 'statusTagsMilestones', id: 'statusTagsMilestonesToggle', fallback: true, nameKey: 'panel_media_tags_badge_milestones', descKey: 'panel_settings_ui_status_tags_milestones', chip: ['milestone', 'season_finale', 'status_tag_season_finale'] },
         { key: 'statusTagsSeriesStatus', id: 'statusTagsSeriesStatusToggle', fallback: false, nameKey: 'panel_media_tags_badge_series_status', descKey: 'panel_settings_ui_status_tags_series_status', chip: ['status', 'returning', 'status_tag_returning'] },
         { key: 'statusTagsScenes', id: 'statusTagsScenesToggle', fallback: false, nameKey: 'panel_media_tags_badge_scenes', descKey: 'panel_settings_ui_status_tags_scenes', chip: ['scenes', 'post_credits', 'status_tag_post_credits'] },
-        { key: 'statusTagsLeaving', id: 'statusTagsLeavingToggle', fallback: false, nameKey: 'panel_media_tags_badge_leaving', descKey: 'panel_media_tags_badge_leaving_desc', chip: ['leaving', 'leaving', 'status_tag_leaving_days', { days: 5 }], requires: 'LeavingSoonAvailable', requiresKey: 'panel_media_tags_badge_leaving_unavailable' },
+        { key: 'statusTagsLeaving', id: 'statusTagsLeavingToggle', fallback: false, nameKey: 'common_leaving_soon', descKey: 'panel_media_tags_badge_leaving_desc', chip: ['leaving', 'leaving', 'status_tag_leaving_days', { days: 5 }], requires: 'LeavingSoonAvailable', requiresKey: 'panel_media_tags_badge_leaving_unavailable' },
         { key: 'statusTagsDirectPlay', id: 'statusTagsDirectPlayToggle', fallback: false, nameKey: 'panel_media_tags_badge_direct_play', descKey: 'panel_media_tags_badge_direct_play_desc', chip: ['playback', 'direct_play', 'status_tag_transcode'] },
     ];
 
@@ -91,13 +91,13 @@
      */
     function tabsFor() {
         const tabs = [
-            { id: 'layout', nameKey: 'panel_media_tags_tab_layout' },
-            { id: 'groups', nameKey: 'panel_media_tags_tab_groups' },
-            { id: 'badges', nameKey: 'panel_media_tags_tab_badges', shortKey: 'panel_media_tags_tab_badges_short' },
-            { id: 'rules', nameKey: 'panel_media_tags_tab_rules', shortKey: 'panel_media_tags_tab_rules_short' },
+            { id: 'layout', nameKey: 'common_layout' },
+            { id: 'groups', nameKey: 'common_groups' },
+            { id: 'badges', nameKey: 'panel_media_tags_tab_badges', shortKey: 'common_badges' },
+            { id: 'rules', nameKey: 'panel_media_tags_tab_rules', shortKey: 'common_rules' },
         ];
-        if (presetsAllowed() || isAdmin()) tabs.push({ id: 'colours', nameKey: 'panel_media_tags_tab_colours' });
-        if (isAdmin()) tabs.push({ id: 'server', nameKey: 'panel_media_tags_tab_server', admin: true });
+        if (presetsAllowed() || isAdmin()) tabs.push({ id: 'colours', nameKey: 'common_colours' });
+        if (isAdmin()) tabs.push({ id: 'server', nameKey: 'common_server', admin: true });
         return tabs;
     }
 
@@ -170,7 +170,7 @@
         const controls = own ? `
             <div class="je-mth-shape-fields">
                 <label>${tx('panel_settings_ui_tag_layout')}<select data-shape-action="layout" aria-label="${tx('tag_shapes_layout_for', { shape: shapeName })}">
-                    ${LAYOUTS.map(id => `<option value="${id}" ${conf.layout === id ? 'selected' : ''}>${tx(`tag_looks_layout_${id}`)}</option>`).join('')}
+                    ${LAYOUTS.map(id => `<option value="${id}" ${conf.layout === id ? 'selected' : ''}>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[id])}</option>`).join('')}
                 </select></label>
                 <label>${tx('panel_settings_ui_tag_density')}<select data-shape-action="density" aria-label="${tx('tag_shapes_density_for', { shape: shapeName })}">
                     ${['full', 'compact'].map(id => `<option value="${id}" ${conf.density === id ? 'selected' : ''}>${tx(`panel_settings_ui_tag_density_${id}`)}</option>`).join('')}
@@ -180,18 +180,18 @@
                     const choices = kind === 'scale' ? L.TAG_SCALES : L.TAG_GAPS;
                     return `<label>${tx(`tag_${kind}_label`)}<select data-shape-action="${key}" aria-label="${escapeHtml(shapeName)}: ${tx(`tag_${kind}_label`)}">
                         <option value="" ${!own[key] ? 'selected' : ''}>${tx('tag_size_inherit')}</option>
-                        ${Object.keys(choices).map(id => `<option value="${id}" ${own[key] === id ? 'selected' : ''}>${tx(`tag_${kind}_${id}`)}</option>`).join('')}
+                        ${Object.keys(choices).map(id => `<option value="${id}" ${own[key] === id ? 'selected' : ''}>${escapeHtml(JE.core.tagLayout.sizeLabel(kind, id))}</option>`).join('')}
                     </select></label>`;
                 }).join('')}
                 <button type="button" class="je-mth-button" data-shape-action="recommended">${tx('tag_shapes_recommended')}</button>
             </div>
             <div class="je-mth-shape-groups">${L.DEFAULT_ORDER.map(group => {
-                const groupName = JE.t(`panel_settings_ui_tag_group_${group === 'ageRating' ? 'age_rating' : group}`);
+                const groupName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.group[`${group === 'ageRating' ? 'age_rating' : group}`]);
                 const cap = conf.caps[group];
                 return `<div class="je-mth-shape-group" data-shape-group="${group}">
                     <span class="je-mth-label">${escapeHtml(groupName)}</span>
                     <div class="je-mth-shape-positions" role="group" aria-label="${tx('tag_shapes_position_for', { group: groupName, shape: shapeName })}">
-                        ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : `panel_settings_ui_tag_slot_${conf.layout}_${slot}`)}</button>`).join('')}
+                        ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'hidden_content_already_hidden' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${conf.layout}_${slot}`])}</button>`).join('')}
                     </div>
                     <div class="je-mth-shape-cap" data-je-cap-control ${L.singleChipGroup(group) ? 'hidden' : ''} role="group" aria-label="${tx('tag_shapes_cap_for', { group: groupName, shape: shapeName })}">
                         <button type="button" data-shape-action="cap" data-value="-1" ${internal.tagGroupEditorData.stepCap(cap, -1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_fewer', { group: groupName })}">−</button>
@@ -221,7 +221,7 @@
         return `<div class="je-mth-density">
             <span class="je-mth-label" id="jeMth${name}Label">${tx(`tag_${kind}_label`)}</span>
             <div class="je-mth-pills" id="jeTag${name}Choice" role="radiogroup" aria-labelledby="jeMth${name}Label">
-                ${Object.keys(choices).map(value => `<label class="je-mth-pill"><input type="radio" name="jeTag${name}" value="${value}" ${conf[`tag${name}`] === value ? 'checked' : ''}><span data-je-label>${tx(`tag_${kind}_${value}`)}</span></label>`).join('')}
+                ${Object.keys(choices).map(value => `<label class="je-mth-pill"><input type="radio" name="jeTag${name}" value="${value}" ${conf[`tag${name}`] === value ? 'checked' : ''}><span data-je-label>${escapeHtml(JE.core.tagLayout.sizeLabel(kind, value))}</span></label>`).join('')}
             </div>
             <span class="je-mth-hint">${tx(`tag_${kind}_desc`)}</span>
         </div>`;
@@ -237,7 +237,7 @@
             <label class="je-mth-tile">
                 <input type="radio" name="jeTagLayout" value="${id}" ${conf.layout === id ? 'checked' : ''}>
                 <span class="je-mth-tile-art" data-layout="${id}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-                <span class="je-mth-tile-name" data-je-label>${tx(`tag_looks_layout_${id}`)}</span>
+                <span class="je-mth-tile-name" data-je-label>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[id])}</span>
             </label>`).join('');
         const density = ['full', 'compact'].map((id) => `
             <label class="je-mth-pill">
@@ -247,14 +247,14 @@
         const edge = EDGES.map((id) => `
             <label class="je-mth-pill">
                 <input type="radio" name="jeTagEdge" value="${id}" ${conf.edge === id ? 'checked' : ''}>
-                <span data-je-label>${tx(`panel_settings_ui_tag_edge_${id}`)}</span>
+                <span data-je-label>${tx(JE.core.tagLayout.VOCABULARY_KEYS.edge[id])}</span>
             </label>`).join('');
         const native = JE.pluginConfig?.NativePosterTagsEnabled === true
             ? switchRow('nativePosterTagsToggle', JE.currentSettings.useNativePosterTags !== false, 'panel_settings_ui_native_poster_tags', 'panel_settings_ui_native_poster_tags_desc')
             : '';
         return `
             <section class="je-mth-card" aria-labelledby="jeMthLayoutTitle">
-                <h4 class="je-mth-card-title" id="jeMthLayoutTitle">${tx('panel_media_tags_layout_title')}</h4>
+                <h4 class="je-mth-card-title" id="jeMthLayoutTitle">${tx('common_layout')}</h4>
                 <p class="je-mth-hint">${tx('panel_media_tags_layout_desc')}</p>
                 <div class="je-mth-tiles" id="jeTagLayoutChoice" role="radiogroup" aria-labelledby="jeMthLayoutTitle" aria-describedby="jeMthLayoutDesc">${tiles}</div>
                 <p class="je-mth-desc" id="jeMthLayoutDesc" aria-live="polite">${tx(`panel_settings_ui_tag_layout_${conf.layout}`)}</p>
@@ -361,8 +361,8 @@
                 </label>`;
             presets = `
                 <div class="je-mth-presets" id="jeTagPresetChoice" role="radiogroup" aria-labelledby="jeMthColoursTitle" aria-describedby="jeMthColoursDesc">
-                    ${tile('', JE.t('panel_settings_ui_tag_style_preset_server', { preset: JE.t(`panel_settings_ui_tag_style_preset_${server}`) }))}
-                    ${PRESETS.map((id) => tile(id, JE.t(`panel_settings_ui_tag_style_preset_${id}`))).join('')}
+                    ${tile('', JE.t('panel_settings_ui_tag_style_preset_server', { preset: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[server]) }))}
+                    ${PRESETS.map((id) => tile(id, JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[id]))).join('')}
                 </div>`;
         } else {
             presets = `<p class="je-mth-off">${tx('panel_media_tags_colours_presets_off')}</p>`;
@@ -371,10 +371,10 @@
             <section class="je-mth-card je-mth-admin" aria-labelledby="jeMthColourEditorTitle">
                 <div class="je-mth-pointer">
                     <div>
-                        <h4 class="je-mth-card-title" id="jeMthColourEditorTitle">${tx('panel_media_tags_server_colours')} <span class="je-mth-admin-chip">${tx('panel_media_tags_admin_badge')}</span></h4>
+                        <h4 class="je-mth-card-title" id="jeMthColourEditorTitle">${tx('panel_media_tags_server_colours')} <span class="je-mth-admin-chip">${tx('common_admin')}</span></h4>
                         <p class="je-mth-hint">${tx('panel_media_tags_server_colours_desc')}</p>
                     </div>
-                    <a class="je-mth-button" href="${escapeHtml(configUrl('colours'))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t('panel_media_tags_server_colours') })}">${tx('panel_media_tags_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+                    <a class="je-mth-button" href="${escapeHtml(configUrl('colours'))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t('panel_media_tags_server_colours') })}">${tx('jellyseerr_issue_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
                 </div>
             </section>` : '';
         return `
@@ -394,11 +394,11 @@
                     <div class="je-mth-pointer-name" data-je-label>${tx(link.nameKey)}</div>
                     <div class="je-mth-hint">${tx(link.descKey)}</div>
                 </div>
-                <a class="je-mth-button" href="${escapeHtml(configUrl(link.tab))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t(link.nameKey) })}">${tx('panel_media_tags_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+                <a class="je-mth-button" href="${escapeHtml(configUrl(link.tab))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t(link.nameKey) })}">${tx('jellyseerr_issue_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
             </li>`).join('');
         return `
             <section class="je-mth-card je-mth-admin" aria-labelledby="jeMthServerTitle">
-                <h4 class="je-mth-card-title" id="jeMthServerTitle">${tx('panel_media_tags_server_title')} <span class="je-mth-admin-chip">${tx('panel_media_tags_admin_badge')}</span></h4>
+                <h4 class="je-mth-card-title" id="jeMthServerTitle">${tx('panel_media_tags_server_title')} <span class="je-mth-admin-chip">${tx('common_admin')}</span></h4>
                 <p class="je-mth-hint">${tx('panel_media_tags_server_desc')}</p>
                 <ul class="je-mth-pointers">${rows}</ul>
             </section>`;
@@ -426,7 +426,7 @@
             const label = tab.admin ? JE.t('panel_media_tags_tab_server_name', { name }) : name;
             return `<button type="button" role="tab" class="je-mth-tab${tab.admin ? ' je-mth-tab--admin' : ''}" id="jeMthTab-${tab.id}" data-tab="${tab.id}" aria-controls="jeMthPanel-${tab.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" aria-label="${escapeHtml(label)}">`
                 + `<span class="je-mth-tab-long">${escapeHtml(name)}</span><span class="je-mth-tab-short" aria-hidden="true">${escapeHtml(short)}</span>`
-                + (tab.admin ? `<span class="je-mth-admin-chip" aria-hidden="true">${tx('panel_media_tags_admin_badge')}</span>` : '')
+                + (tab.admin ? `<span class="je-mth-admin-chip" aria-hidden="true">${tx('common_admin')}</span>` : '')
                 + '</button>';
         }).join('');
         const panels = tabs.map((tab, i) => `
@@ -435,11 +435,11 @@
             <section class="je-pane" data-pane="media-tags">
                 <div class="je-mth" id="jeMediaTagsHub" data-tab="${tabs[0].id}">
                     <div class="je-mth-top">
-                        <h3 class="je-pane-title">${JE.icon(JE.IconName.TAG)} ${tx('panel_media_tags_title')}</h3>
-                        <div class="je-mth-tabs" role="tablist" aria-label="${tx('panel_media_tags_title')}">${tabButtons}</div>
+                        <h3 class="je-pane-title">${JE.icon(JE.IconName.TAG)} ${tx('common_media_tags')}</h3>
+                        <div class="je-mth-tabs" role="tablist" aria-label="${tx('common_media_tags')}">${tabButtons}</div>
                     </div>
                     <div class="je-mth-strip" id="jeMthStrip">
-                        <button type="button" class="je-mth-strip-toggle" id="jeMthStripToggle" aria-expanded="false" aria-controls="jeMthPreview">${tx('panel_media_tags_preview_strip')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+                        <button type="button" class="je-mth-strip-toggle" id="jeMthStripToggle" aria-expanded="false" aria-controls="jeMthPreview">${tx('common_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
                         <div class="je-mth-strip-thumb" aria-hidden="true"></div>
                         <div class="je-mth-strip-info">
                             <div class="je-mth-strip-text"></div>
@@ -956,7 +956,7 @@
             const out = [];
             const seen = new Set();
             for (const panel of hub.querySelectorAll('[role="tabpanel"]')) {
-                const tabName = JE.t(`panel_media_tags_tab_${/** @type {HTMLElement} */ (panel).dataset.tab}`);
+                const tabName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.tab[`${/** @type {HTMLElement} */ (panel).dataset.tab}`]);
                 const controls = panel.querySelectorAll('input:not([type="hidden"]), select, button, a[href], [role="group"][aria-labelledby], [role="radiogroup"][aria-labelledby]');
                 for (const node of controls) {
                     const el = /** @type {HTMLElement} */ (node);
@@ -965,7 +965,7 @@
                     if (!label) continue;
                     const row = /** @type {HTMLElement|null} */ (el.closest('.je-tge-row'));
                     const group = row ? (row.querySelector('.je-tge-name')?.textContent || '').trim() : '';
-                    const path = [JE.t('panel_media_tags_title'), tabName, group].filter(Boolean).join(' › ');
+                    const path = [JE.t('common_media_tags'), tabName, group].filter(Boolean).join(' › ');
                     const key = `${path}|${label}`;
                     if (seen.has(key)) continue;
                     seen.add(key);

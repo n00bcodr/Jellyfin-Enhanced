@@ -129,7 +129,7 @@
                 <div id="jePanelTitle" style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(JE.t('panel_version', { version: JE.pluginVersion }))}</div>
                 ${internal.buildPanelSizeControlsHtml ? internal.buildPanelSizeControlsHtml() : ''}
-                <button id="closeSettingsPanel" type="button" aria-label="${escapeHtml(tWithFallback('panel_close', 'Close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+                <button id="closeSettingsPanel" type="button" aria-label="${escapeHtml(tWithFallback('awards_close', 'Close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
             <div class="je-panel-dock"><select id="jePanelSection" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}"></select></div>
             <div class="je-panel-body">
@@ -366,7 +366,7 @@
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor}; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;">
                                 <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_media_tags_moved'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_media_tags_moved_desc'))}</div></div>
-                                <button type="button" id="jeOpenMediaTags" data-je-open-pane="media-tags" style="font-family:inherit; font-size:13px; font-weight:600; color:#fff; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.22); border-radius:6px; min-height:36px; padding:0 12px; cursor:pointer;">${escapeHtml(JE.t('panel_media_tags_open'))}</button>
+                                <button type="button" id="jeOpenMediaTags" data-je-open-pane="media-tags" style="font-family:inherit; font-size:13px; font-weight:600; color:#fff; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.22); border-radius:6px; min-height:36px; padding:0 12px; cursor:pointer;">${escapeHtml(JE.t('jellyseerr_issue_open'))}</button>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">

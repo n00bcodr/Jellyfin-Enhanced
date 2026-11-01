@@ -99,7 +99,7 @@ test('the hub is a real tablist: roles, names, roving tabindex and Left/Right/Ho
   const h = setup(t);
   await h.open();
   const tablist = h.$('#jeMediaTagsHub [role="tablist"]');
-  assert.equal(tablist.getAttribute('aria-label'), 'panel_media_tags_title');
+  assert.equal(tablist.getAttribute('aria-label'), 'common_media_tags');
   const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
   assert.deepEqual(tabs.map(tab => tab.dataset.tab), ['layout', 'groups', 'badges', 'rules']);
   for (const tab of tabs) {
@@ -113,7 +113,7 @@ test('the hub is a real tablist: roles, names, roving tabindex and Left/Right/Ho
     assert.ok(short && name && name.toLowerCase().includes(short.toLowerCase()), `"${short}" is in "${name}"`);
   }
   assert.equal(h.tab('badges').getAttribute('aria-label'), 'panel_media_tags_tab_badges');
-  assert.equal(h.tab('badges').querySelector('.je-mth-tab-short').textContent, 'panel_media_tags_tab_badges_short');
+  assert.equal(h.tab('badges').querySelector('.je-mth-tab-short').textContent, 'common_badges');
   assert.deepEqual(tabs.map(tab => tab.tabIndex), [0, -1, -1, -1], 'one tab stop');
   assert.equal(h.$('#jeMthPanel-layout').hidden, false);
   assert.equal(h.$('#jeMthPanel-groups').hidden, true);
@@ -177,7 +177,7 @@ test('an admin gets the Server tab with four Media Tags page pointers and the co
   const h = setup(t, { admin: true, plugin: { TagStylesAllowUserPreset: false, StatusTagsJustAddedDays: 14 } });
   await h.open();
   assert.deepEqual(Array.from(h.document.querySelectorAll('[role="tab"]'), tab => tab.dataset.tab), ['layout', 'groups', 'badges', 'rules', 'colours', 'server']);
-  assert.equal(h.tab('server').getAttribute('aria-label'), 'panel_media_tags_tab_server_name:panel_media_tags_tab_server');
+  assert.equal(h.tab('server').getAttribute('aria-label'), 'panel_media_tags_tab_server_name:common_server');
   const links = Array.from(h.document.querySelectorAll('#jeMthPanel-server a[data-je-config-link]'));
   // The admin settings live on the Media Tags page: each pointer opens its tab.
   assert.deepEqual(links.map(a => new URLSearchParams(a.href.split('?')[1]).get('tab')),
@@ -248,15 +248,15 @@ test('the settings search finds hub controls by their visible label, opens their
   await h.settle();
 
   let results = await h.search('trending');
-  const trending = results.find(r => r.label === 'panel_media_tags_badge_trending');
+  const trending = results.find(r => r.label === 'recommendations_trending');
   assert.ok(trending, results.map(r => r.label).join(', '));
-  assert.equal(trending.path, 'panel_media_tags_title › panel_media_tags_tab_badges');
+  assert.equal(trending.path, 'common_media_tags › panel_media_tags_tab_badges');
   h.click(trending.button);
   assert.equal(h.selected(), 'badges');
   assert.equal(h.document.activeElement, h.$('#statusTagsTrendingToggle'));
 
   results = await h.search('show up to language');
-  assert.equal(results[0].path, 'panel_media_tags_title › panel_media_tags_tab_groups › panel_settings_ui_tag_group_language');
+  assert.equal(results[0].path, 'common_media_tags › common_groups › panel_settings_ui_tag_group_language');
   h.click(results[0].button);
   assert.equal(h.selected(), 'groups');
   const row = h.$('.je-tge-row[data-group="language"]');
@@ -269,7 +269,7 @@ test('the settings search finds hub controls by their visible label, opens their
   h.key(h.$('#jePanelSearch'), 'Enter');
   assert.equal(h.document.activeElement, h.$('.je-tge-row[data-group="language"] [data-dir="up"]'));
 
-  for (const [query, label, tab] of [['compact', 'panel_settings_ui_tag_density_compact', 'layout'], ['caption', 'tag_looks_layout_caption', 'layout'],
+  for (const [query, label, tab] of [['compact', 'panel_settings_ui_tag_density_compact', 'layout'], ['caption', 'panel_settings_ui_tag_slot_caption_caption', 'layout'],
     ['people', 'panel_settings_ui_people_tags', 'layout'], ['edit rule', 'tag_looks_edit_named:tag_looks_when:tag_looks_cond_library:Kids', 'rules'],
     ['glass', 'panel_settings_ui_tag_style_preset_glass', 'colours'], ['critic', 'rating_source_critic', 'groups'],
     ['condition 1 field', 'tag_looks_condition_field:1', 'rules']]) {
@@ -285,7 +285,7 @@ test('the settings search finds hub controls by their visible label, opens their
   h.$('.je-pane[data-pane="ui"]').classList.add('active');
   h.$('.je-pane[data-pane="media-tags"]').classList.remove('active');
   results = await h.search('trending');
-  h.click(results.find(r => r.label === 'panel_media_tags_badge_trending').button);
+  h.click(results.find(r => r.label === 'recommendations_trending').button);
   assert.ok(h.$('.je-pane[data-pane="media-tags"]').classList.contains('active'));
   assert.equal((await h.search('')).length, 0);
   assert.equal(h.$('#jePanelSearchResults').hidden, true);
@@ -333,7 +333,7 @@ test('the preview names where each sample\'s look comes from, through the resolv
   await h.open();
   const meta = key => h.$(`.je-mtp-sample[data-sample="${key}"] .je-mtp-meta`).textContent;
   const host = key => h.$(`.je-mtp-sample[data-sample="${key}"] .je-tag-host`);
-  assert.equal(meta('movie'), 'tag_looks_type_movie · panel_media_tags_preview_source_defaulttag_looks_outcome:tag_looks_layout_corners|panel_settings_ui_tag_density_full');
+  assert.equal(meta('movie'), 'jellyseerr_card_badge_movie · common_defaulttag_looks_outcome:tag_looks_layout_corners|panel_settings_ui_tag_density_full');
   assert.match(meta('series'), /🔒 panel_media_tags_preview_source_lock/);
   assert.equal(host('series').dataset.jeLayout, 'bands', 'the lock\'s look');
   assert.equal(h.$('.je-mtp-sample[data-sample="series"] .je-mtp-card').dataset.id, LOCKED, 'the series sample stands in for the locked item');
@@ -346,11 +346,11 @@ test('the preview names where each sample\'s look comes from, through the resolv
   // Switching the rule off, then unlocking: each sample falls back to the next source.
   await h.JE.core.tagLook.saveRules([{ ...rule, enabled: false }]);
   await h.settle(); await h.settle();
-  assert.match(meta('episode'), /panel_media_tags_preview_source_default/);
+  assert.match(meta('episode'), /common_default/);
   assert.equal(host('episode').dataset.jeLayout, 'corners');
   await h.JE.core.tagLook.unlockItems([LOCKED]);
   await h.settle(); await h.settle();
-  assert.match(meta('series'), /panel_media_tags_preview_source_default/);
+  assert.match(meta('series'), /common_default/);
   assert.equal(host('series').dataset.jeLayout, 'corners');
 
   // A lock wins over a rule that matches the same item.
@@ -615,7 +615,7 @@ for (const editor of ['landscape', 'list', 'default']) {
         assert.equal(shape ? saved.tagShapeOverrides[editor].caps.quality : saved.tagGroupCaps.quality, current);
         if (shape) assert.equal(saved.tagGroupCaps, null, 'shape edits leave the default caps alone');
         assert.equal(value(), current === 0
-          ? shape ? 'panel_settings_ui_tag_editor_summary_all' : 'panel_settings_ui_tag_editor_cap_all'
+          ? shape ? 'panel_settings_ui_tag_editor_summary_all' : 'jellyseerr_discover_all'
           : String(current));
         assert.equal(step(-1).disabled, current === 1);
         assert.equal(step(1).disabled, current === 0);

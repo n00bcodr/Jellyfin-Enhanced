@@ -79,7 +79,7 @@ test('rows follow the default order for a document without one; moving writes th
   assert.deepEqual(h.order(), ['status', 'quality', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos', 'custom']);
   assert.equal(h.row('status').querySelector('[data-dir="up"]').disabled, true);
   assert.equal(h.row('custom').querySelector('[data-dir="down"]').disabled, true);
-  assert.equal(h.row('genre').querySelector('[data-dir="up"]').getAttribute('aria-label'), 'panel_settings_ui_tag_editor_move_up{"group":"panel_settings_ui_tag_group_genre"}');
+  assert.equal(h.row('genre').querySelector('[data-dir="up"]').getAttribute('aria-label'), 'panel_settings_ui_tag_editor_move_up{"group":"common_genre"}');
 
   const up = h.row('genre').querySelector('[data-dir="up"]');
   up.focus();
@@ -116,7 +116,7 @@ test('a position pill writes the selected layout\'s profile; corners also keeps 
   saved = h.saved();
   assert.equal(saved.ageRatingTagsPosition, 'top-left');
   assert.deepEqual(saved.tagLayouts.corners.groups, [{ group: 'ageRating', slot: 'off' }]);
-  assert.equal(h.row('ageRating').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_off');
+  assert.equal(h.row('ageRating').querySelector('.je-tge-summary').textContent, 'hidden_content_already_hidden');
 
   // Another layout: its pills, its own profile, the corners pick untouched.
   await h.layout('minimal');
@@ -147,7 +147,7 @@ test('the cap stepper clamps to 1..10, offers All only for quality and rating, a
   assert.equal(step('genre', -1).disabled, true, 'never below 1');
   assert.equal(h.saved().tagGroupCaps.genre, 1);
 
-  assert.equal(cap('quality'), 'panel_settings_ui_tag_editor_cap_all');
+  assert.equal(cap('quality'), 'jellyseerr_discover_all');
   assert.equal(step('quality', 1).disabled, true);
   await h.click(step('quality', -1));
   assert.equal(h.saved().tagGroupCaps.quality, 10);
@@ -223,7 +223,7 @@ test('programmatic layout and density changes refresh Otherwise without a save',
   await h.settle();
   Object.assign(h.JE.currentSettings, { tagLayout: 'caption', tagLabelDensity: 'compact' });
   await h.JE.reinitializeTagLayout();
-  assert.match(h.$('[data-je-row="otherwise"]').textContent, /tag_looks_layout_caption.*tag_density_compact/);
+  assert.match(h.$('[data-je-row="otherwise"]').textContent, /panel_settings_ui_tag_slot_caption_caption.*tag_density_compact/);
   assert.equal(h.writes.length, 0);
 });
 
@@ -275,7 +275,7 @@ test('the preview re-renders through the layout controller on every editor chang
   assert.equal(host.querySelector('.quality-overlay-container'), null);
   await h.change(h.$('#genreTagsToggle'), true);
   assert.ok(host.querySelector('.genre-overlay-container'));
-  assert.ok(h.JE.core.tagLayout.buildStyles().includes('.je-tag-reveal .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }'));
+  assert.ok(h.JE.core.tagLayout.buildStyles().includes('.je-tag-reveal) .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }'));
 });
 
 test('expanding a row is a real button with aria-expanded; every editor control is a focusable button or input', async t => {
@@ -404,7 +404,7 @@ test('the Follow server policy and Follow server settings make the quality field
   let refreshed = 0; h.JE.reinitializeQualityTags = () => refreshed++;
   const select = h.$('#seriesQualityAggregationSelect');
   assert.equal(select.value, 'best');
-  assert.equal(select.options[0].textContent, 'series_quality_aggregation_inherit{"policy":"series_quality_aggregation_latest"}');
+  assert.equal(select.options[0].textContent, 'language_priority_inherit{"policy":"series_quality_aggregation_latest"}');
   await h.change(select, '');
   assert.equal(h.saved().seriesQualityAggregation, null);
   assert.equal(h.JE.currentSettings.seriesQualityAggregation, 'latest', 'shown as the administrator\'s');
@@ -657,8 +657,8 @@ test('the Logos row precedes Custom by default, switches the group, offers All a
   const row = h.row('logos');
   assert.ok(row, 'the Logos row exists');
   assert.equal(h.order().at(-2), 'logos');
-  assert.equal(row.querySelector('.je-tge-name').textContent, 'panel_settings_ui_tag_group_logos');
-  assert.equal(row.querySelector('.je-tge-cap').textContent, 'panel_settings_ui_tag_editor_cap_all');
+  assert.equal(row.querySelector('.je-tge-name').textContent, 'common_logos');
+  assert.equal(row.querySelector('.je-tge-cap').textContent, 'jellyseerr_discover_all');
   assert.match(row.querySelector('.je-tge-body').textContent, /panel_settings_ui_logo_tags_include/);
   const toggle = row.querySelector('#logoTagsToggle');
   assert.equal(toggle.checked, false, 'off by default');

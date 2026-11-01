@@ -141,7 +141,7 @@ test('the detail page ⋮ gets a native-looking Media Tags row before Share, whi
   assert.ok(row, 'the row is there');
   assert.equal(row.nextElementSibling.dataset.id, 'share', 'before Share');
   assert.equal(row.className, 'listItem listItem-button actionSheetMenuItem actionsheet-xlargeFont', 'the native rows\' classes');
-  assert.equal(row.querySelector('.actionSheetItemText').textContent, 'tag_item_editor_menu');
+  assert.equal(row.querySelector('.actionSheetItemText').textContent, 'common_media_tags');
   assert.ok(row.querySelector('.material-icons.local_offer'));
   h.click(row);
   await h.settle();

@@ -101,7 +101,7 @@
      */
     function buildRow(scroller) {
         const shared = JE.internals?.features?.buildNativeActionSheetItem;
-        if (typeof shared === 'function') return shared(scroller, { dataId: DATA_ID, icon: 'local_offer', text: JE.t('tag_item_editor_menu') });
+        if (typeof shared === 'function') return shared(scroller, { dataId: DATA_ID, icon: 'local_offer', text: JE.t('common_media_tags') });
         const ref = scroller.querySelector('.actionSheetMenuItem');
         const button = document.createElement('button');
         button.setAttribute('is', 'emby-button');
@@ -115,7 +115,7 @@
         body.className = 'listItemBody actionsheetListItemBody';
         const text = document.createElement('div');
         text.className = 'listItemBodyText actionSheetItemText';
-        text.textContent = JE.t('tag_item_editor_menu');
+        text.textContent = JE.t('common_media_tags');
         body.appendChild(text);
         button.append(icon, body);
         return /** @type {HTMLButtonElement} */ (button);

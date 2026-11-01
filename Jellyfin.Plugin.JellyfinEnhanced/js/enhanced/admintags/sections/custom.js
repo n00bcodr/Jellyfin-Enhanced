@@ -6,7 +6,7 @@
         id: 'group-custom',
         tab: 'groups',
         order: 80,
-        title: 'admin_tags_custom_title', hint: 'admin_tags_custom_desc',
+        title: 'common_custom', hint: 'admin_tags_custom_desc',
         group: {
             id: 'custom', summary: () => JE.t('admin_tags_custom_desc'), sample: () => [['status', 'Custom']] },
         fields: [

@@ -95,7 +95,7 @@ test('the rules list in order with their outcome, the default after them and the
     tagLayoutLocks: { [MOVIE]: { layout: 'minimal', density: 'full', lockedAt: 1 } } } });
   await h.open();
   assert.deepEqual(h.rows(), [
-    '1. tag_looks_when:tag_looks_cond_library:Kids' + 'tag_looks_and' + 'tag_looks_cond_type:tag_looks_type_episode → tag_looks_outcome:tag_looks_layout_caption|panel_settings_ui_tag_density_compact',
+    '1. tag_looks_when:tag_looks_cond_library:Kids' + 'tag_looks_and' + 'tag_looks_cond_type:jellyseerr_report_issue_episode → tag_looks_outcome:panel_settings_ui_tag_slot_caption_caption|panel_settings_ui_tag_density_compact',
     '2. tag_looks_when:tag_looks_cond_genre:Drama → tag_looks_outcome:tag_looks_layout_bands|panel_settings_ui_tag_density_full',
   ]);
   assert.equal(h.mount().querySelector('.je-tag-looks-main [data-je-row="locked"] .je-tag-looks-count').textContent, '1');
@@ -123,7 +123,7 @@ test('reorder, switch off and delete save the rules and re-present the cards', a
   h.click(h.mount().querySelector('[data-je-rule-id="kids"] .je-tag-looks-pill'));
   await h.settle();
   assert.equal(h.writes.at(-1).tagLookRules.find(r => r.id === 'kids').enabled, false);
-  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="second"]'), 'tag_looks_delete'));
+  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="second"]'), 'reviews_delete'));
   await h.settle();
   assert.deepEqual(h.writes.at(-1).tagLookRules.map(r => r.id), ['kids']);
   assert.equal(h.writes.at(-1).tagLayoutSettingsVersion, 1);
@@ -185,19 +185,19 @@ test('the add-rule form builds conditions from libraries, types and genres, vali
   assert.notEqual(fresh, form, 'a fresh add form takes its place');
   assert.equal(fresh.querySelectorAll('[data-je-cond]').length, 1);
   const newRow = h.mount().querySelector(`[data-je-rule-id="${saved[0].id}"]`);
-  assert.equal(h.document.activeElement, h.buttonIn(newRow, 'tag_looks_edit'), 'focus moves to the new rule');
+  assert.equal(h.document.activeElement, h.buttonIn(newRow, 'reviews_edit'), 'focus moves to the new rule');
 
   // Editing reuses the form with the rule's values; Cancel goes back to adding.
-  h.click(h.buttonIn(newRow, 'tag_looks_edit'));
+  h.click(h.buttonIn(newRow, 'reviews_edit'));
   await h.settle();
   const edit = h.form();
   assert.equal(edit.querySelectorAll('[data-je-cond]').length, 2);
   assert.equal(edit.querySelector('[data-je-rule-layout]').value, 'bands');
   assert.equal(h.document.activeElement, edit.querySelector('[data-je-cond-field]'));
-  h.click(h.buttonIn(edit, 'tag_looks_cancel'));
+  h.click(h.buttonIn(edit, 'jellyseerr_modal_cancel'));
   assert.equal(h.form().querySelectorAll('[data-je-cond]').length, 1, 'back to a new rule');
-  assert.equal(h.document.activeElement, h.buttonIn(newRow, 'tag_looks_edit'));
-  h.click(h.buttonIn(newRow, 'tag_looks_edit'));
+  assert.equal(h.document.activeElement, h.buttonIn(newRow, 'reviews_edit'));
+  h.click(h.buttonIn(newRow, 'reviews_edit'));
   const again = h.form();
   again.querySelector('[data-je-rule-layout]').value = 'minimal';
   again.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
@@ -221,7 +221,7 @@ test('at the 50-rule limit Add rule is off; deleting one turns it back on and ke
   form.querySelector('[data-je-rule-layout]').value = 'bands';
 
   // Delete the first rule: the form is not rebuilt, and it may add again.
-  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="r00"]'), 'tag_looks_delete'));
+  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="r00"]'), 'reviews_delete'));
   await h.settle();
   assert.equal(h.writes.at(-1).tagLookRules.length, 49);
   assert.equal(h.form(), form, 'the form keeps its values');
@@ -253,7 +253,7 @@ test('at the 50-rule limit Add rule is off; deleting one turns it back on and ke
 test('editing a switched-off rule saves its edits and keeps it off', async t => {
   const h = setup(t, { settings: { tagLookRules: [{ ...kidsRule, enabled: false, shapes: { landscape: { layout: 'caption', density: 'compact' } } }] } });
   await h.open();
-  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="kids"]'), 'tag_looks_edit'));
+  h.click(h.buttonIn(h.mount().querySelector('[data-je-rule-id="kids"]'), 'reviews_edit'));
   const form = h.form();
   form.querySelector('[data-je-rule-layout]').value = 'bands';
   form.dispatchEvent(new h.window.Event('submit', { cancelable: true }));
@@ -277,12 +277,12 @@ test('focus recovers after every rule change: moves to an end, deletes in the mi
   assert.deepEqual(h.writes.at(-1).tagLookRules.map(r => r.id), ['b', 'c', 'a']);
   assert.equal(h.document.activeElement, row('a').querySelector('[aria-label^="tag_looks_move_up"]'), 'at the bottom: its up button');
   // Deleting a middle rule: the next rule's Delete.
-  h.click(h.buttonIn(row('c'), 'tag_looks_delete'));
-  assert.equal(h.document.activeElement, h.buttonIn(row('a'), 'tag_looks_delete'));
+  h.click(h.buttonIn(row('c'), 'reviews_delete'));
+  assert.equal(h.document.activeElement, h.buttonIn(row('a'), 'reviews_delete'));
   // Deleting the last one left: the previous rule's, then the empty list.
-  h.click(h.buttonIn(row('a'), 'tag_looks_delete'));
-  assert.equal(h.document.activeElement, h.buttonIn(row('b'), 'tag_looks_delete'));
-  h.click(h.buttonIn(row('b'), 'tag_looks_delete'));
+  h.click(h.buttonIn(row('a'), 'reviews_delete'));
+  assert.equal(h.document.activeElement, h.buttonIn(row('b'), 'reviews_delete'));
+  h.click(h.buttonIn(row('b'), 'reviews_delete'));
   const empty = h.mount().querySelector('.je-tag-looks-empty');
   assert.equal(h.document.activeElement, empty, 'a named empty state, never the page body');
   assert.equal(empty.hidden, false);
@@ -338,7 +338,7 @@ test('the locked list loads titles once its tab shows, in batches of 50, and unl
   const opened = [];
   h.JE.tagItemEditor.open = (id, options) => { opened.push([id, options.opener]); return Promise.resolve(true); };
   const edit = items()[0].querySelector('[data-je-focus-key^="edit-"]');
-  assert.equal(edit.textContent, 'tag_looks_edit');
+  assert.equal(edit.textContent, 'reviews_edit');
   assert.equal(edit.getAttribute('aria-label'), 'tag_looks_edit_lock_named:Title 3b');
   h.click(edit);
   assert.deepEqual(opened.map(([id]) => id), [Object.keys(locks).find((id) => locks[id].lockedAt === 59)]);
@@ -386,7 +386,7 @@ test('a save that fails with HTTP 500 resolves false, restores the locks and rul
   // The panel: deleting the rule shows at once, then comes back with a toast.
   await h.open();
   assert.equal(h.rows().length, 1);
-  h.click(h.buttonIn(h.mount(), 'tag_looks_delete'));
+  h.click(h.buttonIn(h.mount(), 'reviews_delete'));
   assert.equal(h.rows().length, 0, 'optimistic');
   await h.settle(); await h.settle();
   assert.equal(h.toasts.at(-1), 'tag_looks_save_failed_toast');
@@ -395,7 +395,7 @@ test('a save that fails with HTTP 500 resolves false, restores the locks and rul
 
   // Once the server answers again the same change saves.
   h.io.saveStatus = 200;
-  h.click(h.buttonIn(h.mount(), 'tag_looks_delete'));
+  h.click(h.buttonIn(h.mount(), 'reviews_delete'));
   await h.settle(); await h.settle();
   assert.deepEqual(h.writes.at(-1).TagLookRules ?? h.writes.at(-1).tagLookRules, []);
   assert.equal(h.rows().length, 0);

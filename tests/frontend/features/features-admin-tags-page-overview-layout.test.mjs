@@ -225,7 +225,7 @@ test('What\'s New on the main page lists new Media Tags settings with a link to 
   const h = createHarness({ JE: {} });
   try {
     h.window.eval(`${humanize}\n${helper}\nwindow.entries = jeMediaTagsWhatsNewEntries;`);
-    const names = { admin_tags_title: 'Media Tags', admin_tags_tab_layout: 'Layout defaults', admin_tags_tab_groups: 'Groups', admin_tags_tab_badges: 'Status badges', panel_settings_ui_tag_group_rating: 'Rating', panel_settings_ui_tag_group_age_rating: 'Age Rating' };
+    const names = { common_media_tags: 'Media Tags', admin_tags_tab_layout: 'Layout defaults', common_groups: 'Groups', panel_media_tags_tab_badges: 'Status badges', panel_settings_ui_tag_group_rating: 'Rating', panel_settings_ui_tag_group_age_rating: 'Age Rating' };
     const t = (key) => names[key] || key;
     const where = {
       tagLayout: { page: 'JellyfinEnhancedMediaTags', tab: 'layout', group: null },

@@ -186,7 +186,7 @@ public static class StatusRules
 
     private static string FormatAirDay(DateOnly day, int ahead, PosterTagSettings settings)
     {
-        if (ahead == 1) return Translate("status_tag_tomorrow", settings.StatusCulture);
+        if (ahead == 1) return Translate("calendar_tomorrow", settings.StatusCulture);
         var culture = settings.StatusCulture;
         if (ahead <= Thresholds.WeekdayWithinDays) return culture.DateTimeFormat.GetDayName(day.DayOfWeek);
         return FormatShortDate(day, culture);

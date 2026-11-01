@@ -1,8 +1,9 @@
+import { resolve } from 'node:path';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { setImmediate as settle } from 'node:timers/promises';
-import { createHarness, deferred, plain } from '../helpers/harness.mjs';
+import { createHarness, jsRoot, deferred, plain } from '../helpers/harness.mjs';
 
 const DAY = 24 * 60 * 60 * 1000;
 const ID = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -314,10 +315,10 @@ test('hide-on-hover keeps the summary and minimal reveal; reveal follows hover a
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary', tagsHideOnHover: true } });
   h.render();
   const css = h.document.getElementById('je-tag-layout').textContent;
-  assert.match(css, /body\.je-tags-hide-on-hover \.card:hover \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
-  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-slot\[data-je-slot="hover"\] \{ opacity: 1; \}/,
+  assert.match(css, /body\.je-tags-hide-on-hover :is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-mtp\[data-je-hide-on-hover="true"\] \.je-tag-reveal\) \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
+  assert.match(css, /:is\(:is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-tag-reveal\) \.je-tag-host > \.je-tag-slot\[data-je-slot="hover"\] \{ opacity: 1; \}/,
     'cards and list rows (a season\'s episodes) alike');
-  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host:not\(:has\(> \.je-tag-slot\[data-je-slot="hover"\]\[data-je-overflow\]\)\) > \.je-tag-slot:is\(\[data-je-slot="pill"\], \[data-je-slot="dots"\], \[data-je-slot="corner"\]\) \{ opacity: 0; \}/,
+  assert.match(css, /:is\(:is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-tag-reveal\) \.je-tag-host:not\(:has\(> \.je-tag-slot\[data-je-slot="hover"\]\[data-je-overflow\]\)\) > \.je-tag-slot:is\(\[data-je-slot="pill"\], \[data-je-slot="dots"\], \[data-je-slot="corner"\]\) \{ opacity: 0; \}/,
     'the summaries stay when the reveal had no room for a row');
   assert.match(css, /prefers-reduced-motion: reduce/);
   await h.JE.reinitializeTagLayout();
@@ -863,7 +864,7 @@ test('the chips behind "+N" are named by the card link\'s description and a hove
   h.render();
   const css = h.document.getElementById('je-tag-layout').textContent;
   assert.match(css, /\.je-tag-host > \.je-tag-more-tip \{[^}]*pointer-events: none;[^}]*opacity: 0;/);
-  assert.match(css, /:is\(\.card, \.listItem\):is\(:hover, :focus-within\) \.je-tag-host > \.je-tag-more-tip \{\s*opacity: 1;/, 'shown while the card is hovered or focused');
+  assert.match(css, /:is\(:is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-tag-reveal\) \.je-tag-host > \.je-tag-more-tip \{\s*opacity: 1;/, 'shown while the card is hovered or focused');
   assert.doesNotMatch(css, /\.je-tag-more \{[^}]*pointer-events: auto/);
 });
 
@@ -906,7 +907,7 @@ test('genre names are always in the group; layout CSS decides where they show, w
     await h.apply({ tagLayout: 'corners' });
     assert.equal(host.querySelectorAll('.genre-overlay-container .genre-text').length, 3, 'corners keep the spans too');
     const css = h.document.getElementById('je-tag-layout').textContent;
-    assert.match(css, /body\.je-tags-hide-on-hover \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\) \.genre-text \{\s*display: none;/,
+    assert.match(css, /:is\(body\.je-tags-hide-on-hover \.card, \.je-mtp\[data-je-hide-on-hover="true"\] \.je-mtp-card\) \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\) \.genre-text \{\s*display: none;/,
       'Hide Tags on Hover keeps names off the poster slots, not the reveal');
     assert.match(css, /\.je-tag-slot\[data-je-slot="hover"\] \.genre-tag \.genre-text \{\s*position: static;\s*opacity: 1;/, 'the reveal shows them inline');
     assert.doesNotMatch(css, /\.je-tag-caption \.genre-text \{\s*display: none/, 'the caption strip shows them on hover');
@@ -1334,4 +1335,14 @@ test('every Corners anchor keeps its first oversized fact and counts only later 
     if (count === 1 && more) assert.equal(more.hasAttribute('data-je-overflow'), true, slot);
     if (count === 2 && more && !more.hasAttribute('data-je-overflow')) assert.equal(more.textContent, '+1', slot);
   }
+});
+
+
+test('table-driven tag vocabulary names existing English keys and numeric sizes need no translation', t => {
+  const h = setup(t);
+  const en = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
+  for (const table of Object.values(h.JE.core.tagLayout.VOCABULARY_KEYS)) {
+    for (const key of Object.values(table)) assert.equal(typeof en[key], 'string', key);
+  }
+  assert.deepEqual(['smaller', 'default', 'larger', 'largest'].map(v => h.JE.core.tagLayout.sizeLabel('scale', v)), ['85%', '100%', '115%', '130%']);
 });

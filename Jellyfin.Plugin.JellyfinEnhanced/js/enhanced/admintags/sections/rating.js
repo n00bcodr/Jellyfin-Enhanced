@@ -32,7 +32,7 @@
      */
     function rowsHtml(ctx, order, selected) {
         return order.map((id, i) => {
-            const name = JE.t(`rating_source_${id}`);
+            const name = JE.ratingSources.name(id);
             return `<li data-source="${id}"><span class="je-ta-rank" aria-hidden="true">${i + 1}</span>`
                 + `<label><input type="checkbox" ${selected.includes(id) ? 'checked' : ''}><span class="je-ta-order-name">${ctx.esc(name)}</span></label>`
                 + `<button type="button" class="je-ta-icon-btn" data-step="-1" aria-label="${ctx.esc(JE.t('rating_sources_up', { source: name }))}" ${i === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>`
@@ -59,7 +59,7 @@
             id: 'rating',
             summary(ctx) {
                 const c = ctx.config;
-                const sources = selectedSources(c).map((id) => JE.t(`rating_source_${id}`));
+                const sources = selectedSources(c).map((id) => JE.ratingSources.name(id));
                 const types = ['Movies', 'Series', 'Seasons', 'Episodes'].filter((t) => c[`RatingTagsOn${t}`] !== false).length;
                 return [sources.length ? sources.join(', ') : JE.t('admin_tags_none'), types === 4 ? JE.t('admin_tags_rating_every_type') : JE.t('admin_tags_rating_types', { n: types })].join(' · ');
             },
@@ -74,7 +74,7 @@
             { id: 'ratingTagsOnContinueWatching', key: 'RatingTagsOnContinueWatching', type: 'switch', label: 'admin_tags_rating_on_continue' },
             { id: 'ratingTagsOnNextUp', key: 'RatingTagsOnNextUp', type: 'switch', label: 'admin_tags_rating_on_next_up' },
             { id: 'ratingTagsSources', key: 'RatingTagsSources', type: 'custom', label: 'rating_sources_label' },
-            { id: 'ratingTagsMinScore', key: 'RatingTagsMinScore', type: 'select', label: 'rating_sources_minimum', desc: 'admin_tags_rating_min_desc', options: [['0', 'rating_sources_off'], ['5', '=5'], ['6', '=6'], ['7', '=7'], ['8', '=8']], read: (v) => String(Number(v) || 0), write: (v) => Number(v) },
+            { id: 'ratingTagsMinScore', key: 'RatingTagsMinScore', type: 'select', label: 'rating_sources_minimum', desc: 'admin_tags_rating_min_desc', options: [['0', 'track_off'], ['5', '=5'], ['6', '=6'], ['7', '=7'], ['8', '=8']], read: (v) => String(Number(v) || 0), write: (v) => Number(v) },
             { id: 'ratingTagsColorByScore', key: 'RatingTagsColorByScore', type: 'switch', label: 'rating_sources_color', break: true },
             { id: 'showRatingInPlayer', key: 'ShowRatingInPlayer', type: 'switch', label: 'admin_tags_rating_in_player', desc: 'admin_tags_rating_in_player_desc' },
         ],
@@ -123,7 +123,7 @@
             const c = ctx.config;
             const key = String(c.MdblistApiKey || '').trim() !== '';
             const on = c.MdblistRatingsEnabled === true;
-            box.innerHTML = `<div class="je-ta-card-head"><span class="je-ta-state" data-state="${on && key ? 'on' : on ? 'warn' : 'off'}">${ctx.tx(on ? (key ? 'admin_tags_mdblist_on' : 'admin_tags_mdblist_no_key') : 'admin_tags_mdblist_off')}</span></div>`
+            box.innerHTML = `<div class="je-ta-card-head"><span class="je-ta-state" data-state="${on && key ? 'on' : on ? 'warn' : 'off'}">${ctx.tx(on ? (key ? 'common_on' : 'admin_tags_mdblist_no_key') : 'track_off')}</span></div>`
                 + `<p class="je-ta-hint">${ctx.tx('admin_tags_mdblist_desc')}${on && key ? ` ${ctx.tx(c.MdblistRatingsFetchEnabled === true ? 'admin_tags_mdblist_fetch_on' : 'admin_tags_mdblist_fetch_off')}` : ''}</p>`
                 + `<a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl('mdblistRatingsEnabled'))}">${ctx.tx('admin_tags_mdblist_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
         },

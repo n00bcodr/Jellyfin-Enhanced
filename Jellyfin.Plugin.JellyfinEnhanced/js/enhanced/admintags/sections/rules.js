@@ -89,8 +89,8 @@
         const key = field.toLowerCase();
         let shown = value;
         if (key === 'library') shown = libraries[value.replace(/-/g, '').toLowerCase()] || value;
-        else if (key === 'type') shown = JE.t(`tag_looks_type_${value.toLowerCase()}`);
-        return JE.t('admin_tags_rules_condition', { field: JE.t(`tag_looks_field_${key}`), value: shown });
+        else if (key === 'type') shown = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[value.toLowerCase()]);
+        return JE.t('admin_tags_rules_condition', { field: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.field[`${key}`]), value: shown });
     }
 
     /**
@@ -103,10 +103,10 @@
      */
     function ruleHtml(ctx, rule, i, count) {
         const enabled = get(rule, 'enabled') !== false;
-        const when = (get(rule, 'when') || []).map(conditionText).join(JE.t('admin_tags_rules_and'));
-        const look = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${String(get(rule, 'layout') || 'corners').toLowerCase()}`), density: JE.t(`panel_settings_ui_tag_density_${String(get(rule, 'density') || 'full').toLowerCase() === 'compact' ? 'compact' : 'full'}`) });
+        const when = (get(rule, 'when') || []).map(conditionText).join(JE.t('tag_looks_and'));
+        const look = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[String(get(rule, 'layout') || 'corners').toLowerCase()]), density: JE.t(`panel_settings_ui_tag_density_${String(get(rule, 'density') || 'full').toLowerCase() === 'compact' ? 'compact' : 'full'}`) });
         const extra = (Array.isArray(get(rule, 'slots')) && get(rule, 'slots').length) || get(rule, 'shapes') ? ` <span class="je-ta-hint">${ctx.tx('admin_tags_rules_has_more')}</span>` : '';
-        const name = JE.t('admin_tags_rules_rule_n', { n: i + 1 });
+        const name = JE.t('panel_media_tags_preview_source_rule', { n: i + 1 });
         return `<li class="je-ta-rule" data-index="${i}" data-enabled="${enabled}">
             <span class="je-ta-rule-n">${i + 1}</span>
             <input type="checkbox" data-act="enable" ${enabled ? 'checked' : ''} aria-label="${ctx.esc(JE.t('admin_tags_rules_enable', { name }))}">
@@ -126,7 +126,7 @@
      * @returns {string}
      */
     function valueControl(ctx, field) {
-        if (field === 'type') return `<select data-rule="value">${TYPES.map((t) => `<option value="${t}">${ctx.tx(`tag_looks_type_${t.toLowerCase()}`)}</option>`).join('')}</select>`;
+        if (field === 'type') return `<select data-rule="value">${TYPES.map((t) => `<option value="${t}">${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.type[t.toLowerCase()])}</option>`).join('')}</select>`;
         if (field === 'library') {
             const entries = Object.entries(libraries);
             return entries.length ? `<select data-rule="value">${entries.map(([id, name]) => `<option value="${ctx.esc(id)}">${ctx.esc(name)}</option>`).join('')}</select>`
@@ -148,13 +148,13 @@
             body.innerHTML = `
                 <p class="je-ta-off" data-rules-empty>${ctx.tx('admin_tags_rules_none')}</p>
                 <ol class="je-ta-rules" data-rules></ol>
-                <h4 class="je-ta-sub" id="jeTaRuleAddTitle">${ctx.tx('admin_tags_rules_add_title')}</h4>
+                <h4 class="je-ta-sub" id="jeTaRuleAddTitle">${ctx.tx('tag_looks_add_a_rule')}</h4>
                 <div class="je-ta-rule-form" role="group" aria-labelledby="jeTaRuleAddTitle">
-                    <label>${ctx.tx('admin_tags_rules_when')}<select data-rule="field">${FIELDS.map((f) => `<option value="${f}">${ctx.tx(`tag_looks_field_${f.toLowerCase()}`)}</option>`).join('')}</select></label>
-                    <label>${ctx.tx('admin_tags_rules_is')}<span data-rule-value>${valueControl(ctx, 'library')}</span></label>
-                    <label>${ctx.tx('admin_tags_rules_layout')}<select data-rule="layout">${LAYOUTS.map((l) => `<option value="${l}">${ctx.tx(`tag_looks_layout_${l}`)}</option>`).join('')}</select></label>
+                    <label>${ctx.tx('admin_tags_rules_when')}<select data-rule="field">${FIELDS.map((f) => `<option value="${f}">${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.field[`${f.toLowerCase()}`])}</option>`).join('')}</select></label>
+                    <label>${ctx.tx('tag_looks_is')}<span data-rule-value>${valueControl(ctx, 'library')}</span></label>
+                    <label>${ctx.tx('common_layout')}<select data-rule="layout">${LAYOUTS.map((l) => `<option value="${l}">${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</option>`).join('')}</select></label>
                     <label>${ctx.tx('panel_settings_ui_tag_density')}<select data-rule="density"><option value="full">${ctx.tx('panel_settings_ui_tag_density_full')}</option><option value="compact">${ctx.tx('panel_settings_ui_tag_density_compact')}</option></select></label>
-                    <button type="button" class="je-ta-button je-ta-button--primary" data-rule="add"><span class="material-icons" aria-hidden="true">add</span>${ctx.tx('admin_tags_rules_add')}</button>
+                    <button type="button" class="je-ta-button je-ta-button--primary" data-rule="add"><span class="material-icons" aria-hidden="true">add</span>${ctx.tx('tag_looks_add_rule')}</button>
                 </div>
                 <details class="je-ta-json" style="margin-top:14px">
                     <summary class="je-ta-link">${ctx.tx('admin_tags_rules_json')}</summary>
@@ -262,7 +262,7 @@
         id: 'rules-locks',
         tab: 'rules',
         order: 20,
-        title: 'admin_tags_locks_title',
+        title: 'tag_looks_locked_heading',
         hint: 'admin_tags_locks_desc',
     });
 
@@ -306,15 +306,15 @@
      */
     function itemLookHtml(ctx, id, look) {
         const info = itemTitles.get(id);
-        const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('tag_looks_loading');
-        const type = info?.type ? `${JE.t(`tag_looks_type_${info.type.toLowerCase()}`)} · ` : '';
-        const outcome = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${look.layout}`), density: JE.t(`panel_settings_ui_tag_density_${look.density}`) });
+        const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('hidden_content_admin_loading');
+        const type = info?.type ? `${JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[info.type.toLowerCase()])} · ` : '';
+        const outcome = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[look.layout]), density: JE.t(`panel_settings_ui_tag_density_${look.density}`) });
         const scope = info?.type === 'Series' ? ` · ${JE.t(look.scope === 'item' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_series')}` : '';
         const label = info?.name || id;
         return `<li class="je-ta-rule" data-item="${ctx.esc(id)}" data-je-focus-key="admin-item-look-row-${ctx.esc(id)}">
             <span class="je-ta-rule-text"><strong>${ctx.esc(name)}</strong> ${ctx.esc(type)}${ctx.esc(outcome)}${ctx.esc(scope)}</span>
             <span class="je-ta-rule-tools">
-                <button type="button" class="je-ta-button" data-act="edit" data-je-focus-key="admin-item-look-edit-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('tag_looks_edit')}</button>
+                <button type="button" class="je-ta-button" data-act="edit" data-je-focus-key="admin-item-look-edit-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('reviews_edit')}</button>
                 <button type="button" class="je-ta-icon-btn" data-act="remove" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_remove_named', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
             </span>
         </li>`;
@@ -344,7 +344,7 @@
                     if (next === undefined) return;
                     ctx.set('TagLookItemOverrides', next);
                     const removed = look.itemOverridesToWire(new Map([[id, look.normalizeItemOverrides(stored).get(id)]]));
-                    ctx.snack(JE.t('admin_tags_item_looks_removed', { name }), () => {
+                    ctx.snack(JE.t('tag_item_editor_everyone_removed', { name }), () => {
                         if (ctx.isCurrent()) ctx.set('TagLookItemOverrides', look.restoreItemOverrides(ctx.config.TagLookItemOverrides, removed));
                     });
                     /** @type {HTMLElement|null} */ (body.querySelector('[data-item] [data-act="remove"]') || body.querySelector('[data-item-looks-empty]'))?.focus?.();

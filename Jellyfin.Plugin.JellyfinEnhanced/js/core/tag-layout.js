@@ -2677,7 +2677,137 @@
         awaitingData = new WeakMap();
     });
 
+    // Explicit translatable vocabularies keep callers independent of locale key names.
+    const VOCABULARY_KEYS = {
+        "type": {
+            "movie": "jellyseerr_card_badge_movie",
+            "series": "panel_settings_ui_rating_tags_scope_series",
+            "season": "jellyseerr_report_issue_season",
+            "episode": "jellyseerr_report_issue_episode",
+            "boxset": "jellyseerr_card_badge_collection",
+            "video": "jellyseerr_report_issue_type_video"
+        },
+        "layout": {
+            "corners": "tag_looks_layout_corners",
+            "bands": "tag_looks_layout_bands",
+            "caption": "panel_settings_ui_tag_slot_caption_caption",
+            "summary": "catchup_activity_summary",
+            "minimal": "tag_looks_layout_minimal"
+        },
+        "edge": {
+            "default": "common_default",
+            "tight": "panel_settings_ui_tag_edge_tight",
+            "flush": "panel_settings_ui_tag_edge_flush"
+        },
+        "gap": {
+            "tight": "panel_settings_ui_tag_edge_tight",
+            "default": "common_default",
+            "roomy": "tag_gap_roomy"
+        },
+        "preset": {
+            "default": "common_default",
+            "glass": "panel_settings_ui_tag_style_preset_glass",
+            "outline": "panel_settings_ui_tag_style_preset_outline",
+            "dark": "panel_settings_ui_tag_style_preset_dark",
+            "light": "panel_settings_ui_tag_style_preset_light",
+            "mono": "panel_settings_ui_tag_style_preset_mono",
+            "poster": "panel_settings_ui_tag_style_preset_poster"
+        }
+    };
+
+    VOCABULARY_KEYS.group = {
+        "status": "jellyseerr_modal_status",
+        "quality": "panel_settings_ui_tag_group_quality",
+        "rating": "panel_settings_ui_tag_group_rating",
+        "age_rating": "panel_settings_ui_tag_group_age_rating",
+        "logos": "common_logos",
+        "language": "panel_settings_ui_tag_group_language",
+        "genre": "common_genre",
+        "custom": "common_custom",
+        "awards": "awards_label"
+    };
+    VOCABULARY_KEYS.slot = {
+        "off": "hidden_content_already_hidden",
+        "corners_tl": "panel_settings_ui_tag_slot_corners_tl",
+        "corners_tc": "panel_settings_ui_tag_slot_corners_tc",
+        "corners_bc": "panel_settings_ui_tag_slot_corners_bc",
+        "corners_ml": "panel_settings_ui_tag_slot_corners_ml",
+        "corners_mr": "panel_settings_ui_tag_slot_corners_mr",
+        "corners_c": "panel_settings_ui_tag_slot_corners_c",
+        "corners_tr": "panel_settings_ui_tag_slot_corners_tr",
+        "corners_bl": "panel_settings_ui_tag_slot_corners_bl",
+        "corners_br": "panel_settings_ui_tag_slot_corners_br",
+        "bands_top": "panel_settings_ui_tag_slot_bands_top",
+        "bands_bottom": "panel_settings_ui_tag_slot_bands_bottom",
+        "caption_poster": "panel_settings_ui_tag_slot_caption_poster",
+        "caption_caption": "panel_settings_ui_tag_slot_caption_caption",
+        "summary_pill": "panel_settings_ui_tag_slot_summary_pill",
+        "summary_hover": "panel_settings_ui_tag_slot_summary_hover",
+        "minimal_top": "panel_settings_ui_tag_slot_minimal_top",
+        "minimal_dots": "panel_settings_ui_tag_slot_minimal_dots",
+        "minimal_corner": "panel_settings_ui_tag_slot_minimal_corner",
+        "minimal_hover": "panel_settings_ui_tag_slot_summary_hover"
+    };
+    VOCABULARY_KEYS.language = {
+        "partial_tooltip": "language_tags_partial_tooltip",
+        "audio": "jellyseerr_report_issue_type_audio",
+        "subtitles": "jellyseerr_report_issue_type_subtitles",
+        "style": "panel_settings_subtitles_style",
+        "flags": "language_tags_flags",
+        "codes": "language_tags_codes",
+        "count_badge": "language_tags_count_badge",
+        "badge_off": "track_off",
+        "badge_only": "language_tags_badge_only",
+        "badge_both": "language_tags_badge_both",
+        "dual": "language_tags_dual",
+        "multi": "language_tags_multi",
+        "count_tooltip": "language_tags_count_tooltip",
+        "subtitles_sdh": "language_tags_subtitles_sdh"
+    };
+
+    VOCABULARY_KEYS.tab = {
+        "layout": "common_layout",
+        "groups": "common_groups",
+        "badges": "panel_media_tags_tab_badges",
+        "badges_short": "common_badges",
+        "rules": "panel_media_tags_tab_rules",
+        "rules_short": "common_rules",
+        "colours": "common_colours",
+        "server": "common_server",
+        "server_name": "panel_media_tags_tab_server_name"
+    };
+    VOCABULARY_KEYS.adminTab = {
+        "overview": "jellyseerr_modal_overview",
+        "layout": "admin_tags_tab_layout",
+        "groups": "common_groups",
+        "rules": "common_rules",
+        "colours": "common_colours",
+        "badges": "panel_media_tags_tab_badges",
+        "server": "common_server",
+    };
+    VOCABULARY_KEYS.field = {
+        "library": "tag_looks_field_library",
+        "type": "tag_looks_field_type",
+        "genre": "common_genre",
+        "agerating": "tag_looks_field_agerating"
+    };
+    VOCABULARY_KEYS.builtin = {
+        "cinephile": "tag_presets_builtin_cinephile",
+        "cinephile_desc": "tag_presets_builtin_cinephile_desc",
+        "minimal": "tag_looks_layout_minimal",
+        "minimal_desc": "tag_presets_builtin_minimal_desc",
+        "kids": "tag_presets_builtin_kids",
+        "kids_desc": "tag_presets_builtin_kids_desc"
+    };
+
+    /** Labels for the numeric size table and the translatable gap vocabulary. */
+    function sizeLabel(kind, value) {
+        return kind === 'scale' ? `${Math.round(TAG_SCALES[value] * 100)}%` : JE.t(VOCABULARY_KEYS.gap[value]);
+    }
+
     const api = {
+        sizeLabel,
+        VOCABULARY_KEYS,
         isLegacySettings,
         GROUPS: DEFAULT_ORDER.slice(),
         LAYOUT_SLOTS,

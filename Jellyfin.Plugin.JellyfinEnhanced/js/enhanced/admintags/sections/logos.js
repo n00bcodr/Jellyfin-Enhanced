@@ -6,7 +6,7 @@
         id: 'group-logos',
         tab: 'groups',
         order: 70,
-        title: 'admin_tags_logos_title', hint: 'admin_tags_logos_desc',
+        title: 'common_logos', hint: 'admin_tags_logos_desc',
         group: {
             id: 'logos', summary: () => JE.t('admin_tags_logos_desc'), sample: () => [['status', 'Logos']] },
         fields: [

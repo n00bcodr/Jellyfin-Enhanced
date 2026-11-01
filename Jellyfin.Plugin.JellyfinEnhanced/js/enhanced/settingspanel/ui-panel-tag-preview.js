@@ -89,7 +89,7 @@
             rating: { community: '9.3' },
             age: 'TV-Y', flags: ['jp'], genres: [['Animation', 'animation'], ['Family', 'family_restroom']],
             logos: [{ kind: 'network', name: 'Harbor Kids Network' }],
-            status: [['statusTagsMilestones', 'milestone', 'status_tag_season_finale', 'status_tag_compact_finale'], ['statusTagsNewRelease', 'new', 'status_tag_new_episode', 'status_tag_compact_new_episode']],
+            status: [['statusTagsMilestones', 'milestone', 'status_tag_season_finale', 'calendar_finale'], ['statusTagsNewRelease', 'new', 'status_tag_new_episode', 'status_tag_compact_new_episode']],
         },
     ];
     SAMPLES.push({ ...SAMPLES[2], key: 'list', shape: 'list', titleKey: 'tag_shapes_preview_list', id: 'a11ce0000000000000000000000000d4' });
@@ -550,14 +550,14 @@
                 L.refreshPresentation(target);
                 const conf = L.resolveLayout(host);
                 const source = L.lookSource(host);
-                const look = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${conf.layout}`), density: JE.t(conf.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
+                const look = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[conf.layout]), density: JE.t(conf.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
                 const sourceText = source.source === 'lock' ? JE.t('panel_media_tags_preview_source_lock')
                     : source.source === 'override' ? JE.t('panel_media_tags_preview_source_override')
                     : source.source === 'rule' ? JE.t('panel_media_tags_preview_source_rule', { n: source.index + 1 })
                     : source.source === 'shape' ? JE.t('tag_shapes_preview_source', { shape: JE.t(`tag_shapes_${source.shape}`) })
-                    : JE.t('panel_media_tags_preview_source_default');
+                    : JE.t('common_default');
                 const meta = /** @type {HTMLElement} */ (figure.querySelector('.je-mtp-meta'));
-                const typeLabel = JE.t(`tag_looks_type_${type.toLowerCase()}`);
+                const typeLabel = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[type.toLowerCase()]);
                 const strong = document.createElement('strong');
                 strong.dataset.source = source.source;
                 strong.textContent = source.source === 'lock' ? `🔒 ${sourceText}` : sourceText;
@@ -569,8 +569,8 @@
             });
             const base = L.normalizeSettings();
             const preset = JE.pluginConfig?.TagStylesAllowUserPreset && JE.currentSettings?.tagStylePreset
-                ? JE.t(`panel_settings_ui_tag_style_preset_${JE.currentSettings.tagStylePreset}`) : null;
-            const defaultLook = JE.t('tag_looks_outcome', { layout: JE.t(`tag_looks_layout_${base.layout}`), density: JE.t(base.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
+                ? JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[JE.currentSettings.tagStylePreset]) : null;
+            const defaultLook = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[base.layout]), density: JE.t(base.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
             const strong = document.createElement('strong');
             strong.textContent = preset ? `${defaultLook} · ${preset}` : defaultLook;
             foot.replaceChildren(document.createTextNode(`${JE.t('panel_media_tags_preview_default')} `), strong, document.createTextNode(`. ${JE.t('panel_media_tags_preview_precedence')}`));

@@ -388,16 +388,17 @@
         return badge;
     }
 
-    /** @param {string} label Canonical server edition. @returns {string} Localized full label. */
+    // Full words are translatable; compact edition codes and proper nouns are literals.
+    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"]};
+    /** @param {string} label Canonical edition. @returns {string} Its full display name. */
     function editionLabel(label) {
-        const keys = {"Director's Cut": 'directors_cut', 'Extended': 'extended', 'Unrated': 'unrated', 'Theatrical': 'theatrical', 'IMAX': 'imax', 'Remastered': 'remastered', 'Criterion': 'criterion', 'Uncut': 'uncut', 'Final Cut': 'final_cut', 'Special Edition': 'special'};
-        return Object.hasOwn(keys, label) ? JE.t('quality_edition_' + keys[label]) : label;
+        const row = Object.hasOwn(EDITIONS, label) && EDITIONS[label];
+        return row && row[0] ? JE.t(row[0]) : label;
     }
-
-    /** @param {string} label Canonical server edition. @returns {string} Localized compact label. */
+    /** @param {string} label Canonical edition. @returns {string} A compact code or translated word. */
     function compactEditionLabel(label) {
-        const keys = {"Director's Cut": 'directors_cut', 'Extended': 'extended', 'Unrated': 'unrated', 'Theatrical': 'theatrical', 'IMAX': 'imax', 'Remastered': 'remastered', 'Criterion': 'criterion', 'Uncut': 'uncut', 'Final Cut': 'final_cut', 'Special Edition': 'special'};
-        return Object.hasOwn(keys, label) ? JE.t('quality_edition_' + keys[label] + '_compact') : label;
+        const row = Object.hasOwn(EDITIONS, label) && EDITIONS[label];
+        return row?.[1] ? row[1].startsWith('quality_') ? JE.t(row[1]) : row[1] : editionLabel(label);
     }
 
     /**

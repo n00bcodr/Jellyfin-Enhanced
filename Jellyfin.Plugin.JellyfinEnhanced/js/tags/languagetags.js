@@ -238,11 +238,11 @@
             if (info.partial) { chip.classList.add(partialFlagClass); chip.dataset.partial = 'true'; }
             chip.dataset.jeLanguage = info.badge ? 'countBadge' : info.subtitle ? 'subtitles' : 'flag';
             if (info.badge) {
-                chip.textContent = JE.t(`language_tags_${info.badge}`);
+                chip.textContent = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.language[`${info.badge}`]);
                 chip.title = `${JE.t('language_tags_count_tooltip', { count })}: ${counted.flatMap(chip => chip.labels).join(', ')}`;
             } else {
                 const label = info.labels.join(', ');
-                chip.title = `${JE.t(info.subtitle ? info.sdh ? 'language_tags_subtitles_sdh' : 'language_tags_subtitles' : 'language_tags_audio')}: ${label}`;
+                chip.title = `${JE.t(info.subtitle ? info.sdh ? 'language_tags_subtitles_sdh' : 'jellyseerr_report_issue_type_subtitles' : 'jellyseerr_report_issue_type_audio')}: ${label}`;
                 chip.dataset.langName = info.allLanguages.join(', ');
                 chip.dataset.lang = conf.style === 'codes' ? info.text.toLowerCase() : info.countryCode.toLowerCase();
                 if (info.subtitle) {

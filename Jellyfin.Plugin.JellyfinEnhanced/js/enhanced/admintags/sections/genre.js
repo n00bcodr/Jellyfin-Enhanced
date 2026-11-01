@@ -11,7 +11,7 @@
         id: 'group-genre',
         tab: 'groups',
         order: 20,
-        title: 'panel_settings_ui_tag_group_genre',
+        title: 'common_genre',
         hint: 'admin_tags_genre_desc',
         group: {
             id: 'genre',

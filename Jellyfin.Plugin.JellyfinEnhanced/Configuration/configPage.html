@@ -8258,7 +8258,7 @@
                 return text && text !== key ? text : fallback;
             };
             var groupKey = function(group) {
-                return group === 'people' ? 'admin_tags_group_people' : 'panel_settings_ui_tag_group_' + (group === 'ageRating' ? 'age_rating' : group);
+                return ({people:'admin_tags_group_people',quality:'panel_settings_ui_tag_group_quality',rating:'panel_settings_ui_tag_group_rating',ageRating:'panel_settings_ui_tag_group_age_rating',language:'panel_settings_ui_tag_group_language',genre:'common_genre',status:'jellyseerr_modal_status',awards:'awards_label',logos:'common_logos',custom:'common_custom'})[group];
             };
             var entries = {};
             var order = [];
@@ -8268,10 +8268,10 @@
                 var group = at.tab === 'groups' && at.group ? at.group : null;
                 var key = at.tab + ':' + (group || '');
                 if (!entries[key]) {
-                    var tabName = label('admin_tags_tab_' + at.tab, jeHumanizeSettingId(at.tab));
+                    var tabName = label(({overview:'jellyseerr_modal_overview',layout:'admin_tags_tab_layout',groups:'common_groups',rules:'common_rules',colours:'common_colours',badges:'panel_media_tags_tab_badges',server:'common_server'})[at.tab], jeHumanizeSettingId(at.tab));
                     entries[key] = {
                         tab: at.tab,
-                        tabLabel: label('admin_tags_title', 'Media Tags'),
+                        tabLabel: label('common_media_tags', 'Media Tags'),
                         title: group ? tabName + ' \u203a ' + label(groupKey(group), jeHumanizeSettingId(group)) : tabName,
                         href: '#/configurationpage?name=' + encodeURIComponent(at.page || 'JellyfinEnhancedMediaTags') + '&tab=' + encodeURIComponent(at.tab) + (group ? '&group=' + encodeURIComponent(group) : ''),
                         ids: []

@@ -76,13 +76,13 @@
 
     /** The tabs, in order. */
     const TABS = [
-        { id: 'overview', icon: 'dashboard', nameKey: 'admin_tags_tab_overview' },
+        { id: 'overview', icon: 'dashboard', nameKey: 'jellyseerr_modal_overview' },
         { id: 'layout', icon: 'view_quilt', nameKey: 'admin_tags_tab_layout' },
-        { id: 'groups', icon: 'label', nameKey: 'admin_tags_tab_groups' },
-        { id: 'rules', icon: 'rule', nameKey: 'admin_tags_tab_rules' },
-        { id: 'colours', icon: 'palette', nameKey: 'admin_tags_tab_colours' },
-        { id: 'badges', icon: 'new_releases', nameKey: 'admin_tags_tab_badges' },
-        { id: 'server', icon: 'dns', nameKey: 'admin_tags_tab_server' },
+        { id: 'groups', icon: 'label', nameKey: 'common_groups' },
+        { id: 'rules', icon: 'rule', nameKey: 'common_rules' },
+        { id: 'colours', icon: 'palette', nameKey: 'common_colours' },
+        { id: 'badges', icon: 'new_releases', nameKey: 'panel_media_tags_tab_badges' },
+        { id: 'server', icon: 'dns', nameKey: 'common_server' },
     ];
 
     /**
@@ -726,12 +726,12 @@
         root.innerHTML = `
             <div class="je-ta-head"><a class="je-ta-back" href="${esc(mainPageUrl())}"><span class="material-icons" aria-hidden="true">arrow_back</span>${tx('admin_tags_back')}</a></div>
             <div class="je-ta-head" style="padding-top:0">
-                <h2 class="je-ta-title">${tx('admin_tags_title')} <span class="je-ta-admin-chip">${tx('admin_tags_badge')}</span></h2>
+                <h2 class="je-ta-title">${tx('common_media_tags')} <span class="je-ta-admin-chip">${tx('admin_tags_badge')}</span></h2>
                 <span class="je-ta-head-spacer"></span>
                 <span class="je-ta-saved" id="jeTaSaved" data-state="saved" role="status" aria-live="polite">${tx('admin_tags_saved')}</span>
             </div>
             <p class="je-ta-intro">${tx('admin_tags_intro')}</p>
-            <div class="je-ta-tabs" role="tablist" aria-label="${tx('admin_tags_title')}">${tabButtons}</div>
+            <div class="je-ta-tabs" role="tablist" aria-label="${tx('common_media_tags')}">${tabButtons}</div>
             <div class="je-ta-body">
                 <aside class="je-ta-preview" id="jeTaPreview" aria-label="${tx('admin_tags_preview')}">
                     <button type="button" class="je-ta-preview-toggle" aria-expanded="false" aria-controls="jeTaPreviewBody">${tx('admin_tags_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
@@ -758,7 +758,7 @@
                 + (enable ? `<input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}">` : '')
                 + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}</span><span class="je-ta-grow-sum"></span></div>`
                 + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
-                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('admin_tags_open')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
+                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('jellyseerr_issue_open')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
                 + '</div>'
                 + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}${fieldsHtml(s.fields, config)}<div class="je-ta-section-body"></div></div></div>`;
         }
@@ -1023,7 +1023,7 @@
             body.hidden = !open;
             button.setAttribute('aria-expanded', String(open));
             const text = button.querySelector('.je-ta-expand-text');
-            if (text) text.textContent = JE.t(open ? 'admin_tags_close' : 'admin_tags_open');
+            if (text) text.textContent = JE.t(open ? 'awards_close' : 'jellyseerr_issue_open');
             const s = sections.find((x) => x.group?.id === group);
             if (open && s?.show) s.show(ctx, bodyOf(s));
             if (open && opts.focus) {
@@ -1153,7 +1153,7 @@
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'je-ta-button';
-                button.textContent = JE.t('admin_tags_undo');
+                button.textContent = JE.t('hidden_content_undo');
                 button.addEventListener('click', () => { bar.remove(); undo(); announce(JE.t('admin_tags_undone')); });
                 bar.appendChild(button);
             }

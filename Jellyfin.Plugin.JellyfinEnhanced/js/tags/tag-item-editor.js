@@ -38,15 +38,15 @@
      * `capAll` groups may show every tag, `capFixed` groups always show one).
      */
     const GROUPS = {
-        status: { setting: 'statusTagsEnabled', nameKey: 'panel_settings_ui_tag_group_status', capFixed: true },
+        status: { setting: 'statusTagsEnabled', nameKey: 'jellyseerr_modal_status', capFixed: true },
         quality: { setting: 'qualityTagsEnabled', nameKey: 'panel_settings_ui_tag_group_quality', capAll: true },
         rating: { setting: 'ratingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_rating', capAll: true },
         ageRating: { setting: 'ageRatingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_age_rating', capFixed: true },
         language: { setting: 'languageTagsEnabled', nameKey: 'panel_settings_ui_tag_group_language' },
-        genre: { setting: 'genreTagsEnabled', nameKey: 'panel_settings_ui_tag_group_genre' },
-        awards: { setting: 'awardsTagsEnabled', nameKey: 'awards_tags_group', capAll: true },
-        logos: { setting: 'logoTagsEnabled', nameKey: 'panel_settings_ui_tag_group_logos', capAll: true },
-        custom: { setting: 'customTagsEnabled', nameKey: 'panel_settings_ui_tag_group_custom' },
+        genre: { setting: 'genreTagsEnabled', nameKey: 'common_genre' },
+        awards: { setting: 'awardsTagsEnabled', nameKey: 'awards_label', capAll: true },
+        logos: { setting: 'logoTagsEnabled', nameKey: 'common_logos', capAll: true },
+        custom: { setting: 'customTagsEnabled', nameKey: 'common_custom' },
     };
 
     /** Corners anchors in reading order (the 3 × 3 grid). */
@@ -149,7 +149,7 @@
      * @returns {string}
      */
     function slotLabel(layout, slot) {
-        return slot === 'off' ? JE.t('panel_settings_ui_tag_slot_off') : JE.t(`panel_settings_ui_tag_slot_${layout}_${slot}`);
+        return slot === 'off' ? JE.t('hidden_content_already_hidden') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`${layout}_${slot}`]);
     }
 
     /**
@@ -261,7 +261,7 @@
         text.textContent = message;
         const button = document.createElement('button');
         button.type = 'button';
-        button.textContent = JE.t('tag_item_editor_undo');
+        button.textContent = JE.t('hidden_content_undo');
         const timer = setTimeout(() => toast.remove(), UNDO_MS);
         button.addEventListener('click', () => {
             clearTimeout(timer);
@@ -451,11 +451,11 @@
         const uid = `jeTie${++sequence}`;
         const backdrop = document.createElement('div');
         backdrop.className = 'je-tie-backdrop';
-        const typeName = JE.t(`tag_looks_type_${type.toLowerCase()}`);
+        const typeName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[type.toLowerCase()]);
         const titleKey = serverMode ? 'tag_item_editor_title_server' : 'tag_item_editor_title';
         backdrop.innerHTML = `<div class="je-tie" role="dialog" aria-modal="true" aria-labelledby="${uid}Title" tabindex="-1">
-            <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title"><span data-tie-title></span>${serverMode ? `<span class="je-tie-chip">${tx('tag_item_editor_everyone_chip')}</span>` : ''}</h3>
-                <button type="button" class="je-tie-close" data-tie-close aria-label="${tx('tag_item_editor_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>
+            <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title"><span data-tie-title></span>${serverMode ? `<span class="je-tie-chip">${tx('common_admin')}</span>` : ''}</h3>
+                <button type="button" class="je-tie-close" data-tie-close aria-label="${tx('awards_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>
             <div class="je-tie-body">
                 <div class="je-tie-side">
                     <div class="je-tie-card" data-je-shape="${esc(shape)}" data-id="${esc(id)}" data-type="${esc(type)}" aria-hidden="true"><div class="cardBox"><div class="je-tie-scalable cardScalable"></div><div class="cardText je-tie-card-title">${esc(name)}</div></div></div>
@@ -465,11 +465,11 @@
                     ${hasSeries ? `<fieldset class="je-tie-box"><legend>${tx('tag_item_editor_scope')}</legend><div class="je-tie-scope" role="radiogroup">
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="item">${tx(type === 'Series' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_item', { type: typeName })}</label>
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="series">${tx('tag_item_editor_scope_series')}</label></div></fieldset>` : ''}
-                    <fieldset class="je-tie-box"><legend>${tx('panel_media_tags_tab_layout')}</legend><div class="je-tie-tiles">
-                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}">${tx(`tag_looks_layout_${l}`)}</label>`).join('')}</div></fieldset>
+                    <fieldset class="je-tie-box"><legend>${tx('common_layout')}</legend><div class="je-tie-tiles">
+                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}">${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
                     <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
                         ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
-                    <section class="je-tie-box" aria-labelledby="${uid}Groups"><h4 class="je-tie-h" id="${uid}Groups">${tx('tag_item_editor_groups')}</h4><ul class="je-tie-groups" data-tie-groups></ul></section>
+                    <section class="je-tie-box" aria-labelledby="${uid}Groups"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><ul class="je-tie-groups" data-tie-groups></ul></section>
                     <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
                         <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
@@ -478,13 +478,13 @@
                         <label class="je-tie-switch"><input type="checkbox" data-tie-keep aria-describedby="${uid}KeepHint">${tx('tag_item_editor_keep')}</label>
                         <p class="je-tie-hint" id="${uid}KeepHint">${tx('tag_item_editor_keep_hint')}</p></div>`}
                     ${!serverMode && admin ? `<div class="je-tie-box je-tie-keep" data-everyone>
-                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx('tag_item_editor_everyone')}<span class="je-tie-chip">${tx('tag_item_editor_everyone_chip')}</span></label>
+                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx('tag_item_editor_everyone')}<span class="je-tie-chip">${tx('common_admin')}</span></label>
                         <p class="je-tie-hint" id="${uid}EveryoneHint">${tx('tag_item_editor_everyone_hint')}</p></div>` : ''}
                 </div>
             </div>
             <div class="je-tie-foot"><p class="je-tie-status" data-tie-status role="status" aria-live="polite"></p>
-                <button type="button" data-tie-close>${tx('tag_item_editor_cancel')}</button>
-                <button type="button" class="je-tie-save" data-tie-save>${tx('tag_item_editor_save')}</button></div>
+                <button type="button" data-tie-close>${tx('jellyseerr_modal_cancel')}</button>
+                <button type="button" class="je-tie-save" data-tie-save>${tx('elsewhere_settings_save')}</button></div>
         </div>`;
         // Item names and translated substitutions are text, including hostile markup.
         backdrop.querySelector('[data-tie-title]').textContent = JE.t(titleKey, { name: name || typeName });
@@ -548,11 +548,11 @@
                 const positions = positionsFor(draft.layout, group);
                 const current = on ? slot : (lastSlot[`${draft.layout}:${group}`] || positions[0]);
                 const where = draft.layout === 'corners'
-                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor" title="${tx(`panel_settings_ui_tag_slot_corners_${a}`)}"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" aria-label="${esc(slotLabel('corners', a))}" ${a === current ? 'checked' : ''}></label>`).join('')}</div>`
+                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor" title="${tx(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`])}"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" aria-label="${esc(slotLabel('corners', a))}" ${a === current ? 'checked' : ''}></label>`).join('')}</div>`
                     : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
                 const fixed = L.singleChipGroup(group);
                 const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
-                const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
+                const capText = cap === 0 ? JE.t('jellyseerr_discover_all') : String(cap);
                 const stepper = fixed ? '' : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
                     <span>${tx('panel_settings_ui_tag_editor_show_up_to')}</span>
                     <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
@@ -577,9 +577,9 @@
 
         // Size, gap and edge: "Same as default (…)" keeps the user's.
         const selectOptions = {
-            tagScale: { values: SCALES, label: (v) => JE.t(`tag_scale_${v}`), base: base.tagScale },
-            tagGap: { values: GAPS, label: (v) => JE.t(`tag_gap_${v}`), base: base.tagGap },
-            edge: { values: EDGES, label: (v) => JE.t(`panel_settings_ui_tag_edge_${v}`), base: base.edge },
+            tagScale: { values: SCALES, label: (v) => JE.core.tagLayout.sizeLabel('scale', v), base: base.tagScale },
+            tagGap: { values: GAPS, label: (v) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.gap[v]), base: base.tagGap },
+            edge: { values: EDGES, label: (v) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.edge[v]), base: base.edge },
         };
         for (const [key, spec] of Object.entries(selectOptions)) {
             const select = /** @type {HTMLSelectElement} */ (dialog.querySelector(`[data-tie-select="${key}"]`));
@@ -700,7 +700,7 @@
                 return;
             }
             saveButton.disabled = true;
-            statusEl.textContent = JE.t('tag_looks_loading');
+            statusEl.textContent = JE.t('hidden_content_admin_loading');
             const label = name || typeName;
             const results = [];
             try {

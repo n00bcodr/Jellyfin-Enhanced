@@ -171,13 +171,13 @@
     }
 
     /** @param {string} layout @returns {string} */
-    const layoutName = (layout) => JE.t(`tag_looks_layout_${layout}`);
+    const layoutName = (layout) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[layout]);
     /** @param {string} density @returns {string} */
     const densityName = (density) => JE.t(density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full');
     /** @param {{layout: string, density: string}} look @returns {string} */
     const outcomeText = (look) => JE.t('tag_looks_outcome', { layout: layoutName(look.layout), density: densityName(look.density) });
     /** @param {string} type @returns {string} */
-    const typeName = (type) => JE.t(`tag_looks_type_${type.toLowerCase()}`);
+    const typeName = (type) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[type.toLowerCase()]);
 
     /**
      * "When library is Kids and type is Episode".
@@ -358,7 +358,7 @@
         const side = el('div', 'je-tag-looks-side');
 
         const head = el('div', 'je-tag-looks-head');
-        const heading = el('h5', 'je-tag-looks-heading', JE.t('tag_looks_rules_heading'));
+        const heading = el('h5', 'je-tag-looks-heading', JE.t('common_rules'));
         heading.id = 'jeTagLooksRulesTitle';
         const rulesCount = el('span', 'je-tag-looks-count');
         head.append(heading, rulesCount, el('span', 'je-tag-looks-sub', JE.t('tag_looks_first_match')));
@@ -512,12 +512,12 @@
                     saveRules(all.map((r) => (r.id === id ? { ...r, enabled: !r.enabled } : r)));
                 });
                 row.pill.className = 'je-tag-looks-pill';
-                row.edit = button(JE.t('tag_looks_edit'), () => {
+                row.edit = button(JE.t('reviews_edit'), () => {
                     state.editing = id;
                     touch();
                     openForm();
                 });
-                        row.del = button(JE.t('tag_looks_delete'), () => {
+                        row.del = button(JE.t('reviews_delete'), () => {
                     const { all, index: at } = now();
                     if (at < 0) return;
                     // Focus goes to the next rule's Delete, else the previous one's, else the empty list.
@@ -544,7 +544,7 @@
             row.down.disabled = index === rules.length - 1;
             row.up.setAttribute('aria-label', JE.t('tag_looks_move_up', { rule: condition }));
             row.down.setAttribute('aria-label', JE.t('tag_looks_move_down', { rule: condition }));
-            row.pill.textContent = JE.t(rule.enabled ? 'tag_looks_on' : 'tag_looks_off');
+            row.pill.textContent = JE.t(rule.enabled ? 'common_on' : 'track_off');
             row.pill.setAttribute('aria-pressed', rule.enabled ? 'true' : 'false');
             row.pill.setAttribute('aria-label', JE.t('tag_looks_enabled_named', { rule: condition }));
             row.edit.setAttribute('aria-label', JE.t('tag_looks_edit_named', { rule: condition }));
@@ -571,7 +571,7 @@
         const hadFocus = view.lockedList.contains(document.activeElement);
         view.locksCount.textContent = String(locks.size);
         view.locks.classList.toggle('je-open', state.lockedOpen);
-        view.locksToggle.textContent = JE.t(state.lockedOpen ? 'tag_looks_hide' : 'tag_looks_show');
+        view.locksToggle.textContent = JE.t(state.lockedOpen ? 'hidden_content_hide_button' : 'tag_looks_show');
         view.locksToggle.setAttribute('aria-expanded', state.lockedOpen ? 'true' : 'false');
         view.locksToggle.setAttribute('aria-label', JE.t(state.lockedOpen ? 'tag_looks_locks_hide' : 'tag_looks_locks_show', { count: String(locks.size) }));
         view.unlockAll.disabled = locks.size === 0;
@@ -584,7 +584,7 @@
             const info = state.titles.get(id);
             if (!info) pending.push(id);
             const li = el('li');
-            const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('tag_looks_loading');
+            const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('hidden_content_admin_loading');
             const type = info?.type ? `${typeName(info.type)} → ` : '→ ';
             const text = el('span');
             text.append(el('strong', '', name), document.createTextNode(`${type}${outcomeText(lock)}`));
@@ -599,7 +599,7 @@
             }, JE.t('tag_looks_unlock_named', { name: info?.name || id }));
             unlock.dataset.jeFocusKey = `unlock-${id}`;
             // Edit opens the item's Media Tags editor (tags/tag-item-editor.js) on this lock.
-            const edit = button(JE.t('tag_looks_edit'), () => {
+            const edit = button(JE.t('reviews_edit'), () => {
                 touch();
                 JE.tagItemEditor?.open(id, { opener: edit, host: /** @type {HTMLElement|undefined} */ (view.root.closest('#jellyfin-enhanced-panel') || undefined) });
             }, JE.t('tag_looks_edit_lock_named', { name: info?.name || id }));
@@ -730,7 +730,7 @@
             const fieldLabel = el('label', 'je-tag-looks-sr');
             fieldLabel.dataset.jeFieldLabel = '1';
             fieldLabel.setAttribute('for', fieldId);
-            const fieldSelect = select(look.FIELDS.map((f) => /** @type {[string, string]} */ ([f, JE.t(`tag_looks_field_${f.toLowerCase()}`)])), cond.field);
+            const fieldSelect = select(look.FIELDS.map((f) => /** @type {[string, string]} */ ([f, JE.t(JE.core.tagLayout.VOCABULARY_KEYS.field[`${f.toLowerCase()}`])])), cond.field);
             fieldSelect.id = fieldId;
             fieldSelect.dataset.jeCondField = '1';
             const valueLabel = el('label', 'je-tag-looks-sr');
@@ -799,7 +799,7 @@
         const save = /** @type {HTMLButtonElement} */ (el('button', 'je-tag-looks-save', JE.t(existing ? 'tag_looks_save' : 'tag_looks_add_rule')));
         save.type = 'submit';
         buttons.appendChild(save);
-        if (existing) buttons.appendChild(button(JE.t('tag_looks_cancel'), () => { touch(); onCancel(); }));
+        if (existing) buttons.appendChild(button(JE.t('jellyseerr_modal_cancel'), () => { touch(); onCancel(); }));
         const hint = el('span', 'je-tag-looks-buttons-hint');
         buttons.appendChild(hint);
         form.appendChild(buttons);

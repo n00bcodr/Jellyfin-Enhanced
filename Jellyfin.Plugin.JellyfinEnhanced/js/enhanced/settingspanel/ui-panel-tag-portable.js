@@ -194,7 +194,7 @@
         const backdrop = window.document.createElement('div');
         backdrop.className = `je-pt-backdrop ${className}`.trim();
         backdrop.innerHTML = `<div class="je-pt-dialog" role="dialog" aria-modal="true" aria-labelledby="${id}Title" tabindex="-1">`
-            + `<div class="je-pt-head"><h3 class="je-pt-title" id="${id}Title">${esc(title)}</h3><button type="button" class="je-pt-close" data-pt-close aria-label="${tx('tag_portable_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>`
+            + `<div class="je-pt-head"><h3 class="je-pt-title" id="${id}Title">${esc(title)}</h3><button type="button" class="je-pt-close" data-pt-close aria-label="${tx('awards_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>`
             + '<div class="je-pt-body"></div><p class="je-pt-status" role="status" aria-live="polite"></p><div class="je-pt-foot"></div></div>';
         host.appendChild(backdrop);
         const dialog = /** @type {HTMLElement} */ (backdrop.firstElementChild);
@@ -352,7 +352,7 @@
             <section class="je-mth-card je-mth-tp" id="jeMthPresets" aria-labelledby="jeMthPresetsTitle">
                 <h4 class="je-mth-card-title" id="jeMthPresetsTitle">${tx('tag_presets_title')}</h4>
                 <p class="je-mth-hint">${tx('tag_presets_desc')}</p>
-                <div class="je-mth-tp-list" data-tp-list aria-live="polite"><p class="je-mth-hint">${tx('tag_portable_loading')}</p></div>
+                <div class="je-mth-tp-list" data-tp-list aria-live="polite"><p class="je-mth-hint">${tx('hidden_content_admin_loading')}</p></div>
                 <div class="je-mth-actions">
                     <button type="button" class="je-mth-button" data-tp="save-preset"><span class="material-icons" aria-hidden="true">bookmark_add</span><span data-je-label>${tx('tag_presets_save')}</span></button>
                     <button type="button" class="je-mth-button" data-tp="import-preset"><span class="material-icons" aria-hidden="true">file_open</span><span data-je-label>${tx('tag_presets_import')}</span></button>
@@ -481,7 +481,7 @@
 
         /** @param {Object} preset @returns {{name: string, description: string}} A preset's shown name (built-ins are translated). */
         const presetText = (preset, source) => source === 'builtIn'
-            ? { name: JE.t(`tag_presets_builtin_${preset.id}`), description: JE.t(`tag_presets_builtin_${preset.id}_desc`) }
+            ? { name: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.builtin[`${preset.id}`]), description: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.builtin[`${preset.id}_desc`]) }
             : { name: String(preset.name || ''), description: String(preset.description || '') };
 
         /** Draw the presets list. */
@@ -497,14 +497,14 @@
                             <div class="je-mth-tp-buttons">
                                 <button type="button" class="je-mth-button" data-tp="apply" aria-label="${tx('tag_presets_apply_named', { name: text.name })}">${tx('tag_presets_apply')}</button>
                                 <button type="button" class="je-mth-button" data-tp="share" aria-label="${tx('tag_presets_share_named', { name: text.name })}">${tx('tag_presets_share')}</button>
-                                ${source === 'mine' ? `<button type="button" class="je-mth-button" data-tp="delete" aria-label="${tx('tag_presets_delete_named', { name: text.name })}">${tx('tag_presets_delete')}</button>` : ''}
+                                ${source === 'mine' ? `<button type="button" class="je-mth-button" data-tp="delete" aria-label="${tx('admin_tags_rules_delete', { name: text.name })}">${tx('reviews_delete')}</button>` : ''}
                             </div>
                         </li>`;
                     }).join('')}</ul>` : `<p class="je-mth-hint">${tx('tag_presets_none_yet')}</p>`}
                 </div>` : '';
             list.innerHTML = group('builtIn', 'tag_presets_builtin', presets.builtIn)
                 + group('offered', 'tag_presets_offered', presets.offered)
-                + group('mine', 'tag_presets_mine', presets.mine, JE.t('tag_presets_mine_count', { count: presets.mine.length, max: presets.max }));
+                + group('mine', 'tag_presets_mine', presets.mine, JE.t('tag_looks_condition_count', { count: presets.mine.length, max: presets.max }));
             // A full list: saving or importing another is off until one is deleted.
             const full = presets.mine.length >= presets.max;
             for (const button of presetsCard.querySelectorAll('[data-tp="save-preset"], [data-tp="import-preset"]')) {
@@ -552,8 +552,8 @@
         // ── Export ──
         const openExport = async () => {
             const d = show(JE.t('tag_portable_export_title'));
-            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint">${tx('tag_portable_loading')}</p>`;
-            d.foot.innerHTML = buttonHtml('close', 'tag_portable_close');
+            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint">${tx('hidden_content_admin_loading')}</p>`;
+            d.foot.innerHTML = buttonHtml('close', 'awards_close');
             d.foot.querySelector('[data-pt-action="close"]')?.addEventListener('click', d.close);
             d.focusFirst();
             let document;
@@ -570,7 +570,7 @@
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p>
                 <label class="je-pt-label" for="jePtExport">${tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
                 <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea>`;
-            d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('close', 'tag_portable_close');
+            d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('close', 'awards_close');
             const area = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'));
             d.foot.addEventListener('click', async (e) => {
                 const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
@@ -606,7 +606,7 @@
             d.status('');
             const changes = preview?.changes || [];
             d.body.innerHTML = (preview?.name ? `<p class="je-pt-hint">${tx('tag_portable_preset_named', { name: preview.name })}</p>` : '') + previewHtml(preview || {});
-            d.foot.innerHTML = (back ? buttonHtml('back', 'tag_portable_back') : '') + buttonHtml('cancel', 'tag_portable_cancel')
+            d.foot.innerHTML = (back ? buttonHtml('back', 'tag_portable_back') : '') + buttonHtml('cancel', 'jellyseerr_modal_cancel')
                 + (changes.length ? buttonHtml('apply', 'tag_portable_apply_count', { primary: true, params: { count: changes.length } }) : '');
             d.foot.onclick = async (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-pt-action]'));
@@ -637,7 +637,7 @@
             const d = show(JE.t(titleKey));
             const step = () => {
                 d.body.innerHTML = sourceHtml(hintKey);
-                d.foot.innerHTML = buttonHtml('cancel', 'tag_portable_cancel') + buttonHtml('next', nextKey, { primary: true });
+                d.foot.innerHTML = buttonHtml('cancel', 'jellyseerr_modal_cancel') + buttonHtml('next', nextKey, { primary: true });
                 wireSource(d);
                 d.foot.onclick = (e) => {
                     const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
@@ -687,7 +687,7 @@
                 return;
             }
             undoBar.hidden = false;
-            undoBar.innerHTML = `<span>${tx('tag_portable_applied', { count: lastImport.count })}</span><button type="button" class="je-mth-button" data-tp="undo">${tx('tag_portable_undo')}</button>`;
+            undoBar.innerHTML = `<span>${tx('tag_portable_applied', { count: lastImport.count })}</span><button type="button" class="je-mth-button" data-tp="undo">${tx('hidden_content_undo')}</button>`;
             undoTimer = setTimeout(() => { if (!disposed) drawUndo(); }, left);
         };
 
@@ -721,13 +721,13 @@
         };
 
         const openSavePreset = () => {
-            const d = show(JE.t('tag_presets_save_title'));
+            const d = show(JE.t('tag_presets_save'));
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_presets_save_desc')}</p>
                 <label class="je-pt-label" for="jePtName">${tx('tag_presets_name')}</label>
                 <input id="jePtName" class="je-pt-input" type="text" maxlength="${MAX_NAME}" data-pt-autofocus required>
                 <label class="je-pt-label" for="jePtDesc">${tx('tag_presets_description')}</label>
                 <textarea id="jePtDesc" class="je-pt-input" rows="2" maxlength="${MAX_DESCRIPTION}"></textarea>`;
-            d.foot.innerHTML = buttonHtml('cancel', 'tag_portable_cancel') + buttonHtml('save', 'tag_presets_save_button', { primary: true });
+            d.foot.innerHTML = buttonHtml('cancel', 'jellyseerr_modal_cancel') + buttonHtml('save', 'elsewhere_settings_save', { primary: true });
             d.foot.onclick = async (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-pt-action]'));
                 if (button?.dataset.ptAction === 'cancel') { d.close(); return; }
@@ -764,7 +764,7 @@
                 return;
             }
             d.body.innerHTML = `<p class="je-pt-summary">${tx('tag_presets_saved', { name: answer?.preset?.name || document.name })}</p>` + previewHtml({ skipped }, { summary: false });
-            d.foot.innerHTML = buttonHtml('close', 'tag_portable_close', { primary: true });
+            d.foot.innerHTML = buttonHtml('close', 'awards_close', { primary: true });
             d.foot.onclick = () => d.close();
             d.focusFirst();
         };
@@ -796,7 +796,7 @@
             // No clipboard here: show the text to copy by hand.
             const d = show(JE.t('tag_presets_share_title', { name: presetText(preset, source).name }));
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_presets_share_desc')}</p><textarea class="je-pt-text" rows="10" readonly spellcheck="false" aria-label="${tx('tag_presets_share_title', { name: presetText(preset, source).name })}">${esc(text)}</textarea>`;
-            d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download' }) + buttonHtml('close', 'tag_portable_close', { primary: true });
+            d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download' }) + buttonHtml('close', 'awards_close', { primary: true });
             d.foot.onclick = (e) => {
                 const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
                 if (action === 'download') download(shareable(preset, source), `jellyfin-media-tags-preset-${String(preset.id || 'shared')}`);
@@ -834,9 +834,9 @@
                 const found = presetOf(button);
                 if (!found) return;
                 if (action === 'apply') {
-                    const d = show(JE.t('tag_presets_apply_title', { name: presetText(found.preset, found.source).name }));
-                    d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_loading')}</p>`;
-                    d.foot.innerHTML = buttonHtml('cancel', 'tag_portable_cancel');
+                    const d = show(JE.t('tag_presets_apply_named', { name: presetText(found.preset, found.source).name }));
+                    d.body.innerHTML = `<p class="je-pt-hint">${tx('hidden_content_admin_loading')}</p>`;
+                    d.foot.innerHTML = buttonHtml('cancel', 'jellyseerr_modal_cancel');
                     d.foot.onclick = () => d.close();
                     d.focusFirst();
                     showPreview(d, shareable(found.preset, found.source));

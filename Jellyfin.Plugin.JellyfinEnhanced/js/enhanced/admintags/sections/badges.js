@@ -36,14 +36,14 @@
     }
 
     const FAMILY_FIELDS = [
-        { id: 'statusTagsJustAdded', key: 'StatusTagsJustAdded', type: 'switch', place: 'section', label: 'panel_media_tags_badge_just_added', desc: 'panel_media_tags_badge_just_added_desc' },
+        { id: 'statusTagsJustAdded', key: 'StatusTagsJustAdded', type: 'switch', place: 'section', label: 'status_tag_just_added', desc: 'panel_media_tags_badge_just_added_desc' },
         { id: 'statusTagsNewRelease', key: 'StatusTagsNewRelease', type: 'switch', place: 'section', label: 'panel_media_tags_badge_new_release', desc: 'panel_settings_ui_status_tags_new_release' },
-        { id: 'statusTagsTrending', key: 'StatusTagsTrending', type: 'switch', place: 'section', label: 'panel_media_tags_badge_trending', desc: 'admin_tags_badges_trending_desc' },
+        { id: 'statusTagsTrending', key: 'StatusTagsTrending', type: 'switch', place: 'section', label: 'recommendations_trending', desc: 'admin_tags_badges_trending_desc' },
         { id: 'statusTagsSchedule', key: 'StatusTagsSchedule', type: 'switch', place: 'section', label: 'panel_media_tags_badge_schedule', desc: 'admin_status_tags_schedule_description' },
         { id: 'statusTagsMilestones', key: 'StatusTagsMilestones', type: 'switch', place: 'section', label: 'panel_media_tags_badge_milestones', desc: 'admin_status_tags_milestones_description' },
         { id: 'statusTagsSeriesStatus', key: 'StatusTagsSeriesStatus', type: 'switch', place: 'section', label: 'panel_media_tags_badge_series_status', desc: 'admin_status_tags_series_status_description' },
         { id: 'statusTagsScenes', key: 'StatusTagsScenes', type: 'switch', place: 'section', label: 'panel_media_tags_badge_scenes', desc: 'admin_status_tags_scenes_description' },
-        { id: 'statusTagsLeaving', key: 'StatusTagsLeaving', type: 'switch', place: 'section', label: 'panel_media_tags_badge_leaving', desc: 'admin_tags_badges_leaving_desc' },
+        { id: 'statusTagsLeaving', key: 'StatusTagsLeaving', type: 'switch', place: 'section', label: 'common_leaving_soon', desc: 'admin_tags_badges_leaving_desc' },
         { id: 'statusTagsDirectPlay', key: 'StatusTagsDirectPlay', type: 'switch', place: 'section', label: 'panel_media_tags_badge_direct_play', desc: 'admin_tags_badges_direct_play_desc' },
     ];
 
@@ -141,7 +141,7 @@
         id: 'badges-leaving',
         tab: 'badges',
         order: 40,
-        title: 'admin_tags_leaving_title',
+        title: 'common_leaving_soon',
         hint: 'admin_tags_leaving_desc',
         fields: [
             { id: 'leavingSoonMaintainerrUrl', key: 'LeavingSoonMaintainerrUrl', type: 'text', placeholder: 'admin_tags_leaving_url_placeholder', pattern: 'https?://[^\\s?#]+', label: 'admin_tags_leaving_url', desc: 'admin_tags_leaving_url_desc' },

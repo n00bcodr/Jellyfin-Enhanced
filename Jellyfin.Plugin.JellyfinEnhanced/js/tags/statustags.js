@@ -488,7 +488,7 @@
      * @returns {string}
      */
     function formatAirDay(day, daysAhead) {
-        if (daysAhead === 1) return label('status_tag_tomorrow');
+        if (daysAhead === 1) return label('calendar_tomorrow');
         // The day number is a UTC midnight, so format it in UTC.
         const date = new Date(day * DAY_MS);
         const options = daysAhead <= WEEKDAY_WITHIN_DAYS

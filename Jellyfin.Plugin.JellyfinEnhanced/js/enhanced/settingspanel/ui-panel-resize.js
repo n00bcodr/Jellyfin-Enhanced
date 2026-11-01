@@ -120,7 +120,7 @@
      * @returns {string} HTML for the panel header.
      */
     internal.buildPanelSizeControlsHtml = function() {
-        const names = { default: JE.t('panel_size_default'), large: JE.t('panel_size_large'), fill: JE.t('panel_size_fill') };
+        const names = { default: JE.t('common_default'), large: JE.t('panel_size_large'), fill: JE.t('aspect_ratio_fill') };
         const preset = (name) => `<button type="button" class="je-panel-size-btn" data-je-panel-size="${name}" aria-pressed="false">${escapeHtml(names[name])}</button>`;
         return `<div class="je-panel-size" role="group" aria-label="${escapeHtml(JE.t('panel_size_label'))}" hidden>`
             + PRESETS.map(preset).join('')
