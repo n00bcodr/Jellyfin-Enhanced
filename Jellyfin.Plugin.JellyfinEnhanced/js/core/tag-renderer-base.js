@@ -94,6 +94,9 @@
     /** @type {Map<string, any>} name → tag instance */
     const tags = new Map();
 
+    /** @type {Map<string, TagSpec>} Base styles available even when a renderer is disabled. */
+    const styleSpecs = new Map();
+
     /** @type {string|null} STANDARD_IGNORE_SELECTORS (+ search page) joined, per DisableTagsOnSearchPage */
     let standardIgnoreSelector = null;
     let standardIgnoreSearch = null;
@@ -789,7 +792,32 @@
         getOrCreate(name, spec).reinitialize();
     }
 
+    /**
+     * Make a group's base styles available without activating its renderer,
+     * caches, session hooks or network work. Called when its module loads.
+     * @param {TagSpec} spec
+     */
+    function registerStyles(spec) {
+        styleSpecs.set(spec.settingKey, spec);
+    }
+
+    /**
+     * Load missing base sheets for the groups this preview's document enables.
+     * Existing sheets stay intact; previewing never reinitializes real cards.
+     * @param {Object} settings - The preview source's effective group switches.
+     */
+    function ensureStyles(settings) {
+        for (const [key, spec] of styleSpecs) {
+            if (!settings?.[key] || !spec.styleId || document.getElementById(spec.styleId)) continue;
+            if (typeof spec.buildCss !== 'function') continue;
+            const css = spec.buildCss();
+            JE.core.ui.injectCss(spec.styleId, JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
+        }
+    }
+
     JE.core.tagRenderer = {
+        registerStyles,
+        ensureStyles,
         register,
         reinitialize,
         resolvePosition,

@@ -84,4 +84,7 @@
     /** Re-register and clear old chips after a personal switch changes. */
     JE.reinitializeAwardsTags = function() { JE.core.tagRenderer.reinitialize('awards', spec); };
     JE.awardsTags = { IDS, LABELS, resolve, chip, CSS };
+    // Previews may enable this group while the signed-in user has it off.
+    JE.core.tagRenderer.registerStyles(spec);
+
 })(window.JellyfinEnhanced);

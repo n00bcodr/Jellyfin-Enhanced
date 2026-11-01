@@ -200,6 +200,22 @@
             // Placement, and which side the hover names float to, come from
             // the layout stylesheet (tags/tag-layout-styles.js).
             return `
+                .je-msym-outlined {
+                    font-family: 'JE Material Symbols Outlined';
+                    font-weight: normal;
+                    font-style: normal;
+                    font-size: calc(24px * var(--je-tag-scale, 1));
+                    line-height: 1;
+                    letter-spacing: normal;
+                    text-transform: none;
+                    display: inline-block;
+                    white-space: nowrap;
+                    word-wrap: normal;
+                    direction: ltr;
+                    -webkit-font-feature-settings: 'liga';
+                    -webkit-font-smoothing: antialiased;
+                }
+
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;
@@ -355,26 +371,6 @@
     };
 
     JE.initializeGenreTags = function() {
-        // Material Symbols Outlined font, bundled with the plugin (#830); the
-        // @font-face is declared once in enhanced/ui-styles.js.
-        JE.core.ui.injectCss('mat-sym', `
-            .je-msym-outlined {
-                font-family: 'JE Material Symbols Outlined';
-                font-weight: normal;
-                font-style: normal;
-                font-size: calc(24px * var(--je-tag-scale, 1));
-                line-height: 1;
-                letter-spacing: normal;
-                text-transform: none;
-                display: inline-block;
-                white-space: nowrap;
-                word-wrap: normal;
-                direction: ltr;
-                -webkit-font-feature-settings: 'liga';
-                -webkit-font-smoothing: antialiased;
-            }
-        `);
-
         JE.core.tagRenderer.register('genre', spec);
         console.log(`${logPrefix} Initialized successfully.`);
     };
@@ -386,5 +382,8 @@
     JE.reinitializeGenreTags = function() {
         JE.core.tagRenderer.reinitialize('genre', spec);
     };
+
+    // Previews may enable this group while the signed-in user has it off.
+    JE.core.tagRenderer.registerStyles(spec);
 
 })(window.JellyfinEnhanced);

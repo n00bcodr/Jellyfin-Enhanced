@@ -288,4 +288,7 @@
 
     JE.logoTags = { buildChip, readLogos, shortName, logoUrl };
 
+    // Previews may enable this group while the signed-in user has it off.
+    JE.core.tagRenderer.registerStyles(spec);
+
 })(window.JellyfinEnhanced);

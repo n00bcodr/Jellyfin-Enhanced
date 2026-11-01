@@ -498,6 +498,9 @@
         const draw = () => withSource(drawSamples);
         const drawSamples = () => {
             if (disposed || !root.isConnected) return;
+            // This runs inside withSource: admin drafts and hub settings each
+            // load their own enabled groups, without activating any renderer.
+            JE.core.tagRenderer?.ensureStyles?.(JE.currentSettings);
             L.invalidateSettings();
             SAMPLES.forEach((sample, i) => {
                 const figure = figures[i];

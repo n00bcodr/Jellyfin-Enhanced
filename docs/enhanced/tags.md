@@ -23,7 +23,7 @@ You can choose tags for your own account. If you administer the server, you can 
 
 ![The Media Tags settings page: tab strip, the Overview cards and the live preview of a new user's cards](../images/media-tags-admin-overview.png)
 
-The **Media Tags** page gathers every server-wide tag setting, laid out like the personal Media Tags settings, with a live preview of the cards a brand-new account would see. The preview uses the saved server Tag Styles (refreshed after each **Colours** change is saved), not the colours your own account uses:
+The **Media Tags** page gathers every server-wide tag setting, laid out like the personal Media Tags settings, with a live preview of the cards a brand-new account would see. Its enabled groups follow the current server defaults, including changes awaiting a save, independently of the groups you use on your own account. The preview uses the saved server Tag Styles (refreshed after each **Colours** change is saved), not the colours your own account uses:
 
 | Tab | What it holds |
 |---|---|
