@@ -2198,6 +2198,10 @@
         const sides = new Map(slots.filter(el => ['ml', 'mr'].includes(el.dataset.jeSlot || ''))
             .map(el => [el.dataset.jeSlot, slotChips(el).map(chip => chip.getBoundingClientRect())]));
         const conf = resolveLayout(ctrl);
+        // Only rows sharing the corner-language reservation path require whole
+        // ratings. Cards without boxed language columns keep first-chip fitting.
+        const mixedRatingSlots = new Set(cornerLanguageGroups(ctrl).map(group =>
+            group.parentElement.dataset.jeSlot.startsWith('t') ? 'tc' : 'bc'));
         const innerWidth = sides.size ? Math.max(0, ctrl.host.clientWidth - 2 * edgeOf(ctrl)) : 0;
         const sideGap = 4 * TAG_SCALES[conf.tagScale] * TAG_GAPS[conf.tagGap];
         const half = Math.max(0, (innerWidth - sideGap) / 2);
@@ -2233,7 +2237,7 @@
                 let shown = null;
                 let fittedRows = [];
                 let fittedMoreRow = 0;
-                const ratingFirst = chips[0].matches('.rating-tag');
+                const ratingFirst = mixedRatingSlots.has(slotEl.dataset.jeSlot) && chips[0].matches('.rating-tag');
                 const fitWidths = widths.map((width, i) => i === 0 && !ratingFirst ? Math.min(width, Math.max(0, available)) : width);
                 if (vertical) {
                     // Keep the first label (ellipsized if necessary); later chips

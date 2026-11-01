@@ -181,7 +181,7 @@
             }
             /* Truncate only the shrinking label, retaining flex height and
                icon alignment as measured before the constraint was applied. */
-            ${host('corners')} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text),
+            ${host('corners')} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text, .rating-text),
             ${host('corners')} [data-je-fit-width].awards-tag > span:last-child {
                 display: block; min-width: 0;
                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

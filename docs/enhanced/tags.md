@@ -1395,4 +1395,4 @@ The live preview samples respond to pointer hover and keyboard focus to demonstr
 
 Tag size choices are **85%**, **100%**, **115%**, and **130%**. The inherited **Same as default look** option still follows the default size.
 
-Short language code chips use tighter horizontal padding while retaining the quality font and height. When a corner language column crowds a centered rating, excess language chips move into `+N`, after the group limit is applied. The first language chip stays visible. Rating values stay complete; a rating without enough room moves into `+N` with its full value in the overflow description.
+Short language code chips use tighter horizontal padding while retaining the quality font and height. When a corner language column crowds a centered rating, excess language chips move into `+N`, after the group limit is applied. The first language chip stays visible. In that mixed language-and-rating row, rating values stay complete; a rating without enough room moves into `+N` with its full value in the overflow description. Cards without that language column keep the usual first-chip fitting and ellipsis.
