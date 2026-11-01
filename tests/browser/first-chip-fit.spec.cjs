@@ -91,7 +91,7 @@ async function chipGeometry(page, kind, linked, styled, actual = false, mixed = 
     const JE=JellyfinEnhanced,L=JE.core.tagLayout,h=document.querySelector('.je-tag-host');
     const image=document.querySelector('.cardImageContainer');if(linked)image.setAttribute('href','#/details?id=0123456789abcdef0123456789abcdef');else image.removeAttribute('href');
     const group=kind==='logoText'||kind==='logoImage'?'logos':kind==='languageFlag'?'language':kind;
-    if(actual){const width=kind==='rating'||kind==='status'?80:kind==='language'?40:kind==='quality'?80:180;for(const c of document.querySelectorAll('.cardBox,.cardScalable'))c.style.width=width+'px';}
+    if(actual){const width=actual==='ample'?180:kind==='rating'||kind==='status'?80:kind==='language'?40:kind==='quality'?80:180;for(const c of document.querySelectorAll('.cardBox,.cardScalable'))c.style.width=width+'px';}
     Object.assign(JE.currentSettings,{statusTagsEnabled:true,statusTagsJustAddedDays:30,languageTagsShowSubtitles:true,languageTagsStyle:'codes',showResolutionTag:false,showDynamicRangeTag:true,
       tagLayouts:{corners:{groups:[{group,slot:mixed?'bc':'ml'},...(mixed?[{group:'language',slot:'bl'}]:[])]}}});L.invalidateSettings();
     document.getElementById('geometry-colours')?.remove();
@@ -141,7 +141,7 @@ async function chipGeometry(page, kind, linked, styled, actual = false, mixed = 
   },{kind,linked,styled,actual,mixed});
 }
 
-for(const kind of ['custom','status','quality','genre','language','languageFlag','awards','logoText','logoImage']){
+for(const kind of ['custom','rating','status','quality','genre','language','languageFlag','awards','logoText','logoImage']){
   test(`production ${kind} keeps its flex height, icon alignment and Flush paint when constrained`,async ({page})=>{
     await setup(page);
     for(const file of ['core/media-language.js','tags/languagetags.js','tags/customtags.js','tags/rating-sources.js','tags/ratingtags.js','tags/qualitytags.js','tags/genretags.js','tags/logotags.js'])await page.addScriptTag({path:path.join(root,file)});
@@ -200,5 +200,24 @@ test('production rating keeps its full value in overflow beside a language colum
     expect(fitted.more).toContainEqual({text:'+1',title:'IMDb: 8.1'});
     expect(fitted.html).toContain('8.1');
     await page.evaluate(()=>{const L=JellyfinEnhanced.core.tagLayout,h=document.querySelector('.je-tag-host');for(const g of ['rating','status','language'])L.removeGroup(h,g);});
+  }
+});
+
+
+test('visible production rating retains its presentation with an ample Flush budget', async ({page}) => {
+  await setup(page);
+  for (const file of ['tags/rating-sources.js','tags/ratingtags.js']) await page.addScriptTag({path:path.join(root,file)});
+  await page.evaluate(()=>JellyfinEnhanced.initializeRatingTags());
+  for (const styled of [false,true]) {
+    const r = await chipGeometry(page,'rating',true,styled,'ample');
+    expect(r.hidden,r.html).toBe(false);expect(r.constrained,r.html).toBe(false);expect(r.textEllipsis,r.html).toBe(false);
+    expect(r.after.height,r.html).toBeCloseTo(r.before.height,3);expect(r.after.display).toBe(r.before.display);
+    expect(r.after.display).toBe('flex');expect(r.after.icon).not.toBeNull();expect(r.after.icon).toEqual(r.before.icon);
+    expect(r.after.icon.width).toBeGreaterThan(0);expect(r.after.icon.height).toBeGreaterThan(0);
+    expect(r.after.icon.centre).toBeCloseTo(r.after.height/2,3);
+    for (const key of ['clip','left','right','tl','tr','ringLeft','ringRight']) expect(r.after[key],key).toBe(r.before[key]);
+    expect(r.after.clip).not.toBe('none');expect(r.after.tl).toBe('0px');expect(parseFloat(r.after.tr)).toBeGreaterThan(0);
+    if (styled) { expect(r.after.ringLeft).toBe('0px');expect(r.after.ringRight).toBe('1px'); }
+    await page.evaluate(()=>{const L=JellyfinEnhanced.core.tagLayout,h=document.querySelector('.je-tag-host');for(const g of ['rating','status'])L.removeGroup(h,g);});
   }
 });
