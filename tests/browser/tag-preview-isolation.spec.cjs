@@ -37,10 +37,13 @@ test('Hide on hover preserves focused library Corners slots and only hides point
 
 test('genre names stay hidden on hovered or focused library list rows; preview hooks remain active', async ({ page }) => {
   await setup(page);
+  await expect(page.locator('.listItem .genre-text')).toHaveCSS('display', 'none');
   await page.locator('.listItem').hover();
   await expect(page.locator('.listItem .genre-text')).toHaveCSS('opacity', '0');
+  await expect(page.locator('.listItem .genre-text')).toHaveCSS('display', 'none');
   await page.locator('.listItem button').focus();
   await expect(page.locator('.listItem .genre-text')).toHaveCSS('opacity', '0');
+  await expect(page.locator('.listItem .genre-text')).toHaveCSS('display', 'none');
   await page.evaluate(() => {
     const preview = document.querySelector('.je-tie-side');
     preview.dataset.jeHideOnHover = 'true';

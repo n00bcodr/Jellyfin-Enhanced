@@ -908,8 +908,10 @@ test('genre names are always in the group; layout CSS decides where they show, w
     await h.apply({ tagLayout: 'corners' });
     assert.equal(host.querySelectorAll('.genre-overlay-container .genre-text').length, 3, 'corners keep the spans too');
     const css = h.document.getElementById('je-tag-layout').textContent;
-    assert.match(css, /:is\(body\.je-tags-hide-on-hover \.card, \.je-mtp\[data-je-hide-on-hover="true"\] \.je-mtp-card\) \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\) \.genre-text \{\s*display: none;/,
-      'Hide Tags on Hover keeps names off the poster slots, not the reveal');
+    // Exact generated library rule from 83ffd1b3; previews get a separate rule.
+    const baseline = 'body.je-tags-hide-on-hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text { display: none; }';
+    assert.ok(css.replace(/\s+/g, ' ').includes(baseline), 'body-scoped hiding also covers list rows outside .card');
+    assert.ok(css.replace(/\s+/g, ' ').includes('.je-mtp[data-je-hide-on-hover="true"] .je-mtp-card .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text { display: none; }'), 'preview hiding has its own rule');
     assert.match(css, /\.je-tag-slot\[data-je-slot="hover"\] \.genre-tag \.genre-text \{\s*position: static;\s*opacity: 1;/, 'the reveal shows them inline');
     assert.doesNotMatch(css, /\.je-tag-caption \.genre-text \{\s*display: none/, 'the caption strip shows them on hover');
   }

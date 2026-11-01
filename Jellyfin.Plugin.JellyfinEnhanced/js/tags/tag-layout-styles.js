@@ -352,7 +352,10 @@
                 left: calc(100% + 4px);
                 right: auto;
             }
-            :is(body.je-tags-hide-on-hover .card, .je-mtp[data-je-hide-on-hover="true"] .je-mtp-card) .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text {
+            body.je-tags-hide-on-hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text {
+                display: none;
+            }
+            .je-mtp[data-je-hide-on-hover="true"] .je-mtp-card .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text {
                 display: none;
             }
 
