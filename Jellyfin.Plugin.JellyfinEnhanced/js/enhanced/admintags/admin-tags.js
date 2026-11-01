@@ -1320,6 +1320,9 @@
      * @type {{page: HTMLElement, root: HTMLElement, ctx: Object}|null}
      */
     let active = null;
+    // A configuration reload may finish after viewbeforehide. It must not
+    // resume a hidden preview (or retain sheets from a late first mount).
+    const hiddenPages = new WeakSet();
     /** @type {Promise<Object|null>} activations run one after another */
     let queue = Promise.resolve(null);
     let unloadWired = false;
@@ -1364,6 +1367,7 @@
             if (!sameSession(mark)) return again();
             if (!active) return null;
             if (fresh) active.ctx.reload(fresh);
+            if (!hiddenPages.has(page)) active.ctx.preview?.resume();
             const target = requestedTarget();
             if (target.tab) active.ctx.openTab(target.tab, { group: target.group });
             return active.ctx;
@@ -1396,6 +1400,7 @@
         }
         const ctx = createPage(root, config);
         active = { page, root, ctx };
+        if (hiddenPages.has(page)) ctx.preview?.suspend();
         return ctx;
     }
 
@@ -1431,8 +1436,16 @@
         await modulesLoaded;
         if (!page.dataset.jeTaWired) {
             page.dataset.jeTaWired = '1';
-            page.addEventListener('viewshow', () => { activate(page); });
-            page.addEventListener('viewbeforehide', () => { if (active?.page === page) leaveWithPending(); });
+            page.addEventListener('viewshow', () => {
+                hiddenPages.delete(page);
+                activate(page);
+            });
+            page.addEventListener('viewbeforehide', () => {
+                hiddenPages.add(page);
+                if (active?.page !== page) return;
+                active.ctx.preview?.suspend();
+                leaveWithPending();
+            });
         }
         if (!unloadWired) {
             unloadWired = true;

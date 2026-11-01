@@ -426,7 +426,7 @@
      *   phone strip's summary element, the panel's auto-close reset, and
      *   (the Media Tags admin page) the settings and plugin configuration to
      *   draw instead of the signed-in user's.
-     * @returns {{refresh: () => void, setSpotlight: (group: string|null) => void, follow: (key: string) => void, dispose: () => void, root: HTMLElement}|null}
+     * @returns {{refresh: () => void, suspend: () => void, resume: () => void, setSpotlight: (group: string|null) => void, follow: (key: string) => void, dispose: () => void, root: HTMLElement}|null}
      */
     internal.createTagPreview = function(mount, options = {}) {
         const L = layoutApi();
@@ -469,6 +469,8 @@
         mount.replaceChildren(root);
 
         let disposed = false;
+        let suspended = false;
+        const styleOwner = {};
         let queued = false;
         let followKey = 'movie';
         let hover = false;
@@ -497,10 +499,10 @@
         /** Re-feed and re-present every sample, then rewrite the labels and the strip. */
         const draw = () => withSource(drawSamples);
         const drawSamples = () => {
-            if (disposed || !root.isConnected) return;
+            if (disposed || suspended || !root.isConnected) return;
             // This runs inside withSource: admin drafts and hub settings each
             // load their own enabled groups, without activating any renderer.
-            JE.core.tagRenderer?.ensureStyles?.(JE.currentSettings);
+            JE.core.tagRenderer?.ensureStyles?.(JE.currentSettings, styleOwner);
             L.invalidateSettings();
             SAMPLES.forEach((sample, i) => {
                 const figure = figures[i];
@@ -591,7 +593,7 @@
 
         /** Redraw after the current event's handlers ran (a burst of changes draws once). */
         const refresh = () => {
-            if (queued || disposed) return;
+            if (queued || disposed || suspended) return;
             queued = true;
             Promise.resolve().then(() => {
                 queued = false;
@@ -618,6 +620,7 @@
         const dispose = () => {
             if (disposed) return;
             disposed = true;
+            JE.core.tagRenderer?.releaseStyles?.(styleOwner);
             document.removeEventListener('je:tag-layout-changed', refresh);
             // Clear the cards while they are still in the document, then drop them.
             for (const figure of figures) {
@@ -632,6 +635,15 @@
         return {
             root,
             refresh,
+            suspend() {
+                suspended = true;
+                JE.core.tagRenderer?.releaseStyles?.(styleOwner);
+            },
+            resume() {
+                if (disposed) return;
+                suspended = false;
+                draw();
+            },
             /** @param {string|null} group - Outline this group's chips (null: none). */
             setSpotlight(group) {
                 if (group) root.dataset.spot = group;

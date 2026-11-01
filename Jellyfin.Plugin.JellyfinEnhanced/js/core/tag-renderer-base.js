@@ -97,6 +97,9 @@
     /** @type {Map<string, TagSpec>} Base styles available even when a renderer is disabled. */
     const styleSpecs = new Map();
 
+    /** @type {Map<HTMLElement, Set<object>>} Sheets borrowed only by live previews. */
+    const previewStyles = new Map();
+
     /** @type {string|null} STANDARD_IGNORE_SELECTORS (+ search page) joined, per DisableTagsOnSearchPage */
     let standardIgnoreSelector = null;
     let standardIgnoreSearch = null;
@@ -571,7 +574,16 @@
         function injectCss() {
             if (!spec.styleId || typeof spec.buildCss !== 'function') return;
             const css = spec.buildCss(ctx);
-            JE.core.ui.injectCss(spec.styleId, JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
+            const text = JE.core.tagLayout?.preserveLegacySizing?.(css) || css;
+            const existing = document.getElementById(spec.styleId);
+            if (existing && previewStyles.delete(existing)) {
+                // A personal renderer takes over the preview's sheet in place.
+                // Its lifetime now belongs to the renderer, regardless of previews.
+                delete existing.dataset.jeTagPreviewOwned;
+                existing.textContent = text;
+            } else {
+                JE.core.ui.injectCss(spec.styleId, text);
+            }
         }
 
         // ── Context handed to spec callbacks ───────────────────────────
@@ -805,19 +817,40 @@
      * Load missing base sheets for the groups this preview's document enables.
      * Existing sheets stay intact; previewing never reinitializes real cards.
      * @param {Object} settings - The preview source's effective group switches.
+     * @param {object} owner - The preview borrowing these sheets.
      */
-    function ensureStyles(settings) {
+    function ensureStyles(settings, owner) {
         for (const [key, spec] of styleSpecs) {
-            if (!settings?.[key] || !spec.styleId || document.getElementById(spec.styleId)) continue;
+            if (!settings?.[key] || !spec.styleId) continue;
+            const existing = document.getElementById(spec.styleId);
+            if (existing) {
+                previewStyles.get(existing)?.add(owner);
+                continue;
+            }
             if (typeof spec.buildCss !== 'function') continue;
             const css = spec.buildCss();
             JE.core.ui.injectCss(spec.styleId, JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
+            const sheet = document.getElementById(spec.styleId);
+            if (sheet) {
+                sheet.dataset.jeTagPreviewOwned = '';
+                previewStyles.set(sheet, new Set([owner]));
+            }
+        }
+    }
+
+    /** Release only sheets still owned exclusively by previews. @param {object} owner */
+    function releaseStyles(owner) {
+        for (const [sheet, owners] of previewStyles) {
+            if (!owners.delete(owner) || owners.size) continue;
+            sheet.remove();
+            previewStyles.delete(sheet);
         }
     }
 
     JE.core.tagRenderer = {
         registerStyles,
         ensureStyles,
+        releaseStyles,
         register,
         reinitialize,
         resolvePosition,
