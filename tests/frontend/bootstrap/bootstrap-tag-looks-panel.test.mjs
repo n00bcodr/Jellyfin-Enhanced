@@ -47,7 +47,7 @@ function setup(t, { settings = {}, genresFail = false, html = '', tagData = id =
     },
   });
   t.after(() => h.close());
-  const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-pipeline.js', 'tags/tag-item-editor.js'];
+  const files = ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'enhanced/settingspanel/ui-panel-tag-looks.js', 'tags/tag-pipeline.js', 'enhanced/settingspanel/ui-panel-tag-preview.js', 'tags/tag-item-editor.js'];
   if (realSave) files.unshift('tags/rating-sources.js', 'enhanced/config.js');
   for (const file of files) h.load(file);
   h.JE.toast = message => toasts.push(message);

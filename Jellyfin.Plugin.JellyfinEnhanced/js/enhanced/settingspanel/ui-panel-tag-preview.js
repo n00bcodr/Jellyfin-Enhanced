@@ -420,6 +420,56 @@
     }
 
     /**
+     * Share per-card pointer/focus reveal and the touch pin across all previews.
+     * The returned disposer removes every listener owned by this interaction.
+     * @param {HTMLElement[]} cards
+     * @param {HTMLElement} view - Resting/Hover buttons, identified by data-view.
+     * @param {{change?: (active: boolean) => void, touch?: () => void}} [options]
+     * @returns {{sync: () => void, dispose: () => void}}
+     */
+    internal.bindTagPreviewInteraction = function(cards, view, options = {}) {
+        let pinned = false;
+        const pointed = new Set();
+        const focused = new Set();
+        const listeners = [];
+        /** Apply the preview hook without changing any library card selectors. */
+        const sync = () => {
+            for (const card of cards) card.classList.toggle('je-tag-reveal', pinned || pointed.has(card) || focused.has(card));
+            options.change?.(pinned || pointed.size > 0 || focused.size > 0);
+        };
+        /** Register a listener with this preview's lifetime. */
+        const listen = (el, type, fn) => {
+            el.addEventListener(type, fn);
+            listeners.push(() => el.removeEventListener(type, fn));
+        };
+        for (const card of cards) {
+            listen(card, 'pointerenter', event => {
+                if (event.pointerType === 'touch') return;
+                pointed.add(card); sync();
+            });
+            listen(card, 'pointerleave', () => { pointed.delete(card); sync(); });
+            listen(card, 'focusin', () => { focused.add(card); sync(); });
+            listen(card, 'focusout', event => {
+                if (card.contains(event.relatedTarget)) return;
+                focused.delete(card); sync();
+            });
+        }
+        listen(view, 'click', event => {
+            const button = event.target.closest('[data-view]');
+            if (!button) return;
+            pinned = button.dataset.view === 'hover';
+            view.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b === button)));
+            sync();
+            options.touch?.();
+        });
+        return { sync, dispose() {
+            for (const remove of listeners) remove();
+            pointed.clear(); focused.clear(); pinned = false;
+            sync();
+        } };
+    };
+
+    /**
      * Build the preview into its mount and keep it in step. Returns the
      * handle the hub drives: refresh after a change, the Resting/Hover view,
      * the group spotlight, which sample the phone strip follows, and dispose.
@@ -475,33 +525,10 @@
         const styleOwner = {};
         let queued = false;
         let followKey = 'movie';
-        let hover = false;
-        const pointed = new Set();
-        const focused = new Set();
-
-        /** Apply the real layout/genre hover hook, preserving touch pins and live interaction. */
-        const syncHover = () => {
-            for (const figure of figures) {
-                const card = figure.querySelector('.je-mtp-card');
-                card.classList.toggle('je-tag-reveal', hover || pointed.has(card) || focused.has(card));
-            }
-            withSource(() => { note.hidden = !((hover || pointed.size || focused.size) && JE.currentSettings?.tagsHideOnHover); });
-        };
-        for (const figure of figures) {
-            const card = figure.querySelector('.je-mtp-card');
-            card.addEventListener('pointerenter', (event) => {
-                if (event.pointerType === 'touch') return;
-                pointed.add(card);
-                syncHover();
-            });
-            card.addEventListener('pointerleave', () => { pointed.delete(card); syncHover(); });
-            card.addEventListener('focusin', () => { focused.add(card); syncHover(); });
-            card.addEventListener('focusout', (event) => {
-                if (card.contains(event.relatedTarget)) return;
-                focused.delete(card);
-                syncHover();
-            });
-        }
+        const interaction = internal.bindTagPreviewInteraction(figures.map(figure => figure.querySelector('.je-mtp-card')), view, {
+            change: active => withSource(() => { note.hidden = !(active && JE.currentSettings?.tagsHideOnHover); }),
+            touch: options.touch,
+        });
         /** @type {Map<string, {figure: HTMLElement, card: HTMLElement, target: HTMLElement, look: string, source: string}>} */
         const drawn = new Map();
 
@@ -574,7 +601,7 @@
             const strong = document.createElement('strong');
             strong.textContent = preset ? `${defaultLook} · ${preset}` : defaultLook;
             foot.replaceChildren(document.createTextNode(`${JE.t('panel_media_tags_preview_default')} `), strong, document.createTextNode(`. ${JE.t('panel_media_tags_preview_precedence')}`));
-            syncHover();
+            interaction.sync();
             drawStrip();
         };
 
@@ -630,15 +657,6 @@
             });
         };
 
-        view.addEventListener('click', (e) => {
-            const button = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-view]'));
-            if (!button) return;
-            hover = button.dataset.view === 'hover';
-            view.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
-            syncHover();
-            options.touch?.();
-        });
-
         // Cards re-present on every layout reinitialisation (a rule saved, a
         // lock removed, a reset): redraw the labels and the strip with them.
         document.addEventListener('je:tag-layout-changed', refresh);
@@ -648,6 +666,7 @@
         const dispose = () => {
             if (disposed) return;
             disposed = true;
+            interaction.dispose();
             JE.core.tagRenderer?.releaseStyles?.(styleOwner);
             document.removeEventListener('je:tag-layout-changed', refresh);
             // Clear the cards while they are still in the document, then drop them.

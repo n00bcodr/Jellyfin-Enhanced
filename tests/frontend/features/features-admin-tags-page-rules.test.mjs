@@ -131,6 +131,7 @@ for (const move of [false, true]) test(`Rules Edit through the real item editor 
     },
   });
   h.JE.currentSettings = { tagLayoutSettingsVersion: 1, tagLayout: 'corners', qualityTagsEnabled: true };
+  h.load('enhanced/settingspanel/ui-panel-tag-preview.js');
   h.load('tags/tag-item-editor.js');
   h.ctx.openTab('rules');
   await h.settle(); await h.settle();

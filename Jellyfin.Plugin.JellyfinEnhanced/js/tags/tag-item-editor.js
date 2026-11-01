@@ -64,6 +64,10 @@
         .je-tie-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 14px 16px; }
         .je-tie-side { position: sticky; top: 0; align-self: start; }
         .je-tie-card { position: relative; width: 100%; }
+        .je-tie-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        .je-tie-view { margin-top: 8px; }
+        .je-tie-view button { font: inherit; color: inherit; }
+        .je-tie-view [aria-pressed="true"] { border-color: #00a4dc; background: rgba(0,164,220,0.18); }
         .je-tie-card .cardBox { margin: 0; }
         .je-tie-scalable { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden; contain: paint; background: #2b303a center / cover no-repeat; }
         .je-tie-card[data-je-shape="landscape"] .je-tie-scalable { aspect-ratio: 16 / 9; }
@@ -458,8 +462,12 @@
                 <button type="button" class="je-tie-close" data-tie-close aria-label="${tx('awards_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>
             <div class="je-tie-body">
                 <div class="je-tie-side">
-                    <div class="je-tie-card" data-je-shape="${esc(shape)}" data-id="${esc(id)}" data-type="${esc(type)}" aria-hidden="true"><div class="cardBox"><div class="je-tie-scalable cardScalable"></div><div class="cardText je-tie-card-title">${esc(name)}</div></div></div>
-                    <div><p class="je-tie-source" data-tie-source></p><p class="je-tie-note" data-tie-note hidden></p></div>
+                    <div class="je-tie-card" data-je-shape="${esc(shape)}" data-id="${esc(id)}" data-type="${esc(type)}" tabindex="0" aria-label="${tx('panel_media_tags_preview')}: ${esc(name || typeName)}"><div class="cardBox"><div class="je-tie-scalable cardScalable"></div><div class="cardText je-tie-card-title">${esc(name)}</div></div></div>
+                    <div><div class="je-tie-view je-tie-pills" role="group" aria-label="${tx('panel_media_tags_preview_view')}">
+                        <button type="button" class="je-tie-pill" data-view="rest" aria-pressed="true">${tx('panel_settings_ui_tag_editor_preview_resting')}</button>
+                        <button type="button" class="je-tie-pill" data-view="hover" aria-pressed="false">${tx('panel_settings_ui_tag_editor_preview_hover')}</button></div>
+                        <p class="je-tie-note" data-tie-hover-note hidden>${tx('panel_media_tags_preview_hover_hidden')}</p>
+                        <p class="je-tie-source" data-tie-source></p><p class="je-tie-note" data-tie-note hidden></p></div>
                 </div>
                 <div class="je-tie-main">
                     ${hasSeries ? `<fieldset class="je-tie-box"><legend>${tx('tag_item_editor_scope')}</legend><div class="je-tie-scope" role="radiogroup">
@@ -498,6 +506,15 @@
         const statusEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-status]'));
         const keepBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-keep]'));
         const everyoneBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-everyone]'));
+
+        const previewSide = dialog.querySelector('.je-tie-side');
+        const interaction = JE.internals.enhancedUi.bindTagPreviewInteraction([dialog.querySelector('.je-tie-card')], dialog.querySelector('.je-tie-view'), {
+            change: active => {
+                const hidden = !!JE.currentSettings?.tagsHideOnHover;
+                previewSide.dataset.jeHideOnHover = String(hidden);
+                dialog.querySelector('[data-tie-hover-note]').hidden = !(active && hidden);
+            },
+        });
 
         // The poster (the episode's still) under the tags.
         const image = item.ImageTags?.Primary ? ApiClient.getScaledImageUrl(id, { type: 'Primary', maxHeight: 480, tag: item.ImageTags.Primary }) : '';
@@ -642,7 +659,7 @@
         });
 
         // ── Closing, focus, saving ──
-        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])'))
+        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'))
             .filter((el) => !el.closest('[hidden]') && !(/** @type {HTMLInputElement} */ (el).type === 'radio' && !/** @type {HTMLInputElement} */ (el).checked && dialog.querySelector(`input[name="${/** @type {HTMLInputElement} */ (el).name}"]:checked`)));
         const onFocusIn = (e) => {
             // Jellyfin's closing action sheet hands focus back to its button: keep it here.
@@ -657,6 +674,7 @@
             if (presentTimer) clearTimeout(presentTimer);
             document.removeEventListener('focusin', onFocusIn, true);
             window.removeEventListener('hashchange', onNavigate);
+            interaction.dispose();
             L.setPreviewLook(target, null);
             L.clearCard(target);
             backdrop.remove();

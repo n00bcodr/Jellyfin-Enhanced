@@ -116,3 +116,38 @@ test('real sample hover and keyboard focus expand genre names and Summary reveal
   await page.locator('[data-view="hover"]').click();
   await expect(series.locator('[data-je-slot="hover"]')).toHaveCSS('opacity', '1');
 });
+
+test('the real item editor sample reveals Summary on hover, focus and the touch pin', async ({ page }) => {
+  await setup(page, { tagLayout: 'summary', genreTagsEnabled: true, qualityTagsEnabled: false }, {}, false);
+  await page.evaluate(() => {
+    const JE = JellyfinEnhanced, id = 'a'.repeat(32);
+    window.ApiClient = { getCurrentUserId: () => 'admin', serverId: () => 'server', getCurrentUser: async () => ({ Policy: {} }) };
+    // Copy the visible item's actual group through the production editor path.
+    const sample = document.querySelector('[data-sample="movie"] .je-mtp-card');
+    const card = document.createElement('div'); card.className = 'card'; card.dataset.id = id;
+    card.innerHTML = '<div class="cardScalable"></div>';document.body.append(card);
+    const L = JE.core.tagLayout;
+    for (const group of L.GROUPS) {
+      const master = L.getGroup(sample.querySelector('.je-tag-host'), group);
+      if (master) L.commitGroup(card.firstElementChild, group, master.cloneNode(true));
+    }
+  });
+  await page.addScriptTag({ path: path.join(root, 'tags/tag-item-editor.js') });
+  await page.evaluate(() => JellyfinEnhanced.tagItemEditor.open('a'.repeat(32), { item: { Id: 'a'.repeat(32), Type: 'Movie', Name: 'Movie sample' } }));
+  const sample = page.locator('.je-tie-card');
+  const reveal = sample.locator('.je-tag-slot[data-je-slot="hover"]');
+  await expect(sample).toHaveAttribute('tabindex', '0');
+  await expect(sample).toHaveAccessibleName('Live preview: Movie sample');
+  await expect(reveal).toHaveCSS('opacity', '0');
+  await sample.hover();
+  await expect(reveal).toHaveCSS('opacity', '1');
+  await page.mouse.move(0, 0);
+  await expect(reveal).toHaveCSS('opacity', '0');
+  await sample.focus();
+  await expect(reveal).toHaveCSS('opacity', '1');
+  await page.locator('.je-tie-close').focus();
+  await expect(reveal).toHaveCSS('opacity', '0');
+  await page.locator('.je-tie-view [data-view="hover"]').click();
+  await page.mouse.move(0, 0);
+  await expect(reveal).toHaveCSS('opacity', '1');
+});

@@ -74,7 +74,7 @@ function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagDat
     },
   });
   t.after(() => h.close());
-  for (const file of ['core/ui-kit.js', 'core/dom-observer.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-pipeline.js', 'tags/tag-item-editor.js', 'tags/tag-item-menu.js']) h.load(file);
+  for (const file of ['core/ui-kit.js', 'core/dom-observer.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-pipeline.js', 'enhanced/settingspanel/ui-panel-tag-preview.js', 'tags/tag-item-editor.js', 'tags/tag-item-menu.js']) h.load(file);
   h.JE.toast = (message) => toasts.push(message);
   const settle = async (n = 3) => { for (let i = 0; i < n; i++) await new Promise((resolve) => setTimeout(resolve, 0)); };
   const frame = () => new Promise((resolve) => h.window.requestAnimationFrame(() => resolve()));
@@ -667,4 +667,37 @@ test('server-wide Undo at capacity never evicts an intervening addition', async 
   assert.equal(await h.JE.core.tagLook.saveItemOverride(MOVIE, { layout: 'caption' }, { restoreOnly: true }), true);
   assert.equal(h.patches.length, 0, 'Undo leaves the newer full list alone');
   assert.deepEqual(h.io.config.TagLookItemOverrides, before);
+});
+
+test('the real item editor sample reacts to pointer, focus and the touch Hover pin', async t => {
+  const h = setup(t, { settings: { tagLayout: 'summary', tagsHideOnHover: true } });
+  h.load('enhanced/settingspanel/ui-panel-tag-preview.js');
+  await h.open(MOVIE);
+  const sample = h.$('.je-tie-card');
+  const reveal = () => sample.classList.contains('je-tag-reveal');
+  sample.dispatchEvent(new h.window.Event('pointerenter'));
+  assert.equal(reveal(), true, 'pointer enter reveals the actual item sample');
+  sample.dispatchEvent(new h.window.Event('pointerleave'));
+  assert.equal(reveal(), false);
+  assert.equal(sample.tabIndex, 0);
+  assert.ok(sample.getAttribute('aria-label'));
+  assert.equal(sample.hasAttribute('aria-hidden'), false);
+  sample.focus();
+  assert.equal(reveal(), true, 'keyboard focus reveals');
+  assert.equal(h.$('[data-tie-hover-note]').hidden, false);
+  h.$('[data-tie-close]').focus();
+  assert.equal(reveal(), false);
+  const touch = new h.window.Event('pointerenter');
+  Object.defineProperty(touch, 'pointerType', { value: 'touch' });
+  sample.dispatchEvent(touch);
+  assert.equal(reveal(), false, 'touch does not leave a synthetic hover behind');
+  h.click(h.$('.je-tie-view [data-view="hover"]'));
+  sample.dispatchEvent(new h.window.Event('pointerleave'));
+  assert.equal(reveal(), true, 'the touch pin survives pointer leave');
+  assert.equal(h.$('.je-tie-view [data-view="hover"]').getAttribute('aria-pressed'), 'true');
+  h.click(h.$('.je-tie-view [data-view="rest"]'));
+  assert.equal(reveal(), false);
+  h.JE.tagItemEditor.close();
+  sample.dispatchEvent(new h.window.Event('pointerenter'));
+  assert.equal(reveal(), false, 'closing disposes the interaction handlers');
 });
