@@ -191,7 +191,7 @@
                 return `<div class="je-mth-shape-group" data-shape-group="${group}">
                     <span class="je-mth-label">${escapeHtml(groupName)}</span>
                     <div class="je-mth-shape-positions" role="group" aria-label="${tx('tag_shapes_position_for', { group: groupName, shape: shapeName })}">
-                        ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'hidden_content_already_hidden' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${conf.layout}_${slot}`])}</button>`).join('')}
+                        ${L.LAYOUT_SLOTS[conf.layout].filter(slot => slot !== 'dots' || group === 'quality').map(slot => `<button type="button" data-shape-action="slot" data-value="${slot}" aria-pressed="${conf.slots[group] === slot}">${tx(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${conf.layout}_${slot}`])}</button>`).join('')}
                     </div>
                     <div class="je-mth-shape-cap" data-je-cap-control ${L.singleChipGroup(group) ? 'hidden' : ''} role="group" aria-label="${tx('tag_shapes_cap_for', { group: groupName, shape: shapeName })}">
                         <button type="button" data-shape-action="cap" data-value="-1" ${internal.tagGroupEditorData.stepCap(cap, -1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_fewer', { group: groupName })}">−</button>
@@ -374,7 +374,7 @@
                         <h4 class="je-mth-card-title" id="jeMthColourEditorTitle">${tx('panel_media_tags_server_colours')} <span class="je-mth-admin-chip">${tx('common_admin')}</span></h4>
                         <p class="je-mth-hint">${tx('panel_media_tags_server_colours_desc')}</p>
                     </div>
-                    <a class="je-mth-button" href="${escapeHtml(configUrl('colours'))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t('panel_media_tags_server_colours') })}">${tx('jellyseerr_issue_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+                    <a class="je-mth-button" href="${escapeHtml(configUrl('colours'))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t('panel_media_tags_server_colours') })}">${tx('common_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
                 </div>
             </section>` : '';
         return `
@@ -394,7 +394,7 @@
                     <div class="je-mth-pointer-name" data-je-label>${tx(link.nameKey)}</div>
                     <div class="je-mth-hint">${tx(link.descKey)}</div>
                 </div>
-                <a class="je-mth-button" href="${escapeHtml(configUrl(link.tab))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t(link.nameKey) })}">${tx('jellyseerr_issue_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
+                <a class="je-mth-button" href="${escapeHtml(configUrl(link.tab))}" data-je-config-link aria-label="${tx('panel_media_tags_open_named', { name: JE.t(link.nameKey) })}">${tx('common_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>
             </li>`).join('');
         return `
             <section class="je-mth-card je-mth-admin" aria-labelledby="jeMthServerTitle">

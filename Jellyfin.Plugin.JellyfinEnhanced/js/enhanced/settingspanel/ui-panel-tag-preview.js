@@ -89,7 +89,7 @@
             rating: { community: '9.3' },
             age: 'TV-Y', flags: ['jp'], genres: [['Animation', 'animation'], ['Family', 'family_restroom']],
             logos: [{ kind: 'network', name: 'Harbor Kids Network' }],
-            status: [['statusTagsMilestones', 'milestone', 'status_tag_season_finale', 'calendar_finale'], ['statusTagsNewRelease', 'new', 'status_tag_new_episode', 'status_tag_compact_new_episode']],
+            status: [['statusTagsMilestones', 'milestone', 'status_tag_season_finale', 'status_tag_compact_finale'], ['statusTagsNewRelease', 'new', 'status_tag_new_episode', 'status_tag_compact_new_episode']],
         },
     ];
     SAMPLES.push({ ...SAMPLES[2], key: 'list', shape: 'list', titleKey: 'tag_shapes_preview_list', id: 'a11ce0000000000000000000000000d4' });

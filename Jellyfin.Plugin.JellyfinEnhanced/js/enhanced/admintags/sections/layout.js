@@ -149,13 +149,13 @@
                 const label = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`]);
                 return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" aria-label="${ctx.esc(JE.t('admin_tags_position_aria', { group: name, slot: label }))}" title="${ctx.esc(label)}"></button>`;
             }).join('');
-            const where = slot === 'off' ? JE.t('hidden_content_already_hidden') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${slot}`]);
+            const where = slot === 'off' ? JE.t('panel_settings_ui_tag_slot_off') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${slot}`]);
             slots = `<span class="je-ta-anchors" role="group" id="${L().POSITION_SETTINGS[g].userKey}" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${anchors}</span>`
                 + `<span class="je-ta-slot-name">${ctx.esc(where)}</span>`
-                + `<button type="button" class="je-ta-pill" data-slot="off" aria-pressed="${slot === 'off'}">${ctx.tx('hidden_content_already_hidden')}</button>`;
+                + `<button type="button" class="je-ta-pill" data-slot="off" aria-pressed="${slot === 'off'}">${ctx.tx('panel_settings_ui_tag_slot_off')}</button>`;
         } else {
             slots = `<span class="je-ta-pills" role="group" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${L().LAYOUT_SLOTS[state.layout].filter((s) => s !== 'dots' || g === 'quality').map((s) => {
-                const label = JE.t(s === 'off' ? 'hidden_content_already_hidden' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${s}`]);
+                const label = JE.t(s === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${s}`]);
                 return `<button type="button" class="je-ta-pill" data-slot="${s}" aria-pressed="${slot === s}">${ctx.esc(label)}</button>`;
             }).join('')}</span>`;
         }

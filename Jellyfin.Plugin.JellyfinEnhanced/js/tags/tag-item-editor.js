@@ -38,7 +38,7 @@
      * `capAll` groups may show every tag, `capFixed` groups always show one).
      */
     const GROUPS = {
-        status: { setting: 'statusTagsEnabled', nameKey: 'jellyseerr_modal_status', capFixed: true },
+        status: { setting: 'statusTagsEnabled', nameKey: 'panel_settings_ui_tag_group_status', capFixed: true },
         quality: { setting: 'qualityTagsEnabled', nameKey: 'panel_settings_ui_tag_group_quality', capAll: true },
         rating: { setting: 'ratingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_rating', capAll: true },
         ageRating: { setting: 'ageRatingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_age_rating', capFixed: true },
@@ -149,7 +149,7 @@
      * @returns {string}
      */
     function slotLabel(layout, slot) {
-        return slot === 'off' ? JE.t('hidden_content_already_hidden') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`${layout}_${slot}`]);
+        return slot === 'off' ? JE.t('panel_settings_ui_tag_slot_off') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`${layout}_${slot}`]);
     }
 
     /**
@@ -552,7 +552,7 @@
                     : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
                 const fixed = L.singleChipGroup(group);
                 const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
-                const capText = cap === 0 ? JE.t('jellyseerr_discover_all') : String(cap);
+                const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
                 const stepper = fixed ? '' : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
                     <span>${tx('panel_settings_ui_tag_editor_show_up_to')}</span>
                     <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>

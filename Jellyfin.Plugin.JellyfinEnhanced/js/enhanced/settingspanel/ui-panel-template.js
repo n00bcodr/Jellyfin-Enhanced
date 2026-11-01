@@ -366,7 +366,7 @@
                             </div>
                             <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor}; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;">
                                 <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_media_tags_moved'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_media_tags_moved_desc'))}</div></div>
-                                <button type="button" id="jeOpenMediaTags" data-je-open-pane="media-tags" style="font-family:inherit; font-size:13px; font-weight:600; color:#fff; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.22); border-radius:6px; min-height:36px; padding:0 12px; cursor:pointer;">${escapeHtml(JE.t('jellyseerr_issue_open'))}</button>
+                                <button type="button" id="jeOpenMediaTags" data-je-open-pane="media-tags" style="font-family:inherit; font-size:13px; font-weight:600; color:#fff; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.22); border-radius:6px; min-height:36px; padding:0 12px; cursor:pointer;">${escapeHtml(JE.t('common_open'))}</button>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">

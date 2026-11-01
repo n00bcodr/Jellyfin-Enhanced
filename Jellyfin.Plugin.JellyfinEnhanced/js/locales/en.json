@@ -1593,5 +1593,20 @@
     "common_server": "Server",
     "common_admin": "Admin",
     "common_preview": "Preview",
-    "common_on": "On"
+    "common_on": "On",
+    "admin_tags_tab_overview_desc": "What new users get today, and the state of the tag cache.",
+    "admin_tags_tab_layout_desc": "The layout, label density, group order, positions and limits new users start with.",
+    "admin_tags_tab_groups_desc": "Turn each tag group on or off for new users, and open a group for its server settings.",
+    "admin_tags_tab_rules_desc": "Give some cards a different look by library, type, genre or age rating.",
+    "admin_tags_tab_colours_desc": "The colours of the tags, on the web and in native posters.",
+    "admin_tags_tab_badges_desc": "Which status badges new users start with, and how long a title counts as new.",
+    "admin_tags_tab_server_desc": "The tag data the server keeps, and tags drawn into poster images for other apps.",
+    "admin_tags_tab_overview": "Overview",
+    "panel_settings_ui_tag_group_status": "Status",
+    "panel_settings_ui_tag_slot_off": "Hidden",
+    "panel_settings_ui_tag_editor_cap_all": "All",
+    "tag_looks_type_series": "Series",
+    "status_tag_compact_finale": "Finale",
+    "common_open": "Open",
+    "tag_layout_summary": "Summary"
 }

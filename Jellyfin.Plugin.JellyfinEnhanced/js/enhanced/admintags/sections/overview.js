@@ -17,7 +17,7 @@
         ['language', 'LanguageTagsEnabled', 'panel_settings_ui_tag_group_language'],
         ['rating', 'RatingTagsEnabled', 'panel_settings_ui_tag_group_rating'],
         ['ageRating', 'AgeRatingTagsEnabled', 'panel_settings_ui_tag_group_age_rating'],
-        ['status', 'StatusTagsEnabled', 'jellyseerr_modal_status'],
+        ['status', 'StatusTagsEnabled', 'panel_settings_ui_tag_group_status'],
         ['awards', 'AwardsTagsEnabled', 'awards_label'],
         ['logos', 'LogoTagsEnabled', 'common_logos'],
         ['custom', 'CustomTagsEnabled', 'common_custom'],

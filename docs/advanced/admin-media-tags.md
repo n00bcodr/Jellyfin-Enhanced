@@ -30,11 +30,11 @@ The Media Tags settings page (`Configuration/mediaTagsPage.html`, `#/configurati
             id: 'group-awards',
             tab: 'groups',            // overview, layout, groups, rules, colours, badges, server
             order: 55,                // position within the tab
-            title: 'admin_tags_awards_title',
+            title: 'awards_label',
             hint: 'admin_tags_awards_desc',
             group: { id: 'awards', summary: (ctx) => '…', sample: () => [['status', 'Oscar']] }, // Groups tab rows only
             fields: [
-                { id: 'awardsTagsEnabled', key: 'AwardsTagsEnabled', type: 'enable', label: 'admin_tags_awards_enabled' },
+                { id: 'awardsTagsEnabled', key: 'AwardsTagsEnabled', type: 'enable', label: 'admin_tags_awardsTagsEnabled' },
                 { id: 'awardsTagsRefreshHours', key: 'AwardsTagsRefreshHours', type: 'number', min: 1, max: 168, fallback: 24, label: 'admin_tags_awardsTagsRefreshHours' },
             ],
             render(ctx, body) { /* optional custom controls into body */ },

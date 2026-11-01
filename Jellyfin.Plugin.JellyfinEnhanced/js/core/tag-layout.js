@@ -2681,7 +2681,7 @@
     const VOCABULARY_KEYS = {
         "type": {
             "movie": "jellyseerr_card_badge_movie",
-            "series": "panel_settings_ui_rating_tags_scope_series",
+            "series": "tag_looks_type_series",
             "season": "jellyseerr_report_issue_season",
             "episode": "jellyseerr_report_issue_episode",
             "boxset": "jellyseerr_card_badge_collection",
@@ -2691,7 +2691,7 @@
             "corners": "tag_looks_layout_corners",
             "bands": "tag_looks_layout_bands",
             "caption": "panel_settings_ui_tag_slot_caption_caption",
-            "summary": "catchup_activity_summary",
+            "summary": "tag_layout_summary",
             "minimal": "tag_looks_layout_minimal"
         },
         "edge": {
@@ -2716,7 +2716,7 @@
     };
 
     VOCABULARY_KEYS.group = {
-        "status": "jellyseerr_modal_status",
+        "status": "panel_settings_ui_tag_group_status",
         "quality": "panel_settings_ui_tag_group_quality",
         "rating": "panel_settings_ui_tag_group_rating",
         "age_rating": "panel_settings_ui_tag_group_age_rating",
@@ -2727,7 +2727,7 @@
         "awards": "awards_label"
     };
     VOCABULARY_KEYS.slot = {
-        "off": "hidden_content_already_hidden",
+        "off": "panel_settings_ui_tag_slot_off",
         "corners_tl": "panel_settings_ui_tag_slot_corners_tl",
         "corners_tc": "panel_settings_ui_tag_slot_corners_tc",
         "corners_bc": "panel_settings_ui_tag_slot_corners_bc",
@@ -2777,7 +2777,7 @@
         "server_name": "panel_media_tags_tab_server_name"
     };
     VOCABULARY_KEYS.adminTab = {
-        "overview": "jellyseerr_modal_overview",
+        "overview": "admin_tags_tab_overview",
         "layout": "admin_tags_tab_layout",
         "groups": "common_groups",
         "rules": "common_rules",

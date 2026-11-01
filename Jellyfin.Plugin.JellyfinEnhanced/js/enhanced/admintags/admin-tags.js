@@ -76,13 +76,13 @@
 
     /** The tabs, in order. */
     const TABS = [
-        { id: 'overview', icon: 'dashboard', nameKey: 'jellyseerr_modal_overview' },
-        { id: 'layout', icon: 'view_quilt', nameKey: 'admin_tags_tab_layout' },
-        { id: 'groups', icon: 'label', nameKey: 'common_groups' },
-        { id: 'rules', icon: 'rule', nameKey: 'common_rules' },
-        { id: 'colours', icon: 'palette', nameKey: 'common_colours' },
-        { id: 'badges', icon: 'new_releases', nameKey: 'panel_media_tags_tab_badges' },
-        { id: 'server', icon: 'dns', nameKey: 'common_server' },
+        { id: 'overview', icon: 'dashboard', nameKey: 'admin_tags_tab_overview', descKey: 'admin_tags_tab_overview_desc' },
+        { id: 'layout', icon: 'view_quilt', nameKey: 'admin_tags_tab_layout', descKey: 'admin_tags_tab_layout_desc' },
+        { id: 'groups', icon: 'label', nameKey: 'common_groups', descKey: 'admin_tags_tab_groups_desc' },
+        { id: 'rules', icon: 'rule', nameKey: 'common_rules', descKey: 'admin_tags_tab_rules_desc' },
+        { id: 'colours', icon: 'palette', nameKey: 'common_colours', descKey: 'admin_tags_tab_colours_desc' },
+        { id: 'badges', icon: 'new_releases', nameKey: 'panel_media_tags_tab_badges', descKey: 'admin_tags_tab_badges_desc' },
+        { id: 'server', icon: 'dns', nameKey: 'common_server', descKey: 'admin_tags_tab_server_desc' },
     ];
 
     /**
@@ -720,7 +720,7 @@
             const own = sections.filter((s) => s.tab === tab.id && !s.group);
             const rows = tab.id === 'groups' ? `<div class="je-ta-grows">${groupSections.map((s) => groupRowHtml(s)).join('')}</div>` : '';
             return `<div class="je-ta-panel" role="tabpanel" id="jeTaPanel-${tab.id}" data-tab="${tab.id}" aria-labelledby="jeTaTab-${tab.id}" ${i === 0 ? '' : 'hidden'}>`
-                + `<h2 tabindex="-1">${tx(tab.nameKey)}</h2><p class="je-ta-hint">${tx(`${tab.nameKey}_desc`)}</p>`
+                + `<h2 tabindex="-1">${tx(tab.nameKey)}</h2><p class="je-ta-hint">${tx(tab.descKey)}</p>`
                 + own.map((s) => sectionHtml(s)).join('') + rows + '</div>';
         }).join('');
         root.innerHTML = `
@@ -758,7 +758,7 @@
                 + (enable ? `<input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}">` : '')
                 + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}</span><span class="je-ta-grow-sum"></span></div>`
                 + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
-                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('jellyseerr_issue_open')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
+                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('common_open')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
                 + '</div>'
                 + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}${fieldsHtml(s.fields, config)}<div class="je-ta-section-body"></div></div></div>`;
         }
@@ -1023,7 +1023,7 @@
             body.hidden = !open;
             button.setAttribute('aria-expanded', String(open));
             const text = button.querySelector('.je-ta-expand-text');
-            if (text) text.textContent = JE.t(open ? 'awards_close' : 'jellyseerr_issue_open');
+            if (text) text.textContent = JE.t(open ? 'awards_close' : 'common_open');
             const s = sections.find((x) => x.group?.id === group);
             if (open && s?.show) s.show(ctx, bodyOf(s));
             if (open && opts.focus) {

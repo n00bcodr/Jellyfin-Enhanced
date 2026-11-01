@@ -25,7 +25,7 @@
      */
     const GROUP_META = {
         awards: { toggleId: 'awardsTagsToggle', settingKey: 'awardsTagsEnabled', nameKey: 'awards_label', descKey: 'awards_tags_description', color: '#d7ae52', capAll: true },
-        status: { toggleId: 'statusTagsToggle', settingKey: 'statusTagsEnabled', nameKey: 'jellyseerr_modal_status', descKey: 'panel_settings_ui_status_tags_desc', color: '#e53935', capFixed: true },
+        status: { toggleId: 'statusTagsToggle', settingKey: 'statusTagsEnabled', nameKey: 'panel_settings_ui_tag_group_status', descKey: 'panel_settings_ui_status_tags_desc', color: '#e53935', capFixed: true },
         quality: { toggleId: 'qualityTagsToggle', settingKey: 'qualityTagsEnabled', nameKey: 'panel_settings_ui_tag_group_quality', descKey: 'panel_settings_ui_quality_tags_desc', color: '#1e88e5', capAll: true },
         rating: { toggleId: 'ratingTagsToggle', settingKey: 'ratingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_rating', descKey: 'panel_settings_ui_rating_tags_desc', color: '#ffb300', capAll: true },
         ageRating: { toggleId: 'ageRatingTagsToggle', settingKey: 'ageRatingTagsEnabled', nameKey: 'panel_settings_ui_tag_group_age_rating', descKey: 'panel_settings_ui_age_rating_tags_desc', color: '#8e24aa', capFixed: true },
@@ -85,7 +85,7 @@
      */
     function slotLabel(layout, slot) {
         return slot === 'off'
-            ? JE.t('hidden_content_already_hidden')
+            ? JE.t('panel_settings_ui_tag_slot_off')
             : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`${layout}_${slot}`]);
     }
 
@@ -186,7 +186,7 @@
         const cap = capOf(conf, group);
         if (layoutApi().singleChipGroup(group)) return { text: '1', canDown: false, canUp: false };
         return {
-            text: cap === 0 ? JE.t('jellyseerr_discover_all') : String(cap),
+            text: cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap),
             canDown: stepCap(cap, -1, meta) !== null,
             canUp: stepCap(cap, 1, meta) !== null,
         };

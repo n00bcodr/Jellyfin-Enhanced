@@ -58,13 +58,13 @@
       "kind": "milestone",
       "style": "season_finale",
       "label": "status_tag_season_finale",
-      "compact": "calendar_finale"
+      "compact": "status_tag_compact_finale"
     },
     "series_finale": {
       "kind": "milestone",
       "style": "series_finale",
       "label": "status_tag_series_finale",
-      "compact": "calendar_finale"
+      "compact": "status_tag_compact_finale"
     },
     "complete_season": {
       "kind": "milestone",
