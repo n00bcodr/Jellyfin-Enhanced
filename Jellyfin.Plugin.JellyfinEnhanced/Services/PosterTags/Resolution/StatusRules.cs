@@ -220,7 +220,7 @@ public static class StatusRules
     private static StatusTag Make(string key, PosterTagSettings settings, string? date = null, int? rank = null, int? days = null)
     {
         var definition = Table.Badges[key];
-        var label = settings.CompactBands && definition.Compact != null ? definition.Compact : definition.Label;
+        var label = settings.CompactLabels && definition.Compact != null ? definition.Compact : definition.Label;
         var text = Translate(label, settings.StatusCulture).Replace("{date}", date ?? string.Empty, StringComparison.Ordinal)
             .Replace("{rank}", rank?.ToString(settings.StatusCulture) ?? string.Empty, StringComparison.Ordinal)
             .Replace("{days}", days?.ToString(settings.StatusCulture) ?? string.Empty, StringComparison.Ordinal);

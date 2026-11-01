@@ -328,7 +328,7 @@ async function runProfile(profile) {
     // Bands is composited natively; title/hover layouts retain the Corners profile.
     const nativeBands = Number(JE.currentSettings.tagLayoutSettingsVersion) >= 1 && JE.currentSettings.tagLayout === 'bands';
     JE.currentSettings.tagLayout = nativeBands ? 'bands' : 'corners';
-    if (!nativeBands) JE.currentSettings.tagLabelDensity = 'full';
+    if (!['corners', 'bands'].includes(profile.settingsWeb.tagLayout || 'corners')) JE.currentSettings.tagLabelDensity = 'full';
     JE.core.tagLayout.invalidateSettings();
     const order = new Map();
     const realRegister = JE.tagPipeline.registerRenderer;
@@ -375,10 +375,9 @@ async function runProfile(profile) {
             const L = JE.core.tagLayout;
             L.setCardContext(host, { ...entry, Id: id }, id);
             const conf = L.resolveLayout({ ...entry, Id: id, itemId: id, cardType: entry.Type });
-            if (conf.layout !== 'bands') {
+            if (!['corners', 'bands'].includes(conf.layout)) {
                 // The native fallback policy: the real resolved item's caps/size/
                 // spacing and explicit off-groups over the user's Corners profile.
-                // Native Corners uses full labels even when the item's web look is compact.
                 const off = Object.fromEntries(Object.entries(conf.slots).filter(([, slot]) => slot === 'off'));
                 const slots = conf.layout === 'corners' ? conf.slots : { ...L.normalizeSettings().profiles.corners, ...off };
                 const fallback = { ...conf, layout: 'corners', density: 'full', slots };

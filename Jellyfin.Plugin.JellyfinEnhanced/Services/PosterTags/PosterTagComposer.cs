@@ -51,8 +51,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     public sealed class PosterTagComposer
     {
         /// <summary>Composition/pixel revision within the renderer version (part of every composite key).</summary>
-        // 8.2 retires fitted text logos shaped with chip rather than logo metrics.
-        public const string CompositionVersion = "2";
+        // 8.3 retires full labels previously painted for Compact Corners.
+        public const string CompositionVersion = "3";
 
         /// <summary>
         /// Every version that changes a composite's pixels and is not already part of

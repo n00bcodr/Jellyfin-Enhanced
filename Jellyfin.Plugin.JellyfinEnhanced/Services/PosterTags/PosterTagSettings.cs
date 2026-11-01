@@ -94,6 +94,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool Bands { get; private init; }
         public bool CompactBands { get; private init; }
 
+        /// <summary>Compact labels on the active static layout; legacy and hover-layout fallbacks keep full labels.</summary>
+        public bool CompactLabels { get; private init; }
+
         /// <summary>Preserve the original audio detector for version-0 documents.</summary>
         public bool LegacyAudioFacts { get; private init; }
         public bool StatusTagsEnabled { get; private init; }
@@ -502,6 +505,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 UseNativePosterTags = useNative,
                 Bands = layout.Bands,
                 CompactBands = layout.Bands && user.TagLabelDensity == "compact",
+                CompactLabels = !TagLayoutRules.IsLegacy(user)
+                    && TagLayoutRules.NormalizeLayout(user.TagLayout) is "corners" or "bands"
+                    && user.TagLabelDensity == "compact",
                 LegacyAudioFacts = legacyAudioFacts ?? TagLayoutRules.IsLegacy(user),
                 StatusTagsEnabled = user.StatusTagsEnabled,
                 StatusTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Status) ?? Position(user.StatusTagsPosition, config.StatusTagsPosition, "top-right"),
@@ -1112,6 +1118,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ["layout.compactBands"] = Bool(CompactBands),
                 ["order"] = GroupOrder is null ? string.Empty : string.Join(",", GroupOrder.Where(g => (g != PosterTagGroup.Logos && g != PosterTagGroup.Custom) || Shows(g))),
             };
+
+            // Keep existing full-label and Bands digests stable while distinguishing Compact Corners.
+            if (CompactLabels && !Bands) values["layout.compactCorners"] = Bool(true);
 
             if (AnyGroupEnabled)
             {

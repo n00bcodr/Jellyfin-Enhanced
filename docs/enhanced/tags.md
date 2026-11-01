@@ -474,7 +474,7 @@ For series and seasons, each category in All mode follows the selected aggregati
 | Only what every episode has | Intersection: values present in every episode; an unknown episode contributes an empty set |
 | Best, marked when mixed | Ranked union, plus Mixed when an enabled category's episode sets differ |
 
-Categories left on Highest only keep their existing aggregation semantics. Source, edition, special formats and resolution retain their existing policies. Restricted accounts aggregate only episodes they can access. Browser cache, batch fallback and Native Poster Tags use the same facts and filtering. Corners native posters retain full labels; native Bands respects Compact and its existing overflow rules.
+Categories left on Highest only keep their existing aggregation semantics. Source, edition, special formats and resolution retain their existing policies. Restricted accounts aggregate only episodes they can access. Browser cache, batch fallback and Native Poster Tags use the same facts and filtering. Native Corners and Bands respect the chosen Full or Compact label density and their existing overflow rules.
 
 ### Runtime, aspect ratio and frame rate
 
@@ -535,7 +535,7 @@ The server stores policy-independent summaries with both legacy and current soun
 
     **Edition:** Explicit `{edition-…}` markers in the file name, then the parent folder, take precedence over known edition words in those names. For example, `Movie (2020) {edition-Director's Cut}/Movie.1080p.WEB-DL.mkv` shows **WEB** and **Director's Cut**. Custom explicit edition labels are plain text, limited to 64 characters, and cannot include path separators. Directory paths stay on the server; clients receive labels and the existing basename-only legacy signals.
 
-    Full density keeps full edition labels. Compact density uses **BD**, **DC**, **Ext**, **Unr**, **Rem**, **CC**, and **Special** for BluRay, Director's Cut, Extended, Unrated, Remastered, Criterion, and Special Edition. If both the special-format and edition categories would show IMAX, the special-format chip wins; disabling that category leaves the edition chip eligible. Native Poster Tags apply the same detection, category toggles/order and low-quality gate, with full labels in Corners and the chosen density in Bands.
+    Full density keeps full edition labels. Compact density uses **BD**, **DC**, **Ext**, **Unr**, **Rem**, **CC**, and **Special** for BluRay, Director's Cut, Extended, Unrated, Remastered, Criterion, and Special Edition. If both the special-format and edition categories would show IMAX, the special-format chip wins; disabling that category leaves the edition chip eligible. Native Poster Tags apply the same detection, category toggles/order and low-quality gate, with the chosen label density in both Corners and Bands.
 
     Source colours are deep blue for REMUX, blue for BluRay, teal for WEB, grey-blue for HDTV, grey for DVD and red for low-quality sources. Editions use purple. The known source and edition labels are available in **Tag Styles**; custom editions inherit the quality group's style.
 

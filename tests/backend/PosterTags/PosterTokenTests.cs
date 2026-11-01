@@ -28,7 +28,7 @@ public class PosterTokenTests : IDisposable
         const string version11Digest = "223695b6d0444ff8";
         var settings = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsShowSubtitles\":true,\"LanguageTagsStyle\":\"codes\"}", new());
         Assert.Equal("12", PosterTagSettings.ResolverVersion);
-        Assert.Equal("8.2", PosterTagComposer.PixelVersion);
+        Assert.Equal("8.3", PosterTagComposer.PixelVersion);
         var service = Tokens();
         var old = service.Mint(user, item, version10Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
         var version11 = service.Mint(user, item, version11Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
@@ -45,11 +45,22 @@ public class PosterTokenTests : IDisposable
     public void TextLogoMetricsRetireAlreadyFittedPixelTokens()
     {
         var service = Tokens();
-        Assert.Equal("8.2", PosterTagComposer.PixelVersion);
+        Assert.Equal("8.3", PosterTagComposer.PixelVersion);
         var old = service.Mint(user, item, "logo-side-settings", "8.1", PosterTagVariantFlags.None, "abcdef");
         Assert.False(service.Verify(old, user, item, "logo-side-settings", PosterTagComposer.PixelVersion, out _));
         var current = service.Mint(user, item, "logo-side-settings", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
         Assert.True(service.Verify(current, user, item, "logo-side-settings", PosterTagComposer.PixelVersion, out _));
+    }
+
+    [Fact]
+    public void CompactCornersRetireFullLabelPixelTokens()
+    {
+        var service = Tokens();
+        var old = service.Mint(user, item, "compact-corners", "8.2", PosterTagVariantFlags.None, "abcdef");
+        Assert.Equal("8.3", PosterTagComposer.PixelVersion);
+        Assert.False(service.Verify(old, user, item, "compact-corners", PosterTagComposer.PixelVersion, out _));
+        var current = service.Mint(user, item, "compact-corners", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, "compact-corners", PosterTagComposer.PixelVersion, out _));
     }
 
     [Theory]
@@ -58,7 +69,7 @@ public class PosterTokenTests : IDisposable
     public void TierTwoPixelsRejectTierOneAndRoundOneTokens(string historicalVersion)
     {
         var service = Tokens();
-        Assert.Equal("8.2", PosterTagComposer.PixelVersion);
+        Assert.Equal("8.3", PosterTagComposer.PixelVersion);
         var old = service.Mint(user, item, "settings", historicalVersion, PosterTagVariantFlags.None, "abcdef");
         Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
     }

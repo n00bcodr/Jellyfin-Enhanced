@@ -62,6 +62,8 @@ add('added-clock-skew-exceeded', { Type: 'Video', DateCreated: now + day + 1 }, 
 add('utc-midnight', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 9, 30, 23, 30), schedule: schedule(null, ep('2026-10-30')) });
 add('perth-next-calendar-day', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 9, 30, 23, 30), zone: 'Australia/Perth', schedule: schedule(null, ep('2026-10-31')) });
 add('new-york-before-midnight', show(), 'airing_today', 'Airing Today', { now: Date.UTC(2026, 10, 1, 3, 30), zone: 'America/New_York', schedule: schedule(null, ep('2026-10-31')) });
+add('compact-corners-added', movie({ DateCreated: ago(1) }), 'just_added', 'Added', { settings: { TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLabelDensity: 'compact' } });
+add('compact-corners-premiere', episode({ EpisodeNumber: 1 }), 'season_premiere', 'Premiere', { settings: { TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLabelDensity: 'compact' } });
 add('compact-bands-premiere', episode({ EpisodeNumber: 1 }), 'season_premiere', 'Premiere', { settings: { TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' } });
 add('bands-profile-off', movie({ PremiereDate: ago(2) }), null, null, { settings: { TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLayouts: { Bands: { Groups: [{ Group: 'status', Slot: 'off' }] } } } });
 add('german-weekday-locale', show(), 'airs_date', 'Airs Sonntag', { locale: 'de-DE', schedule: schedule(null, ep('2026-11-01')) });

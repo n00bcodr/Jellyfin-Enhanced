@@ -593,6 +593,7 @@ synth('awards-disabled', { AwardsTagsEnabled: true }, { AwardsTagsEnabled: false
 synth('awards-combined', { ...allOn, AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupOrder: ['awards', 'quality', 'rating'] }, { AwardsTagsEnabled: true, AwardsTagsCertifiedFresh: false });
 // Native Bands now follows its active profile, density, order and limits.
 synth('native-bands-full', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' });
+synth('native-corners-compact', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLabelDensity: 'compact' });
 synth('native-bands-compact', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' });
 synth('native-bands-custom', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagGroupOrder: ['language', 'quality', 'genre'], TagGroupCaps: { Quality: 2 },
     TagLayouts: { Bands: { Groups: [{ Group: 'language', Slot: 'top' }, { Group: 'quality', Slot: 'top' }, { Group: 'rating', Slot: 'off' }, { Group: 'genre', Slot: 'bottom' }] } } });
@@ -620,6 +621,9 @@ for (const density of ['full', 'compact']) for (const LanguageTagsStyle of ['fla
     synth(`technical-${density}-${LanguageTagsStyle}`, { QualityTagsEnabled: true, LanguageTagsEnabled: true,
         LanguageTagsShowSubtitles: true, LanguageTagsStyle, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
         TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: density, TagGroupCaps: { Quality: 0 } });
+    synth(`technical-corners-${density}-${LanguageTagsStyle}`, { QualityTagsEnabled: true, LanguageTagsEnabled: true,
+        LanguageTagsShowSubtitles: true, LanguageTagsStyle, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
+        TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLabelDensity: density, TagGroupCaps: { Quality: 0 } });
 }
 synth('technical-reordered', { QualityTagsEnabled: true, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
     RuntimeTagOrder: 1, FrameRateTagOrder: 2, AspectRatioTagOrder: 3, TagLayoutSettingsVersion: 1, TagGroupCaps: { Quality: 0 } });

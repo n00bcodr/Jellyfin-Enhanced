@@ -109,7 +109,6 @@ public class PosterLayoutTests
     [Theory]
     [InlineData(",ageRatingTagsPosition:'top-left',tagGroupCaps:{" + LegacyCaps + "},tagLayouts:{corners:{groups:[{group:'ageRating',slot:'tl'}]}}", PosterTagGroup.AgeRating)]
     [InlineData(",tagGroupCaps:{quality:0,genre:2,language:3,rating:0,ageRating:1,status:1}", PosterTagGroup.Genre)]
-    [InlineData(",tagLabelDensity:'compact',tagGroupCaps:{" + LegacyCaps + "}", null)]
     public void Promoting_a_document_from_before_layouts_changes_only_the_edited_group(string edit, PosterTagGroup? changed)
     {
         // Admin defaults that would restack and cap every shared corner if they leaked in.
@@ -120,6 +119,21 @@ public class PosterLayoutTests
         var name = changed?.ToString() + "@";
         Assert.Equal(before.Where(d => changed is null || !d.StartsWith(name, StringComparison.Ordinal)), after.Where(d => changed is null || !d.StartsWith(name, StringComparison.Ordinal)));
         if (changed is not null) Assert.NotEqual(before.Single(d => d.StartsWith(name, StringComparison.Ordinal)), after.Single(d => d.StartsWith(name, StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void Promoting_to_compact_changes_quality_and_rating_labels_without_restacking_other_groups()
+    {
+        var before = PosterTagResolver.Resolve(Entry(), Settings("{" + LegacyDoc + "}"), Context(), false)!;
+        var after = PosterTagResolver.Resolve(Entry(), Settings("{" + LegacyDoc + Promoted + ",tagLabelDensity:'compact',tagGroupCaps:{" + LegacyCaps + "}}"), Context(), false)!;
+        static bool Unchanged(string value) => !value.StartsWith("Quality@", StringComparison.Ordinal) && !value.StartsWith("Rating@", StringComparison.Ordinal);
+        Assert.Equal(Drawn(before).Where(Unchanged), Drawn(after).Where(Unchanged));
+        Assert.Equal(before.Groups.Select(g => (g.Group, g.Corner)), after.Groups.Select(g => (g.Group, g.Corner)));
+        var fullQuality = GroupOf(before, PosterTagGroup.Quality).Tags.Cast<QualityTag>().ToArray();
+        var compactQuality = GroupOf(after, PosterTagGroup.Quality).Tags.Cast<QualityTag>().ToArray();
+        Assert.Equal(fullQuality.Select(t => t.Label), compactQuality.Select(t => t.Label));
+        Assert.Contains(compactQuality, t => t.DisplayText != null && t.DisplayText != t.Label);
+        Assert.Equal(PosterRatingSource.Community, Assert.IsType<RatingTag>(Assert.Single(GroupOf(after, PosterTagGroup.Rating).Tags)).Source);
     }
 
     [Fact]

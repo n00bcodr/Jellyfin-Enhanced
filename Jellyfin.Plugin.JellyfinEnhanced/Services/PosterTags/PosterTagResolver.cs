@@ -218,7 +218,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             where T : PosterTag
         {
             List<PosterTag> list = tags is List<PosterTag> same ? same : tags.ConvertAll(t => (PosterTag)t);
-            if (settings.CompactBands)
+            if (settings.CompactLabels)
             {
                 if (group == PosterTagGroup.Quality) list = list.Select(t => t is QualityTag q ? q with { DisplayText = q.Category is QualityTagRules.Runtime or QualityTagRules.AspectRatio or QualityTagRules.FrameRate ? TechnicalQualityRules.Compact(q.Label, q.Category) : CompactQuality(q.Label) } : t).ToList();
                 if (group == PosterTagGroup.Rating && list.OfType<RatingTag>().Any(t => t.Source == PosterRatingSource.Community))
