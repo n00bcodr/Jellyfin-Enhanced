@@ -264,7 +264,8 @@ for (const [key, entry] of Object.entries(synthetic)) {
 
 // Per-item looks (the item editor): entries with real item ids, so a user lock or an
 // administrator item look can name them. Native posters draw Corners and Bands, so the looks
-// stay on those (Corners with full labels); see the item-looks profiles below.
+// stay on those; these Corners looks select Full labels explicitly (native Corners follows the
+// chosen density). See the item-looks profiles below.
 const LOOK = Object.fromEntries(['movieLock', 'movieItemLook', 'movieBoth', 'series', 'seriesEpisode', 'seriesPoster', 'seriesPosterEpisode'].map((key, i) => [key, `00000000000000000000000000000f${(i + 1).toString(16).padStart(2, '0')}`]));
 const lookEntries = {
     [LOOK.movieLock]: movie({ Genres: ['Drama', 'Comedy', 'Family'], AudioLanguages: ['eng', 'fra', 'deu'], StreamData: sd([video(), audio({ Codec: 'ac3', Channels: 6, DisplayTitle: 'AC-3 5.1' })]) }),
