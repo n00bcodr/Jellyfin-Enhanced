@@ -1351,18 +1351,22 @@ test('table-driven tag vocabulary names existing English keys and numeric sizes 
 });
 
 
-test('a first rating without room moves whole into overflow instead of obeying label ellipsis', t => {
-  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups:
-    ['quality','genre','language','rating','ageRating','status'].map(group => ({group,slot:group === 'rating' ? 'bc' : 'off'})) } } } });
-  const rating = h.document.createElement('div');rating.className = 'rating-overlay-container';
-  rating.innerHTML = '<span class="rating-tag"><span class="rating-text">7.7</span></span>';
-  h.layout.commitGroup(h.host(), 'rating', rating);
-  fitCard(h, { width: 40, height: 180, chip: 90 });
-  const chip = h.host().querySelector('.rating-tag');
-  assert.equal(chip.hasAttribute('data-je-overflow'), true);
-  assert.equal(chip.hasAttribute('data-je-fit-width'), false);
-  const more = h.host().querySelector('[data-je-slot="bc"] > .je-tag-more');
-  assert.equal(more.textContent, '+1');
-  assert.equal(more.hasAttribute('data-je-overflow'), false);
-  assert.equal(more.title, '7.7');
+test('first ratings use whole overflow only in mixed language rows', t => {
+  for (const mixed of [false, true]) {
+    const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, languageTagsStyle: 'codes', tagLayouts: { corners: { groups:
+      ['quality','genre','language','rating','ageRating','status'].map(group => ({group,slot:group === 'rating' ? 'bc' : group === 'language' && mixed ? 'bl' : 'off'})) } } } });
+    const rating = h.document.createElement('div');rating.className = 'rating-overlay-container';
+    rating.innerHTML = '<span class="rating-tag"><span class="rating-text">7.7</span></span>';
+    h.layout.commitGroup(h.host(), 'rating', rating);
+    if (mixed) h.layout.commitGroup(h.host(), 'language', h.JE.core.languageTags.buildGroup([{code:'en',name:'English'}]));
+    // The mixed card has room for its first 90px language chip and the 20px
+    // count, but only a 40px centre budget for the intrinsic 90px rating.
+    fitCard(h, { width: mixed ? 240 : 40, height: 360, chip: 90, slotWidth: 40 });
+    const chip = h.host().querySelector('.rating-tag');
+    assert.equal(chip.hasAttribute('data-je-overflow'), mixed);
+    assert.equal(chip.hasAttribute('data-je-fit-width'), !mixed);
+    const more = h.host().querySelector('[data-je-slot="bc"] > .je-tag-more');
+    assert.equal(more.hasAttribute('data-je-overflow'), !mixed);
+    if (mixed) { assert.equal(more.textContent, '+1');assert.equal(more.title, '7.7'); }
+  }
 });
