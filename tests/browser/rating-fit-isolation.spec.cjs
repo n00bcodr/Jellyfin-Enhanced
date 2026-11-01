@@ -6,7 +6,7 @@ const en = require('../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json');
 
 /** Optional baseline replay records the same production probe without requiring git in CI. */
 async function setup(page) {
-  await page.setContent('<style>.cardScalable{position:relative;height:270px;width:80px}.je-tag-host{position:absolute;inset:0}</style><div class="card"><div class="cardScalable"><div class="je-tag-host"></div></div></div>');
+  await page.setContent('<style>.cardScalable{position:relative;height:270px;width:80px}.je-tag-host{position:absolute;inset:0}.mixed-rating-fit .rating-tag{width:70px}.mixed-rating-fit .language-chip{box-sizing:border-box;width:30px}.mixed-rating-fit .je-tag-more{width:24px}</style><div class="card"><div class="cardScalable"><div class="je-tag-host"></div></div></div>');
   await page.evaluate(en => {
     window.JellyfinEnhanced = { currentSettings: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', tagEdgeSpacing: 'default', tagScale: 'largest' },
       pluginConfig: {}, t: key => en[key] || key,
@@ -27,6 +27,10 @@ async function probe(page, width, slot, mixed = false) {
     const JE = JellyfinEnhanced, L = JE.core.tagLayout, host = document.querySelector('.je-tag-host');
     for (const group of ['rating', 'status', 'language']) L.removeGroup(host, group);
     document.querySelector('.cardScalable').style.width = `${width}px`;
+    // At 100/113px, a 30px language chip plus the 4px gap leaves 32/45px:
+    // enough for the 24px +N, never the 70px rating, regardless of system fonts.
+    // Natural chip geometry is retained for the no-language baseline replay.
+    host.classList.toggle('mixed-rating-fit', mixed);
     Object.assign(JE.currentSettings, { tagScale: mixed ? 'default' : 'largest', tagEdgeSpacing: mixed ? 'flush' : 'default', statusTagsEnabled: true, statusTagsShowJustAdded: true, statusTagsJustAddedDays: 30,
       languageTagsStyle: 'codes', languageTagsShowAudio: true,
       tagLayouts: { corners: { groups: [{ group: 'rating', slot }, { group: 'status', slot: 'mr' }, { group: 'language', slot: slot === 'bc' ? 'bl' : 'tl' }] } } });
@@ -35,12 +39,14 @@ async function probe(page, width, slot, mixed = false) {
     rating.append(JE.ratingSources.chip({ id: 'imdb', value: 10, text: '10.0' }));L.commitGroup(host, 'rating', rating);
     if (mixed) L.commitGroup(host, 'language', JE.core.languageTags.buildGroup([{ code: 'en', name: 'English' }]));
     else JE.tagPipeline.status.renderFromServerCache(host, { Type: 'Movie', DateCreated: new Date().toISOString() });
-    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const results = [];
     for (let pass = 0; pass < 3; pass++) {
-      L.refreshPresentation(host);L.flushFit();
+      L.refreshPresentation(host);
+      await document.fonts.ready;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      L.flushFit();
       const chip = host.querySelector('.rating-tag'), text = chip.querySelector('.rating-text');
-      results.push({ hidden: chip.hasAttribute('data-je-overflow'), constrained: chip.hasAttribute('data-je-fit-width'),
+      results.push({ label: chip.title, value: text.textContent, hidden: chip.hasAttribute('data-je-overflow'), constrained: chip.hasAttribute('data-je-fit-width'),
         ellipsis: getComputedStyle(text).textOverflow, textClipped: text.scrollWidth > text.clientWidth,
         more: [...host.querySelectorAll('.je-tag-more:not([data-je-overflow])')].map(el => ({ text: el.textContent, title: el.title })) });
     }
@@ -58,7 +64,7 @@ test('no-language constrained ratings match the recorded 83ffd1b3 browser outcom
     evidence.push({ width, slot, rows });
     for (const row of rows) {
       expect(row, `${width}px ${slot}`).toMatchObject({ hidden: false, constrained: true, ellipsis: 'ellipsis', textClipped: true });
-      expect(row.more.some(more => more.title.includes('IMDb: 10.0'))).toBe(false);
+      expect(row.more.some(more => more.title.includes(row.label))).toBe(false);
     }
     expect(rows[2]).toEqual(rows[0]);
   }
@@ -69,8 +75,9 @@ test('only the mixed language and rating row overflows the whole value and reset
   await setup(page);
   for (const width of [100, 113]) {
     for (const row of await probe(page, width, 'bc', true)) {
-      expect(row).toMatchObject({ hidden: true, constrained: false, textClipped: false });
-      expect(row.more).toContainEqual({ text: '+1', title: 'IMDb: 10.0' });
+      expect(row).toMatchObject({ value: '10.0', hidden: true, constrained: false, textClipped: false });
+      expect(row.label).toContain(row.value);
+      expect(row.more).toContainEqual({ text: '+1', title: row.label });
     }
     for (const row of await probe(page, 50, 'bc')) expect(row).toMatchObject({ hidden: false, constrained: true, ellipsis: 'ellipsis', textClipped: true });
   }
