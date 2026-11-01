@@ -81,7 +81,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         public bool Clips { get; set; }
 
-        public IReadOnlyList<PlannedItem> Items { get; }
+        public IReadOnlyList<PlannedItem> Items { get; private set; }
+
+        internal void AppendItem(PlannedItem item) => Items = Items.Append(item).ToArray();
 
         public bool IsTop => Corner is PosterTagCorner.TopLeft or PosterTagCorner.TopRight;
 
@@ -537,6 +539,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         used = item.X + item.Width;
                         rowHeight = Math.Max(rowHeight, item.Height);
                         rows[^1].Add(item);
+                    }
+                }
+                if (items.Any(i => i.Hidden))
+                {
+                    // Centre slots expose every omitted fact through one slot-level +N,
+                    // reserving its box before selecting a prefix/skip-and-continue fit.
+                    var original = items.ToArray();
+                    var reserved = MeasureOverflow(original.Length, css);
+                    PlannedItem? more = null;
+                    if (vertical)
+                    {
+                        var fit = BandChipsThatFit(original.Select(i => i.Width <= width + 0.01f ? i.Height : float.PositiveInfinity).ToArray(), maxHeight, gap, 1, reserved.Height);
+                        if (!fit[0]) fit = original.Select((_, i) => i == 0).ToArray();
+                        height = 0;
+                        for (int i = 0; i < original.Length; i++)
+                        {
+                            original[i].Hidden = !fit[i];
+                            if (!fit[i]) continue;
+                            original[i].Y = height;
+                            height += original[i].Height + gap;
+                        }
+                        var hidden = fit.Count(shown => !shown);
+                        if (hidden > 0 && width >= reserved.Width && height + reserved.Height <= maxHeight + 0.01f)
+                        {
+                            more = MeasureOverflow(hidden, css);
+                            more.Y = height;
+                            height += more.Height + gap;
+                        }
+                    }
+                    else
+                    {
+                        var fitted = FitBandChips(original, width, maxHeight, gap, count => MeasureOverflow(count, css), 0);
+                        if (!fitted.Contains(original[0]))
+                        {
+                            fitted = new List<PlannedItem> { original[0] };
+                            original[0].X = original[0].Y = 0;
+                            if (width >= reserved.Width && original[0].Height + gap + reserved.Height <= maxHeight + 0.01f)
+                            {
+                                var fallback = MeasureOverflow(original.Length - 1, css);
+                                fallback.Y = original[0].Height + gap;
+                                fitted.Add(fallback);
+                            }
+                        }
+                        foreach (var item in original) item.Hidden = !fitted.Contains(item);
+                        more = fitted.FirstOrDefault(i => !original.Contains(i));
+                        rows = fitted.GroupBy(i => i.Y).OrderBy(r => r.Key).Select(r => r.ToList()).ToList();
+                        height = rows.Take(Math.Max(0, rows.Count - 1)).Sum(r => r.Max(i => i.Height) + gap);
+                        rowHeight = rows.LastOrDefault()?.Max(i => i.Height) ?? 0;
+                    }
+                    if (more is not null)
+                    {
+                        anchor.Last().AppendItem(more);
+                        items.Add(more);
                     }
                 }
                 if (vertical) height = Math.Max(0, height - gap);
