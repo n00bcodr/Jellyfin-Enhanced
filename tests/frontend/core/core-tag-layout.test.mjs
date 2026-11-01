@@ -315,7 +315,8 @@ test('hide-on-hover keeps the summary and minimal reveal; reveal follows hover a
   const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout: 'summary', tagsHideOnHover: true } });
   h.render();
   const css = h.document.getElementById('je-tag-layout').textContent;
-  assert.match(css, /body\.je-tags-hide-on-hover :is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-mtp\[data-je-hide-on-hover="true"\] \.je-tag-reveal\) \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
+  assert.match(css, /body\.je-tags-hide-on-hover \.card:hover \.je-tag-host > \.je-tag-slot:not\(\[data-je-slot="hover"\]\)/);
+  assert.doesNotMatch(css, /body\.je-tags-hide-on-hover[^{}]+:focus-within/);
   assert.match(css, /:is\(:is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-tag-reveal\) \.je-tag-host > \.je-tag-slot\[data-je-slot="hover"\] \{ opacity: 1; \}/,
     'cards and list rows (a season\'s episodes) alike');
   assert.match(css, /:is\(:is\(\.card, \.listItem\):is\(:hover, :focus-within\), \.je-tag-reveal\) \.je-tag-host:not\(:has\(> \.je-tag-slot\[data-je-slot="hover"\]\[data-je-overflow\]\)\) > \.je-tag-slot:is\(\[data-je-slot="pill"\], \[data-je-slot="dots"\], \[data-je-slot="corner"\]\) \{ opacity: 0; \}/,

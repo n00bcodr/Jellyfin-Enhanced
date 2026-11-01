@@ -8,9 +8,10 @@
 (function (JE) {
     'use strict';
 
-    // Real cards and explicit preview pins share every hover/focus rule.
+    // Reveals keep the existing library interaction and add the preview hook.
     const ACTIVE_CARD = ':is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)';
-    const HIDE_ACTIVE = ':is(body.je-tags-hide-on-hover :is(.card, .listItem):is(:hover, :focus-within), .je-mtp[data-je-hide-on-hover="true"] .je-tag-reveal)';
+    const HIDE_ACTIVE = 'body.je-tags-hide-on-hover .card:hover';
+    const PREVIEW_HIDE = ':is(.je-mtp, .je-tie-side)[data-je-hide-on-hover="true"] .je-tag-reveal';
     const SLOT = '.je-tag-host > .je-tag-slot';
     const host = (layout) => `.je-tag-host[data-je-layout="${layout}"] > .je-tag-slot`;
     const INDICATORS = '.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host';
@@ -565,7 +566,9 @@
 
             /* Hide Tags on Hover: everything but the summary / minimal reveal. */
             ${HIDE_ACTIVE} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
-            ${HIDE_ACTIVE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
+            ${HIDE_ACTIVE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip,
+            ${PREVIEW_HIDE} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            ${PREVIEW_HIDE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
                 opacity: 0 !important;
             }
 
