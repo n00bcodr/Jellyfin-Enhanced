@@ -205,7 +205,7 @@
                     glyph.className = 'je-msym-outlined';
                     glyph.textContent = icon;
                     chip.appendChild(glyph);
-                    if (!JE.currentSettings?.tagsHideOnHover) {
+                    {
                         const text = document.createElement('span');
                         text.className = 'genre-text';
                         text.textContent = name;
@@ -303,7 +303,8 @@
         const card = document.createElement('div');
         card.className = `je-mtp-card je-mtp-card--${sample.shape}`;
         card.dataset.jeShape = sample.shape === 'thumb' ? 'landscape' : sample.shape === 'list' ? 'list' : 'portrait';
-        card.setAttribute('aria-hidden', 'true');
+        card.tabIndex = 0;
+        card.setAttribute('aria-label', JE.t(sample.titleKey));
         const box = document.createElement('div');
         box.className = 'cardBox';
         const scalable = document.createElement('div');
@@ -378,6 +379,7 @@
         #jellyfin-enhanced-panel .je-mtp-card--list .cardBox { display: flex; height: 92px; gap: 8px; align-items: center; background: var(--je-mtp-surface, rgba(255,255,255,0.05)); border-radius: 6px; }
         #jellyfin-enhanced-panel .je-mtp-card--list .je-mtp-scalable { width: 140px; height: 92px; flex: 0 0 140px; }
         #jellyfin-enhanced-panel .je-mtp-art--list { background: linear-gradient(180deg, #8fd0f2 0%, #bfe6f7 55%, #6fbf5a 56%, #3f8d3a 100%); }
+        #jellyfin-enhanced-panel .je-mtp-card:focus-visible { outline: 2px solid var(--je-mtp-strong, #fff); outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mtp-card .cardBox { margin: 0; }
         #jellyfin-enhanced-panel .je-mtp-card--poster .je-mtp-scalable { width: 100%; aspect-ratio: 2 / 3; }
         #jellyfin-enhanced-panel .je-mtp-card--thumb { width: 140px; }
@@ -474,6 +476,32 @@
         let queued = false;
         let followKey = 'movie';
         let hover = false;
+        const pointed = new Set();
+        const focused = new Set();
+
+        /** Apply the real layout/genre hover hook, preserving touch pins and live interaction. */
+        const syncHover = () => {
+            for (const figure of figures) {
+                const card = figure.querySelector('.je-mtp-card');
+                card.classList.toggle('je-tag-reveal', hover || pointed.has(card) || focused.has(card));
+            }
+            withSource(() => { note.hidden = !((hover || pointed.size || focused.size) && JE.currentSettings?.tagsHideOnHover); });
+        };
+        for (const figure of figures) {
+            const card = figure.querySelector('.je-mtp-card');
+            card.addEventListener('pointerenter', (event) => {
+                if (event.pointerType === 'touch') return;
+                pointed.add(card);
+                syncHover();
+            });
+            card.addEventListener('pointerleave', () => { pointed.delete(card); syncHover(); });
+            card.addEventListener('focusin', () => { focused.add(card); syncHover(); });
+            card.addEventListener('focusout', (event) => {
+                if (card.contains(event.relatedTarget)) return;
+                focused.delete(card);
+                syncHover();
+            });
+        }
         /** @type {Map<string, {figure: HTMLElement, card: HTMLElement, target: HTMLElement, look: string, source: string}>} */
         const drawn = new Map();
 
@@ -504,6 +532,7 @@
             // load their own enabled groups, without activating any renderer.
             JE.core.tagRenderer?.ensureStyles?.(JE.currentSettings, styleOwner);
             L.invalidateSettings();
+            root.dataset.jeHideOnHover = String(!!JE.currentSettings?.tagsHideOnHover);
             SAMPLES.forEach((sample, i) => {
                 const figure = figures[i];
                 const card = /** @type {HTMLElement} */ (figure.querySelector('.je-mtp-card'));
@@ -545,7 +574,7 @@
             const strong = document.createElement('strong');
             strong.textContent = preset ? `${defaultLook} · ${preset}` : defaultLook;
             foot.replaceChildren(document.createTextNode(`${JE.t('panel_media_tags_preview_default')} `), strong, document.createTextNode(`. ${JE.t('panel_media_tags_preview_precedence')}`));
-            note.hidden = !(hover && JE.currentSettings?.tagsHideOnHover);
+            syncHover();
             drawStrip();
         };
 
@@ -606,8 +635,7 @@
             if (!button) return;
             hover = button.dataset.view === 'hover';
             view.querySelectorAll('[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b === button)));
-            for (const figure of figures) figure.querySelector('.je-mtp-card')?.classList.toggle('je-tag-reveal', hover);
-            withSource(() => { note.hidden = !(hover && JE.currentSettings?.tagsHideOnHover); });
+            syncHover();
             options.touch?.();
         });
 

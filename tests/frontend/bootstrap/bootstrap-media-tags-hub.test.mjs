@@ -765,3 +765,36 @@ test('Quality includes and display modes keep the dialog body, preview, scroll a
   assert.equal(moves.length, 0, 'refreshing unchanged group order never detaches the focused row');
   observer.disconnect();
 });
+
+
+test('preview pointer and focus reveal only their card, touch pins all and hide-on-hover explains the fade', async t => {
+  const h = setup(t, { stored: { tagsHideOnHover: true } });
+  await h.open();
+  const cards = [...h.document.querySelectorAll('.je-mtp-card')];
+  const revealed = () => cards.map(c => c.classList.contains('je-tag-reveal'));
+  const pointer = (card, type, pointerType = 'mouse') => {
+    const event = new h.window.Event(type);
+    Object.defineProperty(event, 'pointerType', { value: pointerType });
+    card.dispatchEvent(event);
+  };
+  assert.deepEqual(revealed(), [false, false, false, false]);
+  pointer(cards[0], 'pointerenter');
+  assert.deepEqual(revealed(), [true, false, false, false]);
+  assert.equal(h.$('.je-mtp-note').hidden, false);
+  pointer(cards[0], 'pointerleave');
+  assert.deepEqual(revealed(), [false, false, false, false]);
+  assert.equal(h.$('.je-mtp-note').hidden, true);
+  cards[1].focus();
+  assert.deepEqual(revealed(), [false, true, false, false]);
+  cards[1].blur();
+  pointer(cards[0], 'pointerenter', 'touch');
+  assert.deepEqual(revealed(), [false, false, false, false]);
+  h.click(h.$('.je-mtp [data-view="hover"]'));
+  assert.deepEqual(revealed(), [true, true, true, true]);
+  pointer(cards[0], 'pointerenter');
+  h.click(h.$('.je-mtp [data-view="rest"]'));
+  assert.deepEqual(revealed(), [true, false, false, false], 'live hover wins over Resting');
+  h.click(h.$('.je-mtp [data-view="hover"]'));
+  pointer(cards[0], 'pointerleave');
+  assert.deepEqual(revealed(), [true, true, true, true], 'leaving restores the pin');
+});

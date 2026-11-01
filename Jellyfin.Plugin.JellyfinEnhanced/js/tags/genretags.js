@@ -267,7 +267,7 @@
                     pointer-events: none;
                     transition: opacity 0.12s ease;
                 }
-                .card:hover .${tagClass} .genre-text {
+                :is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal) .${tagClass} .genre-text {
                     opacity: 1;
                 }
                 .layout-mobile .${containerClass} { gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }

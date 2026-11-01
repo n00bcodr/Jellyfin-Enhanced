@@ -91,3 +91,28 @@ test('hub preview keeps personal group switches when server defaults disagree', 
   await expect(page.locator('.genre-tag').first()).toHaveCSS('border-radius', '50%');
   await expect(page.locator('.genre-tag').first()).toHaveCSS('background-color', 'rgba(10, 10, 10, 0.8)');
 });
+
+
+test('real sample hover and keyboard focus expand genre names and Summary reveal through shared styles', async ({ page }) => {
+  await setup(page, { genreTagsEnabled: true, tagLayout: 'corners' }, {}, false);
+  const movie = page.locator('[data-sample="movie"] .je-mtp-card');
+  const series = page.locator('[data-sample="series"] .je-mtp-card');
+  const movieName = movie.locator('.genre-text').first();
+  await page.mouse.move(0, 0);
+  await expect(movieName).toHaveCSS('opacity', '0');
+  await movie.hover();
+  await expect(movieName).toHaveCSS('opacity', '1');
+  await expect(series.locator('.genre-text').first()).toHaveCSS('opacity', '0');
+  await page.mouse.move(0, 0);
+  await expect(movieName).toHaveCSS('opacity', '0');
+  await series.focus();
+  await expect(series.locator('.genre-text').first()).toHaveCSS('opacity', '1');
+  await page.evaluate(() => { document.activeElement.blur(); JellyfinEnhanced.currentSettings.tagLayout = 'summary'; window.preview.refresh(); });
+  const reveal = movie.locator('[data-je-slot="hover"]');
+  await expect(reveal).toHaveCSS('opacity', '0');
+  await movie.hover();
+  await expect(reveal).toHaveCSS('opacity', '1');
+  await expect(series.locator('[data-je-slot="hover"]')).toHaveCSS('opacity', '0');
+  await page.locator('[data-view="hover"]').click();
+  await expect(series.locator('[data-je-slot="hover"]')).toHaveCSS('opacity', '1');
+});

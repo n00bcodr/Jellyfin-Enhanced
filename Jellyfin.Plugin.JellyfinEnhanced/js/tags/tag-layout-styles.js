@@ -8,6 +8,9 @@
 (function (JE) {
     'use strict';
 
+    // Real cards and explicit preview pins share every hover/focus rule.
+    const ACTIVE_CARD = ':is(:is(.card, .listItem):is(:hover, :focus-within), .je-tag-reveal)';
+    const HIDE_ACTIVE = ':is(body.je-tags-hide-on-hover :is(.card, .listItem):is(:hover, :focus-within), .je-mtp[data-je-hide-on-hover="true"] .je-tag-reveal)';
     const SLOT = '.je-tag-host > .je-tag-slot';
     const host = (layout) => `.je-tag-host[data-je-layout="${layout}"] > .je-tag-slot`;
     const INDICATORS = '.cardScalable:has(.countIndicator, .playedIndicator) > .je-tag-host';
@@ -348,7 +351,7 @@
                 left: calc(100% + 4px);
                 right: auto;
             }
-            body.je-tags-hide-on-hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text {
+            :is(body.je-tags-hide-on-hover .card, .je-mtp[data-je-hide-on-hover="true"] .je-mtp-card) .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]) .genre-text {
                 display: none;
             }
 
@@ -443,7 +446,7 @@
                 visibility: hidden;
                 transition: opacity 0.15s ease, visibility 0.15s;
             }
-            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host > .je-tag-more-tip {
+            ${ACTIVE_CARD} .je-tag-host > .je-tag-more-tip {
                 opacity: 1;
                 visibility: visible;
             }
@@ -500,15 +503,11 @@
                 opacity: 0;
             }
             /* Cards, and list rows (a season's episodes) whose image holds the tags. */
-            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
+            ${ACTIVE_CARD} .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
             /* The summaries give way to the reveal, unless it had no room for a row. */
-            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
+            ${ACTIVE_CARD} .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
             /* Hidden linked summaries must not intercept the revealed chips, regardless of their groups. */
-            :is(.card, .listItem):is(:hover, :focus-within) .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot[data-je-slot="pill"] .je-tag-pill[href] { pointer-events: none; }
-            /* The hover state on demand (the settings panel's preview card). */
-            .je-tag-reveal .je-tag-host > .je-tag-slot[data-je-slot="hover"] { opacity: 1; }
-            .je-tag-reveal .je-tag-host > .je-tag-slot:is([data-je-slot="pill"], [data-je-slot="dots"], [data-je-slot="corner"]) { opacity: 0; }
-            .je-tag-reveal .je-tag-host > .je-tag-slot[data-je-slot="pill"] .je-tag-pill[href] { pointer-events: none; }
+            ${ACTIVE_CARD} .je-tag-host:not(:has(> .je-tag-slot[data-je-slot="hover"][data-je-overflow])) > .je-tag-slot[data-je-slot="pill"] .je-tag-pill[href] { pointer-events: none; }
             html .je-tag-host > .je-tag-slot[data-je-slot="hover"] .genre-tag {
                 width: auto; min-width: 0; height: auto;
                 padding: calc(2px * var(--je-tag-scale, 1)) calc(7px * var(--je-tag-scale, 1)) calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1));
@@ -565,8 +564,8 @@
             html .je-tag-host > .je-tag-slot[data-je-slot="corner"] .rating-star-icon { font-size: calc(11px * var(--je-tag-scale, 1)) !important; }
 
             /* Hide Tags on Hover: everything but the summary / minimal reveal. */
-            body.je-tags-hide-on-hover .card:hover .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
-            body.je-tags-hide-on-hover .card:hover .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
+            ${HIDE_ACTIVE} .je-tag-host > .je-tag-slot:not([data-je-slot="hover"]),
+            ${HIDE_ACTIVE} .je-tag-host:not([data-je-layout="summary"], [data-je-layout="minimal"]) > .je-tag-more-tip {
                 opacity: 0 !important;
             }
 
