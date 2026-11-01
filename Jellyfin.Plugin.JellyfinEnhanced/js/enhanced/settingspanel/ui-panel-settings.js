@@ -94,6 +94,19 @@
     internal.wireSettingsListeners = function(ctx) {
         const { createToast, resetAutoCloseTimer } = ctx;
 
+        // Detail-page languages belong to UI Settings, including search results.
+        const unregisterAudioSearch = ctx.registerSearch?.({
+            pane: 'ui',
+            /** Find the moved detail-page preference by its visible label. */
+            search(query) {
+                const control = ctx.help?.querySelector('[data-pane="ui"] #showAudioLanguagesToggle');
+                const label = JE.t('panel_settings_ui_audio_languages');
+                return control && label.toLowerCase().includes(query) ? [{ label, path: JE.t('panel_settings_ui'),
+                    run() { control.scrollIntoView?.({ block: 'center' }); control.focus({ preventScroll: true }); } }] : [];
+            },
+        });
+        if (unregisterAudioSearch) ctx.onClose?.(unregisterAudioSearch);
+
         const addSettingToggleListener = (id, settingKey, featureKey, requiresRefresh = false) => {
             document.getElementById(id).addEventListener('change', (e) => {
                 JE.currentSettings[settingKey] = e.target.checked;

@@ -11,7 +11,7 @@ const LOCKED = 'cccccccccccccccccccccccccccccccc';
 
 // Panel controls outside the Media Tags hub that the settings wiring binds by id.
 const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'autoSkipIntroToggle', 'autoSkipOutroToggle',
-  'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle',
+  'randomButtonToggle', 'randomUnwatchedOnly', 'randomScopeCurrentContainer', 'showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle',
   'removeContinueWatchingToggle', 'pauseScreenToggle', 'disableCustomSubtitleStyles', 'longPress2xEnabled', 'randomIncludeMovies', 'randomIncludeShows'];
 
 /**
@@ -23,7 +23,7 @@ const otherToggles = ['autoPauseToggle', 'autoResumeToggle', 'autoPipToggle', 'a
  * @param {import('node:test').TestContext} t
  * @param {{stored?: object, plugin?: object, admin?: boolean, observer?: boolean}} [options]
  */
-function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, phone = false } = {}) {
+function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, phone = false, realUi = false } = {}) {
   const writes = [], requests = [], observers = [];
   class FakeIntersectionObserver {
     constructor(callback) { this.callback = callback; this.targets = []; this.disconnected = false; observers.push(this); }
@@ -33,7 +33,7 @@ function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, p
   }
   const media = { matches: phone, addEventListener() {}, removeEventListener() {} };
   const h = createHarness({
-    html: otherToggles.map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button><button id="opener">open</button>',
+    html: otherToggles.filter(id => !realUi || !['showWatchProgressToggle', 'showFileSizesToggle', 'showAudioLanguagesToggle', 'removeContinueWatchingToggle'].includes(id)).map(id => `<input type="checkbox" id="${id}">`).join('') + '<input id="pauseScreenDelayInput"><button id="releaseNotesBtn"></button><button id="opener">open</button>',
     JE: {
       pluginConfig: { HelpPanelAutocloseDelay: 60000, ...plugin },
       userConfig: { settings: { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true, ratingTagsEnabled: true, statusTagsEnabled: true, ...stored, isAdmin: admin }, shortcuts: { Shortcuts: [] } },
@@ -66,10 +66,19 @@ function setup(t, { stored = {}, plugin = {}, admin = false, observer = false, p
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   for (const file of ['ui-panel-settings.js', 'ui-panel-tag-editor.js', 'ui-panel-tag-looks.js', 'ui-panel-tag-preview.js', 'ui-panel-media-tags.js']) h.load(`enhanced/settingspanel/${file}`);
   const ui = h.JE.internals.enhancedUi;
+  let uiPane = '<section class="je-pane" data-pane="ui"><h3 class="je-pane-title">UI</h3></section>';
+  if (realUi) {
+    Object.assign(h.JE, { fontSizePresets: [{size:1},{size:1},{size:1}], fontFamilyPresets: [{family:'sans-serif'}],
+      subtitlePresets: [], subtitleTextEffectPresets: [], decodeSubtitleColor: () => ({swatch:'#fff',alphaValue:255}), getSubtitleTextShadow: () => 'none' });
+    h.JE.t = key => en[key] || key;
+    h.load('enhanced/settingspanel/ui-panel-template.js');
+    const template = h.document.createElement('template');template.innerHTML = ui.buildPanelHtml({});
+    uiPane = template.content.querySelector('[data-pane="ui"]').outerHTML;
+  }
   // The host's frame (header, nav with search, main) around the real hub pane.
   ui.buildPanelHtml = ctx => `<div class="panel-header"><div id="jePanelTitle">JE</div><button id="closeSettingsPanel">x</button></div>`
     + '<div class="je-panel-dock"><select id="jePanelSection"></select></div><div class="je-panel-body"><nav class="je-panel-nav"><input id="jePanelSearch" type="search"><ul id="jePanelSearchResults" hidden></ul><div class="je-panel-nav-items"></div></nav>'
-    + `<div class="je-panel-main"><button id="jePanelBack"></button><section class="je-pane" data-pane="ui"><h3 class="je-pane-title">UI</h3></section>${ui.buildMediaTagsHubHtml(ctx)}</div></div>`;
+    + `<div class="je-panel-main"><button id="jePanelBack"></button>${uiPane}${ui.buildMediaTagsHubHtml(ctx)}</div></div>`;
   for (const name of ['wireShortcutEditor', 'wireHiddenContentListeners', 'wireLanguageControls']) ui[name] = () => {};
   h.load('enhanced/settingspanel/ui-panel.js');
   const settle = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -209,7 +218,7 @@ test('every hub control keeps writing the setting it always did', async t => {
   assert.equal(h.$('#jeMthLayoutDesc').textContent, 'panel_settings_ui_tag_layout_caption', 'the selected tile is described');
   await h.change(h.$('input[name="jeTagDensity"][value="compact"]'), true);
   assert.equal(h.saved().tagLabelDensity, 'compact');
-  for (const [id, key] of [['tagsHideOnHoverToggle', 'tagsHideOnHover'], ['peopleTagsToggle', 'peopleTagsEnabled'], ['showAudioLanguagesToggle', 'showAudioLanguages']]) {
+  for (const [id, key] of [['tagsHideOnHoverToggle', 'tagsHideOnHover'], ['peopleTagsToggle', 'peopleTagsEnabled']]) {
     const box = h.$(`#${id}`);
     await h.change(box, !box.checked);
     assert.equal(h.saved()[key], box.checked, key);
@@ -239,7 +248,7 @@ test('the native apps switch is not rendered while the server feature is off', a
   const h = setup(t, { plugin: { NativePosterTagsEnabled: false } });
   await h.open();
   assert.equal(h.$('#nativePosterTagsToggle'), null);
-  assert.equal(h.document.querySelectorAll('#jeMthPanel-layout .je-mth-switch').length, 3);
+  assert.equal(h.document.querySelectorAll('#jeMthPanel-layout .je-mth-switch').length, 2);
 });
 
 test('the settings search finds hub controls by their visible label, opens their tab (and group) and focuses them', async t => {
@@ -615,7 +624,7 @@ for (const editor of ['landscape', 'list', 'default']) {
         assert.equal(shape ? saved.tagShapeOverrides[editor].caps.quality : saved.tagGroupCaps.quality, current);
         if (shape) assert.equal(saved.tagGroupCaps, null, 'shape edits leave the default caps alone');
         assert.equal(value(), current === 0
-          ? shape ? 'panel_settings_ui_tag_editor_summary_all' : 'jellyseerr_discover_all'
+          ? shape ? 'panel_settings_ui_tag_editor_summary_all' : 'panel_settings_ui_tag_editor_cap_all'
           : String(current));
         assert.equal(step(-1).disabled, current === 1);
         assert.equal(step(1).disabled, current === 0);
@@ -797,4 +806,28 @@ test('preview pointer and focus reveal only their card, touch pins all and hide-
   h.click(h.$('.je-mtp [data-view="hover"]'));
   pointer(cards[0], 'pointerleave');
   assert.deepEqual(revealed(), [true, true, true, true], 'leaving restores the pin');
+});
+
+
+test('audio detail languages stay in UI Settings after file sizes, outside Media Tags and its search provider', async t => {
+  const h = setup(t, { realUi: true, stored: { showAudioLanguages: true } });
+  await h.open();
+  const toggle = h.$('#showAudioLanguagesToggle');
+  assert.ok(toggle.closest('[data-pane="ui"]'), 'the detail-page preference belongs to UI Settings');
+  assert.equal(h.$('#jeMediaTagsHub #showAudioLanguagesToggle'), null);
+  const checkboxes = [...h.$('[data-pane="ui"]').querySelectorAll('input[type="checkbox"]')].map(el => el.id);
+  assert.equal(checkboxes.indexOf('showAudioLanguagesToggle'), checkboxes.indexOf('showFileSizesToggle') + 1);
+  assert.ok(h.$('#jeMediaTagsHub #peopleTagsToggle'), 'People Tags remains in the hub');
+  const results = await h.search('Show Audio Languages');
+  assert.equal(results.length, 1);
+  assert.equal(results[0].path, 'UI Settings');
+  h.click(results[0].button);
+  assert.equal(h.document.activeElement, toggle);
+  const link = h.document.createElement('a');link.className = 'mediaInfoItem-audioLanguage';
+  h.document.body.append(link);
+  await h.change(toggle, false);
+  assert.equal(h.saved().showAudioLanguages, false);
+  assert.equal(link.isConnected, false, 'the existing listener removes detail-page language links immediately');
+  await h.change(toggle, true);
+  assert.equal(h.saved().showAudioLanguages, true);
 });

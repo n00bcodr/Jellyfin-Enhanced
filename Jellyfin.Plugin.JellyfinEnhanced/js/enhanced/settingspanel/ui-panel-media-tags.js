@@ -280,7 +280,6 @@
                     ${switchRow('tagsHideOnHoverToggle', !!JE.currentSettings.tagsHideOnHover, 'panel_settings_ui_hide_tags_on_hover', 'panel_settings_ui_hide_tags_on_hover_desc')}
                     ${native}
                     ${switchRow('peopleTagsToggle', !!JE.currentSettings.peopleTagsEnabled, 'panel_settings_ui_people_tags', 'panel_settings_ui_people_tags_desc')}
-                    ${switchRow('showAudioLanguagesToggle', !!JE.currentSettings.showAudioLanguages, 'panel_settings_ui_audio_languages', 'panel_settings_ui_audio_languages_desc')}
                 </div>
             </section>
             ${internal.buildTagPortableHtml?.() || ''}`;

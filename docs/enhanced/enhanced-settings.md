@@ -245,9 +245,10 @@ Open **UI Settings** and turn on the options you want.
 | **Percentage** / **Time Watched** / **Time Remaining** | **Percentage** | Chooses how **Show Watch Progress** shows progress. |
 | **h:m** / **y:mo:d:h:m** | **h:m** | Selects the time format for time-based progress displays. |
 | **Show File Sizes** | Off | Shows total file size on item details. |
+| **Show Audio Languages** | On | Audio language links on item details. |
 | **Add Remove from Continue Watching & Next Up Buttons** | Off | Adds removal buttons to home rows and keeps your playback position. |
 
-Poster tags and **Show Audio Languages** moved to [Media Tags](#media-tags); **UI Settings** keeps a **Media Tags moved to its own section** note with an **Open** button.
+Poster tags moved to [Media Tags](#media-tags); **UI Settings** keeps a **Media Tags moved to its own section** note with an **Open** button.
 
 ??? info "How it works"
 
@@ -281,7 +282,6 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | **Hide Tags on Hover** | Off | Fades poster tags while you hover a card. |
     | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags, including Status, into posters for native apps. Corners and Bands are supported; Caption, Summary and Minimal use Corners. Bands follows its profile, limits and density. |
     | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
-    | **Show Audio Languages** | On | Audio language links on item details. |
     | **Presets** | Built-in presets | **Apply** previews a preset's changes first; **Share** copies it; **Save as preset** keeps your settings (up to 10, on the server); **Import preset** adds a shared one; administrators can offer more. |
     | **Import & export** | — | **Export settings** downloads or copies your Media Tags settings; **Import settings** checks a file or pasted text on the server, shows what changes and what is skipped, and applies it with **Undo**. See [Import, export and presets](tags.md#import-export-and-presets). |
 
@@ -483,7 +483,7 @@ For the broader storage and backup reference, see [Settings overview](../getting
 
 ### Display defaults
 
-Choose the starting information new users see on item details. Users can override these admin preferences in **UI Settings** (audio languages in **Media Tags** → **Layout**).
+Choose the starting information new users see on item details. Users can override these admin preferences in **UI Settings**.
 
 Open **Display** → **UI Preferences** and set the starting values:
 
@@ -493,7 +493,7 @@ Open **Display** → **UI Preferences** and set the starting values:
 | **Watch Progress Default** | **Percentage** | Starts the personal display at **Percentage**, **Time Watched**, or **Time Remaining**. |
 | **Watch Progress Time Format** | **h:m** | Starts the personal time format at **h:m** or **y:mo:d:h:m**. |
 | **Show file sizes** | Off | Starts **Show File Sizes** enabled. |
-| **Show available audio languages on item detail page** | On | Starts **Show Audio Languages** enabled. |
+| **Show available audio languages on item detail page** | On | Starts **Show Audio Languages** enabled; users override it in **UI Settings**. |
 | **Enable "Remove from Continue Watching"** | Off | Starts **Add Remove from Continue Watching & Next Up Buttons** enabled. |
 
 Under **Display** → **Icons & Theme**, these are server settings with no personal-panel counterpart:

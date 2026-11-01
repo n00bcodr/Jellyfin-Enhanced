@@ -53,7 +53,7 @@ Every personal poster tag setting lives in one section of the panel, **Media Tag
 
 | Tab | What you set there |
 |---|---|
-| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), **Tag size**, **Gap**, per-shape looks for **Episode thumbnails** and **List rows**, and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags** and **Show Audio Languages**. |
+| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), **Tag size**, **Gap**, per-shape looks for **Episode thumbnails** and **List rows**, and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags**. |
 | **Groups** | The [tag groups](#tag-groups-order-position-limits) in priority order: move buttons, the on/off switch, and per group its position, **Show up to** and **Include** choices, plus **Reset to defaults**. The Status row's **Badges** button opens the next tab. |
 | **Status badges** | Which [status badges](#status-tags) the Status group may show: **Just Added**, **New releases**, **Trending**, **Schedule**, **Milestones**, **Series status**, **Leaving soon** and **Direct-play warning**, each with a sample badge. The two time windows the administrator chose are shown beside Just Added and New releases. **Status position and limit in Groups** goes back to the Status row. |
 | **Rules & locks** | Your [rules and locked items](#rules-and-locked-items) on the left, the **Add a rule** form on the right. |
@@ -88,7 +88,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 | [Status Tags](#status-tags) | One badge: trending, release, schedule, milestone or series status | Supported library cards and eligible native posters |
 | [Logo Tags](#logo-tags) | The streaming service, TV network or studio as a small logo (or its name) | Movie, series, season and episode cards; seasons and episodes show their series' logo |
 | [People Tags](#people-tags) | Age, age at release, birthplace, deceased styling | Cast and guest-cast cards on web item detail pages |
-| [Audio language links](#audio-language-links) | Named audio languages linking to Jellyfin tag lists | Movie, series, season, and episode detail pages |
+| [Audio language links](#audio-language-links) | Named audio languages linking to Jellyfin tag lists | Movie, series, season, and episode detail pages; control in **UI Settings** |
 | [Player badges](#player-badges) | Scores in the controls; optional age/advisory badge at playback start | Jellyfin web video player |
 
 [Native Poster Tags](#native-poster-tags-experimental) draw supported poster groups into images for eligible native clients. Their page and row limits differ from web overlays.
@@ -666,7 +666,7 @@ The detail-page audio-language row shows language names and flags. You can also 
 
 **How to use:**
 
-1. Keep **Show Audio Languages** on (**Media Tags** → **Layout**, under the quick switches) to display the row.
+1. Keep **Show Audio Languages** on in **UI Settings** to display the row.
 2. As an administrator, open **Display** → **Audio Language Tags** and turn on **Enable Audio Language Tags Sync** and **Link audio languages to their tag page**. Click **Save Settings**.
 3. Run **Sync Audio Language Tags to Jellyfin** under **Dashboard** → **Scheduled Tasks** → **Jellyfin Enhanced** to tag existing movies and series.
 
