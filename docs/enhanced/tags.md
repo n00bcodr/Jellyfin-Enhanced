@@ -144,7 +144,13 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
     ![Movie posters with quality dots and a corner score; the hovered poster shows every tag](../images/tags/tag-layout-minimal.webp)
 
+![The same four movie posters in Corners with Default, Tight and Flush edge spacing, then Bands, Caption, Summary and Minimal](../images/tags/pr-layout-gallery.webp)
+*The same four posters and tag groups in every layout.*
+
 At left centre or right centre, a group can use the poster's width when the opposite side is empty. With groups on both sides, each keeps half the available width with a gap between them. The first chip at every anchor stays visible; a label too wide for its space is shortened with an ellipsis. The chip keeps its height and icon alignment while its text shortens, including linked Awards and Language chips. A `+N` chip counts only later chips that do not fit.
+
+![Status badges at left centre and right centre: a lone +1 before, the first badge shown after](../images/tags/pr-side-status.webp)
+*Status at left centre (top) and right centre (bottom): the first badge stays visible instead of collapsing to `+1`.*
 
 #### Tag size and spacing
 
@@ -173,7 +179,13 @@ An enabled shape override has its own **Tag size** and **Gap** selectors. **Same
 | **Tight** | 3px | |
 | **Flush** | 0px | Tags touch the edge, like a tab hanging off the poster: the chip corners against an edge are square, and a tag in a corner follows the poster's own rounded corner. Nothing is drawn outside the poster |
 
+![The Layout tab with Tag size, Gap and Edge Spacing below Label Density, and the live preview](../images/tags/pr-hub-layout.webp)
+*Edge Spacing sits on the Layout tab below Tag size and Gap.*
+
 Flush chips have no visible border or shadow on the sides touching an edge; inward borders and shadows remain. Top-centre tabs meet `top: 0` with square top corners, and bottom-centre tabs meet `bottom: 0` with square bottom corners. If a progress bar is present, bottom centre meets its top edge without a gap. Top centre first narrows to the gap between corner indicators and moves below them only when that gap cannot fit its first chip. Tight and Default retain their existing indicator and progress gaps. The other layouts have their own spacing and ignore it. Native Poster Tags use the selected inset in Corners; Bands retains its own 6px inset, including for overflow chips. Edge spacing applies to every Corners card, including shape overrides; size and gap may be overridden independently for each shape.
+
+![Five-times crops of a Flush top-centre Status tab beside the count bubble and a bottom-left quality stack, before and after](../images/tags/pr-flush-tabs.webp)
+*Flush at 5×: the top-centre Status tab now sits on the edge beside Jellyfin's count bubble; the bottom-left stack also shows the compact `DD+ 5.1` label.*
 
 !!! note "Flush and rounded posters"
     Flush tags are clipped to the poster's rounded corners rather than being given a radius of their own, so a corner tag takes exactly the curve your theme gives the poster.
@@ -238,6 +250,9 @@ Compact quality vocabulary is shared by web and native rendering. The canonical 
 | Dolby Vision / HDR10+ / BluRay | DV / HDR+ / BD |
 
 Other emitted video codec labels (AV1, HEVC, H265, VP9, H264, VP8, XVID, DIVX, WMV, MPEG2, MPEG4, MJPEG, THEORA) are already short and remain unchanged.
+
+![Six movie posters with Compact quality labels: DD+ 5.1, DD 5.1, DTS-HD 5.1, BD, REMUX, IMAX, Ext and DC](../images/tags/pr-compact-labels.webp)
+*Compact labels on real library files: `DD+ 5.1`, `DD 5.1`, `DTS-HD 5.1`, `BD`, `REMUX`, `IMAX`, `Ext` and `DC`.*
 
 The four default corners keep their original appearance. Top and bottom centre wrap chips into centred rows (up to two); left and right centre stack chips vertically. Centre rows reserve the width occupied by corner groups; side columns reserve the height of their neighbouring corner stacks. Chips that are too wide or tall are hidden whole and counted in a **+N** chip, which names the hidden tags on hover or focus. Group limits apply before fitting.
 
@@ -1150,6 +1165,9 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 ![Native status chip in Corners and Bands, with +N overflow in the bottom strip](../images/tags/native-status-bands.webp)
 *Personalized native image responses for the same movie: Corners (left), Bands (right). These are composited posters, not physical-device screenshots.*
 
+![Jellyfin web beside the Jellyfin Android TV app for Flush Corners and for side anchors, with the same four posters side by side](../images/tags/pr-native-tv.webp)
+*Web (left) and the real Jellyfin Android TV 0.19.10 app in the emulator (right): Flush Corners with Compact labels (top) and Status at left centre with Quality at right centre (bottom). The app dims unfocused cards.*
+
 **How to use:**
 
 1. Enable suitable tag groups and ensure the items have the required metadata.
@@ -1294,6 +1312,9 @@ A tag's colours are worked out field by field: its own colour if you set one, el
 Each genre the icons know is its own tag on the **Genre** tab, shown as its icon (with its name where there is room; hover a tile for the name). **Find a genre** narrows the list. With the keyboard the tiles are a single stop: the arrow keys move the selection, **Home** and **End** jump to the first and last tile. A genre and its other spellings and translations share one tag, so colouring **Comedy** also colours *Comédie* and *Komödie*. Genres without an icon of their own (for example *Anime* or *Children*) use **Other**. Genre names are matched without regard to case.
 
 ![The Genre tab of the Tag Styles editor: Whole group, then one icon tile per genre, with Horror, Comedy and Animation coloured](../images/admin/tag-styles-genre.webp)
+
+![The movie grid with the Poster preset and Animation, Comedy and Family genre icons in their own colours](../images/tags/pr-poster-genre-colours.webp)
+*Poster preset with three coloured genres: Animation blue, Family green, Comedy yellow; every other tag takes its poster's colour.*
 
 | Tag | Key | Icon | Also covers |
 |---|---|---|---|
