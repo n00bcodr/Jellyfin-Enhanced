@@ -850,14 +850,15 @@
     /**
      * Shared quality/language chip box, including responsive fallback and card-width metrics.
      * @param {string} selector Internal chip selector.
+     * @param {boolean} [code=false] Tight padding for a two/three-letter language code.
      * @returns {string} Base CSS; group colours are layered on by the renderers and Tag Styles.
      */
-    function chipBaseCss(selector) {
-        return `
+    function chipBaseCss(selector, code = false) {
+        const css = `
                 ${selector} {
                     font-weight: bold;
                     border-radius: 5px;
-                    padding: calc(2px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(${code ? 4 : 10}px * var(--je-tag-scale, 1));
                     font-size: calc(clamp(0.65rem, 2vw, 0.85rem) * var(--je-tag-scale, 1));
                     user-select: none;
                     pointer-events: none;
@@ -872,27 +873,27 @@
                     line-height: 1.2;
                 }
                 .layout-mobile ${selector} {
-                    padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
+                    padding: calc(0px * var(--je-tag-scale, 1)) calc(${code ? 3 : 6}px * var(--je-tag-scale, 1));
                     font-size: calc(0.65rem * var(--je-tag-scale, 1));
                     border-radius: 3px;
                 }
                 @media (min-width: 1440px) {
                 ${selector} {
-                        padding: calc(3px * var(--je-tag-scale, 1)) calc(12px * var(--je-tag-scale, 1));
+                        padding: calc(3px * var(--je-tag-scale, 1)) calc(${code ? 4 : 12}px * var(--je-tag-scale, 1));
                         font-size: calc(0.9rem * var(--je-tag-scale, 1));
                         border-radius: 6px;
                     }
                 }
                 @media (max-width: 768px) {
                 ${selector} {
-                        padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(${code ? 3 : 6}px * var(--je-tag-scale, 1));
                         font-size: calc(0.65rem * var(--je-tag-scale, 1));
                         border-radius: 3px;
                     }
                 }
                 @media (max-width: 480px) {
                 ${selector} {
-                        padding: calc(0px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(${code ? 2 : 5}px * var(--je-tag-scale, 1));
                         font-size: calc(0.6rem * var(--je-tag-scale, 1));
                         border-radius: 2px;
                         box-shadow: 0 1px 3px rgba(0,0,0,0.4);
@@ -902,11 +903,17 @@
                 @supports (container-type: inline-size) {
                     html:not(.layout-mobile) .je-tag-host ${selector} {
                         font-size: calc(clamp(9px, 6.6cqw, 13.6px) * var(--je-tag-scale, 1));
-                        padding: calc(clamp(0px, 0.6cqw, 2px) * var(--je-tag-scale, 1)) calc(clamp(4px, 4.2cqw, 10px) * var(--je-tag-scale, 1));
+                        padding: calc(clamp(0px, 0.6cqw, 2px) * var(--je-tag-scale, 1)) calc(clamp(${code ? 2 : 4}px, ${code ? 1.5 : 4.2}cqw, ${code ? 4 : 10}px) * var(--je-tag-scale, 1));
                         border-radius: calc(clamp(2px, 2.4cqw, 5px) * var(--je-tag-scale, 1));
                     }
                 }
         `;
+        // Code selectors are more specific than the shared chip selector. Only
+        // override padding, so they cannot reset partial opacity or preset paint.
+        return code ? css.replace(/([^{}]+)\{([^{}]*)\}/g, (_, rule, body) => {
+            const padding = body.split(';').filter(declaration => /^\s*padding\s*:/.test(declaration)).join(';');
+            return `${rule}{${padding};}`;
+        }) : css;
     }
 
     JE.core.tagRenderer = {

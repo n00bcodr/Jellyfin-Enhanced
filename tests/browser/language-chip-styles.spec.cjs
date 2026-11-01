@@ -46,7 +46,14 @@ for (const [index, preset] of fixture.presets.entries()) {
       });
     });
     expect(pairs).toHaveLength(4);
-    for(const pair of pairs) expect(pair.language,JSON.stringify(pair)).toEqual(pair.quality);
+    for(const pair of pairs) {
+      if (pair.label === 'EN') {
+        expect(parseFloat(pair.language.paddingRight)).toBeLessThan(parseFloat(pair.quality.paddingRight));
+        const { paddingRight: languagePadding, ...language } = pair.language;
+        const { paddingRight: qualityPadding, ...quality } = pair.quality;
+        expect(language, JSON.stringify(pair)).toEqual(quality);
+      } else expect(pair.language,JSON.stringify(pair)).toEqual(pair.quality);
+    }
     if(preset.document) {
       expect(pairs[0].color).toBe('rgb(255, 0, 0)');
       expect(pairs[1].color).toBe('rgb(255, 0, 0)');

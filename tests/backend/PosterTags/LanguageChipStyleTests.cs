@@ -31,7 +31,8 @@ public class LanguageChipStyleTests
                 Assert.Equal((string)chip["text"]!, item.Text);
                 var quality = new PosterTagLayout([new(PosterTagGroup.Quality, PosterTagCorner.TopLeft, [new QualityTag((string)chip["text"]!, "other")])], false, false);
                 var other = Assert.Single(Assert.Single(renderer.Plan(180, 270, quality).Groups).Items);
-                Assert.Equal(other.Width, item.Width);
+                if (kind == "code") Assert.True(item.Width < other.Width, "Short codes use tighter padding without shrinking their text.");
+                else Assert.Equal(other.Width, item.Width);
                 Assert.Equal(other.Height, item.Height);
                 Assert.Equal(other.TextLayout!.FontSize, item.TextLayout!.FontSize);
                 using var source = new SKBitmap(180, 270); source.Erase(SKColors.Transparent);

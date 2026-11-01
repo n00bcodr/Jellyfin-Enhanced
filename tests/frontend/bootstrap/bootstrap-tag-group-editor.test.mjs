@@ -116,7 +116,7 @@ test('a position pill writes the selected layout\'s profile; corners also keeps 
   saved = h.saved();
   assert.equal(saved.ageRatingTagsPosition, 'top-left');
   assert.deepEqual(saved.tagLayouts.corners.groups, [{ group: 'ageRating', slot: 'off' }]);
-  assert.equal(h.row('ageRating').querySelector('.je-tge-summary').textContent, 'hidden_content_already_hidden');
+  assert.equal(h.row('ageRating').querySelector('.je-tge-summary').textContent, 'panel_settings_ui_tag_slot_off');
 
   // Another layout: its pills, its own profile, the corners pick untouched.
   await h.layout('minimal');
@@ -147,7 +147,7 @@ test('the cap stepper clamps to 1..10, offers All only for quality and rating, a
   assert.equal(step('genre', -1).disabled, true, 'never below 1');
   assert.equal(h.saved().tagGroupCaps.genre, 1);
 
-  assert.equal(cap('quality'), 'jellyseerr_discover_all');
+  assert.equal(cap('quality'), 'panel_settings_ui_tag_editor_cap_all');
   assert.equal(step('quality', 1).disabled, true);
   await h.click(step('quality', -1));
   assert.equal(h.saved().tagGroupCaps.quality, 10);
@@ -658,7 +658,7 @@ test('the Logos row precedes Custom by default, switches the group, offers All a
   assert.ok(row, 'the Logos row exists');
   assert.equal(h.order().at(-2), 'logos');
   assert.equal(row.querySelector('.je-tge-name').textContent, 'common_logos');
-  assert.equal(row.querySelector('.je-tge-cap').textContent, 'jellyseerr_discover_all');
+  assert.equal(row.querySelector('.je-tge-cap').textContent, 'panel_settings_ui_tag_editor_cap_all');
   assert.match(row.querySelector('.je-tge-body').textContent, /panel_settings_ui_logo_tags_include/);
   const toggle = row.querySelector('#logoTagsToggle');
   assert.equal(toggle.checked, false, 'off by default');

@@ -830,7 +830,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var label = tag.CountBadge?.ToLowerInvariant() ?? tag.StyleLabel ?? tag.Code?.ToLowerInvariant() ?? kind;
                 var colors = styles.ResolveLanguageChip(label, kind);
                 float gap = flagWidth > 0 ? 3f * css.Scale : 0;
-                float chipWidth = PosterTagCss.LuCeil(layout.Width) + flagWidth + gap + (2 * PosterTagCss.Lu(css.QualityPaddingH)) + 2f;
+                float chipWidth = PosterTagCss.LuCeil(layout.Width) + flagWidth + gap + (2 * PosterTagCss.Lu(css.LanguagePaddingH(tag))) + 2f;
                 float chipHeight = Math.Max(PosterTagCss.Lu(1.2f * css.QualityFontSize), flagWidth * 0.75f) + (2 * PosterTagCss.Lu(css.QualityPaddingV)) + 2f;
                 // The key carries flag identity, partial treatment, and label-specific style.
                 return new PlannedItem(PosterTagTileKind.LanguageChip, tag, text, (flagCode ?? string.Empty) + "|" + tag.Partial + "|" + colors.Encode(), chipWidth, chipHeight)

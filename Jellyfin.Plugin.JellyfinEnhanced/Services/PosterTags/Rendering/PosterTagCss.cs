@@ -67,6 +67,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             QualityFontSize = Clamp(9f, 6.6f * cqw, 13.6f) * Scale;
             QualityPaddingV = Clamp(0f, 0.6f * cqw, 2f) * Scale;
             QualityPaddingH = Clamp(4f, 4.2f * cqw, 10f) * Scale;
+            LanguageCodePaddingH = Clamp(2f, 1.5f * cqw, 4f) * Scale;
             QualityRadius = Clamp(2f, 2.4f * cqw, 5f) * Scale;
             QualityGap = Clamp(1f, 1.8f * cqw, 4f) * Scale * Gap;
 
@@ -99,6 +100,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         public float QualityPaddingV { get; }
 
         public float QualityPaddingH { get; }
+
+        /// <summary>Tight padding for a two/three-letter audio language code.</summary>
+        public float LanguageCodePaddingH { get; }
+
+        /// <summary>Code-only chips keep the quality font with less horizontal padding.</summary>
+        public float LanguagePaddingH(LanguageTag tag) => tag.Code is not null && tag.CountBadge is null && !tag.Subtitle ? LanguageCodePaddingH : QualityPaddingH;
 
         public float QualityRadius { get; }
 

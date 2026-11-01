@@ -1874,7 +1874,7 @@
      * @param {CardController} ctrl
      */
     function scheduleFit(ctrl) {
-        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl))) return;
+        if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || cornerLanguageGroups(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl))) return;
         pendingFit.add(ctrl);
         if (fitScheduled) return;
         fitScheduled = true;
@@ -1956,11 +1956,19 @@
             }
             list.forEach((ctrl, i) => { if (radii[i] !== null) ctrl.host.style.setProperty('--je-card-radius', radii[i]); });
             for (const ctrl of shown) prepareFit(ctrl);
+            // Language columns yield whole chips before centre budgets are read,
+            // keeping a full rating value or a readable overflow chip beside them.
+            const languages = shown.map(measureCornerLanguages);
+            languages.forEach(applyChipRows);
             // Read every occupied corner before writing centre-anchor budgets.
             const anchors = shown.map(measureAnchors);
             shown.forEach((ctrl, i) => applyAnchors(anchors[i]));
             // Reads, then writes.
-            const plans = shown.map(measureFit);
+            const plans = shown.map((ctrl, i) => {
+                const plan = measureFit(ctrl);
+                plan.rows.unshift(...languages[i]);
+                return plan;
+            });
             shown.forEach((ctrl, i) => applyFit(ctrl, plans[i]));
         } finally {
             fitting = false;
@@ -2043,6 +2051,56 @@
     }
 
     /**
+     * Corner language columns containing boxed chips; plain legacy flags keep
+     * their geometry. Other layouts already fit their shared wrapping rows.
+     * @param {CardController} ctrl
+     * @returns {HTMLElement[]}
+     */
+    function cornerLanguageGroups(ctrl) {
+        return ctrl.layout === 'corners' ? Array.from(ctrl.host.querySelectorAll(':scope > .je-tag-slot:is([data-je-slot="tl"], [data-je-slot="tr"], [data-je-slot="bl"], [data-je-slot="br"]) > [data-je-group="language"]'))
+            .filter(group => group.querySelector('.language-chip') && Array.from(ctrl.host.children)
+                .some(slot => slot.dataset.jeSlot === (group.parentElement.dataset.jeSlot.startsWith('t') ? 'tc' : 'bc') && slot.querySelector('.rating-tag'))) : [];
+    }
+
+    /**
+     * Fit boxed language columns around a centred rating row. Its first rating
+     * needs its entire intrinsic width; when that cannot coexist with the first
+     * language chip, reserve the centre's +N width instead. Caps are applied
+     * before this pass, and the first language chip always stays whole.
+     * @param {CardController} ctrl
+     * @returns {FitPlan['rows']}
+     */
+    function measureCornerLanguages(ctrl) {
+        const rows = [];
+        const conf = resolveLayout(ctrl);
+        const gap = 4 * TAG_SCALES[conf.tagScale] * TAG_GAPS[conf.tagGap];
+        const inner = Math.max(0, ctrl.host.clientWidth - 2 * edgeOf(ctrl));
+        for (const group of cornerLanguageGroups(ctrl)) {
+            const slot = group.parentElement.dataset.jeSlot;
+            const centre = Array.from(ctrl.host.children).find(el => el.dataset.jeSlot === (slot.startsWith('t') ? 'tc' : 'bc'));
+            const rating = centre?.querySelector('.rating-tag');
+            const centreMore = centre && moreChipOf(centre);
+            const more = moreChipOf(group);
+            if (!rating || !centreMore || !more) continue;
+            const chips = Array.from(group.children).filter(chip => chip !== more);
+            if (!chips.length) continue;
+            const rects = chips.map(chip => chip.getBoundingClientRect());
+            const ratingWidth = rating.getBoundingClientRect().width;
+            const moreRect = more.getBoundingClientRect();
+            const languageMinimum = Math.max(rects[0].width, chips.length > 1 ? moreRect.width : 0);
+            const fullRoom = (inner - ratingWidth) / 2 - gap;
+            const minimum = languageMinimum <= fullRoom ? Math.max(ratingWidth, centreMore.getBoundingClientRect().width) : centreMore.getBoundingClientRect().width;
+            const available = Math.max(rects[0].width, (inner - minimum) / 2 - gap);
+            const height = ctrl.host.clientHeight * 0.9;
+            const rowGap = parseFloat(getComputedStyle(group).rowGap) || 0;
+            const shown = chipsThatFit(rects.map((rect, i) => i === 0 || rect.width <= available + 0.01 ? rect.height : Infinity), height, rowGap, 1, moreRect.height);
+            shown[0] = true;
+            rows.push({ slot: group, chips, shown, more: moreRect.width <= available + 0.01 && rects[0].height + rowGap + moreRect.height <= height });
+        }
+        return rows;
+    }
+
+    /**
      * Undo an earlier pass and put a "+N" chip (sized for the worst case)
      * last in every wrapping slot that has chips (writes only).
      * @param {CardController} ctrl
@@ -2057,8 +2115,9 @@
                 el.style.removeProperty('--je-chip-fit-width');
             });
         }
-        for (const slotEl of rowSlots(ctrl)) {
-            const count = slotChips(slotEl).length;
+        const languages = cornerLanguageGroups(ctrl);
+        for (const slotEl of [...rowSlots(ctrl), ...languages]) {
+            const count = languages.includes(slotEl) ? Array.from(slotEl.children).filter(el => !el.classList.contains('je-tag-more')).length : slotChips(slotEl).length;
             let more = moreChipOf(slotEl) || slotEl.querySelector(':scope > .je-tag-more');
             if (count === 0) { more?.remove(); continue; }
             if (!more) {
@@ -2174,7 +2233,8 @@
                 let shown = null;
                 let fittedRows = [];
                 let fittedMoreRow = 0;
-                const fitWidths = widths.map((width, i) => i === 0 ? Math.min(width, Math.max(0, available)) : width);
+                const ratingFirst = chips[0].matches('.rating-tag');
+                const fitWidths = widths.map((width, i) => i === 0 && !ratingFirst ? Math.min(width, Math.max(0, available)) : width);
                 if (vertical) {
                     // Keep the first label (ellipsized if necessary); later chips
                     // still need both height and width to be shown whole.
@@ -2186,17 +2246,18 @@
                         if (rowsHeight(fit, rows, heights, moreRect.height, rowGap, moreRow.row) <= limit) { shown = fit; fittedRows = rows; fittedMoreRow = moreRow.row; }
                     }
                 }
-                if (!shown?.[0]) {
+                if (!shown?.[0] && !ratingFirst) {
                     // An anchor always tells the user at least its first fact.
                     // +N counts only later chips, and is omitted without room.
                     shown = chips.map((_, i) => i === 0);
                     fittedRows = chips.map((_, i) => i === 0 ? 1 : 0);
                     fittedMoreRow = 2;
                 }
-                const moreFits = vertical ? heights[0] + rowGap + moreRect.height <= limit
+                if (!shown) shown = chips.map(() => false);
+                const moreFits = vertical ? (shown.some(Boolean) ? heights[0] + rowGap : 0) + moreRect.height <= limit
                     : rowsHeight(shown, fittedRows, heights, moreRect.height, rowGap, fittedMoreRow) <= limit;
                 plan.rows.push({ slot: slotEl, chips, shown, fittedRows, fittedMoreRow,
-                    width: vertical ? available : undefined, firstWidth: widths[0] > available ? Math.max(0, available) : undefined,
+                    width: vertical ? available : undefined, firstWidth: !ratingFirst && widths[0] > available ? Math.max(0, available) : undefined,
                     more: moreFits && limit >= moreRect.height && available >= moreRect.width });
                 continue;
             }
@@ -2326,9 +2387,26 @@
                 fact.previousElementSibling?.setAttribute('data-je-overflow', '');
             });
         }
+        const names = applyChipRows(plan.rows);
+        describeHidden(ctrl, names);
+        for (const { el, before } of plan.indicator) {
+            const value = before === null ? '' : `${Math.round(before * 100) / 100}px`;
+            if (el.style.getPropertyValue(INDICATOR_BEFORE) === value) continue;
+            if (value) el.style.setProperty(INDICATOR_BEFORE, value);
+            else el.style.removeProperty(INDICATOR_BEFORE);
+        }
+    }
+
+    /**
+     * Write whole-chip visibility and accessible overflow labels (no measurements).
+     * Used before anchor measurement for language columns and in the final pass.
+     * @param {FitPlan['rows']} rows
+     * @returns {string[]} Names hidden behind this card's overflow chips.
+     */
+    function applyChipRows(rows) {
         /** @type {string[]} */
         const names = [];
-        for (const { slot, chips, shown, more: room } of plan.rows) {
+        for (const { slot, chips, shown, more: room } of rows) {
             const more = moreChipOf(slot);
             if (!more) continue;
             const hidden = chips.filter((chip, i) => !shown[i]);
@@ -2344,13 +2422,7 @@
             more.textContent = `+${hidden.length}`;
             more.title = hidden.map(chipLabel).filter(Boolean).join(', ');
         }
-        describeHidden(ctrl, names);
-        for (const { el, before } of plan.indicator) {
-            const value = before === null ? '' : `${Math.round(before * 100) / 100}px`;
-            if (el.style.getPropertyValue(INDICATOR_BEFORE) === value) continue;
-            if (value) el.style.setProperty(INDICATOR_BEFORE, value);
-            else el.style.removeProperty(INDICATOR_BEFORE);
-        }
+        return names;
     }
 
     // ── Hidden chip names ──────────────────────────────────────────────

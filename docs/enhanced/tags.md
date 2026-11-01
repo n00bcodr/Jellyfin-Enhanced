@@ -1394,3 +1394,5 @@ Existing version-0 Full layouts keep their previous audio labels until a layout 
 The live preview samples respond to pointer hover and keyboard focus to demonstrate genre expansion, reveal lists and hide-on-hover. Library genre-name reveal and hover hiding retain their pointer-hover behavior; keyboard reveal in the previews stays scoped to the samples. **Hover** pins all samples in that state, including on touch screens; **Resting** releases the pin while the pointed or focused sample stays active. This applies to the hub, administrator preview and item editor.
 
 Tag size choices are **85%**, **100%**, **115%**, and **130%**. The inherited **Same as default look** option still follows the default size.
+
+Short language code chips use tighter horizontal padding while retaining the quality font and height. When a corner language column crowds a centered rating, excess language chips move into `+N`, after the group limit is applied. The first language chip stays visible. Rating values stay complete; a rating without enough room moves into `+N` with its full value in the overflow description.

@@ -51,8 +51,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     public sealed class PosterTagComposer
     {
         /// <summary>Composition/pixel revision within the renderer version (part of every composite key).</summary>
-        // 8.4 gives language chips the shared chip base and Tag Styles colours.
-        public const string CompositionVersion = "4";
+        // 8.5 tightens code-only language padding while keeping the shared chip font.
+        public const string CompositionVersion = "5";
 
         /// <summary>
         /// Every version that changes a composite's pixels and is not already part of

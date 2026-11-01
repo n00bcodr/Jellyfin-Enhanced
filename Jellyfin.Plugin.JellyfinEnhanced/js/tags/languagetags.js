@@ -302,7 +302,7 @@
             hotBucket: 'language',
         },
         buildCss() {
-            return JE.core.tagRenderer.chipBaseCss('.language-chip') + `
+            return JE.core.tagRenderer.chipBaseCss('.language-chip') + JE.core.tagRenderer.chipBaseCss('.language-code:not([data-je-language="subtitles"])', true) + `
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;

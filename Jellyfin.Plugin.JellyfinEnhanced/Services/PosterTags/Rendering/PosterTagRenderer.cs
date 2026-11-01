@@ -795,10 +795,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 float top = 1f + PosterTagCss.Lu(plan.Css.QualityPaddingV);
                 float contentHeight = local.Height - 2f - (2 * PosterTagCss.Lu(plan.Css.QualityPaddingV));
                 float textHeight = PosterTagCss.Lu(1.2f * fontSize);
-                DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.Lu(plan.Css.QualityPaddingH), top + PosterTagCss.Lu((contentHeight - textHeight) / 2f) + Assets.TextMetrics.BaselineOffset(fontSize, textHeight), colors.Text ?? SKColors.White, null, space);
+                DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.Lu(plan.Css.LanguagePaddingH(tag)), top + PosterTagCss.Lu((contentHeight - textHeight) / 2f) + Assets.TextMetrics.BaselineOffset(fontSize, textHeight), colors.Text ?? SKColors.White, null, space);
                 if (item.IconWidth > 0 && Assets.GetFlag(parts[0]) is { } image)
                 {
-                    var target = SKRect.Create(local.Width - item.IconWidth - 1f - PosterTagCss.Lu(plan.Css.QualityPaddingH), top + PosterTagCss.Lu((contentHeight - item.IconHeight) / 2f), item.IconWidth, item.IconHeight);
+                    var target = SKRect.Create(local.Width - item.IconWidth - 1f - PosterTagCss.Lu(plan.Css.LanguagePaddingH(tag)), top + PosterTagCss.Lu((contentHeight - item.IconHeight) / 2f), item.IconWidth, item.IconHeight);
                     canvas.DrawImage(image, target, new SKSamplingOptions(SKFilterMode.Linear));
                 }
                 canvas.Restore();

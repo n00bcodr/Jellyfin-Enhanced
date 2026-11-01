@@ -1347,3 +1347,20 @@ test('table-driven tag vocabulary names existing English keys and numeric sizes 
   }
   assert.deepEqual(['smaller', 'default', 'larger', 'largest'].map(v => h.JE.core.tagLayout.sizeLabel('scale', v)), ['85%', '100%', '115%', '130%']);
 });
+
+
+test('a first rating without room moves whole into overflow instead of obeying label ellipsis', t => {
+  const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayouts: { corners: { groups:
+    ['quality','genre','language','rating','ageRating','status'].map(group => ({group,slot:group === 'rating' ? 'bc' : 'off'})) } } } });
+  const rating = h.document.createElement('div');rating.className = 'rating-overlay-container';
+  rating.innerHTML = '<span class="rating-tag"><span class="rating-text">7.7</span></span>';
+  h.layout.commitGroup(h.host(), 'rating', rating);
+  fitCard(h, { width: 40, height: 180, chip: 90 });
+  const chip = h.host().querySelector('.rating-tag');
+  assert.equal(chip.hasAttribute('data-je-overflow'), true);
+  assert.equal(chip.hasAttribute('data-je-fit-width'), false);
+  const more = h.host().querySelector('[data-je-slot="bc"] > .je-tag-more');
+  assert.equal(more.textContent, '+1');
+  assert.equal(more.hasAttribute('data-je-overflow'), false);
+  assert.equal(more.title, '7.7');
+});
