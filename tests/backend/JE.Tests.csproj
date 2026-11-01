@@ -26,6 +26,7 @@
     <EmbeddedResource Include="../fixtures/flush-edges.json" LogicalName="FlushEdges.json" />
     <EmbeddedResource Include="../fixtures/logo-custom-layout.json" LogicalName="LogoCustomLayout.json" />
     <EmbeddedResource Include="../fixtures/custom-tag-labels.json" LogicalName="CustomTagLabels.json" />
+    <EmbeddedResource Include="../fixtures/language-chip-styles.json" LogicalName="LanguageChipStyles.json" />
     <EmbeddedResource Include="../fixtures/genre-styles.json" LogicalName="GenreStyles.json" />
     <EmbeddedResource Include="../fixtures/admin-tags-page-fields.json" LogicalName="AdminTagsPageFields.json" />
     <ProjectReference Include="../../Jellyfin.Plugin.JellyfinEnhanced/JellyfinEnhanced.csproj" />

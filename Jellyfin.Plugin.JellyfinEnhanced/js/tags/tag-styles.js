@@ -110,6 +110,7 @@
             `${M} .logo-overlay-container .je-logo-chip[data-je-logo-style] { ${fill} ${edge} }`,
             `${M} .custom-overlay-container.custom-overlay-container .custom-tag { ${fill} ${edge} }`,
             `${M} .genre-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
+            `${M} .language-overlay-container .language-chip { ${fill} ${edge} }`,
             `${M} .status-overlay-container .status-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
             `${M} .status-overlay-container .status-tag .status-tag-rank { color: var(--je-tag-fg) !important; }`,
             `${M} .je-tag-pill { background: var(--je-tag-bg); border-color: var(--je-tag-border); color: var(--je-tag-fg); }`,
@@ -224,12 +225,19 @@
         }
 
         if (styles.language) {
-            add(`${P}.language-overlay-container .language-flag:not(.language-flag-partial)`, ring(styles.language.border));
+            add(`${P}.language-overlay-container .language-chip`, box(styles.language));
         }
-        for (const label of ['flag', 'subtitles', 'countBadge']) {
-            const color = styles.languageLabels?.[label];
+        // Only flag images keep their inner ring; chip borders use the shared box treatment.
+        const flagColours = styles.languageLabels?.flag || styles.language;
+        if (flagColours) add(`${P}.language-overlay-container .language-flag:not(.language-flag-partial)`, ring(flagColours.border));
+        for (const [label, color] of Object.entries(styles.languageLabels || {})) {
             if (!color) continue;
-            add(`${P}.language-overlay-container.language-overlay-container [data-je-language="${label}"]:not(.language-flag-partial)`, ring(color.border));
+            if (['subtitles', 'countBadge', 'code'].includes(label)) {
+                const kind = label === 'code' ? '.language-code' : `[data-je-language="${label}"]`;
+                add(`${P}.language-overlay-container.language-overlay-container .language-chip${kind}`, box(color));
+            } else if (label !== 'flag') {
+                add(`${P}.language-overlay-container.language-overlay-container.language-overlay-container .language-chip[data-je-language-label="${attr(label)}"]`, box(color));
+            }
         }
         // Logos: the pill behind a logo or name; text colours the name chip.
         const logos = styles.logos || {};

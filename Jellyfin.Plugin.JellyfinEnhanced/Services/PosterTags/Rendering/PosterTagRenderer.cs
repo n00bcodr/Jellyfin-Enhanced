@@ -789,20 +789,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 var colors = parts.Length == 3 ? TagColors.Decode(parts[2]) : default;
                 using var opacity = new SKPaint { Color = new SKColor(0, 0, 0, tag.Partial ? CssColor.AlphaByte(0.55f) : (byte)255) };
                 canvas.SaveLayer(opacity);
-                using var shape = new SKRoundRect(local, 3f);
-                PaintBox(canvas, shape, colors.Background ?? new SKColor(0, 0, 0, 191), colors.Border ?? SKColors.White, border, ChipShadow, item.FlushEdges);
-                var fontSize = plan.Css.ChipFontSize;
-                DrawText(canvas, item.TextLayout!, 5f * plan.Css.Scale, (3f * plan.Css.Scale) + Assets.TextMetrics.BaselineOffset(fontSize, local.Height - (6f * plan.Css.Scale)), colors.Text ?? SKColors.White, null, space);
+                using var shape = new SKRoundRect(local, plan.Css.QualityRadius);
+                PaintBox(canvas, shape, colors.Background ?? new SKColor(15, 15, 15, CssColor.AlphaByte(0.72f)), colors.Border ?? QualityBorder, border, QualityShadow, item.FlushEdges);
+                var fontSize = plan.Css.QualityFontSize;
+                float top = 1f + PosterTagCss.Lu(plan.Css.QualityPaddingV);
+                float contentHeight = local.Height - 2f - (2 * PosterTagCss.Lu(plan.Css.QualityPaddingV));
+                float textHeight = PosterTagCss.Lu(1.2f * fontSize);
+                DrawText(canvas, item.TextLayout!, 1f + PosterTagCss.Lu(plan.Css.QualityPaddingH), top + PosterTagCss.Lu((contentHeight - textHeight) / 2f) + Assets.TextMetrics.BaselineOffset(fontSize, textHeight), colors.Text ?? SKColors.White, null, space);
                 if (item.IconWidth > 0 && Assets.GetFlag(parts[0]) is { } image)
                 {
-                    var target = SKRect.Create(local.Width - item.IconWidth - (5f * plan.Css.Scale), 3f * plan.Css.Scale, item.IconWidth, item.IconHeight);
+                    var target = SKRect.Create(local.Width - item.IconWidth - 1f - PosterTagCss.Lu(plan.Css.QualityPaddingH), top + PosterTagCss.Lu((contentHeight - item.IconHeight) / 2f), item.IconWidth, item.IconHeight);
                     canvas.DrawImage(image, target, new SKSamplingOptions(SKFilterMode.Linear));
-                }
-                if (tag.Partial)
-                {
-                    using var dash = SKPathEffect.CreateDash(new[] { 3f * border, 2f * border }, 0f);
-                    using var paint = new SKPaint { Color = SKColors.White, IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = border, PathEffect = dash };
-                    canvas.DrawRoundRect(shape, paint);
                 }
                 canvas.Restore();
             }

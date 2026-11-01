@@ -117,7 +117,8 @@ public class LanguageTagDisplayTests
     {
         using var renderer = new PosterTagRenderer();
         var layout = Isolated(new LanguageTag("fr", "French", false) { Subtitle = true });
-        var group = Assert.Single(renderer.Plan(180, 270, layout).Groups);
+        var plan = renderer.Plan(180, 270, layout);
+        var group = Assert.Single(plan.Groups);
         var item = Assert.Single(group.Items);
         Assert.Equal("CC ", item.Text);
         Assert.True(item.IconWidth > 0);
@@ -127,7 +128,7 @@ public class LanguageTagDisplayTests
         using var output = renderer.Render(source, layout)!;
         var text = Pixels(output, SKRect.Create(group.X + item.X + 4, group.Y + item.Y + 3, item.Width - item.IconWidth - 9, item.Height - 6));
         Assert.True(text.Count(c => c.Red > 220 && c.Green > 220 && c.Blue > 220 && c.Alpha > 200) > 8);
-        var flag = Pixels(output, SKRect.Create(group.X + item.X + item.Width - item.IconWidth - 5, group.Y + item.Y + 3, item.IconWidth, item.IconHeight));
+        var flag = Pixels(output, SKRect.Create(group.X + item.X + item.Width - item.IconWidth - 1 - PosterTagCss.Lu(plan.Css.QualityPaddingH), group.Y + item.Y + 1 + PosterTagCss.Lu(plan.Css.QualityPaddingV), item.IconWidth, item.IconHeight));
         Assert.Contains(flag, c => c.Blue > 120 && c.Red < 80 && c.Alpha > 240);
         Assert.Contains(flag, c => c.Red > 180 && c.Blue < 120 && c.Alpha > 240);
         using var differentFlag = renderer.Render(source, Isolated(new LanguageTag("jp", "Japanese", false) { Subtitle = true }))!;

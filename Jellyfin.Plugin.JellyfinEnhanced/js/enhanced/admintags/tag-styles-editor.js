@@ -54,7 +54,7 @@
         const NOTES = {
             genre: 'admin_tags_colours_genre_note',
             status: 'Status badges use the same colours on web cards and native posters.',
-            language: 'Flags are images, so only the border ring can be coloured. Partial dubs keep their dashed outline.',
+            language: 'Language chips use Background, Border and Text, including per-language colours and Dual/Multi. Flag images keep only their border ring; partial flags keep their dashed outline.',
             logos: 'Colours the pill behind a logo, or the name chip a logo without an image shows (Text colours the name).',
             custom: 'One target per label of the Custom tag rules above (labels shared by several rules share their colours). The icon takes the text colour.'
         };
@@ -217,11 +217,18 @@
         const genreGlyph = (l) => el('i', 'je-ts-genre-glyph', genreIcon(l));
 
         // Custom labels are the rules table's, unsaved edits included.
-        const labelsOf = (g) => (g === 'custom'
-            ? customLabels().map((l) => ({ key: l, name: l }))
-            : (cat && cat.groups[g]) || []);
+        const labelsOf = (g) => {
+            if (g === 'custom') return customLabels().map(l => ({ key: l, name: l }));
+            const labels = ((cat && cat.groups[g]) || []).slice();
+            if (g === 'language') {
+                for (const key of Object.keys(state.labels).filter(k => k.startsWith('language:')).map(k => k.slice(9))) {
+                    if (!labels.some(l => l.key === key)) labels.push({ key, name: key.toUpperCase() });
+                }
+            }
+            return labels;
+        };
         const labelKey = (g, l) => g + ':' + l;
-        const fieldsOf = (g) => (g === 'language' ? FIELDS.filter(([f]) => f === 'border') : FIELDS);
+        const fieldsOf = (g) => (g === 'language' && target === 'flag' ? FIELDS.filter(([f]) => f === 'border') : FIELDS);
 
         /**
          * A preset's colours for one label, as {background, border, text}.
@@ -246,9 +253,11 @@
         function effective(g, l) {
             const own = state.labels[labelKey(g, l)] || {};
             const shared = state.groups[g] || {};
+            const kind = g === 'language' && !['flag', 'code', 'subtitles', 'countBadge'].includes(l)
+                ? state.labels[labelKey(g, ['dual', 'multi'].includes(l) ? 'countBadge' : 'code')] || {} : {};
             const pal = palette(state.preset, g, l);
             const out = {};
-            FIELDS.forEach(([f]) => { out[f] = own[f] || shared[f] || pal[f]; });
+            FIELDS.forEach(([f]) => { out[f] = own[f] || kind[f] || shared[f] || pal[f]; });
             return out;
         }
 
@@ -296,17 +305,27 @@
          * @returns {HTMLElement} n
          */
         function paint(n, g, c) {
-            if (g !== 'language') {
+            if (g !== 'language' || !n.matches('img.language-flag')) {
                 n.style.background = c.background || '';
                 n.style.color = c.text || '';
             }
-            if (g === 'rating' || g === 'language') {
+            if (g === 'rating' || (g === 'language' && n.matches('img.language-flag'))) {
                 const ring = c.border && parse(c.border).a > 0;
                 n.style.outline = ring ? '1px solid ' + c.border : '';
                 n.style.outlineOffset = ring ? '-1px' : '';
             } else {
                 n.style.borderColor = c.border || '';
             }
+            return n;
+        }
+
+        /** A real language-chip class and style label for one colour-editor sample. */
+        function languageSample(label) {
+            const count = ['dual', 'multi', 'countBadge'].includes(label.key);
+            const text = label.key === 'subtitles' ? 'CC EN' : count ? label.key === 'dual' ? 'Dual' : 'Multi' : label.key === 'code' ? 'EN' : label.key.toUpperCase();
+            const n = el('span', 'je-ts-chip language-chip ' + (count ? 'language-count-badge' : 'language-code'), text);
+            n.dataset.jeLanguage = count ? 'countBadge' : label.key === 'subtitles' ? 'subtitles' : 'flag';
+            n.dataset.jeLanguageLabel = count ? label.key === 'dual' ? 'dual' : 'multi' : label.key === 'code' || label.key === 'subtitles' ? 'en' : label.key;
             return n;
         }
 
@@ -360,8 +379,8 @@
                 n.dataset.jeLogoStyle = label.key;
             } else if (g === 'custom') {
                 n = el('span', 'je-ts-chip je-ts-custom custom-tag', label.name);
-            } else if (label.key === 'countBadge' || label.key === 'subtitles') {
-                n = el('span', 'je-ts-chip language-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
+            } else if (g === 'language' && label.key !== 'flag') {
+                n = languageSample(label);
             } else {
                 n = el('img', 'je-ts-chip je-ts-flag language-flag');
                 n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');
@@ -575,7 +594,7 @@
          * @returns {number|null} Null when neither field comes from the artwork.
          */
         function posterContrast(label) {
-            if (state.preset !== 'poster' || current === 'language') return null;
+            if (state.preset !== 'poster' || (current === 'language' && label.key === 'flag')) return null;
             const own = state.labels[labelKey(current, label.key)] || {};
             const shared = state.groups[current] || {};
             const text = own.text || shared.text;
@@ -604,7 +623,7 @@
         function renderContrast() {
             const box = root.querySelector('#tagStyleContrast');
             box.textContent = '';
-            if (current === 'language') return;
+            if (current === 'language' && target === 'flag') return;
             // One label: its own contrast. Whole group: the label that reads worst. Under Poster, a
             // label whose text or background comes from the artwork counts with its worst case over
             // any artwork, a label with both set here with its own colours.
@@ -639,7 +658,7 @@
         function renderGroup() {
             renderTargets();
             const note = current === 'genre' ? tr(NOTES.genre) : NOTES[current] || '';
-            root.querySelector('#tagStyleGroupNote').textContent = [state.preset === 'poster' && current !== 'language' ? POSTER_NOTE : '', note].filter(Boolean).join(' ');
+            root.querySelector('#tagStyleGroupNote').textContent = [state.preset === 'poster' && (current !== 'language' || target !== 'flag') ? POSTER_NOTE : '', note].filter(Boolean).join(' ');
             renderRows();
             renderContrast();
         }
@@ -666,8 +685,8 @@
                 status: map('status'),
                 awards: map('awards'),
                 custom: Object.assign({ '*': web(effective('custom', ALL)) }, map('custom')),
-                language: { border: effective('language', 'flag').border },
-                languageLabels: Object.fromEntries(['flag', 'subtitles', 'countBadge'].map(key => [key, { border: effective('language', key).border }])),
+                language: web(effective('language', 'code')),
+                languageLabels: Object.fromEntries(labelsOf('language').map(({ key }) => [key, ['flag', 'code', 'subtitles', 'countBadge'].includes(key) ? web(effective('language', key)) : web(state.labels[labelKey('language', key)] || {})])),
                 logos: map('logos')
             };
         }
@@ -725,9 +744,8 @@
                 n = el('div', 'custom-tag je-ts-chip je-ts-custom');
                 n.dataset.jeCustom = label.key;
                 n.appendChild(el('span', 'custom-tag-text', label.name));
-            } else if (label.key === 'countBadge' || label.key === 'subtitles') {
-                n = el('span', 'language-chip je-ts-chip', label.key === 'subtitles' ? 'CC EN' : 'Multi');
-                n.dataset.jeLanguage = label.key;
+            } else if (g === 'language' && label.key !== 'flag') {
+                n = languageSample(label);
             } else {
                 n = el('img', 'language-flag je-ts-chip je-ts-flag');
                 n.src = window.jeCdnUrl('flag-icons/flags/4x3/gb.svg');

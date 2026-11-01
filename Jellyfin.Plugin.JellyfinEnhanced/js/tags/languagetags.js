@@ -237,6 +237,7 @@
             chip.className = info.badge ? 'language-count-badge language-chip' : conf.style === 'codes' ? 'language-code language-chip' : info.subtitle ? 'language-subtitle language-chip' : flagClass;
             if (info.partial) { chip.classList.add(partialFlagClass); chip.dataset.partial = 'true'; }
             chip.dataset.jeLanguage = info.badge ? 'countBadge' : info.subtitle ? 'subtitles' : 'flag';
+            if (chip.tagName !== 'IMG') chip.dataset.jeLanguageLabel = info.badge || info.text.toLowerCase();
             if (info.badge) {
                 chip.textContent = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.language[`${info.badge}`]);
                 chip.title = `${JE.t('language_tags_count_tooltip', { count })}: ${counted.flatMap(chip => chip.labels).join(', ')}`;
@@ -301,7 +302,7 @@
             hotBucket: 'language',
         },
         buildCss() {
-            return `
+            return JE.core.tagRenderer.chipBaseCss('.language-chip') + `
                 .${containerClass} {
                     display: flex;
                     flex-direction: column;
@@ -329,18 +330,17 @@
                 .language-chip {
                     display: inline-flex; align-items: center; gap: calc(3px * var(--je-tag-scale, 1));
                     align-self: flex-start; flex-shrink: 0; width: max-content;
-                    padding: calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1)); border: 1px solid rgba(255,255,255,0.8);
-                    border-radius: 3px; background: rgba(0,0,0,0.75); color: #fff;
-                    font: 700 calc(clamp(9px, 6cqw, 12px) * var(--je-tag-scale, 1))/1 sans-serif;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    background: rgba(15,15,15,0.72); color: #fff;
+                    font-family: inherit;
                 }
-                .language-cc { font-size: 0.7em; }
+                .language-cc { font-size: inherit; }
                 .language-subtitle .language-flag { box-shadow: none; }
                 /* Dub that doesn't cover every episode: dimmed, washed out and
                    dash-outlined so it reads as "incomplete" next to a full flag.
                    The dark ring keeps the white dashes (and a white flag's edge)
                    visible on light posters. */
-                .${partialFlagClass} {
+                .${partialFlagClass} { opacity: 0.55; }
+                img.${partialFlagClass} {
                     opacity: 0.55;
                     filter: saturate(0.5);
                     outline: 1px dashed rgba(255, 255, 255, 0.95);

@@ -835,3 +835,5 @@ Series and season quality policies preserve version-0 audio labels in Highest an
 In the Corners tag layout, left-centre and right-centre groups use the available poster width, sharing it when both sides are occupied. The first chip remains visible even on a narrow poster; long labels use an ellipsis, and `+N` counts later chips.
 
 When a first chip needs an ellipsis in Corners, only its text shrinks: Custom icons, rating logos and the chip’s height and inward Flush borders stay in place. Awards and Language poster links use the same constraint on their inner chip.
+
+Media Tags live previews react to each sample’s pointer hover or keyboard focus. **Hover** pins every sample for touch comparison; **Resting** releases that pin. Tag sizes show percentage values. Language code, CC/SDH and Dual/Multi chips follow the Language Tag Styles colours, including Poster artwork colours.

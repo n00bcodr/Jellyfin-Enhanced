@@ -97,7 +97,8 @@ test('documents without colours of a single genre draw exactly the stylesheet 83
   for (const entry of fixture.legacy) {
     // Flush-only ring variables do not change this legacy non-Flush stylesheet's paint.
     const css = client(t).JE.tagStyles.buildCss({ preset: entry.preset, genre: entry.genre })
-      .replace(/ --je-tag-ring-color: [^;]+; outline-color: [^;]+;/g, '');
+      .replace(/ --je-tag-ring-color: [^;]+; outline-color: [^;]+;/g, '')
+      .split('\n').filter(rule => !rule.includes('.language-chip')).join('\n');
     assert.equal(css, entry.css, entry.name);
   }
   const h = client(t);

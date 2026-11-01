@@ -584,7 +584,9 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
 ## Language Tags
 
-Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a small **CC** prefix, or **SDH** when a hearing-impaired subtitle flag or a whole-word SDH/CC title marker is present. Hover a chip for Audio or Subtitles and the full language name; partial dubs identify missing episode coverage. Dual/Multi tooltips include the distinct count and represented audio languages in priority order. A language fact assigned to the Summary pill keeps the CC prefix and full-name tooltip. Language chips follow the poster link, including Ctrl/Command-click and middle-click to open a new tab. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
+Codes, CC/SDH subtitle chips and Dual/Multi badges use the quality chips’ padding, radius, font, border and shadow, including Flush edges. **Tag Styles → Language** supplies their background, border and text colours, and **Poster** takes these from the artwork. Per-language code colours (such as `en`), or `dual` / `multi`, override the chip-kind and group colours. Flag images retain their original appearance and border ring. Partial code chips use reduced opacity; only partial flag images keep a dashed outline.
+
+Language Tags show audio and subtitle languages as flags or short uppercase codes. Subtitle chips carry a **CC** prefix, or **SDH** when a hearing-impaired subtitle flag or a whole-word SDH/CC title marker is present. Hover a chip for Audio or Subtitles and the full language name; partial dubs identify missing episode coverage. Dual/Multi tooltips include the distinct count and represented audio languages in priority order. A language fact assigned to the Summary pill keeps the CC prefix and full-name tooltip. Language chips follow the poster link, including Ctrl/Command-click and middle-click to open a new tab. An optional **Dual** (two audio languages) or **Multi** (three or more) badge helps you find multilingual titles. Audio with no linguistic content uses a crossed-out speech-bubble symbol labeled **No dialogue**.
 
 ![Subtitle language chips with CC markers on library posters](../images/tags/language-subtitles.webp)
 
@@ -1300,7 +1302,7 @@ The editor shows every tag of the selected group in its current colours, so you 
 | **Genre** | Every genre with an icon of its own and **Other** (see [Genre colours](#genre-colours)) | **Text** colours the icon; a genre with colours of its own also colours its name beside it on hover |
 | **Status** | **Just Added**, **New Movie**, **New Series**, **New Episode**, **Trending**, schedule, milestone and series-state badges | Applies to web and native posters. A Trending text colour also recolours the rank |
 | **Awards** | **IMDb Top 250**, **Certified Fresh**, **Oscar winner**, **Emmy winner**, **Letterboxd Top 250** | Bundled logos keep their source colours; the chip background, text and border can change |
-| **Language** | **Flag / code**, **Subtitles**, **Dual / Multi** | Each label can change its border ring. Partial dubs keep their dashed outline |
+| **Language** | **Flag image**, **Language codes**, **Subtitles**, **Dual / Multi**, **Dual**, **Multi**, and individual ISO language codes | Chips share the quality-chip box and take background, border and text colours. Flag images keep only their border ring; partial flags keep their dashed outline |
 | **Logos** | **Provider logo**, **Network / studio logo**, **Name chip** | Colours the pill behind the logo; **Text** colours the name chip |
 
 | **Custom** | Each label of the **Custom tag rules** | The labels follow the rules table as you edit it; rules that share a label share its colours. The icon takes the text colour |

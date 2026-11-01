@@ -214,7 +214,7 @@ public class TagStyleTests
                     var concrete = TagStylePalettes.Concrete(preset, group, label);
                     Assert.All(new[] { concrete.Background, concrete.Border, concrete.Text }, v => Assert.StartsWith("rgba(", v));
                     var palette = TagStylePalettes.Preset(preset, group, label);
-                    if (group == "language")
+                    if (group == "language" && label == "flag")
                     {
                         Assert.Null(palette.Background);
                         Assert.Null(palette.Text);
@@ -257,7 +257,6 @@ public class TagStyleTests
     [InlineData("{\"v\":2,\"groups\":{\"quality\":{\"text\":\"red;}body{display:none\"}}}", "not a colour")]
     [InlineData("{\"v\":2,\"groups\":{\"quality\":{\"text\":5}}}", "not a colour")]
     [InlineData("{\"v\":2,\"groups\":{\"quality\":{\"shadow\":\"#fff\"}}}", "does not apply")]
-    [InlineData("{\"v\":2,\"groups\":{\"language\":{\"background\":\"#fff\"}}}", "does not apply")]
     [InlineData("{\"v\":2,\"groups\":{\"__proto__\":{\"text\":\"#fff\"}}}", "unknown group")]
     [InlineData("{\"v\":2,\"labels\":{\"quality:constructor\":{\"text\":\"#fff\"}}}", "unknown label")]
     [InlineData("{\"v\":2,\"__proto__\":{}}", "unknown key")]
@@ -354,8 +353,8 @@ public class TagStyleTests
         Assert.Equal("rgba(0, 0, 255, 1)", (string)model["quality"]!["4K"]!["color"]!);
         Assert.Equal("rgba(255, 0, 0, 1)", (string)model["quality"]!["*"]!["background"]!);
         Assert.Equal("rgba(0, 255, 0, 1)", (string)model["status"]!["trending"]!["color"]!);
-        Assert.Equal("rgba(255, 255, 255, 1)", (string)model["language"]!["border"]!);
-        Assert.Null(model["language"]!["background"]);
+        Assert.Equal("rgba(255, 255, 255, 1)", (string)model["languageLabels"]!["flag"]!["border"]!);
+        Assert.Equal("rgba(255, 255, 255, 0.161)", (string)model["language"]!["background"]!);
         Assert.Equal(TagStyleCatalog.AgeGroups.Count, model["age"]!.AsArray().Count);
 
         var empty = JsonNode.Parse(JsonSerializer.Serialize(TagStyleSet.Empty.ToWebModel()))!;

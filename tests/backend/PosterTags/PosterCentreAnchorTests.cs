@@ -218,9 +218,9 @@ public class PosterCentreAnchorTests
             var fitted = plan.Groups.Single(g => g.Group == group).Items.Single();
             Assert.False(fitted.Hidden);
             Assert.EndsWith("…", fitted.Text);
-            float size = kind == "quality" ? plan.Css.QualityFontSize : plan.Css.ChipFontSize;
+            float size = kind is "quality" or "language" ? plan.Css.QualityFontSize : plan.Css.ChipFontSize;
             float spacing = kind is "status" or "custom" ? size * .01f : kind == "ageRating" ? size * .02f : 0;
-            var expected = text.Layout(fitted.Text, size, kind == "quality", spacing);
+            var expected = text.Layout(fitted.Text, size, kind is "quality" or "language", spacing);
             Assert.Equal(expected.Width, fitted.TextLayout!.Width);
             Assert.Equal(expected.Runs.Select(r => r.FontSize), fitted.TextLayout.Runs.Select(r => r.FontSize));
             Assert.Equal(expected.Runs.SelectMany(r => r.Positions), fitted.TextLayout.Runs.SelectMany(r => r.Positions));

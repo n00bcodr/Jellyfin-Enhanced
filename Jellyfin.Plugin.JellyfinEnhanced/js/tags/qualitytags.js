@@ -1241,7 +1241,7 @@
         buildCss() {
             // Generate CSS rules from the color configuration
             const rules = Object.entries(qualityColors).map(([k, v]) => {
-                return `.${containerClass} .${overlayClass}[data-quality="${k}"] {
+                return JE.core.tagRenderer.chipBaseCss(`.${overlayClass}`) + `.${containerClass} .${overlayClass}[data-quality="${k}"] {
                     background: ${v.bg} !important;
                     color: ${v.text} !important;
                 }`;
@@ -1261,58 +1261,25 @@
                     overflow: hidden;
                     pointer-events: none;
                 }
-                .${overlayClass} {
-                    font-weight: bold;
-                    border-radius: 5px;
-                    padding: calc(2px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
-                    font-size: calc(clamp(0.65rem, 2vw, 0.85rem) * var(--je-tag-scale, 1));
-                    user-select: none;
-                    pointer-events: none;
-                    font-variant-caps: small-caps;
-                    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-                    border: 1px solid rgba(255,255,255,0.15);
-                    /* backdrop-filter removed — blur causes jank during hover animations */
-                    opacity: 1;
-                    transform: translateY(0);
-                    white-space: nowrap;
-                    flex-shrink: 0;
-                    line-height: 1.2;
-                }
-                .layout-mobile .${overlayClass} {
-                    padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
-                    font-size: calc(0.65rem * var(--je-tag-scale, 1));
-                    border-radius: 3px;
-                }
+
+
                 .layout-mobile .${containerClass} {
                     gap: calc(2px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                 }
                 @media (min-width: 1440px) {
-                    .${overlayClass} {
-                        padding: calc(3px * var(--je-tag-scale, 1)) calc(12px * var(--je-tag-scale, 1));
-                        font-size: calc(0.9rem * var(--je-tag-scale, 1));
-                        border-radius: 6px;
-                    }
+
                     .${containerClass} {
                         gap: calc(6px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     }
                 }
                 @media (max-width: 768px) {
-                    .${overlayClass} {
-                        padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
-                        font-size: calc(0.65rem * var(--je-tag-scale, 1));
-                        border-radius: 3px;
-                    }
+
                     .${containerClass} {
                         gap: calc(1px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                     }
                 }
                 @media (max-width: 480px) {
-                    .${overlayClass} {
-                        padding: calc(0px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
-                        font-size: calc(0.6rem * var(--je-tag-scale, 1));
-                        border-radius: 2px;
-                        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
-                    }
+
                     .${containerClass} {
                         gap: calc(1px * var(--je-tag-scale, 1) * var(--je-tag-gap, 1));
                         max-height: 85%;

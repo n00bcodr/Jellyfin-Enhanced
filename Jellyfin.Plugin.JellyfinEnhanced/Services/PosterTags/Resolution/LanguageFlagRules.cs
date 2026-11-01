@@ -308,6 +308,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return CanonicalBase(parsed.Base) + (mergeRegions ? string.Empty : ":" + (parsed.Region ?? parsed.Script ?? string.Empty));
         }
 
+        /// <summary>Known canonical ISO codes for the language colour editor (no translated strings).</summary>
+        internal static IReadOnlyList<(string Key, string Name)> StyleLabels => BaseLanguageFlags.Keys
+            .Where(k => k.Length is 2 or 3 && k.All(c => c is >= 'a' and <= 'z'))
+            .Select(CanonicalBase).OfType<string>().Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+            .Select(code => (code, code.ToUpperInvariant())).ToArray();
+
         /// <summary>Language chips in the combined cap order: badge, audio, subtitles.</summary>
         internal static List<PosterTag>? ResolveGroup(Model.TagCacheEntry entry, PosterTagSettings settings)
         {
@@ -327,7 +333,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 foreach (var flag in flags ?? new List<FlagInfo>())
                 {
                     tags.Add(new LanguageTag(ToFlagCode(flag.CountryCode), string.Join(", ", flag.AllLanguages), flag.Partial)
-                    { Subtitle = subtitle, Sdh = subtitle && flag.AllCodes.Any(code => (entry.SdhSubtitleLanguages ?? Array.Empty<string>()).Any(sdh => MatchesLanguage(code, sdh, requireRegion: true))), Code = codes ? ShortCode(flag.Code) : null });
+                    { Subtitle = subtitle, Sdh = subtitle && flag.AllCodes.Any(code => (entry.SdhSubtitleLanguages ?? Array.Empty<string>()).Any(sdh => MatchesLanguage(code, sdh, requireRegion: true))), Code = codes ? ShortCode(flag.Code) : null, StyleLabel = codes || subtitle ? ShortCode(flag.Code).ToLowerInvariant() : null });
                 }
             }
             if (!badge || settings.LanguageCountBadge != "only") Add(audio, false);

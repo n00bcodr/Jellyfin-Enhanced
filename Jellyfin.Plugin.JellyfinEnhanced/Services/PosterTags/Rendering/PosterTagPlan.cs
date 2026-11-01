@@ -822,14 +822,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             if (tag.Code is not null || tag.CountBadge is not null || tag.Subtitle)
             {
                 var text = tag.CountBadge ?? (tag.Subtitle ? tag.Sdh ? "SDH " : "CC " : string.Empty) + (tag.Code ?? string.Empty);
-                var layout = _text.Layout(text, css.ChipFontSize, smallCaps: false, letterSpacing: 0f);
+                var layout = _text.Layout(text, css.QualityFontSize, smallCaps: true, letterSpacing: 0f);
                 float flagWidth = tag.Code is null && tag.CountBadge is null ? PosterTagCss.Lu(css.FlagWidth) : 0;
                 var flagCode = PosterTagRenderer.FlagAssetCode(tag.FlagCode);
                 if (flagWidth > 0 && (flagCode is null || !_assets.HasFlag(flagCode))) return null;
-                var label = tag.CountBadge is not null ? "countBadge" : tag.Subtitle ? "subtitles" : "flag";
-                var colors = styles.Resolve(TagStyleKeys.Language, label);
-                float chipWidth = PosterTagCss.LuCeil(layout.Width) + flagWidth + (10f * css.Scale);
-                float chipHeight = Math.Max(PosterTagCss.Lu(css.ChipFontSize), flagWidth * 0.75f) + (6f * css.Scale);
+                var kind = tag.CountBadge is not null ? "countBadge" : tag.Subtitle ? "subtitles" : "code";
+                var label = tag.CountBadge?.ToLowerInvariant() ?? tag.StyleLabel ?? tag.Code?.ToLowerInvariant() ?? kind;
+                var colors = styles.ResolveLanguageChip(label, kind);
+                float gap = flagWidth > 0 ? 3f * css.Scale : 0;
+                float chipWidth = PosterTagCss.LuCeil(layout.Width) + flagWidth + gap + (2 * PosterTagCss.Lu(css.QualityPaddingH)) + 2f;
+                float chipHeight = Math.Max(PosterTagCss.Lu(1.2f * css.QualityFontSize), flagWidth * 0.75f) + (2 * PosterTagCss.Lu(css.QualityPaddingV)) + 2f;
                 // The key carries flag identity, partial treatment, and label-specific style.
                 return new PlannedItem(PosterTagTileKind.LanguageChip, tag, text, (flagCode ?? string.Empty) + "|" + tag.Partial + "|" + colors.Encode(), chipWidth, chipHeight)
                 { TextLayout = layout, IconWidth = flagWidth, IconHeight = flagWidth * 0.75f };

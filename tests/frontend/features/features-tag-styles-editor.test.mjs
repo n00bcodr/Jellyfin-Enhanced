@@ -239,9 +239,11 @@ test('under Poster the Whole group badge covers labels set here as well as those
   assert.equal(badge().dataset.poster, 'worst');
 });
 
-test('language edits only the border ring and reset all clears everything', async t => {
+test('language group edits chip colours, flag target keeps its border ring, and reset all clears everything', async t => {
   const h = await setup(t, JSON.stringify({ v: 2, preset: 'glass', groups: { status: { text: 'rgba(0, 255, 0, 1)' } } }), 'glass');
   h.click('.je-ts-tab[data-group="language"]');
+  assert.deepEqual(h.$$('.je-ts-field-row').map(r => r.dataset.field), ['background', 'border', 'text']);
+  h.click('.je-ts-target[data-label="flag"]');
   assert.deepEqual(h.$$('.je-ts-field-row').map(r => r.dataset.field), ['border']);
   assert.equal(h.$('.je-ts-contrast').textContent, '', 'no text on a flag');
   assert.match(h.$('#tagStyleGroupNote').textContent, /border ring/);

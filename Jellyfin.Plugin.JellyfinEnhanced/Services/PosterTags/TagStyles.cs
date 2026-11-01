@@ -260,8 +260,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             Labels.TryGetValue(group + ":" + label, out var own);
             Groups.TryGetValue(group, out var shared);
             var c = (own ?? new TagColors(null, null, null)).Over(shared).Over(TagStylePalettes.Preset(Preset, group, label));
-            if (group == TagStyleKeys.Language) return c with { Background = null, Text = null };
+            if (group == TagStyleKeys.Language && label == "flag") return c with { Background = null, Text = null };
             return Sampled is null ? c : c.Over(Sampled);
+        }
+
+        /// <summary>Language-code and Dual/Multi label colours over the chip kind, group and preset.</summary>
+        public TagColors ResolveLanguageChip(string label, string kind)
+        {
+            Labels.TryGetValue(TagStyleKeys.Language + ":" + label, out var own);
+            return own is null ? Resolve(TagStyleKeys.Language, kind) : own.Over(Resolve(TagStyleKeys.Language, kind));
         }
 
         /// <summary>A quality chip's colours: catalog labels by name, composite labels ("ATMOS 7.1") by their base, anything else as <c>*</c> (as the web's selectors match).</summary>
@@ -316,7 +323,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 if (!c.IsEmpty) age.Add(new { ratings = board.Ratings, background = c.Background, border = c.Border, color = c.Text });
             }
 
-            var language = Resolve(TagStyleKeys.Language, "flag");
+            var language = Resolve(TagStyleKeys.Language, "*");
+            var languageLabels = new Dictionary<string, object>();
+            foreach (var kind in new[] { "flag", "code", "subtitles", "countBadge" }) languageLabels[kind] = Web(Resolve(TagStyleKeys.Language, kind));
+            foreach (var (key, color) in Labels.Where(kv => kv.Key.StartsWith("language:", StringComparison.Ordinal)))
+            {
+                var label = key[9..];
+                if (label is not ("flag" or "code" or "subtitles" or "countBadge")) languageLabels[label] = Web(color);
+            }
             return new
             {
                 v = 2,
@@ -331,7 +345,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 genre = Map(TagStyleKeys.Genre, GenreLabelKeys().Where(k => Labels.ContainsKey(TagStyleKeys.Genre + ":" + k)).Prepend(TagStyleKeys.AnyLabel)),
                 status = Map(TagStyleKeys.Status, TagStyleKeys.StatusLabels.Select(l => l.Key)),
                 language = language.IsEmpty ? null : Web(language),
-                languageLabels = Map(TagStyleKeys.Language, TagStyleCatalog.Labels(TagStyleKeys.Language).Select(l => l.Key)),
+                languageLabels,
                 logos = Map(TagStyleKeys.Logos, TagStyleKeys.LogoLabels.Select(l => l.Key)),
                 // Every custom chip ("*"), then each label with an override of its own.
                 custom = Map(TagStyleKeys.Custom, Labels.Keys
@@ -709,7 +723,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             TagStyleKeys.Genre => Resolution.GenreIcons.Labels,
             TagStyleKeys.Status => TagStyleKeys.StatusLabels,
             TagStyleKeys.Logos => TagStyleKeys.LogoLabels,
-            TagStyleKeys.Language => new[] { ("flag", "Flag / code"), ("subtitles", "Subtitles"), ("countBadge", "Dual / Multi") },
+            TagStyleKeys.Language => new[] { ("flag", "Flag image"), ("code", "Language codes"), ("subtitles", "Subtitles"), ("countBadge", "Dual / Multi"), ("dual", "Dual"), ("multi", "Multi") }.Concat(Resolution.LanguageFlagRules.StyleLabels).ToList(),
             _ => Array.Empty<(string, string)>(),
         };
 
@@ -722,7 +736,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <returns>True when known.</returns>
         public static bool IsLabel(string group, string label) => group == TagStyleKeys.Custom
             ? label != TagStyleKeys.AnyLabel && Configuration.CustomTagRuleSet.IsValidLabel(label)
-            : Labels(group).Any(l => l.Key == label);
+            : group == TagStyleKeys.Language
+                ? Labels(group).Any(l => l.Key == label) || (label == label.ToLowerInvariant() && Resolution.LanguageFlagRules.Parse(label, out _) && Resolution.LanguageNames.Of(label) is not null)
+                : Labels(group).Any(l => l.Key == label);
 
         /// <summary>The catalog label a drawn quality label takes its colours from (composites by their base), or null.</summary>
         /// <param name="label">A drawn quality label.</param>

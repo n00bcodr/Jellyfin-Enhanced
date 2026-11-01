@@ -2009,7 +2009,7 @@
                 @supports (container-type: inline-size) {
                     .je-tag-host { container-type: inline-size; }
                     html:not(.layout-mobile) .je-tag-host .quality-overlay-container { gap: calc(clamp(1px, 1.8cqw, 4px) * var(--je-tag-scale, 1) * var(--je-tag-gap, 1)); }
-                    html:not(.layout-mobile) .je-tag-host .quality-overlay-label {
+                    html:not(.layout-mobile) .je-tag-host :is(.quality-overlay-label, .language-chip) {
                         font-size: calc(clamp(9px, 6.6cqw, 13.6px) * var(--je-tag-scale, 1));
                         padding: calc(clamp(0px, 0.6cqw, 2px) * var(--je-tag-scale, 1)) calc(clamp(4px, 4.2cqw, 10px) * var(--je-tag-scale, 1));
                         border-radius: calc(clamp(2px, 2.4cqw, 5px) * var(--je-tag-scale, 1));

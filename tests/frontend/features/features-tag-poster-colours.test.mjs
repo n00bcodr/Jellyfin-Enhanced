@@ -272,7 +272,8 @@ test('Poster rules come first and sit between the tag modules\' rules and the ad
   }
   assert.match(unguarded, /\[data-je-poster-colour\] \.quality-overlay-container\.quality-overlay-container \.quality-overlay-label \{ background: var\(--je-tag-bg\) !important; color: var\(--je-tag-fg\) !important; border-color: var\(--je-tag-border\) !important; \}/);
   assert.match(unguarded, /\[data-je-poster-colour\] \.je-tag-pill \{ background: var\(--je-tag-bg\);/, 'the summary pill follows the artwork too');
-  assert.doesNotMatch(css, /\[data-je-poster-colour\][^{]*language/, 'flags keep their look');
+  assert.match(css, /\[data-je-poster-colour\][^{]*\.language-chip/, 'language chips take artwork colours');
+  assert.doesNotMatch(css, /\[data-je-poster-colour\][^{]*\.language-flag/, 'only flag images keep their look');
   // Scoped (the configuration page preview), the Poster rules are limited too.
   assert.ok(buildCss({ preset: 'poster' }, '#tagStylePreview').split('\n').every(line => line.startsWith('#tagStylePreview ')));
 });

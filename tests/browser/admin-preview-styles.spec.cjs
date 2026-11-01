@@ -13,7 +13,7 @@ async function setup(page, personal, defaults, admin = true) {
     window.defaults = { TagLayout: 'corners', StatusTagsTrending: true, ...defaults };
   }, { personal, defaults, english });
   for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js',
-    'tags/tag-layout-styles.js', 'tags/status-vocabulary.js', 'tags/statustags.js', 'tags/genretags.js',
+    'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'tags/status-vocabulary.js', 'tags/statustags.js', 'tags/genretags.js',
     'enhanced/admintags/admin-tags.js', 'enhanced/settingspanel/ui-panel-tag-preview.js']) {
     await page.addScriptTag({ path: path.join(root, file) });
   }

@@ -847,7 +847,70 @@
         }
     }
 
+    /**
+     * Shared quality/language chip box, including responsive fallback and card-width metrics.
+     * @param {string} selector Internal chip selector.
+     * @returns {string} Base CSS; group colours are layered on by the renderers and Tag Styles.
+     */
+    function chipBaseCss(selector) {
+        return `
+                ${selector} {
+                    font-weight: bold;
+                    border-radius: 5px;
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(10px * var(--je-tag-scale, 1));
+                    font-size: calc(clamp(0.65rem, 2vw, 0.85rem) * var(--je-tag-scale, 1));
+                    user-select: none;
+                    pointer-events: none;
+                    font-variant-caps: small-caps;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+                    border: 1px solid rgba(255,255,255,0.15);
+                    /* backdrop-filter removed — blur causes jank during hover animations */
+                    opacity: 1;
+                    transform: translateY(0);
+                    white-space: nowrap;
+                    flex-shrink: 0;
+                    line-height: 1.2;
+                }
+                .layout-mobile ${selector} {
+                    padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
+                    font-size: calc(0.65rem * var(--je-tag-scale, 1));
+                    border-radius: 3px;
+                }
+                @media (min-width: 1440px) {
+                ${selector} {
+                        padding: calc(3px * var(--je-tag-scale, 1)) calc(12px * var(--je-tag-scale, 1));
+                        font-size: calc(0.9rem * var(--je-tag-scale, 1));
+                        border-radius: 6px;
+                    }
+                }
+                @media (max-width: 768px) {
+                ${selector} {
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1));
+                        font-size: calc(0.65rem * var(--je-tag-scale, 1));
+                        border-radius: 3px;
+                    }
+                }
+                @media (max-width: 480px) {
+                ${selector} {
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
+                        font-size: calc(0.6rem * var(--je-tag-scale, 1));
+                        border-radius: 2px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    }
+                }
+
+                @supports (container-type: inline-size) {
+                    html:not(.layout-mobile) .je-tag-host ${selector} {
+                        font-size: calc(clamp(9px, 6.6cqw, 13.6px) * var(--je-tag-scale, 1));
+                        padding: calc(clamp(0px, 0.6cqw, 2px) * var(--je-tag-scale, 1)) calc(clamp(4px, 4.2cqw, 10px) * var(--je-tag-scale, 1));
+                        border-radius: calc(clamp(2px, 2.4cqw, 5px) * var(--je-tag-scale, 1));
+                    }
+                }
+        `;
+    }
+
     JE.core.tagRenderer = {
+        chipBaseCss,
         registerStyles,
         ensureStyles,
         releaseStyles,

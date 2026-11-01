@@ -71,6 +71,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool Sdh { get; init; }
         /// <summary>Uppercase ISO code for Codes style; null for a flag.</summary>
         public string? Code { get; init; }
+        /// <summary>Canonical displayed code for chip colour overrides; absent on flag images.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? StyleLabel { get; init; }
         /// <summary>Dual/Multi audio count label, or null for a language chip.</summary>
         public string? CountBadge { get; init; }
     }

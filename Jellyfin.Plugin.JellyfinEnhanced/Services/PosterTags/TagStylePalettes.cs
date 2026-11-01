@@ -26,7 +26,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Status Tags, shared by web and native posters.</summary>
         public const string Status = "status";
 
-        /// <summary>Language flags (only the border ring applies: a flag is an image).</summary>
+        /// <summary>Language chips, plus the border ring of flag images.</summary>
         public const string Language = "language";
         public const string Awards = "awards";
 
@@ -88,12 +88,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <returns>True for a group id.</returns>
         public static bool IsGroup(string? group) => group is not null && Groups.Contains(group, StringComparer.Ordinal);
 
-        /// <summary>The fields a group can override; language flags only take the border ring.</summary>
+        /// <summary>The fields a group can override; language chips use all three, flag images only paint their ring.</summary>
         /// <param name="group">A group id.</param>
         /// <param name="field">"background", "border" or "text".</param>
         /// <returns>True when the field applies.</returns>
         public static bool FieldApplies(string group, string field) =>
-            field is "background" or "border" or "text" && (group != Language || field == "border");
+            field is "background" or "border" or "text";
     }
 
     /// <summary>
@@ -140,7 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 TagStyleKeys.Genre => new TagColors("rgba(10, 10, 10, 0.8)", "rgba(255, 255, 255, 0.2)", "#E0E0E0"),
                 TagStyleKeys.Status => new TagColors("rgba(15, 15, 15, 0.72)", "rgba(255, 255, 255, 0.18)", White),
                 TagStyleKeys.Custom => new TagColors("rgba(38, 50, 56, 0.88)", "rgba(255, 255, 255, 0.22)", White),
-                TagStyleKeys.Language => new TagColors(Transparent, Transparent, White),
+                TagStyleKeys.Language => label == "flag" ? new TagColors(Transparent, Transparent, White) : new TagColors("rgba(15, 15, 15, 0.72)", "rgba(255, 255, 255, 0.15)", White),
                 TagStyleKeys.Awards => new TagColors("rgba(15, 15, 15, 0.85)", Transparent, White),
                 TagStyleKeys.Logos => label switch
                 {
@@ -166,27 +166,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             if (!TagStyleKeys.IsGroup(group)) return Unknown;
             var tint = Tint(group, label);
-            bool hasBox = group != TagStyleKeys.Rating && group != TagStyleKeys.Language;
+            bool hasBox = group != TagStyleKeys.Rating && (group != TagStyleKeys.Language || label != "flag");
             TagColors c = preset switch
             {
-                "glass" => group == TagStyleKeys.Language
+                "glass" => group == TagStyleKeys.Language && label == "flag"
                     ? new TagColors(null, "rgba(255, 255, 255, 0.35)", null)
                     : new TagColors("rgba(255, 255, 255, 0.16)", "rgba(255, 255, 255, 0.35)", Accent(group, label, White, Gold, "#ff8a8a", "#ff8ac4")),
-                "outline" => group == TagStyleKeys.Language
+                "outline" => group == TagStyleKeys.Language && label == "flag"
                     ? new TagColors(null, "rgba(255, 255, 255, 0.6)", null)
                     : tint is null
                         ? new TagColors("rgba(0, 0, 0, 0.35)", "rgba(255, 255, 255, 0.6)", White)
                         : new TagColors("rgba(0, 0, 0, 0.35)", tint, tint),
-                "dark" => group == TagStyleKeys.Language
+                "dark" => group == TagStyleKeys.Language && label == "flag"
                     ? Unknown
                     : new TagColors("rgba(0, 0, 0, 0.82)", hasBox ? Transparent : null, Accent(group, label, White, Gold, "#ff8a8a", "#ff8ac4")),
-                "light" => group == TagStyleKeys.Language
+                "light" => group == TagStyleKeys.Language && label == "flag"
                     ? Unknown
                     : new TagColors(
                         "rgba(255, 255, 255, 0.92)",
                         hasBox ? Transparent : null,
                         group == TagStyleKeys.AgeRating ? tint : Accent(group, label, "#111111", "#b8860b", "#c62828", "#ad1457", trendingGold: false)),
-                "mono" => group == TagStyleKeys.Language
+                "mono" => group == TagStyleKeys.Language && label == "flag"
                     ? new TagColors(null, "rgba(255, 255, 255, 0.2)", null)
                     : new TagColors("rgba(20, 20, 20, 0.75)", "rgba(255, 255, 255, 0.2)", "#e0e0e0"),
                 _ => Unknown,
@@ -203,7 +203,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <param name="label">A label of the group.</param>
         /// <returns>The colours.</returns>
         public static TagColors Concrete(string preset, string group, string label) =>
-            preset == TagStyleKeys.PosterPreset && group != TagStyleKeys.Language
+            preset == TagStyleKeys.PosterPreset && (group != TagStyleKeys.Language || label != "flag")
                 ? PosterColour.Example
                 : Preset(preset, group, label).Over(Builtin(group, label));
 
