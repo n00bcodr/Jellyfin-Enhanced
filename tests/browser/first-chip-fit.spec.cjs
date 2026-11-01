@@ -136,11 +136,11 @@ async function chipGeometry(page, kind, linked, styled, actual = false) {
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));L.flushFit();
     }else{fit.setAttribute('data-je-fit-width','');fit.style.setProperty('--je-chip-fit-width',kind==='rating'?'38px':'88px');}
     const after=geometry();
-    return {before,after,html:chip.outerHTML+JSON.stringify([...chip.querySelectorAll('.je-tag-fit-text,.custom-tag-text,.rating-text,span:last-child')].map(t=>({text:t.textContent,w:t.clientWidth,sw:t.scrollWidth,ellipsis:getComputedStyle(t).textOverflow,min:getComputedStyle(t).minWidth}))),constrained:!!chip.closest('[data-je-fit-width]'),textEllipsis:[...chip.querySelectorAll('.je-tag-fit-text,.custom-tag-text,.rating-text,.awards-tag > span:last-child')].some(t=>getComputedStyle(t).textOverflow==='ellipsis'&&t.scrollWidth>t.clientWidth)};
+    return {before,after,hidden:chip.hasAttribute('data-je-overflow'),more:[...h.querySelectorAll('.je-tag-more:not([data-je-overflow])')].map(chip=>({text:chip.textContent,title:chip.title})),html:chip.outerHTML+JSON.stringify([...chip.querySelectorAll('.je-tag-fit-text,.custom-tag-text,.rating-text,span:last-child')].map(t=>({text:t.textContent,w:t.clientWidth,sw:t.scrollWidth,ellipsis:getComputedStyle(t).textOverflow,min:getComputedStyle(t).minWidth}))),constrained:!!chip.closest('[data-je-fit-width]'),textEllipsis:[...chip.querySelectorAll('.je-tag-fit-text,.custom-tag-text,.rating-text,.awards-tag > span:last-child')].some(t=>getComputedStyle(t).textOverflow==='ellipsis'&&t.scrollWidth>t.clientWidth)};
   },{kind,linked,styled,actual});
 }
 
-for(const kind of ['custom','rating','status','quality','genre','language','languageFlag','awards','logoText','logoImage']){
+for(const kind of ['custom','status','quality','genre','language','languageFlag','awards','logoText','logoImage']){
   test(`production ${kind} keeps its flex height, icon alignment and Flush paint when constrained`,async ({page})=>{
     await setup(page);
     for(const file of ['core/media-language.js','tags/languagetags.js','tags/customtags.js','tags/rating-sources.js','tags/ratingtags.js','tags/qualitytags.js','tags/genretags.js','tags/logotags.js'])await page.addScriptTag({path:path.join(root,file)});
@@ -183,5 +183,21 @@ test('text-logo side fixtures keep web/native font size and letter spacing while
     expect(r.fontSize).toBeCloseTo(row.fontSize,3);expect(r.textFontSize).toBeCloseTo(row.fontSize,3);
     expect(r.spacing).toBeCloseTo(row.letterSpacing,3);expect(r.textSpacing).toBeCloseTo(row.letterSpacing,3);
     expect(r.ellipsis,r.html).toBe('ellipsis');expect(r.overflow,r.html).toBe(true);
+  }
+});
+
+
+test('production rating keeps its full value in overflow when a side budget cannot fit it', async ({page}) => {
+  await setup(page);
+  for (const file of ['tags/rating-sources.js','tags/ratingtags.js']) await page.addScriptTag({path:path.join(root,file)});
+  await page.evaluate(()=>JellyfinEnhanced.initializeRatingTags());
+  for (const styled of [false,true]) {
+    const fitted = await chipGeometry(page,'rating',true,styled,true);
+    expect(fitted.hidden,fitted.html).toBe(true);
+    expect(fitted.constrained,fitted.html).toBe(false);
+    expect(fitted.textEllipsis,fitted.html).toBe(false);
+    expect(fitted.more).toContainEqual({text:'+1',title:'IMDb: 8.1'});
+    expect(fitted.html).toContain('8.1');
+    await page.evaluate(()=>{const L=JellyfinEnhanced.core.tagLayout,h=document.querySelector('.je-tag-host');for(const g of ['rating','status'])L.removeGroup(h,g);});
   }
 });
