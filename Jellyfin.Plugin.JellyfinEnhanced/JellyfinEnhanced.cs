@@ -639,7 +639,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             var pluginInterface = pluginPagesAssembly?.GetType("Jellyfin.Plugin.PluginPages.PluginInterface");
             var registerPage = pluginInterface?.GetMethod("RegisterPage");
             var removePage = pluginInterface?.GetMethod("RemovePage");
-            if (registerPage != null && removePage != null)
+            // On server start Jellyfin builds plugins in name order, so this can run before Plugin Pages is
+            // constructed. Its static methods then hit a null Instance; config.json above is what it reads on start.
+            var pluginPagesInstance = pluginPagesAssembly?.GetType("Jellyfin.Plugin.PluginPages.PluginPagesPlugin")
+                ?.GetProperty("Instance", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            var pluginPagesNotConstructed = pluginPagesInstance != null && pluginPagesInstance.GetValue(null) == null;
+            if (registerPage != null && removePage != null && !pluginPagesNotConstructed)
             {
                 try
                 {
