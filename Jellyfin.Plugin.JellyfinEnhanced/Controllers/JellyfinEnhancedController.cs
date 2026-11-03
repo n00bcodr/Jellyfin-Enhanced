@@ -5664,6 +5664,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Turning the Logos group on (or the last user off) changes whether cache entries carry logos.
                     if (existing?.LogoTagsEnabled != userConfiguration.LogoTagsEnabled)
                         Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+                    // The first user naming an MDBList source starts enrichment at once (and the last stops it).
+                    if (existing?.RatingTagsEnabled != userConfiguration.RatingTagsEnabled
+                        || !(existing?.RatingTagsSources ?? Array.Empty<string>()).SequenceEqual(userConfiguration.RatingTagsSources ?? Array.Empty<string>()))
+                        Services.TagCacheService.Instance?.OnRatingSourceSettingsChanged();
 
                     if (changes.Count > 0)
                         _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
@@ -8827,8 +8831,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            // Every user took the admin's Logos switch: re-check who shows the group.
+            // Every user took the admin's Logos switch and rating sources: re-check who shows them.
             Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+            Services.TagCacheService.Instance?.OnRatingSourceSettingsChanged();
             _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}.");
             return Ok(new
             {

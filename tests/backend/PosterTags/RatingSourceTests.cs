@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.Mvc;
+using MediaBrowser.Controller.Session;
+using System.Security.Claims;
 using System.Text.Json;
 using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
@@ -373,6 +376,50 @@ public class RatingSourceTests
             cache.WarmSourceRatingsForItems([movie], default);
             Assert.Equal(0, requests);
         }
+    }
+
+    [Fact]
+    public void SourceDemandReadsUsersSettingsOncePerIntervalAndAUserSaveFlipsItAtOnce()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = null;
+        var ids = Enumerable.Range(0, 20).Select(_ => Guid.NewGuid().ToString("N")).ToArray();
+        foreach (var id in ids)
+            f.Core.Write(id, JsonSerializer.Serialize(new JellyfinEnhancedUserSettings { RatingTagsEnabled = true, RatingTagsSources = ["community", "critic"] }));
+        var requests = 0;
+        using var transport = new IntegrationTransport((request, _) => {
+            requests++;
+            return Task.FromResult(IntegrationTransport.Response(request.RequestUri!.AbsolutePath == "/user"
+                ? "{\"rate_limit\":1000,\"rate_limit_remaining\":1000}" : "[]"));
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var library = new Mock<ILibraryManager>();
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        for (var i = 0; i < 50; i++) cache.WarmSourceRatingsForItems([movie], default);
+        Assert.Equal(0, requests);
+        Assert.Equal(1, cache.UserSourceRatingDemandScans);
+
+        // The first user naming a source saves through the real endpoint: the next call enriches.
+        var maintenance = new MaintenanceModeService(Mock.Of<IUserManager>(), Mock.Of<ISessionManager>(), f.Core.Paths.Object, f.Core.Logger);
+        var controller = ApiAssetTests.Controller(f.Core, maintenance, f.Core.Manager);
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", ids[3])], "test"));
+        var saved = f.Core.Manager.GetUserConfiguration<JellyfinEnhancedUserSettings>(ids[3], "settings.json");
+        saved.RatingTagsSources = ["imdb"];
+        Assert.IsType<OkObjectResult>(controller.SaveUserSettingsSettings(ids[3], saved));
+        cache.WarmSourceRatingsForItems([movie], default);
+        Assert.True(requests > 0, "enriched right after the save");
+        Assert.Equal(2, cache.UserSourceRatingDemandScans);
+
+        // Reset puts every user back on the administrator's (community/critic) sources: demand ends at once.
+        controller.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-UserId", ids[0]), new Claim(ClaimTypes.Role, "Administrator")], "test"));
+        Assert.IsType<OkObjectResult>(controller.ResetAllUsersSettings());
+        Assert.Empty(f.Plugin.Configuration.RatingTagsSources ?? []);
+        var before = requests;
+        cache.WarmSourceRatingsForItems([new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "456" } }], default);
+        Assert.Equal(before, requests);
     }
 
     [Theory]

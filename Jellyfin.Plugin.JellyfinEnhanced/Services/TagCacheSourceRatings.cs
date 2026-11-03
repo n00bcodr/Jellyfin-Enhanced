@@ -52,19 +52,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return id == null ? null : TagSourceRatings.FromMdblist(_mdblistService.GetCachedEntry(item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", id));
         }
 
-        /// <summary>Only named-source consumers may trigger upstream enrichment; legacy scores remain cache-only.</summary>
+        private static readonly TimeSpan SourceRatingDemandTtl = TimeSpan.FromMinutes(1);
+        private long _userSourceRatingDemandCheckedTicks;
+        private volatile bool _userSourceRatingDemand;
+        private int _userSourceRatingDemandScans;
+
+        /// <summary>How many times the users' settings were read for the demand check (tests).</summary>
+        internal int UserSourceRatingDemandScans => Volatile.Read(ref _userSourceRatingDemandScans);
+
+        private static bool NamesSource(string[]? sources) => RatingSourceSettings.NormalizeSources(sources)?.Any(id => id is not ("community" or "critic")) == true;
+
+        /// <summary>
+        /// Only named-source consumers may trigger upstream enrichment; legacy scores remain cache-only.
+        /// The key and the administrator's choice are read live; whether any user names a source is
+        /// re-read at most once a minute, and at once after a user's save or a reset
+        /// (<see cref="OnRatingSourceSettingsChanged"/>), so hot paths never read every settings file.
+        /// </summary>
         private bool HasSourceRatingDemand()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null || !SourceRatingsConfigured) return false;
-            static bool Named(string[]? sources) => RatingSourceSettings.NormalizeSources(sources)?.Any(id => id is not ("community" or "critic")) == true;
-            if (config.RatingTagsEnabled && Named(config.RatingTagsSources)) return true;
+            if (config.RatingTagsEnabled && NamesSource(config.RatingTagsSources)) return true;
+            var now = DateTime.UtcNow.Ticks;
+            if (now - Interlocked.Read(ref _userSourceRatingDemandCheckedTicks) < SourceRatingDemandTtl.Ticks) return _userSourceRatingDemand;
+            _userSourceRatingDemand = ComputeUserSourceRatingDemand();
+            Interlocked.Exchange(ref _userSourceRatingDemandCheckedTicks, now);
+            return _userSourceRatingDemand;
+        }
+
+        private bool ComputeUserSourceRatingDemand()
+        {
+            Interlocked.Increment(ref _userSourceRatingDemandScans);
             var users = new UserConfigurationManager(_applicationPaths, _logger);
             return users.GetAllUserIds().Any(id =>
             {
                 var settings = users.GetUserConfiguration<JellyfinEnhancedUserSettings>(id, "settings.json");
-                return settings.RatingTagsEnabled && Named(settings.RatingTagsSources);
+                return settings.RatingTagsEnabled && NamesSource(settings.RatingTagsSources);
             });
+        }
+
+        /// <summary>A user saved Rating Tags settings, or every user's settings were reset: re-check who names a source now.</summary>
+        internal void OnRatingSourceSettingsChanged()
+        {
+            _userSourceRatingDemand = ComputeUserSourceRatingDemand();
+            Interlocked.Exchange(ref _userSourceRatingDemandCheckedTicks, DateTime.UtcNow.Ticks);
         }
 
         /// <summary>Warm only accessible request items, deduplicating children by series. Used without the bulk cache too.</summary>
