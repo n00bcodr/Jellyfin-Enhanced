@@ -765,6 +765,35 @@ test('a failed import rolls back only its own fields: a layout chosen while its 
 
 // ── A failed preset deletion (astra R5-6) ─────────────────────────────
 
+/** Poll until `predicate` holds, for up to five seconds (the suite runs under load). */
+async function waitFor(predicate) {
+  for (const end = Date.now() + 5000; Date.now() < end && !predicate();) await new Promise(resolve => setTimeout(resolve, 10));
+}
+
+/**
+ * Track every request from now on. The returned function resolves once all of
+ * them answered and the hub's 30 ms announcement timer armed after them has
+ * fired: a timer armed later fires after it, however busy the machine is.
+ */
+function trackRequests(h) {
+  const pending = new Set();
+  const ajax = h.window.ApiClient.ajax;
+  h.window.ApiClient.ajax = (request) => {
+    const answer = Promise.resolve().then(() => ajax(request));
+    pending.add(answer);
+    answer.then(() => pending.delete(answer), () => pending.delete(answer));
+    return answer;
+  };
+  return async () => {
+    do {
+      await Promise.allSettled([...pending]);
+      await h.settle(6);
+    } while (pending.size);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    await h.settle(2);
+  };
+}
+
 test('a preset whose deletion fails stays listed, is never announced as deleted, and Retry deletes it', async t => {
   const h = setup(t, { mine: [{ id: 'p1', name: 'Keep', description: '', settings: { TagLayout: 'bands' } }] });
   await h.open();
@@ -774,12 +803,12 @@ test('a preset whose deletion fails stays listed, is never announced as deleted,
     if (request.type === 'DELETE' && refuse) throw { status: refuse };
     return ajax(request);
   };
+  const settled = trackRequests(h);
   const announced = [];
   const live = h.$('#jeMthLive');
   new h.window.MutationObserver(() => { if (live.textContent) announced.push(live.textContent); }).observe(live, { childList: true, characterData: true, subtree: true });
   h.click(h.$('[data-tp-source="mine"] [data-tp="delete"]'));
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await h.settle(6);
+  await settled();
   assert.deepEqual(h.server.mine.map(p => p.name), ['Keep']);
   assert.deepEqual(h.names('mine'), ['Keep'], 'the row stays');
   assert.deepEqual(announced, [], 'never announced as deleted');
@@ -791,15 +820,14 @@ test('a preset whose deletion fails stays listed, is never announced as deleted,
 
   // A second failure keeps the same Retry focused.
   h.click(retry);
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await h.settle(6);
+  await settled();
   assert.equal(h.document.activeElement, retry);
   assert.deepEqual(announced, []);
 
   refuse = 0;
   h.click(retry);
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await h.settle(6);
+  await waitFor(() => announced.length > 0);
+  await settled();
   assert.deepEqual(h.server.mine, []);
   assert.deepEqual(h.names('mine'), []);
   assert.equal(error.hidden, true);
@@ -816,8 +844,7 @@ test('a preset another device already deleted (404) is announced as deleted', as
     return ajax(request);
   };
   h.click(h.$('[data-tp-source="mine"] [data-tp="delete"]'));
-  await new Promise(resolve => setTimeout(resolve, 80));
-  await h.settle(6);
+  await waitFor(() => h.$('#jeMthLive').textContent);
   assert.deepEqual(h.names('mine'), []);
   assert.notEqual(h.$('[data-tp-error]')?.hidden, false, 'no failure status');
   assert.equal(h.$('#jeMthLive').textContent, 'tag_presets_deleted:Gone');
