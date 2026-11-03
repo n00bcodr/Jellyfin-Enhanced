@@ -27,8 +27,31 @@
     ];
 
     /**
+     * Returns the item whose TMDB ID Seerr knows the media by. Seerr tracks TV
+     * media only by the series' TMDB ID, while a Season or Episode carries its
+     * own TMDB season/episode ID, so those resolve to their parent series.
+     * @param {Object} item - Jellyfin item shown on the detail page.
+     * @returns {Promise<Object|null>} The series for a Season/Episode (null if it can't be loaded), otherwise the item itself.
+     */
+    async function getTmdbSourceItem(item) {
+        if (item?.Type !== 'Season' && item?.Type !== 'Episode') return item || null;
+        // An Episode's ParentId is its season, so only a Season may fall back to it
+        const seriesId = item.SeriesId || (item.Series && item.Series.Id) || (item.Type === 'Season' ? item.ParentId : null);
+        const userId = ApiClient.getCurrentUserId();
+        if (!seriesId || !userId) return null;
+        try {
+            return JE.helpers?.getItemCached
+                ? await JE.helpers.getItemCached(seriesId, { userId })
+                : await ApiClient.getItem(userId, seriesId);
+        } catch (e) {
+            console.debug(`${logPrefix} Could not load series ${seriesId} for ${item.Name}:`, e);
+            return null;
+        }
+    }
+
+    /**
      * Checks if issue reporting is available.
-     * Resolves TMDB via parent series or fallback for Season/Episode items.
+     * Season/Episode items are checked against their parent series' TMDB ID.
      * Returns: 'available', 'no-tmdb', 'no-jellyseerr', or 'no-both'
      * @returns {Promise<string>}
      */
@@ -39,28 +62,9 @@
             const statusRes = await ApiClient.ajax({ type: 'GET', url: statusUrl, dataType: 'json' });
             const jellyseerrActive = statusRes && statusRes.active === true;
 
-            // Resolve TMDB ID: direct, parent (for Season/Episode), or fallback search
-            let tmdbId = item && (item.ProviderIds?.Tmdb || item.ProviderIds?.['Tmdb']);
-            const type = item?.Type;
+            const tmdbItem = await getTmdbSourceItem(item);
+            const tmdbId = tmdbItem?.ProviderIds?.Tmdb || null;
 
-            // If Season or Episode without TMDB, attempt parent series
-            if (!tmdbId && (type === 'Season' || type === 'Episode')) {
-                try {
-                    const parentId = item.SeriesId || item.ParentId || (item.Series && item.Series.Id) || null;
-                    const userId = ApiClient.getCurrentUserId();
-                    if (parentId && userId) {
-                        const parentItem = JE.helpers?.getItemCached
-                            ? await JE.helpers.getItemCached(parentId, { userId })
-                            : await ApiClient.getItem(userId, parentId);
-                        tmdbId = parentItem?.ProviderIds?.Tmdb || parentItem?.ProviderIds?.['Tmdb'] || null;
-                        if (tmdbId) {
-                            console.debug(`${logPrefix} Availability check resolved TMDB via parent: ${tmdbId}`);
-                        }
-                    }
-                } catch (e) {
-                    console.debug(`${logPrefix} Availability check: parent TMDB resolution failed:`, e);
-                }
-            }
             // Determine availability
             const hasTmdb = !!tmdbId;
             if (!hasTmdb && !jellyseerrActive) {
@@ -938,40 +942,18 @@
                 return false;
             }
 
-            let tmdbId = item.ProviderIds?.Tmdb;
+            // Season/Episode report against their series: Seerr has no media record
+            // for a TMDB season/episode ID, and the issue carries the season and
+            // episode numbers instead (problemSeason/problemEpisode).
+            const tmdbItem = await getTmdbSourceItem(item);
+            let tmdbId = tmdbItem?.ProviderIds?.Tmdb;
 
             console.debug(`${logPrefix} Checking item: ${item.Name} (type=${item.Type}, mediaType=${mediaType}, TMDB: ${tmdbId})`);
-
-            // If no TMDB ID, and this is a Season/Episode, try to fetch parent/series TMDB ID first
-            if (!tmdbId && (item.Type === 'Season' || item.Type === 'Episode')) {
-                try {
-                    // Common fields that may point to the series/parent item
-                    const parentId = item.SeriesId || item.ParentId || item.ParentId || (item.Parent && item.Parent.Id) || (item.Series && item.Series.Id) || null;
-                    if (parentId) {
-                        console.debug(`${logPrefix} Found parentId ${parentId} for ${item.Name}, fetching parent item`);
-                        const userId2 = ApiClient.getCurrentUserId();
-                        if (userId2) {
-                            const parentItem = JE.helpers?.getItemCached
-                                ? await JE.helpers.getItemCached(parentId, { userId: userId2 })
-                                : await ApiClient.getItem(userId2, parentId);
-                            if (parentItem) {
-                                const parentTmdb = parentItem.ProviderIds?.Tmdb;
-                                if (parentTmdb) {
-                                    tmdbId = parentTmdb;
-                                    console.log(`${logPrefix} Found TMDB ID on parent: ${tmdbId} (parent ${parentItem.Name})`);
-                                }
-                            }
-                        }
-                    }
-                } catch (err) {
-                    console.debug(`${logPrefix} Error fetching parent item for TMDB lookup:`, err);
-                }
-            }
 
             // If still no TMDB ID, try the general fallback lookup (may inspect names/urls)
             if (!tmdbId) {
                 console.debug(`${logPrefix} No direct TMDB ID found for ${item.Name}, trying fallback...`);
-                tmdbId = await issueReporter.getTmdbIdFallback(item.Name, mediaType, item);
+                tmdbId = tmdbItem ? await issueReporter.getTmdbIdFallback(tmdbItem.Name, mediaType, tmdbItem) : null;
 
                 if (!tmdbId) {
                     // No TMDB ID for this item, and the fallback search couldn't find one

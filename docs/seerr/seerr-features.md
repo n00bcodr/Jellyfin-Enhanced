@@ -508,7 +508,7 @@ Choose **Video**, **Audio**, **Subtitles**, or **Other** in **Issue Type**.
 
 ??? info "How it works"
 
-    Specials (season zero) and other item types are excluded. The item needs TMDB identification, which can come from the parent series or fallback lookup; submission also needs a Seerr media record (`mediaInfo.id`). Ordinary users need `CREATE_ISSUES` or `MANAGE_ISSUES`; reads need `VIEW_ISSUES` or `MANAGE_ISSUES`. Linked Jellyfin/Seerr administrators bypass those local permission checks.
+    Specials (season zero) and other item types are excluded. The item needs TMDB identification. Movies and series use their own TMDB ID. Season and episode pages always use the parent series' TMDB ID, because Seerr tracks TV media only by series, and send the selected season and episode numbers with the report. Submission also needs a Seerr media record (`mediaInfo.id`). Ordinary users need `CREATE_ISSUES` or `MANAGE_ISSUES`; reads need `VIEW_ISSUES` or `MANAGE_ISSUES`. Linked Jellyfin/Seerr administrators bypass those local permission checks.
 
     Missing linkage can fail submission while the button remains visible. If Seerr is inactive at initialization, the reporter is not added; if availability fails later, an eligible identified item can show a disabled reporting button. Missing identification can also make reporting unavailable.
 
