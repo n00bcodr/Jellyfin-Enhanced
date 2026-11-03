@@ -102,6 +102,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 CountryCode = countryCode;
                 Code = code;
                 Partial = partial;
+                AllCodes = new List<string>(2) { code };
                 AllLanguages = new List<string>(2) { name };
             }
 
@@ -110,6 +111,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             public string Code { get; }
 
             public bool Partial { get; set; }
+
+            /// <summary>Every language code that resolved to this flag (web <c>allCodes</c>), first one in <see cref="Code"/>.</summary>
+            public List<string> AllCodes { get; }
 
             public List<string> AllLanguages { get; }
 
@@ -259,10 +263,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 {
                     flags.Add(new FlagInfo(countryCode, code, name, partial));
                 }
-                else if (!existing.AllLanguages.Contains(name))
+                else
                 {
-                    existing.AllLanguages.Add(name);
-                    existing.Partial = existing.Partial && partial;
+                    if (!existing.AllCodes.Contains(code)) existing.AllCodes.Add(code);
+                    if (!existing.AllLanguages.Contains(name))
+                    {
+                        existing.AllLanguages.Add(name);
+                        existing.Partial = existing.Partial && partial;
+                    }
                 }
             }
 
@@ -313,6 +321,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return terms;
         }
 
+        /// <summary>
+        /// languagetags.js orderByPriority. A term matches a flag by exact code, base code or display
+        /// name, or when <see cref="MatchesLanguage"/> accepts any of the flag's codes for it: "en"
+        /// matches "eng", "en-US" and "en-GB", and "pt-BR" still matches a bare "pt" (#993).
+        /// </summary>
         private static List<FlagInfo> OrderByPriority(List<FlagInfo> flags, IReadOnlyList<string> priority, bool strict)
         {
             if (priority.Count == 0) return flags;
@@ -322,11 +335,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 var code = JsText.ToLower(flag.Code);
                 var dash = code.IndexOf('-');
                 var baseCode = dash < 0 ? code : code.Substring(0, dash);
-                var best = Best(-1, IndexOf(priority, code));
-                best = Best(best, IndexOf(priority, baseCode));
-                foreach (var name in flag.AllLanguages)
+                var best = -1;
+                for (var idx = 0; idx < priority.Count; idx++)
                 {
-                    best = Best(best, IndexOf(priority, JsText.ToLower(name)));
+                    if (best != -1 && idx >= best) break;
+                    var term = priority[idx];
+                    if (string.Equals(term, code, StringComparison.Ordinal) || string.Equals(term, baseCode, StringComparison.Ordinal))
+                    {
+                        best = idx;
+                        continue;
+                    }
+
+                    foreach (var name in flag.AllLanguages)
+                    {
+                        if (string.Equals(term, JsText.ToLower(name), StringComparison.Ordinal))
+                        {
+                            best = idx;
+                            break;
+                        }
+                    }
+
+                    if (best == idx) continue;
+                    foreach (var flagCode in flag.AllCodes)
+                    {
+                        if (MatchesLanguage(flagCode, term, requireRegion: false))
+                        {
+                            best = idx;
+                            break;
+                        }
+                    }
                 }
 
                 return best;
@@ -341,18 +378,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
 
             return ranked.OrderBy(r => r.Rank).ThenBy(r => r.Index).Select(r => r.Flag).ToList();
-        }
-
-        private static int Best(int best, int index) => index != -1 && (best == -1 || index < best) ? index : best;
-
-        private static int IndexOf(IReadOnlyList<string> list, string value)
-        {
-            for (var i = 0; i < list.Count; i++)
-            {
-                if (string.Equals(list[i], value, StringComparison.Ordinal)) return i;
-            }
-
-            return -1;
         }
 
         /// <summary>media-language.js canonicalBase (undefined base stays undefined).</summary>
