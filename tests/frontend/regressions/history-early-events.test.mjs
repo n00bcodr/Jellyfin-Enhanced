@@ -29,6 +29,23 @@ test('history issue 1 subtitle shortcut closes an existing sheet rather than reo
   h.press('s');assert.equal(opens,1);
 });
 
+// InPlayerEpisodePreview 2.x wraps its backdrop and dialog in #previewPopup; older versions add them to <body> directly.
+for(const [label,markup,leftovers] of [
+  ['current #previewPopup wrapper','<div id="previewPopup"><div id="dialogBackdrop" class="dialogBackdrop dialogBackdropOpened"></div><div id="dialogContainer" class="dialogContainer"><div id="popupFocusContainer" class="opened"></div></div></div>',['#previewPopup','#dialogBackdrop','.dialogBackdropOpened','#dialogContainer']],
+  ['legacy separate backdrop','<div id="dialogBackdropContainer" class="dialogBackdrop dialogBackdropOpened"></div><div id="dialogContainer" class="dialogContainer"><div id="popupFocusContainer" class="opened"></div></div>',['#dialogBackdropContainer','.dialogBackdropOpened','#dialogContainer']],
+]){
+  test(`episode preview shortcut closes the ${label} without leaving the backdrop behind`,t=>{
+    const h=setup(t);h.JE.isVideoPage=()=>true;h.JE.state.activeShortcuts.OpenEpisodePreview='P';let opens=0;
+    h.document.body.insertAdjacentHTML('beforeend','<button id="popupPreviewButton" class="autoSize paper-icon-button-light" is="paper-icon-button-light"></button><div id="unrelated" class="dialogContainer"></div>');
+    h.document.getElementById('popupPreviewButton').onclick=()=>opens++;
+    h.document.body.insertAdjacentHTML('beforeend',markup);
+    assert.equal(h.press('p').defaultPrevented,true);assert.equal(opens,0);
+    for(const selector of leftovers)assert.equal(h.document.querySelector(selector),null,selector);
+    assert.ok(h.document.getElementById('unrelated'),'other dialogs stay');
+    h.press('p');assert.equal(opens,1);
+  });
+}
+
 test('history issue 163 disabled auto pause respects tab changes and only resumes its own pause',t=>{
   const h=setup(t);const video=h.document.querySelector('video');let paused=false,hidden=false,pauses=0,plays=0;
   Object.defineProperty(video,'paused',{get:()=>paused});Object.defineProperty(h.document,'hidden',{get:()=>hidden});
