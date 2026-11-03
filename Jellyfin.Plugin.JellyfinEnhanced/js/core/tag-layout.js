@@ -209,6 +209,15 @@
     const STACK_INSET = 6;
     /** Inline custom property: how far Minimal's corner stack rises above its corner to clear the quality dots. */
     const STACK_LIFT = '--je-stack-lift';
+    /**
+     * Height a Corners top- or bottom-centre row may use below or above its
+     * offset (reads only): a third of the image, and never past its middle,
+     * where the other centre row starts on a short image.
+     * @param {number} height - The image's height.
+     * @param {number} offset - The row's distance from its edge.
+     * @returns {number}
+     */
+    const centreRowLimit = (height, offset) => Math.max(0, Math.min(height / 3, height / 2 - offset));
     /** Cards narrower than this show bands with compact labels. */
     const NARROW_CARD_PX = 160;
 
@@ -2068,13 +2077,28 @@
             // Prefer the gap between corner indicators. Only a first chip that
             // cannot fit there moves below the obstructions and gets full width.
             if (top > 0 || firstWidth > host.width - 2 * topReserve + 0.01) {
-                top = Math.max(overlayBottom, height(['tl', 'tr']));
-                topReserve = 0;
+                // Below them only while the row stays in the image's top half
+                // (a short image has no room there): else it keeps its place.
+                const below = Math.max(overlayBottom, height(['tl', 'tr']));
+                if (below + (first?.getBoundingClientRect().height || 0) <= host.height / 2 + 0.01) {
+                    top = below;
+                    topReserve = 0;
+                }
             } else top = 0;
         }
+        // On a short image a tall column of the other edge (languages
+        // bottom-left, a status column top-right) reaches into a centre row's
+        // band: the row keeps clear of it too.
+        const crossing = (slots, from, to) => Math.max(0, ...slots.flatMap((s) => (boxes[s] || [])
+            .filter((b) => b.bottom - host.top > from && b.top - host.top < to)
+            .map((b) => s.endsWith('l') ? b.right - host.left + gap : host.right - b.left + gap)));
+        const topRow = top + centreRowLimit(host.height, top);
+        const bottomRow = host.height - bottom - centreRowLimit(host.height, bottom);
+        topReserve = Math.max(topReserve, crossing(['bl', 'br'], top, topRow));
+        const bottomReserve = Math.max(width(['bl', 'br']), crossing(['tl', 'tr'], bottomRow, host.height - bottom));
         return centres.map((el) => {
             const slot = el.dataset.jeSlot;
-            return { el, top, bottom, reserve: slot === 'tc' ? topReserve : slot === 'bc' ? width(['bl', 'br']) : slot === 'ml' ? height(['tl', 'bl']) : slot === 'mr' ? height(['tr', 'br']) : edge };
+            return { el, top, bottom, reserve: slot === 'tc' ? topReserve : slot === 'bc' ? bottomReserve : slot === 'ml' ? height(['tl', 'bl']) : slot === 'mr' ? height(['tr', 'br']) : edge };
         });
     }
 
@@ -2303,7 +2327,17 @@
             if (ctrl.layout === 'corners') {
                 const measured = parseFloat(slotEl.style.getPropertyValue('--je-anchor-reserve'));
                 const reserve = Number.isFinite(measured) ? measured : edgeOf(ctrl);
-                const limit = Math.max(0, vertical ? ctrl.host.clientHeight - 2 * reserve : ctrl.host.clientHeight / 3);
+                const offset = parseFloat(slotEl.style.getPropertyValue(slotEl.dataset.jeSlot === 'tc' ? '--je-anchor-top' : '--je-anchor-bottom'));
+                const limit = Math.max(0, vertical ? ctrl.host.clientHeight - 2 * reserve
+                    : ['tc', 'bc'].includes(slotEl.dataset.jeSlot || '') ? centreRowLimit(ctrl.host.clientHeight, Number.isFinite(offset) ? offset : reserve)
+                        : ctrl.host.clientHeight / 3);
+                if (!vertical && ctrl.host.clientHeight > 0 && available < moreRect.width - 0.01) {
+                    // No room between the corner stacks even for "+N" (a short
+                    // image crowded with tags): the row is left out, its facts
+                    // stay in the card's description.
+                    plan.rows.push({ slot: slotEl, chips, shown: chips.map(() => false), more: false });
+                    continue;
+                }
                 const heights = rects.map((r) => r.height);
                 const rowGap = parseFloat(style.rowGap) || 0;
                 let shown = null;
