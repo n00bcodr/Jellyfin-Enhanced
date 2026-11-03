@@ -800,3 +800,57 @@ test('Overview: a new view shows its own cache summary, never the previous view\
   await settleMany(h);
   assert.match(h.root.querySelector('[data-ov="cache"]').textContent, /^7admin_tags_overview_cached/);
 });
+
+// ── The Rules add form's library condition (astra R5-5) ──────────────
+
+test('Rules: a late library list keeps the condition being entered and its focus; a replacement view never offers an earlier view\'s list', async t => {
+  const libraries = [{ ItemId: LIBRARY, Name: 'Movies' }, { ItemId: OTHER_LIBRARY, Name: 'Shows' }];
+  const h = setup(t, { apiClient: { getJSON: async () => libraries } });
+  await settleMany(h);
+  h.ctx.openTab('rules');
+  assert.equal(h.$('[data-rule="value"]').tagName, 'SELECT', 'the first view has its list');
+  h.ctx.dispose();
+  for (const typed of [OTHER_LIBRARY, '']) {
+    const gate = deferred();
+    h.window.ApiClient.getJSON = () => gate.promise;
+    const next = h.A.createPage(h.root, structuredClone(h.server));
+    h.cleanup.push(() => next.dispose());
+    next.openTab('rules');
+    await settleMany(h);
+    const control = h.$('[data-rule="value"]');
+    assert.equal(control.tagName, 'INPUT', 'no list until this view\'s own answer (the id can be typed)');
+    control.value = typed;
+    control.focus();
+    gate.resolve(libraries);
+    await settleMany(h);
+    const now = h.$('[data-rule="value"]');
+    if (typed) {
+      assert.equal(now, control, 'a typed id is kept as typed');
+      assert.equal(now.value, OTHER_LIBRARY);
+    } else {
+      assert.equal(now.tagName, 'SELECT', 'an empty field becomes the list');
+    }
+    assert.equal(h.document.activeElement, now, 'focus stays on the condition');
+    // The rule is added with the condition that was entered.
+    if (typed) {
+      h.$('[data-rule="add"]').click();
+      await next.flush();
+      assert.deepEqual(h.server.TagLookRules.at(-1).When, [{ Field: 'library', Value: OTHER_LIBRARY }]);
+    }
+    next.dispose();
+  }
+});
+
+test('Rules: on the first view a library id typed before the list arrives is kept, with focus', async t => {
+  const gate = deferred();
+  const h = setup(t, { apiClient: { getJSON: () => gate.promise } });
+  await settleMany(h);
+  h.ctx.openTab('rules');
+  const control = h.$('[data-rule="value"]');
+  control.value = OTHER_LIBRARY;
+  control.focus();
+  gate.resolve([{ ItemId: LIBRARY, Name: 'Movies' }, { ItemId: OTHER_LIBRARY, Name: 'Shows' }]);
+  await settleMany(h);
+  assert.equal(h.$('[data-rule="value"]').value, OTHER_LIBRARY, 'the typed id is kept');
+  assert.equal(h.document.activeElement, h.$('[data-rule="value"]'));
+});

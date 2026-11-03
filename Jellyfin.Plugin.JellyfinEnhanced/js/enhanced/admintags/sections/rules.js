@@ -16,8 +16,16 @@
     const TYPES = ['Movie', 'Series', 'Season', 'Episode', 'BoxSet', 'Video'];
     const MAX_RULES = 50;
 
-    /** @type {Object<string, string>} library id (no dashes, lower case) → name */
-    let libraries = {};
+    /**
+     * Each page view's library names, library id (no dashes, lower case) →
+     * name: empty until that view's own request answers (never an earlier
+     * view's or another server's list).
+     * @type {WeakMap<Object, Object<string, string>>}
+     */
+    const libraryNames = new WeakMap();
+
+    /** @param {Object} ctx @returns {Object<string, string>} */
+    const librariesOf = (ctx) => libraryNames.get(ctx) || {};
 
     /**
      * Read a key in either case.
@@ -81,9 +89,10 @@
     /**
      * One condition as words: "Type is Episode", "Library is Anime".
      * @param {Object} cond
+     * @param {Object<string, string>} [libraries] - The view's library names.
      * @returns {string}
      */
-    function conditionText(cond) {
+    function conditionText(cond, libraries = {}) {
         const field = String(get(cond, 'field') || '');
         const value = String(get(cond, 'value') || '');
         const key = field.toLowerCase();
@@ -103,7 +112,7 @@
      */
     function ruleHtml(ctx, rule, i, count) {
         const enabled = get(rule, 'enabled') !== false;
-        const when = (get(rule, 'when') || []).map(conditionText).join(JE.t('tag_looks_and'));
+        const when = (get(rule, 'when') || []).map((cond) => conditionText(cond, librariesOf(ctx))).join(JE.t('tag_looks_and'));
         const look = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[String(get(rule, 'layout') || 'corners').toLowerCase()]), density: JE.t(`panel_settings_ui_tag_density_${String(get(rule, 'density') || 'full').toLowerCase() === 'compact' ? 'compact' : 'full'}`) });
         const extra = (Array.isArray(get(rule, 'slots')) && get(rule, 'slots').length) || get(rule, 'shapes') ? ` <span class="je-ta-hint">${ctx.tx('admin_tags_rules_has_more')}</span>` : '';
         const name = JE.t('panel_media_tags_preview_source_rule', { n: i + 1 });
@@ -128,11 +137,24 @@
     function valueControl(ctx, field) {
         if (field === 'type') return `<select data-rule="value">${TYPES.map((t) => `<option value="${t}">${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.type[t.toLowerCase()])}</option>`).join('')}</select>`;
         if (field === 'library') {
-            const entries = Object.entries(libraries);
-            return entries.length ? `<select data-rule="value">${entries.map(([id, name]) => `<option value="${ctx.esc(id)}">${ctx.esc(name)}</option>`).join('')}</select>`
+            const options = libraryOptions(ctx);
+            return options ? `<select data-rule="value">${options}</select>`
                 : `<input type="text" data-rule="value" placeholder="${ctx.tx('admin_tags_rules_library_id')}">`;
         }
         return `<input type="text" data-rule="value" placeholder="${ctx.tx(field === 'genre' ? 'admin_tags_rules_genre_placeholder' : 'admin_tags_rules_age_placeholder')}">`;
+    }
+
+    /**
+     * The library choices of the add form ('' while the view has no list).
+     * @param {Object} ctx
+     * @param {string} [chosen] - A chosen id (no dashes, lower case) kept as a
+     *   choice even when the list does not name it.
+     * @returns {string}
+     */
+    function libraryOptions(ctx, chosen = '') {
+        const entries = Object.entries(librariesOf(ctx));
+        if (chosen && !entries.some(([id]) => id === chosen)) entries.push([chosen, chosen]);
+        return entries.map(([id, name]) => `<option value="${ctx.esc(id)}">${ctx.esc(name)}</option>`).join('');
     }
 
     A.registerSection({
@@ -232,11 +254,33 @@
             body.querySelector('[data-rule="json-revert"]')?.addEventListener('click', () => { this.load(ctx, body); });
             ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then((folders) => {
                 if (!ctx.isCurrent()) return;
-                libraries = {};
-                for (const f of folders || []) if (f.ItemId) libraries[String(f.ItemId).replace(/-/g, '').toLowerCase()] = f.Name;
-                if (fieldSelect.value === 'library') /** @type {HTMLElement} */ (form.querySelector('[data-rule-value]')).innerHTML = valueControl(ctx, 'library');
+                const names = {};
+                for (const f of folders || []) if (f.ItemId) names[String(f.ItemId).replace(/-/g, '').toLowerCase()] = f.Name;
+                libraryNames.set(ctx, names);
+                if (fieldSelect.value === 'library') updateLibraryChoices();
                 ctx.refresh({ controls: false });
             }).catch((err) => console.warn('🪼 Jellyfin Enhanced: could not load the library list', err));
+            /**
+             * The library list arrived: update the add form's library choices
+             * without losing the draft. A select keeps its element (and focus) and
+             * the chosen id, even one the new list does not name; a typed id is kept
+             * as typed; an empty text field becomes the list.
+             */
+            const updateLibraryChoices = () => {
+                const slot = /** @type {HTMLElement} */ (form.querySelector('[data-rule-value]'));
+                const current = /** @type {HTMLInputElement|HTMLSelectElement|null} */ (slot.querySelector('[data-rule="value"]'));
+                const chosen = String(current?.value || '').trim().replace(/-/g, '').toLowerCase();
+                if (!Object.keys(librariesOf(ctx)).length) return;
+                if (current?.tagName === 'SELECT') {
+                    current.innerHTML = libraryOptions(ctx, chosen);
+                    if (chosen) current.value = chosen;
+                    return;
+                }
+                if (chosen) return;
+                const hadFocus = !!current && current === document.activeElement;
+                slot.innerHTML = valueControl(ctx, 'library');
+                if (hadFocus) /** @type {HTMLElement|null} */ (slot.querySelector('[data-rule="value"]'))?.focus({ preventScroll: true });
+            };
             this.load(ctx, body);
         },
         /** Put the stored rules into the JSON box (first draw, Revert, page shown again). */
