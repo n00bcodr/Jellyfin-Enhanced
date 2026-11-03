@@ -276,7 +276,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v9 stores each video stream's Width (cropped scope encodes were tagged by height alone)
         // and the SourceId of the version every stream belongs to (per-version quality badges).
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        private const int CurrentCacheSchemaVersion = 9;
+        internal const int CurrentCacheSchemaVersion = 9;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
