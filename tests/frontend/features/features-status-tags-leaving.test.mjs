@@ -864,7 +864,7 @@ test('direct play: a failed card scrolled away gets no retry; scrolled back befo
   assert.equal(h.badge(h.hosts[0]), 'Transcode');
 });
 
-test('direct play: media never probed (no video or audio stream, e.g. a .strm) is not asked about, so Jellyfin never probes it', async t => {
+test('direct play: media never probed (no video stream listed) is not asked about, so Jellyfin never probes it', async t => {
   const h = setup(t, { cards: 4, settings: { statusTagsDirectPlay: true } });
   const probed = { Streams: [{ Type: 'Video', Codec: 'hevc' }, { Type: 'Audio', Codec: 'dts' }] };
   h.show(movie({ StreamData: { Streams: [] } }), h.hosts[0], 'strm');
@@ -878,6 +878,26 @@ test('direct play: media never probed (no video or audio stream, e.g. a .strm) i
   assert.equal(h.chip(h.hosts[0]), null, 'no badge rather than a probe');
   assert.equal(h.badge(h.hosts[1]), 'Transcode');
   assert.equal(h.chip(h.hosts[3]), null);
+});
+
+test('direct play: a .strm item, probed or not, and a video whose first source has no video stream are not asked about', async t => {
+  const h = setup(t, { cards: 6, settings: { statusTagsDirectPlay: true } });
+  const streams = [{ Type: 'Video', Codec: 'h264', SourceId: 's' }, { Type: 'Audio', Codec: 'aac', SourceId: 's' }];
+  // Jellyfin's PlaybackInfo refreshes every .strm with a remote probe, whatever it stored before.
+  h.show(movie({ StreamData: { Streams: streams, ItemPath: 'Film (2020).strm', Sources: [{ Id: 's', Path: 'master.m3u8' }] } }), h.hosts[0], 'strm-probed');
+  h.show(movie({ StreamData: { Streams: streams, Sources: [{ Id: 's', Path: 'Film (2020).STRM' }] } }), h.hosts[1], 'strm-source');
+  // ... and a video item whose first source lists no video stream.
+  h.show(movie({ StreamData: { Streams: [{ Type: 'Audio', SourceId: 'a' }, { Type: 'Video', SourceId: 'b' }], Sources: [{ Id: 'a', Path: 'a.mkv' }, { Id: 'b', Path: 'b.mkv' }] } }), h.hosts[2], 'first-audio-only');
+  h.show(movie({ StreamData: { Streams: streams, ItemPath: 'Film (2020).mkv', Sources: [{ Id: 's', Path: 'Film (2020) - 1080p.mkv' }] } }), h.hosts[3], 'file');
+  // The /tag-data path reads the item's Path and MediaSources.
+  for (const [i, item] of [[4, { Id: 'strm-tag-data', Path: 'Episode.strm' }], [5, { Id: 'file-tag-data', Path: 'Episode.mkv' }]]) {
+    delete h.hosts[i].closest('.card').dataset.jeStatusTagged;
+    h.renderer.render(h.hosts[i], { ...item, Type: 'Episode', SeriesId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', DateCreated: OLD, PremiereDate: OLD,
+      MediaStreams: streams, MediaSources: [{ Id: 's', Path: item.Path }] });
+  }
+  await h.slice(); await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id).sort(), ['file', 'file-tag-data']);
+  for (const i of [0, 1, 2, 4]) assert.equal(h.chip(h.hosts[i]), null, 'no badge rather than a probe');
 });
 
 test('direct play: stored answers are restored before any request, and new ones are written per scope and profile', async t => {

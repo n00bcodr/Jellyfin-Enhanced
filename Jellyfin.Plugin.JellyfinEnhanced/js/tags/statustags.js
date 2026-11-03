@@ -198,7 +198,8 @@
      * @property {string|null} seriesId - The series whose TMDB schedule applies (Series: itself).
      * @property {string|null|undefined} seriesTmdb - That series' TMDB id; undefined when unknown.
      * @property {{deleteAt: number|null}|null} [leaving] - Leaving soon facts (deleteAt: Unix ms, or null when undated).
-     * @property {boolean|null} [probed] - Movie/Episode: whether its media has a video or audio stream (false: never probed, e.g. a .strm); null when the data doesn't say.
+     * @property {boolean|null} [probed] - Video items: whether its first media source lists a video stream (false: Jellyfin would probe it); null when the data doesn't say.
+     * @property {boolean} [strm] - Whether its file (or one of its sources) is a .strm, which Jellyfin probes on every playback lookup.
      */
 
     /**
@@ -244,13 +245,15 @@
 
     /**
      * Whether a card can get a direct-play warning: the user's switch and a
-     * playable item type whose media was probed (tags/tag-direct-play.js does
-     * the lookups; asking about unprobed media would make Jellyfin probe it).
+     * playable item type that Jellyfin's PlaybackInfo would not probe
+     * (tags/tag-direct-play.js does the lookups). Jellyfin refreshes the item
+     * with a remote probe when its file is a .strm, probed before or not, or
+     * when its first source lists no video stream; those are skipped.
      * @param {StatusData} data
      * @returns {boolean}
      */
     function wantsDirectPlay(data) {
-        return !!JE.tagDirectPlay && PLAYABLE_TYPES.has(data.type || '') && data.probed !== false && isScopeEnabled(BADGE_SCOPES.directPlay);
+        return !!JE.tagDirectPlay && PLAYABLE_TYPES.has(data.type || '') && data.probed !== false && !data.strm && isScopeEnabled(BADGE_SCOPES.directPlay);
     }
 
     /**
@@ -382,7 +385,9 @@
             // so a missing one means the series has none.
             seriesTmdb: type === 'Series' ? tmdb : (entry.SeriesTmdbId ? String(entry.SeriesTmdbId) : null),
             leaving: readLeaving(entry.Leaving),
-            probed: probedOf(entry.StreamData?.Streams),
+            probed: probedOf(entry.StreamData?.Streams, entry.StreamData?.Sources),
+            // The cache keeps the file name in ItemPath only when no source names it.
+            strm: isStrm([entry.StreamData?.ItemPath, ...sourcePaths(entry.StreamData?.Sources)]),
         };
     }
 
@@ -411,20 +416,43 @@
             // id; the server answers only for those that do.
             seriesTmdb: type === 'Series' ? tmdb : undefined,
             leaving: readLeaving(item.Leaving),
-            probed: probedOf(item.MediaStreams),
+            probed: probedOf(item.MediaStreams, item.MediaSources),
+            strm: isStrm([item.Path, ...sourcePaths(item.MediaSources)]),
         };
     }
 
     /**
-     * Whether an item's media was probed: it lists a video or audio stream.
-     * Jellyfin's PlaybackInfo probes media that has neither (a .strm or other
-     * remote item never probed), so the direct-play lookup skips it.
+     * Whether a video item's media was probed as Jellyfin's PlaybackInfo
+     * checks it: its first media source lists a video stream (streams are
+     * matched to it by SourceId when they carry one). Jellyfin probes the
+     * item otherwise, so the direct-play lookup skips it.
      * @param {*} streams - The item's streams (cache entry StreamData.Streams or /tag-data MediaStreams).
+     * @param {*} [sources] - Its media sources, first one first (StreamData.Sources or /tag-data MediaSources).
      * @returns {boolean|null} null when the data has no stream list (stripped or not sent).
      */
-    function probedOf(streams) {
+    function probedOf(streams, sources) {
         if (!Array.isArray(streams)) return null;
-        return streams.some((stream) => stream?.Type === 'Video' || stream?.Type === 'Audio');
+        const first = Array.isArray(sources) ? sources[0]?.Id : null;
+        const ofFirst = first && streams.some((stream) => stream?.SourceId) ? streams.filter((stream) => stream?.SourceId === first) : streams;
+        return ofFirst.some((stream) => stream?.Type === 'Video');
+    }
+
+    /**
+     * @param {*} sources
+     * @returns {Array<*>} The sources' file names (unknown entries included as undefined).
+     */
+    function sourcePaths(sources) {
+        return Array.isArray(sources) ? sources.map((source) => source?.Path) : [];
+    }
+
+    /**
+     * Whether any of the given file names is a .strm (Jellyfin compares
+     * without case).
+     * @param {Array<*>} paths
+     * @returns {boolean}
+     */
+    function isStrm(paths) {
+        return paths.some((path) => typeof path === 'string' && path.toLowerCase().endsWith('.strm'));
     }
 
     /**
