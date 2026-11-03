@@ -425,7 +425,17 @@
                 const load = async () => {
                     d.status(JE.t('tag_portable_checking'));
                     try {
-                        await JE.saveUserSettings?.('settings.json', JE.currentSettings);
+                        // The export reads the stored settings: a change of the administrator's
+                        // own settings that failed to save would offer older ones instead.
+                        try {
+                            await JE.saveUserSettings?.('settings.json', JE.currentSettings, { throwOnError: true, isCurrent: ctx.isCurrent });
+                        } catch (err) {
+                            if (!ctx.isCurrent() || d.closed()) return;
+                            console.warn('🪼 Jellyfin Enhanced: your own Media Tags settings are not saved yet', err);
+                            failed(d, JE.t('admin_tags_presets_mine_unsaved'), true);
+                            return;
+                        }
+                        if (!ctx.isCurrent() || d.closed()) return;
                         const mine = await request('GET', `user-settings/${ApiClient.getCurrentUserId()}/media-tags/export`);
                         if (!ctx.isCurrent() || d.closed()) return;
                         await check(d, mine, true);

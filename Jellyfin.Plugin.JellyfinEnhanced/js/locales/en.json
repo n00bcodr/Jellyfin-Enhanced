@@ -1586,6 +1586,7 @@
     "admin_tags_presets_offered": "{name} is offered to users.",
     "admin_tags_presets_full": "{max} presets are offered already. Remove one first.",
     "admin_tags_presets_save_failed": "Not saved. Try again.",
+    "admin_tags_presets_mine_unsaved": "Not offered: your latest change to your own Media Tags settings is not saved yet. Check the connection, then try again.",
     "admin_tags_presets_remove_named": "Remove {name}",
     "admin_tags_presets_remove_confirm": "Stop offering {name}? Users who applied it keep their settings.",
     "admin_tags_presets_removed": "{name} removed.",

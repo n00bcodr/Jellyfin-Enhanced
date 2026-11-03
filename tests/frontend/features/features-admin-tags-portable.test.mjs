@@ -495,3 +495,60 @@ test('export: a failed read offers Retry in the same dialog, which exports', asy
   await h.settle(10);
   assert.equal(JSON.parse(h.dialog().querySelector('textarea').value).kind, 'je-media-tags-admin');
 });
+
+// ── Offer my settings after a failed save of my own settings (astra R5-3 = opus R5 2) ──
+
+test('offer my settings stops when my own settings fail to save, offers nothing, and Retry offers what the panel shows', async t => {
+  const h = setup(t);
+  await h.settle(8);
+  h.load('enhanced/config.js');
+  // The panel shows Minimal; the stored settings still say Bands.
+  const stored = { TagLayout: 'bands', TagScale: 'larger' };
+  h.JE.currentSettings = { tagLayout: 'minimal' };
+  const ajax = h.window.ApiClient.ajax;
+  let refuse = true;
+  const posted = [];
+  h.window.ApiClient.ajax = async (request) => {
+    const path = new URL(request.url).pathname;
+    if (request.type === 'POST' && path.endsWith('/settings.json')) {
+      if (refuse) throw { status: 500 };
+      // This page has no key converter loaded: the document is posted as the panel holds it.
+      const body = JSON.parse(request.data);
+      posted.push(body);
+      stored.TagLayout = body.TagLayout ?? body.tagLayout;
+      return { success: true };
+    }
+    if (path.endsWith('/user-settings/user-a/media-tags/export')) return { v: 1, kind: 'je-media-tags-user', settings: { ...stored } };
+    return ajax(request);
+  };
+  h.click(h.$('#jeTaOfferMine'));
+  await h.settle(15);
+  assert.equal(h.status(), 'admin_tags_presets_mine_unsaved');
+  assert.ok(!h.requests.some((r) => r.path.endsWith('/media-tags/export')), 'the stored settings are not read');
+  assert.equal(h.dialog().querySelector('#jeTaOfferName'), null, 'no name step');
+  assert.equal(h.document.activeElement, h.action('retry'));
+  assert.equal(h.server.TagOfferedPresets, '', 'nothing offered');
+
+  refuse = false;
+  h.click(h.action('retry'));
+  await h.settle(15);
+  assert.equal(posted.at(-1).tagLayout, 'minimal');
+  h.dialog().querySelector('#jeTaOfferName').value = 'My current layout';
+  h.click(h.action('offer'));
+  await h.settle(15);
+  assert.equal(JSON.parse(h.server.TagOfferedPresets)[0].settings.TagLayout, 'minimal', 'the offered preset is what the panel shows');
+});
+
+test('offer my settings: a page view closed while my settings save posts nothing for it', async t => {
+  const h = setup(t);
+  await h.settle(8);
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  h.JE.saveUserSettings = async () => { await gate; };
+  h.click(h.$('#jeTaOfferMine'));
+  await h.settle(4);
+  h.ctx.dispose();
+  release();
+  await h.settle(10);
+  assert.ok(!h.requests.some((r) => r.path.endsWith('/user-settings/user-a/media-tags/export')), 'no read for a view that ended');
+});
