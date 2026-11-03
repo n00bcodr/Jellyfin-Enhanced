@@ -408,6 +408,20 @@ test('editLocks moves a season\'s own look to its series in one save', async t =
   assert.equal(h.writes.length, 1);
 });
 
+test('saveItemOverride keeps the per-user projection: the stored answer never adds items the user was not served', async t => {
+  const HIDDEN = 'c'.repeat(32);
+  const h = setup(t, { plugin: { TagLookItemOverrides: [{ ItemId: OTHER, Layout: 'caption', LockedAt: 5 }] } });
+  h.render();
+  const stored = [{ ItemId: HIDDEN, Layout: 'minimal', LockedAt: 4 }, { ItemId: OTHER, Layout: 'caption', LockedAt: 5 }];
+  const api = { get: async () => ({ TagLookItemOverrides: stored }),
+    patch: async (changes) => ({ values: { TagLookItemOverrides: [...changes.TagLookItemOverrides.Set, ...stored] } }) };
+  assert.equal(await h.look.saveItemOverride(MOVIE, { layout: 'bands' }, { api }), true);
+  assert.deepEqual(h.JE.pluginConfig.TagLookItemOverrides.map((o) => o.ItemId).sort(), [MOVIE, OTHER].sort(),
+    'the edited item and the items already served, not the item this user cannot see');
+  assert.equal(await h.look.saveItemOverride(MOVIE, null, { api: { get: async () => ({ TagLookItemOverrides: [stored[0], ...h.JE.pluginConfig.TagLookItemOverrides] }), patch: async () => ({ values: { TagLookItemOverrides: [stored[0]] } }) } }), true);
+  assert.equal(h.JE.pluginConfig.TagLookItemOverrides, null);
+});
+
 test('saveItemOverride sends only affected entries, retries once on a conflict and re-presents', async t => {
   const h = setup(t, { plugin: { TagLookItemOverrides: null } });
   h.render();

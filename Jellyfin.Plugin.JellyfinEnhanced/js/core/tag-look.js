@@ -824,7 +824,7 @@
                     ? await api.patch({ TagLookItemOverrides: mutation }, {}) : null;
                 if (!isCurrent()) return false;
                 const stored = result?.values?.TagLookItemOverrides ?? result?.Values?.TagLookItemOverrides ?? (result ? next : before);
-                if (JE.pluginConfig) JE.pluginConfig.TagLookItemOverrides = stored;
+                if (JE.pluginConfig) JE.pluginConfig.TagLookItemOverrides = visibleItemLooks(stored, JE.pluginConfig.TagLookItemOverrides, id);
                 represent();
                 return true;
             } catch (err) {
@@ -835,6 +835,25 @@
             }
         }
         return false;
+    }
+
+    /**
+     * The item looks the public config serves this user after an
+     * administrator's save. The server projects the list per caller (only
+     * items that user can see), while a save answers with the whole stored
+     * list, so keep the items the user was already served plus the one just
+     * edited (it was opened from the user's own view); a later sign-in on the
+     * same tab reloads the projection from the server.
+     * @param {*} stored - The stored list the save answered with.
+     * @param {*} previous - The list the public config served this user.
+     * @param {string} id - Normalised id of the item just edited.
+     * @returns {Object[]|null}
+     */
+    function visibleItemLooks(stored, previous, id) {
+        if (!Array.isArray(stored)) return null;
+        const visible = new Set(normalizeItemOverrides(previous).keys()).add(id);
+        const kept = stored.filter((entry) => visible.has(normalizeId(String(pick(entry, 'itemId') ?? '')) || ''));
+        return kept.length ? kept : null;
     }
 
     JE.core.tagLook = {

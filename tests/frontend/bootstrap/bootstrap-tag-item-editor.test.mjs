@@ -308,7 +308,8 @@ test('an episode can keep its own look or move it to its series in one save; a s
 });
 
 test('administrators also keep the look for everyone, through the field patch with the value read before', async t => {
-  const h = setup(t, { admin: true, plugin: { TagLookItemOverrides: null } });
+  // The public config serves this administrator the series look it can see.
+  const h = setup(t, { admin: true, plugin: { TagLookItemOverrides: [{ ItemId: SERIES, Layout: 'caption', Density: 'full', LockedAt: 4 }] } });
   h.io.config.TagLookItemOverrides = [{ ItemId: SERIES, Layout: 'caption', Density: 'full', LockedAt: 4 }];
   h.io.conflict = 1;
   await h.open(MOVIE);

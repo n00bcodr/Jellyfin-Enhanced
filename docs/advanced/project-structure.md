@@ -26,7 +26,7 @@ The initialization stages and user-switch behavior are:
 | Translations | `js/enhanced/translations.js` starts loading at the beginning of `initialize()`, in parallel with bootstrap. It loads/caches locale JSON and resolves `JE.t` before components run. |
 | Bootstrap | Authenticated `GET /JellyfinEnhanced/bootstrap` returns version, token user ID, public configuration, administrator-only private configuration, Custom Tabs / Plugin Pages presence flags, five user documents and the component list. Non-admin `PrivateConfig` is null. The loader falls back to individual endpoints if bootstrap fails. |
 | Components | After configuration is applied, production loads `GET /JellyfinEnhanced/bundle.js`; development mode and bundle failure use individual scripts. |
-| User switches | `js/core/session.js` detects identity changes and resets registered feature state. The loader reloads the incoming user's documents and emits `je:user-data-loaded`. Async work uses identity epochs to discard stale results. |
+| User switches | `js/core/session.js` detects identity changes and resets registered feature state. The loader reloads the incoming user's documents and the public config fields the server projects per user (`TagLookItemOverrides`, filtered to the items that user can see) and emits `je:user-data-loaded`. Async work uses identity epochs to discard stale results. |
 
 The bootstrap's `UserSettings` members are `Settings`, `Shortcuts`, `Bookmark`, `Elsewhere` and `HiddenContent`. A document-loading failure yields null for that document. Bootstrap always loads the token user's data, with no target-user parameter, and is served with `no-store`.
 
