@@ -819,13 +819,21 @@ test('the reveal keeps only the chip rows its height has room for: one on a land
   }
 });
 
-test('the caption strip and the bottom band are not limited by the card height', t => {
-  for (const [tagLayout, slot] of [['caption', '.je-tag-caption'], ['bands', '.je-tag-slot[data-je-slot="bottom"]']]) {
+test('the caption strip is not limited by the card height; the bottom band only by the room below the top band', t => {
+  // Chips are 30x18 and the top band's chips end 18px down; jsdom resolves
+  // neither the band's padding nor its calc() gap, so only the rows count:
+  // a 44px image has room below the top band for one row, 30px for none.
+  for (const [tagLayout, slot, height, shownChips, more] of [['caption', '.je-tag-caption', 40, 10, false],
+    ['bands', '.je-tag-slot[data-je-slot="bottom"]', 120, 9, false], ['bands', '.je-tag-slot[data-je-slot="bottom"]', 44, 4, true],
+    ['bands', '.je-tag-slot[data-je-slot="bottom"]', 30, 0, false]]) {
     const h = setup(t, { settings: { tagLayoutSettingsVersion: 1, tagLayout } });
     h.render();
-    fitCard(h, { width: 172, height: 40 }); // a bottom band wider than 160px keeps full labels
+    fitCard(h, { width: 172, height }); // a bottom band wider than 160px keeps full labels
     const el = h.document.querySelector(slot);
-    assert.ok(el.querySelectorAll(':scope > [data-je-group] > :not([data-je-overflow])').length > 5, `${tagLayout}: two rows whatever the card height`);
+    const where = `${tagLayout} on a ${height}px image`;
+    assert.equal(el.querySelectorAll(':scope > [data-je-group] > :not([data-je-overflow])').length, shownChips, where);
+    assert.equal(!el.lastElementChild.hasAttribute('data-je-overflow'), more, `${where}: "+N" only for hidden chips`);
+    assert.equal(el.hasAttribute('data-je-overflow'), shownChips === 0, `${where}: no empty band`);
   }
 });
 

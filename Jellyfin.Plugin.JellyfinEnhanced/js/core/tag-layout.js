@@ -2187,18 +2187,20 @@
      * The bottom band's rows end a gap below the top band's lowest chip; on a
      * short image (an episode still at a larger tag size) that is less than its
      * two rows. Its top padding is only the scrim's fade and may run under the
-     * top band. Null when the top band is empty (reads only).
+     * top band. Null when the top band is empty or the card not laid out (reads only).
      * @param {CardController} ctrl
      * @param {CSSStyleDeclaration} style - The bottom band's computed style.
      * @returns {{inside: number, oneRow: number, gap: number}|null}
      */
     function bandRoom(ctrl, style) {
+        const height = ctrl.host.clientHeight;
         const top = ctrl.host.querySelector(':scope > .je-tag-slot[data-je-slot="top"]');
         const bottoms = Array.from(top?.querySelectorAll(':scope > [data-je-group] > *') || [])
             .map((chip) => chip.getBoundingClientRect()).filter((r) => r.height > 0).map((r) => r.bottom);
-        if (!bottoms.length) return null;
+        if (!(height > 0) || !bottoms.length) return null;
+        const below = Math.max(...bottoms) - ctrl.host.getBoundingClientRect().top;
         const gap = parseFloat(style.rowGap) || 0;
-        const inside = ctrl.host.getBoundingClientRect().bottom - (parseFloat(style.paddingBottom) || 0) - Math.max(...bottoms) - gap;
+        const inside = height - (parseFloat(style.paddingBottom) || 0) - below - gap;
         return { inside, oneRow: inside, gap };
     }
 
