@@ -15,13 +15,18 @@ const GROUPS_ON = { statusTagsEnabled: true, statusTagsTrending: true, statusTag
   ratingTagsEnabled: true, languageTagsEnabled: true, languageTagsStyle: 'codes', languageTagsShowSubtitles: true,
   genreTagsEnabled: true, ageRatingTagsEnabled: true };
 
+/** A lab administrator's own choices: every rating source, uncapped, and Corners centre rows. */
+const CENTRES = { ratingTagsSources: ['imdb', 'tmdb', 'rtCritic', 'community', 'critic'], tagGroupCaps: { rating: 0 },
+  tagLayouts: { corners: { groups: [{ group: 'quality', slot: 'tc' }, { group: 'rating', slot: 'bc' }] } } };
+
 /**
  * The production preview (hub panel or admin page column) at a given mount width.
  * @param {import('@playwright/test').Page} page
  * @param {'hub'|'admin'} surface
  * @param {number} width - The preview mount's width (the hub's default panel gives ~126px poster samples).
+ * @param {object} [extra] - Settings over GROUPS_ON.
  */
-async function setup(page, surface, width) {
+async function setup(page, surface, width, extra = {}) {
   const holder = surface === 'admin' ? `<div class="je-tag-admin"><div id="preview" style="width:${width}px"></div></div>`
     : `<div id="jellyfin-enhanced-panel"><div id="preview" style="width:${width}px"></div></div>`;
   await page.setContent(`<style>body{margin:0;padding:8px;font-family:Arial,sans-serif;background:#111;color:#fff}*,*::before,*::after{transition:none!important}</style>${holder}`);
@@ -29,7 +34,7 @@ async function setup(page, surface, width) {
     window.JellyfinEnhanced = { core: {}, helpers: {}, pluginConfig: {}, currentSettings: { tagLayoutSettingsVersion: 1, ...settings },
       t: (key, params = {}) => Object.entries(params).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, v), english[key] || key),
       tagPipeline: { registerRenderer() {}, clearProcessed() {}, scheduleScan() {} } };
-  }, { english, settings: GROUPS_ON });
+  }, { english, settings: { ...GROUPS_ON, ...extra } });
   for (const file of FILES) await page.addScriptTag({ path: path.join(root, file) });
   await page.evaluate(() => {
     const JE = window.JellyfinEnhanced;
@@ -62,12 +67,13 @@ const SURFACES = [
   { name: 'hub', surface: 'hub', width: 262 },
   { name: 'hub-wide', surface: 'hub', width: 550 },
   { name: 'admin', surface: 'admin', width: 300 },
+  { name: 'hub-centres', surface: 'hub', width: 262, extra: CENTRES },
 ];
 
-for (const { name, surface, width } of SURFACES) {
+for (const { name, surface, width, extra } of SURFACES) {
   test(`${name} preview: no chip is clipped, spilled, wrapped, overlapping or outside its card`, async ({ page }, testInfo) => {
     test.setTimeout(240000);
-    await setup(page, surface, width);
+    await setup(page, surface, width, extra);
     const results = [];
     for (const conf of clippingConfigurations()) {
       await configure(page, conf);
