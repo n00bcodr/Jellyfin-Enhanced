@@ -49,8 +49,9 @@
 
     /**
      * The last import applied in this browser tab, for Undo after the panel
-     * opened again: the changes it made and until when Undo is offered.
-     * @type {{changes: Array<{field: string, from: *, to: *}>, until: number, count: number}|null}
+     * opened again: the changes it made, until when Undo is offered and
+     * whether the session that made it is still the signed-in one.
+     * @type {{changes: Array<{field: string, from: *, to: *}>, until: number, count: number, isCurrent: () => boolean}|null}
      */
     let lastImport = null;
 
@@ -342,6 +343,28 @@
     const userId = () => (typeof ApiClient !== 'undefined' && ApiClient.getCurrentUserId?.()) || '';
     /** @param {string} path @returns {string} */
     const userUrl = (path) => ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${userId()}/media-tags/${path}`);
+    /** @returns {string} The server the requests go to. */
+    const serverId = () => {
+        try {
+            return (typeof ApiClient !== 'undefined' && (typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId)) || '';
+        } catch {
+            return '';
+        }
+    };
+
+    /**
+     * Capture the signed-in session (user, server and JE.session epoch) at the
+     * start of an operation. The check stays true only while that session
+     * lasts: A → B → A and the same user id on another server both end it, so
+     * a late answer never writes into, or offers Undo to, the next account.
+     * @returns {() => boolean}
+     */
+    function sessionCheck() {
+        const user = userId();
+        const server = serverId();
+        const epoch = JE.session?.getEpoch?.();
+        return () => userId() === user && serverId() === server && JE.session?.getEpoch?.() === epoch;
+    }
 
     /**
      * The hub's two cards for the Layout tab.
@@ -403,9 +426,11 @@
      * new group switches on the page. A null value keeps (or makes) the field
      * follow the administrator: it is saved as null, never as today's default.
      * @param {Array<{field: string, to: *}>} changes
-     * @returns {Promise<void>} Rejects when the save failed (nothing is kept then).
+     * @param {() => boolean} isCurrent - The session the import belongs to (sessionCheck).
+     * @returns {Promise<boolean>} False when that session ended first (nothing
+     *   more is done for it); rejects when the save failed (nothing is kept then).
      */
-    async function writeChanges(changes) {
+    async function writeChanges(changes, isCurrent) {
         const settings = JE.currentSettings;
         const before = {};
         const inheritedBefore = {};
@@ -428,8 +453,12 @@
             } else settings[key] = value;
         }
         try {
-            await JE.saveUserSettings('settings.json', settings, { throwOnError: true });
+            // Queued saves read the document at their turn: one for a session that
+            // ended by then is dropped, never sent for the next account.
+            await JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent });
         } catch (err) {
+            // Another session's documents are not this import's to roll back.
+            if (!isCurrent()) throw err;
             Object.assign(settings, before);
             for (const [key, inherited] of Object.entries(inheritedBefore)) {
                 if (JE.setSettingInherited?.(settings, key, inherited)) settings[key] = before[key];
@@ -437,6 +466,7 @@
             if (JE.userConfig?.settings && 'useNativePosterTags' in before) JE.userConfig.settings.useNativePosterTags = nativeBefore;
             throw err;
         }
+        if (!isCurrent()) return false;
         JE.core?.tagLayout?.invalidateSettings?.();
         for (const g of GROUP_SWITCHES) {
             const on = !!settings[g.key];
@@ -449,6 +479,7 @@
             }
         }
         JE.reinitializeTagLayout?.();
+        return true;
     }
 
     /**
@@ -468,7 +499,7 @@
         const list = /** @type {HTMLElement} */ (presetsCard.querySelector('[data-tp-list]'));
         const undoBar = /** @type {HTMLElement} */ (portableCard.querySelector('[data-tp-undo]'));
         const touch = () => { try { ctx.resetAutoCloseTimer?.(); } catch { /* panel closing */ } };
-        const forUser = userId();
+        const viewSession = sessionCheck();
         let disposed = false;
         /** @type {ReturnType<typeof openDialog>|null} */
         let dialog = null;
@@ -476,8 +507,8 @@
         /** @type {{max: number, builtIn: Object[], offered: Object[], mine: Object[]}|null} */
         let presets = null;
 
-        /** @returns {boolean} Whether answers still belong to this view and user. */
-        const live = () => !disposed && userId() === forUser;
+        /** @returns {boolean} Whether answers still belong to this view and its session. */
+        const live = () => !disposed && viewSession();
 
         /** @param {Object} preset @returns {{name: string, description: string}} A preset's shown name (built-ins are translated). */
         const presetText = (preset, source) => source === 'builtIn'
@@ -529,10 +560,12 @@
 
         /**
          * The user's own export, after any queued settings save went through.
-         * @returns {Promise<Object>}
+         * @param {() => boolean} isCurrent - The operation's session (sessionCheck).
+         * @returns {Promise<Object|null>} null when that session ended first.
          */
-        const fetchExport = async () => {
-            await JE.saveUserSettings('settings.json', JE.currentSettings);
+        const fetchExport = async (isCurrent) => {
+            await JE.saveUserSettings('settings.json', JE.currentSettings, { isCurrent });
+            if (!isCurrent()) return null;
             return ApiClient.ajax({ type: 'GET', url: userUrl('export'), dataType: 'json' });
         };
 
@@ -551,6 +584,7 @@
 
         // ── Export ──
         const openExport = async () => {
+            const current = sessionCheck();
             const d = show(JE.t('tag_portable_export_title'));
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint">${tx('hidden_content_admin_loading')}</p>`;
             d.foot.innerHTML = buttonHtml('close', 'awards_close');
@@ -558,14 +592,14 @@
             d.focusFirst();
             let document;
             try {
-                document = await fetchExport();
+                document = await fetchExport(current);
             } catch (err) {
-                if (!live() || d.closed()) return;
+                if (!live() || !current() || d.closed()) return;
                 console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
                 d.status(JE.t('tag_portable_export_failed'), 'error');
                 return;
             }
-            if (!live() || d.closed()) return;
+            if (!live() || !current() || d.closed()) return;
             const text = JSON.stringify(document, null, 2);
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p>
                 <label class="je-pt-label" for="jePtExport">${tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
@@ -619,7 +653,7 @@
                     try {
                         await apply(changes);
                     } catch (err) {
-                        if (d.closed()) return;
+                        if (!live() || d.closed()) return;
                         console.warn('🪼 Jellyfin Enhanced: could not apply the imported Media Tags settings', err);
                         button.disabled = false;
                         d.status(JE.t('tag_portable_apply_failed'), 'error');
@@ -660,8 +694,11 @@
          * @param {{undo?: boolean}} [opts] - undo: this is the Undo itself (no new Undo).
          */
         const apply = async (changes, opts = {}) => {
-            await writeChanges(changes);
-            lastImport = opts.undo ? null : { changes, until: Date.now() + UNDO_MS, count: changes.length };
+            const current = sessionCheck();
+            if (!live() || !await writeChanges(changes, current)) return;
+            // Published only while the import's session lasts; a closed panel
+            // of that session still offers it when opened again.
+            if (!opts.undo) lastImport = { changes, until: Date.now() + UNDO_MS, count: changes.length, isCurrent: current };
             if (!live()) return;
             dialog?.close();
             reopen(opts.undo ? 'tag_portable_undone' : null);
@@ -681,7 +718,7 @@
         const drawUndo = () => {
             clearTimeout(undoTimer);
             const left = lastImport ? lastImport.until - Date.now() : 0;
-            if (!lastImport || left <= 0) {
+            if (!lastImport || left <= 0 || !lastImport.isCurrent() || !live()) {
                 undoBar.hidden = true;
                 undoBar.innerHTML = '';
                 return;
@@ -693,7 +730,7 @@
 
         const undo = async () => {
             const last = lastImport;
-            if (!last) return;
+            if (!last || !last.isCurrent() || !live()) return;
             lastImport = null;
             drawUndo();
             try {
@@ -735,12 +772,14 @@
                 const name = /** @type {HTMLInputElement} */ (d.body.querySelector('#jePtName')).value.trim();
                 const description = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('#jePtDesc')).value.trim();
                 if (!name) { d.status(errorText('name'), 'error'); /** @type {HTMLElement} */ (d.body.querySelector('#jePtName')).focus(); return; }
+                const current = sessionCheck();
                 button.disabled = true;
                 try {
-                    const exported = await fetchExport();
-                    await savePreset(d, { v: exported.v, kind: PRESET_KIND, name, description, settings: exported.settings });
+                    const exported = await fetchExport(current);
+                    if (!live() || !current() || d.closed()) return;
+                    await savePreset(d, { v: exported.v, kind: PRESET_KIND, name, description, settings: exported.settings }, current);
                 } catch (err) {
-                    if (d.closed()) return;
+                    if (!live() || !current() || d.closed()) return;
                     button.disabled = false;
                     d.status(errorText((await errorOf(err)).code, { max: presets?.max || 10 }), 'error');
                 }
@@ -752,10 +791,13 @@
          * Save a preset to the user's list and report what was skipped.
          * @param {ReturnType<typeof openDialog>} d
          * @param {Object} document
+         * @param {() => boolean} [isCurrent] - The operation's session (sessionCheck); the
+         *   preset is posted only while it lasts, so always to the user who asked.
          */
-        const savePreset = async (d, document) => {
+        const savePreset = async (d, document, isCurrent = sessionCheck()) => {
+            if (!live() || !isCurrent()) return;
             const answer = await ApiClient.ajax({ type: 'POST', url: userUrl('presets'), data: JSON.stringify(document), contentType: 'application/json', dataType: 'json' });
-            if (!live()) return;
+            if (!live() || !isCurrent()) return;
             await loadPresets();
             const skipped = answer?.skipped || [];
             if (!skipped.length || d.closed()) {
@@ -778,7 +820,7 @@
                 try {
                     await savePreset(d, document);
                 } catch (err) {
-                    if (d.closed()) return;
+                    if (!live() || d.closed()) return;
                     d.status(errorText((await errorOf(err)).code, { max: presets?.max || 10 }), 'error');
                 }
             },
@@ -822,7 +864,8 @@
 
         const onClick = (e) => {
             const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tp]'));
-            if (!button || button.disabled) return;
+            // A panel left from another session starts nothing.
+            if (!button || button.disabled || !live()) return;
             const action = button.dataset.tp;
             touch();
             if (action === 'export') openExport();
@@ -867,7 +910,7 @@
                 }
                 target?.focus({ preventScroll: true });
                 if (reopened.messageKey) hooks.announce(JE.t(reopened.messageKey));
-                else if (lastImport) hooks.announce(JE.t('tag_portable_applied', { count: lastImport.count }));
+                else if (lastImport?.isCurrent()) hooks.announce(JE.t('tag_portable_applied', { count: lastImport.count }));
             }, 0));
         }
 

@@ -24,6 +24,9 @@ const CINEPHILE = { v: 1, kind: 'je-media-tags-preset', id: 'cinephile', name: '
  * The panel with the hub, over a server that stores settings.json (PascalCase)
  * and answers the media-tags endpoints.
  * @param {import('node:test').TestContext} t
+ * Each user (and server) has its own store; `flags` hold or fail requests:
+ * saveGate holds settings.json POSTs until it resolves, failSave answers them
+ * with a 500, exportGate answers the export with what it resolves to.
  * @param {{stored?: object, plugin?: object, mine?: object[], offered?: object[], preview?: (doc: object) => object}} [options]
  */
 function setup(t, { stored = {}, plugin = {}, mine = [], offered = [], preview } = {}) {
@@ -32,6 +35,12 @@ function setup(t, { stored = {}, plugin = {}, mine = [], offered = [], preview }
     settings: { TagLayoutSettingsVersion: 1, QualityTagsEnabled: true, RatingTagsEnabled: true, StatusTagsEnabled: true, TagLayout: 'corners', ...stored },
     mine: structuredClone(mine),
   };
+  /** @type {{saveGate: Promise<void>|null, failSave: boolean, exportGate: Promise<object>|null}} */
+  const flags = { saveGate: null, failSave: false, exportGate: null };
+  const identity = { user: 'user-a', server: 'server-a' };
+  const accounts = new Map([['server-a/user-a', server]]);
+  /** The store a request is for (by the user id in its path and the current server). */
+  const accountOf = (path) => accounts.get(`${identity.server}/${path.split('/user-settings/')[1]?.split('/')[0]}`) || server;
   /** What the server's preview answers: each posted field changes from the stored value; Foo is unknown. */
   const defaultPreview = (doc) => {
     const changes = [];
@@ -58,31 +67,42 @@ function setup(t, { stored = {}, plugin = {}, mine = [], offered = [], preview }
       themer: { getThemeVariables: () => ({ panelBg: '#000', secondaryBg: '#111', primaryAccent: '#0af', altAccent: '#222', blur: '0px', textColor: '#fff', logo: '' }) },
     },
     apiClient: {
+      getCurrentUserId: () => identity.user,
+      serverId: () => identity.server,
       getUrl: (path) => `http://jellyfin.test/${path.replace(/^\//, '')}`,
       ajax: async (request) => {
         const url = new URL(request.url);
         const path = url.pathname;
         const body = request.data ? JSON.parse(request.data) : null;
-        requests.push({ type: request.type, path, body });
+        requests.push({ type: request.type, path, body, server: identity.server });
+        const account = accountOf(path);
         if (path.endsWith('/settings.json')) {
-          if (request.type === 'POST') { server.settings = body; return { success: true }; }
-          return structuredClone(server.settings);
+          if (request.type === 'POST') {
+            if (flags.saveGate) await flags.saveGate;
+            if (flags.failSave) throw { status: 500 };
+            account.settings = body;
+            return { success: true };
+          }
+          return structuredClone(account.settings);
         }
-        if (path.endsWith('/media-tags/export')) return { v: 1, kind: 'je-media-tags-user', settings: { TagLayout: server.settings.TagLayout, QualityTagsEnabled: server.settings.QualityTagsEnabled } };
+        if (path.endsWith('/media-tags/export')) {
+          if (flags.exportGate) return await flags.exportGate;
+          return { v: 1, kind: 'je-media-tags-user', settings: { TagLayout: account.settings.TagLayout, QualityTagsEnabled: account.settings.QualityTagsEnabled } };
+        }
         if (path.endsWith('/media-tags/preview')) {
           const answer = (preview || defaultPreview)(body);
           if (answer.error) throw { status: 400, json: async () => answer };
           return answer;
         }
-        if (path.endsWith('/media-tags/presets') && request.type === 'GET') return { max: 10, builtIn: [CINEPHILE], offered, mine: structuredClone(server.mine) };
+        if (path.endsWith('/media-tags/presets') && request.type === 'GET') return { max: 10, builtIn: [CINEPHILE], offered, mine: structuredClone(account.mine) };
         if (path.endsWith('/media-tags/presets') && request.type === 'POST') {
-          if (server.mine.length >= 10) throw { status: 400, json: async () => ({ error: 'full', max: 10 }) };
-          const preset = { v: 1, kind: 'je-media-tags-preset', id: `p${server.mine.length + 1}`, name: body.name.trim(), description: body.description || '', settings: body.settings };
-          server.mine.push(preset);
+          if (account.mine.length >= 10) throw { status: 400, json: async () => ({ error: 'full', max: 10 }) };
+          const preset = { v: 1, kind: 'je-media-tags-preset', id: `p${account.mine.length + 1}`, name: body.name.trim(), description: body.description || '', settings: body.settings };
+          account.mine.push(preset);
           return { preset, skipped: body.settings.Foo !== undefined ? [{ field: 'Foo', reason: 'unknown', detail: null }] : [] };
         }
         if (request.type === 'DELETE' && path.includes('/media-tags/presets/')) {
-          server.mine = server.mine.filter(p => p.id !== decodeURIComponent(path.split('/').pop()));
+          account.mine = account.mine.filter(p => p.id !== decodeURIComponent(path.split('/').pop()));
           return { success: true };
         }
         if (path.endsWith('/tag-styles')) return {};
@@ -102,6 +122,8 @@ function setup(t, { stored = {}, plugin = {}, mine = [], offered = [], preview }
   h.JE.toPascalCase = convert(c => c.toUpperCase());
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'enhanced/config.js', 'enhanced/icons.js', 'enhanced/helpers.js']) h.load(file);
   h.JE.currentSettings = h.JE.loadSettings();
+  h.JE.core.navigation = { onNavigate: () => () => {} };
+  h.load('core/session.js');
   h.JE.escapeHtml = h.JE.core.ui.escapeHtml;
   for (const file of ['ui-panel-settings.js', 'ui-panel-tag-editor.js', 'ui-panel-tag-looks.js', 'ui-panel-tag-preview.js', 'ui-panel-tag-portable.js', 'ui-panel-media-tags.js']) h.load(`enhanced/settingspanel/${file}`);
   const ui = h.JE.internals.enhancedUi;
@@ -121,7 +143,25 @@ function setup(t, { stored = {}, plugin = {}, mine = [], offered = [], preview }
     area.dispatchEvent(new h.window.Event('input', { bubbles: true }));
   };
   return {
-    ...h, server, requests, copies, clicks, settle, $, click, dialog, action, paste,
+    ...h, server, accounts, flags, requests, copies, clicks, settle, $, click, dialog, action, paste,
+    /**
+     * Sign in as another user (or the same user on another server) in this tab, as
+     * plugin.js does: the session resets, then the new user's settings load. The
+     * open panel stays on screen unless `closePanel`.
+     * @param {string} user @param {object} [settings] - Their stored settings (a new account).
+     * @param {{server?: string, closePanel?: boolean}} [opts]
+     */
+    switchUser(user, settings, { server: serverName = identity.server, closePanel = false } = {}) {
+      const key = `${serverName}/${user}`;
+      if (settings) accounts.set(key, { settings: structuredClone(settings), mine: [] });
+      identity.user = user;
+      identity.server = serverName;
+      h.JE.session.checkNow('test-switch');
+      h.JE.userConfig = { settings: convert(c => c.toLowerCase())(accounts.get(key).settings), shortcuts: { Shortcuts: [] } };
+      h.JE.currentSettings = h.JE.loadSettings();
+      if (closePanel) $('#closeSettingsPanel')?.click();
+    },
+    account: (user, serverName = 'server-a') => accounts.get(`${serverName}/${user}`),
     async open() { await h.JE.showEnhancedPanel(); await settle(); },
     key(el, key) { el.dispatchEvent(new h.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); },
     status: () => dialog()?.querySelector('.je-pt-status').textContent,
@@ -435,4 +475,108 @@ test('an import of the administrator\'s own value is kept as the user\'s choice'
   h.JE.currentSettings.tagsHideOnHover = true;
   await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
   assert.equal(h.server.settings.SeriesQualityAggregation, 'best');
+});
+
+// ── Late answers after a sign-in change (astra R4-1) ─────────────────
+
+/** Paste a user document into a fresh Import dialog and ask for its preview. */
+async function importDocument(h, settings) {
+  h.click(h.$('[data-tp="import"]'));
+  await h.settle();
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-user', settings }));
+  h.click(h.action('next'));
+  await h.settle(12);
+}
+
+test('save as preset whose export answers after another user signed in posts nothing for either user', async t => {
+  const h = setup(t, { stored: { TagLayout: 'bands' } });
+  await h.open();
+  let release;
+  h.flags.exportGate = new Promise(resolve => { release = resolve; });
+  h.click(h.$('[data-tp="save-preset"]'));
+  h.dialog().querySelector('#jePtName').value = 'A private preset';
+  h.click(h.action('save'));
+  await h.settle(10);
+  assert.ok(h.requests.some(r => r.path.includes('/user-a/media-tags/export')), 'the export is on its way for user A');
+
+  h.switchUser('user-b', { TagLayoutSettingsVersion: 1, TagLayout: 'minimal' });
+  await h.settle(6);
+  release({ v: 1, kind: 'je-media-tags-user', settings: { TagLayout: 'bands' } });
+  await h.settle(15);
+  assert.deepEqual(h.requests.filter(r => r.type === 'POST' && r.path.endsWith('/media-tags/presets')), [], 'no preset is posted, least of all into B\'s list');
+  assert.deepEqual(h.account('user-b').mine, []);
+  assert.deepEqual(h.account('user-a').mine, []);
+});
+
+for (const [name, back] of [
+  ['another user', (h) => h.switchUser('user-b', { TagLayoutSettingsVersion: 1, TagLayout: 'minimal' })],
+  ['another user and back again', (h) => { h.switchUser('user-b', { TagLayoutSettingsVersion: 1, TagLayout: 'minimal' }); h.switchUser('user-a'); }],
+  ['the same user id on another server', (h) => h.switchUser('user-a', { TagLayoutSettingsVersion: 1, TagLayout: 'minimal' }, { server: 'server-b' })],
+]) {
+  test(`an import whose save answers after a sign-in change (${name}) offers no Undo to the next session`, async t => {
+    const h = setup(t);
+    await h.open();
+    await importDocument(h, { TagLayout: 'bands' });
+    let release;
+    h.flags.saveGate = new Promise(resolve => { release = resolve; });
+    h.click(h.action('apply'));
+    await h.settle(8);
+    back(h);
+    await h.settle(6);
+    h.flags.saveGate = null;
+    release();
+    await h.settle(12);
+    assert.equal(h.account('user-a').settings.TagLayout, 'bands', 'A\'s own save still lands in A\'s settings');
+
+    // The next session opens the panel (and the stale one is still on screen too).
+    const posts = h.requests.length;
+    h.$('#closeSettingsPanel')?.click();
+    await h.open();
+    const bar = h.$('[data-tp-undo]');
+    assert.equal(bar.hidden, true, 'no Undo from the previous session');
+    assert.equal(bar.querySelector('[data-tp="undo"]'), null);
+    assert.equal(h.requests.slice(posts).filter(r => r.type === 'POST').length, 0, 'nothing written for the next session');
+  });
+}
+
+test('an import save that fails after another user signed in leaves that user\'s settings alone', async t => {
+  const h = setup(t);
+  await h.open();
+  await importDocument(h, { UseNativePosterTags: false });
+  let release;
+  h.flags.saveGate = new Promise(resolve => { release = resolve; });
+  h.click(h.action('apply'));
+  await h.settle(8);
+  h.switchUser('user-b', { TagLayoutSettingsVersion: 1, TagLayout: 'minimal', UseNativePosterTags: true });
+  const userB = h.JE.userConfig;
+  await h.settle(4);
+  h.flags.saveGate = null;
+  h.flags.failSave = true;
+  release();
+  await h.settle(12);
+  h.flags.failSave = false;
+  assert.equal(userB.settings.useNativePosterTags, true, 'the rollback of A\'s import never reaches B\'s configuration');
+  assert.equal(h.JE.currentSettings.tagLayout, 'minimal');
+});
+
+test('an import that finishes after its panel was closed still offers Undo in the same session', async t => {
+  const h = setup(t);
+  await h.open();
+  await importDocument(h, { TagLayout: 'bands' });
+  let release;
+  h.flags.saveGate = new Promise(resolve => { release = resolve; });
+  h.click(h.action('apply'));
+  await h.settle(8);
+  h.$('#closeSettingsPanel').click();
+  await h.settle(4);
+  h.flags.saveGate = null;
+  release();
+  await h.settle(12);
+  assert.equal(h.server.settings.TagLayout, 'bands');
+  if (!h.$('#jeMediaTagsHub')) await h.open();
+  const bar = h.$('[data-tp-undo]');
+  assert.equal(bar.hidden, false, 'Undo is offered to the session that imported');
+  h.click(bar.querySelector('[data-tp="undo"]'));
+  await h.settle(12);
+  assert.equal(h.server.settings.TagLayout, 'corners', 'and it undoes');
 });
