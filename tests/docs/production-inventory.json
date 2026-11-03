@@ -759,6 +759,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsEpisodeLookup.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/StatusTagsScenesService.cs",
       "category": "Services"
     },
@@ -9921,7 +9925,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 454,
+    "files": 455,
     "routes": 194,
     "configuration_properties": 720,
     "storage_references": 85,
