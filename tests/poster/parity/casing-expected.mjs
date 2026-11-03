@@ -2,7 +2,7 @@
 // Builds data/casing-expected.json: String.prototype.toLowerCase() / toUpperCase() for every
 // code point the two change, plus Final_Sigma contexts (capital sigma before and after every
 // cased or case-ignorable code point), so `PosterTagParity casing` can check JsText against the
-// real JS. Rows are [input, lower, upper].
+// real JS. Rows are [input, lower, upper]; lower or upper is null when it can't be checked (below).
 import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,9 +12,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 // JsText cases through .NET, which on Linux uses the host's system ICU, while Node bundles its
 // own (newer) ICU. Ubuntu 24.04, the CI runner, has ICU 74 (Unicode 15.1), so a string whose
 // input or result involves a character added later can't match there: U+019B gained the
-// uppercase U+A7DC in Unicode 16, for example. These are the cased or case-ignorable code
-// points added in Unicode 16.0 and 17.0 (DerivedAge.txt 17.0.0); 15.1 added none. Extend the
-// list when Node moves to a newer Unicode version.
+// uppercase U+A7DC in Unicode 16, for example, while its lowercase checks still hold. These are
+// the DerivedAge.txt 17.0.0 ranges of Unicode 16.0 and 17.0 that contain cased or
+// case-ignorable code points (15.1 added none). Extend the list when Node moves to a newer
+// Unicode version.
 const newerThanUnicode15_1 = [
     [0x0897, 0x0897], [0x1c89, 0x1c8a], [0xa7cb, 0xa7cd], [0xa7da, 0xa7dc], [0x10d40, 0x10d65],
     [0x10d69, 0x10d85], [0x10efc, 0x10efc], [0x113b7, 0x113c0], [0x113cc, 0x113d5], [0x113e1, 0x113e2],
@@ -31,9 +32,16 @@ const isNewer = (s) => [...s].some((ch) => {
 const rows = [];
 let skipped = 0;
 const add = (s) => {
-    const row = [s, s.toLowerCase(), s.toUpperCase()];
-    if (row.some(isNewer)) skipped++;
-    else rows.push(row);
+    if (isNewer(s)) {
+        skipped += 2;
+        return;
+    }
+    const [lower, upper] = [s.toLowerCase(), s.toUpperCase()].map((r) => {
+        if (!isNewer(r)) return r;
+        skipped++;
+        return null;
+    });
+    if (lower !== null || upper !== null) rows.push([s, lower, upper]);
 };
 const context = /^[\p{Cased}\p{Case_Ignorable}]$/u;
 for (let cp = 0; cp <= 0x10ffff; cp++) {
@@ -47,6 +55,6 @@ for (let cp = 0; cp <= 0x10ffff; cp++) {
         add(`AΣ${ch}b`);
     }
 }
-for (const s of ['Σ', 'AΣ', 'ΣA', 'AΣ b', 'A.Σ', '𐐀Σ', 'Straße İ ŉ ǰ']) add(s);
+for (const s of ['\u03a3', 'A\u03a3', '\u03a3A', 'A\u03a3 b', 'A.\u03a3', '\ud801\udc00\u03a3', 'Stra\u00dfe \u0130 \u0149 \u01f0']) add(s);
 writeFileSync(join(here, 'data', 'casing-expected.json'), JSON.stringify(rows));
-console.log(`casing: ${rows.length} strings (${skipped} skipped: characters newer than Unicode 15.1)`);
+console.log(`casing: ${rows.length} strings (${skipped} checks skipped: characters newer than Unicode 15.1)`);
