@@ -1223,6 +1223,7 @@
     "admin_tags_layout_groups_for": "Positions for the {layout} layout. Pick another layout above to set its positions.",
     "admin_tags_limit": "Limit",
     "admin_tags_limit_for": "{group} limit",
+    "admin_tags_limit_set": "{group} limit: {n}",
     "admin_tags_position_for": "{group} position",
     "admin_tags_position_aria": "{group}: {slot}",
     "admin_tags_group_off_for_new": "Off for new users",

@@ -307,3 +307,16 @@ test('Layout defaults: a move refused because another administrator reordered is
   assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['TagGroupOrder']);
   assert.equal(h.A.pendingState().state, 'conflict');
 });
+
+test('Layout defaults: the limit stepper says the new limit to screen readers and keeps focus', async t => {
+  const h = setup(t);
+  await h.settle();
+  const live = h.$('.je-ta-live');
+  h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]').click();
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(live.textContent, 'admin_tags_limit_set:common_genre|4');
+  assert.equal(h.document.activeElement, h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]'), 'focus stays on More');
+  assert.equal(h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] output').textContent.trim(), '4');
+  await h.save();
+  assert.deepEqual(plain(h.server.TagGroupCaps), { Genre: 4 });
+});

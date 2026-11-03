@@ -263,6 +263,8 @@
                     if (next === null || next === undefined) return;
                     state.caps[g] = next;
                     keep = `[data-act="cap"][data-dir="${button.dataset.dir}"]`;
+                    // The redrawn row's <output> arrives already filled, which screen readers do not read out.
+                    ctx.announce(JE.t('admin_tags_limit_set', { group: groupName(g), n: next === 0 ? JE.t('panel_settings_ui_tag_editor_summary_all') : next }));
                 } else if (button.dataset.slot) {
                     const slot = button.dataset.slot;
                     if (state.layout === 'corners') {
