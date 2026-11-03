@@ -1846,6 +1846,24 @@
         return shown;
     }
 
+    /**
+     * The content width a wrapping slot lays its rows out in (reads only).
+     * clientWidth is rounded to whole pixels, but grid cards rarely are, and
+     * flex wraps a chip that overflows by any fraction of a pixel: read the
+     * used width instead.
+     * @param {HTMLElement} slotEl
+     * @param {CSSStyleDeclaration} style - The slot's computed style.
+     * @returns {number}
+     */
+    function rowWidth(slotEl, style) {
+        const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+        const width = parseFloat(style.width);
+        if (!Number.isFinite(width)) return slotEl.clientWidth - pad;
+        return style.boxSizing === 'border-box'
+            ? width - pad - (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0)
+            : width;
+    }
+
     /** @type {Set<CardController>} cards waiting for the next fitting pass */
     const pendingFit = new Set();
     let fitScheduled = false;
@@ -2270,7 +2288,7 @@
             // a previous +N chip must not shrink the next measurement's budget.
             const available = vertical ? Math.max(0, Math.min(opposite.length ? half : innerWidth,
                 innerWidth - oppositeWidth - sideGap))
-                : slotEl.clientWidth - (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+                : rowWidth(slotEl, style);
             const gap = parseFloat(style.columnGap) || 0;
             // Centre chips are unconstrained by CSS, so these batched reads
             // measure their intrinsic widths, including padding and borders.
