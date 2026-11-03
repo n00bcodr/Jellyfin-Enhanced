@@ -39,7 +39,8 @@ function setup(t, { config = {}, confirm = true, adminPreview, userPreview } = {
   const copies = [];
   const confirms = [];
   // failSave: the next field saves fail (an error other than a conflict).
-  const flags = { failSave: false };
+  // saveGate: a promise each field save waits for before it writes (a save on its way).
+  const flags = { failSave: false, saveGate: null };
   const h = createHarness({
     html: '<div id="jeTaRoot"></div>',
     url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=server',
@@ -54,6 +55,7 @@ function setup(t, { config = {}, confirm = true, adminPreview, userPreview } = {
         requests.push({ type: request.type, path, body });
         if (path.endsWith('/admin/configuration')) {
           patches.push(structuredClone(body));
+          if (flags.saveGate) await flags.saveGate;
           if (flags.failSave) throw { status: 500 };
           const conflicts = {};
           for (const [key, before] of Object.entries(body.Expected || {})) if (!same(server[key], before) && !same(server[key], body.Changes[key])) conflicts[key] = server[key];
@@ -209,6 +211,76 @@ test('a field another administrator changed meanwhile waits for Keep mine / Take
   h.click(h.$('#jeTaSaved [data-je-keep]'));
   await h.ctx.flush();
   assert.equal(h.server.TagLayout, 'bands');
+});
+
+test('import saves an edit still on its way before the preview, so the document\'s value of that field is applied', async t => {
+  const h = setup(t);
+  let release;
+  h.flags.saveGate = new Promise((r) => { release = r; });
+  h.ctx.set('TagLayout', 'bands');
+  const saving = h.ctx.flush();
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLayout: 'corners', StatusTagsJustAddedDays: 9 } }));
+  h.click(h.action('next'));
+  await h.settle(10);
+  assert.ok(!h.requests.some((r) => r.path.endsWith('/admin/media-tags/preview')), 'no preview while the save is on its way');
+  h.flags.saveGate = null;
+  release();
+  await saving;
+  await h.settle(10);
+  assert.equal(h.server.TagLayout, 'bands');
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), (el) => el.textContent), ['Tag Layout', 'Status Tags Just Added Days'], 'compared with the saved edit');
+  h.click(h.action('apply'));
+  await h.settle(10);
+  assert.equal(h.server.TagLayout, 'corners', 'the document\'s layout');
+  assert.equal(h.server.StatusTagsJustAddedDays, 9);
+  assert.equal(h.dialog(), null);
+  assert.equal(h.A.pendingState().state, 'saved');
+});
+
+test('import refuses while an edit failed to save, and previews and applies after a successful retry', async t => {
+  const h = setup(t);
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  h.flags.failSave = true;
+  h.ctx.set('TagLayout', 'bands');
+  await h.ctx.flush();
+  assert.equal(h.A.pendingState().state, 'error');
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLayout: 'corners', StatusTagsJustAddedDays: 9 } }));
+  h.click(h.action('next'));
+  await h.settle(10);
+  assert.ok(!h.requests.some((r) => r.path.endsWith('/admin/media-tags/preview')), 'not previewed against settings the page does not show');
+  assert.equal(h.status(), 'admin_tags_portable_import_unsaved');
+  assert.equal(h.action('apply'), null);
+  h.flags.failSave = false;
+  h.click(h.action('next'));
+  await h.settle(10);
+  assert.equal(h.server.TagLayout, 'bands', 'the retained edit was saved first');
+  h.click(h.action('apply'));
+  await h.settle(10);
+  assert.equal(h.server.TagLayout, 'corners');
+  assert.equal(h.server.StatusTagsJustAddedDays, 9);
+  assert.equal(h.A.pendingState().state, 'saved');
+});
+
+test('import: an edit on the page after the preview to a field the document sets shows the preview again instead of applying', async t => {
+  const h = setup(t);
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLayout: 'corners', StatusTagsJustAddedDays: 9 } }));
+  h.click(h.action('next'));
+  await h.settle(10);
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), (el) => el.textContent), ['Status Tags Just Added Days'], 'the layout is already corners');
+  h.ctx.set('TagLayout', 'bands');
+  h.click(h.action('apply'));
+  await h.settle(10);
+  assert.equal(h.server.TagLayout, 'bands', 'the edit was saved first');
+  assert.equal(h.server.StatusTagsJustAddedDays, 7, 'nothing applied from the old preview');
+  assert.equal(h.status(), 'admin_tags_portable_import_changed');
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), (el) => el.textContent), ['Tag Layout', 'Status Tags Just Added Days']);
+  h.click(h.action('apply'));
+  await h.settle(10);
+  assert.equal(h.server.TagLayout, 'corners');
+  assert.equal(h.server.StatusTagsJustAddedDays, 9);
 });
 
 test('declining the confirmation or a refused document writes nothing', async t => {

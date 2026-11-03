@@ -3,9 +3,10 @@
  * server-wide Media Tags settings, and the presets offered to users.
  *
  * Export is the server's document (GET admin/media-tags/export: every field
- * this page writes, never an API key or the custom rule key). Import asks the
- * server what a document would change (POST admin/media-tags/preview, the
- * field patch's own checks), and after a confirmation writes the changed
+ * this page writes, never an API key or the custom rule key). Import saves
+ * the page's pending edits, asks the server what a document would change
+ * (POST admin/media-tags/preview, the field patch's own checks), and after a
+ * confirmation writes the changed
  * fields through the page's working copy, so they are saved by the locked
  * field patch with the values this page read: a field another administrator
  * changed meanwhile is refused and waits for Keep mine / Take theirs, like
@@ -159,6 +160,57 @@
 
             body.querySelector('#jeTaImport')?.addEventListener('click', () => {
                 const d = show('admin_tags_portable_import_title');
+                /**
+                 * Ask the server what the document changes, compared with what this page
+                 * shows: edits not saved yet (on their way, failed or refused) are saved
+                 * first, else the server would compare with settings the page no longer
+                 * shows and leave out a field the page changed.
+                 * @param {Object} document - The parsed document.
+                 * @param {string} [note] - Status shown with the preview.
+                 */
+                const preview = async (document, note) => {
+                    d.status(JE.t('tag_portable_checking'));
+                    const saved = await ctx.flush();
+                    if (!ctx.isCurrent() || d.closed()) return;
+                    if (!saved) { d.status(JE.t('admin_tags_portable_import_unsaved'), 'error'); return; }
+                    let answer;
+                    try {
+                        answer = await request('POST', 'admin/media-tags/preview', document);
+                    } catch (err) {
+                        if (!ctx.isCurrent() || d.closed()) return;
+                        d.status(P.errorText((await P.errorOf(err)).code), 'error');
+                        return;
+                    }
+                    if (!ctx.isCurrent() || d.closed()) return;
+                    d.status(note || '');
+                    const changes = answer?.changes || [];
+                    // The page's values of every field the document sets, as the preview compared them.
+                    const fields = new Set([...Object.keys(answer?.imported || {}), ...changes.map((c) => c.field)]);
+                    const snapshot = () => JSON.stringify(Array.from(fields, (f) => ctx.config[f] ?? null));
+                    const compared = snapshot();
+                    d.body.innerHTML = P.previewHtml(answer || {});
+                    d.foot.innerHTML = P.buttonHtml('back', 'tag_portable_back') + P.buttonHtml('cancel', 'jellyseerr_modal_cancel')
+                        + (changes.length ? P.buttonHtml('apply', 'tag_portable_apply_count', { primary: true, params: { count: changes.length } }) : '');
+                    d.foot.onclick = async (ev) => {
+                        const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (ev.target).closest('[data-pt-action]'));
+                        const next = button?.dataset.ptAction;
+                        if (next === 'back') { d.status(''); step(); d.focusFirst(); }
+                        else if (next === 'cancel') d.close();
+                        else if (next === 'apply' && button) {
+                            const ok = await ctx.confirm(JE.t('admin_tags_portable_apply_confirm', { count: changes.length }), JE.t('admin_tags_portable_import_title'));
+                            if (!ok || d.closed()) return;
+                            button.disabled = true;
+                            // Edited on this page since the preview: it no longer says what Apply changes.
+                            const settled = await ctx.flush();
+                            if (!ctx.isCurrent() || d.closed()) return;
+                            if (!settled) { button.disabled = false; d.status(JE.t('admin_tags_portable_import_unsaved'), 'error'); return; }
+                            if (snapshot() !== compared) { await preview(document, JE.t('admin_tags_portable_import_changed')); return; }
+                            await apply(d, changes);
+                            if (!d.closed()) button.disabled = false;
+                        }
+                    };
+                    /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="apply"]') || d.foot.querySelector('[data-pt-action="cancel"]'))?.focus();
+                };
                 const step = () => {
                     d.body.innerHTML = P.sourceHtml('admin_tags_portable_import_desc');
                     d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('next', 'tag_portable_preview', { primary: true });
@@ -169,35 +221,7 @@
                         if (action !== 'next') return;
                         const parsed = P.parseDocument(/** @type {HTMLTextAreaElement} */ (d.body.querySelector('[data-pt-paste]')).value);
                         if (parsed.error) { d.status(P.errorText(parsed.error), 'error'); return; }
-                        d.status(JE.t('tag_portable_checking'));
-                        let preview;
-                        try {
-                            preview = await request('POST', 'admin/media-tags/preview', parsed.document);
-                        } catch (err) {
-                            if (!ctx.isCurrent() || d.closed()) return;
-                            d.status(P.errorText((await P.errorOf(err)).code), 'error');
-                            return;
-                        }
-                        if (!ctx.isCurrent() || d.closed()) return;
-                        d.status('');
-                        const changes = preview?.changes || [];
-                        d.body.innerHTML = P.previewHtml(preview || {});
-                        d.foot.innerHTML = P.buttonHtml('back', 'tag_portable_back') + P.buttonHtml('cancel', 'jellyseerr_modal_cancel')
-                            + (changes.length ? P.buttonHtml('apply', 'tag_portable_apply_count', { primary: true, params: { count: changes.length } }) : '');
-                        d.foot.onclick = async (ev) => {
-                            const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (ev.target).closest('[data-pt-action]'));
-                            const next = button?.dataset.ptAction;
-                            if (next === 'back') { d.status(''); step(); d.focusFirst(); }
-                            else if (next === 'cancel') d.close();
-                            else if (next === 'apply' && button) {
-                                const ok = await ctx.confirm(JE.t('admin_tags_portable_apply_confirm', { count: changes.length }), JE.t('admin_tags_portable_import_title'));
-                                if (!ok || d.closed()) return;
-                                button.disabled = true;
-                                await apply(d, changes);
-                                if (!d.closed()) button.disabled = false;
-                            }
-                        };
-                        /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="apply"]') || d.foot.querySelector('[data-pt-action="cancel"]'))?.focus();
+                        await preview(/** @type {Object} */ (parsed.document));
                     };
                     d.focusFirst();
                 };

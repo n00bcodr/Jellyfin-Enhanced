@@ -1562,6 +1562,8 @@
     "admin_tags_portable_export_unsaved": "Not exported: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then export again.",
     "admin_tags_portable_import_title": "Import server Media Tags settings",
     "admin_tags_portable_import_desc": "Choose a server export or paste its text. Settings the server does not accept are listed and skipped.",
+    "admin_tags_portable_import_unsaved": "Not previewed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then preview again.",
+    "admin_tags_portable_import_changed": "Settings on this page changed since the preview. This is the preview again: check it, then apply.",
     "admin_tags_portable_apply_confirm": "Change {count} server settings for everyone?",
     "admin_tags_portable_apply_refused": "Another administrator changed some of these settings meanwhile: choose Keep mine or Take theirs at the top of the page. The other settings were saved.",
     "admin_tags_portable_applied": "{count} server settings changed.",
