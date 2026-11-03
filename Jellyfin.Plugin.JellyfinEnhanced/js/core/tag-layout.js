@@ -2160,8 +2160,9 @@
      * held to the bottom 40% of the card. Its rows must fit inside that height
      * less its padding; on a card too short for even one row that way (a small
      * landscape thumbnail), one row may sit in the top padding, which is only
-     * the scrim's fade-in, while it still fits above the bottom padding. So is
-     * the bottom band (bandRoom).
+     * the scrim's fade-in, while it still fits above the bottom padding. So are
+     * the bottom band (bandRoom) and the caption strip, whose fixed two-row
+     * height (no vertical padding) clips anything below it.
      * @param {CardController} ctrl
      * @param {CSSStyleDeclaration} style - The slot's computed style.
      * @param {HTMLElement} slotEl
@@ -2169,6 +2170,10 @@
      */
     function rowRoom(ctrl, style, slotEl) {
         const raw = style.maxHeight;
+        if (slotEl === ctrl.outlet) {
+            const height = parseFloat(style.height);
+            return height > 0 ? { inside: height, oneRow: height, gap: parseFloat(style.rowGap) || 0 } : null;
+        }
         if (!raw || raw === 'none') return ctrl.layout === 'bands' && slotEl.dataset.jeSlot === 'bottom' ? bandRoom(ctrl, style) : null;
         let limit = parseFloat(raw);
         if (raw.endsWith('%')) {

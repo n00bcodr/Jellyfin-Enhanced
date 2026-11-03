@@ -4,23 +4,25 @@ const root = path.resolve(__dirname, '../../Jellyfin.Plugin.JellyfinEnhanced/js'
 const english = require('../../Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json');
 
 // The caption strip reserves a fixed two-row height and clips what is below
-// it. Taller chips (language codes with subtitles, on ~270px posters where
-// the caption's other chips reach their largest font) made two rows taller
-// than that height, so the second row was cut at the bottom. The fitting
-// pass must keep only the rows that fit (then "+N").
-test('the caption strip shows only whole rows of chips within its reserved height', async ({ page }) => {
+// it. Language codes on desktop (sized by the viewport, not the strip) made a
+// row taller than the strip's own chips, so on ~270px posters the second row
+// was cut at the bottom. Logos and awards keep chips of their own size too:
+// the fitting pass must measure rows against the reserved height and keep
+// only those that fit (then "+N").
+const CASES = { 'boxed groups': {}, 'logos and awards too': { logoTagsEnabled: true, awardsTagsEnabled: true } };
+for (const [name, extra] of Object.entries(CASES)) test(`the caption strip shows only whole rows of chips within its reserved height (${name})`, async ({ page }) => {
   test.setTimeout(90000);
   await page.setContent('<style>body{margin:0;padding:8px}</style><div id="jellyfin-enhanced-panel"><div id="preview" style="width:550px"></div></div>');
-  await page.evaluate((english) => {
+  await page.evaluate(({ english, extra }) => {
     window.JellyfinEnhanced = { core: {}, helpers: {}, pluginConfig: {}, currentSettings: { tagLayoutSettingsVersion: 1, tagLayout: 'caption',
       statusTagsEnabled: true, statusTagsTrending: true, statusTagsSchedule: true, qualityTagsEnabled: true, ratingTagsEnabled: true, ageRatingTagsEnabled: true,
-      languageTagsEnabled: true, languageTagsStyle: 'codes', languageTagsShowSubtitles: true, genreTagsEnabled: true },
+      languageTagsEnabled: true, languageTagsStyle: 'codes', languageTagsShowSubtitles: true, genreTagsEnabled: true, ...extra },
       t: (key, params = {}) => Object.entries(params).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, v), english[key] || key),
       tagPipeline: { registerRenderer() {}, clearProcessed() {}, scheduleScan() {} } };
-  }, english);
+  }, { english, extra });
   for (const file of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
     'tags/rating-sources.js', 'tags/status-vocabulary.js', 'tags/statustags.js', 'tags/qualitytags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/languagetags.js',
-    'tags/genretags.js', 'enhanced/settingspanel/ui-panel-tag-editor.js', 'enhanced/settingspanel/ui-panel-tag-preview.js']) {
+    'tags/genretags.js', 'tags/logotags.js', 'tags/awardstags.js', 'enhanced/settingspanel/ui-panel-tag-editor.js', 'enhanced/settingspanel/ui-panel-tag-preview.js']) {
     await page.addScriptTag({ path: path.join(root, file) });
   }
   await page.evaluate(() => { window.preview = JellyfinEnhanced.internals.enhancedUi.createTagPreview(document.querySelector('#preview'), {}); });
