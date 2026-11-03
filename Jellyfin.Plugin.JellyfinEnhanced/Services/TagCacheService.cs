@@ -2619,8 +2619,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // or timestamp reconcile.
                 if (ServerModeEnabled && !_cacheReleased)
                 {
+                    // No MDBList/logo warm here: a slow or unreachable upstream could hold
+                    // shutdown past the grace period and lose the save below. Entries rebuild
+                    // from the scores and logos already cached; the next flush or reconcile
+                    // after startup refreshes them.
                     var batch = _pending.Drain();
-                    WarmForRebuild(batch.Where(change => !change.Removed).Select(change => change.Id));
                     using (BeginInPlaceWrites())
                     {
                         if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))

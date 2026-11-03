@@ -196,9 +196,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Warm one batch's MDBList scores and logos before its entries are
-        /// rebuilt (the monitor's flush, the shutdown flush, due Status
-        /// containers): one MDBList request per 150 titles and one bounded logo
-        /// wait for the whole batch, instead of a request and a wait per item.
+        /// rebuilt (the monitor's flush, due Status containers): one MDBList
+        /// request per 150 titles and one bounded logo wait for the whole batch,
+        /// instead of a request and a wait per item.
         /// </summary>
         private void WarmForRebuild(IEnumerable<Guid> ids)
         {

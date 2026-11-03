@@ -553,6 +553,46 @@ public class RatingSourceTests
     }
 
     [Fact]
+    public void ShutdownPersistsQueuedUpdatesWithoutWaitingOnMdblist()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        var upstream = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var requests = 0;
+        using var transport = new IntegrationTransport(async (request, _) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":1000}");
+            Interlocked.Increment(ref requests);
+            await upstream.Task; // an unreachable MDBList: the request would wait for its timeout
+            return IntegrationTransport.Response("[]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "late", ProviderIds = new() { ["Tmdb"] = "123" } };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<Guid>());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<BaseItem>());
+        library.Setup(l => l.GetItemById<BaseItem>(movie.Id)).Returns(movie);
+        TagCacheService Create() => new(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        try
+        {
+            var cache = Create();
+            cache.BuildFullCache(null, default);
+            cache.EnqueueUpdate(movie.Id);
+            Assert.True(Task.Run(cache.Dispose).Wait(TimeSpan.FromSeconds(5)), "Dispose never waits on the MDBList transport");
+            Assert.Equal(0, Volatile.Read(ref requests));
+            using var restarted = Create();
+            restarted.LoadFromDisk();
+            Assert.True(restarted.TryGetEntry(movie.Id, out _), "the queued update was applied and saved");
+        }
+        finally
+        {
+            upstream.TrySetResult();
+        }
+    }
+
+    [Fact]
     public void FlushWithNoWarmDemandResolvesEachChangedItemOnce()
     {
         using var f = new ApiPluginFixture();
