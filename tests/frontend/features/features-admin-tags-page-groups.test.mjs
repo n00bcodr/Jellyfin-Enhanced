@@ -93,3 +93,16 @@ test('every declared field reads its configuration field and saves the new value
   assert.equal(h.server.LanguageTagsPriority, 'changed', 'text is trimmed');
   assert.equal(h.server.DevMode, false, 'fields the page does not own keep the server value');
 });
+
+test('Groups › Logos: both mode selects name Off with the translated track_off, like the page\'s other selects', async t => {
+  const h = setup(t);
+  await h.settle();
+  for (const id of ['#logoTagsMovieMode', '#logoTagsSeriesMode']) {
+    const off = h.$(`${id} option[value="off"]`);
+    assert.ok(off, `${id} offers Off`);
+    assert.equal(off.textContent.trim(), 'track_off');
+  }
+  h.change(h.$('#logoTagsMovieMode'), 'off');
+  await h.save();
+  assert.equal(h.server.LogoTagsMovieMode, 'off');
+});
