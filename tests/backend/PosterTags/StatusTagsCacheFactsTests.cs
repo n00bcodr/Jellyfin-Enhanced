@@ -430,13 +430,15 @@ public class StatusTagsCacheFactsTests
     }
 
     [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    [InlineData(4)]
-    [InlineData(5)]
-    [InlineData(6)]
-    public void BoundedTagDataFactsMatchTheFullWalkWithoutReadingEveryEpisode(int seed)
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    [InlineData(3, 0)]
+    [InlineData(4, 0)]
+    [InlineData(5, 0)]
+    [InlineData(6, 0)]
+    [InlineData(1, StatusTagsEpisodeLookup.SmallContainer)]
+    [InlineData(2, StatusTagsEpisodeLookup.SmallContainer)]
+    public void BoundedTagDataFactsMatchTheFullWalkWithoutReadingEveryEpisode(int seed, int smallContainer)
     {
         var now = new DateTime(2026, 11, 3, 0, 0, 0, DateTimeKind.Utc);
         var (series, seasons, episodes) = MessySeries(seed, seasons: 12, perSeason: 30);
@@ -447,8 +449,9 @@ public class StatusTagsCacheFactsTests
         foreach (var container in seasons.Cast<BaseItem>().Prepend(series))
         {
             var before = fake.Materialised;
-            Assert.Equal(Facts(FullWalk(container, episodes, now)), Facts(StatusTagsEpisodeLookup.Load(library.Object, container, EpisodesOf(container), now)));
-            Assert.InRange(fake.Materialised - before, 1, 40);
+            Assert.Equal(Facts(FullWalk(container, episodes, now)), Facts(StatusTagsEpisodeLookup.Load(library.Object, container, EpisodesOf(container), now, smallContainer)));
+            // One capped first page, then (larger containers) a few sorted pages.
+            Assert.InRange(fake.Materialised - before, 1, smallContainer + 41);
         }
     }
 }

@@ -790,7 +790,7 @@ public class PerfRound2TagCacheResponseTests
         Assert.Equal(25, item.GetProperty("LatestEpisodeIndex").GetProperty("Episode").GetInt32());
         Assert.True(item.GetProperty("LatestEpisodeIndex").GetProperty("IsLast").GetBoolean());
         Assert.Equal(20, item.GetProperty("SeasonPremiere").GetProperty("Season").GetInt32());
-        // 500 episodes in the series; the facts read a handful.
-        Assert.InRange(fake.Materialised, 1, 30);
+        // 500 episodes in the series; the facts read one capped page and a few sorted ones.
+        Assert.InRange(fake.Materialised, 1, StatusTagsEpisodeLookup.SmallContainer + 40);
     }
 }

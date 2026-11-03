@@ -10,7 +10,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
     /// The Status Tags episode facts of one Series or Season for the /tag-data
-    /// fallback, from a few sorted, limited queries instead of every episode.
+    /// fallback, never reading every episode of a large container. One query
+    /// reads up to <see cref="SmallContainer"/> episodes, newest added first:
+    /// a container that fits is walked in full from it (each query has a cost
+    /// of its own, so this is the cheapest for the usual season or short
+    /// series). A larger one reads a few sorted, limited queries instead.
     /// Each query fetches the episodes that decide one fact (the newest added,
     /// every episode of the newest air date, the newest season, the last
     /// episode of the latest season, the first aired episode of the seasons
@@ -22,6 +26,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// </summary>
     internal static class StatusTagsEpisodeLookup
     {
+        /// <summary>Containers with at most this many episodes are read in one query.</summary>
+        internal const int SmallContainer = 100;
+
         // Episodes fetched per page when a fact's first candidates may not
         // count (a special for a Series, another season's episode in a Season).
         private const int Page = 4;
@@ -36,7 +43,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <param name="container">The Series or Season.</param>
         /// <param name="query">A new query for the container's episodes as the user (parent, type, recursion, non-virtual, user).</param>
         /// <param name="now">The time the facts are computed for.</param>
-        public static (long? LatestAdded, StatusTagsEpisodeFacts Facts) Load(ILibraryManager library, BaseItem container, Func<InternalItemsQuery> query, DateTime now)
+        /// <param name="smallContainer">Containers with at most this many episodes are read in one query (tests lower it).</param>
+        public static (long? LatestAdded, StatusTagsEpisodeFacts Facts) Load(ILibraryManager library, BaseItem container, Func<InternalItemsQuery> query, DateTime now, int smallContainer = SmallContainer)
         {
             var isSeason = container is Season;
             var own = (container as Season)?.IndexNumber;
@@ -74,9 +82,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             const ItemSortBy Aired = ItemSortBy.PremiereDate, Added = ItemSortBy.DateCreated;
             const JSortOrder desc = JSortOrder.Descending, asc = JSortOrder.Ascending;
 
-            // Newest added (a missing date sorts last, so it is the newest only when all are missing).
-            var newest = Note(Ordered(Any, (Added, desc)).FirstOrDefault());
+            // Newest added first (a missing date sorts last, so it is the newest only when all are missing).
+            var head = query();
+            head.OrderBy = new[] { (Added, desc) };
+            head.Limit = smallContainer + 1;
+            var firstPage = library.GetItemList(head);
+            var newest = firstPage.OfType<Episode>().FirstOrDefault();
             DateTime? latestAdded = newest != null && newest.DateCreated != default ? newest.DateCreated : null;
+            if (firstPage.Count <= smallContainer)
+            {
+                // Every episode is here: the full walk.
+                foreach (var episode in firstPage.OfType<Episode>()) Note(episode);
+                return (TagCacheService.ToUnixMilliseconds(latestAdded), facts);
+            }
+
+            Note(newest);
 
             // Newest aired up to now: every episode of that air date, so ties resolve as in the full walk.
             var latest = Ordered(q => { q.MinPremiereDate = AfterUnset; q.MaxPremiereDate = now; }, (Aired, desc))
