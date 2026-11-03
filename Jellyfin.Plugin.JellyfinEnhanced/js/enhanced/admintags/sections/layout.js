@@ -276,7 +276,15 @@
                     }
                     keep = `[data-slot="${slot}"]`;
                 } else return;
-                ctx.setMany({ ...writeState(state), ...values });
+                // Only what this click changed: the stored order, caps and profiles come in the
+                // server's own shape ([] for no order, members omitted, its key order), which
+                // never matches writeState's text, so an untouched one would be resent and could
+                // conflict with (and on Keep mine undo) another administrator's change.
+                const before = writeState(readState(c));
+                const after = writeState(state);
+                for (const key of Object.keys(after)) if (JSON.stringify(after[key]) !== JSON.stringify(before[key])) values[key] = after[key];
+                if (!Object.keys(values).length) return;
+                ctx.setMany(values);
                 // Keep keyboard focus on the same control of the (redrawn) row.
                 const again = /** @type {HTMLButtonElement|null} */ (ctx.root.querySelector(`#tagGroupAdminRows .je-ta-lrow[data-group="${g}"] ${keep}`));
                 const fallback = ctx.root.querySelector(`#tagGroupAdminRows .je-ta-lrow[data-group="${g}"] button:not([disabled])`);

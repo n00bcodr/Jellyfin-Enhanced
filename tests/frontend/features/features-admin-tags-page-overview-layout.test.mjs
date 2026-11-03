@@ -268,3 +268,42 @@ test('editing Genre cap carries stored single-chip limits through the admin layo
   await h.save();
   assert.deepEqual(plain(h.server.TagGroupCaps), { Status: 9, AgeRating: 0, Genre: 3 });
 });
+
+test('Layout defaults: a click saves only the field it changed, whatever shape the server sent the others in', async t => {
+  // As the API sends them: no order is [], null members are omitted, caps come in the server's key order.
+  const h = setup(t, { config: { TagGroupOrder: [], TagGroupCaps: { Quality: 2, Status: 1 }, TagLayouts: { Bands: { Groups: [{ Group: 'quality', Slot: 'top' }] } } } });
+  await h.settle();
+  h.$('#tagGroupAdminRows .je-ta-lrow[data-group="quality"] [data-slot="tr"]').click();
+  await h.save();
+  assert.deepEqual(h.patches.map((p) => Object.keys(p.Changes)), [['QualityTagsPosition']]);
+  // Another administrator reorders the groups; this one only moves Quality's corner again.
+  const theirs = ['quality', 'status', 'rating', 'ageRating', 'language', 'genre', 'awards', 'logos', 'custom'];
+  h.server.TagGroupOrder = theirs.slice();
+  h.$('#tagGroupAdminRows .je-ta-lrow[data-group="quality"] [data-slot="bl"]').click();
+  await h.save();
+  assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['QualityTagsPosition']);
+  assert.equal(h.A.pendingState().state, 'saved', 'no conflict on a field this administrator did not touch');
+  assert.deepEqual(plain(h.server.TagGroupOrder), theirs, 'their order is kept');
+  assert.equal(h.server.QualityTagsPosition, 'bottom-left');
+  // Each control still writes its own field: a cap step, a move, a Bands slot.
+  h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]').click();
+  await h.save();
+  assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['TagGroupCaps']);
+  assert.deepEqual(plain(h.server.TagGroupCaps), { Quality: 2, Status: 1, Genre: 4 });
+  h.change(h.$('input[name="jeTaLayout"][value="bands"]'), true);
+  await h.save();
+  h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] [data-slot="top"]').click();
+  await h.save();
+  assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['TagLayouts']);
+  assert.deepEqual(plain(h.server.TagLayouts.Bands), { Groups: [{ Group: 'quality', Slot: 'top' }, { Group: 'genre', Slot: 'top' }] });
+});
+
+test('Layout defaults: a move refused because another administrator reordered is a real conflict', async t => {
+  const h = setup(t);
+  await h.settle();
+  h.server.TagGroupOrder = ['genre', 'status', 'quality', 'rating', 'ageRating', 'language', 'awards', 'logos', 'custom'];
+  h.$('#tagGroupAdminRows .je-ta-lrow[data-group="quality"] [data-act="move"][data-dir="-1"]').click();
+  await h.save();
+  assert.deepEqual(Object.keys(h.patches.at(-1).Changes), ['TagGroupOrder']);
+  assert.equal(h.A.pendingState().state, 'conflict');
+});

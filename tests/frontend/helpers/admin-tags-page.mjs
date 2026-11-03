@@ -23,10 +23,12 @@ const BASE = {
   QualityTagsPosition: 'top-left', GenreTagsPosition: 'top-right', LanguageTagsPosition: 'bottom-left', RatingTagsPosition: 'bottom-right', AgeRatingTagsPosition: 'bottom-right', StatusTagsPosition: 'top-right',
   LanguageTagsPriority: '', LanguageTagsPriorityStrict: false, LanguageTagsMergeRegions: false, LanguageTagsShowAudio: true, LanguageTagsShowSubtitles: false, LanguageTagsStyle: 'flags', LanguageTagsCountBadge: 'off',
   RatingTagsOnMovies: true, RatingTagsOnSeries: true, RatingTagsOnSeasons: true, RatingTagsOnEpisodes: true, RatingTagsOnContinueWatching: true, RatingTagsOnNextUp: true,
-  RatingTagsShowCommunity: true, RatingTagsShowCritic: true, RatingTagsSources: null, RatingTagsMinScore: 0, RatingTagsColorByScore: false, ShowRatingInPlayer: true,
+  RatingTagsShowCommunity: true, RatingTagsShowCritic: true, RatingTagsMinScore: 0, RatingTagsColorByScore: false, ShowRatingInPlayer: true,
   StatusTagsJustAdded: true, StatusTagsNewRelease: true, StatusTagsTrending: true, StatusTagsSchedule: true, StatusTagsMilestones: true, StatusTagsSeriesStatus: false, StatusTagsJustAddedDays: 7, StatusTagsNewReleaseDays: 30,
   StatusTagsLeaving: false, StatusTagsDirectPlay: false, LeavingSoonMaintainerrUrl: '', LeavingSoonMaintainerrApiKey: '', LeavingSoonCollections: '', LeavingSoonRefreshHours: 6,
-  TagLayout: 'corners', TagLabelDensity: 'full', TagLayouts: null, TagGroupOrder: null, TagGroupCaps: null, TagLookRules: null, TagShapeOverrides: null,
+  // As Jellyfin's plugin configuration API sends them: an unset list is [], an
+  // unset object (TagLayouts, TagGroupCaps, TagShapeOverrides, RatingTagsSources) is omitted.
+  TagLayout: 'corners', TagLabelDensity: 'full', TagGroupOrder: [], TagLookRules: [],
   TagsHideOnHover: false, DisableTagsOnSearchPage: false,
   TagStylesEnabled: true, TagStyleTarget: 'both', TagStyleOverrides: '', TagStylePreset: 'default', TagStylesAllowUserPreset: false,
   TagCacheServerMode: true, TagCacheExcludeLibraries: false, TagCacheExcludedLibraryIds: '', EnableTagsLocalStorageFallback: false, TagsCacheTtlDays: 30,
