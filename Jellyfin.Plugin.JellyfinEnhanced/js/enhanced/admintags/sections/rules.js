@@ -266,33 +266,46 @@
         hint: 'admin_tags_locks_desc',
     });
 
-    /** @type {Map<string, {name: string, type: string}>} item id → title, loaded once per page */
-    const itemTitles = new Map();
-    /** @type {Set<string>} ids whose title is being loaded (a refresh meanwhile asks for no more) */
-    const loadingTitles = new Set();
+    /**
+     * Each view's item titles: id → title once loaded, and the ids being loaded
+     * (a refresh meanwhile asks for no more). Kept per view, so a view that
+     * replaces one torn down mid-load (or a new session) asks for its own.
+     * @type {WeakMap<Object, {titles: Map<string, {name: string, type: string}>, loading: Set<string>}>}
+     */
+    const titleState = new WeakMap();
+    /** @param {Object} ctx @returns {{titles: Map<string, {name: string, type: string}>, loading: Set<string>}} */
+    function titlesOf(ctx) {
+        let state = titleState.get(ctx);
+        if (!state) titleState.set(ctx, state = { titles: new Map(), loading: new Set() });
+        return state;
+    }
 
     /**
      * Load the titles of server-wide item looks not known yet (50 per request).
+     * A view torn down meanwhile stops before its next request.
      * @param {Object} ctx
      * @param {string[]} ids
      * @returns {Promise<boolean>} Whether a title was added.
      */
     async function loadItemTitles(ctx, ids) {
-        const missing = ids.filter((id) => !itemTitles.has(id) && !loadingTitles.has(id));
-        for (const id of missing) loadingTitles.add(id);
-        for (let i = 0; i < missing.length; i += 50) {
-            const batch = missing.slice(i, i + 50);
-            try {
-                const resp = await ApiClient.getJSON(ApiClient.getUrl(`Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), EnableImages: false, EnableUserData: false }));
-                if (!ctx.isCurrent()) { for (const id of batch) loadingTitles.delete(id); return false; }
-                for (const item of resp?.Items || []) itemTitles.set(String(item.Id).replace(/-/g, '').toLowerCase(), { name: String(item.Name || ''), type: String(item.Type || '') });
-            } catch (err) {
-                console.warn('🪼 Jellyfin Enhanced: could not load the item titles', err);
+        const { titles, loading } = titlesOf(ctx);
+        const missing = ids.filter((id) => !titles.has(id) && !loading.has(id));
+        for (const id of missing) loading.add(id);
+        try {
+            for (let i = 0; i < missing.length; i += 50) {
+                const batch = missing.slice(i, i + 50);
+                try {
+                    const resp = await ApiClient.getJSON(ApiClient.getUrl(`Users/${ApiClient.getCurrentUserId()}/Items`, { Ids: batch.join(','), EnableImages: false, EnableUserData: false }));
+                    if (!ctx.isCurrent()) return false;
+                    for (const item of resp?.Items || []) titles.set(String(item.Id).replace(/-/g, '').toLowerCase(), { name: String(item.Name || ''), type: String(item.Type || '') });
+                } catch (err) {
+                    if (!ctx.isCurrent()) return false;
+                    console.warn('🪼 Jellyfin Enhanced: could not load the item titles', err);
+                }
+                for (const id of batch) if (!titles.has(id)) titles.set(id, { name: '', type: '' });
             }
-            for (const id of batch) {
-                if (!itemTitles.has(id)) itemTitles.set(id, { name: '', type: '' });
-                loadingTitles.delete(id);
-            }
+        } finally {
+            for (const id of missing) loading.delete(id);
         }
         return missing.length > 0;
     }
@@ -305,7 +318,7 @@
      * @returns {string}
      */
     function itemLookHtml(ctx, id, look) {
-        const info = itemTitles.get(id);
+        const info = titlesOf(ctx).titles.get(id);
         const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('hidden_content_admin_loading');
         const type = info?.type ? `${JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[info.type.toLowerCase()])} · ` : '';
         const outcome = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[look.layout]), density: JE.t(`panel_settings_ui_tag_density_${look.density}`) });
@@ -338,7 +351,7 @@
                 if (!button || !row || !look) return;
                 const id = row.dataset.item || '';
                 const stored = ctx.config.TagLookItemOverrides ?? null;
-                const name = itemTitles.get(id)?.name || id;
+                const name = titlesOf(ctx).titles.get(id)?.name || id;
                 if (button.dataset.act === 'remove') {
                     const next = look.itemOverridesWith(stored, id, null);
                     if (next === undefined) return;

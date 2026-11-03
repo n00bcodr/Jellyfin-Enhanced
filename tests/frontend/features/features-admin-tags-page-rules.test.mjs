@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { resolve } from 'node:path';
 import { deferred, plain } from '../helpers/harness.mjs';
-import { LIBRARY, serverPatch, setup } from '../helpers/admin-tags-page.mjs';
+import { BASE, LIBRARY, TWO_PAGES, boot, serverPatch, setup } from '../helpers/admin-tags-page.mjs';
 
 test('Rules: add, switch off, reorder, delete with undo, and JSON with the old checks', async t => {
   const h = setup(t);
@@ -101,6 +101,45 @@ test('Rules: server-wide item looks are listed with titles; Remove saves and can
   opened.at(-1)[1].onSave({ layout: 'summary', density: 'full', scope: null }, SERIES);
   await h.save();
   assert.deepEqual(plain(h.server.TagLookItemOverrides.map((o) => [o.ItemId, o.Layout])), [[SERIES, 'summary']]);
+});
+
+for (const outcome of ['answer', 'rejection']) test(`Rules: a view replaced while its item titles load (${outcome}) does not leave the new view's rows loading`, async t => {
+  // 51 looks: two batches of titles. The first view's first batch is held while Jellyfin builds another page.
+  const looks = Array.from({ length: 51 }, (_, i) => ({ ItemId: (i + 1).toString(16).padStart(32, '0'), Layout: 'bands', Density: 'full', LockedAt: 100 - i }));
+  const held = deferred();
+  const requests = [];
+  const h = boot(t, {
+    server: { ...BASE, TagLookItemOverrides: looks },
+    apiClient: {
+      getJSON: async (url) => {
+        if (!url.includes('/Items')) return [];
+        const ids = new URL(url).searchParams.get('Ids').split(',');
+        requests.push(ids);
+        if (requests.length === 1) return held.promise;
+        return { Items: ids.map((id) => ({ Id: id, Name: `Title ${id}`, Type: 'Movie' })) };
+      },
+    },
+  });
+  h.document.body.innerHTML = TWO_PAGES;
+  const pages = h.document.querySelectorAll('.page');
+  const first = await h.A.activate(pages[0]);
+  const second = await h.A.activate(pages[1]);
+  h.cleanup.push(() => second.dispose());
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(first.disposed, true);
+  assert.deepEqual(requests.map((r) => r.length), [50, 50, 1], 'the new view asks for every title itself');
+  if (outcome === 'answer') held.resolve({ Items: requests[0].map((id) => ({ Id: id, Name: `Old ${id}`, Type: 'Movie' })) });
+  else held.reject(new Error('signed out'));
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(requests.length, 3, 'the torn-down view asks for nothing more');
+  const loading = () => Array.from(pages[1].querySelectorAll('[data-item-looks] strong')).filter((e) => e.textContent.includes('hidden_content_admin_loading')).length;
+  assert.equal(loading(), 0);
+  assert.equal(pages[1].querySelector(`[data-item="${looks[50].ItemId}"] strong`).textContent, `Title ${looks[50].ItemId}`);
+  assert.ok(!pages[1].textContent.includes('Old '), 'the old view\'s late answer is not shown');
+  second.refresh();
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(requests.length, 3, 'titles are asked for once per view');
+  assert.equal(loading(), 0);
 });
 
 for (const editedTarget of [false, true]) test(`Rules: remove Undo preserves intervening additions, edits and removals (target edited: ${editedTarget})`, async t => {
