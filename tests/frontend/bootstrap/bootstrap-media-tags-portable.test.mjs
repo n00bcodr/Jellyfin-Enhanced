@@ -822,3 +822,60 @@ test('a preset another device already deleted (404) is announced as deleted', as
   assert.notEqual(h.$('[data-tp-error]')?.hidden, false, 'no failure status');
   assert.equal(h.$('#jeMthLive').textContent, 'tag_presets_deleted:Gone');
 });
+
+// ── Export Retry keeps focus in the dialog (opus R5 4) ────────────────
+
+/** Export while the settings save fails: the not-saved status with Retry focused. */
+async function exportUnsaved(h) {
+  h.expectConsoleError(/Failed to save settings.json/);
+  await h.open();
+  h.flags.failSave = true;
+  await chooseLayout(h, 'bands');
+  h.click(h.$('[data-tp="export"]'));
+  await h.settle(12);
+  assert.equal(h.status(), 'tag_portable_export_unsaved');
+  assert.equal(h.document.activeElement, h.action('retry'));
+  h.flags.failSave = false;
+}
+
+test('export Retry keeps keyboard focus inside the dialog while it works and when the read fails; Escape closes only the dialog', async t => {
+  const h = setup(t);
+  await exportUnsaved(h);
+  let reject;
+  h.flags.exportGate = new Promise((resolve, no) => { reject = no; });
+  const retry = h.action('retry');
+  h.click(retry);
+  await h.settle(8);
+  assert.equal(h.status(), 'tag_portable_checking');
+  assert.ok(h.dialog().contains(h.document.activeElement), 'focus stays in the dialog while the export loads');
+  reject({ status: 500 });
+  await h.settle(8);
+  assert.equal(h.status(), 'tag_portable_export_failed');
+  const active = h.document.activeElement;
+  assert.ok(h.dialog().contains(active), 'and after the read failed');
+  h.key(active, 'Escape');
+  await h.settle();
+  assert.equal(h.dialog(), null, 'Escape closes the dialog');
+  assert.ok(h.$('#jellyfin-enhanced-panel'), 'and not the settings panel');
+});
+
+test('export Retry while the save is still on its way keeps focus on Retry; another not-saved answer keeps it there', async t => {
+  const h = setup(t);
+  await exportUnsaved(h);
+  let release;
+  h.flags.saveGate = new Promise(resolve => { release = resolve; });
+  h.flags.failSave = true;
+  const retry = h.action('retry');
+  h.click(retry);
+  await h.settle(8);
+  assert.equal(h.document.activeElement, retry, 'focus stays on Retry while the save is held');
+  h.flags.saveGate = null;
+  release();
+  await h.settle(12);
+  assert.equal(h.status(), 'tag_portable_export_unsaved');
+  assert.equal(h.document.activeElement, h.action('retry'));
+  h.flags.failSave = false;
+  h.click(h.action('retry'));
+  await h.settle(12);
+  assert.equal(h.document.activeElement, h.action('download'), 'Download takes focus once exported');
+});

@@ -314,7 +314,7 @@
         .je-pt-btn:hover { background: rgba(255,255,255,0.12); }
         .je-pt-btn[data-primary] { background: #00a4dc; border-color: #00a4dc; }
         .je-pt-btn[data-primary]:hover { background: #0aa9e0; }
-        .je-pt-btn:disabled { opacity: 0.45; cursor: default; }
+        .je-pt-btn:is(:disabled, [aria-disabled="true"]) { opacity: 0.45; cursor: default; }
         .je-pt-btn .material-icons { font-size: 18px; }
         :is(.je-pt-btn, .je-pt-close, .je-pt-text, .je-pt-input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         @media (max-width: 480px) {
@@ -660,11 +660,25 @@
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint" data-pt-loading>${tx('hidden_content_admin_loading')}</p>`;
             d.foot.innerHTML = buttonHtml('close', 'awards_close');
             d.foot.onclick = (e) => {
-                const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
-                if (action === 'retry') { d.foot.innerHTML = buttonHtml('close', 'awards_close'); showLoading(d, true); d.status(JE.t('tag_portable_checking')); load(); }
-                else if (action === 'close') d.close();
+                const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
+                const action = button?.getAttribute('data-pt-action');
+                if (action === 'retry') {
+                    // Busy, not replaced: a focused Retry keeps focus inside the dialog.
+                    if (button.getAttribute('aria-disabled') === 'true') return;
+                    button.setAttribute('aria-disabled', 'true');
+                    showLoading(d, true);
+                    d.status(JE.t('tag_portable_checking'));
+                    load();
+                } else if (action === 'close') d.close();
             };
             d.focusFirst();
+            /** Offer Retry again: the same button when there is one (focus stays on it). */
+            const offerRetry = () => {
+                const retry = /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'));
+                if (retry) { retry.removeAttribute('aria-disabled'); return; }
+                d.foot.innerHTML = buttonHtml('retry', 'admin_tags_retry', { primary: true }) + buttonHtml('close', 'awards_close');
+                /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
+            };
             const load = async () => {
                 let result;
                 try {
@@ -673,6 +687,7 @@
                     if (!live() || !current() || d.closed()) return;
                     console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
                     d.status(JE.t('tag_portable_export_failed'), 'error');
+                    d.foot.querySelector('[data-pt-action="retry"]')?.removeAttribute('aria-disabled');
                     return;
                 }
                 if (!live() || !current() || d.closed() || !result) return;
@@ -680,8 +695,7 @@
                     // The stored settings are not the ones the panel shows: no export of them.
                     showLoading(d, false);
                     d.status(JE.t('tag_portable_export_unsaved'), 'error');
-                    d.foot.innerHTML = buttonHtml('retry', 'admin_tags_retry', { primary: true }) + buttonHtml('close', 'awards_close');
-                    /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
+                    offerRetry();
                     return;
                 }
                 d.status('');
