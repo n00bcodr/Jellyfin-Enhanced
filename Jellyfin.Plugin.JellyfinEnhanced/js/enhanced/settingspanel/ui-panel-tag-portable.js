@@ -603,6 +603,16 @@
         }));
 
         /**
+         * Show or hide a dialog's loading line (hidden while its status says why nothing loads).
+         * @param {ReturnType<typeof openDialog>} d
+         * @param {boolean} on
+         */
+        const showLoading = (d, on) => {
+            const line = /** @type {HTMLElement|null} */ (d.body.querySelector('[data-pt-loading]'));
+            if (line) line.hidden = !on;
+        };
+
+        /**
          * Open a dialog in the panel (one at a time).
          * @param {string} title
          * @returns {ReturnType<typeof openDialog>}
@@ -619,11 +629,11 @@
         const openExport = async () => {
             const current = sessionCheck();
             const d = show(JE.t('tag_portable_export_title'));
-            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint">${tx('hidden_content_admin_loading')}</p>`;
+            d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint" data-pt-loading>${tx('hidden_content_admin_loading')}</p>`;
             d.foot.innerHTML = buttonHtml('close', 'awards_close');
             d.foot.onclick = (e) => {
                 const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
-                if (action === 'retry') { d.foot.innerHTML = buttonHtml('close', 'awards_close'); d.status(JE.t('tag_portable_checking')); load(); }
+                if (action === 'retry') { d.foot.innerHTML = buttonHtml('close', 'awards_close'); showLoading(d, true); d.status(JE.t('tag_portable_checking')); load(); }
                 else if (action === 'close') d.close();
             };
             d.focusFirst();
@@ -640,6 +650,7 @@
                 if (!live() || !current() || d.closed() || !result) return;
                 if (result.unsaved) {
                     // The stored settings are not the ones the panel shows: no export of them.
+                    showLoading(d, false);
                     d.status(JE.t('tag_portable_export_unsaved'), 'error');
                     d.foot.innerHTML = buttonHtml('retry', 'admin_tags_retry', { primary: true }) + buttonHtml('close', 'awards_close');
                     /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
@@ -689,9 +700,11 @@
         const showPreview = async (d, document, back, note) => {
             const current = sessionCheck();
             d.status(JE.t('tag_portable_checking'));
+            showLoading(d, true);
             const saved = await saveFirst(current);
             if (!live() || !current() || d.closed()) return;
             if (!saved) {
+                showLoading(d, false);
                 d.status(JE.t('tag_portable_import_unsaved'), 'error');
                 // On the source step Check tries again; elsewhere Retry does.
                 if (d.body.querySelector('[data-pt-paste]')) return;
@@ -971,7 +984,7 @@
                 if (!found) return;
                 if (action === 'apply') {
                     const d = show(JE.t('tag_presets_apply_named', { name: presetText(found.preset, found.source).name }));
-                    d.body.innerHTML = `<p class="je-pt-hint">${tx('hidden_content_admin_loading')}</p>`;
+                    d.body.innerHTML = `<p class="je-pt-hint" data-pt-loading>${tx('hidden_content_admin_loading')}</p>`;
                     d.foot.innerHTML = buttonHtml('cancel', 'jellyseerr_modal_cancel');
                     d.foot.onclick = () => d.close();
                     d.focusFirst();

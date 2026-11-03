@@ -649,6 +649,7 @@ test('applying a preset while a save failed offers Retry, then previews', async 
   await h.settle(10);
   assert.equal(h.status(), 'tag_portable_import_unsaved');
   assert.ok(!h.requests.some(r => r.path.endsWith('/preview')));
+  assert.equal(h.dialog().querySelector('[data-pt-loading]').hidden, true, 'no "Loading" beside the status');
   h.flags.failSave = false;
   h.click(h.action('retry'));
   await h.settle(12);
@@ -665,6 +666,7 @@ test('export after a failed save says the settings are not saved, exports nothin
   await h.settle(12);
   assert.equal(h.status(), 'tag_portable_export_unsaved');
   assert.ok(!h.requests.some(r => r.path.endsWith('/media-tags/export')), 'no export of the stored settings');
+  assert.equal(h.dialog().querySelector('[data-pt-loading]').hidden, true, 'no "Loading" beside the status');
   assert.equal(h.action('download'), null);
   assert.equal(h.dialog().querySelector('textarea'), null);
   assert.equal(h.document.activeElement, h.action('retry'));
