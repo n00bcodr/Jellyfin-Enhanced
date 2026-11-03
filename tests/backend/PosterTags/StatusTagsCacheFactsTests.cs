@@ -371,4 +371,84 @@ public class StatusTagsCacheFactsTests
         Assert.True(cache.TryGetEntry(season, out var shared)); // the shared entry is untouched
         Assert.Equal(new TagSeasonPremiere { Season = 2, Aired = 300 }, shared.SeasonPremiere);
     }
+
+    /// <summary>The /tag-data facts as the full walk over every episode computed them (the reference).</summary>
+    private static (long? LatestAdded, StatusTagsEpisodeFacts Facts) FullWalk(BaseItem container, IEnumerable<Episode> episodes, DateTime now)
+    {
+        var season = container as Season;
+        var facts = new StatusTagsEpisodeFacts(season != null, season?.IndexNumber, now);
+        DateTime? latest = null;
+        foreach (var ep in episodes.Where(e => e.SeasonId == container.Id || e.SeriesId == container.Id))
+        {
+            facts.Note(ep.Id, ep.DateCreated, ep.PremiereDate, ep.ParentIndexNumber, ep.IndexNumber);
+            if (ep.DateCreated != default && (latest == null || ep.DateCreated > latest)) latest = ep.DateCreated;
+        }
+
+        return (TagCacheService.ToUnixMilliseconds(latest), facts);
+    }
+
+    private static string Facts((long? LatestAdded, StatusTagsEpisodeFacts Facts) f) => JsonSerializer.Serialize(new
+    {
+        f.LatestAdded, f.Facts.LatestAired, f.Facts.LatestIndex, f.Facts.SeasonPremiere, f.Facts.AddedSpan,
+    });
+
+    private static Func<InternalItemsQuery> EpisodesOf(BaseItem container) => () => new InternalItemsQuery
+    {
+        ParentId = container.Id, IncludeItemTypes = [BaseItemKind.Episode], Recursive = true, IsVirtualItem = false,
+    };
+
+    /// <summary>A long-running series with specials, unnumbered and undated episodes, ties and future episodes.</summary>
+    private static (Series Series, Season[] Seasons, Episode[] Episodes) MessySeries(int seed, int seasons, int perSeason)
+    {
+        var random = new Random(seed);
+        var series = new Series { Id = Guid.NewGuid(), Name = "Long runner" };
+        var seasonItems = Enumerable.Range(0, seasons + 1).Select(n => new Season { Id = Guid.NewGuid(), IndexNumber = n, SeriesId = series.Id }).ToArray();
+        var start = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var episodes = new List<Episode>();
+        foreach (var season in seasonItems)
+        {
+            var count = season.IndexNumber == 0 ? 5 : perSeason;
+            for (var e = 1; e <= count; e++)
+            {
+                var aired = start.AddDays((season.IndexNumber!.Value == 0 ? random.Next(0, 9500) : season.IndexNumber.Value * 365) + e * 7);
+                episodes.Add(new Episode
+                {
+                    Id = Guid.NewGuid(), Name = $"S{season.IndexNumber}E{e}", SeasonId = season.Id, SeriesId = series.Id,
+                    ParentIndexNumber = random.Next(40) == 0 ? null : season.IndexNumber,
+                    IndexNumber = random.Next(50) == 0 ? null : e,
+                    PremiereDate = random.Next(30) == 0 ? null : random.Next(40) == 0 ? default(DateTime) : aired,
+                    DateCreated = random.Next(60) == 0 ? default : aired.AddDays(random.Next(0, 3)),
+                });
+            }
+        }
+
+        // Ties on the newest air date, and a few episodes not aired yet.
+        var newest = episodes.Where(e => e.ParentIndexNumber > 0 && e.PremiereDate > start).MaxBy(e => e.PremiereDate)!;
+        episodes.Add(new Episode { Id = Guid.NewGuid(), SeasonId = newest.SeasonId, SeriesId = series.Id, ParentIndexNumber = newest.ParentIndexNumber, IndexNumber = (newest.IndexNumber ?? 0) + 1, PremiereDate = newest.PremiereDate, DateCreated = newest.DateCreated });
+        episodes.Add(new Episode { Id = Guid.NewGuid(), SeasonId = seasonItems[^1].Id, SeriesId = series.Id, ParentIndexNumber = seasons, IndexNumber = perSeason + 1, PremiereDate = new DateTime(2099, 1, 1), DateCreated = new DateTime(2026, 1, 1) });
+        return (series, seasonItems, episodes.ToArray());
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    public void BoundedTagDataFactsMatchTheFullWalkWithoutReadingEveryEpisode(int seed)
+    {
+        var now = new DateTime(2026, 11, 3, 0, 0, 0, DateTimeKind.Utc);
+        var (series, seasons, episodes) = MessySeries(seed, seasons: 12, perSeason: 30);
+        var fake = new EpisodeQueryFake(episodes);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.List(q));
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Ids(q));
+        foreach (var container in seasons.Cast<BaseItem>().Prepend(series))
+        {
+            var before = fake.Materialised;
+            Assert.Equal(Facts(FullWalk(container, episodes, now)), Facts(StatusTagsEpisodeLookup.Load(library.Object, container, EpisodesOf(container), now)));
+            Assert.InRange(fake.Materialised - before, 1, 40);
+        }
+    }
 }

@@ -1,3 +1,4 @@
+using Jellyfin.Data.Enums;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Jellyfin.Database.Implementations.Entities;
@@ -743,9 +744,12 @@ public class PerfRound2TagCacheResponseTests
         {
             Id = Guid.NewGuid(), Name = "E" + number, IndexNumber = number, ParentIndexNumber = 2, PremiereDate = aired, DateCreated = added, SeasonId = season.Id, SeriesId = endpoint.SeriesId,
         };
-        var episodes = new BaseItem[] { Make(1, new DateTime(2026, 10, 1), new DateTime(2026, 10, 20)), Make(2, new DateTime(2026, 10, 8), new DateTime(2026, 10, 21)) };
+        var episodes = new[] { Make(1, new DateTime(2026, 10, 1), new DateTime(2026, 10, 20)), Make(2, new DateTime(2026, 10, 8), new DateTime(2026, 10, 21)) };
+        var fake = new EpisodeQueryFake(episodes);
         endpoint.Library.Setup(x => x.GetItemById<BaseItem>(season.Id, It.IsAny<User>())).Returns(season);
-        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.User == endpoint.Alice && q.Limit == null ? episodes : []); // the facts query; the representative-episode scan pages
+        // The facts queries (sorted episode queries of the season); the representative-episode scan finds nothing here.
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.User == endpoint.Alice && q.OrderBy.Count > 0 && !RepresentativeScan(q) ? fake.List(q) : []);
+        endpoint.Library.Setup(x => x.GetItemIds(It.Is<InternalItemsQuery>(q => q.ParentId == season.Id))).Returns((InternalItemsQuery q) => q.User == endpoint.Alice ? fake.Ids(q) : []);
         endpoint.SignIn(endpoint.Alice);
         var ok = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [season.Id.ToString()], latestEpisode: true));
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
@@ -759,5 +763,34 @@ public class PerfRound2TagCacheResponseTests
         // Without the flag nothing is queried for the facts.
         var plain = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [season.Id.ToString()]));
         Assert.DoesNotContain("SeasonAddedSpan\":{", JsonSerializer.Serialize(plain.Value));
+    }
+
+    /// <summary>The representative-episode scan (by sort name), which these tests leave empty.</summary>
+    private static bool RepresentativeScan(InternalItemsQuery q) => q.OrderBy.Any(o => o.OrderBy == ItemSortBy.SortName);
+
+    [Fact]
+    public void TagDataSeriesFactsReadAFewEpisodesNotEveryOne()
+    {
+        using var endpoint = new Endpoint();
+        var series = new Series { Id = endpoint.SeriesId, Name = "Long runner" };
+        var episodes = Enumerable.Range(1, 20).SelectMany(s => Enumerable.Range(1, 25).Select(e => new Episode
+        {
+            Id = Guid.NewGuid(), Name = $"S{s}E{e}", ParentIndexNumber = s, IndexNumber = e, SeriesId = series.Id, SeasonId = Guid.NewGuid(),
+            PremiereDate = new DateTime(2000 + s, 1, 1).AddDays(e * 7), DateCreated = new DateTime(2020, 1, 1).AddDays(s * 30 + e),
+        })).ToArray();
+        var fake = new EpisodeQueryFake(episodes);
+        endpoint.Library.Setup(x => x.GetItemById<BaseItem>(series.Id, It.IsAny<User>())).Returns(series);
+        endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.User == endpoint.Alice && q.ParentId == series.Id && !RepresentativeScan(q) ? fake.List(q) : []);
+        endpoint.SignIn(endpoint.Alice);
+        var ok = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [series.Id.ToString()], latestEpisode: true));
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+        var item = json.RootElement.GetProperty("Items")[0];
+        Assert.Equal(new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(20 * 30 + 25).ToUnixTimeMilliseconds(), item.GetProperty("LatestEpisodeAdded").GetInt64());
+        Assert.Equal(20, item.GetProperty("LatestEpisodeIndex").GetProperty("Season").GetInt32());
+        Assert.Equal(25, item.GetProperty("LatestEpisodeIndex").GetProperty("Episode").GetInt32());
+        Assert.True(item.GetProperty("LatestEpisodeIndex").GetProperty("IsLast").GetBoolean());
+        Assert.Equal(20, item.GetProperty("SeasonPremiere").GetProperty("Season").GetInt32());
+        // 500 episodes in the series; the facts read a handful.
+        Assert.InRange(fake.Materialised, 1, 30);
     }
 }

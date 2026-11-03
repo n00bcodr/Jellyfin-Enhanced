@@ -9457,6 +9457,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     : null;
             string? TagDataSeriesStatus(BaseItem tagItem) =>
                 tagItem is MediaBrowser.Controller.Entities.TV.Series statusSeries ? statusSeries.Status?.ToString() : null;
+            // A few sorted, limited queries per container (never every episode),
+            // once per container per request.
+            var episodeFactsMemo = new Dictionary<Guid, (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts)>();
+            var factsNow = DateTime.UtcNow;
             (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts) TagDataEpisodeFacts(BaseItem tagItem)
             {
                 if (!latestEpisode || tagItem is not (MediaBrowser.Controller.Entities.TV.Series or MediaBrowser.Controller.Entities.TV.Season))
@@ -9464,25 +9468,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     return (null, null);
                 }
 
-                var episodes = _libraryManager.GetItemList(new InternalItemsQuery(user)
+                if (episodeFactsMemo.TryGetValue(tagItem.Id, out var memo)) return memo;
+                return episodeFactsMemo[tagItem.Id] = Services.StatusTagsEpisodeLookup.Load(_libraryManager, tagItem, () => new InternalItemsQuery(user)
                 {
                     ParentId = tagItem.Id,
                     IncludeItemTypes = new[] { BaseItemKind.Episode },
                     Recursive = true,
                     IsVirtualItem = false,
                     DtoOptions = new DtoOptions(false) { EnableImages = false, EnableUserData = false },
-                });
-                var seasonItem = tagItem as MediaBrowser.Controller.Entities.TV.Season;
-                var facts = new Services.StatusTagsEpisodeFacts(seasonItem != null, seasonItem?.IndexNumber);
-                DateTime? latestAdded = null;
-                foreach (var episode in episodes)
-                {
-                    if (episode is not MediaBrowser.Controller.Entities.TV.Episode ep) continue;
-                    facts.Note(ep.Id, ep.DateCreated, ep.PremiereDate, ep.ParentIndexNumber, ep.IndexNumber);
-                    if (ep.DateCreated != default && (latestAdded == null || ep.DateCreated > latestAdded)) latestAdded = ep.DateCreated;
-                }
-
-                return (Services.TagCacheService.ToUnixMilliseconds(latestAdded), facts);
+                }, factsNow);
             }
 
             // The Series/Movie stubs carry no provider ids, but a trending rank is

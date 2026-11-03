@@ -106,6 +106,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return bySeason != 0 ? bySeason : (episodeA ?? -1).CompareTo(episodeB ?? -1);
         }
 
+        /// <summary>
+        /// Replace the added span with one measured without noting every episode
+        /// (<see cref="StatusTagsEpisodeLookup"/>): the episode count, the oldest
+        /// added date (unset when an episode has none) and the newest set one.
+        /// </summary>
+        internal void UseAddedSpan(int count, DateTime? oldest, DateTime? newest)
+        {
+            _count = count;
+            _missingAdded = oldest == default(DateTime);
+            _firstAdded = oldest is { } o && o != default ? o : null;
+            _lastAdded = newest;
+        }
+
         /// <summary>Next relevant premiere boundary (Unix ms), for time-driven refresh.</summary>
         public long? NextPremiere => TagCacheService.ToUnixMilliseconds(_nextPremiere);
 
