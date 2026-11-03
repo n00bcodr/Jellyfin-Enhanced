@@ -425,6 +425,8 @@
      * normal settings save (which normalises them once more), then follow the
      * new group switches on the page. A null value keeps (or makes) the field
      * follow the administrator: it is saved as null, never as today's default.
+     * A failed save rolls back only what the import still owns: a field the
+     * panel changed while the save was on its way keeps that newer edit.
      * @param {Array<{field: string, to: *}>} changes
      * @param {() => boolean} isCurrent - The session the import belongs to (sessionCheck).
      * @returns {Promise<boolean>} False when that session ended first (nothing
@@ -436,6 +438,7 @@
         const inheritedBefore = {};
         const wasOn = Object.fromEntries(GROUP_SWITCHES.map((g) => [g.key, !!settings[g.key]]));
         const nativeBefore = JE.userConfig?.settings?.useNativePosterTags;
+        let nativeWritten;
         for (const change of changes) {
             const key = clientKey(change.field);
             before[key] = settings[key];
@@ -446,24 +449,43 @@
                 JE.userConfig = JE.userConfig || {};
                 JE.userConfig.settings = JE.userConfig.settings || {};
                 JE.userConfig.settings.useNativePosterTags = value;
+                nativeWritten = value;
                 settings.useNativePosterTags = value !== false;
             } else if (JE.setSettingInherited?.(settings, key, value === null)) {
                 // Shown resolved, saved as null while inherited (config.js).
                 if (value !== null) settings[key] = value;
             } else settings[key] = value;
         }
+        // What the import wrote, to tell its fields from a newer edit at rollback.
+        const owned = (key) => JSON.stringify([settings[key] ?? null, JE.isSettingInherited?.(settings, key) === true]);
+        const written = Object.fromEntries(Object.keys(before).map((key) => [key, owned(key)]));
+        let rolledBack = false;
+        /**
+         * Runs in the save queue, before the next queued save reads the
+         * document, and only while the import's session lasts (config.js).
+         */
+        const rollback = () => {
+            rolledBack = true;
+            for (const key of Object.keys(before)) {
+                if (owned(key) !== written[key]) continue;
+                if (key === 'useNativePosterTags') {
+                    if (JE.userConfig?.settings?.useNativePosterTags !== nativeWritten) continue;
+                    JE.userConfig.settings.useNativePosterTags = nativeBefore;
+                }
+                settings[key] = before[key];
+                if (JE.setSettingInherited?.(settings, key, inheritedBefore[key])) settings[key] = before[key];
+            }
+        };
         try {
             // Queued saves read the document at their turn: one for a session that
             // ended by then is dropped, never sent for the next account.
-            await JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent });
+            await JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent, onError: rollback });
         } catch (err) {
-            // Another session's documents are not this import's to roll back.
-            if (!isCurrent()) throw err;
-            Object.assign(settings, before);
-            for (const [key, inherited] of Object.entries(inheritedBefore)) {
-                if (JE.setSettingInherited?.(settings, key, inherited)) settings[key] = before[key];
+            // The tags drawn meanwhile may show the import's values: draw them again.
+            if (rolledBack && isCurrent()) {
+                JE.core?.tagLayout?.invalidateSettings?.();
+                JE.reinitializeTagLayout?.();
             }
-            if (JE.userConfig?.settings && 'useNativePosterTags' in before) JE.userConfig.settings.useNativePosterTags = nativeBefore;
             throw err;
         }
         if (!isCurrent()) return false;
@@ -753,8 +775,10 @@
                     try {
                         await apply(changes);
                     } catch (err) {
-                        if (!live() || d.closed()) return;
+                        if (!live()) return;
                         console.warn('🪼 Jellyfin Enhanced: could not apply the imported Media Tags settings', err);
+                        // Closed while the save was on its way: say it on the panel instead.
+                        if (d.closed()) { hooks.announce(JE.t('tag_portable_apply_failed')); return; }
                         button.disabled = false;
                         d.status(JE.t('tag_portable_apply_failed'), 'error');
                     }

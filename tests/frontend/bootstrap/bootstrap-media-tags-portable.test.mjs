@@ -718,3 +718,47 @@ test('a layout change after the preview shows the preview again instead of apply
   assert.equal(h.server.settings.TagLayout, 'corners', 'the document\'s layout, not the edit the old preview missed');
   assert.equal(h.server.settings.TagGap, 'tight');
 });
+
+// ── A failed import save and a newer edit (astra R5-1) ───────────────
+
+test('a failed import rolls back only its own fields: a layout chosen while its save was on its way is kept', async t => {
+  const h = setup(t);
+  await h.open();
+  const gapBefore = h.JE.currentSettings.tagGap;
+  await importDocument(h, { TagLayout: 'bands', TagGap: 'tight' });
+  // Only the import's settings POST is held, then refused.
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const ajax = h.window.ApiClient.ajax;
+  let failNext = true;
+  h.window.ApiClient.ajax = async (request) => {
+    if (request.type === 'POST' && new URL(request.url).pathname.endsWith('/settings.json') && failNext) {
+      failNext = false;
+      await gate;
+      throw { status: 500 };
+    }
+    return ajax(request);
+  };
+  h.click(h.action('apply'));
+  await h.settle(6);
+  // The dialog's own close: the Apply already posted goes on.
+  h.click(h.dialog().querySelector('[data-pt-close]'));
+  await chooseLayout(h, 'minimal');
+  release();
+  await h.settle(20);
+  assert.equal(h.server.settings.TagLayout, 'minimal', 'the newer edit is saved');
+  assert.equal(h.JE.currentSettings.tagLayout, 'minimal', 'and kept: the rollback does not take it back');
+  assert.equal(h.$('input[name="jeTagLayout"]:checked').value, 'minimal');
+  assert.equal(h.JE.currentSettings.tagGap, gapBefore, 'a field only the import changed is rolled back');
+  assert.notEqual(h.server.settings.TagGap, 'tight');
+  // The hub announces after 30 ms (a fresh text each time).
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(h.$('#jeMthLive').textContent, 'tag_portable_apply_failed', 'the failure is said on the panel when the dialog is closed');
+
+  // The next unrelated edit saves the layout the panel shows.
+  h.JE.currentSettings.tagScale = 'larger';
+  await h.JE.saveUserSettings('settings.json', h.JE.currentSettings);
+  await h.settle(8);
+  assert.equal(h.server.settings.TagLayout, 'minimal');
+  assert.equal(h.server.settings.TagScale, 'larger');
+});
