@@ -123,9 +123,16 @@
             const c = ctx.config;
             const key = String(c.MdblistApiKey || '').trim() !== '';
             const on = c.MdblistRatingsEnabled === true;
-            box.innerHTML = `<div class="je-ta-card-head"><span class="je-ta-state" data-state="${on && key ? 'on' : on ? 'warn' : 'off'}">${ctx.tx(on ? (key ? 'common_on' : 'admin_tags_mdblist_no_key') : 'track_off')}</span></div>`
-                + `<p class="je-ta-hint">${ctx.tx('admin_tags_mdblist_desc')}${on && key ? ` ${ctx.tx(c.MdblistRatingsFetchEnabled === true ? 'admin_tags_mdblist_fetch_on' : 'admin_tags_mdblist_fetch_off')}` : ''}</p>`
-                + `<a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl('mdblistRatingsEnabled'))}">${ctx.tx('admin_tags_mdblist_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
+            // Drawn once, then updated in place: a refresh never replaces a focused link.
+            if (!box.querySelector('[data-mdblist-state]')) {
+                box.innerHTML = '<div class="je-ta-card-head"><span class="je-ta-state" data-mdblist-state></span></div><p class="je-ta-hint" data-mdblist-hint></p>'
+                    + `<a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl('mdblistRatingsEnabled'))}">${ctx.tx('admin_tags_mdblist_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
+            }
+            const state = /** @type {HTMLElement} */ (box.querySelector('[data-mdblist-state]'));
+            state.dataset.state = on && key ? 'on' : on ? 'warn' : 'off';
+            state.textContent = JE.t(on ? (key ? 'common_on' : 'admin_tags_mdblist_no_key') : 'track_off');
+            /** @type {HTMLElement} */ (box.querySelector('[data-mdblist-hint]')).textContent = JE.t('admin_tags_mdblist_desc')
+                + (on && key ? ` ${JE.t(c.MdblistRatingsFetchEnabled === true ? 'admin_tags_mdblist_fetch_on' : 'admin_tags_mdblist_fetch_off')}` : '');
         },
     });
 

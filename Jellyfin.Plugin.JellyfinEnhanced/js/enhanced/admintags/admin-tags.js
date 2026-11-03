@@ -745,7 +745,7 @@
             <div class="je-ta-head" style="padding-top:0">
                 <h2 class="je-ta-title">${tx('common_media_tags')} <span class="je-ta-admin-chip">${tx('admin_tags_badge')}</span></h2>
                 <span class="je-ta-head-spacer"></span>
-                <span class="je-ta-saved" id="jeTaSaved" data-state="saved" role="status" aria-live="polite">${tx('admin_tags_saved')}</span>
+                <span class="je-ta-saved" id="jeTaSaved" data-state="saved" role="status" aria-live="polite" tabindex="-1">${tx('admin_tags_saved')}</span>
             </div>
             <p class="je-ta-intro">${tx('admin_tags_intro')}</p>
             <div class="je-ta-tabs" role="tablist" aria-label="${tx('common_media_tags')}">${tabButtons}</div>
@@ -785,18 +785,35 @@
         const savedChip = /** @type {HTMLElement} */ (root.querySelector('#jeTaSaved'));
 
         // ── Saving (the edits live in the document-wide store) ──
-        /** Draw the save indicator from the store: saved, saving, or not saved with the fields and Retry. */
+        let savedHtml = savedChip.innerHTML;
+        /**
+         * Draw the save indicator from the store: saved, saving, or not saved with
+         * the fields and Retry. Its buttons are replaced when it changes state (the
+         * one pressed is gone at once): keyboard focus inside it stays there, on
+         * the same button if it is drawn again, else the first one, else the
+         * indicator itself.
+         */
         const drawSaveState = () => {
             const state = store.state;
             savedChip.dataset.state = state;
             const names = (keys) => Array.from(new Set(keys.map(fieldName))).join(', ');
+            let html;
             if (state === 'conflict') {
-                savedChip.innerHTML = `<span>${tx('admin_tags_conflict', { fields: names(Array.from(store.conflicts.keys())) })}</span>`
+                html = `<span>${tx('admin_tags_conflict', { fields: names(Array.from(store.conflicts.keys())) })}</span>`
                     + `<button type="button" data-je-keep>${tx('admin_tags_keep_mine')}</button><button type="button" data-je-theirs>${tx('admin_tags_take_theirs')}</button>`;
             } else if (state === 'error') {
                 const fields = names(store.failed.length ? store.failed : Array.from(store.values.keys()));
-                savedChip.innerHTML = `<span>${fields ? tx('admin_tags_save_failed_fields', { fields }) : tx('admin_tags_save_failed')}</span><button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`;
-            } else savedChip.innerHTML = tx(state === 'saving' ? 'admin_tags_saving' : 'admin_tags_saved');
+                html = `<span>${fields ? tx('admin_tags_save_failed_fields', { fields }) : tx('admin_tags_save_failed')}</span><button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`;
+            } else html = tx(state === 'saving' ? 'admin_tags_saving' : 'admin_tags_saved');
+            if (html === savedHtml) return;
+            savedHtml = html;
+            const active = /** @type {HTMLElement|null} */ (document.activeElement);
+            const inside = !!active && savedChip.contains(active);
+            const key = inside ? ['data-je-retry', 'data-je-keep', 'data-je-theirs'].find((a) => active.hasAttribute(a)) : null;
+            savedChip.innerHTML = html;
+            if (!inside) return;
+            const again = /** @type {HTMLElement|null} */ ((key && savedChip.querySelector(`[${key}]`)) || savedChip.querySelector('button'));
+            (again || savedChip).focus({ preventScroll: true });
         };
         savedChip.addEventListener('click', (e) => {
             const target = /** @type {HTMLElement} */ (e.target);

@@ -150,12 +150,18 @@
         tab: 'badges',
         order: 30,
         title: 'admin_tags_badges_tmdb',
-        refresh(ctx, body) {
-            if (!body) return;
-            const set = String(ctx.config.TMDB_API_KEY || '').trim() !== '';
-            body.innerHTML = `<div class="je-ta-card-head"><span class="je-ta-state" data-state="${set ? 'on' : 'warn'}">${ctx.tx(set ? 'admin_tags_badges_tmdb_set' : 'admin_tags_badges_tmdb_missing')}</span></div>`
+        render(ctx, body) {
+            body.innerHTML = '<div class="je-ta-card-head"><span class="je-ta-state" data-tmdb-state></span></div>'
                 + `<p class="je-ta-hint">${ctx.tx('admin_tags_badges_tmdb_desc')}</p>`
                 + `<a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl('TMDB_API_KEY'))}">${ctx.tx('admin_tags_badges_tmdb_open')}<span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
+        },
+        refresh(ctx, body) {
+            // Updated in place: every refresh (a save, the library list) would otherwise replace a focused link.
+            const state = /** @type {HTMLElement|null} */ (body?.querySelector('[data-tmdb-state]'));
+            if (!state) return;
+            const set = String(ctx.config.TMDB_API_KEY || '').trim() !== '';
+            state.dataset.state = set ? 'on' : 'warn';
+            state.textContent = JE.t(set ? 'admin_tags_badges_tmdb_set' : 'admin_tags_badges_tmdb_missing');
         },
     });
 

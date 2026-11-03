@@ -886,3 +886,79 @@ for (const why of ['failed', 'conflict']) {
     assert.deepEqual(h.posts, ['/JellyfinEnhanced/tag-cache/rebuild']);
   });
 }
+
+// ── Save indicator and card links keep focus (opus R5 6) ─────────────
+
+test('the save indicator keeps keyboard focus when Retry is used: on the indicator while it saves, on Retry when it fails again', async t => {
+  let fail = true;
+  const server = structuredClone(BASE);
+  const h = setup(t, { patch: (body) => { if (fail) throw new Error('offline'); return serverPatch(server, body); } });
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  await settleMany(h, 4);
+  const chip = h.$('#jeTaSaved');
+  h.change(h.$('#tagsHideOnHover'), true);
+  assert.equal(await h.ctx.flush(), false);
+  // Fails again: the new Retry has focus.
+  let retry = chip.querySelector('[data-je-retry]');
+  retry.focus();
+  retry.click();
+  await h.ctx.flush();
+  await settleMany(h, 2);
+  assert.equal(chip.dataset.state, 'error');
+  assert.equal(h.document.activeElement, chip.querySelector('[data-je-retry]'), 'on Retry again');
+  // Goes through: focus stays on the indicator, which says Saved.
+  fail = false;
+  retry = chip.querySelector('[data-je-retry]');
+  retry.click();
+  await h.ctx.flush();
+  await settleMany(h, 2);
+  assert.equal(chip.dataset.state, 'saved');
+  assert.equal(h.document.activeElement, chip, 'focus stays on the indicator');
+  assert.equal(server.TagsHideOnHover, true);
+});
+
+for (const choice of ['keep', 'theirs']) {
+  test(`the save indicator keeps keyboard focus after ${choice === 'keep' ? 'Keep mine' : 'Take theirs'}`, async t => {
+    const h = setup(t, { config: { LeavingSoonCollections: 'Original' } });
+    await settleMany(h, 4);
+    h.ctx.set('LeavingSoonCollections', 'Draft');
+    h.server.LeavingSoonCollections = 'Remote';
+    assert.equal(await h.ctx.flush(), false);
+    const chip = h.$('#jeTaSaved');
+    assert.equal(chip.dataset.state, 'conflict');
+    const button = chip.querySelector(`[data-je-${choice}]`);
+    button.focus();
+    button.click();
+    await h.ctx.flush();
+    await settleMany(h, 4);
+    assert.equal(chip.dataset.state, 'saved');
+    assert.equal(h.server.LeavingSoonCollections, choice === 'keep' ? 'Draft' : 'Remote');
+    assert.ok(chip.contains(h.document.activeElement), 'focus stays on the indicator');
+  });
+}
+
+test('the TMDB and MDBList card links keep keyboard focus when their section is refreshed', async t => {
+  for (const [tab, selector] of [['badges', '[data-section="badges-tmdb"] a.je-ta-link'], ['groups', '[data-mdblist] a.je-ta-link']]) {
+    await t.test(tab, async (st) => {
+      const gate = deferred();
+      const h = setup(st, { apiClient: { getJSON: () => gate.promise } });
+      await settleMany(h, 4);
+      h.ctx.openTab(tab);
+      const link = h.$(selector);
+      link.focus();
+      assert.equal(h.document.activeElement, link);
+      // The library list arriving refreshes every section.
+      gate.resolve([{ ItemId: LIBRARY, Name: 'Movies' }]);
+      await settleMany(h);
+      // Their values changed on the main page (the page shown again reads them).
+      h.ctx.reload({ ...structuredClone(h.server), TMDB_API_KEY: '', MdblistRatingsEnabled: true });
+      assert.equal(link.isConnected, true, 'the same link');
+      assert.equal(h.document.activeElement, link);
+    });
+  }
+  // The cards still say what they said.
+  const h = setup(t, { config: { MdblistRatingsEnabled: true, TMDB_API_KEY: '' } });
+  await settleMany(h, 4);
+  assert.match(h.$('[data-mdblist]').textContent, /admin_tags_mdblist_no_key/);
+  assert.match(h.$('[data-section="badges-tmdb"]').textContent, /admin_tags_badges_tmdb_missing/);
+});

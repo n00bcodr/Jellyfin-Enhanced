@@ -92,6 +92,8 @@
 .je-ta-saved[data-state="conflict"] { color: var(--je-ta-warn); border-color: var(--je-ta-warn); }
 .je-ta-saved[data-state="conflict"]::before { background: var(--je-ta-warn); }
 .je-ta-saved:is([data-state="error"], [data-state="conflict"]) { flex-wrap: wrap; max-width: 100%; padding-block: 4px; }
+.je-ta-saved:focus { outline: none; }
+.je-ta-saved:focus-visible { outline: 2px solid var(--je-ta-accent); outline-offset: 2px; }
 .je-ta-saved button { margin-left: 4px; padding: 2px 8px; border: 1px solid currentColor; border-radius: 999px; background: none; color: inherit; font: inherit; cursor: pointer; }
 .je-ta-intro { margin: 0 0 10px; max-width: 80ch; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
 .je-ta-admin-chip { display: inline-block; padding: 1px 6px; border: 1px solid var(--je-ta-admin); border-radius: 4px; color: var(--je-ta-admin); font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
