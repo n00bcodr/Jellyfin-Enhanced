@@ -283,6 +283,9 @@
                     <textarea id="jeTaOfferDesc" class="je-pt-input" rows="2" maxlength="${MAX_DESCRIPTION}">${ctx.esc(checked.description || '')}</textarea>
                     ${checked.skipped.length ? P.previewHtml({ skipped: checked.skipped }, { summary: false }) : ''}`;
                 d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('offer', 'admin_tags_presets_offer', { primary: true });
+                // This dialog's preset, once offered: a retry after a failed or refused
+                // save replaces it instead of adding another copy.
+                let offeredId = '';
                 d.foot.onclick = async (e) => {
                     const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-pt-action]'));
                     if (button?.dataset.ptAction === 'cancel') { d.close(); return; }
@@ -291,8 +294,12 @@
                     const description = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('#jeTaOfferDesc')).value.trim();
                     if (!name) { d.status(P.errorText('name'), 'error'); /** @type {HTMLElement} */ (d.body.querySelector('#jeTaOfferName')).focus(); return; }
                     const list = offered(ctx.config);
-                    if (list.length >= MAX_OFFERED) { d.status(JE.t('admin_tags_presets_full', { max: MAX_OFFERED }), 'error'); return; }
-                    list.push({ v: 1, kind: 'je-media-tags-preset', id: presetId(name, list), name, description, settings: checked.imported });
+                    const again = offeredId ? list.findIndex((p) => p.id === offeredId) : -1;
+                    if (again < 0 && list.length >= MAX_OFFERED) { d.status(JE.t('admin_tags_presets_full', { max: MAX_OFFERED }), 'error'); return; }
+                    if (again < 0 && !offeredId) offeredId = presetId(name, list);
+                    const preset = { v: 1, kind: 'je-media-tags-preset', id: offeredId, name, description, settings: checked.imported };
+                    if (again < 0) list.push(preset);
+                    else list[again] = preset;
                     button.disabled = true;
                     ctx.set('TagOfferedPresets', JSON.stringify(list));
                     const saved = await ctx.flush();

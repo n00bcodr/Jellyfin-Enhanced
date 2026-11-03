@@ -330,6 +330,49 @@ test('offered presets: offer one from a file, list it, share it and remove it, c
   assert.equal(h.$('#jeTaOfferImport').disabled, true);
 });
 
+test('offered presets: Offer again after a failed save stores the preset once', async t => {
+  const h = setup(t);
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  h.click(h.$('#jeTaOfferImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-preset', name: 'Retry preset', settings: { TagLayout: 'bands' } }));
+  h.click(h.action('next'));
+  await h.settle();
+  h.flags.failSave = true;
+  h.click(h.action('offer'));
+  await h.settle(10);
+  assert.equal(h.status(), 'admin_tags_presets_save_failed');
+  assert.equal(h.action('offer').disabled, false, 'Offer can be pressed again');
+  h.flags.failSave = false;
+  h.click(h.action('offer'));
+  await h.settle(10);
+  const stored = JSON.parse(h.server.TagOfferedPresets);
+  assert.deepEqual(stored.map((p) => p.name), ['Retry preset']);
+  assert.equal(h.dialog(), null);
+  assert.equal(h.root.querySelectorAll('[data-offer-id]').length, 1);
+  assert.match(h.$('[data-section="server-presets"]').textContent, /admin_tags_presets_count:1\|20/);
+});
+
+test('offered presets: Offer again while the save is refused, then Keep mine, stores the preset once', async t => {
+  const h = setup(t);
+  h.click(h.$('#jeTaOfferImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-preset', name: 'Family night', settings: { TagScale: 'larger' } }));
+  h.click(h.action('next'));
+  await h.settle();
+  // Another administrator offered one meanwhile.
+  h.server.TagOfferedPresets = JSON.stringify([{ v: 1, kind: 'je-media-tags-preset', id: 'theirs-1', name: 'Theirs', description: '', settings: { TagGap: 'tight' } }]);
+  h.click(h.action('offer'));
+  await h.settle(10);
+  assert.equal(h.A.pendingState().state, 'conflict');
+  h.dialog().querySelector('#jeTaOfferName').value = 'Family night (big)';
+  h.click(h.action('offer'));
+  await h.settle(10);
+  assert.equal(JSON.parse(h.ctx.config.TagOfferedPresets).length, 1, 'the pending list holds this dialog\'s preset once');
+  h.click(h.$('#jeTaSaved [data-je-keep]'));
+  await h.ctx.flush();
+  const stored = JSON.parse(h.server.TagOfferedPresets);
+  assert.deepEqual(stored.map((p) => p.name), ['Family night (big)']);
+});
+
 test('offer my settings uses the administrator\'s own export, and settings the server drops are shown', async t => {
   const h = setup(t, { userPreview: (doc) => ({ kind: doc.kind, v: 1, imported: { TagLayout: 'bands' }, changes: [], skipped: [{ field: 'TagScale', reason: 'invalid', detail: 'must be one of smaller, default, larger, largest' }] }) });
   h.click(h.$('#jeTaOfferMine'));
