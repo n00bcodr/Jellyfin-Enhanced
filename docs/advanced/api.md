@@ -1149,7 +1149,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
 | GET | `translate/languages` | Authenticated | `{languages:[...]}`, the target languages the configured LibreTranslate offers for English. |
-| POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. |
+| POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. A LibreTranslate rate limit returns 429 `{code:"translation_rate_limited"}`, plus `retryAfterSeconds` and a `Retry-After` header when LibreTranslate gave a wait; a LibreTranslate 403 returns 502 `{code:"translation_refused"}`. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \

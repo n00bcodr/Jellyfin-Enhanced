@@ -248,7 +248,7 @@ Translate English TMDB and AniList reviews into your Jellyfin language. Each rev
 
     Jellyfin Enhanced tries your browser's built-in translator first (Chrome and Edge, over HTTPS or localhost). It runs on your device, nothing is sent anywhere, and the browser may download a language model the first time. If the browser cannot translate, or fails, the review text goes to the LibreTranslate instance you set. If neither is available, the button is not shown.
 
-    Translations are done live and are never stored. The server keeps only a small in-memory cache of recent translations for one hour, which is cleared on restart. Reviews over 20,000 characters are not sent to LibreTranslate.
+    Translations are done live and are never stored. The server keeps only a small in-memory cache of recent translations for one hour, which is cleared on restart. Reviews over 20,000 characters are not sent to LibreTranslate. A paragraph over 2,000 characters is sent in pieces, split between sentences, because hosted LibreTranslate plans reject longer text.
 
     The translator receives plain prose, because translators mangle links and formatting. Links in the review are kept where they can be matched: each link is put back on its translated label, or on its original wording when that still appears in the translation (titles and names usually do). A link that matches neither shows as plain text, and italics are not kept in the translation. **Show original** restores the full formatting.
 
