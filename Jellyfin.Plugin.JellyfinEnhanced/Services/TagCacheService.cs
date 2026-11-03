@@ -1237,7 +1237,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // batch BEFORE taking the rebuild lock: network waits never hold it.
                 // (Skipped while a build owns the lock: the batch is deferred anyway.)
                 var warmed = new HashSet<Guid>();
-                if (ServerModeEnabled && !_cacheReleased && _rebuildLock.CurrentCount > 0)
+                var warmDemand = HasRebuildWarmDemand();
+                if (warmDemand && ServerModeEnabled && !_cacheReleased && _rebuildLock.CurrentCount > 0)
                 {
                     warmed.UnionWith(_pending.Updates());
                     WarmForRebuild(warmed);
@@ -1284,8 +1285,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     Interlocked.Exchange(ref _firstPendingTicks, 0);
                     var batch = _pending.Drain();
-                    // Ids recorded since the warm above: one more bounded batch.
-                    WarmForRebuild(batch.Where(change => !change.Removed && !warmed.Contains(change.Id)).Select(change => change.Id));
+                    if (warmDemand)
+                    {
+                        // Updates recorded since the warm above are not warmed here, under
+                        // the lock: they go back to the queue for the next flush, which
+                        // warms them outside it. Removals and warmed updates apply now.
+                        var late = batch.Where(change => !change.Removed && !warmed.Contains(change.Id)).ToArray();
+                        if (late.Length > 0)
+                        {
+                            // Record only where nothing newer arrived meanwhile (last write wins).
+                            foreach (var change in late) _pending.Requeue(change.Id);
+                            Interlocked.CompareExchange(ref _firstPendingTicks, DateTime.UtcNow.Ticks, 0);
+                            batch = batch.Where(change => change.Removed || warmed.Contains(change.Id)).ToArray();
+                        }
+                    }
+
                     using (BeginInPlaceWrites())
                     {
                         var customTagsBefore = CaptureCustomTagsBefore(batch);

@@ -498,6 +498,61 @@ public class RatingSourceTests
     }
 
     [Fact]
+    public void UpdatesArrivingDuringTheWarmWaitForTheNextFlushInsteadOfWarmingUnderTheRebuildLock()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        TagCacheService? cache = null;
+        var batches = new List<int>();
+        var lockHeld = new List<bool>();
+        var movies = Enumerable.Range(1, 161).Select(i => new Movie { Id = Guid.NewGuid(), Name = $"m{i}", ProviderIds = new() { ["Tmdb"] = (1000 + i).ToString() } }).ToArray();
+        var removed = new Movie { Id = Guid.NewGuid(), Name = "gone" }; // no TMDB id: nothing to warm
+        using var transport = new IntegrationTransport(async (request, _) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":10000,\"rate_limit_remaining\":10000}");
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var ids = body.RootElement.GetProperty("ids").EnumerateArray().Select(v => v.GetInt64()).ToArray();
+            batches.Add(ids.Length);
+            var rebuildLock = (SemaphoreSlim)typeof(TagCacheService).GetField("_rebuildLock", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(cache)!;
+            lockHeld.Add(rebuildLock.CurrentCount == 0);
+            // A scan keeps publishing changes while the first warm awaits its answer.
+            if (batches.Count == 1)
+            {
+                foreach (var movie in movies.Skip(1)) cache!.EnqueueUpdate(movie.Id);
+                cache!.EnqueueRemoval(removed.Id);
+            }
+            return IntegrationTransport.Response(JsonSerializer.Serialize(ids.Select(id => new { ids = new { tmdb = id }, ratings = new[] { new { source = "imdb", score = 81 } } })));
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<Guid>());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<BaseItem>());
+        foreach (var movie in movies.Append(removed)) library.Setup(l => l.GetItemById<BaseItem>(movie.Id)).Returns(movie);
+        cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        using (cache)
+        {
+            cache.BuildFullCache(null, default);
+            cache.EnqueueUpdate(removed.Id);
+            var flush = typeof(TagCacheService).GetMethod("FlushPending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            flush.Invoke(cache, null);
+            Assert.True(cache.TryGetEntry(removed.Id, out _));
+            cache.EnqueueUpdate(movies[0].Id);
+            flush.Invoke(cache, null);
+            // The first flush published the warmed title and the removal; the late titles stayed queued.
+            Assert.Equal([1], batches);
+            Assert.True(cache.TryGetEntry(movies[0].Id, out _));
+            Assert.False(cache.TryGetEntry(removed.Id, out _));
+            Assert.DoesNotContain(movies.Skip(1), movie => cache.TryGetEntry(movie.Id, out _));
+            flush.Invoke(cache, null);
+            Assert.Equal([1, 150, 10], batches);
+            Assert.DoesNotContain(true, lockHeld);
+            Assert.All(movies, movie => Assert.Equal(8.1, Assert.IsType<TagCacheEntry>(cache.TryGetEntry(movie.Id, out var entry) ? entry : null).Ratings!.Imdb));
+        }
+    }
+
+    [Fact]
     public void FlushWithNoWarmDemandResolvesEachChangedItemOnce()
     {
         using var f = new ApiPluginFixture();

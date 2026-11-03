@@ -25,6 +25,10 @@ public class PrivacyCacheTests
         var drained = pending.Drain().ToDictionary(x => x.Id, x => x.Removed);
         Assert.True(drained[first]); Assert.False(drained[second]); Assert.True(pending.IsEmpty); Assert.Empty(pending.Drain());
         pending.Record(first, false); Assert.Equal((first, false), Assert.Single(pending.Drain()));
+        // A requeued update never overrides a change recorded after the drain.
+        pending.Record(first, true); pending.Requeue(first); pending.Requeue(second);
+        drained = pending.Drain().ToDictionary(x => x.Id, x => x.Removed);
+        Assert.True(drained[first]); Assert.False(drained[second]);
     }
 
     [Fact]
