@@ -755,3 +755,28 @@ test('the real item editor sample reacts to pointer, focus and the touch Hover p
   sample.dispatchEvent(new h.window.Event('pointerenter'));
   assert.equal(reveal(), false, 'closing disposes the interaction handlers');
 });
+
+test('Show up to: stepping to either end keeps keyboard focus in the editor, on the row\'s other step button; Escape still closes it', async t => {
+  const h = setup(t, { html: card(MOVIE, 'Movie'), settings: { tagGroupCaps: { quality: 2 } } });
+  await h.open(MOVIE);
+  const row = () => h.$('.je-tie [data-group="quality"]');
+  const step = (dir) => row().querySelector(`[data-tie-step="${dir}"]`);
+  // One step inside the range keeps focus on the same button (by key).
+  step('1').focus();
+  h.click(step('1'));
+  assert.equal(h.document.activeElement, step('1'));
+  h.click(step('-1'));
+  // − down to 1: that button is drawn disabled; focus moves to + in the same row.
+  step('-1').focus();
+  h.click(step('-1'));
+  assert.equal(row().querySelector('output').textContent, '1');
+  assert.equal(step('-1').disabled, true);
+  assert.equal(h.document.activeElement, step('1'), 'focus on the other step button');
+  assert.ok(h.editor().contains(h.document.activeElement));
+  // Up to All: + is drawn disabled; focus moves to −.
+  for (let i = 0; i < 20 && !step('1').disabled; i++) h.click(step('1'));
+  assert.equal(step('1').disabled, true);
+  assert.equal(h.document.activeElement, step('-1'));
+  h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(h.editor(), null, 'Escape closes the editor');
+});

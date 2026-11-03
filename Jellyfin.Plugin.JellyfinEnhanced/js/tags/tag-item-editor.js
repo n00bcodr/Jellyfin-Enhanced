@@ -587,9 +587,15 @@
             presentTimer = setTimeout(() => { presentTimer = null; if (backdrop.isConnected) present(); }, 0);
         };
 
-        /** Rebuild the group rows for the draft's layout (focus kept by key). */
+        /**
+         * Rebuild the group rows for the draft's layout (focus kept by key). A
+         * keyed control drawn disabled (a stepper at the end of its range) hands
+         * focus to its row's other step button or switch, so it never leaves the editor.
+         */
         const renderGroups = () => {
-            const focusKey = /** @type {HTMLElement|null} */ (document.activeElement)?.dataset?.tieKey || null;
+            const focused = /** @type {HTMLElement|null} */ (document.activeElement);
+            const focusKey = focused?.dataset?.tieKey || null;
+            const focusGroup = focusKey ? /** @type {HTMLElement|null} */ (focused.closest('[data-group]'))?.dataset.group || null : null;
             const slots = draft.slots[draft.layout];
             // The groups that draw for this user first, the ones switched off in their settings after.
             const ordered = base.order || L.DEFAULT_ORDER;
@@ -617,7 +623,14 @@
                     <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}>${esc(gname)}</label>${groupOn(group) ? '' : `<small>${tx('tag_item_editor_group_off_for_you')}</small>`}</div>
                     <div class="je-tie-where">${where}</div>${stepper}</li>`;
             }).join('');
-            if (focusKey) /** @type {HTMLElement|null} */ (groupsList.querySelector(`[data-tie-key="${focusKey}"]`))?.focus({ preventScroll: true });
+            if (!focusKey) return;
+            const usable = (el) => !!el && !/** @type {HTMLButtonElement} */ (el).disabled;
+            let next = /** @type {HTMLElement|null} */ (groupsList.querySelector(`[data-tie-key="${focusKey}"]`));
+            if (!usable(next)) {
+                const row = focusGroup ? groupsList.querySelector(`[data-group="${focusGroup}"]`) : null;
+                next = /** @type {HTMLElement|null} */ (row?.querySelector('[data-tie-step]:not([disabled])') || row?.querySelector('[data-tie-on]') || null);
+            }
+            (usable(next) ? next : dialog).focus({ preventScroll: true });
         };
 
         /** Put every control in step with the draft. */
