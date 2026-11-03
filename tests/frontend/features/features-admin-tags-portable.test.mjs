@@ -213,6 +213,53 @@ test('a field another administrator changed meanwhile waits for Keep mine / Take
   assert.equal(h.server.TagLayout, 'bands');
 });
 
+test('import after another administrator changed a field this page never edited writes every listed change, and Undo restores theirs', async t => {
+  const h = setup(t);
+  await h.settle(10);
+  // Another administrator (or another tab) saved the layout after this page read it.
+  h.server.TagLayout = 'bands';
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLayout: 'corners', StatusTagsJustAddedDays: 9 } }));
+  h.click(h.action('next'));
+  await h.settle(10);
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), (el) => el.textContent), ['Tag Layout', 'Status Tags Just Added Days']);
+  const n = h.patches.length;
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.deepEqual(plain(h.patches.slice(n)), [{ Changes: { TagLayout: 'corners', StatusTagsJustAddedDays: 9 }, Expected: { TagLayout: 'bands', StatusTagsJustAddedDays: 7 } }], 'both listed changes are written');
+  assert.equal(h.server.TagLayout, 'corners');
+  assert.equal(h.server.StatusTagsJustAddedDays, 9);
+  assert.equal(h.dialog(), null);
+  assert.equal(h.A.pendingState().state, 'saved');
+  assert.equal(h.ctx.config.TagLayout, 'corners');
+  const snack = h.root.querySelector('.je-ta-snack');
+  assert.match(snack.textContent, /admin_tags_portable_applied:2/);
+
+  h.click(snack.querySelector('button'));
+  await h.ctx.flush();
+  await h.settle(20);
+  assert.deepEqual(plain(h.patches.at(-1)), { Changes: { TagLayout: 'bands', StatusTagsJustAddedDays: 7 }, Expected: { TagLayout: 'corners', StatusTagsJustAddedDays: 9 } }, 'Undo puts back the value before the import');
+  assert.equal(h.server.TagLayout, 'bands');
+});
+
+test('import: a field changed by another administrator to another value after the preview is a conflict, not a skipped change', async t => {
+  const h = setup(t);
+  await h.settle(10);
+  h.server.TagLayout = 'bands';
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLayout: 'corners', StatusTagsJustAddedDays: 9 } }));
+  h.click(h.action('next'));
+  await h.settle(10);
+  // Changed again after the preview.
+  h.server.TagLayout = 'minimal';
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.equal(h.server.TagLayout, 'minimal', 'their value is kept');
+  assert.equal(h.server.StatusTagsJustAddedDays, 9);
+  assert.equal(h.status(), 'admin_tags_portable_apply_refused');
+  assert.equal(h.A.pendingState().state, 'conflict');
+});
+
 test('import saves an edit still on its way before the preview, so the document\'s value of that field is applied', async t => {
   const h = setup(t);
   let release;

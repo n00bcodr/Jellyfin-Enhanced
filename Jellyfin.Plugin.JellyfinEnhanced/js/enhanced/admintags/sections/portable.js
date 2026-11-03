@@ -140,8 +140,9 @@
              * @param {Array<{field: string, from: *, to: *}>} changes
              */
             const apply = async (d, changes) => {
-                // What this page shows now: Undo puts it back.
-                const before = Object.fromEntries(changes.map((c) => [c.field, JSON.parse(JSON.stringify(ctx.config[c.field] ?? null))]));
+                // What the server held when the preview compared it (the page read it
+                // again just before): Undo puts it back, never an older copy of the page.
+                const before = Object.fromEntries(changes.map((c) => [c.field, JSON.parse(JSON.stringify(c.from ?? null))]));
                 ctx.setMany(Object.fromEntries(changes.map((c) => [c.field, c.to])));
                 const saved = await ctx.flush();
                 if (!ctx.isCurrent()) return;
@@ -173,6 +174,20 @@
                     const saved = await ctx.flush();
                     if (!ctx.isCurrent() || d.closed()) return;
                     if (!saved) { d.status(JE.t('admin_tags_portable_import_unsaved'), 'error'); return; }
+                    // A field this page never edited can be older here than on the server
+                    // (another administrator or tab saved it since): read the settings again,
+                    // so the page and the preview compare the same values and Apply writes
+                    // every listed change with the value the preview started from.
+                    let fresh = null;
+                    try {
+                        fresh = await ApiClient.getPluginConfiguration(A.PLUGIN_ID);
+                    } catch (err) {
+                        if (!ctx.isCurrent() || d.closed()) return;
+                        console.warn('🪼 Jellyfin Enhanced: could not read the configuration before the import preview', err);
+                    }
+                    if (!ctx.isCurrent() || d.closed()) return;
+                    if (!fresh) { d.status(JE.t('tag_portable_export_failed'), 'error'); return; }
+                    ctx.reload(fresh);
                     let answer;
                     try {
                         answer = await request('POST', 'admin/media-tags/preview', document);
