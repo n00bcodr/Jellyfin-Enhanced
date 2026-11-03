@@ -36,8 +36,10 @@ async function prepare(page, layout) {
     await page.waitForFunction(() => [...window.JellyfinEnhanced.tagPipeline.serverEntries()].some(e => e.Awards?.ImdbRank === 12));
   } else {
     await page.goto('/');
+    // Wide enough for both award chips on one caption-strip row: the strip keeps
+    // only whole rows, and these chips are taller than half of it.
     await page.setContent(`<style>
-      .card { width:180px; margin:20px; } .cardScalable { position:relative; height:270px; background:#234; }
+      .card { width:230px; margin:20px; } .cardScalable { position:relative; height:345px; background:#234; }
       .cardOverlayContainer { position:absolute; inset:0; z-index:1; } .cardImageContainer { position:absolute; inset:0; }
       .je-tag-host { position:absolute; inset:0; pointer-events:none; }
       </style><div class="card" data-id="awards-proof" data-type="Movie"><div class="cardBox"><div class="cardScalable">
