@@ -966,3 +966,64 @@ test('Undo used with the keyboard hands focus to Import while the panel opens ag
   await h.settle(12);
   assert.equal(h.server.settings.TagLayout, 'corners');
 });
+
+// ── A failed rule or lock save and a queued settings save (astra R6-1) ──
+
+/** Hold the next settings POST until the returned release is called, then refuse it. */
+function refuseNextSave(h) {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const ajax = h.window.ApiClient.ajax;
+  let failNext = true;
+  h.window.ApiClient.ajax = async (request) => {
+    if (request.type === 'POST' && new URL(request.url).pathname.endsWith('/settings.json') && failNext) {
+      failNext = false;
+      await gate;
+      throw { status: 500 };
+    }
+    return ajax(request);
+  };
+  return () => release();
+}
+
+test('a failed rule save is rolled back before a layout save queued behind it reads the settings', async t => {
+  const rule = { id: 'movie', enabled: true, when: [{ field: 'type', value: 'Movie' }], layout: 'caption', density: 'compact' };
+  const h = setup(t, { stored: { TagLookRules: [rule] } });
+  await h.open();
+  const toasts = [];
+  h.JE.toast = message => toasts.push(message);
+  h.click(h.$('#jeMthTab-rules'));
+  await h.settle(8);
+  const release = refuseNextSave(h);
+  h.click(h.$('.je-tag-looks-pill'));
+  await h.settle(6);
+  h.click(h.$('#jeMthTab-layout'));
+  await chooseLayout(h, 'minimal');
+  release();
+  await h.settle(24);
+  assert.equal(h.server.settings.TagLayout, 'minimal', 'the layout is saved');
+  assert.equal(h.server.settings.TagLookRules[0].enabled, true, 'without the refused rule change');
+  assert.equal(h.JE.currentSettings.tagLookRules[0].enabled, true);
+  assert.ok(toasts.includes('tag_looks_save_failed_toast'), 'the failure is said');
+  h.click(h.$('#jeMthTab-rules'));
+  await h.settle(8);
+  assert.equal(h.$('.je-tag-looks-pill').getAttribute('aria-pressed'), 'true', 'the rule shows on again');
+  h.click(h.$('#closeSettingsPanel'));
+  await h.open();
+  assert.equal(h.JE.currentSettings.tagLookRules[0].enabled, true, 'and is on after the panel reopens');
+});
+
+test('a failed personal lock save is rolled back before a layout save queued behind it reads the settings', async t => {
+  const h = setup(t);
+  await h.open();
+  const release = refuseNextSave(h);
+  const locked = h.JE.core.tagLook.lockItem('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', { layout: 'bands', density: 'full' });
+  await h.settle(4);
+  await chooseLayout(h, 'minimal');
+  release();
+  assert.equal(await locked, false);
+  await h.settle(12);
+  assert.equal(h.server.settings.TagLayout, 'minimal', 'the layout is saved');
+  assert.equal(h.server.settings.TagLayoutLocks ?? null, null, 'without the refused lock');
+  assert.equal(h.JE.core.tagLook.read().locks.size, 0);
+});

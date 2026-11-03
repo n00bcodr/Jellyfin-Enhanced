@@ -38,7 +38,9 @@ function setup(t, { settings = {}, plugin = {}, html = '', admin = false, tagDat
       pluginConfig: { ...plugin },
       t: (key, params) => params ? `${key}:${Object.values(params).join('|')}` : key,
       escapeHtml: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'),
-      saveUserSettings: (file, doc) => io.save ? io.save(doc) : io.saveStatus === 200 ? (writes.push(plain(doc)), Promise.resolve()) : Promise.reject(Object.assign(new Error('Internal Server Error'), { status: io.saveStatus })),
+      // As config.js: a failure runs onError (unless its session ended) before it rejects.
+      saveUserSettings: (file, doc, options = {}) => Promise.resolve(io.save ? io.save(doc) : io.saveStatus === 200 ? (writes.push(plain(doc)), undefined) : Promise.reject(Object.assign(new Error('Internal Server Error'), { status: io.saveStatus })))
+        .catch(async (err) => { if (options.isCurrent && !options.isCurrent()) return; await options.onError?.(err); throw err; }),
       session: { onUserChange: (name, fn) => userChange.push(fn), getEpoch: () => io.epoch, getUserId: () => io.user },
     },
     apiClient: {

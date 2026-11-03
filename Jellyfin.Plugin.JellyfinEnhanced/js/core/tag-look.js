@@ -528,7 +528,8 @@
      * Apply a change to the rules or locks, re-present the cards and save the
      * settings document. When the save fails the previous value is put back
      * (unless a later change replaced it meanwhile) and the cards re-presented
-     * again.
+     * again, inside the save queue: before the next queued save reads the
+     * document, and only while this session lasts (config.js).
      * @param {'tagLookRules'|'tagLayoutLocks'} key
      * @param {*} value - The new setting value.
      * @returns {Promise<boolean>} Whether the change was saved.
@@ -542,14 +543,16 @@
         represent();
         if (!isCurrent()) return Promise.resolve(false);
         if (typeof JE.saveUserSettings !== 'function') return Promise.resolve(true);
-        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent })))
+        const rollback = () => {
+            if (JE.currentSettings === settings && settings[key] === value) {
+                settings[key] = previous;
+                represent();
+            }
+        };
+        return new Promise((resolve) => resolve(JE.saveUserSettings('settings.json', settings, { throwOnError: true, isCurrent, onError: rollback })))
             .then(() => isCurrent(), (err) => {
                 if (!isCurrent()) return false;
                 console.warn('🪼 Jellyfin Enhanced [TagLook]: saving the tag looks failed:', err);
-                if (JE.currentSettings === settings && settings[key] === value) {
-                    settings[key] = previous;
-                    represent();
-                }
                 return false;
             });
     }
