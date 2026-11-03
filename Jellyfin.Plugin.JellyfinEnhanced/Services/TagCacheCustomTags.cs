@@ -464,6 +464,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// What decides an on-demand entry's Custom matches: the rules' match fingerprint
+        /// (labels and icons excluded) and whether collections count (cache on).
+        /// </summary>
+        internal string CustomTagMatchFingerprint => (ServerModeEnabled ? "c|" : "t|") + CurrentCustomTagMatcher().Fingerprint;
+
+        /// <summary>
+        /// An on-demand entry matched again under the current Custom rules (tags and
+        /// collections only, no media reads): the same instance when its matches are unchanged.
+        /// </summary>
+        internal TagCacheEntry RematchCustomTags(BaseItem item, TagCacheEntry entry)
+        {
+            var series = item is MediaBrowser.Controller.Entities.TV.Season or MediaBrowser.Controller.Entities.TV.Episode ? GetParentSeries(item) : null;
+            var tags = CustomTagsFor(item, series);
+            if (SameIds(tags, entry.CustomTags)) return entry;
+            var copy = entry.Clone();
+            copy.CustomTags = tags;
+            return copy;
+        }
+
+        /// <summary>
         /// After a configuration save or a snapshot load: when what the rules match differs
         /// from what the cache was computed under, re-match every entry in the background
         /// (once queued, later calls wait for it).

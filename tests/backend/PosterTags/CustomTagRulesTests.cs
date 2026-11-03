@@ -345,6 +345,69 @@ public class CustomTagRulesTests
         }
     }
 
+    private static class Held
+    {
+        /// <summary>A movie whose media read can be held, to edit rules while its native build is in flight (named Movie: GetBaseItemKind reads the class name).</summary>
+        public sealed class Movie : MediaBrowser.Controller.Entities.Movies.Movie
+        {
+            public ManualResetEventSlim? Hold { get; set; }
+            public ManualResetEventSlim Reading { get; } = new();
+            public override List<MediaBrowser.Model.Dto.MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
+            {
+                Reading.Set();
+                Hold?.Wait(TimeSpan.FromSeconds(10));
+                return [];
+            }
+        }
+    }
+
+    [Fact]
+    public async Task RuleEditsReachNativeOnDemandEntriesWithTheCacheOffIncludingBuildsInFlight()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = false;
+        f.Plugin.Configuration.CustomTagsEnabled = true;
+        f.Plugin.Configuration.CustomTagRuleKey = "fixture-key";
+        f.Plugin.Configuration.CustomTagRules = [];
+        var movie = new Held.Movie { Id = Guid.NewGuid(), Name = "Synthetic", Tags = ["festival"] };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(movie.Id)).Returns(movie);
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        using var native = new PosterTagDataProvider(cache, library.Object, null!, null!, null!, f.Core.Logger);
+        var getOrBuild = typeof(PosterTagDataProvider).GetMethod("GetOrBuildAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Task<TagCacheEntry?> Native() => (Task<TagCacheEntry?>)getOrBuild.Invoke(native, [movie, CancellationToken.None])!;
+        void Patch(params CustomTagRule[] rules)
+        {
+            var result = PluginConfigurationPatch.Apply(f.Plugin, new Dictionary<string, JsonElement> { ["CustomTagRules"] = JsonSerializer.SerializeToElement(rules) }, null, MediaTagsPageFields.Allowed);
+            Assert.Null(result.Error);
+        }
+
+        var before = await Native();
+        Assert.Null(before!.CustomTags);
+        // A rule added through the real field patch: the very next native read has the tag.
+        Patch(Rule("tag", "festival", "Festival"));
+        var added = await Native();
+        Assert.Equal(new[] { Id("tag", "festival", "fixture-key") }, added!.CustomTags);
+        Assert.Same(added, await Native());
+        // A label or icon edit matches the same items: the entry is kept as it is.
+        Patch(Rule("tag", "festival", "Festival!", "auto_awesome"));
+        Assert.Same(added, await Native());
+        // Retargeted: the tag goes.
+        Patch(Rule("tag", "premiere", "Premiere"));
+        Assert.Null((await Native())!.CustomTags);
+
+        // A build in flight while the rule changes answers (and memoizes) the new matches.
+        movie.Hold = new ManualResetEventSlim();
+        var other = new Held.Movie { Id = Guid.NewGuid(), Name = "Other", Tags = ["festival"], Hold = movie.Hold };
+        library.Setup(l => l.GetItemById(other.Id)).Returns(other);
+        var inFlight = (Task<TagCacheEntry?>)getOrBuild.Invoke(native, [other, CancellationToken.None])!;
+        Assert.True(other.Reading.Wait(TimeSpan.FromSeconds(10)));
+        Patch(Rule("tag", "festival", "Festival"));
+        movie.Hold.Set();
+        Assert.Equal(new[] { Id("tag", "festival", "fixture-key") }, (await inFlight)!.CustomTags);
+        Assert.Equal(new[] { Id("tag", "festival", "fixture-key") }, ((Task<TagCacheEntry?>)getOrBuild.Invoke(native, [other, CancellationToken.None])!).Result!.CustomTags);
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]

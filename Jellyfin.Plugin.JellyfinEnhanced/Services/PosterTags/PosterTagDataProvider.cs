@@ -57,7 +57,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // instance is a valid memo key for its content hash.
         private static readonly ConditionalWeakTable<TagCacheEntry, string> ContentHashes = new();
 
-        private sealed record MemoEntry(TagCacheEntry? Entry, DateTime BuiltAt);
+        // CustomTags: the Custom rule match fingerprint the entry's matches were made under.
+        private sealed record MemoEntry(TagCacheEntry? Entry, DateTime BuiltAt, string CustomTags);
 
         private readonly TagCacheService _tagCache;
         private readonly ILibraryManager _libraryManager;
@@ -67,7 +68,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private readonly Logger _logger;
 
         private readonly ConcurrentDictionary<Guid, MemoEntry> _memo = new();
-        private readonly ConcurrentDictionary<Guid, Lazy<Task<TagCacheEntry?>>> _building = new();
+        private readonly ConcurrentDictionary<Guid, Lazy<Task<(TagCacheEntry? Entry, string CustomTags)>>> _building = new();
         private readonly SemaphoreSlim _buildSlots = new(Math.Max(1, Environment.ProcessorCount / 2));
 
         // Bumped by every item event; a build that started before an event
@@ -228,36 +229,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private async Task<TagCacheEntry?> GetOrBuildAsync(BaseItem item, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
-            if (_memo.TryGetValue(item.Id, out var memo) && now - memo.BuiltAt < MemoTtl) return memo.Entry;
+            if (_memo.TryGetValue(item.Id, out var memo) && now - memo.BuiltAt < MemoTtl)
+                return CurrentCustomTags(item, memo.Entry, memo.CustomTags);
 
-            var mine = new Lazy<Task<TagCacheEntry?>>(() => BuildAsync(item), LazyThreadSafetyMode.ExecutionAndPublication);
+            var mine = new Lazy<Task<(TagCacheEntry? Entry, string CustomTags)>>(() => BuildAsync(item), LazyThreadSafetyMode.ExecutionAndPublication);
             var leader = _building.GetOrAdd(item.Id, mine);
             var task = leader.Value;
             if (ReferenceEquals(leader, mine))
             {
                 _ = task.ContinueWith(
-                    _ => _building.TryRemove(new KeyValuePair<Guid, Lazy<Task<TagCacheEntry?>>>(item.Id, mine)),
+                    _ => _building.TryRemove(new KeyValuePair<Guid, Lazy<Task<(TagCacheEntry? Entry, string CustomTags)>>>(item.Id, mine)),
                     CancellationToken.None,
                     TaskContinuationOptions.ExecuteSynchronously,
                     TaskScheduler.Default);
             }
 
-            return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var built = await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // A build that started before a Custom rule edit matched under the old rules.
+            return CurrentCustomTags(item, built.Entry, built.CustomTags);
+        }
+
+        // Custom rule edits raise no item event, and with the server tag cache off nothing
+        // re-matches entries: an entry matched under other rules is matched again (tags
+        // only, no media reads) and the memo keeps the re-matched entry. Label and icon
+        // edits leave the fingerprint, and the entry, as they are.
+        private TagCacheEntry? CurrentCustomTags(BaseItem item, TagCacheEntry? entry, string matchedUnder)
+        {
+            var fingerprint = _tagCache.CustomTagMatchFingerprint;
+            if (entry == null || matchedUnder == fingerprint) return entry;
+            var current = _tagCache.RematchCustomTags(item, entry);
+            lock (_memoLock)
+            {
+                if (_memo.TryGetValue(item.Id, out var memo) && ReferenceEquals(memo.Entry, entry))
+                    _memo[item.Id] = memo with { Entry = current, CustomTags = fingerprint };
+            }
+
+            return current;
         }
 
         // Runs detached from any one request (a waiter leaving must not cancel
         // the build the others are waiting for).
-        private async Task<TagCacheEntry?> BuildAsync(BaseItem item)
+        private async Task<(TagCacheEntry? Entry, string CustomTags)> BuildAsync(BaseItem item)
         {
             if (!await _buildSlots.WaitAsync(BuildWait).ConfigureAwait(false))
             {
                 _logger.Debug($"Native poster tags: tag data build for {item.Id} timed out waiting for a slot.");
-                return null;
+                return (null, string.Empty);
             }
 
             try
             {
                 var generation = Interlocked.Read(ref _memoGeneration);
+                // Read before the build: a rule edit during it leaves this stale, so the read re-matches.
+                var customTags = _tagCache.CustomTagMatchFingerprint;
                 var entry = await Task.Run(() => _tagCache.BuildEntryOnDemand(item)).ConfigureAwait(false);
                 lock (_memoLock)
                 {
@@ -266,16 +290,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                     if (generation == _memoGeneration && ScenesAreCurrent(item.Id, entry))
                     {
                         if (_memo.Count >= MaxMemoEntries) TrimMemo();
-                        _memo[item.Id] = new MemoEntry(entry, DateTime.UtcNow);
+                        _memo[item.Id] = new MemoEntry(entry, DateTime.UtcNow, customTags);
                     }
                 }
 
-                return entry;
+                return (entry, customTags);
             }
             catch (Exception ex)
             {
                 _logger.Warning($"Native poster tags: tag data build failed for {item.Id}: {ex.Message}");
-                return null;
+                return (null, string.Empty);
             }
             finally
             {
