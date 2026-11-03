@@ -128,6 +128,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
             public List<string> AllLanguages { get; }
 
+            /// <summary>Every language code that resolved to this flag (web <c>allCodes</c>), first one in <see cref="Code"/>.</summary>
             public List<string> AllCodes { get; }
 
             /// <summary>
@@ -380,6 +381,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return terms;
         }
 
+        /// <summary>
+        /// languagetags.js orderByPriority. A personal (canonical) list matches the canonical base of any
+        /// of the flag's codes. A server term matches a flag by exact code, base code or display name, or
+        /// when <see cref="MatchesLanguage"/> accepts any of the flag's codes for it: "en" matches "eng",
+        /// "en-US" and "en-GB", and "pt-BR" still matches a bare "pt" (#993).
+        /// </summary>
         private static List<FlagInfo> OrderByPriority(List<FlagInfo> flags, IReadOnlyList<string> priority, bool strict, bool canonicalPriority)
         {
             if (priority.Count == 0) return flags;
@@ -399,11 +406,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 var code = JsText.ToLower(flag.Code);
                 var dash = code.IndexOf('-');
                 var baseCode = dash < 0 ? code : code.Substring(0, dash);
-                var best = Best(-1, IndexOf(priority, code));
-                best = Best(best, IndexOf(priority, baseCode));
-                foreach (var name in flag.AllLanguages)
+                var best = -1;
+                for (var idx = 0; idx < priority.Count; idx++)
                 {
-                    best = Best(best, IndexOf(priority, JsText.ToLower(name)));
+                    if (best != -1 && idx >= best) break;
+                    var term = priority[idx];
+                    if (string.Equals(term, code, StringComparison.Ordinal) || string.Equals(term, baseCode, StringComparison.Ordinal))
+                    {
+                        best = idx;
+                        continue;
+                    }
+
+                    foreach (var name in flag.AllLanguages)
+                    {
+                        if (string.Equals(term, JsText.ToLower(name), StringComparison.Ordinal))
+                        {
+                            best = idx;
+                            break;
+                        }
+                    }
+
+                    if (best == idx) continue;
+                    foreach (var flagCode in flag.AllCodes)
+                    {
+                        if (MatchesLanguage(flagCode, term, requireRegion: false))
+                        {
+                            best = idx;
+                            break;
+                        }
+                    }
                 }
 
                 return best;

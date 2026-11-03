@@ -629,7 +629,7 @@ Administrators can set the shared fallback under **Priority Languages**. Existin
 | **Audio count badge** | Off | **Badge only** replaces audio chips when two or more audio languages qualify; **Badge and flags** keeps them (or codes with Codes style). Selected subtitles remain. Counts distinct canonical audio languages after priority filtering and before the cap; regional versions and no-dialogue tracks do not increase the count |
 | Personal: **Priority** → **Follow server policy** | On | Follows the live administrator list; turn off for an ordered list of up to 12 ISO 639-1/639-2 languages. An empty personal list has no priorities. |
 | Personal: **Only show priority languages** | Follow server | Inherits strict filtering, or explicitly filters/keeps other languages. |
-| Admin: **Priority Languages** | Empty | Comma-separated language names or codes; use names such as `English, Japanese` to avoid differences between two- and three-letter codes. Matching flags appear first in list order |
+| Admin: **Priority Languages** | Empty | Comma-separated language names or codes such as `English, ja, pt-BR`. Codes match equivalent two- and three-letter tags (`en` covers `eng`). A bare code also covers regional variants (`en` covers `en-US` and `en-GB`); a regional code accepts bare tags but not a different region (`pt-BR` covers `pt`, not `pt-PT`). Matching flags appear first in list order |
 | Admin: **Only Show Priority Languages** | Off | With a nonempty priority list, removes flags that do not match; an item can show fewer flags than its limit, or none |
 | Admin: **Merge Regional Variants** | Off | Regional and script variants such as `en-GB`, `pt-BR` or `zh-Hant` share their base language's flag, so tracks Jellyfin lists as one language show one flag |
 
@@ -646,7 +646,7 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 
     Priority filtering also operates on grouped flags: a matching flag can represent additional languages sharing it. An empty priority list leaves flags unchanged even with strict filtering on. A personal list overrides the administrator list. Strict mode follows the personal override when set, otherwise the administrator value.
 
-    Server-list matching uses the flag's language code, its base code, or its displayed language names; personal ISO priorities match every represented language canonically. The legacy server matcher does not equate two- and three-letter codes: `ja` does not match `jpn`, but `Japanese` matches the displayed name.
+    Server-list matching uses the flag's language code, its base code, or its displayed language names, and compares codes the way the audio-language filter does across every language the chip represents: `ja` matches `jpn`, `en` matches `en-US`, and `te` finds the India flag Hindi claimed first. Personal ISO priorities match every represented language canonically.
 
     Cached audio and subtitle languages use the union across episodes. Subtitle tracks use the same access and Spoiler Guard stripping paths as audio. With the server cache off, container cards use their representative episode instead of the full union. Forced and SDH subtitle variants share one language chip; a grouped subtitle chip carries SDH if any represented track is SDH. The tooltip reads, for example, **Subtitles (SDH): English**. Flags, Codes, the Summary pill and native posters preserve the marker. It appears only while Subtitles is enabled.
 

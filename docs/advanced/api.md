@@ -1377,7 +1377,7 @@ Use these routes to look up language tag names, awards, external ratings, AniLis
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
 | GET | `anilist/reviews` | Authenticated | Query `anilistId` (positive AniList anime id) → `{SiteUrl, Reviews:[{Author,Summary,Content,Score,Rating,RatingAmount,CreatedAt,Url}]}` (PascalCase), the ten highest-rated AniList reviews, cached 12 hours (2 hours when none). `503` when disabled, `400` for a bad id, `502` when AniList fails. |
 | GET | `translate/languages` | Authenticated | `{languages:[...]}`, the target languages the configured LibreTranslate offers for English. |
-| POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. |
+| POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. A LibreTranslate rate limit returns 429 `{code:"translation_rate_limited"}`, plus `retryAfterSeconds` and a `Retry-After` header when LibreTranslate gave a wait; a LibreTranslate 403 returns 502 `{code:"translation_refused"}`. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \

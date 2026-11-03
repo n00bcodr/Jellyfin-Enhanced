@@ -63,6 +63,20 @@ test('subtitle-only mode works with empty audio and respects admin priority and 
   assert.deepEqual(h.chips().map(el => el.dataset.lang), ['br', 'jp']);
 });
 
+test('admin priority matches two- and three-letter codes, regions and every code behind a flag (#993)', t => {
+  for (const [priority, audio, expected] of [['en,it,ja', ['spa', 'jpn', 'ita', 'eng'], ['gb', 'it', 'jp']], ['en,it,ja', ['fra', 'en-US'], ['gb']], ['te', ['hin', 'tel'], ['in']]]) {
+    const h = setup(t, {}, { LanguageTagsPriority: priority, LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: audio });
+    assert.deepEqual(h.chips().map(el => el.dataset.lang), expected, audio.join());
+  }
+});
+
+test('admin priority matches two- and three-letter codes on Codes and subtitle chips (#993)', t => {
+  const h = setup(t, { languageTagsStyle: 'codes', languageTagsShowSubtitles: true, tagGroupCaps: { language: 0 }, tagLayoutSettingsVersion: 1 }, { LanguageTagsPriority: 'en,ja', LanguageTagsPriorityStrict: true });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['fra', 'jpn', 'eng'], SubtitleLanguages: ['deu', 'ja', 'eng'] });
+  assert.deepEqual(h.chips().map(el => el.textContent), ['EN', 'JA', 'CCEN', 'CCJA']);
+});
+
 test('batch renderer retains subtitle facts through local cache and setting reinitialization', t => {
   const h = setup(t, { languageTagsShowSubtitles: true });
   const item = { Id: 'a', Type: 'Movie', SubtitleLanguages: ['fr'], MediaStreams: [{ Type: 'Audio', Language: 'en' }] };

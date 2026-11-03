@@ -26,8 +26,7 @@ public class ApiCdnRefreshTests
             };
             return Task.FromResult(IntegrationTransport.Response("synthetic-asset", type: mime));
         });
-        // The real 2 s pause between award logos is production pacing, not behavior under test.
-        var service = new CdnAssetService(f.Logger, transport, f.Paths.Object) { BurstSensitiveDelay = TimeSpan.Zero };
+        var service = new CdnAssetService(f.Logger, transport, f.Paths.Object);
         var progress = new Reports();
         await service.RefreshKnownAsync(progress, CancellationToken.None);
         Assert.Equal(CdnAssetService.KnownAssets.Count, calls);
@@ -80,5 +79,27 @@ public class ApiCdnRefreshTests
         Assert.Equal(initial.Content, stale.Content);
         Assert.Equal(initial.ETag, stale.ETag);
         Assert.Equal(2, transport.Calls);
+    }
+
+    [Theory]
+    [InlineData("award-logos", "oscar", "image/svg+xml")]
+    [InlineData("award-logos", "kids-choice", "image/png")]
+    [InlineData("ibb", "fdbkXQdP/jellyseerr-poster-not-found.png", "image/png")]
+    [InlineData("moonbase", "moonfin-client", "image/png")]
+    [InlineData("mdblist-logos", "imdb.png", "image/png")]
+    [InlineData("mdblist-static", "favicon.ico", "image/x-icon")]
+    [InlineData("ddd-static", "favicon.ico", "image/x-icon")]
+    public async Task BundledAssetsAreServedWithoutAnyNetworkCall(string source, string path, string type)
+    {
+        using var f = new CoreFixture();
+        using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("network used"));
+        var service = new CdnAssetService(f.Logger, transport, f.Paths.Object);
+        Assert.True(service.IsValidSource(source));
+        var asset = await service.GetAsync(source, path, false, CancellationToken.None);
+        Assert.NotNull(asset);
+        Assert.Equal(type, asset.ContentType);
+        Assert.NotEmpty(asset.Content);
+        Assert.Equal(0, transport.Calls);
+        Assert.Null(await service.GetAsync(source, "not-bundled.png", false, CancellationToken.None));
     }
 }

@@ -118,24 +118,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["zesty"] = new("https://cdn.jsdelivr.net/gh/stpnwf/ZestyTheme@latest", Types("image/png", "image/jpeg")),
             // JellyPlugins jellyfin-helper favicon (pinned ref)
             ["jelly-helper"] = new("https://cdn.jsdelivr.net/gh/JellyPlugins/jellyfin-helper@2.0.0.2", Types("image/vnd.microsoft.icon", "image/x-icon", "image/png")),
-            // Moonbase (Moonfin server plugin) icon: Moonfin-Client's GitHub avatar (pre-sized, no version to pin)
-            ["moonbase"] = new("https://avatars.githubusercontent.com", Types("image/jpeg", "image/png"),
-                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["moonfin-client"] = "https://avatars.githubusercontent.com/u/103554043?v=4&size=40"
-                }),
             // flagcdn raster flags (people/country tags)
             ["flagcdn"] = new("https://flagcdn.com", Types("image/png")),
             // cdnjs flag-icons SVG flags (language tags)
             ["flag-icons"] = new("https://cdnjs.cloudflare.com/ajax/libs/flag-icons/7.2.1", Types("image/svg+xml")),
-            // ibb "poster not found" fallback image. i.ibb.co hosts arbitrary user uploads,
-            // so this is locked to the single known asset via FixedPaths — any other path is
-            // rejected — to avoid an anonymous cache-fill proxy over an open host.
-            ["ibb"] = new("https://i.ibb.co", Types("image/png", "image/jpeg"),
-                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["fdbkXQdP/jellyseerr-poster-not-found.png"] = "https://i.ibb.co/fdbkXQdP/jellyseerr-poster-not-found.png"
-                }),
             // Remote (newer-than-bundled) locale JSON from the upstream repo's main branch
             ["locales"] = new("https://raw.githubusercontent.com/n00bcodr/Jellyfin-Enhanced/main/Jellyfin.Plugin.JellyfinEnhanced/js/locales", Types("application/json", "text/plain")),
             // Documentation screenshots shown on the admin config page
@@ -146,48 +132,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ["icon-metadata"] = new("https://cdn.jsdelivr.net/gh/Druidblack/jellyfin-icon-metadata", Types("text/css")),
             // Jellyfin-Elsewhere region/provider reference lists (fetched as text)
             ["elsewhere-res"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Elsewhere/resources", Types("text/plain")),
-            // Award-body logos for the Awards feature (WikidataAwardsService), sourced from
-            // Wikimedia Commons via its Special:FilePath redirect.
-            ["award-logos"] = new("https://commons.wikimedia.org/wiki/Special:FilePath", Types("image/svg+xml", "image/png"),
-                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["oscar"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Oscar%20gold%20silhouette.svg",
-                    ["golden-globe"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Golden_Globe_icon_(gold).svg",
-                    ["bafta"] = "https://commons.wikimedia.org/wiki/Special:FilePath/BAFTA%20award%20icon%20gold%20silhouette.svg",
-                    ["emmy"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Emmy%20gold%20silhouette.svg",
-                    ["sag"] = "https://commons.wikimedia.org/wiki/Special:FilePath/The%20Actor%20Statuette%20gold%20silhouette.svg",
-                    ["critics-choice"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Critics%20Choice%20Association%20horizontal%20logo.svg",
-                    ["national-board-of-review"] = "https://commons.wikimedia.org/wiki/Special:FilePath/The%20National%20Board%20of%20Review%20Logo.png",
-                    ["saturn"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Saturn_Award_Silhouette.svg",
-                    ["kids-choice"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Kids%27%20Choice%20Awards%202017%20Logo.png",
-                    ["toronto-critics"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Toronto%20Film%20Critics%20Association%20logo.svg",
-                    ["cannes"] = "https://commons.wikimedia.org/wiki/Special:FilePath/Palme%20d%27Or%20gold%20silhouette.svg",
-                }),
-            // Rating-source logos (TMDB, Rotten Tomatoes, IMDb, etc.) for the MDBList
-            // Ratings feature. Vendored into this repo's own images/mdblist-logos/
-            // (sourced from xroguel1ke/jellyfin_ratings, the script this feature is
-            // based on) rather than proxied from their repo directly -- these are
-            // third-party brand marks neither repo owns; identifying a rating's
-            // source with its brand logo is the same nominative-use pattern as the
-            // selfhst/dashboard-icons service logos and the Wikimedia award-logos
-            // above. rottentomatoes_fresh.png/rottentomatoes_rotten.png are the one
-            // exception -- converted from jellyfin/jellyfin-web's own
-            // src/assets/img/fresh.svg and rotten.svg (GPL-2.0), the same glyphs
-            // Jellyfin's own web client uses for critic Fresh/Rotten status.
-            ["mdblist-logos"] = new("https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfin-Enhanced@main/images/mdblist-logos", Types("image/png")),
-            // MDBList's own favicon, for the config page's "MDBList Ratings" fieldset
-            // legend -- single fixed asset, so locked down the same way as "ibb" above.
-            ["mdblist-static"] = new("https://mdblist.com/static", Types("image/x-icon", "image/vnd.microsoft.icon"),
-                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["favicon.ico"] = "https://mdblist.com/static/favicon.ico"
-                }),
-            // DoesTheDogDie favicon for the config page legend (one fixed file).
-            ["ddd-static"] = new("https://www.doesthedogdie.com", Types("image/x-icon", "image/vnd.microsoft.icon"),
-                FixedPaths: new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["favicon.ico"] = "https://www.doesthedogdie.com/favicon.ico"
-                }),
         };
 
         private static HashSet<string> Types(params string[] t) => new(t, StringComparer.OrdinalIgnoreCase);
@@ -227,43 +171,79 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("dashboard-icons", "svg/javascript.svg"),
             ("zesty", "images/logo/jellyfin-logo-light.png"),
             ("jelly-helper", "media/favicon.ico"),
-            ("moonbase", "moonfin-client"),
-            ("ibb", "fdbkXQdP/jellyseerr-poster-not-found.png"),
             ("je-css", "ratings.css"),
             ("icon-metadata", "public-icon.css"),
             ("elsewhere-res", "regions.txt"),
             ("elsewhere-res", "providers.txt"),
-            ("award-logos", "oscar"),
-            ("award-logos", "golden-globe"),
-            ("award-logos", "bafta"),
-            ("award-logos", "emmy"),
-            ("award-logos", "sag"),
-            ("award-logos", "critics-choice"),
-            ("award-logos", "national-board-of-review"),
-            ("award-logos", "saturn"),
-            ("award-logos", "kids-choice"),
-            ("award-logos", "toronto-critics"),
-            ("award-logos", "cannes"),
-            ("mdblist-logos", "master.png"),
-            ("mdblist-logos", "imdb.png"),
-            ("mdblist-logos", "tmdb.png"),
-            ("mdblist-logos", "trakt.png"),
-            ("mdblist-logos", "letterboxd.png"),
-            ("mdblist-logos", "anilist.png"),
-            ("mdblist-logos", "myanimelist.png"),
-            ("mdblist-logos", "rogerebert.png"),
-            ("mdblist-logos", "rottentomatoes.png"),
-            ("mdblist-logos", "rottentomatoes_audience.png"),
-            ("mdblist-logos", "rottentomatoes_fresh.png"),
-            ("mdblist-logos", "rottentomatoes_rotten.png"),
-            ("mdblist-logos", "metacritic.png"),
-            ("mdblist-logos", "metacritic_audience.png"),
-            ("mdblist-static", "favicon.ico"),
-            ("ddd-static", "favicon.ico"),
         };
 
         /// <summary>True when <paramref name="source"/> is a registered upstream.</summary>
-        public bool IsValidSource(string source) => Sources.ContainsKey(source);
+        public bool IsValidSource(string source) => Sources.ContainsKey(source) || BundledSources.Contains(source);
+
+        // Assets shipped inside the plugin DLL (Assets/Cdn/, images/mdblist-logos/), so a
+        // third-party host deleting or rate-limiting a file can never break them. Client
+        // URLs are unchanged: /JellyfinEnhanced/cdn/{source}/{path}. Attribution for the
+        // Wikimedia Commons award logos is in Assets/Cdn/ATTRIBUTION.md.
+        private const string BundledPrefix = "Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.";
+        private static readonly HashSet<string> BundledSources = new(StringComparer.Ordinal)
+        {
+            "award-logos", "ibb", "moonbase", "mdblist-logos", "mdblist-static", "ddd-static"
+        };
+
+        private static readonly IReadOnlyDictionary<string, (string Resource, string ContentType)> BundledFixed =
+            new Dictionary<string, (string, string)>(StringComparer.Ordinal)
+            {
+                ["award-logos/oscar"] = ("award-logos.oscar.svg", "image/svg+xml"),
+                ["award-logos/golden-globe"] = ("award-logos.golden-globe.svg", "image/svg+xml"),
+                ["award-logos/bafta"] = ("award-logos.bafta.svg", "image/svg+xml"),
+                ["award-logos/emmy"] = ("award-logos.emmy.svg", "image/svg+xml"),
+                ["award-logos/sag"] = ("award-logos.sag.svg", "image/svg+xml"),
+                ["award-logos/critics-choice"] = ("award-logos.critics-choice.svg", "image/svg+xml"),
+                ["award-logos/national-board-of-review"] = ("award-logos.national-board-of-review.png", "image/png"),
+                ["award-logos/saturn"] = ("award-logos.saturn.svg", "image/svg+xml"),
+                ["award-logos/kids-choice"] = ("award-logos.kids-choice.png", "image/png"),
+                ["award-logos/toronto-critics"] = ("award-logos.toronto-critics.svg", "image/svg+xml"),
+                ["award-logos/cannes"] = ("award-logos.cannes.svg", "image/svg+xml"),
+                ["ibb/fdbkXQdP/jellyseerr-poster-not-found.png"] = ("misc.jellyseerr-poster-not-found.png", "image/png"),
+                ["moonbase/moonfin-client"] = ("misc.moonfin-client.png", "image/png"),
+                ["mdblist-static/favicon.ico"] = ("misc.mdblist-favicon.ico", "image/x-icon"),
+                ["ddd-static/favicon.ico"] = ("misc.ddd-favicon.ico", "image/x-icon"),
+            };
+
+        private static readonly ConcurrentDictionary<string, CdnAsset?> _bundledCache = new();
+
+        private static CdnAsset? GetBundled(string key)
+        {
+            return _bundledCache.GetOrAdd(key, k =>
+            {
+                string resource;
+                string contentType;
+                if (BundledFixed.TryGetValue(k, out var fixedEntry))
+                {
+                    (resource, contentType) = fixedEntry;
+                }
+                else if (k.StartsWith("mdblist-logos/", StringComparison.Ordinal) && k.EndsWith(".png", StringComparison.Ordinal))
+                {
+                    resource = k.Replace('/', '.');
+                    contentType = "image/png";
+                }
+                else
+                {
+                    return null;
+                }
+
+                using var stream = typeof(CdnAssetService).Assembly.GetManifestResourceStream(BundledPrefix + resource);
+                if (stream == null)
+                {
+                    return null;
+                }
+
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                var bytes = ms.ToArray();
+                return new CdnAsset(bytes, contentType, "\"" + Convert.ToHexString(SHA256.HashData(bytes)) + "\"");
+            });
+        }
 
         /// <summary>
         /// Returns the cached asset for (source, path), fetching and caching it from the
@@ -273,7 +253,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public async Task<CdnAsset?> GetAsync(string source, string path, bool forceRefresh, CancellationToken cancellationToken)
         {
-            if (!Sources.TryGetValue(source, out var src))
+            var isBundled = BundledSources.Contains(source);
+            if (!isBundled && !Sources.ContainsKey(source))
             {
                 return null;
             }
@@ -285,6 +266,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             var key = $"{source}/{path}";
+            if (isBundled)
+            {
+                return GetBundled(key);
+            }
+
+            var src = Sources[source];
 
             // Hot in-memory layer (skipped on a forced refresh so the task always re-downloads).
             // Honours the same TTL as the disk so a lazily-cached asset (flags/locales) is not
@@ -457,22 +444,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return buffer.ToArray();
         }
 
-        // Sources known to rate-limit a burst of same-host requests within a
-        // few seconds (observed directly: Wikimedia Commons 429s a fresh install's
-        // startup refresh of all "award-logos" entries, even though each request
-        // on its own succeeds fine seconds apart). Everything else (jsdelivr,
-        // Google Fonts, etc.) has never shown this and gets no artificial delay —
-        // this is deliberately narrow, not a blanket slowdown of every refresh.
-        private static readonly HashSet<string> BurstSensitiveSources = new(StringComparer.Ordinal) { "award-logos" };
-        // Wikimedia's actual per-IP rate-limit threshold isn't documented, so this
-        // is a deliberately conservative guess rather than a tuned value — cheap to
-        // be generous here since it only adds a few seconds to a background refresh
-        // that runs once at startup and once every 24h, not on the request path.
-        private static readonly TimeSpan DefaultBurstSensitiveDelay = TimeSpan.FromSeconds(2);
-
-        /// <summary>Pause between consecutive burst-sensitive downloads (tests set it to zero).</summary>
-        internal TimeSpan BurstSensitiveDelay { get; set; } = DefaultBurstSensitiveDelay;
-
         /// <summary>Forces a fresh download of every <see cref="KnownAssets"/> entry.</summary>
         public async Task RefreshKnownAsync(IProgress<double>? progress, CancellationToken cancellationToken)
         {
@@ -480,17 +451,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var total = KnownAssets.Count;
             var done = 0;
             var ok = 0;
-            string? previousSource = null;
 
             foreach (var (source, path) in KnownAssets)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                if (source == previousSource && BurstSensitiveSources.Contains(source))
-                {
-                    await Task.Delay(BurstSensitiveDelay, cancellationToken).ConfigureAwait(false);
-                }
-                previousSource = source;
 
                 var asset = await GetAsync(source, path, forceRefresh: true, cancellationToken).ConfigureAwait(false);
                 if (asset != null)

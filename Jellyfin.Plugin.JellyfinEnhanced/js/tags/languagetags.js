@@ -130,7 +130,16 @@
     /**
      * Apply the effective priority list to grouped language chips. Personal ISO
      * codes match every represented language through the shared equivalences.
-     * Server policy retains its existing code/name matching and stable order.
+     * Server policy matches a chip by language code (en, pt-BR), its base code
+     * (pt), or its display name (English, Portuguese), whichever the admin
+     * typed. Codes also compare the way the audio-language filter does
+     * (`matchesLanguage`): `en` matches a track tagged `eng`, `en-US` or
+     * `en-GB`, and `pt-BR` still matches a bare `pt`, so a library that
+     * mixes two- and three-letter tags (Jellyfin's own probe writes `eng`,
+     * a Matroska IETF tag writes `en`) ranks every English track the same (#993).
+     * Every code behind a chip counts, not just the first one: Hindi and
+     * Telugu share India's flag, and `te` in the list must still find it.
+     * Order among matched and unmatched chips stays stable.
      * @param {Array<{code: string, allCodes: string[], allLanguages: string[]}>} flags
      * @returns {Array}
      */
@@ -138,15 +147,19 @@
         const policy = JE.core.mediaLanguage.priorityPolicy();
         const priority = policy.terms;
         if (!priority.length) return flags;
+        const matchesLanguage = JE.core.mediaLanguage.matchesLanguage;
         const rank = (flag) => {
             const code = (flag.code || '').toLowerCase();
             const candidates = policy.personal
                 ? flag.allCodes.map(c => JE.core.mediaLanguage.canonicalBase(JE.core.mediaLanguage.parseLanguageTag(c)?.base))
                 : [code, code.split('-')[0], ...flag.allLanguages.map(n => n.toLowerCase())];
+            // Server terms also compare like the audio-language filter, over every code behind the chip.
+            const codes = policy.personal ? [] : flag.allCodes;
             let best = -1;
-            for (const candidate of candidates) {
-                const idx = priority.indexOf(candidate);
-                if (idx !== -1 && (best === -1 || idx < best)) best = idx;
+            for (let idx = 0; idx < priority.length; idx++) {
+                if (best !== -1 && idx >= best) break;
+                const term = priority[idx];
+                if (candidates.includes(term) || codes.some(c => matchesLanguage(c, term))) best = idx;
             }
             return best;
         };

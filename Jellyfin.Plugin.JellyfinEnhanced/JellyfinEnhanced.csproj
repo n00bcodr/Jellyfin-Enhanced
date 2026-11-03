@@ -70,6 +70,13 @@
       <EmbeddedResource Include="Assets\TagPresets\*.json" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.TagPresets.%(Filename)%(Extension)" WithCulture="false" />
     </ItemGroup>
 
+    <!-- Logos/icons served by CdnAssetService from inside the DLL (no third-party host at runtime). -->
+    <ItemGroup>
+      <EmbeddedResource Include="Assets\Cdn\award-logos\*" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.award-logos.%(Filename)%(Extension)" WithCulture="false" />
+      <EmbeddedResource Include="Assets\Cdn\misc\*" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.misc.%(Filename)%(Extension)" WithCulture="false" />
+      <EmbeddedResource Include="..\images\mdblist-logos\*.png" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.mdblist-logos.%(Filename)%(Extension)" WithCulture="false" />
+    </ItemGroup>
+
     <ItemGroup>
       <!-- tests/poster/rendering (parity/perf harness, not shipped) drives the renderer's internal layout API. -->
       <InternalsVisibleTo Include="PosterTagsHarness" />
