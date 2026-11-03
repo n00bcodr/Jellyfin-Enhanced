@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { jsRoot } from '../helpers/harness.mjs';
+import { jsRoot, deferred } from '../helpers/harness.mjs';
 import { BASE, same, boot, setup, TWO_PAGES } from '../helpers/admin-tags-page.mjs';
 
 test('Colours: editor edits save the Tag Styles document; Reset all asks, saves and can be undone', async t => {
@@ -119,6 +119,41 @@ test('Status badges › Leaving soon: Refresh asks nothing when saving the sourc
   assert.equal(h.$('.je-ta-snack')?.textContent, 'admin_tags_leaving_refresh_unsaved');
   assert.equal(h.$('#leavingSoonRefreshBtn').disabled, false);
 });
+
+for (const outcome of ['answer', 'rejection']) {
+  test(`Status badges › Leaving soon: a replacement view loads its own status; the old view's late ${outcome} changes nothing`, async t => {
+    const requests = [];
+    const server = { ...BASE, LeavingSoonCollections: 'Leaving Soon' };
+    const h = boot(t, { server, routes: { '/admin/leaving-soon': () => { const d = deferred(); requests.push(d); return d.promise; } } });
+    h.document.body.innerHTML = TWO_PAGES;
+    const pages = h.document.querySelectorAll('.page');
+    const first = await h.A.activate(pages[0]);
+    // Jellyfin builds another Media Tags page while the first view's status is on its way.
+    const second = await h.A.activate(pages[1]);
+    h.cleanup.push(() => second.dispose());
+    await h.settle();
+    assert.equal(first.disposed, true);
+    assert.equal(requests.length, 2, 'the new view asks for itself');
+    const view = (sel) => pages[1].querySelector(sel);
+    assert.equal(view('#leavingSoonRefreshBtn').disabled, true, 'busy while its own request runs');
+    requests[1].resolve({ Configured: true, Items: 2, Dated: 1, LastSuccess: Date.UTC(2026, 9, 30, 9), LastError: null });
+    for (let n = 0; n < 5; n++) await h.settle();
+    assert.equal(view('[data-leaving-state]').textContent, 'admin_tags_leaving_state_ok:');
+    assert.equal(view('#leavingSoonRefreshBtn').disabled, false);
+    // The old view's request settles last: the new view keeps its own answer and stays usable.
+    if (outcome === 'answer') requests[0].resolve({ Configured: true, Items: 9, LastError: 'old view' });
+    else requests[0].reject({ status: 500 });
+    for (let n = 0; n < 5; n++) await h.settle();
+    assert.equal(view('[data-leaving-state]').textContent, 'admin_tags_leaving_state_ok:');
+    assert.match(view('[data-leaving-detail]').textContent, /^admin_tags_leaving_detail:2\|1\|/);
+    assert.equal(view('#leavingSoonRefreshBtn').disabled, false);
+    // Its Refresh starts and finishes on its own.
+    view('#leavingSoonRefreshBtn').click();
+    for (let n = 0; n < 5; n++) await h.settle();
+    assert.deepEqual(h.posts.filter((p) => p.includes('leaving-soon')), ['/JellyfinEnhanced/admin/leaving-soon/refresh']);
+    assert.equal(view('#leavingSoonRefreshBtn').disabled, false);
+  });
+}
 
 test('the preview draws the saved server Tag Styles, scoped to it, whatever this browser\'s own styles are', async t => {
   const server = structuredClone({ ...BASE, TagStylesEnabled: true, TagStylePreset: 'default' });

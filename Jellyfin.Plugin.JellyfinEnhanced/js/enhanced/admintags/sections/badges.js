@@ -47,10 +47,25 @@
         { id: 'statusTagsDirectPlay', key: 'StatusTagsDirectPlay', type: 'switch', place: 'section', label: 'panel_media_tags_badge_direct_play', desc: 'admin_tags_badges_direct_play_desc' },
     ];
 
-    /** @type {Object|null} The last Leaving soon status answer (GET admin/leaving-soon). */
-    let leavingStatus = null;
-    /** @type {boolean} A status request or refresh is running. */
-    let leavingBusy = false;
+    /**
+     * Each view's Leaving soon state: its last status answer (GET
+     * admin/leaving-soon) and whether its status request or refresh is
+     * running. Per view, so a view Jellyfin builds while another one's
+     * request is on its way asks for itself, and a disposed view's late
+     * answer only ever reaches that view.
+     * @type {WeakMap<Object, {status: Object|null, busy: boolean}>}
+     */
+    const leavingStates = new WeakMap();
+
+    /**
+     * @param {Object} ctx
+     * @returns {{status: Object|null, busy: boolean}}
+     */
+    function leavingOf(ctx) {
+        let state = leavingStates.get(ctx);
+        if (!state) leavingStates.set(ctx, state = { status: null, busy: false });
+        return state;
+    }
 
     /**
      * A time as the admin's locale writes it, or a dash.
@@ -69,8 +84,9 @@
      * @returns {Promise<void>}
      */
     async function loadLeavingStatus(ctx, refresh) {
-        if (leavingBusy || typeof ApiClient === 'undefined') return;
-        leavingBusy = true;
+        const leaving = leavingOf(ctx);
+        if (leaving.busy || typeof ApiClient === 'undefined') return;
+        leaving.busy = true;
         const button = /** @type {HTMLButtonElement|null} */ (ctx.root?.querySelector?.('#leavingSoonRefreshBtn'));
         if (button) button.disabled = true;
         try {
@@ -88,14 +104,14 @@
                 dataType: 'json',
             });
             if (!ctx.isCurrent()) return;
-            leavingStatus = answer && typeof answer === 'object' ? answer : null;
-            if (refresh) ctx.snack(JE.t(leavingStatus?.LastError ? 'admin_tags_leaving_refresh_failed' : 'admin_tags_leaving_refresh_done'));
+            leaving.status = answer && typeof answer === 'object' ? answer : null;
+            if (refresh) ctx.snack(JE.t(leaving.status?.LastError ? 'admin_tags_leaving_refresh_failed' : 'admin_tags_leaving_refresh_done'));
         } catch {
             if (!ctx.isCurrent()) return;
-            leavingStatus = null;
+            leaving.status = null;
             if (refresh) ctx.snack(JE.t('admin_tags_leaving_refresh_failed'));
         } finally {
-            leavingBusy = false;
+            leaving.busy = false;
             if (ctx.isCurrent()) ctx.refresh({ controls: false });
         }
     }
@@ -168,9 +184,9 @@
             const state = /** @type {HTMLElement|null} */ (body.querySelector('[data-leaving-state]'));
             const detail = body.querySelector('[data-leaving-detail]');
             const button = /** @type {HTMLButtonElement|null} */ (body.querySelector('#leavingSoonRefreshBtn'));
-            const s = leavingStatus;
+            const { status: s, busy } = leavingOf(ctx);
             const configured = String(ctx.config.LeavingSoonMaintainerrUrl || '').trim() !== '' || String(ctx.config.LeavingSoonCollections || '').trim() !== '';
-            if (button) button.disabled = leavingBusy || !configured;
+            if (button) button.disabled = busy || !configured;
             if (!state || !detail) return;
             const key = !configured ? 'admin_tags_leaving_state_off' : !s ? 'admin_tags_leaving_state_unknown' : s.LastError ? 'admin_tags_leaving_state_error' : s.LastSuccess ? 'admin_tags_leaving_state_ok' : 'admin_tags_leaving_state_pending';
             state.dataset.state = key.endsWith('_ok') ? 'on' : key.endsWith('_off') ? 'off' : 'warn';
