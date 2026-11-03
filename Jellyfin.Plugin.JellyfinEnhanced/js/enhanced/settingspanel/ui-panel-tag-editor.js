@@ -732,13 +732,16 @@
             /**
              * Save just the personal language policy through the normal document transport.
              * Pending priority edits are dropped while the fieldset is disabled. A failed
-             * write restores the prior policy inside the shared document save queue.
+             * write restores the prior policy inside the shared document save queue. A
+             * save whose session ended before its queue turn is dropped, never sent to
+             * the next account (the same user id on another server included).
              * @param {Object} changes
              * @param {{code?: string, action?: string}} [focus]
              */
             const savePriority = async (changes, focus = {}) => {
                 if (prioritySaving) return;
                 const settings = JE.currentSettings;
+                const isCurrent = JE.core.tagLook?.captureSession?.();
                 let previous;
                 prioritySaving = true;
                 priorityEditor.disabled = true;
@@ -747,6 +750,7 @@
                 try {
                     await JE.saveUserSettings('settings.json', settings, {
                         throwOnError: true,
+                        isCurrent,
                         beforeSave: () => {
                             previous = { languageTagsPriority: settings.languageTagsPriority, languageTagsPriorityStrict: settings.languageTagsPriorityStrict };
                             Object.assign(settings, changes);

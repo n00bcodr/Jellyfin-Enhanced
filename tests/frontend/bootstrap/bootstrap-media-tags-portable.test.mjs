@@ -1027,3 +1027,37 @@ test('a failed personal lock save is rolled back before a layout save queued beh
   assert.equal(h.server.settings.TagLayoutLocks ?? null, null, 'without the refused lock');
   assert.equal(h.JE.core.tagLook.read().locks.size, 0);
 });
+
+// ── A queued language-priority save and a server switch (astra R6-2) ──
+
+test('a language-priority save queued behind a held save posts nothing once the session moved to another server with the same user id', async t => {
+  const h = setup(t, { stored: { LanguageTagsEnabled: true } });
+  await h.open();
+  h.expectConsoleError(/Failed to save settings.json/);
+  const release = refuseNextSave(h);
+  const attempted = [];
+  const held = h.window.ApiClient.ajax;
+  h.window.ApiClient.ajax = (request) => {
+    if (request.type === 'POST' && new URL(request.url).pathname.endsWith('/settings.json')) attempted.push(JSON.parse(request.data).TagLayout);
+    return held(request);
+  };
+  await chooseLayout(h, 'bands');
+  h.click(h.$('#jeMthTab-groups'));
+  const strict = h.$('[data-language-priority-strict]');
+  assert.ok(strict);
+  strict.value = 'true';
+  strict.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await h.settle(4);
+  const posts = () => h.requests.filter(r => r.type === 'POST' && r.path.endsWith('/settings.json'));
+  assert.deepEqual(attempted, ['bands'], 'the priority save waits behind the held one');
+  h.switchUser('user-a', { TagLayoutSettingsVersion: 1, TagLayout: 'minimal', LanguageTagsEnabled: true }, { server: 'server-b', closePanel: true });
+  await h.open();
+  release();
+  await h.settle(24);
+  assert.deepEqual(attempted, ['bands'], 'the queued save never starts');
+  assert.deepEqual(posts().filter(r => r.server === 'server-b'), [], 'nothing is posted to server B');
+  const destination = h.account('user-a', 'server-b');
+  assert.equal(destination.settings.TagLayout, 'minimal');
+  assert.equal(destination.settings.LanguageTagsPriorityStrict ?? null, null);
+  assert.equal(h.JE.currentSettings.tagLayout, 'minimal');
+});
