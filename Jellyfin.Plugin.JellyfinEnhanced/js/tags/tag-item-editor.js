@@ -138,6 +138,27 @@
     /** @type {null|{close: (saved?: boolean) => void, backdrop: HTMLElement}} the open editor */
     let current = null;
     let sequence = 0;
+    /** Identity of the latest open attempt; another open, close(), navigation or a session reset moves it on. */
+    let openGeneration = 0;
+    /** @type {number} generation of the open still waiting for its item data (0: none) */
+    let pendingOpen = 0;
+
+    /** Cancel the open still waiting for its item data, if any. */
+    function cancelPending() {
+        openGeneration++;
+        settlePending(pendingOpen);
+    }
+
+    /**
+     * An open attempt settled (mounted, failed or cancelled): stop watching
+     * navigation for it.
+     * @param {number} generation
+     */
+    function settlePending(generation) {
+        if (!pendingOpen || pendingOpen !== generation) return;
+        pendingOpen = 0;
+        window.removeEventListener('hashchange', cancelPending);
+    }
 
     const esc = (value) => JE.escapeHtml(String(value ?? ''));
     const tx = (key, params) => esc(JE.t(key, params));
@@ -367,14 +388,28 @@
         const serverMode = options.mode === 'server';
         const opener = options.opener || /** @type {HTMLElement|null} */ (document.activeElement);
         const isCurrent = look.captureSession();
+        // This attempt replaces any still waiting; it ends with another open,
+        // close(), a navigation or a session reset before it mounts.
+        cancelPending();
+        const generation = openGeneration;
+        pendingOpen = generation;
+        window.addEventListener('hashchange', cancelPending);
+        const live = () => isCurrent() && generation === openGeneration;
+        const abandon = () => { settlePending(generation); return false; };
 
-        const [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
-        if (!isCurrent()) return false;
+        let item, admin;
+        try {
+            [item, admin] = await Promise.all([options.item ? Promise.resolve(options.item) : fetchItem(id), serverMode ? Promise.resolve(true) : isAdministrator()]);
+        } catch (err) {
+            abandon();
+            throw err;
+        }
+        if (!live()) return abandon();
         if (!item || !TYPES.has(item.Type)) {
             JE.toast?.(JE.t('tag_item_editor_unsupported'));
-            return false;
+            return abandon();
         }
-        close();
+        closeMounted();
         JE.core.ui?.injectCss?.('je-tag-item-editor', CSS);
 
         const type = String(item.Type);
@@ -393,8 +428,11 @@
         let facts = serverEntry;
         if (!facts && !serverMode) {
             try { facts = await JE.tagPipeline?.itemLookFacts?.(id); } catch { facts = null; }
-            if (!isCurrent()) return false;
+            if (!live()) return abandon();
+            // An editor another open mounted meanwhile is replaced.
+            closeMounted();
         }
+        settlePending(generation);
         const itemCard = opener?.closest?.('.card') || document.querySelector(`.card[data-id="${id}"]`);
         const shape = itemCard ? L.shapeOf(itemCard) : (type === 'Episode' ? 'landscape' : 'portrait');
         const context = { ...(facts || {}), Id: id, Type: type, SeriesId: seriesId || facts?.SeriesId, itemId: id, cardType: type, shape };
@@ -777,9 +815,15 @@
         return true;
     }
 
-    /** Close the open editor without saving. */
-    function close() {
+    /** Close the mounted editor without saving. */
+    function closeMounted() {
         current?.close();
+    }
+
+    /** Close the open editor without saving; an open still waiting for its item data never shows. */
+    function close() {
+        cancelPending();
+        closeMounted();
     }
 
     // A user switch closes the editor: its drafts belong to the outgoing user.
@@ -793,6 +837,8 @@
         close,
         /** @returns {boolean} */
         isOpen: () => !!current,
+        /** @returns {boolean} Whether an open is still waiting for its item data. */
+        isOpening: () => !!pendingOpen,
         anyTagsOn,
         TYPES,
         // Exposed for tests.

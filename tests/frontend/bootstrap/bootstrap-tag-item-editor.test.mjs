@@ -374,6 +374,59 @@ test('the editor waits for the item data before it opens; a session change meanw
   }
 });
 
+// Every open attempt has its own identity: navigation, close() or another open while it waits cancels it.
+test('navigating away while the editor waits for its item data opens nothing', async t => {
+  const answer = deferred();
+  const h = setup(t, { tagData: () => answer.promise, url: 'http://jellyfin.test/web/index.html#/home' });
+  const opening = h.JE.tagItemEditor.open(MOVIE);
+  await h.settle();
+  assert.equal(h.JE.tagItemEditor.isOpening(), true);
+  h.window.location.hash = '#/movies';
+  await h.settle();
+  assert.equal(h.JE.tagItemEditor.isOpening(), false);
+  answer.resolve({ Id: MOVIE, Type: 'Movie', LibraryId: KIDS, Genres: [] });
+  assert.equal(await opening, false);
+  await h.settle();
+  assert.equal(h.document.querySelectorAll('.je-tie-backdrop').length, 0, 'nothing over the destination page');
+  assert.equal(h.JE.tagItemEditor.isOpen(), false);
+});
+
+test('close() before a pending open settles opens nothing', async t => {
+  const answer = deferred();
+  const h = setup(t, { tagData: () => answer.promise });
+  const opening = h.JE.tagItemEditor.open(MOVIE);
+  await h.settle();
+  h.JE.tagItemEditor.close();
+  answer.resolve({ Id: MOVIE, Type: 'Movie', LibraryId: KIDS, Genres: [] });
+  assert.equal(await opening, false);
+  await h.settle();
+  assert.equal(h.document.querySelectorAll('.je-tie-backdrop').length, 0);
+  assert.equal(h.JE.tagItemEditor.isOpen(), false);
+  // The next open works as before.
+  await h.open(MOVIE);
+  assert.equal(h.document.querySelectorAll('.je-tie-backdrop').length, 1);
+});
+
+for (const order of ['first answers first', 'second answers first']) test(`overlapping opens leave one editor, the latest (${order})`, async t => {
+  const pendingA = deferred(), pendingB = deferred();
+  const h = setup(t, { tagData: id => id === MOVIE ? pendingA.promise : pendingB.promise });
+  const openingA = h.JE.tagItemEditor.open(MOVIE);
+  await h.settle();
+  const openingB = h.JE.tagItemEditor.open(SERIES);
+  await h.settle();
+  const answers = [[pendingA, { Id: MOVIE, Type: 'Movie', LibraryId: KIDS, Genres: [] }], [pendingB, { Id: SERIES, Type: 'Series', LibraryId: KIDS, Genres: [] }]];
+  if (order === 'second answers first') answers.reverse();
+  for (const [pending, data] of answers) { pending.resolve(data); await h.settle(); }
+  assert.equal(await openingA, false, 'the replaced attempt never mounts');
+  assert.equal(await openingB, true);
+  assert.equal(h.document.querySelectorAll('.je-tie-backdrop').length, 1);
+  assert.equal(h.JE.tagItemEditor.isOpen(), true);
+  h.JE.tagItemEditor.close();
+  await h.settle();
+  assert.equal(h.document.querySelectorAll('.je-tie-backdrop').length, 0, 'no orphaned editor after closing the current one');
+  assert.equal(h.JE.tagItemEditor.isOpen(), false);
+});
+
 test('without the item data the editor says its current look is not known instead of guessing', async t => {
   const h = setup(t, { settings: { tagLookRules: [kidsRule] }, tagData: () => null });
   await h.open(MOVIE);
