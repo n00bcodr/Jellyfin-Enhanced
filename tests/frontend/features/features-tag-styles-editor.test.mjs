@@ -355,3 +355,36 @@ test('all source labels use their own logo with the bundle and readable names wi
     }
   }
 });
+
+test('keyboard focus stays on the preset tile, tab, swatch or opacity pill that redrew its own strip; Default hands it to its row', async t => {
+  const h = await setup(t);
+  const focusClick = (sel) => { const n = h.$(sel); assert.ok(n, `${sel} exists`); n.focus(); n.click(); };
+  focusClick('.je-ts-preset[data-preset="glass"]');
+  assert.equal(h.document.activeElement, h.$('.je-ts-preset[data-preset="glass"]'), 'preset tile');
+  focusClick('.je-ts-tab[data-group="rating"]');
+  assert.equal(h.document.activeElement, h.$('.je-ts-tab[data-group="rating"]'), 'tab');
+  focusClick('.je-ts-field-row[data-field="background"] .je-ts-swatch[title="#ffffff"]');
+  assert.equal(h.document.activeElement, h.$('.je-ts-field-row[data-field="background"] .je-ts-swatch[title="#ffffff"]'), 'swatch');
+  const pill = () => h.$$('.je-ts-field-row[data-field="background"] .je-ts-opacity-pill').find(b => b.textContent === '40%');
+  pill().focus();
+  pill().click();
+  assert.equal(h.document.activeElement, pill(), 'opacity pill');
+  focusClick('.je-ts-field-row[data-field="background"] .je-ts-reset');
+  assert.equal(h.$('.je-ts-field-row[data-field="background"] .je-ts-reset').disabled, true);
+  assert.ok(h.$('.je-ts-field-row[data-field="background"]').contains(h.document.activeElement), 'Default is disabled now: focus stays in its row');
+});
+
+test('dragging the any-colour picker keeps its input; the rows are redrawn when the pick is done, focus kept', async t => {
+  const h = await setup(t);
+  h.click('.je-ts-target[data-label="4K"]');
+  const any = h.$('.je-ts-field-row[data-field="background"] .je-ts-any');
+  any.focus();
+  any.value = '#123456';
+  any.dispatchEvent(new h.window.Event('input', { bubbles: true }));
+  assert.equal(any.isConnected, true, 'not replaced while picking');
+  assert.match(JSON.parse(h.editor.serialize()).labels['quality:4K'].background, /^rgba\(18, 52, 86, /);
+  any.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  const again = h.$('.je-ts-field-row[data-field="background"] .je-ts-any');
+  assert.equal(again.value, '#123456');
+  assert.equal(h.document.activeElement, again, 'focus on the redrawn picker');
+});

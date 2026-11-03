@@ -111,10 +111,22 @@
                 .catch(function () { /* suggestions only */ });
         }
 
-        /** Redraw the rows from the state. */
+        /** Redraw the rows from the state (keyboard focus stays on the same control of the same row). */
         function render() {
             var box = byId('customTagRuleRows');
             if (!box) return;
+            var active = document.activeElement;
+            var keep = null;
+            if (active && box.contains(active)) {
+                var activeRow = active.closest('.je-ct-row');
+                var activeCell = active.closest('[role="cell"]');
+                keep = activeRow && activeCell ? {
+                    index: activeRow.dataset.index,
+                    cell: activeCell.className,
+                    start: typeof active.selectionStart === 'number' ? active.selectionStart : null,
+                    end: typeof active.selectionEnd === 'number' ? active.selectionEnd : null
+                } : null;
+            }
             box.textContent = '';
             if (!rows.length) {
                 var empty = document.createElement('div');
@@ -204,6 +216,17 @@
                 cell('je-ct-remove-cell', remove);
                 box.appendChild(row);
             });
+            if (keep) {
+                var again = box.querySelector('.je-ct-row[data-index="' + keep.index + '"] [class="' + keep.cell + '"] select, '
+                    + '.je-ct-row[data-index="' + keep.index + '"] [class="' + keep.cell + '"] input, '
+                    + '.je-ct-row[data-index="' + keep.index + '"] [class="' + keep.cell + '"] button');
+                if (again) {
+                    again.focus({ preventScroll: true });
+                    if (keep.start !== null && typeof again.setSelectionRange === 'function') {
+                        try { again.setSelectionRange(keep.start, keep.end); } catch (e) { /* not a text field */ }
+                    }
+                }
+            }
             var add = byId('customTagRuleAdd');
             if (add) add.disabled = rows.length >= MAX_RULES;
             var status = byId('customTagRulesStatus');

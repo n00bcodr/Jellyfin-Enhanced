@@ -286,14 +286,35 @@
          * @param {string|null} css
          * @returns {void}
          */
-        function setField(field, css) {
+        function setField(field, css, live) {
             const bag = target === ALL ? state.groups : state.labels;
             const key = target === ALL ? current : labelKey(current, target);
             const o = Object.assign({}, bag[key] || {});
             if (css) o[field] = norm(css); else delete o[field];
             if (Object.keys(o).length) bag[key] = o; else delete bag[key];
-            renderGroup();
+            // While a colour picker is dragged its rows stay as they are (rebuilding them
+            // would replace the picker's input); they are redrawn when the pick is done.
+            if (live) { renderTargets(); renderContrast(); } else renderGroup();
             renderPreview();
+        }
+
+        /**
+         * Rebuild a strip of controls, keeping keyboard focus on the control with
+         * the same data-ts-key (or `fallback`'s choice when it is gone or disabled):
+         * a click that redraws its own strip must not drop focus to the page.
+         * @param {Element} box
+         * @param {() => void} build
+         * @param {(key: string) => (HTMLElement|null)} [fallback]
+         * @returns {void}
+         */
+        function rebuildKeepingFocus(box, build, fallback) {
+            const active = document.activeElement;
+            const key = active && box.contains(active) && active.dataset ? active.dataset.tsKey : null;
+            build();
+            if (!key) return;
+            const again = Array.from(box.querySelectorAll('[data-ts-key]')).find((n) => n.dataset.tsKey === key);
+            const next = again && !again.disabled ? again : fallback ? fallback(key) : null;
+            if (next) next.focus({ preventScroll: true });
         }
 
         /**
@@ -411,11 +432,17 @@
         /** @returns {void} */
         function renderPresets() {
             const bar = root.querySelector('#tagStylePresets');
+            rebuildKeepingFocus(bar, () => buildPresets(bar));
+        }
+
+        /** @param {Element} bar @returns {void} */
+        function buildPresets(bar) {
             bar.textContent = '';
             const age = labelsOf('ageRating').find((l) => l.name === 'PG-13') || labelsOf('ageRating')[0];
             cat.presets.forEach((id) => {
                 const tile = radio('je-ts-preset', state.preset === id, () => { state.preset = id; render(); });
                 tile.dataset.preset = id;
+                tile.dataset.tsKey = 'preset:' + id;
                 tile.appendChild(el('span', 'je-ts-preset-title', PRESET_TITLES[id] || id));
                 const mini = el('span', 'je-ts-preset-chips');
                 mini.appendChild(chip('quality', { key: '4K', name: '4K' }, palette(id, 'quality', '4K')));
@@ -429,15 +456,18 @@
         /** @returns {void} */
         function renderTabs() {
             const tabs = root.querySelector('#tagStyleTabs');
-            tabs.textContent = '';
-            GROUPS.forEach((g) => {
-                const b = el('button', 'je-ts-tab' + (g.key === current ? ' active' : ''), g.title);
-                b.type = 'button';
-                b.setAttribute('role', 'tab');
-                b.setAttribute('aria-selected', String(g.key === current));
-                b.dataset.group = g.key;
-                b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; renderTabs(); renderGroup(); });
-                tabs.appendChild(b);
+            rebuildKeepingFocus(tabs, () => {
+                tabs.textContent = '';
+                GROUPS.forEach((g) => {
+                    const b = el('button', 'je-ts-tab' + (g.key === current ? ' active' : ''), g.title);
+                    b.type = 'button';
+                    b.setAttribute('role', 'tab');
+                    b.setAttribute('aria-selected', String(g.key === current));
+                    b.dataset.group = g.key;
+                    b.dataset.tsKey = 'tab:' + g.key;
+                    b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; renderTabs(); renderGroup(); });
+                    tabs.appendChild(b);
+                });
             });
         }
 
@@ -528,6 +558,16 @@
         /** @returns {void} */
         function renderRows() {
             const rows = root.querySelector('#tagStyleRows');
+            // A control drawn disabled (Default after a reset) hands focus to its row's first control.
+            rebuildKeepingFocus(rows, () => buildRows(rows), (key) => {
+                const field = key.split(':')[0];
+                const row = Array.from(rows.querySelectorAll('.je-ts-field-row')).find((r) => r.dataset.field === field);
+                return row ? row.querySelector('button:not([disabled]), input') : null;
+            });
+        }
+
+        /** @param {Element} rows @returns {void} */
+        function buildRows(rows) {
             rows.textContent = '';
             const colours = targetColours();
             const own = targetEntry();
@@ -548,6 +588,7 @@
                     b.type = 'button';
                     b.style.setProperty('--je-ts-swatch', hex);
                     b.setAttribute('aria-label', name + ' ' + hex);
+                    b.dataset.tsKey = field + ':swatch:' + hex;
                     b.title = hex;
                     if (own[field] && toHex(parse(own[field])) === hex) b.classList.add('active');
                     b.addEventListener('click', () => setField(field, toCss(Object.assign(parse(hex), { a: alpha }))));
@@ -558,7 +599,9 @@
                 any.className = 'je-ts-any';
                 any.value = toHex(c);
                 any.setAttribute('aria-label', 'Any ' + name.toLowerCase() + ' colour');
-                any.addEventListener('input', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha }))));
+                any.dataset.tsKey = field + ':any';
+                any.addEventListener('input', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha })), true));
+                any.addEventListener('change', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha }))));
                 list.appendChild(any);
                 row.appendChild(list);
                 const opacity = el('div', 'je-ts-opacity');
@@ -569,6 +612,7 @@
                     const b = el('button', 'je-ts-pill je-ts-opacity-pill' + (on ? ' active' : ''), pct + '%');
                     b.type = 'button';
                     b.setAttribute('aria-pressed', String(on));
+                    b.dataset.tsKey = field + ':opacity:' + pct;
                     // A colour that varies by label has no single value to fade: pick one first.
                     b.disabled = varies;
                     if (varies) b.title = 'Pick a colour first';
@@ -579,6 +623,7 @@
                 const reset = el('button', 'je-ts-reset', 'Default');
                 reset.type = 'button';
                 reset.disabled = !own[field];
+                reset.dataset.tsKey = field + ':reset';
                 reset.title = target === ALL ? 'Back to the preset colour' : 'Back to the group or preset colour';
                 reset.addEventListener('click', () => setField(field, null));
                 row.appendChild(reset);

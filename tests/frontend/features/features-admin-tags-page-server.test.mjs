@@ -962,3 +962,20 @@ test('the TMDB and MDBList card links keep keyboard focus when their section is 
   assert.match(h.$('[data-mdblist]').textContent, /admin_tags_mdblist_no_key/);
   assert.match(h.$('[data-section="badges-tmdb"]').textContent, /admin_tags_badges_tmdb_missing/);
 });
+
+// ── Focus sweep: the custom rules table redrawn under focus ──────────
+
+test('Custom rules: rules changed elsewhere redraw the table with keyboard focus (and caret) on the same control of the same row', async t => {
+  const rules = [{ Match: 'tag', Value: '4K Remaster', Label: 'Remaster', Icon: null }, { Match: 'collection', Value: 'Marvel', Label: 'MCU', Icon: null }];
+  const h = setup(t, { config: { CustomTagsEnabled: true, CustomTagRules: rules } });
+  await settleMany(h, 4);
+  h.ctx.openTab('groups');
+  const label = () => h.$('#customTagRuleRows .je-ct-row[data-index="1"] .je-ct-label input');
+  label().focus();
+  label().setSelectionRange(1, 2);
+  // Another administrator renamed the first rule's label: the page shown again reads it.
+  h.ctx.reload({ ...structuredClone(h.server), CustomTagRules: [{ ...rules[0], Label: 'Remastered' }, rules[1]] });
+  assert.equal(h.$('#customTagRuleRows .je-ct-row[data-index="0"] .je-ct-label input').value, 'Remastered', 'redrawn');
+  assert.equal(h.document.activeElement, label(), 'focus on the same row\'s label');
+  assert.deepEqual([label().selectionStart, label().selectionEnd], [1, 2]);
+});
