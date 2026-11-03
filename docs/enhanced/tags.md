@@ -381,6 +381,8 @@ Your Media Tags settings can be saved as a file, moved to another server or shar
 3. **Import settings** takes a file or pasted text. **Check** lists every setting that would change (old value → new value) and every setting that is skipped, with the reason. **Apply** saves the changes; the panel opens again on the new settings with **Undo** for 10 seconds.
 4. Under **Presets**, **Apply** previews a preset the same way. **Share** copies a preset so someone else can import it. **Save as preset** keeps your current settings under a name and description; **Import preset** adds a shared preset to your list. **Delete** removes one of yours.
 
+Export, **Check**, a preset's **Apply** and **Save as preset** first save your latest change, so they work on the settings the panel shows. If that save fails (for example the connection dropped), they stop and say your change is not saved yet; **Retry** (or **Check** / **Save** again) tries once more. If a setting the document sets changes in the panel after the preview, **Apply** shows the preview again instead.
+
 ![Presets on the Layout tab: the three built-in presets, one offered by the administrator and your own list](../images/tags/media-tags-presets.webp)
 
 ![Import preview: three settings change, two are skipped with their reasons, and Apply 3 changes](../images/tags/media-tags-import-preview.webp)

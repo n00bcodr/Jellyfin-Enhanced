@@ -269,7 +269,9 @@ test('a document the server refuses as a whole says why and applies nothing', as
   await h.settle();
   assert.equal(h.status(), 'tag_portable_error_newer');
   assert.equal(h.action('apply'), null);
-  assert.ok(!h.requests.some(r => r.type === 'POST' && r.path.endsWith('/settings.json')));
+  // The panel's own settings are saved before the check (as for Export); nothing of the document is.
+  assert.ok(!h.requests.some(r => r.type === 'POST' && r.path.endsWith('/settings.json') && r.body.TagLayout !== 'corners'));
+  assert.equal(h.server.settings.TagLayout, 'corners');
 });
 
 test('applying a preset previews it first; Share copies it under its shown name', async t => {
@@ -579,4 +581,138 @@ test('an import that finishes after its panel was closed still offers Undo in th
   h.click(bar.querySelector('[data-tp="undo"]'));
   await h.settle(12);
   assert.equal(h.server.settings.TagLayout, 'corners', 'and it undoes');
+});
+
+// ── Settings not saved yet (astra R4-2, R4-3 = opus 2) ───────────────
+
+/** Choose a layout tile on the Layout tab, as a click does (it saves at once). */
+async function chooseLayout(h, value) {
+  const tile = h.$(`input[name="jeTagLayout"][value="${value}"]`);
+  assert.ok(tile, `the ${value} tile exists`);
+  tile.checked = true;
+  tile.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  await h.settle(8);
+}
+
+const fieldsListed = (h) => Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), el => el.textContent);
+
+test('import waits for a layout save still on its way before asking for the preview, then applies the document', async t => {
+  const h = setup(t);
+  await h.open();
+  let release;
+  h.flags.saveGate = new Promise(resolve => { release = resolve; });
+  await chooseLayout(h, 'bands');
+  await importDocument(h, { TagLayout: 'corners', TagGap: 'tight' });
+  assert.ok(!h.requests.some(r => r.path.endsWith('/preview')), 'no preview while the save is on its way');
+  assert.equal(h.status(), 'tag_portable_checking');
+  h.flags.saveGate = null;
+  release();
+  await h.settle(12);
+  assert.deepEqual(fieldsListed(h), ['Tag Layout', 'Tag Gap'], 'compared with the settings the panel shows');
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.equal(h.server.settings.TagLayout, 'corners', 'the document\'s layout is applied');
+  assert.equal(h.server.settings.TagGap, 'tight');
+  assert.equal(h.JE.currentSettings.tagLayout, 'corners');
+  assert.equal(h.$('[data-tp-undo]').hidden, false);
+});
+
+test('import refuses while a layout save failed, says so, and checks again once it saves', async t => {
+  const h = setup(t);
+  h.expectConsoleError(/Failed to save settings.json/);
+  await h.open();
+  h.flags.failSave = true;
+  await chooseLayout(h, 'bands');
+  await importDocument(h, { TagLayout: 'corners', TagGap: 'tight' });
+  assert.equal(h.status(), 'tag_portable_import_unsaved');
+  assert.ok(!h.requests.some(r => r.path.endsWith('/preview')), 'not previewed against settings the panel does not show');
+  assert.ok(h.dialog().querySelector('[data-pt-paste]'), 'the pasted document stays for another try');
+  assert.equal(h.JE.currentSettings.tagLayout, 'bands', 'the panel keeps the edit');
+
+  h.flags.failSave = false;
+  h.click(h.action('next'));
+  await h.settle(12);
+  assert.deepEqual(fieldsListed(h), ['Tag Layout', 'Tag Gap']);
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.equal(h.server.settings.TagLayout, 'corners');
+  assert.equal(h.server.settings.TagGap, 'tight');
+});
+
+test('applying a preset while a save failed offers Retry, then previews', async t => {
+  const h = setup(t);
+  h.expectConsoleError(/Failed to save settings.json/);
+  await h.open();
+  h.flags.failSave = true;
+  await chooseLayout(h, 'bands');
+  h.click(h.$('[data-tp-source="builtIn"] [data-tp="apply"]'));
+  await h.settle(10);
+  assert.equal(h.status(), 'tag_portable_import_unsaved');
+  assert.ok(!h.requests.some(r => r.path.endsWith('/preview')));
+  h.flags.failSave = false;
+  h.click(h.action('retry'));
+  await h.settle(12);
+  assert.deepEqual(fieldsListed(h), ['Tag Layout', 'Awards Tags Enabled']);
+});
+
+test('export after a failed save says the settings are not saved, exports nothing, and Retry exports the shown settings', async t => {
+  const h = setup(t);
+  h.expectConsoleError(/Failed to save settings.json/);
+  await h.open();
+  h.flags.failSave = true;
+  await chooseLayout(h, 'bands');
+  h.click(h.$('[data-tp="export"]'));
+  await h.settle(12);
+  assert.equal(h.status(), 'tag_portable_export_unsaved');
+  assert.ok(!h.requests.some(r => r.path.endsWith('/media-tags/export')), 'no export of the stored settings');
+  assert.equal(h.action('download'), null);
+  assert.equal(h.dialog().querySelector('textarea'), null);
+  assert.equal(h.document.activeElement, h.action('retry'));
+
+  h.flags.failSave = false;
+  h.click(h.action('retry'));
+  await h.settle(12);
+  assert.equal(JSON.parse(h.dialog().querySelector('textarea').value).settings.TagLayout, 'bands');
+  assert.ok(h.action('download'));
+  assert.equal(h.status(), '');
+});
+
+test('save as preset after a failed save stores nothing until the settings save, then stores what the panel shows', async t => {
+  const h = setup(t);
+  h.expectConsoleError(/Failed to save settings.json/);
+  await h.open();
+  h.flags.failSave = true;
+  await chooseLayout(h, 'bands');
+  h.click(h.$('[data-tp="save-preset"]'));
+  h.dialog().querySelector('#jePtName').value = 'Current';
+  h.click(h.action('save'));
+  await h.settle(15);
+  assert.equal(h.status(), 'tag_presets_save_unsaved');
+  assert.deepEqual(h.server.mine, [], 'no preset of the old settings');
+  assert.ok(!h.requests.some(r => r.path.endsWith('/media-tags/export')));
+  assert.equal(h.action('save').disabled, false, 'Save is the retry');
+
+  h.flags.failSave = false;
+  h.click(h.action('save'));
+  await h.settle(15);
+  assert.equal(h.dialog(), null);
+  assert.deepEqual(h.server.mine.map(p => [p.name, p.settings.TagLayout]), [['Current', 'bands']]);
+});
+
+test('a layout change after the preview shows the preview again instead of applying the old one', async t => {
+  const h = setup(t);
+  await h.open();
+  // The document's layout is already the user's: only the gap is listed.
+  await importDocument(h, { TagLayout: 'corners', TagGap: 'tight' });
+  assert.deepEqual(fieldsListed(h), ['Tag Gap']);
+  await chooseLayout(h, 'bands');
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.equal(h.status(), 'tag_portable_import_changed');
+  assert.deepEqual(fieldsListed(h), ['Tag Layout', 'Tag Gap'], 'compared again with the settings the panel shows');
+  assert.notEqual(h.server.settings.TagGap, 'tight', 'nothing applied from the old preview');
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.equal(h.server.settings.TagLayout, 'corners', 'the document\'s layout, not the edit the old preview missed');
+  assert.equal(h.server.settings.TagGap, 'tight');
 });

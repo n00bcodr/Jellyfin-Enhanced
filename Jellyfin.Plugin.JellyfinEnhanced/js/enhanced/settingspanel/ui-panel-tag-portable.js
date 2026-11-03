@@ -559,15 +559,48 @@
         };
 
         /**
-         * The user's own export, after any queued settings save went through.
+         * Save the panel's settings before the server reads them: the preview
+         * compares with, and the export reads, the stored settings.json. An edit
+         * still on its way is waited for; one kept after a failed save is sent
+         * again.
          * @param {() => boolean} isCurrent - The operation's session (sessionCheck).
-         * @returns {Promise<Object|null>} null when that session ended first.
+         * @returns {Promise<boolean>} False when the save failed (the panel keeps the edit).
+         */
+        const saveFirst = async (isCurrent) => {
+            try {
+                await JE.saveUserSettings('settings.json', JE.currentSettings, { throwOnError: true, isCurrent });
+                return true;
+            } catch (err) {
+                console.warn('🪼 Jellyfin Enhanced: the Media Tags settings are not saved yet', err);
+                return false;
+            }
+        };
+
+        /**
+         * The user's own export, after the panel's settings were saved.
+         * @param {() => boolean} isCurrent - The operation's session (sessionCheck).
+         * @returns {Promise<{document?: Object, unsaved?: boolean}|null>} unsaved when
+         *   the save failed (nothing was exported); null when that session ended first.
          */
         const fetchExport = async (isCurrent) => {
-            await JE.saveUserSettings('settings.json', JE.currentSettings, { isCurrent });
+            const saved = await saveFirst(isCurrent);
             if (!isCurrent()) return null;
-            return ApiClient.ajax({ type: 'GET', url: userUrl('export'), dataType: 'json' });
+            if (!saved) return { unsaved: true };
+            return { document: await ApiClient.ajax({ type: 'GET', url: userUrl('export'), dataType: 'json' }) };
         };
+
+        /**
+         * The panel's values of some fields (with their inherited state), to see
+         * whether they changed since a preview compared them.
+         * @param {string[]} fields - PascalCase fields.
+         * @returns {string}
+         */
+        const clientSnapshot = (fields) => JSON.stringify(fields.map((field) => {
+            const key = clientKey(field);
+            const settings = JE.currentSettings || {};
+            return [settings[key] ?? null, JE.isSettingInherited?.(settings, key) === true,
+                key === 'useNativePosterTags' ? JE.userConfig?.settings?.useNativePosterTags ?? null : null];
+        }));
 
         /**
          * Open a dialog in the panel (one at a time).
@@ -588,25 +621,49 @@
             const d = show(JE.t('tag_portable_export_title'));
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p><p class="je-pt-hint">${tx('hidden_content_admin_loading')}</p>`;
             d.foot.innerHTML = buttonHtml('close', 'awards_close');
-            d.foot.querySelector('[data-pt-action="close"]')?.addEventListener('click', d.close);
+            d.foot.onclick = (e) => {
+                const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
+                if (action === 'retry') { d.foot.innerHTML = buttonHtml('close', 'awards_close'); d.status(JE.t('tag_portable_checking')); load(); }
+                else if (action === 'close') d.close();
+            };
             d.focusFirst();
-            let document;
-            try {
-                document = await fetchExport(current);
-            } catch (err) {
-                if (!live() || !current() || d.closed()) return;
-                console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
-                d.status(JE.t('tag_portable_export_failed'), 'error');
-                return;
-            }
-            if (!live() || !current() || d.closed()) return;
+            const load = async () => {
+                let result;
+                try {
+                    result = await fetchExport(current);
+                } catch (err) {
+                    if (!live() || !current() || d.closed()) return;
+                    console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
+                    d.status(JE.t('tag_portable_export_failed'), 'error');
+                    return;
+                }
+                if (!live() || !current() || d.closed() || !result) return;
+                if (result.unsaved) {
+                    // The stored settings are not the ones the panel shows: no export of them.
+                    d.status(JE.t('tag_portable_export_unsaved'), 'error');
+                    d.foot.innerHTML = buttonHtml('retry', 'admin_tags_retry', { primary: true }) + buttonHtml('close', 'awards_close');
+                    /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
+                    return;
+                }
+                d.status('');
+                showExport(d, result.document);
+            };
+            await load();
+        };
+
+        /**
+         * The export step: the document with Download and Copy.
+         * @param {ReturnType<typeof openDialog>} d
+         * @param {Object} document
+         */
+        const showExport = (d, document) => {
             const text = JSON.stringify(document, null, 2);
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p>
                 <label class="je-pt-label" for="jePtExport">${tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
                 <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea>`;
             d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('close', 'awards_close');
             const area = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'));
-            d.foot.addEventListener('click', async (e) => {
+            d.foot.onclick = async (e) => {
                 const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
                 if (action === 'download') {
                     download(document, `jellyfin-media-tags-${stamp()}`);
@@ -614,19 +671,41 @@
                 } else if (action === 'copy') {
                     d.status(JE.t(await copyText(text, area) ? 'tag_portable_copied' : 'tag_portable_copy_failed'), '');
                 } else if (action === 'close') d.close();
-            });
+            };
             /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="download"]'))?.focus();
         };
 
         // ── Import (a document, or a preset to apply) ──
         /**
          * Ask the server what a document would change and show it, with Apply.
+         * The panel's settings are saved first (an edit on its way or kept after a
+         * failed save), else the server would compare with settings the panel no
+         * longer shows and leave out a field the panel changed.
          * @param {ReturnType<typeof openDialog>} d
          * @param {Object} document
          * @param {() => void} [back] - Shows the source step again.
+         * @param {string} [note] - Status shown with the preview.
          */
-        const showPreview = async (d, document, back) => {
+        const showPreview = async (d, document, back, note) => {
+            const current = sessionCheck();
             d.status(JE.t('tag_portable_checking'));
+            const saved = await saveFirst(current);
+            if (!live() || !current() || d.closed()) return;
+            if (!saved) {
+                d.status(JE.t('tag_portable_import_unsaved'), 'error');
+                // On the source step Check tries again; elsewhere Retry does.
+                if (d.body.querySelector('[data-pt-paste]')) return;
+                d.foot.innerHTML = (back ? buttonHtml('back', 'tag_portable_back') : '') + buttonHtml('cancel', 'jellyseerr_modal_cancel')
+                    + buttonHtml('retry', 'admin_tags_retry', { primary: true });
+                d.foot.onclick = (e) => {
+                    const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
+                    if (action === 'back') back?.();
+                    else if (action === 'cancel') d.close();
+                    else if (action === 'retry') showPreview(d, document, back, note);
+                };
+                /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
+                return;
+            }
             let preview;
             try {
                 preview = await ApiClient.ajax({ type: 'POST', url: userUrl('preview'), data: JSON.stringify(document), contentType: 'application/json', dataType: 'json' });
@@ -636,9 +715,12 @@
                 d.status(errorText(code), 'error');
                 return;
             }
-            if (!live() || d.closed()) return;
-            d.status('');
+            if (!live() || !current() || d.closed()) return;
+            d.status(note || '');
             const changes = preview?.changes || [];
+            // The panel's values of every field the document sets, as the preview compared them.
+            const fields = Array.from(new Set([...Object.keys(preview?.imported || {}), ...changes.map((c) => c.field)]));
+            const compared = clientSnapshot(fields);
             d.body.innerHTML = (preview?.name ? `<p class="je-pt-hint">${tx('tag_portable_preset_named', { name: preview.name })}</p>` : '') + previewHtml(preview || {});
             d.foot.innerHTML = (back ? buttonHtml('back', 'tag_portable_back') : '') + buttonHtml('cancel', 'jellyseerr_modal_cancel')
                 + (changes.length ? buttonHtml('apply', 'tag_portable_apply_count', { primary: true, params: { count: changes.length } }) : '');
@@ -648,6 +730,11 @@
                 if (action === 'back') back?.();
                 else if (action === 'cancel') d.close();
                 else if (action === 'apply' && button) {
+                    // Changed in the panel since the preview: it no longer says what Apply changes.
+                    if (clientSnapshot(fields) !== compared) {
+                        showPreview(d, document, back, JE.t('tag_portable_import_changed'));
+                        return;
+                    }
                     button.disabled = true;
                     d.status(JE.t('tag_portable_applying'));
                     try {
@@ -776,8 +863,14 @@
                 button.disabled = true;
                 try {
                     const exported = await fetchExport(current);
-                    if (!live() || !current() || d.closed()) return;
-                    await savePreset(d, { v: exported.v, kind: PRESET_KIND, name, description, settings: exported.settings }, current);
+                    if (!live() || !current() || d.closed() || !exported) return;
+                    if (exported.unsaved) {
+                        // A preset of the stored settings would not be what the panel shows.
+                        button.disabled = false;
+                        d.status(JE.t('tag_presets_save_unsaved'), 'error');
+                        return;
+                    }
+                    await savePreset(d, { v: exported.document.v, kind: PRESET_KIND, name, description, settings: exported.document.settings }, current);
                 } catch (err) {
                     if (!live() || !current() || d.closed()) return;
                     button.disabled = false;
