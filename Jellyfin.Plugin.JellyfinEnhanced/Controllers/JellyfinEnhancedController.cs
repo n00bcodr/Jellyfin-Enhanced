@@ -4592,6 +4592,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     baseUrl, config.ReviewTranslationApiKey ?? string.Empty, request.Text, request.Target, cancellationToken).ConfigureAwait(false);
                 return Ok(new { text = translated });
             }
+            catch (Services.TranslationLimitException ex)
+            {
+                // A rate limit is passed on as 429 (with the wait, when the service gave one) so the client
+                // can say "try again later"; a refusal (403) stays a 502 with its own error code.
+                var rateLimited = ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
+                int? retryAfterSeconds = ex.RetryAfter is { } wait ? (int)Math.Ceiling(wait.TotalSeconds) : null;
+                if (rateLimited && retryAfterSeconds is { } seconds)
+                {
+                    Response.Headers["Retry-After"] = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                _logger.Warning($"Translation service returned {(int)ex.StatusCode!} for a review. {ex.Message}");
+                return StatusCode(rateLimited ? 429 : 502, new
+                {
+                    error = true,
+                    code = rateLimited ? "translation_rate_limited" : "translation_refused",
+                    message = ex.Message,
+                    retryAfterSeconds = rateLimited ? retryAfterSeconds : null,
+                });
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.Error($"Failed to translate a review. Error: {ex.Message}");

@@ -48,7 +48,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install mkdocs-material==9.6.12 mdx-truly-sane-lists mkdocs-glightbox==0.5.2
+          pip install mkdocs-material==9.8.0 mdx-truly-sane-lists mkdocs-glightbox==0.5.3
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
