@@ -762,3 +762,63 @@ test('a failed import rolls back only its own fields: a layout chosen while its 
   assert.equal(h.server.settings.TagLayout, 'minimal');
   assert.equal(h.server.settings.TagScale, 'larger');
 });
+
+// ── A failed preset deletion (astra R5-6) ─────────────────────────────
+
+test('a preset whose deletion fails stays listed, is never announced as deleted, and Retry deletes it', async t => {
+  const h = setup(t, { mine: [{ id: 'p1', name: 'Keep', description: '', settings: { TagLayout: 'bands' } }] });
+  await h.open();
+  const ajax = h.window.ApiClient.ajax;
+  let refuse = 500;
+  h.window.ApiClient.ajax = async (request) => {
+    if (request.type === 'DELETE' && refuse) throw { status: refuse };
+    return ajax(request);
+  };
+  const announced = [];
+  const live = h.$('#jeMthLive');
+  new h.window.MutationObserver(() => { if (live.textContent) announced.push(live.textContent); }).observe(live, { childList: true, characterData: true, subtree: true });
+  h.click(h.$('[data-tp-source="mine"] [data-tp="delete"]'));
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await h.settle(6);
+  assert.deepEqual(h.server.mine.map(p => p.name), ['Keep']);
+  assert.deepEqual(h.names('mine'), ['Keep'], 'the row stays');
+  assert.deepEqual(announced, [], 'never announced as deleted');
+  const error = h.$('[data-tp-error]');
+  assert.equal(error?.hidden, false, 'a visible failure status');
+  assert.equal(error.textContent.includes('tag_presets_delete_failed:Keep'), true);
+  const retry = error.querySelector('[data-tp="delete-retry"]');
+  assert.equal(h.document.activeElement, retry, 'focus on Retry');
+
+  // A second failure keeps the same Retry focused.
+  h.click(retry);
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await h.settle(6);
+  assert.equal(h.document.activeElement, retry);
+  assert.deepEqual(announced, []);
+
+  refuse = 0;
+  h.click(retry);
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await h.settle(6);
+  assert.deepEqual(h.server.mine, []);
+  assert.deepEqual(h.names('mine'), []);
+  assert.equal(error.hidden, true);
+  assert.deepEqual(announced, ['tag_presets_deleted:Keep']);
+  assert.equal(h.document.activeElement, h.$('[data-tp="save-preset"]'));
+});
+
+test('a preset another device already deleted (404) is announced as deleted', async t => {
+  const h = setup(t, { mine: [{ id: 'p1', name: 'Gone', description: '', settings: { TagLayout: 'bands' } }] });
+  await h.open();
+  const ajax = h.window.ApiClient.ajax;
+  h.window.ApiClient.ajax = async (request) => {
+    if (request.type === 'DELETE') { h.server.mine = []; throw { status: 404 }; }
+    return ajax(request);
+  };
+  h.click(h.$('[data-tp-source="mine"] [data-tp="delete"]'));
+  await new Promise(resolve => setTimeout(resolve, 80));
+  await h.settle(6);
+  assert.deepEqual(h.names('mine'), []);
+  assert.notEqual(h.$('[data-tp-error]')?.hidden, false, 'no failure status');
+  assert.equal(h.$('#jeMthLive').textContent, 'tag_presets_deleted:Gone');
+});

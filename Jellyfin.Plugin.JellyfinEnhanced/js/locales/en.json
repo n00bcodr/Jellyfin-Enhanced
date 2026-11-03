@@ -1542,6 +1542,7 @@
     "tag_presets_share_desc": "Copy this text and send it; anyone can import it as a preset.",
     "tag_presets_shared": "{name} copied. Paste it to share it.",
     "tag_presets_deleted": "{name} deleted.",
+    "tag_presets_delete_failed": "Could not delete {name}. Check the connection, then try again.",
     "tag_presets_save": "Save as preset",
     "tag_presets_save_desc": "Keeps your current Media Tags settings under a name, on this server, for every device you sign in on.",
     "tag_presets_saved": "Saved {name}.",

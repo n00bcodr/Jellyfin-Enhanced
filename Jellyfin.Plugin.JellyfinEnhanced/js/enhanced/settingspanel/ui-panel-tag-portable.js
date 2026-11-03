@@ -376,6 +376,7 @@
                 <h4 class="je-mth-card-title" id="jeMthPresetsTitle">${tx('tag_presets_title')}</h4>
                 <p class="je-mth-hint">${tx('tag_presets_desc')}</p>
                 <div class="je-mth-tp-list" data-tp-list aria-live="polite"><p class="je-mth-hint">${tx('hidden_content_admin_loading')}</p></div>
+                <div class="je-mth-tp-error" data-tp-error role="alert" hidden><span data-tp-error-text></span><button type="button" class="je-mth-button" data-tp="delete-retry">${tx('admin_tags_retry')}</button></div>
                 <div class="je-mth-actions">
                     <button type="button" class="je-mth-button" data-tp="save-preset"><span class="material-icons" aria-hidden="true">bookmark_add</span><span data-je-label>${tx('tag_presets_save')}</span></button>
                     <button type="button" class="je-mth-button" data-tp="import-preset"><span class="material-icons" aria-hidden="true">file_open</span><span data-je-label>${tx('tag_presets_import')}</span></button>
@@ -406,6 +407,8 @@
         #jellyfin-enhanced-panel .je-mth-tp-buttons .je-mth-button { min-height: 34px; padding: 0 10px; }
         #jellyfin-enhanced-panel .je-mth-tp-undo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 4px 0 6px; padding: 8px 10px; border-radius: 6px; background: rgba(0,164,220,0.14); border: 1px solid rgba(0,164,220,0.4); font-size: 13px; }
         #jellyfin-enhanced-panel .je-mth-tp-undo[hidden] { display: none; }
+        #jellyfin-enhanced-panel .je-mth-tp-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0 0; padding: 8px 10px; border-radius: 6px; background: rgba(255,138,128,0.12); border: 1px solid rgba(255,138,128,0.45); font-size: 13px; }
+        #jellyfin-enhanced-panel .je-mth-tp-error[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-mth-tp-count { font-weight: 400; color: rgba(255,255,255,0.55); text-transform: none; letter-spacing: 0; }
     `;
 
@@ -520,6 +523,7 @@
         const host = /** @type {HTMLElement} */ (ctx.help || hub);
         const list = /** @type {HTMLElement} */ (presetsCard.querySelector('[data-tp-list]'));
         const undoBar = /** @type {HTMLElement} */ (portableCard.querySelector('[data-tp-undo]'));
+        const deleteError = /** @type {HTMLElement} */ (presetsCard.querySelector('[data-tp-error]'));
         const touch = () => { try { ctx.resetAutoCloseTimer?.(); } catch { /* panel closing */ } };
         const viewSession = sessionCheck();
         let disposed = false;
@@ -528,6 +532,8 @@
         let undoTimer = null;
         /** @type {{max: number, builtIn: Object[], offered: Object[], mine: Object[]}|null} */
         let presets = null;
+        /** @type {Object|null} The preset whose deletion failed (Retry deletes it). */
+        let failedDelete = null;
 
         /** @returns {boolean} Whether answers still belong to this view and its session. */
         const live = () => !disposed && viewSession();
@@ -979,14 +985,33 @@
             area.select();
         };
 
+        /**
+         * Show (or hide, with null) why a preset is still listed, with Retry.
+         * Updated in place, so a focused Retry keeps focus.
+         * @param {Object|null} preset
+         */
+        const showDeleteError = (preset) => {
+            failedDelete = preset;
+            deleteError.hidden = !preset;
+            /** @type {HTMLElement} */ (deleteError.querySelector('[data-tp-error-text]')).textContent = preset ? JE.t('tag_presets_delete_failed', { name: preset.name }) : '';
+        };
+
         const deletePreset = async (preset) => {
             try {
                 await ApiClient.ajax({ type: 'DELETE', url: userUrl(`presets/${encodeURIComponent(preset.id)}`) });
             } catch (err) {
                 // Already gone (another device deleted it): the reload shows that.
-                if (err?.status !== 404) console.warn('🪼 Jellyfin Enhanced: could not delete the preset', err);
+                if (err?.status !== 404) {
+                    console.warn('🪼 Jellyfin Enhanced: could not delete the preset', err);
+                    if (!live()) return;
+                    // Still there: say so (never "deleted"), keep the row and offer Retry.
+                    showDeleteError(preset);
+                    /** @type {HTMLElement} */ (deleteError.querySelector('[data-tp="delete-retry"]')).focus();
+                    return;
+                }
             }
             if (!live()) return;
+            showDeleteError(null);
             await loadPresets();
             hooks.announce(JE.t('tag_presets_deleted', { name: preset.name }));
             /** @type {HTMLElement|null} */ (presetsCard.querySelector('[data-tp="save-preset"]'))?.focus();
@@ -1003,6 +1028,7 @@
             else if (action === 'undo') undo();
             else if (action === 'save-preset') openSavePreset();
             else if (action === 'import-preset') openImportPreset();
+            else if (action === 'delete-retry') { if (failedDelete) deletePreset(failedDelete); }
             else {
                 const found = presetOf(button);
                 if (!found) return;
