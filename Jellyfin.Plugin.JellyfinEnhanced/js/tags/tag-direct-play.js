@@ -130,6 +130,8 @@
     let generation = 0;
     let persistTimer = 0;
     let retryTimer = 0;
+    /** When the retry timer fires (ms since the epoch), or 0. */
+    let retryAt = 0;
     /** @type {Object|null} */
     let override = null;
     /**
@@ -945,6 +947,8 @@
                 if (isIntersecting) { visible.add(card); enqueue(card); } else visible.delete(card);
             }
             scheduleSlice();
+            // A failed lookup scrolled back before it is due waits for the timer.
+            armRetry();
         }, { rootMargin: '200px 0px' });
         observer = own;
         return observer;
@@ -1143,7 +1147,8 @@
         // A freed slot: queued lookups (of this session) may go now.
         if (gen !== generation) { if (queue.size) scheduleSlice(); return; }
         remember(key, value);
-        if (value.r) { unsaved.set(key, value.t); persistSoon(); } else armRetry();
+        if (value.r) { unsaved.set(key, value.t); persistSoon(); }
+        armRetry();
         for (const card of job.cards) {
             const entry = tracked.get(card);
             if (entry && entry.id === job.id) pendingNotify.add(entry.onResult);
@@ -1151,14 +1156,46 @@
         scheduleSlice();
     }
 
-    /** One timer re-queues visible cards whose lookup failed, once the retry delay has passed. */
+    /**
+     * When the earliest failed lookup of a visible card is due again (ms
+     * since the epoch), or 0 when none is waiting. Lookups already queued or
+     * on the network are left out; successful answers never count.
+     * @returns {number}
+     */
+    function nextRetryAt() {
+        const { hash } = current();
+        let earliest = 0;
+        for (const card of visible) {
+            const entry = tracked.get(card);
+            if (!entry) continue;
+            const key = `${hash}|${entry.id}`;
+            const value = memory.get(key);
+            if (!value || value.r !== null || inFlight.has(key) || queue.has(key)) continue;
+            const at = value.t + RETRY_MS;
+            if (!earliest || at < earliest) earliest = at;
+        }
+        return earliest;
+    }
+
+    /**
+     * One timer re-queues visible cards whose lookup failed, at the time the
+     * earliest of them is due again; each pass and each answer arms it again
+     * for the failures not due yet.
+     */
     function armRetry() {
-        if (retryTimer) return;
+        const at = nextRetryAt();
+        if (retryTimer && at === retryAt) return;
+        if (retryTimer) clearTimeout(retryTimer);
+        retryTimer = 0;
+        retryAt = at;
+        if (!at) return;
         retryTimer = setTimeout(() => {
             retryTimer = 0;
+            retryAt = 0;
             for (const card of visible) enqueue(card);
             scheduleSlice();
-        }, RETRY_MS);
+            armRetry();
+        }, Math.max(0, at - Date.now()));
     }
 
     /**
@@ -1178,6 +1215,7 @@
         observer = null;
         if (retryTimer) clearTimeout(retryTimer);
         retryTimer = 0;
+        retryAt = 0;
     }
 
     /** Register the session hook once: another user's answers are never shown or stored. */

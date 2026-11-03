@@ -790,6 +790,80 @@ test('direct play: a stalled item counts as failed and is asked again only after
   assert.equal(h.badge(h.hosts[0]), "Won't direct play");
 });
 
+test('direct play: failures a second apart are each retried on time by the one retry timer, with no new draw', async t => {
+  let fail = true;
+  const h = setup(t, { cards: 2, hold: true, settings: { statusTagsDirectPlay: true }, answer: () => (fail ? new Error('offline fixture') : 'transcode') });
+  // The retry timer runs by hand: every timer that is not a request deadline, a slice or the persist debounce.
+  const retries = [];
+  const timeout = h.window.setTimeout, clear = h.window.clearTimeout;
+  let now = NOW;
+  const setNow = ms => { now = ms; h.setNow(ms); };
+  h.window.setTimeout = (fn, ms, ...rest) => {
+    if (ms === DEADLINE_MS || ms === 2000 || ms <= 16) return timeout(fn, ms, ...rest);
+    const timer = { fn, at: now + ms };
+    retries.push(timer);
+    return timer;
+  };
+  h.window.clearTimeout = timer => { const at = retries.indexOf(timer); if (at >= 0) retries.splice(at, 1); else clear(timer); };
+  const fire = async () => { const due = retries.filter(r => r.at <= now); for (const r of due) { retries.splice(retries.indexOf(r), 1); r.fn(); } await h.slice(); };
+  h.show(movie(), h.hosts[0], 'first');
+  h.show(movie(), h.hosts[1], 'second');
+  await h.slice(); await h.slice();
+  await h.releaseOne();
+  setNow(NOW + 1000);
+  await h.releaseOne();
+  await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['first', 'second']);
+  assert.equal(retries.length, 1, 'one timer');
+  assert.equal(retries[0].at, NOW + 10 * 60 * 1000, 'due with the earliest failure');
+  fail = false;
+  setNow(NOW + 10 * 60 * 1000);
+  await fire();
+  await h.releaseOne(); await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['first', 'second', 'first'], 'only the first is due yet');
+  assert.equal(retries.length, 1, 'armed again for the second failure');
+  assert.equal(retries[0].at, NOW + 10 * 60 * 1000 + 1000);
+  setNow(NOW + 10 * 60 * 1000 + 1000);
+  await fire();
+  await h.releaseOne(); await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id), ['first', 'second', 'first', 'second']);
+  assert.deepEqual(h.hosts.map(host => h.badge(host)), ['Transcode', 'Transcode']);
+  assert.equal(retries.length, 0, 'nothing left to retry: answers are never asked again');
+  assert.ok(h.network.peak <= 2);
+  h.JE.tagDirectPlay.reset();
+});
+
+test('direct play: a failed card scrolled away gets no retry; scrolled back before it is due, it is retried on time', async t => {
+  let fail = true;
+  const h = setup(t, { cards: 1, settings: { statusTagsDirectPlay: true }, answer: () => (fail ? new Error('offline fixture') : 'transcode') });
+  const retries = [];
+  const timeout = h.window.setTimeout, clear = h.window.clearTimeout;
+  h.window.setTimeout = (fn, ms, ...rest) => {
+    if (ms === DEADLINE_MS || ms === 2000 || ms <= 16) return timeout(fn, ms, ...rest);
+    const timer = { fn, ms };
+    retries.push(timer);
+    return timer;
+  };
+  h.window.clearTimeout = timer => { const at = retries.indexOf(timer); if (at >= 0) retries.splice(at, 1); else clear(timer); };
+  h.show(movie(), h.hosts[0], 'away');
+  await h.slice(); await h.slice(); await h.slice();
+  assert.equal(retries.length, 1);
+  h.intersect(h.hosts[0], false);
+  assert.equal(retries.length, 0, 'offscreen: nothing armed');
+  h.setNow(NOW + 60 * 1000);
+  await h.slice();
+  assert.equal(h.requests.length, 1);
+  h.intersect(h.hosts[0], true);
+  assert.equal(retries.length, 1, 'visible again before it is due: armed');
+  assert.equal(retries[0].ms, 9 * 60 * 1000);
+  fail = false;
+  h.setNow(NOW + 10 * 60 * 1000);
+  retries.shift().fn();
+  await h.slice(); await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
+});
+
 test('direct play: stored answers are restored before any request, and new ones are written per scope and profile', async t => {
   const puts = [];
   const hash = { value: null };
