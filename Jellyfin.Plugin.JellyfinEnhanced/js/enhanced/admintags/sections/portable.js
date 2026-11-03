@@ -411,12 +411,17 @@
             if (!box) return;
             const list = offered(ctx.config);
             const count = `<p class="je-ta-hint">${ctx.tx('admin_tags_presets_count', { count: list.length, max: MAX_OFFERED })}</p>`;
-            box.innerHTML = count + (list.length ? `<ul class="je-ta-list je-ta-offered-list">${list.map((p) => `<li data-offer-id="${ctx.esc(p.id)}">
+            // Redrawn by other views' saves and the library list answer too: keep focus on the same preset's button.
+            A.redrawList(box, count + (list.length ? `<ul class="je-ta-list je-ta-offered-list">${list.map((p) => `<li data-offer-id="${ctx.esc(p.id)}">
                     <span class="je-ta-offered-text"><strong>${ctx.esc(p.name)}</strong>${p.description ? `<span class="je-ta-hint">${ctx.esc(p.description)}</span>` : ''}</span>
                     <span class="je-ta-offered-buttons">
                         <button type="button" class="je-ta-button" data-offer-action="share" aria-label="${ctx.tx('tag_presets_share_named', { name: p.name })}">${ctx.tx('tag_presets_share')}</button>
                         <button type="button" class="je-ta-button" data-offer-action="remove" aria-label="${ctx.tx('admin_tags_presets_remove_named', { name: p.name })}">${ctx.tx('remove_button_text')}</button>
-                    </span></li>`).join('')}</ul>` : `<p class="je-ta-hint">${ctx.tx('admin_tags_presets_none')}</p>`);
+                    </span></li>`).join('')}</ul>` : `<p class="je-ta-hint">${ctx.tx('admin_tags_presets_none')}</p>`), (el) => {
+                const id = el.closest('[data-offer-id]')?.getAttribute('data-offer-id');
+                const act = el.dataset.offerAction;
+                return id && act ? `[data-offer-id="${id.replace(/["\\]/g, '\\$&')}"] [data-offer-action="${act}"]` : null;
+            });
             const full = list.length >= MAX_OFFERED;
             for (const id of ['#jeTaOfferMine', '#jeTaOfferImport']) {
                 const button = /** @type {HTMLButtonElement|null} */ (body.querySelector(id));

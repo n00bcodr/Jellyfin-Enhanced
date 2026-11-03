@@ -625,3 +625,63 @@ test('a destructive action confirmed after the administrator changed does not ru
   await rebuilding;
   assert.equal(h.posts.filter(p => p.endsWith('/tag-cache/rebuild')).length, 0, 'no rebuild is started for a signed-out session');
 });
+
+// ── Focus kept on lists redrawn by an answer or another view (opus R4-3) ──
+
+test('Rules: the item titles arriving keep keyboard focus on a look\'s Remove and Edit buttons', async t => {
+  const looks = Array.from({ length: 60 }, (_, i) => ({ ItemId: (i + 1).toString(16).padStart(32, '0'), Layout: 'bands', Density: 'full', LockedAt: 100 - i }));
+  for (const act of ['remove', 'edit']) {
+    await t.test(act, async (st) => {
+      const held = deferred();
+      const requests = [];
+      const h = setup(st, {
+        config: { TagLookItemOverrides: looks },
+        apiClient: {
+          getJSON: async (url) => {
+            if (!url.includes('/Items')) return [];
+            const ids = new URL(url).searchParams.get('Ids').split(',');
+            requests.push(ids);
+            const answer = { Items: ids.map((id) => ({ Id: id, Name: `Title ${id}`, Type: 'Movie' })) };
+            return requests.length === 2 ? held.promise.then(() => answer) : answer;
+          },
+        },
+      });
+      for (let i = 0; i < 5; i++) await h.settle();
+      h.ctx.openTab('rules');
+      for (let i = 0; i < 5; i++) await h.settle();
+      assert.equal(requests.length, 2, 'the second batch of titles is on its way');
+      const button = h.$(`[data-item="${looks[0].ItemId}"] [data-act="${act}"]`);
+      button.focus();
+      assert.equal(h.document.activeElement, button);
+      held.resolve();
+      for (let i = 0; i < 8; i++) await h.settle();
+      const again = h.$(`[data-item="${looks[0].ItemId}"] [data-act="${act}"]`);
+      assert.equal(button.isConnected, false, 'the list was redrawn');
+      assert.equal(h.document.activeElement, again, 'focus stays on the same control of the redrawn row');
+    });
+  }
+});
+
+test('Server: a redraw of the offered presets keeps keyboard focus on a preset\'s Share or Remove', async t => {
+  const list = [{ v: 1, kind: 'je-media-tags-preset', id: 'family-ab12cd', name: 'Family', description: '', settings: { TagScale: 'larger' } },
+    { v: 1, kind: 'je-media-tags-preset', id: 'night-ef34gh', name: 'Night', description: '', settings: { TagGap: 'tight' } }];
+  const h = setup(t, { config: { TagOfferedPresets: JSON.stringify(list) }, url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=server' });
+  for (let i = 0; i < 5; i++) await h.settle();
+  for (const action of ['share', 'remove']) {
+    const button = h.$(`[data-offer-id="night-ef34gh"] [data-offer-action="${action}"]`);
+    button.focus();
+    h.ctx.refresh();
+    assert.equal(button.isConnected, false, 'the list was redrawn');
+    assert.equal(h.document.activeElement, h.$(`[data-offer-id="night-ef34gh"] [data-offer-action="${action}"]`), `focus stays on ${action}`);
+  }
+});
+
+test('Overview: a redraw of the group buttons keeps keyboard focus on the same group', async t => {
+  const h = setup(t);
+  for (let i = 0; i < 5; i++) await h.settle();
+  const button = h.$('.je-ta-ov-group[data-group="rating"]');
+  button.focus();
+  h.ctx.refresh();
+  assert.equal(button.isConnected, false, 'the buttons were redrawn');
+  assert.equal(h.document.activeElement, h.$('.je-ta-ov-group[data-group="rating"]'));
+});

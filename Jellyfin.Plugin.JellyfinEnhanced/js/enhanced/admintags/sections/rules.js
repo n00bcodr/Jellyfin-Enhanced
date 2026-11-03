@@ -332,7 +332,7 @@
             <span class="je-ta-rule-text"><strong>${ctx.esc(name)}</strong> ${ctx.esc(type)}${ctx.esc(outcome)}${ctx.esc(scope)}</span>
             <span class="je-ta-rule-tools">
                 <button type="button" class="je-ta-button" data-act="edit" data-je-focus-key="admin-item-look-edit-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('reviews_edit')}</button>
-                <button type="button" class="je-ta-icon-btn" data-act="remove" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_remove_named', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
+                <button type="button" class="je-ta-icon-btn" data-act="remove" data-je-focus-key="admin-item-look-remove-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_remove_named', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
             </span>
         </li>`;
     }
