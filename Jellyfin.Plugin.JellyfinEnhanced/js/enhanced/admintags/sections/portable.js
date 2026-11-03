@@ -197,7 +197,9 @@
                 // What the server held when the preview compared it (the page read it
                 // again just before): Undo puts it back, never an older copy of the page.
                 const before = Object.fromEntries(changes.map((c) => [c.field, JSON.parse(JSON.stringify(c.from ?? null))]));
-                ctx.setMany(Object.fromEntries(changes.map((c) => [c.field, c.to])));
+                // Written against that value too: a listed change is sent (Expected = what the
+                // preview compared) even if this page's copy of the field already equals it.
+                ctx.setMany(Object.fromEntries(changes.map((c) => [c.field, c.to])), { base: before });
                 const saved = await ctx.flush();
                 if (!ctx.isCurrent()) return;
                 if (!saved) {

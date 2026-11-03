@@ -840,7 +840,10 @@
         /**
          * Write configuration fields, save them and redraw what depends on them.
          * @param {Object<string, *>} values - Field → value.
-         * @param {{redraw?: boolean, itemEdit?: boolean}} [opts] - itemEdit captures per-entry intent; otherwise this is a replacement.
+         * @param {{redraw?: boolean, itemEdit?: boolean, base?: Object<string, *>}} [opts] - itemEdit captures
+         *   per-entry intent; otherwise this is a replacement. base: what the server held for these fields
+         *   (an import preview's from), compared and sent as Expected instead of this page's copy, so a
+         *   listed change is written even when the page's copy is older and already equals it.
          */
         function setMany(values, opts = {}) {
             // A late callback of a page that is gone must not save anything.
@@ -855,9 +858,10 @@
                 // Editors hand back whole documents (the layout writes its order, caps and
                 // profiles together): a field that did not change is not an edit, so it
                 // neither saves nor can conflict with another administrator's change.
-                if (!store.values.has(key) && sameValue(config[key], value)) continue;
+                const known = opts.base && Object.prototype.hasOwnProperty.call(opts.base, key) ? opts.base[key] : config[key];
+                if (!store.values.has(key) && sameValue(known, value)) continue;
                 // What the server should still hold when this edit is saved.
-                if (!store.values.has(key) && !store.base.has(key)) store.base.set(key, copy(config[key]));
+                if (!store.values.has(key) && !store.base.has(key)) store.base.set(key, copy(known));
                 if (key === 'TagLookItemOverrides') {
                     // Until the whole list is acknowledged, entry edits fold into that
                     // replacement, including while its request is pending or failed.
@@ -1218,6 +1222,9 @@
             if (disposed) return;
             const keep = protectedFields();
             for (const key of Object.keys(fresh)) if (!keep.has(key)) config[key] = fresh[key];
+            // The configuration API omits null values: a page field missing from a
+            // full configuration is null on the server (another administrator cleared it).
+            for (const key of owned) if (!(key in fresh) && !keep.has(key)) config[key] = null;
             for (const { f } of allFields) if (f.secret && !keep.has(f.key)) delete config[f.key];
             for (const s of sections) s.load?.(ctx, bodyOf(s));
             refresh();

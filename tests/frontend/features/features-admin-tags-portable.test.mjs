@@ -552,3 +552,63 @@ test('offer my settings: a page view closed while my settings save posts nothing
   await h.settle(10);
   assert.ok(!h.requests.some((r) => r.path.endsWith('/user-settings/user-a/media-tags/export')), 'no read for a view that ended');
 });
+
+// ── A field another administrator cleared (astra R5-4 = opus R5 1) ────
+
+test('import after another administrator cleared a field (omitted by the configuration API) writes that listed change too', async t => {
+  const h = setup(t, {
+    config: { TagGroupCaps: { Quality: 2 } },
+    // As PreviewAdmin compares: from the stored value, null when unset.
+    adminPreview: (doc) => ({ kind: doc.kind, v: 1, imported: doc.settings, skipped: [],
+      changes: Object.entries(doc.settings).filter(([k, v]) => !same(h.server[k], v)).map(([field, to]) => ({ field, from: h.server[field] ?? null, to })) }),
+  });
+  await h.settle(10);
+  delete h.server.TagGroupCaps; // reset elsewhere: the API omits the null value
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagGroupCaps: { Quality: 2 }, StatusTagsJustAddedDays: 9 } }));
+  h.click(h.action('next'));
+  await h.settle(12);
+  assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), (el) => el.textContent), ['Tag Group Caps', 'Status Tags Just Added Days']);
+  assert.equal(h.ctx.config.TagGroupCaps, null, 'the page read the cleared field as cleared');
+  const n = h.patches.length;
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.deepEqual(plain(h.patches.slice(n)), [{ Changes: { TagGroupCaps: { Quality: 2 }, StatusTagsJustAddedDays: 9 }, Expected: { TagGroupCaps: null, StatusTagsJustAddedDays: 7 } }], 'both listed changes are written');
+  assert.deepEqual(h.server.TagGroupCaps, { Quality: 2 });
+  assert.equal(h.server.StatusTagsJustAddedDays, 9);
+  assert.equal(h.dialog(), null);
+});
+
+test('import Apply writes a listed change against the value the preview compared, even when the page\'s copy already equals the new value', async t => {
+  // The server changed the layout between the page's read and the preview: the preview says bands → corners.
+  const h = setup(t, { adminPreview: (doc) => ({ kind: doc.kind, v: 1, imported: doc.settings, skipped: [], changes: [{ field: 'TagLayout', from: 'bands', to: 'corners' }] }) });
+  await h.settle(10);
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLayout: 'corners' } }));
+  h.click(h.action('next'));
+  await h.settle(12);
+  h.server.TagLayout = 'bands';
+  assert.equal(h.ctx.config.TagLayout, 'corners');
+  const n = h.patches.length;
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.deepEqual(plain(h.patches.slice(n)), [{ Changes: { TagLayout: 'corners' }, Expected: { TagLayout: 'bands' } }], 'sent with the compared value as Expected');
+  assert.equal(h.server.TagLayout, 'corners');
+});
+
+test('a full configuration read again clears a page field the server omits, but keeps an edit not saved yet', async t => {
+  const h = setup(t, { config: { TagGroupCaps: { Quality: 2 }, TagShapeOverrides: { Landscape: { Layout: 'bands' } } } });
+  await h.settle(10);
+  let release;
+  h.flags.saveGate = new Promise((resolve) => { release = resolve; });
+  h.ctx.set('TagShapeOverrides', { Landscape: { Layout: 'minimal' } });
+  const fresh = structuredClone(h.server);
+  delete fresh.TagGroupCaps;
+  delete fresh.TagShapeOverrides;
+  h.ctx.reload(fresh);
+  assert.equal(h.ctx.config.TagGroupCaps, null, 'cleared on the server');
+  assert.deepEqual(h.ctx.config.TagShapeOverrides, { Landscape: { Layout: 'minimal' } }, 'the pending edit is kept');
+  h.flags.saveGate = null;
+  release();
+  await h.ctx.flush();
+});
