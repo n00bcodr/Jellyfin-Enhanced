@@ -309,7 +309,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | **Just Added** / **New releases** / **Trending** / **Schedule** / **Milestones** | On | Which badge families the Status group may show. A poster shows one badge at a time. |
     | **Series status** | Off | Returning / Ended / Cancelled. |
     | **Leaving soon** | Off | **Leaving in 5d** / **Leaving soon** on items the server will remove (Maintainerr or the administrator's leaving collections). Says *needs a Leaving soon source on the server* until an administrator sets one. |
-    | **Direct-play warning** | Off | **Transcode** / **Won't direct play** on movies and episodes this browser can't play as they are, with the reasons on hover. Web only; checked for cards on screen. |
+    | **Direct-play warning** | Off | **Transcode** / **Won't direct play** on movies and episodes this browser can't play as they are, with the reasons on hover. Web only; checked for cards on screen whose media Jellyfin has already probed (never-probed `.strm` items are skipped). |
 
     The administrator's two time windows show beside **Just Added** and **New releases**; administrators also get a link to change them. Turn the Status group itself on in **Groups**. Native posters follow these family switches and time windows too; their trending badge requires a TMDB key. A personal web save remembers the date locale and timezone used for native relative dates. Invalid or oversized context values are dropped, retaining the display-language/server-timezone fallback.
 

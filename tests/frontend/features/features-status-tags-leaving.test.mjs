@@ -864,6 +864,22 @@ test('direct play: a failed card scrolled away gets no retry; scrolled back befo
   assert.equal(h.badge(h.hosts[0]), 'Transcode');
 });
 
+test('direct play: media never probed (no video or audio stream, e.g. a .strm) is not asked about, so Jellyfin never probes it', async t => {
+  const h = setup(t, { cards: 4, settings: { statusTagsDirectPlay: true } });
+  const probed = { Streams: [{ Type: 'Video', Codec: 'hevc' }, { Type: 'Audio', Codec: 'dts' }] };
+  h.show(movie({ StreamData: { Streams: [] } }), h.hosts[0], 'strm');
+  h.show(movie({ StreamData: probed }), h.hosts[1], 'file');
+  h.show(movie(), h.hosts[2], 'unknown'); // no stream list (stripped or not sent): asked as before
+  // The /tag-data path reads the item's MediaStreams.
+  delete h.hosts[3].closest('.card').dataset.jeStatusTagged;
+  h.renderer.render(h.hosts[3], { Id: 'remote', Type: 'Episode', SeriesId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', DateCreated: OLD, PremiereDate: OLD, MediaStreams: [{ Type: 'Subtitle' }] });
+  await h.slice(); await h.slice(); await h.slice();
+  assert.deepEqual(h.requests.map(r => r.id).sort(), ['file', 'unknown']);
+  assert.equal(h.chip(h.hosts[0]), null, 'no badge rather than a probe');
+  assert.equal(h.badge(h.hosts[1]), 'Transcode');
+  assert.equal(h.chip(h.hosts[3]), null);
+});
+
 test('direct play: stored answers are restored before any request, and new ones are written per scope and profile', async t => {
   const puts = [];
   const hash = { value: null };

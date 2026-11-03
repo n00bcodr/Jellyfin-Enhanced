@@ -198,6 +198,7 @@
      * @property {string|null} seriesId - The series whose TMDB schedule applies (Series: itself).
      * @property {string|null|undefined} seriesTmdb - That series' TMDB id; undefined when unknown.
      * @property {{deleteAt: number|null}|null} [leaving] - Leaving soon facts (deleteAt: Unix ms, or null when undated).
+     * @property {boolean|null} [probed] - Movie/Episode: whether its media has a video or audio stream (false: never probed, e.g. a .strm); null when the data doesn't say.
      */
 
     /**
@@ -243,12 +244,13 @@
 
     /**
      * Whether a card can get a direct-play warning: the user's switch and a
-     * playable item type (tags/tag-direct-play.js does the lookups).
+     * playable item type whose media was probed (tags/tag-direct-play.js does
+     * the lookups; asking about unprobed media would make Jellyfin probe it).
      * @param {StatusData} data
      * @returns {boolean}
      */
     function wantsDirectPlay(data) {
-        return !!JE.tagDirectPlay && PLAYABLE_TYPES.has(data.type || '') && isScopeEnabled(BADGE_SCOPES.directPlay);
+        return !!JE.tagDirectPlay && PLAYABLE_TYPES.has(data.type || '') && data.probed !== false && isScopeEnabled(BADGE_SCOPES.directPlay);
     }
 
     /**
@@ -380,6 +382,7 @@
             // so a missing one means the series has none.
             seriesTmdb: type === 'Series' ? tmdb : (entry.SeriesTmdbId ? String(entry.SeriesTmdbId) : null),
             leaving: readLeaving(entry.Leaving),
+            probed: probedOf(entry.StreamData?.Streams),
         };
     }
 
@@ -408,7 +411,20 @@
             // id; the server answers only for those that do.
             seriesTmdb: type === 'Series' ? tmdb : undefined,
             leaving: readLeaving(item.Leaving),
+            probed: probedOf(item.MediaStreams),
         };
+    }
+
+    /**
+     * Whether an item's media was probed: it lists a video or audio stream.
+     * Jellyfin's PlaybackInfo probes media that has neither (a .strm or other
+     * remote item never probed), so the direct-play lookup skips it.
+     * @param {*} streams - The item's streams (cache entry StreamData.Streams or /tag-data MediaStreams).
+     * @returns {boolean|null} null when the data has no stream list (stripped or not sent).
+     */
+    function probedOf(streams) {
+        if (!Array.isArray(streams)) return null;
+        return streams.some((stream) => stream?.Type === 'Video' || stream?.Type === 'Audio');
     }
 
     /**
