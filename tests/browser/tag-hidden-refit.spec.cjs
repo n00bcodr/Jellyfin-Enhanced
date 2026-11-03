@@ -176,6 +176,46 @@ for (const cards of [1, 300]) test(`card widths that change after the frame's ob
   expect(narrow).toEqual(await fresh(page));
 });
 
+for (const hidden of [false, true]) test(`a height-only change refits a card whose shape is measured (${hidden ? 'while its view is hidden' : 'on screen'})`, async ({ page }) => {
+  await setup(page);
+  // A landscape look: the card (no Jellyfin shape class) is shaped by its rendered aspect.
+  await page.evaluate(() => {
+    const JE = JellyfinEnhanced;
+    JE.currentSettings.tagShapeOverrides = { landscape: { layout: 'bands', density: 'compact' } };
+    JE.core.tagLayout.invalidateSettings();
+    JE.core.tagLayout.refreshPresentation();
+  });
+  await frames(page, 8);
+  const state = () => page.evaluate(() => {
+    const h = document.querySelector('.je-tag-host');
+    return { w: h.clientWidth, h: h.clientHeight, shape: h.dataset.jeShape, layout: h.dataset.jeLayout };
+  });
+  expect(await state()).toEqual({ w: 168, h: 252, shape: 'portrait', layout: 'corners' });
+  await page.evaluate(() => {
+    const dom = JellyfinEnhanced.core.dom, schedule = dom.afterNextPaint;
+    window.__passes = 0;
+    dom.afterNextPaint = fn => { if (fn.name === 'flushFit') window.__passes++; return schedule(fn); };
+  });
+  if (hidden) { await page.evaluate(() => document.getElementById('view').classList.add('hide')); await frames(page, 6); }
+  // A responsive image or container: the same width, much shorter, with no window resize.
+  await page.evaluate(() => { document.querySelector('.cardScalable').style.height = '80px'; });
+  if (hidden) await page.evaluate(() => document.getElementById('view').classList.remove('hide'));
+  await frames(page, 8);
+  const after = await state();
+  expect(after).toEqual({ w: 168, h: 80, shape: 'landscape', layout: 'bands' });
+  expect(await page.evaluate(() => window.__passes)).toBe(1);
+  // What a fresh fit at this size gives.
+  await page.evaluate(() => { const L = JellyfinEnhanced.core.tagLayout; L.refreshPresentation(document.querySelector('.je-tag-host')); L.flushFit(); });
+  await frames(page, 8);
+  expect(await state()).toEqual(after);
+  // Hidden and shown again at that size: no pass.
+  await page.evaluate(() => { window.__passes = 0; document.getElementById('view').classList.add('hide'); });
+  await frames(page, 6);
+  await page.evaluate(() => document.getElementById('view').classList.remove('hide'));
+  await frames(page, 6);
+  expect(await page.evaluate(() => window.__passes)).toBe(0);
+});
+
 test('legacy cards that never needed a fit are not watched', async ({ page }) => {
   await page.goto('/');
   await page.setContent('<div class="card"><div class="cardBox"><div class="cardScalable" style="position:relative;width:180px;height:270px"><div class="je-tag-host"></div></div></div></div>');
