@@ -1923,10 +1923,57 @@
     function scheduleFit(ctrl) {
         if (fitting || !(FIT_LAYOUTS.has(ctrl.layout || '') || centreSlots(ctrl).length || cornerLanguageGroups(ctrl).length || indicatorGapsToMeasure(ctrl) || needsShape(ctrl) || needsRadius(ctrl))) return;
         pendingFit.add(ctrl);
+        watchSize(ctrl.host);
         if (fitScheduled) return;
         fitScheduled = true;
         if (typeof JE.core.dom?.afterNextPaint === 'function') JE.core.dom.afterNextPaint(flushFit);
         else requestAnimationFrame(flushFit);
+    }
+
+    /** @type {ResizeObserver|null} one observer over every card that needed a fit (created on first use) */
+    let sizeObserver = null;
+    /** @type {WeakMap<HTMLElement, number>} host → inline size its last fit or observation saw */
+    const fittedWidths = new WeakMap();
+
+    /**
+     * Refit a card whenever its own width changes, not only when the window
+     * resizes: a cached view shown again (0 → N), a card measured while its
+     * view was hidden, a scrollbar appearing. Only cards scheduleFit accepted
+     * are watched, so cards that never needed a fit never start fitting.
+     * @param {HTMLElement} host
+     */
+    function watchSize(host) {
+        if (typeof ResizeObserver !== 'function' || fittedWidths.has(host)) return;
+        sizeObserver ??= new ResizeObserver(refitOnSizeChange);
+        fittedWidths.set(host, -1);
+        sizeObserver.observe(host);
+    }
+
+    /** @param {HTMLElement} host */
+    function unwatchSize(host) {
+        if (!fittedWidths.has(host)) return;
+        fittedWidths.delete(host);
+        sizeObserver?.unobserve(host);
+    }
+
+    /**
+     * ResizeObserver callback. The fit's own writes never change the host's
+     * width, and a width the last fit already used is skipped, so it cannot
+     * loop; the refit itself goes through scheduleFit's batched pass.
+     * @param {ResizeObserverEntry[]} entries
+     */
+    function refitOnSizeChange(entries) {
+        for (const entry of entries) {
+            const host = /** @type {HTMLElement} */ (entry.target);
+            const ctrl = controllers.get(host);
+            if (!ctrl || !host.isConnected) { unwatchSize(host); continue; }
+            const width = entry.contentRect.width;
+            const seen = /** @type {number} */ (fittedWidths.get(host));
+            fittedWidths.set(host, width);
+            // The first observation reports the size the queued fit is about to use.
+            if (seen < 0 || width <= 0 || Math.abs(width - seen) < 1) continue;
+            scheduleFit(ctrl);
+        }
     }
 
     /**
@@ -1975,6 +2022,7 @@
             // Reads: cards not laid out (hidden, detached tab) are left as they
             // are. The image's height only for cards whose shape is measured.
             const widths = list.map((ctrl) => ctrl.host.clientWidth);
+            list.forEach((ctrl, i) => { if (fittedWidths.has(ctrl.host)) fittedWidths.set(ctrl.host, widths[i]); });
             const heights = list.map((ctrl, i) => (widths[i] > 0 && needsShape(ctrl) ? ctrl.host.clientHeight : 0));
             const radii = list.map((ctrl, i) => (widths[i] > 0 && needsRadius(ctrl) ? cardRadiusOf(ctrl) : null));
             const shown = list.filter((ctrl, i) => widths[i] > 0);
@@ -2862,6 +2910,7 @@
         if (contextOf(awaitingData, ctrl.host)?.cardId === ctrl.itemId) endAwait(ctrl.host);
         teardown(ctrl);
         controllers.delete(ctrl.host);
+        unwatchSize(ctrl.host);
         // Its artwork watch (tags/tag-poster-colours.js) goes with it.
         JE.tagPosterColours?.release(ctrl.host);
     }
