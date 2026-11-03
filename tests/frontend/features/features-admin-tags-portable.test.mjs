@@ -612,3 +612,39 @@ test('a full configuration read again clears a page field the server omits, but 
   release();
   await h.ctx.flush();
 });
+
+// ── The Undo snackbar hands focus on when it goes (astra R6-3) ───────
+
+test('Undo of an import used with the keyboard hands focus to Import; a replaced bar never steals focus moved elsewhere', async t => {
+  const h = setup(t);
+  await h.settle(10);
+  h.click(h.$('#jeTaImport'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-admin', settings: { TagLayout: 'bands' } }));
+  h.click(h.action('next'));
+  await h.settle(12);
+  h.click(h.action('apply'));
+  await h.settle(20);
+  assert.equal(h.server.TagLayout, 'bands');
+  const undo = h.$('.je-ta-snack button');
+  undo.focus();
+  assert.equal(h.document.activeElement, undo);
+  h.click(undo);
+  assert.equal(undo.isConnected, false);
+  assert.equal(h.document.activeElement, h.$('#jeTaImport'), 'focus on Import, not dropped to the page');
+  await h.ctx.flush();
+  await h.settle(12);
+  assert.equal(h.server.TagLayout, 'corners');
+
+  // The same removal replaces a bar: focus in it moves to a control on the page...
+  h.ctx.snack('first', () => {});
+  h.$('.je-ta-snack button').focus();
+  h.ctx.snack('second');
+  assert.notEqual(h.document.activeElement, h.document.body, 'not dropped to the page');
+  assert.ok(h.root.contains(h.document.activeElement));
+  // ...and focus the user moved away stays where it is.
+  h.ctx.snack('third', () => {});
+  const elsewhere = h.$('#jeTaImport');
+  elsewhere.focus();
+  h.ctx.snack('fourth');
+  assert.equal(h.document.activeElement, elsewhere);
+});

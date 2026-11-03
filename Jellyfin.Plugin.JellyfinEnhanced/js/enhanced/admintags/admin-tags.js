@@ -1172,16 +1172,39 @@
             return !!ok && !disposed && sameSession(mark);
         }
 
+        /** @type {WeakMap<Element, () => (HTMLElement|null)>} Where focus goes when each snackbar leaves. */
+        const snackOrigins = new WeakMap();
+
+        /**
+         * Remove a snackbar (activated, replaced or expired). Keyboard focus in it
+         * moves to its origin on the page, else to the tab shown now; focus the
+         * user moved elsewhere stays where it is.
+         * @param {Element|null} bar
+         */
+        function removeSnack(bar) {
+            if (!bar) return;
+            const focused = bar.contains(document.activeElement);
+            bar.remove();
+            if (!focused || disposed) return;
+            /** @type {HTMLElement|null} */ (snackOrigins.get(bar)?.() || root.querySelector('[role="tab"][aria-selected="true"]'))?.focus();
+        }
+
         /**
          * A short message at the bottom of the page, with an Undo button when
          * `undo` is given.
          * @param {string} message
          * @param {(() => void)|null} [undo]
+         * @param {() => (HTMLElement|null|undefined)} [origin] - The control focus
+         *   goes back to when the bar leaves while it holds focus (else the
+         *   control focused when it showed).
          */
-        function snack(message, undo) {
-            root.querySelector('.je-ta-snack')?.remove();
+        function snack(message, undo, origin) {
+            removeSnack(root.querySelector('.je-ta-snack'));
             clearTimeout(snackTimer);
+            const opener = document.activeElement;
             const bar = document.createElement('div');
+            snackOrigins.set(bar, () => [origin?.(), opener].find((el) => el instanceof HTMLElement && el.isConnected
+                && root.contains(el) && !el.closest('[hidden]') && !(/** @type {HTMLButtonElement} */ (el).disabled)) || null);
             bar.className = 'je-ta-snack';
             bar.setAttribute('role', 'status');
             const text = document.createElement('span');
@@ -1192,11 +1215,11 @@
                 button.type = 'button';
                 button.className = 'je-ta-button';
                 button.textContent = JE.t('hidden_content_undo');
-                button.addEventListener('click', () => { bar.remove(); undo(); announce(JE.t('admin_tags_undone')); });
+                button.addEventListener('click', () => { removeSnack(bar); undo(); announce(JE.t('admin_tags_undone')); });
                 bar.appendChild(button);
             }
             root.appendChild(bar);
-            snackTimer = setTimeout(() => bar.remove(), undo ? UNDO_MS : 4000);
+            snackTimer = setTimeout(() => removeSnack(bar), undo ? UNDO_MS : 4000);
             announce(message);
         }
 

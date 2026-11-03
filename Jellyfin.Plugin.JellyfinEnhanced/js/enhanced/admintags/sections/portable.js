@@ -212,7 +212,7 @@
                 ctx.snack(JE.t('admin_tags_portable_applied', { count: changes.length }), () => {
                     ctx.setMany(before);
                     ctx.flush().then((ok) => (ok ? reloadPage(ctx) : null));
-                });
+                }, () => body.querySelector('#jeTaImport'));
             };
 
             body.querySelector('#jeTaImport')?.addEventListener('click', () => {
