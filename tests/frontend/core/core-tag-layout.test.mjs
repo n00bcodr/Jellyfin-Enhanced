@@ -1052,13 +1052,22 @@ test('settings saved before layouts keep the 4px phone edge offsets of rating, a
   assert.equal(h.host().dataset.jeLegacy, '1');
 });
 
-test('corner slots restate the containers\' card-relative size limits, so narrow cards clip chips where they always did', t => {
+test('every slot restates the containers\' card-relative width limits: corners clip where they always did, no slot trims its own chips', t => {
   const h = setup(t);
   h.render();
   const css = h.document.getElementById('je-tag-layout').textContent;
   const corner = '\\.je-tag-host > \\.je-tag-slot:is\\(\\[data-je-slot="tl"\\], \\[data-je-slot="tr"\\], \\[data-je-slot="bl"\\], \\[data-je-slot="br"\\]\\)';
-  assert.match(css, new RegExp(`${corner} > :is\\(\\.quality-overlay-container, \\.rating-overlay-container, \\.age-rating-overlay-container, \\.status-overlay-container\\) \\{\\s*max-width: 100%;`),
-    'calc(100% - 12px) of the card is the whole 6px-inset slot');
+  // Not only the corners: in Minimal's top / corner and Caption's poster slot,
+  // which size themselves to their chips, calc(100% - 12px) of the slot was
+  // 12px narrower than the chip it holds.
+  const rule = css.match(/\.je-tag-host > \.je-tag-slot > :is\(([^)]*)\) \{\s*max-width: 100%;\s*\}/);
+  assert.ok(rule, 'the restatement applies to every .je-tag-host > .je-tag-slot');
+  assert.deepEqual(rule[1].split(', ').sort(), ['.age-rating-overlay-container', '.logo-overlay-container', '.quality-overlay-container', '.rating-overlay-container', '.status-overlay-container'],
+    'exactly the containers whose stylesheets set calc(100% - 12px)');
+  for (const file of ['tags/qualitytags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/statustags.js', 'tags/logotags.js']) {
+    assert.match(readFileSync(resolve(jsRoot, file), 'utf8'), /max-width: calc\(100% - 12px\)/, `${file} still has the card-relative limit the rule restates`);
+  }
+  assert.doesNotMatch(css, new RegExp(`${corner} > :is\\([^)]*\\) \\{\\s*max-width`), 'no corner-only width rule is left to drift from it');
   assert.match(css, new RegExp(`${corner} > :is\\(\\.quality-overlay-container, \\.language-overlay-container, \\.genre-overlay-container\\) \\{\\s*max-height: calc\\(90% \\+ 10\\.8px\\);`),
     '90% of the card, against a slot 12px shorter');
   assert.match(css, /@media \(max-width: 480px\) \{\s*[^{]+> :is\(\.quality-overlay-container, \.genre-overlay-container\) \{ max-height: calc\(85% \+ 10\.2px\); \}/);

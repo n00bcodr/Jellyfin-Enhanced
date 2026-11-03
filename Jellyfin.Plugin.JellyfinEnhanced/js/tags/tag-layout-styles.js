@@ -125,13 +125,13 @@
             ${SLOT}[data-je-slot="br"] { flex-direction: column-reverse; align-items: flex-end; }
             ${SLOT}:is([data-je-slot="tl"], [data-je-slot="bl"]) > [data-je-group] { align-items: flex-start; }
             ${SLOT}:is([data-je-slot="tr"], [data-je-slot="br"]) > [data-je-group] { align-items: flex-end; }
-            /* The containers' own size limits were written against the whole card
-               (a 100% that a corner slot, inset 6px, makes 12px smaller): restate
-               them so narrow cards clip chips exactly where they always did. */
-            ${CORNER} > :is(.quality-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container) {
+            /* The containers' own width limits were written against the whole card.
+               In a slot that 100% is the slot: a corner slot, inset 6px, is the old
+               limit (narrow cards clip chips exactly where they always did), and a
+               slot sized to its chips must never be 12px narrower than they are. */
+            ${SLOT} > :is(.quality-overlay-container, .rating-overlay-container, .age-rating-overlay-container, .status-overlay-container, .logo-overlay-container) {
                 max-width: 100%;
             }
-            ${CORNER} > .logo-overlay-container { max-width: 100%; }
             ${CORNER} > :is(.quality-overlay-container, .language-overlay-container, .genre-overlay-container) {
                 max-height: calc(90% + 10.8px);
             }
