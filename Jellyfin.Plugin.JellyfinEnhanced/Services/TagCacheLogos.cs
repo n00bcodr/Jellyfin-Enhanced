@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -73,6 +74,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Interlocked.Exchange(ref _logoDemandCheckedTicks, now);
             return _logoDemand;
         }
+
+        /// <summary>
+        /// True when a logo warm can fetch anything: a lookup service, a TMDB key
+        /// and someone who shows the Logos group. Without a key cards show the
+        /// names Jellyfin has, so there is nothing to warm.
+        /// </summary>
+        [MemberNotNullWhen(true, nameof(_logoService))]
+        private bool LogoWarmPossible([NotNullWhen(true)] PluginConfiguration? config)
+            => _logoService != null && config != null && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY) && HasLogoDemand();
 
         private bool ComputeLogoDemand()
         {
@@ -240,7 +250,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private async Task WarmLogoOwnersAsync(IReadOnlyCollection<BaseItem> owners, CancellationToken cancellationToken)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (_logoService == null || config == null || owners.Count == 0 || string.IsNullOrWhiteSpace(config.TMDB_API_KEY) || !HasLogoDemand()) return;
+            if (owners.Count == 0 || !LogoWarmPossible(config)) return;
             var region = LogoTagRules.Region(config);
             await _logoService.WarmAsync(config.TMDB_API_KEY, owners.SelectMany(o => LogoLookups(o, config, false)), region, cancellationToken).ConfigureAwait(false);
             await _logoService.WarmAsync(config.TMDB_API_KEY, owners.SelectMany(o => LogoLookups(o, config, true)), region, cancellationToken).ConfigureAwait(false);
@@ -255,7 +265,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         public void WarmLogosForItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken)
         {
-            if (_logoService == null || !HasLogoDemand()) return;
+            if (!LogoWarmPossible(JellyfinEnhanced.Instance?.Configuration)) return;
             var owners = items.Select(item => LogoOwner(item, null)).Where(o => o != null).Select(o => o!)
                 .GroupBy(o => o.Id).Select(g => g.First()).ToArray();
             if (owners.Length == 0) return;
@@ -284,7 +294,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void QueueLogoWarm(IEnumerable<BaseItem> items)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (_logoService == null || config == null || _disposed || string.IsNullOrWhiteSpace(config.TMDB_API_KEY) || !HasLogoDemand()) return;
+            if (_disposed || !LogoWarmPossible(config)) return;
             var region = LogoTagRules.Region(config);
             foreach (var item in items)
             {
@@ -335,7 +345,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private void WarmLogos(CancellationToken cancellationToken)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
-            if (_logoService == null || config == null || string.IsNullOrWhiteSpace(config.TMDB_API_KEY) || !HasLogoDemand()) return;
+            if (!LogoWarmPossible(config)) return;
             try
             {
                 var owners = _libraryManager.GetItemList(new InternalItemsQuery

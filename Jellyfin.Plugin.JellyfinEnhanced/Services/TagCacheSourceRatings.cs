@@ -220,9 +220,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             WarmLogosForItems(items, CancellationToken.None);
         }
 
-        /// <summary>True when <see cref="WarmForRebuild"/> has anything to fetch: MDBList named-source or logo demand.</summary>
+        /// <summary>True when <see cref="WarmForRebuild"/> has anything to fetch: MDBList named-source demand, or a logo warm that can fetch.</summary>
         private bool HasRebuildWarmDemand()
-            => (_mdblistService != null && HasSourceRatingDemand()) || (_logoService != null && HasLogoDemand());
+            => (_mdblistService != null && HasSourceRatingDemand()) || LogoWarmPossible(JellyfinEnhanced.Instance?.Configuration);
 
         /// <summary>Reuse MDBList's bounded batches, seven-day TTL, pacing and quota reserve before a build.</summary>
         private void WarmSourceRatings(CancellationToken cancellationToken)

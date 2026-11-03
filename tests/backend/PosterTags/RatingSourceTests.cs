@@ -615,6 +615,47 @@ public class RatingSourceTests
         Assert.All(movies, movie => Assert.True(cache.TryGetEntry(movie.Id, out _)));
     }
 
+    [Theory]
+    [InlineData("", 200)]
+    [InlineData("tmdb-fixture-key", 400)]
+    public void FlushWithLogosOnResolvesEachChangedItemOnceWithoutATmdbKey(string tmdbKey, int expectedLookups)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        f.Plugin.Configuration.MdblistApiKey = "";
+        f.Plugin.Configuration.TMDB_API_KEY = tmdbKey;
+        f.Plugin.Configuration.LogoTagsEnabled = true;
+        var dir = Path.Combine(Path.GetTempPath(), "je-logos-" + Guid.NewGuid().ToString("N"));
+        var upstream = 0;
+        using var transport = new IntegrationTransport((_, _) => { Interlocked.Increment(ref upstream); return Task.FromResult(IntegrationTransport.Response("{}")); });
+        using var logos = new TagLogoService(transport, new TmdbResponseCache(transport, TimeProvider.System), TimeProvider.System, Path.Combine(dir, "tag-logos.json"), Path.Combine(dir, "logos"), null, 4, 1000, TimeSpan.FromSeconds(10));
+        try
+        {
+            // No provider ids: even with a key nothing is fetched, the warm only resolves the items.
+            var movies = Enumerable.Range(1, 200).Select(i => new Movie { Id = Guid.NewGuid(), Name = $"m{i}" }).ToArray();
+            var lookups = 0;
+            var library = new Mock<ILibraryManager>();
+            library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<Guid>());
+            library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<BaseItem>());
+            foreach (var movie in movies) library.Setup(l => l.GetItemById<BaseItem>(movie.Id)).Callback(() => Interlocked.Increment(ref lookups)).Returns(movie);
+            using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), null, null, logos);
+            cache.BuildFullCache(null, default);
+            Assert.True(cache.HasLogoDemand());
+            lookups = 0;
+            foreach (var movie in movies) cache.EnqueueUpdate(movie.Id);
+            typeof(TagCacheService).GetMethod("FlushPending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(cache, null);
+            // Logos on but no TMDB key: there is nothing a warm could fetch, so only the rebuild resolves each item.
+            // With a key the warm runs first and resolves them too.
+            Assert.Equal(expectedLookups, lookups);
+            Assert.Equal(0, upstream);
+            Assert.All(movies, movie => Assert.True(cache.TryGetEntry(movie.Id, out _)));
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        }
+    }
+
     [Fact]
     public async Task OnDemandBuildNeverWaitsForMdblistAndTheBackgroundWarmRetiresTheNativeMemo()
     {
