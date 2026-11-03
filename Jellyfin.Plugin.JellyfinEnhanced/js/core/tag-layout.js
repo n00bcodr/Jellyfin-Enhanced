@@ -2343,7 +2343,8 @@
      * Caption's poster stack keeps the chips, in order, whose bottom stays the
      * stack's inset above the image's bottom; once one does not, it and every
      * later chip are left out and the "+N" chip (already last in the column)
-     * takes the space below the shown ones (reads only).
+     * takes the space below the shown ones. Unlimited while the card has no
+     * height (reads only).
      * @param {CardController} ctrl
      * @returns {FitPlan['rows']}
      */
@@ -2351,10 +2352,12 @@
         const slot = posterStack(ctrl)[0];
         const more = slot && moreChipOf(slot);
         if (!more) return [];
+        const height = ctrl.host.clientHeight;
         const chips = slotChips(slot);
-        const bottoms = chips.map((chip) => chip.getBoundingClientRect().bottom);
-        const limit = ctrl.host.getBoundingClientRect().bottom - STACK_INSET;
-        if (bottoms.every((bottom) => bottom <= limit + 0.01)) return [{ slot, chips, shown: chips.map(() => true), more: true }];
+        const top = ctrl.host.getBoundingClientRect().top;
+        const bottoms = chips.map((chip) => chip.getBoundingClientRect().bottom - top);
+        const limit = height - STACK_INSET;
+        if (!(height > 0) || bottoms.every((bottom) => bottom <= limit + 0.01)) return [{ slot, chips, shown: chips.map(() => true), more: true }];
         const room = limit - more.getBoundingClientRect().height - (parseFloat(getComputedStyle(slot).rowGap) || 0);
         let fits = true;
         return [{ slot, chips, shown: bottoms.map((bottom) => (fits = fits && bottom <= room + 0.01)), more: true }];
