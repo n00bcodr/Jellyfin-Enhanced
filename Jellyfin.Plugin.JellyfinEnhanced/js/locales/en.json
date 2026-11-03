@@ -1216,6 +1216,7 @@
     "admin_tags_rebuild_running": "A tag cache rebuild is already in progress.",
     "admin_tags_rebuild_cache_off": "Turn on the server tag cache first.",
     "admin_tags_rebuild_failed": "The rebuild could not start. Check the server log.",
+    "admin_tags_rebuild_unsaved": "Not rebuilt: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then rebuild again.",
     "admin_tags_layout_look_desc": "Where the tags sit on a poster, and how long their labels are.",
     "admin_tags_layout_default": "Default layout",
     "admin_tags_layout_groups": "Group order, limits and positions",

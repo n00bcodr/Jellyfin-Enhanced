@@ -854,3 +854,35 @@ test('Rules: on the first view a library id typed before the list arrives is kep
   assert.equal(h.$('[data-rule="value"]').value, OTHER_LIBRARY, 'the typed id is kept');
   assert.equal(h.document.activeElement, h.$('[data-rule="value"]'));
 });
+
+// ── Rebuild while a change is not saved (opus R5 8) ──────────────────
+
+for (const why of ['failed', 'conflict']) {
+  test(`Rebuild while a change is not saved (${why}) says why and rebuilds nothing; once saved it rebuilds`, async t => {
+    let fail = why === 'failed';
+    const server = structuredClone({ ...BASE, LeavingSoonCollections: 'Original' });
+    const h = setup(t, {
+      config: { LeavingSoonCollections: 'Original' },
+      url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=server',
+      patch: (body) => { if (fail) throw new Error('offline'); return serverPatch(server, body); },
+    });
+    if (why === 'failed') h.expectConsoleError(/could not save the Media Tags settings/);
+    for (let i = 0; i < 5; i++) await h.settle();
+    if (why === 'conflict') server.TagCacheExcludeLibraries = 'theirs';
+    h.change(h.$('#tagCacheExcludeLibraries'), true);
+    assert.equal(await h.ctx.flush(), false);
+    h.$('#rebuildTagCacheBtn').click();
+    for (let i = 0; i < 8; i++) await h.settle();
+    assert.deepEqual(h.posts, [], 'nothing is rebuilt');
+    assert.match(h.root.querySelector('.je-ta-snack')?.textContent || '', /admin_tags_rebuild_unsaved/, 'and it says why');
+    assert.deepEqual(h.confirms, [], 'before asking');
+    // Saved (Retry, or Keep mine): Rebuild asks and rebuilds.
+    fail = false;
+    h.root.querySelector(why === 'failed' ? '[data-je-retry]' : '[data-je-keep]').click();
+    await h.ctx.flush();
+    h.$('#rebuildTagCacheBtn').click();
+    for (let i = 0; i < 8; i++) await h.settle();
+    assert.deepEqual(h.confirms, ['admin_tags_rebuild_title']);
+    assert.deepEqual(h.posts, ['/JellyfinEnhanced/tag-cache/rebuild']);
+  });
+}

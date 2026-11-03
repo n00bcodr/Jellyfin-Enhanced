@@ -72,13 +72,19 @@
     /**
      * Rebuild the server tag cache, after a confirmation (POST tag-cache/rebuild).
      * Saves pending changes first, so turning the cache on and rebuilding works.
+     * While a change is not saved (a failed save, or a conflict waiting for Keep
+     * mine / Take theirs) it rebuilds nothing and says so, before and after asking.
      * @param {Object} ctx
      * @returns {Promise<void>}
      */
     A.rebuildCache = async function(ctx) {
+        const unsaved = () => { if (ctx.isCurrent()) ctx.snack(JE.t('admin_tags_rebuild_unsaved')); };
+        if (!(await ctx.flush())) { unsaved(); return; }
+        if (!ctx.isCurrent()) return;
         const ok = await ctx.confirm(JE.t('admin_tags_rebuild_confirm'), JE.t('admin_tags_rebuild_title'));
         if (!ok) return;
-        if (!(await ctx.flush()) || !ctx.isCurrent()) return;
+        if (!(await ctx.flush())) { unsaved(); return; }
+        if (!ctx.isCurrent()) return;
         try {
             const res = await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/tag-cache/rebuild'), dataType: 'json' });
             if (!ctx.isCurrent()) return;
