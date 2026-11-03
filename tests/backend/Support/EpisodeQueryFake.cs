@@ -8,9 +8,9 @@ namespace JE.Tests;
 /// <summary>
 /// Answers library queries over a fixed set of episodes the way Jellyfin's item
 /// repository does for the fields the Status Tags lookups use: parent (season
-/// or series), premiere date range, season/episode numbers, ordering (unset
-/// values sort first ascending, last descending, as in SQLite), paging, counts
-/// and id-only queries. Item and count queries match a recursive ParentId as an
+/// or series), premiere date range, season/episode numbers and their minimum
+/// and not-equal filters, ordering (unset values sort first ascending, last
+/// descending, as in SQLite), paging, counts and id-only queries. Item and count queries match a recursive ParentId as an
 /// ancestor (Jellyfin's LibraryManager rewrites it into AncestorIds, and an
 /// episode's ancestors include its SeasonId); id-only queries match only the
 /// direct parent, because GetItemIds does no such rewrite. Counts every
@@ -46,6 +46,9 @@ internal sealed class EpisodeQueryFake(IEnumerable<Episode> episodes)
         if (q.MinPremiereDate is { } min) found = found.Where(e => e.PremiereDate >= min);
         if (q.MaxPremiereDate is { } max) found = found.Where(e => e.PremiereDate <= max);
         if (q.ParentIndexNumber is { } season) found = found.Where(e => e.ParentIndexNumber == season);
+        // As BaseItemRepository translates them; an unset number fails every comparison, as in SQL.
+        if (q.ParentIndexNumberNotEquals is { } notSeason) found = found.Where(e => e.ParentIndexNumber != notSeason || e.ParentIndexNumber == null);
+        if (q.MinParentAndIndexNumber is { } from) found = found.Where(e => (e.ParentIndexNumber == from.ParentIndexNumber && e.IndexNumber >= from.IndexNumber) || e.ParentIndexNumber > from.ParentIndexNumber);
         if (q.IndexNumber is { } number) found = found.Where(e => e.IndexNumber == number);
         IOrderedEnumerable<Episode>? ordered = null;
         foreach (var (by, order) in q.OrderBy)

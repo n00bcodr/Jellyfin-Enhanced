@@ -456,6 +456,91 @@ public class StatusTagsCacheFactsTests
         }
     }
 
+    [Theory]
+    [InlineData("series-ties")]
+    [InlineData("season-ties")]
+    [InlineData("season-own-ties")]
+    [InlineData("series-specials-first")]
+    [InlineData("season-other-numbers")]
+    public void LargeTiesAndIneligibleCandidatesKeepTheLookupBounded(string shape)
+    {
+        var now = new DateTime(2026, 11, 4, 0, 0, 0, DateTimeKind.Utc);
+        var aired = now.AddDays(-1);
+        var series = new Series { Id = Guid.NewGuid(), Name = "Bulk release" };
+        var season = new Season { Id = Guid.NewGuid(), IndexNumber = 3, SeriesId = series.Id };
+        var episodes = new List<Episode>();
+        void Add(int? seasonNumber, int? number, DateTime? premiere, int addedMinutes) => episodes.Add(new Episode
+        {
+            Id = Guid.NewGuid(), SeasonId = season.Id, SeriesId = series.Id, ParentIndexNumber = seasonNumber, IndexNumber = number,
+            PremiereDate = premiere, DateCreated = now.AddDays(-10).AddMinutes(addedMinutes),
+        });
+        BaseItem container = shape.StartsWith("series", StringComparison.Ordinal) ? series : season;
+        switch (shape)
+        {
+            case "series-ties":
+            case "season-ties":
+                // Every episode shares the newest air date (a bulk release).
+                for (var e = 1; e <= 500; e++) Add(3, e, aired, e);
+                break;
+            case "season-own-ties":
+                // Numbered and unnumbered episodes tie; the unnumbered ones take the Season's own number.
+                for (var e = 1; e <= 250; e++) Add(2, e, aired, e);
+                for (var e = 1; e <= 250; e++) Add(null, e, aired, 250 + e);
+                break;
+            case "series-specials-first":
+                // Hundreds of specials and unnumbered episodes aired after the last regular one.
+                for (var e = 1; e <= 300; e++) Add(0, e, aired.AddMinutes(-e), e);
+                for (var e = 1; e <= 100; e++) Add(null, e, aired.AddMinutes(-e), 300 + e);
+                for (var e = 1; e <= 100; e++) Add(3, e, now.AddDays(-400).AddDays(e), 400 + e);
+                break;
+            case "season-other-numbers":
+                // A Season folder holding many episodes numbered for another season, first-aired candidates everywhere.
+                for (var e = 1; e <= 300; e++) Add(4, e % 2 == 0 ? 1 : e, now.AddDays(-300).AddDays(e % 200), e);
+                for (var e = 1; e <= 100; e++) Add(3, e, now.AddDays(-500).AddDays(e), 300 + e);
+                for (var e = 1; e <= 50; e++) Add(null, e, now.AddDays(-600).AddDays(e), 400 + e);
+                break;
+        }
+
+        var fake = new EpisodeQueryFake(episodes);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.List(q));
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Ids(q));
+        library.Setup(l => l.GetCount(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Count(q));
+        var actual = StatusTagsEpisodeLookup.Load(library.Object, container, EpisodesOf(container), now);
+        Assert.Equal(Facts(FullWalk(container, episodes, now)), Facts(actual));
+        Assert.NotNull(actual.Facts.LatestIndex);
+        // The capped first page plus one episode per fact query, however many episodes tie or do not count.
+        Assert.InRange(fake.Queries, 1, 12);
+        Assert.InRange(fake.Materialised, 1, StatusTagsEpisodeLookup.SmallContainer + 1 + 12);
+    }
+
+    [Fact]
+    public void BoundedFactsMatchTheFullWalkForTwoHundredMixedContainers()
+    {
+        var now = new DateTime(2026, 11, 4, 0, 0, 0, DateTimeKind.Utc);
+        for (var seed = 0; seed < 200; seed++)
+        {
+            var random = new Random(seed);
+            int? Number() => random.Next(0, 8) is var n && n == 7 ? null : n;
+            var own = Number();
+            BaseItem container = seed % 2 == 0 ? new Series { Id = Guid.NewGuid() } : new Season { Id = Guid.NewGuid(), IndexNumber = own };
+            // Specials, unset numbers, unset/default dates, ties and future dates, more than one capped page.
+            var episodes = Enumerable.Range(0, 105).Select(_ => new Episode
+            {
+                Id = Guid.NewGuid(), SeriesId = container.Id, SeasonId = container.Id, ParentIndexNumber = Number(), IndexNumber = Number(),
+                PremiereDate = random.Next(0, 15) is var d && d == 14 ? null : d == 13 ? default(DateTime) : now.AddDays(d - 10),
+                DateCreated = random.Next(0, 15) is var a && a == 14 ? default : now.AddDays(-a),
+            }).ToArray();
+            var fake = new EpisodeQueryFake(episodes);
+            var library = new Mock<ILibraryManager>();
+            library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.List(q));
+            library.Setup(l => l.GetCount(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Count(q));
+            var actual = StatusTagsEpisodeLookup.Load(library.Object, container, EpisodesOf(container), now);
+            Assert.True(Facts(FullWalk(container, episodes, now)) == Facts(actual), $"seed={seed} own={own} {container.GetType().Name}");
+            Assert.InRange(fake.Queries, 1, 12);
+        }
+    }
+
     [Fact]
     public void ALargeSeasonWithoutASeasonFolderCountsEveryEpisode()
     {
