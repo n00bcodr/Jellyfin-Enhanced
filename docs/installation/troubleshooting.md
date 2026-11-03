@@ -21,6 +21,8 @@ Check that Jellyfin has loaded the server plugin first. If it has, troubleshoot 
 
 Install the build that matches your Jellyfin version, then restart the server. See [Compatibility](../getting-started/compatibility.md) for version requirements.
 
+On Jellyfin 13 and newer, the page shows **This Jellyfin version is not supported yet** instead and names no build to install, because no current JE build supports that version: stay on Jellyfin 12.x until a JE release lists Jellyfin 13 support.
+
 1. Back up your configuration.
 2. Replace the mismatched installation using the shared repository in the [Installation Guide](installation.md).
 3. Restart Jellyfin.

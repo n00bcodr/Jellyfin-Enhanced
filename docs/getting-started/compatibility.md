@@ -35,6 +35,14 @@ Use the build that matches your Jellyfin server. Both versions support the seven
 
     The startup log reports a wrong build as `BUILD/HOST MISMATCH`. The authenticated, administrator-only `/JellyfinEnhanced/host-compat` diagnostic identifies the expected artifact. There is no setting to turn off this check.
 
+## Support policy
+
+Jellyfin 12.x is JE's primary target. New features and fixes are built and tested there first.
+
+The Jellyfin 10.11.x build keeps compiling and shipping with each release, on a best-effort basis, without 10.11-only features or fixes. Jellyfin 10.11 runs on .NET 9, which Microsoft stops supporting after November 10, 2026. The 10.11 build keeps loading after that date, but on a runtime that no longer gets security updates. If you're on 10.11, plan your move to Jellyfin 12.
+
+Jellyfin 13 isn't supported yet. It's set to change server interfaces JE is built against, and Jellyfin still loads older plugin builds, so features could fail or return the wrong items without an error. On Jellyfin 13, the admin page shows **This Jellyfin version is not supported yet** and the startup log reports `BUILD/HOST MISMATCH`. Stay on Jellyfin 12.x until a JE release lists Jellyfin 13 support. See [troubleshooting](../installation/troubleshooting.md#wrong-plugin-build).
+
 ## Clients and playback
 
 For the panel, tags, and browser playback tools, open the web interface served by your Jellyfin server. Check the table below if you prefer an app or a separate player.
