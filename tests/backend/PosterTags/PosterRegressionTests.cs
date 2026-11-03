@@ -110,6 +110,30 @@ public class PosterRegressionTests
         Assert.Equal(expected, flags);
     }
 
+    [Fact]
+    public void Language_priority_matches_two_and_three_letter_codes_and_regions()
+    {
+        // #993: Jellyfin's probe tags audio "eng"/"ita"/"jpn" while Matroska IETF tags give "en"/"en-US";
+        // the admin list "en,it,ja" must rank (and in strict mode keep) all of them.
+        var settings = PosterTagSettings.FromSettingsJson("{languageTagsEnabled:true}", new PluginConfiguration { LanguageTagsPriority = "en,it,ja", LanguageTagsPriorityStrict = true, LanguageTagsMergeRegions = true });
+        var result = PosterTagResolver.Resolve(new() { AudioLanguages = ["spa", "jpn", "ita", "eng"] }, settings, Context(), false)!;
+        Assert.Equal(["gb", "it", "jp"], result.Groups.SelectMany(g => g.Tags).Cast<LanguageTag>().Select(t => t.FlagCode).ToArray());
+
+        var regional = PosterTagResolver.Resolve(new() { AudioLanguages = ["fra", "en-US"] }, settings, Context(), false)!;
+        Assert.Equal(["gb"], regional.Groups.SelectMany(g => g.Tags).Cast<LanguageTag>().Select(t => t.FlagCode).ToArray());
+
+        Assert.Null(PosterTagResolver.Resolve(new() { AudioLanguages = ["fra", "deu"] }, settings, Context(), false));
+    }
+
+    [Fact]
+    public void Language_priority_checks_every_code_behind_a_shared_flag()
+    {
+        // Hindi and Telugu share India's flag; "te" in the list must still find the flag through its second code.
+        var settings = PosterTagSettings.FromSettingsJson("{languageTagsEnabled:true}", new PluginConfiguration { LanguageTagsPriority = "te", LanguageTagsPriorityStrict = true });
+        var result = PosterTagResolver.Resolve(new() { AudioLanguages = ["hin", "tel"] }, settings, Context(), false)!;
+        Assert.Equal(["in"], result.Groups.SelectMany(g => g.Tags).Cast<LanguageTag>().Select(t => t.FlagCode).ToArray());
+    }
+
     private static PosterTagLayout Layout(PosterTagCorner corner = PosterTagCorner.TopLeft) => new([new(PosterTagGroup.Quality, corner, [new QualityTag("4K", "resolution")])], false, false);
     private static SKBitmap Poster() { var b = new SKBitmap(180, 270); b.Erase(SKColors.Navy); return b; }
 

@@ -137,26 +137,35 @@
      * this is what actually decides which 3 flags a card shows. A flag can
      * match the priority list by language code (en, pt-BR), its base code
      * (pt), or its display name (English, Portuguese) — whichever the admin
-     * typed.
+     * typed. Codes compare the way the audio-language filter does
+     * (`matchesLanguage`): `en` matches a track tagged `eng`, `en-US` or
+     * `en-GB`, and `pt-BR` still matches a bare `pt`, so a library that
+     * mixes two- and three-letter tags (Jellyfin's own probe writes `eng`,
+     * a Matroska IETF tag writes `en`) ranks every English track the same (#993).
+     * Every code behind a flag counts, not just the first one: Hindi and
+     * Telugu share India's flag, and `te` in the list must still find it.
      * When LanguageTagsPriorityStrict is on, non-matching flags are dropped
      * entirely instead of just being pushed to the back — a card can then
      * show fewer than 3 flags, or none, if it has no matching audio track.
-     * @param {Array<{code: string, allLanguages: Array<string>}>} flags
+     * @param {Array<{code: string, allCodes: Array<string>, allLanguages: Array<string>}>} flags
      * @returns {Array}
      */
     function orderByPriority(flags) {
         const priority = getPriorityTerms();
         if (!priority.length) return flags;
 
+        const matchesLanguage = JE.core.mediaLanguage.matchesLanguage;
         const rank = (flag) => {
             const code = (flag.code || '').toLowerCase();
             const base = code.split('-')[0];
             const names = (flag.allLanguages || []).map(n => n.toLowerCase());
             const candidates = [code, base, ...names];
+            const codes = flag.allCodes && flag.allCodes.length ? flag.allCodes : [flag.code || ''];
             let best = -1;
-            for (const candidate of candidates) {
-                const idx = priority.indexOf(candidate);
-                if (idx !== -1 && (best === -1 || idx < best)) best = idx;
+            for (let idx = 0; idx < priority.length; idx++) {
+                if (best !== -1 && idx >= best) break;
+                const term = priority[idx];
+                if (candidates.includes(term) || codes.some(c => matchesLanguage(c, term))) best = idx;
             }
             return best;
         };
@@ -214,10 +223,11 @@
             const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
             if (countryCode && !seenCountries.has(countryCode)) {
                 seenCountries.add(countryCode);
-                uniqueFlags.push({ countryCode, code: codeKey, name, partial: !!lang.partial, allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
+                uniqueFlags.push({ countryCode, code: codeKey, allCodes: [codeKey], name, partial: !!lang.partial, allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
             } else if (countryCode && seenCountries.has(countryCode)) {
                 // Add language name to existing country's tooltip
                 const existingFlag = uniqueFlags.find(f => f.countryCode === countryCode);
+                if (existingFlag && !existingFlag.allCodes.includes(codeKey)) existingFlag.allCodes.push(codeKey);
                 if (existingFlag && !existingFlag.allLanguages.includes(name)) {
                     existingFlag.allLanguages.push(name);
                     existingFlag.labels.push(languageLabel({ name, partial: lang.partial }));
