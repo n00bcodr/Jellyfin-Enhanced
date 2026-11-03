@@ -1937,7 +1937,10 @@
      * the size its last fit used (-1: not known yet; 0: the fit skipped it
      * because it was not laid out). Observations compare with `fitted`, never
      * with the previous observation, so changes below a pixel add up.
-     * @type {WeakMap<HTMLElement, {observed: number, fitted: number}>}
+     * `measured` is the width a pass read when it was a pixel or more off the
+     * last observation (the card changed after the frame observed it): the
+     * next observation reports that change, and is the size that pass fitted.
+     * @type {WeakMap<HTMLElement, {observed: number, fitted: number, measured: number}>}
      */
     const fittedWidths = new WeakMap();
     /** Observed sizes closer than this are the same size (float noise, below a layout unit). */
@@ -1953,7 +1956,7 @@
     function watchSize(host) {
         if (typeof ResizeObserver !== 'function' || fittedWidths.has(host)) return;
         sizeObserver ??= new ResizeObserver(refitOnSizeChange);
-        fittedWidths.set(host, { observed: -1, fitted: -1 });
+        fittedWidths.set(host, { observed: -1, fitted: -1, measured: 0 });
         sizeObserver.observe(host);
     }
 
@@ -1983,6 +1986,10 @@
             sizes.observed = width;
             // The first observation reports the size the queued fit is about to use.
             if (sizes.fitted < 0) { sizes.fitted = width; continue; }
+            // The change the last pass already measured and fitted (in whole pixels).
+            const measured = sizes.measured;
+            sizes.measured = 0;
+            if (measured > 0 && Math.abs(width - measured) < 1) { sizes.fitted = width; continue; }
             if (Math.abs(width - sizes.fitted) < SAME_WIDTH_PX) continue;
             scheduleFit(ctrl);
         }
@@ -2038,7 +2045,10 @@
             // (delivered before this pass's paint), or 0 for a card left unfitted.
             list.forEach((ctrl, i) => {
                 const sizes = fittedWidths.get(ctrl.host);
-                if (sizes) sizes.fitted = widths[i] > 0 ? sizes.observed : 0;
+                if (!sizes) return;
+                sizes.fitted = widths[i] > 0 ? sizes.observed : 0;
+                // Changed after the frame observed it: the next observation is this pass's width.
+                sizes.measured = widths[i] > 0 && sizes.observed >= 0 && Math.abs(widths[i] - sizes.observed) >= 1 ? widths[i] : 0;
             });
             const heights = list.map((ctrl, i) => (widths[i] > 0 && needsShape(ctrl) ? ctrl.host.clientHeight : 0));
             const radii = list.map((ctrl, i) => (widths[i] > 0 && needsRadius(ctrl) ? cardRadiusOf(ctrl) : null));

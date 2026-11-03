@@ -140,6 +140,42 @@ test('a cached view shown again at the width it was fitted for runs no fitting p
   expect(shown.overlap).toBeLessThan(0);
 });
 
+for (const cards of [1, 300]) test(`card widths that change after the frame's observation but before the pass cost one pass, not two (${cards} card${cards > 1 ? 's' : ''})`, async ({ page }) => {
+  await setup(page, cards);
+  // A task queued before the fitting pass (a network answer adding a section, a scrollbar)
+  // narrows every card after the frame delivered its observations.
+  await page.evaluate(() => {
+    const dom = JellyfinEnhanced.core.dom, schedule = dom.afterNextPaint;
+    window.__passes = 0;
+    dom.afterNextPaint = fn => schedule(fn.name !== 'flushFit' ? fn : () => {
+      if (window.__arm) { window.__arm = false; for (const el of document.querySelectorAll('.cardBox, .cardScalable')) el.style.width = '150px'; }
+      window.__passes++;
+      return fn();
+    });
+    window.__arm = true;
+    JellyfinEnhanced.core.tagLayout.refreshPresentation();
+  });
+  await frames(page, 8);
+  expect(await page.evaluate(() => window.__passes)).toBe(1);
+  const after = await measure(page);
+  expect(after.card).toBe(150);
+  expect(after.overlap).toBeLessThan(0);
+  expect(after).toEqual(await fresh(page));
+  if (cards > 1) return;
+  // Later sub-pixel changes still add up from the width the pass measured.
+  await page.evaluate(async () => {
+    for (let width = 149.5; width >= 84; width -= 0.5) {
+      for (const el of document.querySelectorAll('.cardBox, .cardScalable')) el.style.width = `${width}px`;
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+  });
+  await frames(page);
+  const narrow = await measure(page);
+  expect(narrow.card).toBe(84);
+  expect(narrow.budget).not.toBe(after.budget);
+  expect(narrow).toEqual(await fresh(page));
+});
+
 test('legacy cards that never needed a fit are not watched', async ({ page }) => {
   await page.goto('/');
   await page.setContent('<div class="card"><div class="cardBox"><div class="cardScalable" style="position:relative;width:180px;height:270px"><div class="je-tag-host"></div></div></div></div>');
