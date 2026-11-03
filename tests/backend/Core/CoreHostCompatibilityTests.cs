@@ -19,6 +19,15 @@ public class CoreHostCompatibilityTests
         return new HostCompatibilityService(host.Object);
     }
 
+    private static HostCompatibilityService Service(string versionString)
+    {
+        var host = new Mock<IServerApplicationHost>();
+        // Prerelease builds report their numeric assembly version, e.g. 13.0.0-rc1 as 13.0.0.0.
+        host.SetupGet(h => h.ApplicationVersion).Returns(new Version(versionString.Split('-')[0]));
+        host.SetupGet(h => h.ApplicationVersionString).Returns(versionString);
+        return new HostCompatibilityService(host.Object);
+    }
+
     private static void WriteModule(string path, Guid mvid)
     {
         // Tiny managed PE files let us replace the disk image without loading assemblies.
@@ -131,5 +140,51 @@ public class CoreHostCompatibilityTests
         var logged = service.GetCompatibilityMessage(stale, includeInstallAdvice: true)!;
         // Stale and mismatched: the replacement may be the wrong build too, so the log still names the right one.
         Assert.Equal(mismatch, logged.Contains($"{service.ExpectedAssetName} from {HostCompatibilityService.ManifestUrl}.", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("10.11.0", "jf10", "Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip")]
+    [InlineData("10.11.11", "jf10", "Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip")]
+    [InlineData("11.0.0", "jf10", "Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip")]
+    [InlineData("12.0.0", "jf12", "Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip")]
+    [InlineData("12.0.0-rc1", "jf12", "Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip")]
+    [InlineData("12.4.0", "jf12", "Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip")]
+    [InlineData("13.0.0", HostCompatibilityService.UnsupportedTarget, null)]
+    [InlineData("13.0.0-rc1", HostCompatibilityService.UnsupportedTarget, null)]
+    [InlineData("14.1.0", HostCompatibilityService.UnsupportedTarget, null)]
+    public void HostLinesMapToExactTargets(string version, string target, string? asset)
+    {
+        var service = Service(version);
+        Assert.Equal(target, service.HostTarget);
+        Assert.Equal(asset, service.ExpectedAssetName);
+        Assert.Equal(target == HostCompatibilityService.UnsupportedTarget, service.IsHostUnsupported);
+        Assert.Equal(target != HostCompatibilityService.BuiltFor, service.IsMismatch);
+        Assert.Equal(service.IsMismatch, service.GetCompatibilityMessage(false) is not null);
+    }
+
+    [Theory]
+    [InlineData("13.0.0", false)]
+    [InlineData("13.0.0", true)]
+    [InlineData("13.0.0-rc1", false)]
+    public void UnsupportedHostNamesTheLinesAndOffersNoAsset(string version, bool stale)
+    {
+        var service = Service(version);
+        Assert.True(service.IsMismatch);
+
+        var message = service.GetCompatibilityMessage(stale)!;
+        Assert.Contains("does not support Jellyfin 13.x yet", message);
+        Assert.Contains($"the server is Jellyfin {version}", message);
+        Assert.Contains("Stay on Jellyfin 12.x", message);
+        Assert.Contains("lists Jellyfin 13 support.", message);
+        Assert.DoesNotContain(".zip", message);
+        Assert.DoesNotContain("Install ", message);
+        Assert.DoesNotContain(HostCompatibilityService.ManifestUrl, message);
+        // Swapping builds cannot help here, so the build-swap restart advice is not repeated.
+        Assert.DoesNotContain("Both builds share one version number", message);
+        Assert.Equal(stale, message.Contains("plugin file on disk was also replaced", StringComparison.Ordinal));
+
+        var logged = service.GetCompatibilityMessage(stale, includeInstallAdvice: true)!;
+        Assert.Contains($"lists Jellyfin 13 support from {HostCompatibilityService.ManifestUrl}.", logged);
+        Assert.DoesNotContain(".zip", logged);
     }
 }

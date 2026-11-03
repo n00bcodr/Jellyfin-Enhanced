@@ -9065,11 +9065,15 @@
                     banner.style.display = 'none';
                     return;
                 }
+                // A mismatch without an expected asset means no build of this release supports the host (Jellyfin 13+).
+                var unsupported = data.mismatch && !data.expectedAsset;
                 document.getElementById('je-host-mismatch-title').textContent = data.stale
                     ? 'Plugin restart required'
-                    : 'Wrong plugin build for this Jellyfin version';
+                    : unsupported
+                        ? 'This Jellyfin version is not supported yet'
+                        : 'Wrong plugin build for this Jellyfin version';
                 document.getElementById('je-host-mismatch-msg').textContent = ' ' + (data.message || '');
-                document.getElementById('je-host-mismatch-install').style.display = data.mismatch ? '' : 'none';
+                document.getElementById('je-host-mismatch-install').style.display = data.mismatch && !unsupported ? '' : 'none';
                 document.getElementById('je-host-mismatch-asset').textContent = data.expectedAsset || '';
                 var link = document.getElementById('je-host-mismatch-link');
                 link.textContent = data.manifestUrl || '';
