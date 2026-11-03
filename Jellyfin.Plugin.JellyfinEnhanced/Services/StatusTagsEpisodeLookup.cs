@@ -22,7 +22,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// all fed to <see cref="StatusTagsEpisodeFacts"/>, so the rules (specials,
     /// ties, future dates, a Season's own number for unnumbered episodes) stay
     /// the ones the tag cache applies to the full walk. A Season's added span
-    /// counts its episodes with an id-only query.
+    /// counts its episodes with a count query.
     /// </summary>
     internal static class StatusTagsEpisodeLookup
     {
@@ -131,9 +131,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             if (isSeason)
             {
-                // A Season's added span: its episode count (ids only) and oldest added date.
+                // A Season's added span: its episode count and oldest added date. GetCount,
+                // not GetItemIds: only item and count queries turn the recursive parent into
+                // an ancestor match, and a Season's episodes are not its children when the
+                // series has no season folders.
                 var oldest = Note(Ordered(Any, (Added, asc)).FirstOrDefault());
-                facts.UseAddedSpan(library.GetItemIds(query()).Count, oldest?.DateCreated, latestAdded);
+                facts.UseAddedSpan(library.GetCount(query()), oldest?.DateCreated, latestAdded);
             }
 
             return (TagCacheService.ToUnixMilliseconds(latestAdded), facts);

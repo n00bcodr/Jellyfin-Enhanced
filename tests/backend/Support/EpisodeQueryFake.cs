@@ -9,8 +9,12 @@ namespace JE.Tests;
 /// Answers library queries over a fixed set of episodes the way Jellyfin's item
 /// repository does for the fields the Status Tags lookups use: parent (season
 /// or series), premiere date range, season/episode numbers, ordering (unset
-/// values sort first ascending, last descending, as in SQLite), paging and
-/// id-only queries. Counts every episode it hands out as materialised.
+/// values sort first ascending, last descending, as in SQLite), paging, counts
+/// and id-only queries. Item and count queries match a recursive ParentId as an
+/// ancestor (Jellyfin's LibraryManager rewrites it into AncestorIds, and an
+/// episode's ancestors include its SeasonId); id-only queries match only the
+/// direct parent, because GetItemIds does no such rewrite. Counts every
+/// episode it hands out as materialised.
 /// </summary>
 internal sealed class EpisodeQueryFake(IEnumerable<Episode> episodes)
 {
@@ -30,12 +34,15 @@ internal sealed class EpisodeQueryFake(IEnumerable<Episode> episodes)
         return page;
     }
 
-    public IReadOnlyList<Guid> Ids(InternalItemsQuery query) => Select(query).Select(e => e.Id).ToArray();
+    public IReadOnlyList<Guid> Ids(InternalItemsQuery query) => Select(query, directParent: true).Select(e => e.Id).ToArray();
 
-    private IEnumerable<Episode> Select(InternalItemsQuery q)
+    public int Count(InternalItemsQuery query) => Select(query).Count();
+
+    private IEnumerable<Episode> Select(InternalItemsQuery q, bool directParent = false)
     {
         if (q.IncludeItemTypes.Length > 0 && !q.IncludeItemTypes.Contains(BaseItemKind.Episode)) return [];
-        IEnumerable<Episode> found = _episodes.Where(e => q.ParentId == Guid.Empty || e.SeasonId == q.ParentId || e.SeriesId == q.ParentId);
+        IEnumerable<Episode> found = _episodes.Where(e => q.ParentId == Guid.Empty
+            || (directParent ? e.ParentId == q.ParentId : e.SeasonId == q.ParentId || e.SeriesId == q.ParentId));
         if (q.MinPremiereDate is { } min) found = found.Where(e => e.PremiereDate >= min);
         if (q.MaxPremiereDate is { } max) found = found.Where(e => e.PremiereDate <= max);
         if (q.ParentIndexNumber is { } season) found = found.Where(e => e.ParentIndexNumber == season);

@@ -749,7 +749,7 @@ public class PerfRound2TagCacheResponseTests
         endpoint.Library.Setup(x => x.GetItemById<BaseItem>(season.Id, It.IsAny<User>())).Returns(season);
         // The facts queries (sorted episode queries of the season); the representative-episode scan finds nothing here.
         endpoint.Library.Setup(x => x.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => q.User == endpoint.Alice && q.OrderBy.Count > 0 && !RepresentativeScan(q) ? fake.List(q) : []);
-        endpoint.Library.Setup(x => x.GetItemIds(It.Is<InternalItemsQuery>(q => q.ParentId == season.Id))).Returns((InternalItemsQuery q) => q.User == endpoint.Alice ? fake.Ids(q) : []);
+        endpoint.Library.Setup(x => x.GetCount(It.Is<InternalItemsQuery>(q => q.ParentId == season.Id))).Returns((InternalItemsQuery q) => q.User == endpoint.Alice ? fake.Count(q) : 0);
         endpoint.SignIn(endpoint.Alice);
         var ok = Assert.IsType<OkObjectResult>(endpoint.Controller.GetTagData(Guid.Empty, [season.Id.ToString()], latestEpisode: true));
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));

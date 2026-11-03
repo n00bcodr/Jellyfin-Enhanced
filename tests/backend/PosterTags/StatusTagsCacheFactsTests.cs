@@ -446,6 +446,7 @@ public class StatusTagsCacheFactsTests
         var library = new Mock<ILibraryManager>();
         library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.List(q));
         library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Ids(q));
+        library.Setup(l => l.GetCount(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Count(q));
         foreach (var container in seasons.Cast<BaseItem>().Prepend(series))
         {
             var before = fake.Materialised;
@@ -453,5 +454,27 @@ public class StatusTagsCacheFactsTests
             // One capped first page, then (larger containers) a few sorted pages.
             Assert.InRange(fake.Materialised - before, 1, smallContainer + 41);
         }
+    }
+
+    [Fact]
+    public void ALargeSeasonWithoutASeasonFolderCountsEveryEpisode()
+    {
+        var now = new DateTime(2026, 11, 3, 0, 0, 0, DateTimeKind.Utc);
+        var series = new Series { Id = Guid.NewGuid(), Name = "Long anime" };
+        var season = new Season { Id = Guid.NewGuid(), IndexNumber = 1, SeriesId = series.Id };
+        // No season folders: the files are children of the series folder, only SeasonId names the Season.
+        var episodes = Enumerable.Range(1, 150).Select(e => new Episode
+        {
+            Id = Guid.NewGuid(), ParentId = series.Id, SeasonId = season.Id, SeriesId = series.Id, ParentIndexNumber = 1, IndexNumber = e,
+            PremiereDate = new DateTime(2020, 1, 1).AddDays(e), DateCreated = new DateTime(2026, 10, 1).AddMinutes(e),
+        }).ToArray();
+        var fake = new EpisodeQueryFake(episodes);
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.List(q));
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Ids(q));
+        library.Setup(l => l.GetCount(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => fake.Count(q));
+        var facts = StatusTagsEpisodeLookup.Load(library.Object, season, EpisodesOf(season), now);
+        Assert.Equal(150, facts.Facts.AddedSpan?.Count);
+        Assert.Equal(Facts(FullWalk(season, episodes, now)), Facts(facts));
     }
 }
