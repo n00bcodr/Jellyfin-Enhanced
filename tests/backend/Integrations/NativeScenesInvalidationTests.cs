@@ -301,13 +301,13 @@ public class NativeScenesInvalidationTests
             _version = Cache.Version;
         }
 
-        internal async Task<TagCacheEntry> BuildAsync(BaseItem item) => Assert.IsType<TagCacheEntry>(await (Task<TagCacheEntry?>)
-            typeof(PosterTagDataProvider).GetMethod("BuildAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Native, [item])!);
+        internal async Task<TagCacheEntry> BuildAsync(BaseItem item) => Assert.IsType<TagCacheEntry>((await (Task<(TagCacheEntry? Entry, string CustomTags)>)
+            typeof(PosterTagDataProvider).GetMethod("BuildAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(Native, [item])!).Entry);
 
         private void AddMemo(Guid id, string type, Guid owner)
         {
             var memoType = typeof(PosterTagDataProvider).GetNestedType("MemoEntry", BindingFlags.NonPublic)!;
-            Memo[id] = Activator.CreateInstance(memoType, new TagCacheEntry { Type = type, SeriesId = owner.ToString("N") }, DateTime.UtcNow)!;
+            Memo[id] = Activator.CreateInstance(memoType, new TagCacheEntry { Type = type, SeriesId = owner.ToString("N") }, DateTime.UtcNow, Cache.CustomTagMatchFingerprint)!;
         }
 
         internal async Task RefreshAsync(params BaseItem[] items)
