@@ -571,8 +571,9 @@
             .je-tag-dot[data-je-dot="range"] { background: #ef6c00; }
             .je-tag-dot[data-je-dot="audio"] { background: #2e7d32; }
             .je-tag-dot[data-je-dot="codec"] { background: #546e7a; }
+            /* The fitting pass lifts the stack clear of the dots on narrow cards. */
             ${SLOT}[data-je-slot="corner"] {
-                right: 6px; bottom: 6px;
+                right: 6px; bottom: calc(6px + var(--je-stack-lift, 0px));
                 max-width: calc(100% - 12px);
                 flex-direction: column-reverse;
                 align-items: flex-end;

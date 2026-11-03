@@ -207,6 +207,8 @@
      */
     const STACK_SLOTS = Object.assign(Object.create(null), { minimal: ['top', 'corner'], caption: ['poster'] });
     const STACK_INSET = 6;
+    /** Inline custom property: how far Minimal's corner stack rises above its corner to clear the quality dots. */
+    const STACK_LIFT = '--je-stack-lift';
     /** Cards narrower than this show bands with compact labels. */
     const NARROW_CARD_PX = 160;
 
@@ -2113,6 +2115,7 @@
      * @param {CardController} ctrl
      */
     function prepareFit(ctrl) {
+        ctrl.host.querySelector(':scope > .je-tag-slot[data-je-slot="corner"]')?.style.removeProperty(STACK_LIFT);
         for (const root of [ctrl.host, ctrl.outlet]) {
             root?.querySelectorAll('[data-je-overflow]').forEach((el) => el.removeAttribute('data-je-overflow'));
             // Restore the intrinsic markup before any measurements.
@@ -2147,6 +2150,8 @@
      *   (null: the stylesheet default).
      * @property {Array<{chip: HTMLElement, width: number}>} stacks - Stack chips wider than their slot,
      *   with the width their label is ellipsized to.
+     * @property {{slot: HTMLElement, lift: number}|null} lift - Minimal's corner stack and how far it
+     *   rises to clear the quality dots (0: it stays in its corner).
      */
 
     /**
@@ -2202,7 +2207,7 @@
      * @returns {FitPlan}
      */
     function measureFit(ctrl) {
-        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [], indicator: measureIndicatorGaps(ctrl), stacks: measureStacks(ctrl) };
+        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [], indicator: measureIndicatorGaps(ctrl), stacks: measureStacks(ctrl), lift: measureCornerLift(ctrl) };
         const slots = rowSlots(ctrl);
         const sides = new Map(slots.filter(el => ['ml', 'mr'].includes(el.dataset.jeSlot || ''))
             .map(el => [el.dataset.jeSlot, slotChips(el).map(chip => chip.getBoundingClientRect())]));
@@ -2319,6 +2324,29 @@
     }
 
     /**
+     * Minimal's quality dots sit bottom-left and its corner stack bottom-right;
+     * on a narrow card they meet. Then the stack rises until its bottom is a
+     * gap above the dots (reads only).
+     * @param {CardController} ctrl
+     * @returns {FitPlan['lift']}
+     */
+    function measureCornerLift(ctrl) {
+        if (ctrl.layout !== 'minimal') return null;
+        const slots = /** @type {HTMLElement[]} */ (Array.from(ctrl.host.children));
+        const corner = slots.find((el) => el.dataset.jeSlot === 'corner');
+        const dots = slots.find((el) => el.dataset.jeSlot === 'dots')?.getBoundingClientRect();
+        if (!corner) return null;
+        if (!dots?.width) return { slot: corner, lift: 0 };
+        const conf = resolveLayout(ctrl);
+        const gap = 4 * TAG_SCALES[conf.tagScale] * TAG_GAPS[conf.tagGap];
+        const meets = Array.from(corner.querySelectorAll(':scope > [data-je-group] > *')).some((chip) => {
+            const r = chip.getBoundingClientRect();
+            return r.width > 0 && r.left < dots.right + gap && r.top < dots.bottom && r.bottom > dots.top;
+        });
+        return { slot: corner, lift: meets ? Math.max(0, corner.getBoundingClientRect().bottom - dots.top + gap) : 0 };
+    }
+
+    /**
      * Where each exact top-right container of a legacy corners card right
      * below one that is not would sit without its indicator margin: right
      * below that container (the margin never moves the containers above it).
@@ -2407,6 +2435,7 @@
             chip.setAttribute('data-je-fit-width', '');
             chip.style.setProperty('--je-chip-fit-width', `${width}px`);
         }
+        if (plan.lift?.lift) plan.lift.slot.style.setProperty(STACK_LIFT, `${Math.round(plan.lift.lift * 100) / 100}px`);
         if (ctrl.layout === 'corners' && resolveLayout(ctrl).edge === 'flush') {
             for (const row of plan.rows) {
                 const slot = row.slot.dataset.jeSlot;
