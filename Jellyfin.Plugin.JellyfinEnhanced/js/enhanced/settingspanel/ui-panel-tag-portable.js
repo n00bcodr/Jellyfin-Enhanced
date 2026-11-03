@@ -551,7 +551,7 @@
                     <h5 class="je-mth-tp-group-title">${tx(titleKey)}${count ? ` <span class="je-mth-tp-count">${esc(count)}</span>` : ''}</h5>
                     ${items.length ? `<ul class="je-mth-tp-items">${items.map((p, i) => {
                         const text = presetText(p, source);
-                        return `<li class="je-mth-tp-item" data-tp-index="${i}">
+                        return `<li class="je-mth-tp-item" data-tp-index="${i}" data-tp-id="${esc(p.id ?? '')}">
                             <div class="je-mth-tp-text"><div class="je-mth-tp-name" data-je-label>${esc(text.name)}</div>${text.description ? `<div class="je-mth-tp-desc">${esc(text.description)}</div>` : ''}</div>
                             <div class="je-mth-tp-buttons">
                                 <button type="button" class="je-mth-button" data-tp="apply" aria-label="${tx('tag_presets_apply_named', { name: text.name })}">${tx('tag_presets_apply')}</button>
@@ -561,9 +561,21 @@
                         </li>`;
                     }).join('')}</ul>` : `<p class="je-mth-hint">${tx('tag_presets_none_yet')}</p>`}
                 </div>` : '';
+            // Redrawn after a save, a delete or a reload: keep keyboard focus on the same preset's button.
+            const active = /** @type {HTMLElement|null} */ (window.document.activeElement);
+            const keep = active && list.contains(active) && active.dataset.tp ? {
+                source: active.closest('[data-tp-source]')?.getAttribute('data-tp-source'),
+                id: active.closest('[data-tp-id]')?.getAttribute('data-tp-id'),
+                action: active.dataset.tp,
+            } : null;
             list.innerHTML = group('builtIn', 'tag_presets_builtin', presets.builtIn)
                 + group('offered', 'tag_presets_offered', presets.offered)
                 + group('mine', 'tag_presets_mine', presets.mine, JE.t('tag_looks_condition_count', { count: presets.mine.length, max: presets.max }));
+            if (keep) {
+                const again = Array.from(list.querySelectorAll(`[data-tp-source="${keep.source}"] [data-tp="${keep.action}"]`))
+                    .find((el) => el.closest('[data-tp-id]')?.getAttribute('data-tp-id') === keep.id);
+                /** @type {HTMLElement|null} */ (again || presetsCard.querySelector('[data-tp="save-preset"]:not([disabled])'))?.focus({ preventScroll: true });
+            }
             // A full list: saving or importing another is off until one is deleted.
             const full = presets.mine.length >= presets.max;
             for (const button of presetsCard.querySelectorAll('[data-tp="save-preset"], [data-tp="import-preset"]')) {
@@ -582,7 +594,9 @@
             } catch (err) {
                 if (!live()) return;
                 console.warn('🪼 Jellyfin Enhanced: could not load the Media Tags presets', err);
+                const hadFocus = list.contains(window.document.activeElement);
                 list.innerHTML = `<p class="je-mth-off">${tx('tag_presets_load_failed')}</p>`;
+                if (hadFocus) /** @type {HTMLElement|null} */ (presetsCard.querySelector('[data-tp="save-preset"]'))?.focus({ preventScroll: true });
             }
         };
 
@@ -879,8 +893,11 @@
             clearTimeout(undoTimer);
             const left = lastImport ? lastImport.until - Date.now() : 0;
             if (!lastImport || left <= 0 || !lastImport.isCurrent() || !live()) {
+                // Undo used or expired while it had focus: hand focus to Import beside it.
+                const hadFocus = undoBar.contains(window.document.activeElement);
                 undoBar.hidden = true;
                 undoBar.innerHTML = '';
+                if (hadFocus) /** @type {HTMLElement|null} */ (portableCard.querySelector('[data-tp="import"]'))?.focus({ preventScroll: true });
                 return;
             }
             undoBar.hidden = false;

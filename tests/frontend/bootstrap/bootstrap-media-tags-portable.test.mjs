@@ -920,3 +920,49 @@ test('a preset whose preview fails hides the loading line and offers Retry, whic
   assert.deepEqual(fieldsListed(h), ['Awards Tags Enabled']);
   assert.ok(h.action('apply'));
 });
+
+// ── Focus sweep: the presets list and the Undo bar ────────────────────
+
+test('the presets list redrawn when a preset saved from a closed dialog arrives keeps keyboard focus on the same preset\'s button', async t => {
+  const h = setup(t, { mine: [{ id: 'p1', name: 'Keep', description: '', settings: { TagLayout: 'bands' } }] });
+  await h.open();
+  const ajax = h.window.ApiClient.ajax;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  h.window.ApiClient.ajax = async (request) => {
+    if (request.type === 'POST' && new URL(request.url).pathname.endsWith('/media-tags/presets')) await gate;
+    return ajax(request);
+  };
+  h.click(h.$('[data-tp="import-preset"]'));
+  h.paste(JSON.stringify({ v: 1, kind: 'je-media-tags-preset', name: 'Shared', settings: { TagScale: 'larger' } }));
+  h.click(h.action('next'));
+  await h.settle(4);
+  // Closed while the preset is on its way; the keyboard user moves on to another preset.
+  h.dialog().querySelector('[data-pt-close]').click();
+  // Found by its name, not a hook the redraw adds.
+  const share = () => Array.from(h.document.querySelectorAll('[data-tp-source="mine"] .je-mth-tp-item'))
+    .find(li => li.querySelector('.je-mth-tp-name').textContent === 'Keep').querySelector('[data-tp="share"]');
+  const button = share();
+  button.focus();
+  release();
+  await h.settle(10);
+  assert.deepEqual(h.names('mine'), ['Keep', 'Shared']);
+  assert.equal(button.isConnected, false, 'the list was redrawn');
+  assert.equal(h.document.activeElement, share(), 'focus on the same preset\'s Share');
+});
+
+test('Undo used with the keyboard hands focus to Import while the panel opens again', async t => {
+  const h = setup(t);
+  await h.open();
+  await importAndApply(h, { TagLayout: 'bands' });
+  if (!h.$('#jeMediaTagsHub')) await h.open();
+  await h.settle(4);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const undo = h.$('[data-tp-undo] [data-tp="undo"]');
+  assert.ok(undo, 'Undo is offered');
+  undo.focus();
+  undo.click();
+  assert.equal(h.document.activeElement, h.$('[data-tp="import"]'), 'not dropped to the page');
+  await h.settle(12);
+  assert.equal(h.server.settings.TagLayout, 'corners');
+});
