@@ -97,6 +97,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemUpdated += OnItemChanged;
             _libraryManager.ItemRemoved += OnItemChanged;
             _tagCache.LogosWarmed += OnOwnerFactsChanged;
+            _tagCache.SourceRatingsWarmed += OnOwnerFactsChanged;
             _tagCache.ScenesRefreshed += OnOwnerFactsChanged;
             _tagCache.CollectNativeScenesChanges += CollectScenesChanges;
         }
@@ -174,6 +175,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager.ItemUpdated -= OnItemChanged;
             _libraryManager.ItemRemoved -= OnItemChanged;
             _tagCache.LogosWarmed -= OnOwnerFactsChanged;
+            _tagCache.SourceRatingsWarmed -= OnOwnerFactsChanged;
             _tagCache.ScenesRefreshed -= OnOwnerFactsChanged;
             _tagCache.CollectNativeScenesChanges -= CollectScenesChanges;
         }
@@ -304,7 +306,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
         }
 
-        // A background logo warm or changed Scenes projection: drop only these
+        // A background logo or MDBList score warm, or a changed Scenes projection: drop only these
         // owners and their seasons/episodes so the next request projects the new facts.
         private void OnOwnerFactsChanged(IReadOnlyCollection<Guid> owners)
         {

@@ -1233,6 +1233,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // _pending. Defer instead; the queued ids apply to the NEW cache
                 // once the lock is free. (Wait(0): never block the timer thread
                 // for the duration of a large-library build.)
+                // Warm the queued items' MDBList scores and logos once for the whole
+                // batch BEFORE taking the rebuild lock: network waits never hold it.
+                // (Skipped while a build owns the lock: the batch is deferred anyway.)
+                var warmed = new HashSet<Guid>();
+                if (ServerModeEnabled && !_cacheReleased && _rebuildLock.CurrentCount > 0)
+                {
+                    warmed.UnionWith(_pending.Updates());
+                    WarmForRebuild(warmed);
+                }
+
                 if (!_rebuildLock.Wait(0))
                 {
                     // Restart the cap clock while deferring: the cap exists to stop
@@ -1274,6 +1284,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                     Interlocked.Exchange(ref _firstPendingTicks, 0);
                     var batch = _pending.Drain();
+                    // Ids recorded since the warm above: one more bounded batch.
+                    WarmForRebuild(batch.Where(change => !change.Removed && !warmed.Contains(change.Id)).Select(change => change.Id));
                     using (BeginInPlaceWrites())
                     {
                         var customTagsBefore = CaptureCustomTagsBefore(batch);
@@ -1388,6 +1400,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>
         /// Resolve an id to its live library item and (re)build its cache entry.
         /// Returns true if the cache was modified. Runs on the flush worker only.
+        /// Network warms are the caller's, once per batch.
         /// <paramref name="episodeScans"/> is the caller's per-episode memo (see
         /// <see cref="BuildEntryForItem"/>), shared across one batch/reconcile.
         /// </summary>
@@ -1406,8 +1419,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // every cached sibling, including ones not otherwise in this batch.
             var siblingsChanged = item is MediaBrowser.Controller.Entities.TV.Season season
                 && RefreshStatusSiblings(season.Id, episodeScans);
-            WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
-            WarmLogosForItems(new[] { item }, CancellationToken.None);
+            // MDBList scores and logos were warmed for the whole batch by the caller
+            // (WarmForRebuild, or the full build/reconcile warms before their loops).
             QueueScenesRefresh(new[] { item });
             var entry = BuildEntryForItem(item, episodeScans);
             if (entry == null) return siblingsChanged;
@@ -2080,15 +2093,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// touching the cache (native poster tags when the cache is off or has no
         /// entry yet). Same derivation as the cache, including the Series/Season
         /// episode scan, so it can be expensive for containers: callers memoize.
-        /// Logos are read from stored lookups only: a poster request never waits
-        /// on TMDB, and what is missing is warmed in the background for a later
-        /// build (<see cref="QueueLogoWarm"/>). Null for non-taggable items or
+        /// Logos and MDBList scores are read from what is stored: a poster request
+        /// never waits on TMDB or MDBList, and what is missing is warmed in the
+        /// background for a later build (<see cref="QueueLogoWarm"/>,
+        /// <see cref="QueueSourceRatingWarm"/>). Null for non-taggable items or
         /// when the build fails.
         /// </summary>
         public TagCacheEntry? BuildEntryOnDemand(BaseItem item)
         {
             if (item == null || !TaggableTypes.Contains(item.GetBaseItemKind())) return null;
-            WarmSourceRatingsForItems(new[] { item }, CancellationToken.None);
+            QueueSourceRatingWarm(new[] { item });
             QueueLogoWarm(new[] { item });
             return BuildEntryForItem(item);
         }
@@ -2352,6 +2366,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var due = DueStatusContainers();
             if (due.Length == 0) return;
+            WarmForRebuild(due);
             using var writes = BeginInPlaceWrites();
             var memo = new EpisodeScanMemo { Pending = due.ToHashSet() };
             var changed = false;
@@ -2591,6 +2606,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (ServerModeEnabled && !_cacheReleased)
                 {
                     var batch = _pending.Drain();
+                    WarmForRebuild(batch.Where(change => !change.Removed).Select(change => change.Id));
                     using (BeginInPlaceWrites())
                     {
                         if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))

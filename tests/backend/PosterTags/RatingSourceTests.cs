@@ -423,6 +423,86 @@ public class RatingSourceTests
     }
 
     [Theory]
+    [InlineData(20, 1)]
+    [InlineData(160, 2)]
+    public void FlushWarmsTheChangedTitlesInBatchesOutsideTheRebuildLock(int titles, int expectedBatches)
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        TagCacheService? cache = null;
+        var batches = new List<int>();
+        var lockHeld = new List<bool>();
+        using var transport = new IntegrationTransport(async (request, _) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":1000}");
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            var ids = body.RootElement.GetProperty("ids").EnumerateArray().Select(v => v.GetInt64()).ToArray();
+            batches.Add(ids.Length);
+            var rebuildLock = (SemaphoreSlim)typeof(TagCacheService).GetField("_rebuildLock", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(cache)!;
+            lockHeld.Add(rebuildLock.CurrentCount == 0);
+            return IntegrationTransport.Response(JsonSerializer.Serialize(ids.Select(id => new { ids = new { tmdb = id }, ratings = new[] { new { source = "imdb", score = 81 } } })));
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var movies = Enumerable.Range(1, titles).Select(i => new Movie { Id = Guid.NewGuid(), Name = $"m{i}", ProviderIds = new() { ["Tmdb"] = (1000 + i).ToString() } }).ToArray();
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<Guid>());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<BaseItem>());
+        foreach (var movie in movies) library.Setup(l => l.GetItemById<BaseItem>(movie.Id)).Returns(movie);
+        cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        using (cache)
+        {
+            cache.BuildFullCache(null, default);
+            foreach (var movie in movies) cache.EnqueueUpdate(movie.Id);
+            typeof(TagCacheService).GetMethod("FlushPending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(cache, null);
+            Assert.Equal(expectedBatches, batches.Count);
+            Assert.Equal(titles, batches.Sum());
+            Assert.DoesNotContain(true, lockHeld);
+            Assert.All(movies, movie => Assert.Equal(8.1, Assert.IsType<TagCacheEntry>(cache.TryGetEntry(movie.Id, out var entry) ? entry : null).Ratings!.Imdb));
+        }
+    }
+
+    [Fact]
+    public async Task OnDemandBuildNeverWaitsForMdblistAndTheBackgroundWarmRetiresTheNativeMemo()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, _) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":1000}");
+            Interlocked.Increment(ref batches);
+            await gate.Task;
+            return IntegrationTransport.Response("[{\"ids\":{\"tmdb\":123},\"ratings\":[{\"source\":\"imdb\",\"score\":81}]}]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        using var cache = new TagCacheService(Mock.Of<ILibraryManager>(), f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        cache.RatingWarmDelay = TimeSpan.Zero;
+        var warmed = new List<Guid>();
+        cache.SourceRatingsWarmed += ids => { lock (warmed) warmed.AddRange(ids); };
+        using var native = new PosterTagDataProvider(cache, Mock.Of<ILibraryManager>(), null!, null!, null!, f.Core.Logger);
+        Task<TagCacheEntry?> Native() => (Task<TagCacheEntry?>)typeof(PosterTagDataProvider).GetMethod("GetOrBuildAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(native, [movie, CancellationToken.None])!;
+        var build = Native();
+        Assert.True(build.Wait(TimeSpan.FromSeconds(5)), "the native on-demand build does not wait for MDBList");
+        Assert.Null(build.Result!.Ratings);
+        // The same title asked again while queued is not queued twice.
+        cache.BuildEntryOnDemand(movie);
+        gate.SetResult();
+        await cache.RatingWarmQueue.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(1, batches);
+        Assert.Equal([movie.Id], warmed);
+        var after = await Native();
+        Assert.NotSame(build.Result, after);
+        Assert.Equal(8.1, after!.Ratings!.Imdb);
+        await cache.RatingWarmQueue.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(1, batches);
+    }
+
+    [Theory]
     [InlineData("reconcile", 399, 0)]
     [InlineData("update", 399, 0)]
     [InlineData("update", 400, 0)]

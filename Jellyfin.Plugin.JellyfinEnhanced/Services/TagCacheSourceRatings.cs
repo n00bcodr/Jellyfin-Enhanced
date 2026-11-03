@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
@@ -102,13 +104,117 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void WarmSourceRatingsForItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken)
         {
             if (_mdblistService == null || !HasSourceRatingDemand()) return;
-            var titles = items.Select(item => item is MediaBrowser.Controller.Entities.TV.Season or MediaBrowser.Controller.Entities.TV.Episode ? GetParentSeries(item) ?? item : item)
-                .Where(item => item is MediaBrowser.Controller.Entities.Movies.Movie or MediaBrowser.Controller.Entities.TV.Series)
-                .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie",
-                    Id: item.ProviderIds?.TryGetValue("Tmdb", out var id) == true ? id : null))
-                .Where(title => title.Id != null && title.Id.Length > 0 && title.Id.All(char.IsAsciiDigit))
+            var titles = items.Select(RatingOwner).OfType<BaseItem>()
+                .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", Id: RatingTmdbId(item)))
+                .Where(title => title.Id != null)
                 .Select(title => (title.MediaType, Id: title.Id!)).Distinct().ToArray();
             _mdblistService.WarmTagRatingsAsync(titles, cancellationToken, JellyfinEnhanced.Instance!.Configuration.MdblistFetchReserve).GetAwaiter().GetResult();
+        }
+
+        /// <summary>The movie or series whose MDBList scores an item shows (children use their series), or null.</summary>
+        private BaseItem? RatingOwner(BaseItem item)
+        {
+            var owner = item is MediaBrowser.Controller.Entities.TV.Season or MediaBrowser.Controller.Entities.TV.Episode ? GetParentSeries(item) ?? item : item;
+            return owner is MediaBrowser.Controller.Entities.Movies.Movie or MediaBrowser.Controller.Entities.TV.Series ? owner : null;
+        }
+
+        private static string? RatingTmdbId(BaseItem owner)
+            => owner.ProviderIds?.TryGetValue("Tmdb", out var id) == true && !string.IsNullOrEmpty(id) && id.All(char.IsAsciiDigit) ? id : null;
+
+        private readonly ConcurrentDictionary<Guid, BaseItem> _pendingRatingOwners = new();
+        private readonly object _ratingWarmLock = new();
+        private Task _ratingWarmQueue = Task.CompletedTask;
+        private int _ratingWarmQueued;
+
+        /// <summary>How long owners queued by on-demand builds gather before their background warm runs.</summary>
+        internal TimeSpan RatingWarmDelay { get; set; } = TimeSpan.FromSeconds(2);
+
+        /// <summary>The background rating warms queued so far (tests).</summary>
+        internal Task RatingWarmQueue
+        {
+            get
+            {
+                lock (_ratingWarmLock) return _ratingWarmQueue;
+            }
+        }
+
+        /// <summary>Raised after a background warm with the ids of the movies and series whose scores changed.</summary>
+        internal event Action<IReadOnlyCollection<Guid>>? SourceRatingsWarmed;
+
+        /// <summary>
+        /// On-demand builds (native posters): never wait on MDBList during the
+        /// request. Owners whose scores are due are queued, and one background
+        /// warm runs after <see cref="RatingWarmDelay"/> in MDBList's bounded
+        /// batches (same reserve and pacing); <see cref="SourceRatingsWarmed"/>
+        /// then lets the native memo rebuild the owners whose scores changed.
+        /// The poster meanwhile draws the scores already cached.
+        /// </summary>
+        public void QueueSourceRatingWarm(IEnumerable<BaseItem> items)
+        {
+            var service = _mdblistService;
+            if (service == null || _disposed || !HasSourceRatingDemand()) return;
+            foreach (var item in items)
+            {
+                var owner = RatingOwner(item);
+                var id = owner == null ? null : RatingTmdbId(owner);
+                if (owner == null || id == null || _pendingRatingOwners.ContainsKey(owner.Id)
+                    || !service.NeedsFetch(owner is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", id)) continue;
+                _pendingRatingOwners.TryAdd(owner.Id, owner);
+            }
+
+            if (_pendingRatingOwners.IsEmpty || Interlocked.Exchange(ref _ratingWarmQueued, 1) == 1) return;
+            lock (_ratingWarmLock)
+            {
+                _ratingWarmQueue = _ratingWarmQueue.ContinueWith(_ => RunQueuedRatingWarmAsync(), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+            }
+        }
+
+        private async Task RunQueuedRatingWarmAsync()
+        {
+            try
+            {
+                await Task.Delay(RatingWarmDelay).ConfigureAwait(false);
+                // Reset before taking the owners: one queued after this starts its own run.
+                Volatile.Write(ref _ratingWarmQueued, 0);
+                var owners = new List<BaseItem>();
+                foreach (var id in _pendingRatingOwners.Keys)
+                {
+                    if (_pendingRatingOwners.TryRemove(id, out var owner)) owners.Add(owner);
+                }
+
+                if (owners.Count == 0 || _disposed) return;
+                var before = owners.ToDictionary(owner => owner.Id, GetSourceRatings);
+                WarmSourceRatingsForItems(owners, CancellationToken.None);
+                var changed = owners.Where(owner => GetSourceRatings(owner) != before[owner.Id]).Select(owner => owner.Id).ToArray();
+                if (changed.Length > 0) SourceRatingsWarmed?.Invoke(changed);
+            }
+            catch (Exception ex)
+            {
+                _logger.Debug($"[MDBList] Background rating warm failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Warm one batch's MDBList scores and logos before its entries are
+        /// rebuilt (the monitor's flush, the shutdown flush, due Status
+        /// containers): one MDBList request per 150 titles and one bounded logo
+        /// wait for the whole batch, instead of a request and a wait per item.
+        /// </summary>
+        private void WarmForRebuild(IEnumerable<Guid> ids)
+        {
+            var items = ids.Select(id => _libraryManager.GetItemById<BaseItem>(id)).OfType<BaseItem>()
+                .Where(item => TaggableTypes.Contains(item.GetBaseItemKind()) && !IsInExcludedLibrary(item)).ToArray();
+            if (items.Length == 0) return;
+            try
+            {
+                WarmSourceRatingsForItems(items, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning($"[TagCache] Warming MDBList scores for {items.Length} changed items failed: {ex.Message}");
+            }
+
+            WarmLogosForItems(items, CancellationToken.None);
         }
 
         /// <summary>Reuse MDBList's bounded batches, seven-day TTL, pacing and quota reserve before a build.</summary>

@@ -34,6 +34,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         public bool IsEmpty => _pending.IsEmpty;
 
+        /// <summary>The ids currently pending as an add/update (a snapshot; nothing is removed).</summary>
+        public IReadOnlyList<Guid> Updates() => _pending.Where(pair => !pair.Value).Select(pair => pair.Key).ToList();
+
         public int Count => _pending.Count;
 
         /// <summary>
