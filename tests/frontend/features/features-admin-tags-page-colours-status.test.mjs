@@ -82,6 +82,43 @@ test('Status badges › Leaving soon: source fields save, the key is a password 
   assert.equal(h.$('[data-leaving-state]').textContent, 'admin_tags_leaving_state_off:');
 });
 
+test('Status badges › Leaving soon: Refresh asks nothing while the source edit is refused, and works once it is settled', async t => {
+  const status = { Configured: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
+  const h = setup(t, { config: { LeavingSoonCollections: 'Original' }, routes: { '/admin/leaving-soon': () => status } });
+  await h.settle(); await h.settle(); await h.settle();
+  const refreshes = () => h.posts.filter((p) => p.endsWith('/admin/leaving-soon/refresh'));
+  // Another administrator saved the source meanwhile.
+  h.change(h.$('#leavingSoonCollections'), 'Draft');
+  h.server.LeavingSoonCollections = 'Remote';
+  h.$('#leavingSoonRefreshBtn').click();
+  for (let n = 0; n < 10; n++) await h.settle();
+  assert.equal(h.A.pendingState().state, 'conflict');
+  assert.deepEqual(refreshes(), [], 'the stored source was not refreshed');
+  assert.equal(h.$('.je-ta-snack')?.textContent, 'admin_tags_leaving_refresh_unsaved');
+  assert.equal(h.$('#leavingSoonRefreshBtn').disabled, false, 'the button stays usable for a retry');
+  // Keep mine saves the draft; Refresh then asks the server.
+  h.$('#jeTaSaved [data-je-keep]').click();
+  await h.save();
+  assert.equal(h.server.LeavingSoonCollections, 'Draft');
+  h.$('#leavingSoonRefreshBtn').click();
+  for (let n = 0; n < 10; n++) await h.settle();
+  assert.equal(refreshes().length, 1);
+  assert.equal(h.$('.je-ta-snack')?.textContent, 'admin_tags_leaving_refresh_done');
+});
+
+test('Status badges › Leaving soon: Refresh asks nothing when saving the source edit fails', async t => {
+  const status = { Configured: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
+  const h = setup(t, { config: { LeavingSoonCollections: 'Original' }, routes: { '/admin/leaving-soon': () => status }, patch: () => { throw { status: 500 }; } });
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  await h.settle(); await h.settle(); await h.settle();
+  h.change(h.$('#leavingSoonCollections'), 'Draft');
+  h.$('#leavingSoonRefreshBtn').click();
+  for (let n = 0; n < 10; n++) await h.settle();
+  assert.equal(h.A.pendingState().state, 'error');
+  assert.deepEqual(h.posts.filter((p) => p.includes('leaving-soon')), []);
+  assert.equal(h.$('.je-ta-snack')?.textContent, 'admin_tags_leaving_refresh_unsaved');
+  assert.equal(h.$('#leavingSoonRefreshBtn').disabled, false);
+});
 
 test('the preview draws the saved server Tag Styles, scoped to it, whatever this browser\'s own styles are', async t => {
   const server = structuredClone({ ...BASE, TagStylesEnabled: true, TagStylePreset: 'default' });

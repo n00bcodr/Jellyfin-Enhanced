@@ -38,6 +38,8 @@ function setup(t, { config = {}, confirm = true, adminPreview, userPreview } = {
   const requests = [];
   const copies = [];
   const confirms = [];
+  // failSave: the next field saves fail (an error other than a conflict).
+  const flags = { failSave: false };
   const h = createHarness({
     html: '<div id="jeTaRoot"></div>',
     url: 'http://jellyfin.test/web/index.html#/configurationpage?name=JellyfinEnhancedMediaTags&tab=server',
@@ -52,6 +54,7 @@ function setup(t, { config = {}, confirm = true, adminPreview, userPreview } = {
         requests.push({ type: request.type, path, body });
         if (path.endsWith('/admin/configuration')) {
           patches.push(structuredClone(body));
+          if (flags.failSave) throw { status: 500 };
           const conflicts = {};
           for (const [key, before] of Object.entries(body.Expected || {})) if (!same(server[key], before) && !same(server[key], body.Changes[key])) conflicts[key] = server[key];
           if (Object.keys(conflicts).length) throw { status: 409, json: async () => ({ conflicts }) };
@@ -99,7 +102,7 @@ function setup(t, { config = {}, confirm = true, adminPreview, userPreview } = {
   const dialog = () => root.querySelector('.je-pt-dialog');
   const action = (name) => dialog()?.querySelector(`[data-pt-action="${name}"]`);
   const paste = (text) => { dialog().querySelector('[data-pt-paste]').value = text; };
-  return { ...h, A, ctx, root, server, patches, requests, copies, confirms, settle, $, click, dialog, action, paste, status: () => dialog()?.querySelector('.je-pt-status').textContent };
+  return { ...h, A, ctx, root, server, flags, patches, requests, copies, confirms, settle, $, click, dialog, action, paste, status: () => dialog()?.querySelector('.je-pt-status').textContent };
 }
 
 test('the Server tab has the import and export block and the offered presets, declared as a page field', async t => {
@@ -127,6 +130,42 @@ test('export saves pending edits first and shows the server document, without se
   h.click(h.action('copy'));
   await h.settle();
   assert.equal(JSON.parse(h.copies[0]).kind, 'je-media-tags-admin');
+});
+
+test('export refuses while a pending edit is refused by a conflict, and exports it once settled', async t => {
+  const h = setup(t);
+  h.ctx.set('TagLayout', 'bands');
+  h.server.TagLayout = 'minimal'; // another administrator saved the layout meanwhile
+  h.click(h.$('#jeTaExport'));
+  await h.settle(10);
+  assert.equal(h.A.pendingState().state, 'conflict');
+  assert.ok(!h.requests.some((r) => r.path.endsWith('/admin/media-tags/export')), 'the stored settings were not read');
+  assert.equal(h.dialog().querySelector('textarea'), null, 'no document is offered');
+  assert.equal(h.action('download'), null);
+  assert.equal(h.status(), 'admin_tags_portable_export_unsaved');
+  // Keep mine, then export again: the document has this page's value.
+  h.click(h.$('#jeTaSaved [data-je-keep]'));
+  await h.ctx.flush();
+  h.click(h.$('#jeTaExport'));
+  await h.settle(10);
+  assert.equal(JSON.parse(h.dialog().querySelector('textarea').value).settings.TagLayout, 'bands');
+});
+
+test('export refuses while a pending edit failed to save, and exports after a successful retry', async t => {
+  const h = setup(t);
+  h.expectConsoleError(/could not save the Media Tags settings/);
+  h.flags.failSave = true;
+  h.ctx.set('TagsHideOnHover', true);
+  h.click(h.$('#jeTaExport'));
+  await h.settle(10);
+  assert.equal(h.A.pendingState().state, 'error');
+  assert.ok(!h.requests.some((r) => r.path.endsWith('/admin/media-tags/export')));
+  assert.equal(h.action('download'), null);
+  assert.equal(h.status(), 'admin_tags_portable_export_unsaved');
+  h.flags.failSave = false;
+  h.click(h.$('#jeTaExport'));
+  await h.settle(10);
+  assert.equal(JSON.parse(h.dialog().querySelector('textarea').value).settings.TagsHideOnHover, true);
 });
 
 test('import previews, confirms and writes the changed fields through the locked patch with the values read; Undo restores them', async t => {

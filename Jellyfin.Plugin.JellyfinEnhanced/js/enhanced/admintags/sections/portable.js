@@ -100,8 +100,15 @@
                 d.focusFirst();
                 let document;
                 try {
-                    // Edits not saved yet belong in the export.
-                    await ctx.flush();
+                    // Edits not saved yet belong in the export: a save that failed or is
+                    // refused (Keep mine / Take theirs) would export the stored settings
+                    // instead of the ones this page shows.
+                    const saved = await ctx.flush();
+                    if (!ctx.isCurrent() || d.closed()) return;
+                    if (!saved) {
+                        d.status(JE.t('admin_tags_portable_export_unsaved'), 'error');
+                        return;
+                    }
                     document = await request('GET', 'admin/media-tags/export');
                 } catch (err) {
                     if (!ctx.isCurrent() || d.closed()) return;

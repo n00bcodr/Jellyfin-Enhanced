@@ -74,8 +74,14 @@
         const button = /** @type {HTMLButtonElement|null} */ (ctx.root?.querySelector?.('#leavingSoonRefreshBtn'));
         if (button) button.disabled = true;
         try {
-            if (refresh) await ctx.flush();
+            // The refresh reads the stored source: refuse while this page's edits to it
+            // are not saved (a failed save, or a conflict waiting for Keep mine / Take theirs).
+            const saved = refresh ? await ctx.flush() : true;
             if (!ctx.isCurrent()) return;
+            if (!saved) {
+                ctx.snack(JE.t('admin_tags_leaving_refresh_unsaved'));
+                return;
+            }
             const answer = await ApiClient.ajax({
                 type: refresh ? 'POST' : 'GET',
                 url: ApiClient.getUrl(refresh ? 'JellyfinEnhanced/admin/leaving-soon/refresh' : 'JellyfinEnhanced/admin/leaving-soon'),
