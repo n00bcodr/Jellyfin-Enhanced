@@ -2156,18 +2156,20 @@
 
     /**
      * The height a wrapping slot has for its chip rows, or null when it is not
-     * limited (reads only). Only a slot with a max-height is: the hover reveal,
+     * limited (reads only). A slot with a max-height is: the hover reveal,
      * held to the bottom 40% of the card. Its rows must fit inside that height
      * less its padding; on a card too short for even one row that way (a small
      * landscape thumbnail), one row may sit in the top padding, which is only
-     * the scrim's fade-in, while it still fits above the bottom padding.
+     * the scrim's fade-in, while it still fits above the bottom padding. So is
+     * the bottom band (bandRoom).
      * @param {CardController} ctrl
      * @param {CSSStyleDeclaration} style - The slot's computed style.
+     * @param {HTMLElement} slotEl
      * @returns {{inside: number, oneRow: number, gap: number}|null}
      */
-    function rowRoom(ctrl, style) {
+    function rowRoom(ctrl, style, slotEl) {
         const raw = style.maxHeight;
-        if (!raw || raw === 'none') return null;
+        if (!raw || raw === 'none') return ctrl.layout === 'bands' && slotEl.dataset.jeSlot === 'bottom' ? bandRoom(ctrl, style) : null;
         let limit = parseFloat(raw);
         if (raw.endsWith('%')) {
             // The slot is positioned in the host, which covers the image.
@@ -2179,6 +2181,25 @@
         const padTop = parseFloat(style.paddingTop) || 0;
         const padBottom = parseFloat(style.paddingBottom) || 0;
         return { inside: limit - padTop - padBottom, oneRow: limit - padBottom, gap: parseFloat(style.rowGap) || 0 };
+    }
+
+    /**
+     * The bottom band's rows end a gap below the top band's lowest chip; on a
+     * short image (an episode still at a larger tag size) that is less than its
+     * two rows. Its top padding is only the scrim's fade and may run under the
+     * top band. Null when the top band is empty (reads only).
+     * @param {CardController} ctrl
+     * @param {CSSStyleDeclaration} style - The bottom band's computed style.
+     * @returns {{inside: number, oneRow: number, gap: number}|null}
+     */
+    function bandRoom(ctrl, style) {
+        const top = ctrl.host.querySelector(':scope > .je-tag-slot[data-je-slot="top"]');
+        const bottoms = Array.from(top?.querySelectorAll(':scope > [data-je-group] > *') || [])
+            .map((chip) => chip.getBoundingClientRect()).filter((r) => r.height > 0).map((r) => r.bottom);
+        if (!bottoms.length) return null;
+        const gap = parseFloat(style.rowGap) || 0;
+        const inside = ctrl.host.getBoundingClientRect().bottom - (parseFloat(style.paddingBottom) || 0) - Math.max(...bottoms) - gap;
+        return { inside, oneRow: inside, gap };
     }
 
     /**
@@ -2279,7 +2300,7 @@
                     more: moreFits && limit >= moreRect.height && available >= moreRect.width });
                 continue;
             }
-            const room = rowRoom(ctrl, style);
+            const room = rowRoom(ctrl, style, slotEl);
             if (!room) {
                 plan.rows.push({ slot: slotEl, chips, shown: chipsThatFit(widths, available, gap, FIT_MAX_ROWS, moreRect.width), more: true });
                 continue;
