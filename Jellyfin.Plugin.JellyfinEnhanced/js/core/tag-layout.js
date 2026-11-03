@@ -2179,8 +2179,9 @@
      *   (null: the stylesheet default).
      * @property {Array<{chip: HTMLElement, width: number}>} stacks - Stack chips wider than their slot,
      *   with the width their label is ellipsized to.
-     * @property {{slot: HTMLElement, lift: number}|null} lift - Minimal's corner stack and how far it
-     *   rises to clear the quality dots (0: it stays in its corner).
+     * @property {{slot: HTMLElement, lift: number, hidden: HTMLElement[]}|null} lift - Minimal's corner
+     *   stack, how far it rises to clear the quality dots (0: it stays in its corner) and its chips
+     *   left for the hover reveal (no room inside the image).
      */
 
     /**
@@ -2407,7 +2408,11 @@
     /**
      * Minimal's quality dots sit bottom-left and its corner stack bottom-right;
      * on a narrow card they meet. Then the stack rises until its bottom is a
-     * gap above the dots (reads only).
+     * gap above the dots. On a short image (an episode still) a tall stack,
+     * several rating sources, has no room for every chip: from the bottom (its
+     * first, highest-priority chip) up it keeps the chips that stay inside the
+     * image and a gap below the top stack's chips they would meet; the rest
+     * appear in the hover reveal (reads only).
      * @param {CardController} ctrl
      * @returns {FitPlan['lift']}
      */
@@ -2415,16 +2420,26 @@
         if (ctrl.layout !== 'minimal') return null;
         const slots = /** @type {HTMLElement[]} */ (Array.from(ctrl.host.children));
         const corner = slots.find((el) => el.dataset.jeSlot === 'corner');
-        const dots = slots.find((el) => el.dataset.jeSlot === 'dots')?.getBoundingClientRect();
         if (!corner) return null;
-        if (!dots?.width) return { slot: corner, lift: 0 };
+        const dots = slots.find((el) => el.dataset.jeSlot === 'dots')?.getBoundingClientRect();
+        const chipRects = (slot) => Array.from(slot?.querySelectorAll(':scope > [data-je-group] > *') || [])
+            .map((chip) => ({ chip: /** @type {HTMLElement} */ (chip), r: chip.getBoundingClientRect() })).filter(({ r }) => r.width > 0);
+        const chips = chipRects(corner);
         const conf = resolveLayout(ctrl);
         const gap = 4 * TAG_SCALES[conf.tagScale] * TAG_GAPS[conf.tagGap];
-        const meets = Array.from(corner.querySelectorAll(':scope > [data-je-group] > *')).some((chip) => {
-            const r = chip.getBoundingClientRect();
-            return r.width > 0 && r.left < dots.right + gap && r.top < dots.bottom && r.bottom > dots.top;
-        });
-        return { slot: corner, lift: meets ? Math.max(0, corner.getBoundingClientRect().bottom - dots.top + gap) : 0 };
+        const meets = !!dots?.width && chips.some(({ r }) => r.left < dots.right + gap && r.top < dots.bottom && r.bottom > dots.top);
+        const lift = meets ? Math.max(0, corner.getBoundingClientRect().bottom - dots.top + gap) : 0;
+        const host = ctrl.host.getBoundingClientRect();
+        if (!(ctrl.host.clientHeight > 0)) return { slot: corner, lift, hidden: [] };
+        const ceiling = host.top + STACK_INSET;
+        const above = chipRects(slots.find((el) => el.dataset.jeSlot === 'top')).map(({ r }) => r);
+        const hidden = [];
+        for (const { chip, r } of chips.sort((a, b) => b.r.bottom - a.r.bottom)) {
+            const top = r.top - lift;
+            if (hidden.length || top < ceiling - 0.01
+                || above.some((t) => r.left < t.right && r.right > t.left && top < t.bottom + gap - 0.01)) hidden.push(chip);
+        }
+        return { slot: corner, lift, hidden };
     }
 
     /**
@@ -2517,6 +2532,13 @@
             chip.style.setProperty('--je-chip-fit-width', `${width}px`);
         }
         if (plan.lift?.lift) plan.lift.slot.style.setProperty(STACK_LIFT, `${Math.round(plan.lift.lift * 100) / 100}px`);
+        if (plan.lift?.hidden.length) {
+            for (const chip of plan.lift.hidden) chip.setAttribute('data-je-overflow', '');
+            // A group left without chips takes no gap in the stack either.
+            for (const group of plan.lift.slot.children) {
+                if (Array.from(group.children).every((chip) => chip.hasAttribute('data-je-overflow'))) group.setAttribute('data-je-overflow', '');
+            }
+        }
         if (ctrl.layout === 'corners' && resolveLayout(ctrl).edge === 'flush') {
             for (const row of plan.rows) {
                 const slot = row.slot.dataset.jeSlot;
