@@ -1752,6 +1752,17 @@
     }
 
     /**
+     * Caption's poster stack, which also holds the caption groups on cards with
+     * no title block (list rows): fitted to the image's height with a "+N".
+     * @param {CardController} ctrl
+     * @returns {HTMLElement[]}
+     */
+    function posterStack(ctrl) {
+        const slot = ctrl.layout === 'caption' ? ctrl.host.querySelector(':scope > .je-tag-slot[data-je-slot="poster"]') : null;
+        return slot ? [/** @type {HTMLElement} */ (slot)] : [];
+    }
+
+    /**
      * The chips of a wrapping slot in display order (its groups flow as one
      * row of chips, in priority order).
      * @param {HTMLElement} slotEl
@@ -2126,7 +2137,7 @@
             });
         }
         const languages = cornerLanguageGroups(ctrl);
-        for (const slotEl of [...rowSlots(ctrl), ...languages]) {
+        for (const slotEl of [...rowSlots(ctrl), ...languages, ...posterStack(ctrl)]) {
             const count = languages.includes(slotEl) ? Array.from(slotEl.children).filter(el => !el.classList.contains('je-tag-more')).length : slotChips(slotEl).length;
             let more = moreChipOf(slotEl) || slotEl.querySelector(':scope > .je-tag-more');
             if (count === 0) { more?.remove(); continue; }
@@ -2235,7 +2246,7 @@
      * @returns {FitPlan}
      */
     function measureFit(ctrl) {
-        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [], indicator: measureIndicatorGaps(ctrl), stacks: measureStacks(ctrl), lift: measureCornerLift(ctrl) };
+        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: measurePosterStack(ctrl), indicator: measureIndicatorGaps(ctrl), stacks: measureStacks(ctrl), lift: measureCornerLift(ctrl) };
         const slots = rowSlots(ctrl);
         const sides = new Map(slots.filter(el => ['ml', 'mr'].includes(el.dataset.jeSlot || ''))
             .map(el => [el.dataset.jeSlot, slotChips(el).map(chip => chip.getBoundingClientRect())]));
@@ -2326,6 +2337,27 @@
                 : { slot: slotEl, chips, shown: chips.map(() => false), more: false });
         }
         return plan;
+    }
+
+    /**
+     * Caption's poster stack keeps the chips, in order, whose bottom stays the
+     * stack's inset above the image's bottom; once one does not, it and every
+     * later chip are left out and the "+N" chip (already last in the column)
+     * takes the space below the shown ones (reads only).
+     * @param {CardController} ctrl
+     * @returns {FitPlan['rows']}
+     */
+    function measurePosterStack(ctrl) {
+        const slot = posterStack(ctrl)[0];
+        const more = slot && moreChipOf(slot);
+        if (!more) return [];
+        const chips = slotChips(slot);
+        const bottoms = chips.map((chip) => chip.getBoundingClientRect().bottom);
+        const limit = ctrl.host.getBoundingClientRect().bottom - STACK_INSET;
+        if (bottoms.every((bottom) => bottom <= limit + 0.01)) return [{ slot, chips, shown: chips.map(() => true), more: true }];
+        const room = limit - more.getBoundingClientRect().height - (parseFloat(getComputedStyle(slot).rowGap) || 0);
+        let fits = true;
+        return [{ slot, chips, shown: bottoms.map((bottom) => (fits = fits && bottom <= room + 0.01)), more: true }];
     }
 
     /**
@@ -2487,6 +2519,13 @@
         }
         const names = applyChipRows(plan.rows);
         describeHidden(ctrl, names);
+        // A poster-stack group left with no chip takes no gap in the column either.
+        for (const slot of posterStack(ctrl)) {
+            for (const group of slot.children) {
+                const chips = Array.from(group.children);
+                if (/** @type {HTMLElement} */ (group).dataset.jeGroup && chips.length && chips.every((chip) => chip.hasAttribute('data-je-overflow'))) group.setAttribute('data-je-overflow', '');
+            }
+        }
         for (const { el, before } of plan.indicator) {
             const value = before === null ? '' : `${Math.round(before * 100) / 100}px`;
             if (el.style.getPropertyValue(INDICATOR_BEFORE) === value) continue;
