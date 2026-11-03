@@ -499,15 +499,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var (preferred, usesJellyfin) = ResolvePreferredAudioLanguage(preferredChoice, config, jellyfinAudioLanguagePreference);
             var useNative = user.UseNativePosterTags != false;
             var layout = ResolveLayout(user, config);
+            // Compact density applies where native draws the layout itself: Caption,
+            // Summary and Minimal fall back to Corners with Full labels.
+            var compactLabels = !TagLayoutRules.IsLegacy(user)
+                && TagLayoutRules.NormalizeLayout(user.TagLayout) is "corners" or "bands"
+                && user.TagLabelDensity == "compact";
 
             var settings = new PosterTagSettings
             {
                 UseNativePosterTags = useNative,
                 Bands = layout.Bands,
                 CompactBands = layout.Bands && user.TagLabelDensity == "compact",
-                CompactLabels = !TagLayoutRules.IsLegacy(user)
-                    && TagLayoutRules.NormalizeLayout(user.TagLayout) is "corners" or "bands"
-                    && user.TagLabelDensity == "compact",
+                CompactLabels = compactLabels,
                 LegacyAudioFacts = legacyAudioFacts ?? TagLayoutRules.IsLegacy(user),
                 StatusTagsEnabled = user.StatusTagsEnabled,
                 StatusTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Status) ?? Position(user.StatusTagsPosition, config.StatusTagsPosition, "top-right"),
@@ -604,7 +607,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 RatingTagsSources = RatingSourceSettings.NormalizeSources(user.RatingTagsSources),
                 RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(user.RatingTagsMinScore),
                 RatingTagsColorByScore = user.RatingTagsColorByScore,
-                RatingTagsCompact = user.TagLabelDensity == "compact",
+                // Named-source dots follow the same effective density as the other labels.
+                RatingTagsCompact = compactLabels,
                 LanguagePriorityTerms = LanguageTagPriority.TryNormalize(user.LanguageTagsPriority, out var personalPriority) && personalPriority is not null
                     ? personalPriority : LanguageFlagRules.ParsePriorityTerms(config.LanguageTagsPriority),
                 LanguagePriorityIsPersonal = personalPriority is not null,

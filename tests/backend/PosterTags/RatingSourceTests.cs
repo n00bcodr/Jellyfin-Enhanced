@@ -423,6 +423,40 @@ public class RatingSourceTests
     }
 
     [Theory]
+    [InlineData("corners", true)]
+    [InlineData("bands", true)]
+    [InlineData("caption", false)]
+    [InlineData("summary", false)]
+    [InlineData("minimal", false)]
+    public void NamedSourceDotsFollowTheEffectiveNativeDensity(string layout, bool compact)
+    {
+        using var f = new ApiPluginFixture();
+        var settings = PosterTagSettings.FromSettingsJson("{ratingTagsEnabled:true,tagLayoutSettingsVersion:1,tagLayout:'" + layout + "',tagLabelDensity:'compact',ratingTagsSources:['imdb','community']}", f.Plugin.Configuration);
+        Assert.Equal(compact, settings.CompactLabels);
+        Assert.Equal(compact, settings.RatingTagsCompact);
+        var plan = PosterTagResolver.Resolve(new TagCacheEntry { Type = "Movie", CommunityRating = 7.4f, Ratings = new TagSourceRatings { Imdb = 8.1 } }, settings, new("Movie", false, null, null, null), false);
+        var tags = plan!.Groups.SelectMany(g => g.Tags).OfType<RatingTag>().ToArray();
+        Assert.Equal(compact, tags.Single(t => t.Source == PosterRatingSource.Imdb).Compact);
+        // Values and the community score are untouched by density.
+        Assert.False(tags.Single(t => t.Source == PosterRatingSource.Community).Compact);
+        Assert.Equal(tags.Select(t => t.Text), PosterTagResolver.Resolve(new TagCacheEntry { Type = "Movie", CommunityRating = 7.4f, Ratings = new TagSourceRatings { Imdb = 8.1 } },
+            PosterTagSettings.FromSettingsJson("{ratingTagsEnabled:true,tagLayoutSettingsVersion:1,tagLayout:'" + layout + "',tagLabelDensity:'full',ratingTagsSources:['imdb','community']}", f.Plugin.Configuration),
+            new("Movie", false, null, null, null), false)!.Groups.SelectMany(g => g.Tags).OfType<RatingTag>().Select(t => t.Text));
+    }
+
+    [Fact]
+    public void AnItemLookFallingBackToCornersDrawsFullSourceIconsAndOneInCompactCornersDrawsDots()
+    {
+        using var f = new ApiPluginFixture();
+        const string Movie = "0123456789abcdef0123456789abcdef", Other = "fedcba9876543210fedcba9876543210";
+        var settings = PosterTagSettings.FromSettingsJson("{ratingTagsEnabled:true,tagLayoutSettingsVersion:1,tagLayout:'corners',tagLabelDensity:'compact',ratingTagsSources:['imdb'],"
+            + $"tagLayoutLocks:{{'{Movie}':{{layout:'caption',density:'compact',lockedAt:1}},'{Other}':{{layout:'bands',density:'compact',lockedAt:1}}}}}}", f.Plugin.Configuration);
+        Assert.True(settings.RatingTagsCompact);
+        Assert.False(settings.ForItem(Movie, null).RatingTagsCompact);
+        Assert.True(settings.ForItem(Other, null).RatingTagsCompact);
+    }
+
+    [Theory]
     [InlineData(20, 1)]
     [InlineData(160, 2)]
     public void FlushWarmsTheChangedTitlesInBatchesOutsideTheRebuildLock(int titles, int expectedBatches)
