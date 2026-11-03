@@ -879,3 +879,44 @@ test('export Retry while the save is still on its way keeps focus on Retry; anot
   await h.settle(12);
   assert.equal(h.document.activeElement, h.action('download'), 'Download takes focus once exported');
 });
+
+// ── No "Loading" beside an error, and Retry, on every failure (opus R5 7) ──
+
+/** The dialog's loading line is shown (by its text, not only its hook). */
+const loadingShown = (h) => Array.from(h.dialog().querySelectorAll('.je-pt-hint'))
+  .some(el => el.textContent === 'hidden_content_admin_loading' && !el.closest('[hidden]'));
+
+test('export whose read fails hides the loading line and offers Retry, which exports', async t => {
+  const h = setup(t);
+  await h.open();
+  let reject;
+  h.flags.exportGate = new Promise((resolve, no) => { reject = no; });
+  h.click(h.$('[data-tp="export"]'));
+  await h.settle(8);
+  assert.equal(loadingShown(h), true, 'loading while the read is on its way');
+  reject({ status: 500 });
+  await h.settle(8);
+  assert.equal(h.status(), 'tag_portable_export_failed');
+  assert.equal(loadingShown(h), false, 'no "Loading" beside the error');
+  assert.equal(h.document.activeElement, h.action('retry'), 'Retry in the same dialog');
+  h.flags.exportGate = null;
+  h.click(h.action('retry'));
+  await h.settle(12);
+  assert.equal(JSON.parse(h.dialog().querySelector('textarea').value).settings.TagLayout, 'corners');
+});
+
+test('a preset whose preview fails hides the loading line and offers Retry, which previews', async t => {
+  let refuse = true;
+  const h = setup(t, { preview: (doc) => (refuse ? { error: 'settings' } : { kind: doc.kind, v: 1, name: doc.name, imported: doc.settings, changes: [{ field: 'AwardsTagsEnabled', from: false, to: true }], skipped: [] }) });
+  await h.open();
+  h.click(h.$('[data-tp-source="builtIn"] [data-tp="apply"]'));
+  await h.settle(12);
+  assert.equal(h.status(), 'tag_portable_error_settings');
+  assert.equal(loadingShown(h), false, 'no "Loading" beside the error');
+  assert.equal(h.document.activeElement, h.action('retry'));
+  refuse = false;
+  h.click(h.action('retry'));
+  await h.settle(12);
+  assert.deepEqual(fieldsListed(h), ['Awards Tags Enabled']);
+  assert.ok(h.action('apply'));
+});

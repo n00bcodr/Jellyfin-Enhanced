@@ -434,3 +434,64 @@ test('offer my settings uses the administrator\'s own export, and settings the s
   await h.settle(8);
   assert.deepEqual(JSON.parse(h.server.TagOfferedPresets)[0].settings, { TagLayout: 'bands' });
 });
+
+// ── No "Loading" beside an error, and Retry, on every failure (opus R5 7) ──
+
+/** The dialog's loading line is shown (by its text, not only its hook). */
+const loadingShown = (h) => Array.from(h.dialog().querySelectorAll('.je-pt-hint'))
+  .some((el) => el.textContent === 'hidden_content_admin_loading' && !el.closest('[hidden]'));
+
+test('offer my settings: a failed read of my settings hides the loading line and Retry reads them again', async t => {
+  const h = setup(t);
+  await h.settle(8);
+  const ajax = h.window.ApiClient.ajax;
+  let refuse = true;
+  h.window.ApiClient.ajax = async (request) => {
+    if (refuse && new URL(request.url).pathname.endsWith('/user-settings/user-a/media-tags/export')) throw { status: 500 };
+    return ajax(request);
+  };
+  h.click(h.$('#jeTaOfferMine'));
+  await h.settle(10);
+  assert.equal(h.status(), 'tag_portable_export_failed');
+  assert.equal(loadingShown(h), false, 'no "Loading" beside the error');
+  assert.equal(h.document.activeElement, h.action('retry'), 'Retry in the same dialog');
+  refuse = false;
+  h.click(h.action('retry'));
+  await h.settle(10);
+  assert.ok(h.dialog().querySelector('#jeTaOfferName'), 'the name step');
+});
+
+test('offer my settings: a refused check hides the loading line and offers Retry', async t => {
+  let refuse = true;
+  const h = setup(t, { userPreview: (doc) => { if (refuse) throw { status: 500 }; return { kind: doc.kind, v: 1, imported: { TagLayout: 'bands' }, changes: [], skipped: [] }; } });
+  await h.settle(8);
+  h.click(h.$('#jeTaOfferMine'));
+  await h.settle(10);
+  assert.notEqual(h.status(), '');
+  assert.equal(loadingShown(h), false);
+  assert.equal(h.document.activeElement, h.action('retry'));
+  refuse = false;
+  h.click(h.action('retry'));
+  await h.settle(10);
+  assert.ok(h.dialog().querySelector('#jeTaOfferName'));
+});
+
+test('export: a failed read offers Retry in the same dialog, which exports', async t => {
+  const h = setup(t);
+  await h.settle(8);
+  const ajax = h.window.ApiClient.ajax;
+  let refuse = true;
+  h.window.ApiClient.ajax = async (request) => {
+    if (refuse && new URL(request.url).pathname.endsWith('/admin/media-tags/export')) throw { status: 500 };
+    return ajax(request);
+  };
+  h.click(h.$('#jeTaExport'));
+  await h.settle(10);
+  assert.equal(h.status(), 'tag_portable_export_failed');
+  assert.equal(loadingShown(h), false);
+  assert.equal(h.document.activeElement, h.action('retry'));
+  refuse = false;
+  h.click(h.action('retry'));
+  await h.settle(10);
+  assert.equal(JSON.parse(h.dialog().querySelector('textarea').value).kind, 'je-media-tags-admin');
+});

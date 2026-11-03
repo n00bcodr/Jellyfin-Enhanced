@@ -686,8 +686,9 @@
                 } catch (err) {
                     if (!live() || !current() || d.closed()) return;
                     console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
+                    showLoading(d, false);
                     d.status(JE.t('tag_portable_export_failed'), 'error');
-                    d.foot.querySelector('[data-pt-action="retry"]')?.removeAttribute('aria-disabled');
+                    offerRetry();
                     return;
                 }
                 if (!live() || !current() || d.closed() || !result) return;
@@ -743,22 +744,36 @@
             const current = sessionCheck();
             d.status(JE.t('tag_portable_checking'));
             showLoading(d, true);
-            const saved = await saveFirst(current);
-            if (!live() || !current() || d.closed()) return;
-            if (!saved) {
+            /**
+             * Say why nothing is shown, without the loading line. On the source
+             * step Check tries again; elsewhere Retry does (the same button when
+             * there is one, so a focused Retry keeps focus).
+             * @param {string} message
+             */
+            const failed = (message) => {
                 showLoading(d, false);
-                d.status(JE.t('tag_portable_import_unsaved'), 'error');
-                // On the source step Check tries again; elsewhere Retry does.
+                d.status(message, 'error');
                 if (d.body.querySelector('[data-pt-paste]')) return;
+                const again = d.foot.querySelector('[data-pt-action="retry"]');
+                if (again) { again.removeAttribute('aria-disabled'); return; }
                 d.foot.innerHTML = (back ? buttonHtml('back', 'tag_portable_back') : '') + buttonHtml('cancel', 'jellyseerr_modal_cancel')
                     + buttonHtml('retry', 'admin_tags_retry', { primary: true });
                 d.foot.onclick = (e) => {
-                    const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
+                    const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
+                    const action = button?.getAttribute('data-pt-action');
                     if (action === 'back') back?.();
                     else if (action === 'cancel') d.close();
-                    else if (action === 'retry') showPreview(d, document, back, note);
+                    else if (action === 'retry' && button.getAttribute('aria-disabled') !== 'true') {
+                        button.setAttribute('aria-disabled', 'true');
+                        showPreview(d, document, back, note);
+                    }
                 };
                 /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
+            };
+            const saved = await saveFirst(current);
+            if (!live() || !current() || d.closed()) return;
+            if (!saved) {
+                failed(JE.t('tag_portable_import_unsaved'));
                 return;
             }
             let preview;
@@ -767,7 +782,8 @@
             } catch (err) {
                 if (!live() || d.closed()) return;
                 const { code } = await errorOf(err);
-                d.status(errorText(code), 'error');
+                if (!live() || !current() || d.closed()) return;
+                failed(errorText(code));
                 return;
             }
             if (!live() || !current() || d.closed()) return;

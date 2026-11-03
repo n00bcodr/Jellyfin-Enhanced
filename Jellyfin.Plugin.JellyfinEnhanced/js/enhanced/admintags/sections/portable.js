@@ -69,6 +69,38 @@
         ...(body ? { data: JSON.stringify(body), contentType: 'application/json' } : {}),
     });
 
+    /**
+     * Say in a dialog why nothing is shown: its loading line is hidden and,
+     * with `retry`, Retry is offered (the same button when there is one, so a
+     * focused Retry keeps focus; busy buttons are aria-disabled, not replaced).
+     * @param {Object} d - A dialog from openDialog.
+     * @param {string} message
+     * @param {boolean} [retry]
+     */
+    function failed(d, message, retry = false) {
+        const P = tools();
+        const line = /** @type {HTMLElement|null} */ (d.body.querySelector('[data-pt-loading]'));
+        if (line) line.hidden = true;
+        d.status(message, 'error');
+        if (!retry || !P) return;
+        const again = d.foot.querySelector('[data-pt-action="retry"]');
+        if (again) { again.removeAttribute('aria-disabled'); return; }
+        const close = d.foot.querySelector('[data-pt-action="close"]') ? P.buttonHtml('close', 'awards_close') : P.buttonHtml('cancel', 'jellyseerr_modal_cancel');
+        d.foot.innerHTML = close + P.buttonHtml('retry', 'admin_tags_retry', { primary: true });
+        /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
+    }
+
+    /**
+     * Start a Retry once: false while one is already working.
+     * @param {HTMLElement|null} button
+     * @returns {boolean}
+     */
+    function startRetry(button) {
+        if (!button || button.getAttribute('aria-disabled') === 'true') return false;
+        button.setAttribute('aria-disabled', 'true');
+        return true;
+    }
+
     A.registerSection({
         id: 'server-portable',
         tab: 'server',
@@ -95,29 +127,51 @@
 
             body.querySelector('#jeTaExport')?.addEventListener('click', async () => {
                 const d = show('admin_tags_portable_export_title');
-                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p>`;
+                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p><p class="je-pt-hint" data-pt-loading>${ctx.tx('hidden_content_admin_loading')}</p>`;
                 d.foot.innerHTML = P.buttonHtml('close', 'awards_close');
-                d.foot.onclick = () => d.close();
+                d.foot.onclick = (e) => {
+                    const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
+                    const action = button?.getAttribute('data-pt-action');
+                    if (action === 'close') d.close();
+                    else if (action === 'retry' && startRetry(button)) {
+                        /** @type {HTMLElement} */ (d.body.querySelector('[data-pt-loading]')).hidden = false;
+                        d.status(JE.t('tag_portable_checking'));
+                        load();
+                    }
+                };
                 d.focusFirst();
-                let document;
-                try {
-                    // Edits not saved yet belong in the export: a save that failed or is
-                    // refused (Keep mine / Take theirs) would export the stored settings
-                    // instead of the ones this page shows.
-                    const saved = await ctx.flush();
-                    if (!ctx.isCurrent() || d.closed()) return;
-                    if (!saved) {
-                        d.status(JE.t('admin_tags_portable_export_unsaved'), 'error');
+                const load = async () => {
+                    let document;
+                    try {
+                        // Edits not saved yet belong in the export: a save that failed or is
+                        // refused (Keep mine / Take theirs) would export the stored settings
+                        // instead of the ones this page shows.
+                        const saved = await ctx.flush();
+                        if (!ctx.isCurrent() || d.closed()) return;
+                        if (!saved) {
+                            failed(d, JE.t('admin_tags_portable_export_unsaved'), true);
+                            return;
+                        }
+                        document = await request('GET', 'admin/media-tags/export');
+                    } catch (err) {
+                        if (!ctx.isCurrent() || d.closed()) return;
+                        console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
+                        failed(d, JE.t('tag_portable_export_failed'), true);
                         return;
                     }
-                    document = await request('GET', 'admin/media-tags/export');
-                } catch (err) {
                     if (!ctx.isCurrent() || d.closed()) return;
-                    console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
-                    d.status(JE.t('tag_portable_export_failed'), 'error');
-                    return;
-                }
-                if (!ctx.isCurrent() || d.closed()) return;
+                    d.status('');
+                    showExport(d, document);
+                };
+                await load();
+            }, { signal: ctx.signal });
+
+            /**
+             * The export step: the document with Download and Copy.
+             * @param {ReturnType<typeof P.openDialog>} d
+             * @param {Object} document
+             */
+            const showExport = (d, document) => {
                 const text = JSON.stringify(document, null, 2);
                 d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p>
                     <label class="je-pt-label" for="jeTaExportText">${ctx.tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
@@ -132,7 +186,7 @@
                     else if (action === 'close') d.close();
                 };
                 /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="download"]'))?.focus();
-            }, { signal: ctx.signal });
+            };
 
             /**
              * Write a preview's changes through the page and offer Undo.
@@ -330,15 +384,18 @@
              * Check a document as a preset (the user preview endpoint: the settings save path's validators).
              * @param {ReturnType<typeof P.openDialog>} d
              * @param {Object} document
+             * @param {boolean} [retry] - Offer Retry when it fails (no source step to check again from).
              */
-            const check = async (d, document) => {
+            const check = async (d, document, retry = false) => {
                 d.status(JE.t('tag_portable_checking'));
                 let preview;
                 try {
                     preview = await request('POST', `user-settings/${ApiClient.getCurrentUserId()}/media-tags/preview`, document);
                 } catch (err) {
                     if (!ctx.isCurrent() || d.closed()) return;
-                    d.status(P.errorText((await P.errorOf(err)).code), 'error');
+                    const { code } = await P.errorOf(err);
+                    if (!ctx.isCurrent() || d.closed()) return;
+                    failed(d, P.errorText(code), retry);
                     return;
                 }
                 if (!ctx.isCurrent() || d.closed()) return;
@@ -353,20 +410,32 @@
 
             body.querySelector('#jeTaOfferMine')?.addEventListener('click', async () => {
                 const d = show('admin_tags_presets_add_title');
-                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('hidden_content_admin_loading')}</p>`;
+                d.body.innerHTML = `<p class="je-pt-hint" data-pt-loading>${ctx.tx('hidden_content_admin_loading')}</p>`;
                 d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel');
-                d.foot.onclick = () => d.close();
+                d.foot.onclick = (e) => {
+                    const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
+                    const action = button?.getAttribute('data-pt-action');
+                    if (action === 'cancel') d.close();
+                    else if (action === 'retry' && startRetry(button)) {
+                        /** @type {HTMLElement} */ (d.body.querySelector('[data-pt-loading]')).hidden = false;
+                        load();
+                    }
+                };
                 d.focusFirst();
-                try {
-                    await JE.saveUserSettings?.('settings.json', JE.currentSettings);
-                    const mine = await request('GET', `user-settings/${ApiClient.getCurrentUserId()}/media-tags/export`);
-                    if (!ctx.isCurrent() || d.closed()) return;
-                    await check(d, mine);
-                } catch (err) {
-                    if (!ctx.isCurrent() || d.closed()) return;
-                    console.warn('🪼 Jellyfin Enhanced: could not read your Media Tags settings', err);
-                    d.status(JE.t('tag_portable_export_failed'), 'error');
-                }
+                const load = async () => {
+                    d.status(JE.t('tag_portable_checking'));
+                    try {
+                        await JE.saveUserSettings?.('settings.json', JE.currentSettings);
+                        const mine = await request('GET', `user-settings/${ApiClient.getCurrentUserId()}/media-tags/export`);
+                        if (!ctx.isCurrent() || d.closed()) return;
+                        await check(d, mine, true);
+                    } catch (err) {
+                        if (!ctx.isCurrent() || d.closed()) return;
+                        console.warn('🪼 Jellyfin Enhanced: could not read your Media Tags settings', err);
+                        failed(d, JE.t('tag_portable_export_failed'), true);
+                    }
+                };
+                await load();
             }, { signal: ctx.signal });
 
             body.querySelector('#jeTaOfferImport')?.addEventListener('click', () => {
