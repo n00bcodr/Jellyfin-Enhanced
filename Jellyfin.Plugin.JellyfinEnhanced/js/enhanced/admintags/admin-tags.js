@@ -314,6 +314,23 @@
         return out.join('');
     }
 
+    /**
+     * Replace a list's markup, keeping keyboard focus on the same control of
+     * the new markup: a redraw that is not the administrator's own action (a
+     * poll, another view's save, a late answer) must not drop focus to the page.
+     * @param {Element} list
+     * @param {string} html
+     * @param {(el: HTMLElement) => string|null} selectorOf - The focused control's
+     *   selector within the list, or null when it is not kept.
+     */
+    function redrawList(list, html, selectorOf) {
+        const active = /** @type {HTMLElement|null} */ (document.activeElement);
+        const selector = active && active !== list && list.contains(active) ? selectorOf(active) : null;
+        list.innerHTML = html;
+        const again = /** @type {HTMLButtonElement|null} */ (selector ? list.querySelector(selector) : null);
+        if (again && !again.disabled) again.focus({ preventScroll: true });
+    }
+
     // ── Unsaved edits ──────────────────────────────────────────────────
 
     /**
@@ -1481,6 +1498,7 @@
         mainPageUrl,
         fieldHtml,
         fieldsHtml,
+        redrawList,
         fieldValue,
         controlValue,
         createPage,

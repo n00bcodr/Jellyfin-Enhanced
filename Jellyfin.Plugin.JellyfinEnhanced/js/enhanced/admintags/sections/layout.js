@@ -208,6 +208,18 @@
         },
     });
 
+    /**
+     * The selector of a focused group row control, to focus it again after a redraw.
+     * @param {HTMLElement} el
+     * @returns {string|null}
+     */
+    function focusSelector(el) {
+        const g = /** @type {HTMLElement|null} */ (el.closest('.je-ta-lrow'))?.dataset.group;
+        if (!g) return null;
+        const own = el.dataset.slot ? `[data-slot="${el.dataset.slot}"]` : el.dataset.act ? `[data-act="${el.dataset.act}"][data-dir="${el.dataset.dir}"]` : null;
+        return own && `.je-ta-lrow[data-group="${g}"] ${own}`;
+    }
+
     A.registerSection({
         id: 'layout-groups',
         tab: 'layout',
@@ -276,7 +288,7 @@
             if (!list) return;
             const state = readState(ctx.config);
             const order = state.order || L().DEFAULT_ORDER;
-            list.innerHTML = order.map((g, i) => rowHtml(ctx, state, g, i, order.length)).join('');
+            A.redrawList(list, order.map((g, i) => rowHtml(ctx, state, g, i, order.length)).join(''), focusSelector);
             const note = body.querySelector('[data-layout-note]');
             if (note) note.textContent = JE.t('admin_tags_layout_groups_for', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[state.layout]) });
         },

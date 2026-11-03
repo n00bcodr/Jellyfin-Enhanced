@@ -209,6 +209,47 @@ test('a cache summary that answers after the page was torn down starts no pollin
   assert.equal(summaries, 1);
 });
 
+test('the cache rebuild poll redraws only the cache card: a focused Layout or Rules control keeps keyboard focus', async t => {
+  const polls = [];
+  let rebuilding = true;
+  const rules = [{ Enabled: true, When: [{ Field: 'type', Value: 'Episode' }], Layout: 'bands', Density: 'full' }, { Enabled: true, When: [{ Field: 'type', Value: 'Movie' }], Layout: 'minimal', Density: 'full' }];
+  const h = boot(t, { server: { ...BASE, TagLookRules: rules }, routes: { '/tag-cache/summary': () => ({ enabled: true, entries: 123, lastModified: 0, rebuilding }) } });
+  const realSetTimeout = h.window.setTimeout;
+  h.window.setTimeout = (fn, ms, ...rest) => (ms === 3000 ? (polls.push(fn), 777) : realSetTimeout(fn, ms, ...rest));
+  const root = h.document.getElementById('jeTaRoot');
+  const ctx = h.A.createPage(root, structuredClone({ ...BASE, TagLookRules: rules }));
+  h.cleanup.push(() => ctx.dispose());
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(root.querySelector('[data-ov="cache-state"]').textContent, 'admin_tags_rebuilding');
+  assert.equal(polls.length, 1, 'following the rebuild');
+  ctx.openTab('layout');
+  const selector = '#tagGroupAdminRows [data-group="quality"] [data-slot="tc"]';
+  const focused = root.querySelector(selector);
+  focused.focus();
+  polls.shift()();
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(h.document.activeElement, focused, 'the poll left the Layout control alone');
+  assert.equal(focused.isConnected, true);
+  assert.equal(polls.length, 1, 'still following the rebuild');
+
+  // Any other redraw (another view's save, a late answer): the same control of the new rows has focus.
+  ctx.refresh({ controls: false });
+  assert.equal(focused.isConnected, false, 'the rows were redrawn');
+  assert.equal(h.document.activeElement, root.querySelector(selector));
+  ctx.openTab('rules');
+  root.querySelector('.je-ta-rule[data-index="1"] [data-act="move"][data-dir="-1"]').focus();
+  ctx.refresh({ controls: false });
+  assert.equal(h.document.activeElement, root.querySelector('.je-ta-rule[data-index="1"] [data-act="move"][data-dir="-1"]'));
+
+  // The rebuild finishes: the cache card says so and the poll stops.
+  rebuilding = false;
+  polls.shift()();
+  for (let i = 0; i < 5; i++) await h.settle();
+  assert.equal(root.querySelector('[data-ov="cache-state"]').textContent, 'common_on');
+  assert.equal(root.querySelector('[data-ov="rebuild"]').disabled, false);
+  assert.equal(polls.length, 0);
+});
+
 test('the page shown again while a save is on its way keeps the value being saved, and a later edit saves after it', async t => {
   const server = structuredClone(BASE);
   const gate = deferred();

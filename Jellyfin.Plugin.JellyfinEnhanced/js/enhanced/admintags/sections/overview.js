@@ -53,7 +53,9 @@
         if (seq !== summarySeq || !ctx.isCurrent()) return;
         summary = next;
         summaryError = failed;
-        ctx.refresh({ controls: false });
+        // Only the cache card shows the summary: a poll redraws nothing else (the
+        // other tabs' editors keep their controls and keyboard focus).
+        drawCache(ctx);
         // Follow a rebuild until it finishes.
         if (summary?.rebuilding) pollTimer = setTimeout(() => A.cacheSummary(ctx), 3000);
     };
@@ -98,6 +100,32 @@
         } catch {
             return new Date(ms).toLocaleString();
         }
+    }
+
+    /**
+     * The Overview's cache card: on/off/rebuilding, the summary and Rebuild.
+     * @param {Object} ctx
+     */
+    function drawCache(ctx) {
+        const grid = ctx.root.querySelector('.je-ta-ov[data-section="overview"]');
+        if (!grid) return;
+        const c = ctx.config;
+        const t = (key, params) => JE.t(key, params);
+        const cacheOn = c.TagCacheServerMode !== false;
+        const state = /** @type {HTMLElement|null} */ (grid.querySelector('[data-ov="cache-state"]'));
+        if (state) {
+            state.dataset.state = cacheOn ? (summary?.rebuilding ? 'warn' : 'on') : 'off';
+            state.textContent = t(cacheOn ? (summary?.rebuilding ? 'admin_tags_rebuilding' : 'common_on') : 'track_off');
+        }
+        const excluded = c.TagCacheExcludeLibraries === true ? String(c.TagCacheExcludedLibraryIds || '').split(',').filter(Boolean).length : 0;
+        const body = grid.querySelector('[data-ov="cache"]');
+        if (body) body.innerHTML = !cacheOn ? `<p class="je-ta-hint">${ctx.tx('admin_tags_overview_cache_off')}</p>`
+            : summaryError ? `<p class="je-ta-hint">${ctx.tx('admin_tags_overview_cache_unknown')}</p>`
+            : `<div class="je-ta-stat"><strong>${ctx.esc(summary ? Number(summary.entries).toLocaleString() : '…')}</strong><span>${ctx.tx('admin_tags_overview_cached')}</span></div>`
+                + `<dl class="je-ta-ov-dl"><dt>${ctx.tx('admin_tags_overview_last_change')}</dt><dd>${ctx.esc(summary ? ago(summary.lastModified) : '…')}</dd>`
+                + `<dt>${ctx.tx('admin_tags_overview_excluded')}</dt><dd>${ctx.esc(excluded ? t('admin_tags_overview_excluded_n', { n: excluded }) : t('admin_tags_none'))}</dd></dl>`;
+        const rebuild = /** @type {HTMLButtonElement|null} */ (grid.querySelector('[data-ov="rebuild"]'));
+        if (rebuild) rebuild.disabled = !cacheOn || !!summary?.rebuilding;
     }
 
     A.registerSection({
@@ -153,16 +181,7 @@
                 [t('admin_tags_overview_order'), order.map(groupName).join(', ')],
                 [t('common_rules'), rules ? t('admin_tags_overview_rules_n', { n: rules }) : t('admin_tags_none')],
             ].map(([k, v]) => `<dt>${ctx.esc(k)}</dt><dd>${ctx.esc(v)}</dd>`).join(''));
-            const cacheOn = c.TagCacheServerMode !== false;
-            state('cache-state', cacheOn ? (summary?.rebuilding ? 'warn' : 'on') : 'off', t(cacheOn ? (summary?.rebuilding ? 'admin_tags_rebuilding' : 'common_on') : 'track_off'));
-            const excluded = c.TagCacheExcludeLibraries === true ? String(c.TagCacheExcludedLibraryIds || '').split(',').filter(Boolean).length : 0;
-            set('cache', !cacheOn ? `<p class="je-ta-hint">${ctx.tx('admin_tags_overview_cache_off')}</p>`
-                : summaryError ? `<p class="je-ta-hint">${ctx.tx('admin_tags_overview_cache_unknown')}</p>`
-                : `<div class="je-ta-stat"><strong>${ctx.esc(summary ? Number(summary.entries).toLocaleString() : '…')}</strong><span>${ctx.tx('admin_tags_overview_cached')}</span></div>`
-                    + `<dl class="je-ta-ov-dl"><dt>${ctx.tx('admin_tags_overview_last_change')}</dt><dd>${ctx.esc(summary ? ago(summary.lastModified) : '…')}</dd>`
-                    + `<dt>${ctx.tx('admin_tags_overview_excluded')}</dt><dd>${ctx.esc(excluded ? t('admin_tags_overview_excluded_n', { n: excluded }) : t('admin_tags_none'))}</dd></dl>`);
-            const rebuild = /** @type {HTMLButtonElement|null} */ (grid.querySelector('[data-ov="rebuild"]'));
-            if (rebuild) rebuild.disabled = !cacheOn || !!summary?.rebuilding;
+            drawCache(ctx);
             state('native-state', c.NativePosterTagsEnabled === true ? 'on' : 'off', t(c.NativePosterTagsEnabled === true ? 'common_on' : 'track_off'));
             const styles = c.TagStylesEnabled === true;
             state('colours-state', styles ? 'on' : 'off', t(styles ? 'common_on' : 'track_off'));

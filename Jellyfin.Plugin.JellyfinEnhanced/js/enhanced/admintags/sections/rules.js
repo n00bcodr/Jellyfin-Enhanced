@@ -251,7 +251,11 @@
             const list = body?.querySelector('[data-rules]');
             if (!list) return;
             const rules = rulesOf(ctx.config);
-            list.innerHTML = rules.map((r, i) => ruleHtml(ctx, r, i, rules.length)).join('');
+            A.redrawList(list, rules.map((r, i) => ruleHtml(ctx, r, i, rules.length)).join(''), (el) => {
+                const i = /** @type {HTMLElement|null} */ (el.closest('.je-ta-rule'))?.dataset.index;
+                if (i === undefined || !el.dataset.act) return null;
+                return `.je-ta-rule[data-index="${i}"] [data-act="${el.dataset.act}"]${el.dataset.dir ? `[data-dir="${el.dataset.dir}"]` : ''}`;
+            });
             /** @type {HTMLElement} */ (body.querySelector('[data-rules-empty]')).hidden = rules.length > 0;
             const box = /** @type {HTMLTextAreaElement|null} */ (body.querySelector('#tagLookRulesJson'));
             if (box && document.activeElement !== box && !box.closest('details[open]')) this.load(ctx, body);
