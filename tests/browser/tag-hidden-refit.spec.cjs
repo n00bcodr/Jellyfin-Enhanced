@@ -6,9 +6,10 @@ const en = JSON.parse(fs.readFileSync(path.join(root, 'locales/en.json')));
 
 /**
  * Production Awards (ml) opposite production Status (mr) on a 12vw Corners
- * card inside a view Jellyfin can hide with display:none and keep cached.
+ * card (or `cards` of them, wrapping) inside a view Jellyfin can hide with
+ * display:none and keep cached.
  */
-async function setup(page) {
+async function setup(page, cards = 1) {
   await page.setViewportSize({ width: 1400, height: 800 });
   await page.goto('/');
   await page.setContent(`<style>
@@ -19,7 +20,7 @@ async function setup(page) {
     .cardScalable { position:relative; width:12vw; aspect-ratio:2/3 }
     .cardImageContainer { position:absolute; inset:0; border-radius:8px }
     .je-tag-host { position:absolute!important; inset:0 }
-  </style><div id="view"><div id="wrap"><div class="card" data-type="Movie"><div class="cardBox"><div class="cardScalable"><a class="cardImageContainer" href="#/details?id=0123456789abcdef0123456789abcdef"></a><div class="je-tag-host"></div></div><div class="cardText">Fixture</div></div></div></div></div>`);
+  </style><div id="view"><div id="wrap"${cards > 1 ? ' style="display:flex;flex-wrap:wrap"' : ''}>${'<div class="card" data-type="Movie"><div class="cardBox"><div class="cardScalable"><a class="cardImageContainer" href="#/details?id=0123456789abcdef0123456789abcdef"></a><div class="je-tag-host"></div></div><div class="cardText">Fixture</div></div></div>'.repeat(cards)}</div></div>`);
   await page.evaluate(en => {
     window.JellyfinEnhanced = { pluginConfig:{}, currentSettings:{tagLayoutSettingsVersion:1,tagLayout:'corners',
       statusTagsEnabled:true,statusTagsShowJustAdded:true,statusTagsJustAddedDays:30,
@@ -29,10 +30,12 @@ async function setup(page) {
   for (const file of ['core/ui-kit.js','core/dom-observer.js','core/tag-renderer-base.js','core/tag-layout.js','tags/tag-layout-styles.js',
     'tags/tag-styles.js','tags/status-vocabulary.js','tags/statustags.js','tags/awardstags.js']) await page.addScriptTag({path:path.join(root,file)});
   await page.evaluate(async () => {
-    const JE=JellyfinEnhanced,h=document.querySelector('.je-tag-host');
+    const JE=JellyfinEnhanced;
     JE.initializeStatusTags(); JE.initializeAwardsTags(); JE.core.tagLayout.invalidateSettings();
-    JE.tagPipeline.awards.renderFromServerCache(h,{Awards:{CertifiedFresh:true}});
-    JE.tagPipeline.status.renderFromServerCache(h,{Type:'Movie',DateCreated:new Date().toISOString()});
+    for (const h of document.querySelectorAll('.je-tag-host')) {
+      JE.tagPipeline.awards.renderFromServerCache(h,{Awards:{CertifiedFresh:true}});
+      JE.tagPipeline.status.renderFromServerCache(h,{Type:'Movie',DateCreated:new Date().toISOString()});
+    }
   });
   await frames(page);
 }
@@ -93,6 +96,48 @@ test('a card width change without a window resize refits the card, then settles'
   });
   expect(settled).toBe(true);
   expect(narrow).toEqual(await fresh(page));
+});
+
+test('many sub-pixel width changes add up to a refit', async ({ page }) => {
+  await setup(page);
+  const before = await measure(page);
+  // An animated or resizable container: every step is under a pixel, with no window resize.
+  await page.evaluate(async () => {
+    for (let width = 167.5; width >= 84; width -= 0.5) {
+      for (const el of document.querySelectorAll('.cardBox, .cardScalable')) el.style.width = `${width}px`;
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+  });
+  await frames(page);
+  const after = await measure(page);
+  expect(after.card).toBe(84);
+  expect(after.budget).not.toBe(before.budget);
+  expect(after.overlap).toBeLessThan(0);
+  expect(after).toEqual(await fresh(page));
+});
+
+test('a cached view shown again at the width it was fitted for runs no fitting pass', async ({ page }) => {
+  await setup(page, 300);
+  // Count the fitting passes scheduled from here on (scheduleFit queues flushFit after the next paint).
+  await page.evaluate(() => {
+    const dom = JellyfinEnhanced.core.dom, schedule = dom.afterNextPaint;
+    window.__passes = 0;
+    dom.afterNextPaint = fn => { if (fn.name === 'flushFit') window.__passes++; return schedule(fn); };
+  });
+  const toggle = async hidden => { await page.evaluate(h => document.getElementById('view').classList.toggle('hide', h), hidden); await frames(page, 6); };
+  await toggle(true);
+  await toggle(false);
+  expect(await page.evaluate(() => window.__passes)).toBe(0);
+  // Shown again at another width (changed while hidden, no window resize): one pass for all the cards.
+  const wide = await measure(page);
+  await toggle(true);
+  await page.evaluate(() => { for (const el of document.querySelectorAll('.cardBox, .cardScalable')) el.style.width = '84px'; });
+  await toggle(false);
+  expect(await page.evaluate(() => window.__passes)).toBe(1);
+  const shown = await measure(page);
+  expect(shown.card).toBe(84);
+  expect(shown.budget).not.toBe(wide.budget);
+  expect(shown.overlap).toBeLessThan(0);
 });
 
 test('legacy cards that never needed a fit are not watched', async ({ page }) => {

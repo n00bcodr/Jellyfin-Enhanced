@@ -1932,8 +1932,16 @@
 
     /** @type {ResizeObserver|null} one observer over every card that needed a fit (created on first use) */
     let sizeObserver = null;
-    /** @type {WeakMap<HTMLElement, number>} host → inline size its last fit or observation saw */
+    /**
+     * host → its content-box inline size as last observed while laid out, and
+     * the size its last fit used (-1: not known yet; 0: the fit skipped it
+     * because it was not laid out). Observations compare with `fitted`, never
+     * with the previous observation, so changes below a pixel add up.
+     * @type {WeakMap<HTMLElement, {observed: number, fitted: number}>}
+     */
     const fittedWidths = new WeakMap();
+    /** Observed sizes closer than this are the same size (float noise, below a layout unit). */
+    const SAME_WIDTH_PX = 0.01;
 
     /**
      * Refit a card whenever its own width changes, not only when the window
@@ -1945,7 +1953,7 @@
     function watchSize(host) {
         if (typeof ResizeObserver !== 'function' || fittedWidths.has(host)) return;
         sizeObserver ??= new ResizeObserver(refitOnSizeChange);
-        fittedWidths.set(host, -1);
+        fittedWidths.set(host, { observed: -1, fitted: -1 });
         sizeObserver.observe(host);
     }
 
@@ -1958,20 +1966,24 @@
 
     /**
      * ResizeObserver callback. The fit's own writes never change the host's
-     * width, and a width the last fit already used is skipped, so it cannot
-     * loop; the refit itself goes through scheduleFit's batched pass.
+     * width, and the width the last fit used is skipped, so it cannot loop;
+     * the refit itself goes through scheduleFit's batched pass. A hidden view
+     * (width 0) is not recorded: shown again at the width it was fitted for,
+     * its cards need no pass.
      * @param {ResizeObserverEntry[]} entries
      */
     function refitOnSizeChange(entries) {
         for (const entry of entries) {
             const host = /** @type {HTMLElement} */ (entry.target);
             const ctrl = controllers.get(host);
-            if (!ctrl || !host.isConnected) { unwatchSize(host); continue; }
+            const sizes = fittedWidths.get(host);
+            if (!ctrl || !sizes || !host.isConnected) { unwatchSize(host); continue; }
             const width = entry.contentRect.width;
-            const seen = /** @type {number} */ (fittedWidths.get(host));
-            fittedWidths.set(host, width);
+            if (width <= 0) continue;
+            sizes.observed = width;
             // The first observation reports the size the queued fit is about to use.
-            if (seen < 0 || width <= 0 || Math.abs(width - seen) < 1) continue;
+            if (sizes.fitted < 0) { sizes.fitted = width; continue; }
+            if (Math.abs(width - sizes.fitted) < SAME_WIDTH_PX) continue;
             scheduleFit(ctrl);
         }
     }
@@ -2022,7 +2034,12 @@
             // Reads: cards not laid out (hidden, detached tab) are left as they
             // are. The image's height only for cards whose shape is measured.
             const widths = list.map((ctrl) => ctrl.host.clientWidth);
-            list.forEach((ctrl, i) => { if (fittedWidths.has(ctrl.host)) fittedWidths.set(ctrl.host, widths[i]); });
+            // The size this pass fits at, in the observer's units: its latest observation
+            // (delivered before this pass's paint), or 0 for a card left unfitted.
+            list.forEach((ctrl, i) => {
+                const sizes = fittedWidths.get(ctrl.host);
+                if (sizes) sizes.fitted = widths[i] > 0 ? sizes.observed : 0;
+            });
             const heights = list.map((ctrl, i) => (widths[i] > 0 && needsShape(ctrl) ? ctrl.host.clientHeight : 0));
             const radii = list.map((ctrl, i) => (widths[i] > 0 && needsRadius(ctrl) ? cardRadiusOf(ctrl) : null));
             const shown = list.filter((ctrl, i) => widths[i] > 0);
