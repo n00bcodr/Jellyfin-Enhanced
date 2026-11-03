@@ -9,11 +9,26 @@
     const A = JE.adminTags;
     if (!A) return;
 
-    /** @type {Array<{ItemId: string, Name: string}>|null} null until the library list is in */
-    let folders = null;
+    /**
+     * Each page view's library list: null until that view's own request
+     * answers (a list from an earlier view, or another server's, is never
+     * shown or written), failed when it could not be read.
+     * @type {WeakMap<Object, {folders: Array<{ItemId: string, Name: string}>|null, failed: boolean}>}
+     */
+    const libraryState = new WeakMap();
+
+    /** @param {Object} ctx @returns {{folders: Array<{ItemId: string, Name: string}>|null, failed: boolean}} */
+    const librariesOf = (ctx) => {
+        let state = libraryState.get(ctx);
+        if (!state) libraryState.set(ctx, state = { folders: null, failed: false });
+        return state;
+    };
 
     /** @param {*} id @returns {string} A library id as TagCacheExcludedLibraryIds stores it. */
     const normId = (id) => String(id).replace(/-/g, '').toLowerCase();
+
+    /** @param {*} value @returns {string[]} The stored excluded ids, as stored. */
+    const excludedIds = (value) => String(value || '').split(',').map((s) => s.trim()).filter(Boolean);
 
     A.registerSection({
         id: 'server-cache',
@@ -45,18 +60,27 @@
                 if (ctx.isCurrent()) ctx.snack(JE.t(saved ? 'admin_tags_server_clear_done' : 'admin_tags_server_clear_failed'));
             });
             const libs = /** @type {HTMLElement} */ (body.querySelector('[data-libs]'));
-            libs.addEventListener('change', () => {
-                const ids = Array.from(libs.querySelectorAll('input:checked')).map((el) => /** @type {HTMLElement} */ (el).dataset.libraryId || '');
+            libs.addEventListener('change', (e) => {
+                const box = /** @type {HTMLInputElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('input[data-library-id]'));
+                if (!box || !librariesOf(ctx).folders) return;
+                // Only the clicked library's membership changes: every other stored id
+                // (a library this list does not show, too) is kept as it is.
+                const id = box.dataset.libraryId || '';
+                const ids = excludedIds(ctx.config.TagCacheExcludedLibraryIds).filter((x) => normId(x) !== id);
+                if (box.checked) ids.push(id);
                 ctx.set('TagCacheExcludedLibraryIds', ids.join(','));
             });
+            const state = librariesOf(ctx);
             ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then((list) => {
                 if (!ctx.isCurrent()) return;
-                folders = (list || []).filter((f) => f.ItemId);
+                state.folders = (list || []).filter((f) => f.ItemId);
+                state.failed = false;
                 ctx.refresh({ controls: false });
             }).catch(() => {
                 // Until the list is in, nothing is written: the stored selection stays as it is.
                 if (!ctx.isCurrent()) return;
-                libs.innerHTML = `<p class="je-ta-hint">${ctx.tx('admin_tags_server_libraries_failed')}</p>`;
+                state.failed = true;
+                ctx.refresh({ controls: false });
             });
         },
         refresh(ctx, body) {
@@ -65,10 +89,30 @@
             const cacheOn = c.TagCacheServerMode !== false;
             const libs = /** @type {HTMLElement} */ (body.querySelector('[data-libs]'));
             libs.hidden = !(cacheOn && c.TagCacheExcludeLibraries === true);
-            if (folders && !libs.contains(document.activeElement)) {
-                const selected = String(c.TagCacheExcludedLibraryIds || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-                if (!ctx.isCurrent()) return;
-                libs.innerHTML = folders.map((f) => `<label><input type="checkbox" data-library-id="${ctx.esc(normId(f.ItemId))}" ${selected.includes(normId(f.ItemId)) ? 'checked' : ''}>${ctx.esc(f.Name)}</label>`).join('');
+            if (!ctx.isCurrent()) return;
+            const { folders, failed } = librariesOf(ctx);
+            if (!folders) {
+                const key = failed ? 'admin_tags_server_libraries_failed' : 'hidden_content_admin_loading';
+                if (libs.dataset.libsState !== key) {
+                    libs.dataset.libsState = key;
+                    libs.innerHTML = `<p class="je-ta-hint">${ctx.tx(key)}</p>`;
+                }
+            } else {
+                const selected = excludedIds(c.TagCacheExcludedLibraryIds).map(normId);
+                const ids = folders.map((f) => normId(f.ItemId));
+                const rows = /** @type {HTMLInputElement[]} */ (Array.from(libs.querySelectorAll('input[data-library-id]')));
+                if (libs.dataset.libsState === 'list' && rows.length === ids.length && rows.every((r, i) => r.dataset.libraryId === ids[i])) {
+                    // The same libraries: update in place (a focused box keeps focus).
+                    rows.forEach((r, i) => {
+                        r.checked = selected.includes(ids[i]);
+                        const name = /** @type {HTMLElement} */ (r.nextElementSibling);
+                        if (name && name.textContent !== folders[i].Name) name.textContent = folders[i].Name;
+                    });
+                } else {
+                    libs.dataset.libsState = 'list';
+                    A.redrawList(libs, folders.map((f, i) => `<label><input type="checkbox" data-library-id="${ctx.esc(ids[i])}" ${selected.includes(ids[i]) ? 'checked' : ''}><span>${ctx.esc(f.Name)}</span></label>`).join(''),
+                        (el) => (el.dataset.libraryId ? `[data-library-id="${el.dataset.libraryId}"]` : null));
+                }
             }
             /** @type {HTMLButtonElement} */ (body.querySelector('#rebuildTagCacheBtn')).hidden = !cacheOn;
             /** @type {HTMLButtonElement} */ (body.querySelector('#clearTagsCacheBtn')).hidden = cacheOn;

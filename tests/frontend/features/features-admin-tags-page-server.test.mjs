@@ -311,7 +311,8 @@ test('Server: cache off keeps the browser cache on, excluded libraries and the c
   assert.deepEqual(boxes.map((b) => [b.dataset.libraryId, b.checked]), [[LIBRARY, false], [OTHER_LIBRARY, true]]);
   h.change(boxes[0], true);
   await h.save();
-  assert.equal(h.server.TagCacheExcludedLibraryIds, `${LIBRARY},${OTHER_LIBRARY}`);
+  // Only the ticked library is added; the stored ids stay as they were.
+  assert.equal(h.server.TagCacheExcludedLibraryIds, `${OTHER_LIBRARY},${LIBRARY}`);
   assert.equal(h.$('[data-field-row="enableTagsLocalStorageFallback"]').hidden, true);
   h.change(h.$('#tagCacheServerMode'), false);
   await h.save();
@@ -684,4 +685,118 @@ test('Overview: a redraw of the group buttons keeps keyboard focus on the same g
   h.ctx.refresh();
   assert.equal(button.isConnected, false, 'the buttons were redrawn');
   assert.equal(h.document.activeElement, h.$('.je-ta-ov-group[data-group="rating"]'));
+});
+
+// ── Excluded libraries belong to their own view (astra R5-2 = opus R5 3) ──
+
+const THIRD_LIBRARY = 'cccccccccccccccccccccccccccccccc';
+const settleMany = async (h, n = 8) => { for (let i = 0; i < n; i++) await h.settle(); };
+const libraryBoxes = (root) => [...root.querySelectorAll('[data-libs] input')].map((b) => ({ id: b.dataset.libraryId, checked: b.checked }));
+
+test('Server: a replacement view never shows or writes the previous view\'s library list; ticking one keeps a newly excluded library', async t => {
+  const old = [{ ItemId: LIBRARY, Name: 'Movies' }];
+  const h = setup(t, { config: { TagCacheExcludeLibraries: true }, apiClient: { getJSON: async () => old } });
+  await settleMany(h);
+  h.ctx.openTab('server');
+  assert.deepEqual(libraryBoxes(h.root), [{ id: LIBRARY, checked: false }]);
+  h.ctx.dispose();
+  // While away, another library was added and excluded.
+  h.server.TagCacheExcludedLibraryIds = OTHER_LIBRARY;
+  const gate = deferred();
+  h.window.ApiClient.getJSON = () => gate.promise;
+  const next = h.A.createPage(h.root, structuredClone(h.server));
+  h.cleanup.push(() => next.dispose());
+  next.openTab('server');
+  await settleMany(h);
+  assert.deepEqual(libraryBoxes(h.root), [], 'no list until this view\'s own answer');
+  assert.match(h.root.querySelector('[data-libs]').textContent, /hidden_content_admin_loading/);
+  gate.resolve([...old, { ItemId: OTHER_LIBRARY, Name: 'New library' }]);
+  await settleMany(h);
+  assert.deepEqual(libraryBoxes(h.root), [{ id: LIBRARY, checked: false }, { id: OTHER_LIBRARY, checked: true }]);
+  h.change(h.root.querySelector(`[data-library-id="${LIBRARY}"]`), true);
+  await next.flush();
+  assert.equal(h.server.TagCacheExcludedLibraryIds, `${OTHER_LIBRARY},${LIBRARY}`, 'the new exclusion is kept');
+  assert.deepEqual(h.patches.at(-1).Expected, { TagCacheExcludedLibraryIds: OTHER_LIBRARY });
+});
+
+test('Server: ticking or unticking a library changes only that id; ids the list does not show are kept', async t => {
+  const h = setup(t, { config: { TagCacheExcludeLibraries: true, TagCacheExcludedLibraryIds: `${THIRD_LIBRARY},${OTHER_LIBRARY}` } });
+  await settleMany(h);
+  h.ctx.openTab('server');
+  h.change(h.root.querySelector(`[data-library-id="${LIBRARY}"]`), true);
+  await h.save();
+  assert.equal(h.server.TagCacheExcludedLibraryIds, `${THIRD_LIBRARY},${OTHER_LIBRARY},${LIBRARY}`);
+  h.change(h.root.querySelector(`[data-library-id="${OTHER_LIBRARY}"]`), false);
+  await h.save();
+  assert.equal(h.server.TagCacheExcludedLibraryIds, `${THIRD_LIBRARY},${LIBRARY}`, 'the library this list does not show stays excluded');
+  assert.deepEqual(h.patches.map((p) => Object.keys(p.Changes)), [['TagCacheExcludedLibraryIds'], ['TagCacheExcludedLibraryIds']]);
+});
+
+test('Server: after a same-tab server switch the new view shows only its own libraries; a failed list writes nothing', async t => {
+  const server = structuredClone({ ...BASE, TagCacheExcludeLibraries: true, TagCacheExcludedLibraryIds: OTHER_LIBRARY });
+  const { who, apiClient } = signedIn('admin-a', 'server-1');
+  let answer = async () => [{ ItemId: '11111111111111111111111111111111', Name: 'Server 1 Movies' }];
+  const h = boot(t, { server, session: true, apiClient: { ...apiClient, getJSON: (url) => (url.includes('VirtualFolders') ? answer() : Promise.resolve([])) } });
+  h.document.body.innerHTML = TWO_PAGES;
+  const [first, second] = h.document.querySelectorAll('.page');
+  const a = await h.A.activate(first);
+  h.cleanup.push(() => a.dispose());
+  a.openTab('server');
+  await settleMany(h);
+  assert.deepEqual(libraryBoxes(first), [{ id: '11111111111111111111111111111111', checked: false }]);
+  // Signed out and into server 2, whose list is slow and then fails.
+  window_signOut(h, who, 'server-2');
+  const gate = deferred();
+  answer = () => gate.promise;
+  const b = await h.A.activate(second);
+  h.cleanup.push(() => b.dispose());
+  b.openTab('server');
+  await settleMany(h);
+  assert.deepEqual(libraryBoxes(second), [], 'server 1\'s libraries are not shown');
+  gate.reject(new Error('offline'));
+  await settleMany(h);
+  assert.deepEqual(libraryBoxes(second), []);
+  assert.match(second.querySelector('[data-libs]').textContent, /admin_tags_server_libraries_failed/);
+  assert.equal(server.TagCacheExcludedLibraryIds, OTHER_LIBRARY, 'the stored exclusion stays');
+  assert.equal(h.patches.length, 0);
+});
+
+/** Sign out and in on another server in the same tab, as Jellyfin does. */
+function window_signOut(h, who, serverName) {
+  h.window.ApiClient.setAuthenticationInfo(null, null);
+  who.server = serverName;
+  h.window.ApiClient.setAuthenticationInfo('token-b', 'admin-b');
+}
+
+test('Server: a library list redrawn while a box has focus updates it in place, so it keeps focus', async t => {
+  const h = setup(t, { config: { TagCacheExcludeLibraries: true } });
+  await settleMany(h);
+  h.ctx.openTab('server');
+  const box = h.root.querySelector(`[data-library-id="${OTHER_LIBRARY}"]`);
+  box.focus();
+  // Another view saved an exclusion: the same box shows it and keeps focus.
+  h.ctx.reload({ ...structuredClone(h.server), TagCacheExcludedLibraryIds: OTHER_LIBRARY });
+  assert.equal(box.isConnected, true, 'updated in place');
+  assert.equal(box.checked, true);
+  assert.equal(h.document.activeElement, box);
+});
+
+test('Overview: a new view shows its own cache summary, never the previous view\'s counts', async t => {
+  let summary = async () => ({ enabled: true, entries: 1234, lastModified: 0, rebuilding: false });
+  const h = setup(t, { routes: { '/tag-cache/summary': () => summary() } });
+  await settleMany(h);
+  h.ctx.openTab('overview');
+  await settleMany(h);
+  assert.match(h.root.querySelector('[data-ov="cache"]').textContent, /1,234|1234/);
+  h.ctx.dispose();
+  const gate = deferred();
+  summary = () => gate.promise;
+  const next = h.A.createPage(h.root, structuredClone(h.server));
+  h.cleanup.push(() => next.dispose());
+  next.openTab('overview');
+  await settleMany(h);
+  assert.doesNotMatch(h.root.querySelector('[data-ov="cache"]').textContent, /1,234|1234/, 'not the previous view\'s count');
+  gate.resolve({ enabled: true, entries: 7, lastModified: 0, rebuilding: false });
+  await settleMany(h);
+  assert.match(h.root.querySelector('[data-ov="cache"]').textContent, /^7admin_tags_overview_cached/);
 });

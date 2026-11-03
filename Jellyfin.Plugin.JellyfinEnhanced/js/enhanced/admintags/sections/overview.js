@@ -25,13 +25,21 @@
     ];
     A.GROUP_SWITCHES = GROUPS;
 
-    /** @type {{enabled: boolean, entries: number, lastModified: number, rebuilding: boolean}|null} */
-    let summary = null;
-    let summaryError = false;
-    let pollTimer = null;
-    // Each request's number: only the newest answer counts, and a page torn
-    // down (dispose bumps it) ignores answers still on their way.
-    let summarySeq = 0;
+    /**
+     * Each page view's cache summary: a new view (after a sign-in, or on another
+     * server) shows "…" until its own answer, never an earlier view's counts.
+     * seq numbers the requests: only the newest answer counts, and a page torn
+     * down (dispose bumps it) ignores answers still on their way.
+     * @type {WeakMap<Object, {summary: {enabled: boolean, entries: number, lastModified: number, rebuilding: boolean}|null, error: boolean, seq: number, timer: ReturnType<typeof setTimeout>|null}>}
+     */
+    const summaries = new WeakMap();
+
+    /** @param {Object} ctx @returns {{summary: Object|null, error: boolean, seq: number, timer: ReturnType<typeof setTimeout>|null}} */
+    const summaryOf = (ctx) => {
+        let state = summaries.get(ctx);
+        if (!state) summaries.set(ctx, state = { summary: null, error: false, seq: 0, timer: null });
+        return state;
+    };
 
     /**
      * Read the server tag cache state (GET tag-cache/summary).
@@ -39,25 +47,26 @@
      * @returns {Promise<void>}
      */
     A.cacheSummary = async function(ctx) {
-        const seq = ++summarySeq;
-        clearTimeout(pollTimer);
-        pollTimer = null;
-        let next = summary;
+        const state = summaryOf(ctx);
+        const seq = ++state.seq;
+        clearTimeout(state.timer);
+        state.timer = null;
+        let next = state.summary;
         let failed = false;
         try {
             next = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl('/JellyfinEnhanced/tag-cache/summary'), dataType: 'json' });
         } catch (err) {
             failed = true;
-            if (seq === summarySeq && ctx.isCurrent()) console.warn('🪼 Jellyfin Enhanced: could not read the tag cache summary', err);
+            if (seq === state.seq && ctx.isCurrent()) console.warn('🪼 Jellyfin Enhanced: could not read the tag cache summary', err);
         }
-        if (seq !== summarySeq || !ctx.isCurrent()) return;
-        summary = next;
-        summaryError = failed;
+        if (seq !== state.seq || !ctx.isCurrent()) return;
+        state.summary = next;
+        state.error = failed;
         // Only the cache card shows the summary: a poll redraws nothing else (the
         // other tabs' editors keep their controls and keyboard focus).
         drawCache(ctx);
         // Follow a rebuild until it finishes.
-        if (summary?.rebuilding) pollTimer = setTimeout(() => A.cacheSummary(ctx), 3000);
+        if (state.summary?.rebuilding) state.timer = setTimeout(() => A.cacheSummary(ctx), 3000);
     };
 
     /**
@@ -112,6 +121,7 @@
         const c = ctx.config;
         const t = (key, params) => JE.t(key, params);
         const cacheOn = c.TagCacheServerMode !== false;
+        const { summary, error: summaryError } = summaryOf(ctx);
         const state = /** @type {HTMLElement|null} */ (grid.querySelector('[data-ov="cache-state"]'));
         if (state) {
             state.dataset.state = cacheOn ? (summary?.rebuilding ? 'warn' : 'on') : 'off';
@@ -195,10 +205,11 @@
                 [t('admin_tags_overview_users_pick'), t(c.TagStylesAllowUserPreset === true ? 'admin_tags_allowed' : 'admin_tags_not_allowed')],
             ].map(([k, v]) => `<dt>${ctx.esc(k)}</dt><dd>${ctx.esc(v)}</dd>`).join(''));
         },
-        dispose() {
-            summarySeq++;
-            clearTimeout(pollTimer);
-            pollTimer = null;
+        dispose(ctx) {
+            const state = summaryOf(ctx);
+            state.seq++;
+            clearTimeout(state.timer);
+            state.timer = null;
         },
     });
 })(window.JellyfinEnhanced);
