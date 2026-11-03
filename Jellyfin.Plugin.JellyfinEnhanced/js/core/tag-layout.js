@@ -200,6 +200,13 @@
     /** Rows a wrapping slot (caption strip, bottom band, hover reveal) shows before its "+N" overflow chip. */
     const FIT_MAX_ROWS = 2;
     const CENTRE_SLOTS = new Set(['tc', 'bc', 'ml', 'mr', 'c']);
+    /**
+     * Column stacks outside Corners, per layout, and their inset from each card
+     * edge (tags/tag-layout-styles.js): their chips are whole, so one wider than
+     * the card is ellipsized at that inset by the fitting pass.
+     */
+    const STACK_SLOTS = Object.assign(Object.create(null), { minimal: ['top', 'corner'], caption: ['poster'] });
+    const STACK_INSET = 6;
     /** Cards narrower than this show bands with compact labels. */
     const NARROW_CARD_PX = 160;
 
@@ -2138,6 +2145,8 @@
      * @property {Array<{el: HTMLElement, before: number|null}>} indicator - Exact top-right containers
      *   of a corners card saved before layouts, with how far down their slot they sit unmoved
      *   (null: the stylesheet default).
+     * @property {Array<{chip: HTMLElement, width: number}>} stacks - Stack chips wider than their slot,
+     *   with the width their label is ellipsized to.
      */
 
     /**
@@ -2193,7 +2202,7 @@
      * @returns {FitPlan}
      */
     function measureFit(ctrl) {
-        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [], indicator: measureIndicatorGaps(ctrl) };
+        const plan = { pillFacts: ctrl.pill ? pillFactsThatFit(ctrl.pill) : -1, rows: [], indicator: measureIndicatorGaps(ctrl), stacks: measureStacks(ctrl) };
         const slots = rowSlots(ctrl);
         const sides = new Map(slots.filter(el => ['ml', 'mr'].includes(el.dataset.jeSlot || ''))
             .map(el => [el.dataset.jeSlot, slotChips(el).map(chip => chip.getBoundingClientRect())]));
@@ -2287,6 +2296,29 @@
     }
 
     /**
+     * Chips of the card's column stacks (STACK_SLOTS) wider than the card less
+     * the stacks' inset on both sides (reads only).
+     * @param {CardController} ctrl
+     * @returns {FitPlan['stacks']}
+     */
+    function measureStacks(ctrl) {
+        const slots = STACK_SLOTS[ctrl.layout];
+        if (!slots) return [];
+        const width = Math.max(0, ctrl.host.clientWidth - 2 * STACK_INSET);
+        const out = [];
+        for (const slot of ctrl.host.children) {
+            if (!slots.includes(/** @type {HTMLElement} */ (slot).dataset.jeSlot || '')) continue;
+            for (const group of slot.children) {
+                if (!(/** @type {HTMLElement} */ (group).dataset.jeGroup)) continue;
+                for (const chip of /** @type {HTMLElement[]} */ (Array.from(group.children))) {
+                    if (chip.getBoundingClientRect().width > width + 0.01) out.push({ chip, width });
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
      * Where each exact top-right container of a legacy corners card right
      * below one that is not would sit without its indicator margin: right
      * below that container (the margin never moves the containers above it).
@@ -2369,6 +2401,11 @@
                 row.chips[0].setAttribute('data-je-fit-width', '');
                 row.chips[0].style.setProperty('--je-chip-fit-width', `${row.firstWidth}px`);
             }
+        }
+        for (const { chip, width } of plan.stacks) {
+            prepareFitText(chip);
+            chip.setAttribute('data-je-fit-width', '');
+            chip.style.setProperty('--je-chip-fit-width', `${width}px`);
         }
         if (ctrl.layout === 'corners' && resolveLayout(ctrl).edge === 'flush') {
             for (const row of plan.rows) {

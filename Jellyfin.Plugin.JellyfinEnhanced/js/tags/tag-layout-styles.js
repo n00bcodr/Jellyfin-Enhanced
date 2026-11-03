@@ -30,6 +30,9 @@
     /** Transparent links pass sizing and Flush paint through to the chip. */
     const CHIP_LINK = ':is(.awards-link, .language-link)';
 
+    /** Minimal's and Caption's column stacks: their oversized chips are fitted (core/tag-layout.js STACK_SLOTS). */
+    const STACK = `:is(${SLOT}[data-je-slot="poster"], ${SLOT}[data-je-slot="corner"], .je-tag-host[data-je-layout="minimal"] > .je-tag-slot[data-je-slot="top"])`;
+
     /** Group chips and the slot's direct overflow chip share Flush paint. */
     const FLUSH_CHIP = `:is([data-je-group] > ${BOX_CHIP}, [data-je-group] > ${CHIP_LINK} > ${BOX_CHIP}, .je-tag-more)`;
 
@@ -198,6 +201,20 @@
             ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > .awards-tag > span:last-child,
             ${host('corners')} ${CHIP_LINK}[data-je-fit-width] > .language-chip > .je-tag-fit-text {
                 min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+            }
+            /* A stack chip wider than the card keeps its whole box at the slot's
+               inset and ellipsizes its label the same way. */
+            ${STACK} > [data-je-group] > [data-je-fit-width],
+            ${STACK} ${CHIP_LINK}[data-je-fit-width] > ${BOX_CHIP} {
+                max-width: var(--je-chip-fit-width); min-width: 0; box-sizing: border-box;
+            }
+            ${STACK} > [data-je-group] > [data-je-fit-width] { overflow: visible; }
+            ${STACK} > [data-je-group] > ${CHIP_LINK}[data-je-fit-width] { display: inline-flex; }
+            ${STACK} [data-je-fit-width] :is(.je-tag-fit-text, .custom-tag-text, .rating-text),
+            ${STACK} [data-je-fit-width].awards-tag > span:last-child,
+            ${STACK} ${CHIP_LINK}[data-je-fit-width] > .awards-tag > span:last-child {
+                display: block; min-width: 0;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
             }
 
             /* Jellyfin's played / unplayed-count indicator sits top-right; a card
@@ -556,6 +573,7 @@
             .je-tag-dot[data-je-dot="codec"] { background: #546e7a; }
             ${SLOT}[data-je-slot="corner"] {
                 right: 6px; bottom: 6px;
+                max-width: calc(100% - 12px);
                 flex-direction: column-reverse;
                 align-items: flex-end;
             }
