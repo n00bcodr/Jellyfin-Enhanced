@@ -413,6 +413,16 @@
                 box-shadow: none;
                 gap: calc(3px * var(--je-tag-scale, 1));
             }
+            /* Language chips size themselves by the viewport (and the phone layout);
+               in the strip they take the same box as its other chips, so two rows
+               fit its reserved height. */
+            html .je-tag-caption .language-chip {
+                font-size: calc(clamp(9px, 6.4cqw, 11.5px) * var(--je-tag-scale, 1));
+                line-height: 1.15;
+                padding: calc(2px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
+                border-radius: 3px;
+                box-shadow: none;
+            }
             .je-tag-caption .rating-star-icon { font-size: calc(clamp(9px, 6.8cqw, 12px) * var(--je-tag-scale, 1)) !important; }
             .je-tag-caption .rating-tomato-icon { width: calc(clamp(9px, 6.8cqw, 12px) * var(--je-tag-scale, 1)); height: calc(clamp(9px, 6.8cqw, 12px) * var(--je-tag-scale, 1)); }
             .je-tag-caption .language-flag { width: calc(20px * var(--je-tag-scale, 1)); box-shadow: none; }
