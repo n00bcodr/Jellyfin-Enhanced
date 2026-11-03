@@ -498,6 +498,29 @@ public class RatingSourceTests
     }
 
     [Fact]
+    public void FlushWithNoWarmDemandResolvesEachChangedItemOnce()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        f.Plugin.Configuration.MdblistApiKey = "";
+        f.Plugin.Configuration.TMDB_API_KEY = "";
+        var movies = Enumerable.Range(1, 200).Select(i => new Movie { Id = Guid.NewGuid(), Name = $"m{i}", ProviderIds = new() { ["Tmdb"] = (1000 + i).ToString() } }).ToArray();
+        var lookups = 0;
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<Guid>());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<BaseItem>());
+        foreach (var movie in movies) library.Setup(l => l.GetItemById<BaseItem>(movie.Id)).Callback(() => lookups++).Returns(movie);
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        cache.BuildFullCache(null, default);
+        lookups = 0;
+        foreach (var movie in movies) cache.EnqueueUpdate(movie.Id);
+        typeof(TagCacheService).GetMethod("FlushPending", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(cache, null);
+        // Nothing to warm (no MDBList key, no logo demand): only the rebuild resolves each item.
+        Assert.Equal(movies.Length, lookups);
+        Assert.All(movies, movie => Assert.True(cache.TryGetEntry(movie.Id, out _)));
+    }
+
+    [Fact]
     public async Task OnDemandBuildNeverWaitsForMdblistAndTheBackgroundWarmRetiresTheNativeMemo()
     {
         using var f = new ApiPluginFixture();

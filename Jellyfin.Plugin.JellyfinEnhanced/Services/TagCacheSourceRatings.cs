@@ -202,6 +202,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// </summary>
         private void WarmForRebuild(IEnumerable<Guid> ids)
         {
+            // No demand (the default: no key or named source, no logos): resolving the
+            // ids here would only repeat the rebuild's own lookups.
+            if (!HasRebuildWarmDemand()) return;
             var items = ids.Select(id => _libraryManager.GetItemById<BaseItem>(id)).OfType<BaseItem>()
                 .Where(item => TaggableTypes.Contains(item.GetBaseItemKind()) && !IsInExcludedLibrary(item)).ToArray();
             if (items.Length == 0) return;
@@ -216,6 +219,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             WarmLogosForItems(items, CancellationToken.None);
         }
+
+        /// <summary>True when <see cref="WarmForRebuild"/> has anything to fetch: MDBList named-source or logo demand.</summary>
+        private bool HasRebuildWarmDemand()
+            => (_mdblistService != null && HasSourceRatingDemand()) || (_logoService != null && HasLogoDemand());
 
         /// <summary>Reuse MDBList's bounded batches, seven-day TTL, pacing and quota reserve before a build.</summary>
         private void WarmSourceRatings(CancellationToken cancellationToken)
