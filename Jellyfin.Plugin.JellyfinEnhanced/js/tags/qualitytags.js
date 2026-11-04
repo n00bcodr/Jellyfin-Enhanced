@@ -275,7 +275,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 12 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 13 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -581,13 +581,41 @@
     function detectCurrentAudioCodec(streams) {
         for (const stream of streams) {
             const title = audioCodecFromText(stream.DisplayTitle);
-            if (title) return atmosCarrier(audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title, stream);
+            if (!title) continue;
+            // The title refined by the same track's codec and profile, else the title alone, if the codec can carry it.
+            const label = [audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title, title]
+                .map(candidate => atmosCarrier(candidate, stream)).find(candidate => carrierAllows(candidate, stream.Codec));
+            if (label) return label;
         }
         for (const stream of streams) {
-            const label = audioCodecFromText([stream.Codec, stream.Profile].filter(Boolean).join(' '));
-            if (label) return atmosCarrier(label, stream);
+            const label = [audioCodecFromText([stream.Codec, stream.Profile].filter(Boolean).join(' ')), audioCodecFromText(stream.Codec)]
+                .filter(Boolean).map(candidate => atmosCarrier(candidate, stream)).find(candidate => carrierAllows(candidate, stream.Codec));
+            if (label) return label;
         }
         return null;
+    }
+
+    // What each known stream codec can be (QualityTagRules.CarrierAllows): a title may refine its carrier
+    // (DTS → DTS-HD MA, E-AC-3 → DD+ ATMOS) but never contradict it, so an AC-3 track titled "Atmos" stays
+    // Dolby Digital and an AAC track titled "TrueHD" has no codec chip. An unknown codec lets the title decide.
+    const CARRIERS = [
+        [/^(?:e-?ac-?3|ddp)/, ['Dolby Digital+', 'DD+ ATMOS']],
+        [/^ac-?3$/, ['Dolby Digital']],
+        [/^(?:truehd|mlp)/, ['TRUEHD', 'TRUEHD ATMOS']],
+        [/^(?:dts|dca)/, ['DTS', 'DTS-HD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS-X']],
+        [/^flac/, ['FLAC']],
+        [/^pcm/, ['PCM']],
+        [/^(?:aac|opus|mp[23]|vorbis|alac|wmav)/, []],
+    ];
+
+    /**
+     * @param {string} label Detected sound label.
+     * @param {string} [codec] The track's stream codec.
+     * @returns {boolean} Whether the codec can carry that label.
+     */
+    function carrierAllows(label, codec) {
+        const known = CARRIERS.find(([pattern]) => pattern.test(String(codec || '').toLowerCase()));
+        return !known || known[1].includes(label);
     }
 
     /**
@@ -1437,7 +1465,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 12, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 13, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1475,7 +1503,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 12, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 13, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

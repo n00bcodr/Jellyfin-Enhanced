@@ -729,14 +729,44 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             foreach (var stream in streams)
             {
                 var title = AudioCodecFromText(stream.DisplayTitle);
-                if (title != null) return AtmosCarrier(AudioCodecFromText(stream.DisplayTitle + " " + stream.Codec + " " + stream.Profile) ?? title, stream);
+                if (title == null) continue;
+                // The title refined by the same track's codec and profile, else the title alone, if the codec can carry it.
+                foreach (var candidate in new[] { AudioCodecFromText(stream.DisplayTitle + " " + stream.Codec + " " + stream.Profile) ?? title, title })
+                {
+                    var label = AtmosCarrier(candidate, stream);
+                    if (CarrierAllows(label, stream.Codec)) return label;
+                }
             }
             foreach (var stream in streams)
             {
-                var label = AudioCodecFromText(stream.Codec + " " + stream.Profile);
-                if (label != null) return AtmosCarrier(label, stream);
+                foreach (var candidate in new[] { AudioCodecFromText(stream.Codec + " " + stream.Profile), AudioCodecFromText(stream.Codec) })
+                {
+                    if (candidate == null) continue;
+                    var label = AtmosCarrier(candidate, stream);
+                    if (CarrierAllows(label, stream.Codec)) return label;
+                }
             }
             return null;
+        }
+
+        // What each known stream codec can be (CARRIERS in qualitytags.js): a title may refine its carrier but never
+        // contradict it. An unknown codec lets the title decide.
+        private static readonly (Regex Codec, string[] Labels)[] Carriers =
+        {
+            (new("^(?:e-?ac-?3|ddp)", Options), new[] { "Dolby Digital+", "DD+ ATMOS" }),
+            (new("^ac-?3$", Options), new[] { "Dolby Digital" }),
+            (new("^(?:truehd|mlp)", Options), new[] { "TRUEHD", "TRUEHD ATMOS" }),
+            (new("^(?:dts|dca)", Options), new[] { "DTS", "DTS-HD", "DTS-HD MA", "DTS-HD HRA", "DTS-X" }),
+            (new("^flac", Options), new[] { "FLAC" }),
+            (new("^pcm", Options), new[] { "PCM" }),
+            (new("^(?:aac|opus|mp[23]|vorbis|alac|wmav)", Options), Array.Empty<string>()),
+        };
+
+        private static bool CarrierAllows(string label, string? codec)
+        {
+            var value = JsText.ToLower(codec ?? string.Empty);
+            foreach (var (pattern, labels) in Carriers) if (pattern.IsMatch(value)) return Array.IndexOf(labels, label) >= 0;
+            return true;
         }
 
         private static readonly Regex TrueHdCarrierRegex = new(@"(?:^|[^a-z0-9_])(?:true[ .-]?hd|mlp)(?![a-z_])", Options);

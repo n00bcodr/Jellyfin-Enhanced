@@ -1605,6 +1605,83 @@
     "480p",
     "DIVX"
    ]
+  },
+  {
+   "name": "An AC-3 track titled Atmos is Dolby Digital",
+   "why": "AC-3 cannot carry Atmos; the codec bounds what the title may claim",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English Atmos"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ]
+  },
+  {
+   "name": "An AAC track titled DTS has no codec chip",
+   "why": "AAC is not DTS; without a chip of its own it shows its surround layout",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Original DTS mix"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "A stereo AAC track titled TrueHD Atmos 7.1 claims nothing",
+   "why": "The codec and Jellyfin's layout beat a stale title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - TrueHD Atmos 7.1"
+    }
+   ],
+   "highest": [],
+   "all": []
+  },
+  {
+   "name": "A DTS track's title still refines it",
+   "why": "A title may add what the codec allows: DTS-HD MA on a DTS stream",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS-HD MA - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ]
   }
  ]
 }

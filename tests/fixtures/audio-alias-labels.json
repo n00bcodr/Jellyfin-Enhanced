@@ -82,6 +82,7 @@
   {"format": "precedence", "alias": "DD+ profile Atmos", "codec": "eac3", "stream": {"Type": "Audio", "Channels": 6, "DisplayTitle": "DD+", "Codec": "eac3", "Profile": "Dolby Atmos"}, "full": "DD+ ATMOS 5.1", "compact": "ATMOS"},
   {"format": "precedence", "alias": "DTS-HD profile X", "codec": "dts", "stream": {"Type": "Audio", "Channels": 6, "DisplayTitle": "DTS-HD MA", "Codec": "dts", "Profile": "DTS:X"}, "full": "DTS-X 5.1", "compact": "DTS-X"},
   {"format": "precedence", "alias": "DTS profile HRA", "codec": "dts", "stream": {"Type": "Audio", "Channels": 6, "DisplayTitle": "DTS", "Codec": "dts", "Profile": "DTS-HD HRA"}, "full": "DTS-HD HRA 5.1", "compact": "DTS-HD 5.1"},
-  {"format": "precedence", "alias": "DD profile Plus", "codec": "ac3", "stream": {"Type": "Audio", "Channels": 6, "DisplayTitle": "Dolby Digital", "Codec": "ac3", "Profile": "Dolby Digital Plus"}, "full": "Dolby Digital+ 5.1", "compact": "DD+ 5.1"},
+  {"format": "precedence", "alias": "DD profile Plus", "codec": "eac3", "stream": {"Type": "Audio", "Channels": 6, "DisplayTitle": "Dolby Digital", "Codec": "eac3", "Profile": "Dolby Digital Plus"}, "full": "Dolby Digital+ 5.1", "compact": "DD+ 5.1"},
+  {"format": "precedence", "alias": "AC-3 codec over a Plus profile", "codec": "ac3", "stream": {"Type": "Audio", "Channels": 6, "DisplayTitle": "Dolby Digital", "Codec": "ac3", "Profile": "Dolby Digital Plus"}, "full": "Dolby Digital 5.1", "compact": "DD 5.1"},
   {"format": "precedence", "alias": "DTS Express is not X", "codec": "dts", "stream": {"Type": "Audio", "Channels": 6, "DisplayTitle": "DTS", "Codec": "dts", "Profile": "DTS Express"}, "full": "DTS 5.1", "compact": "DTS"}
 ]
