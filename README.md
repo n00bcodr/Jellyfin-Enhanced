@@ -52,7 +52,7 @@
 4. **Restart** Jellyfin and refresh your browser (<kbd>Ctrl</kbd>+<kbd>F5</kbd>). Press <kbd>?</kbd> outside an input or textarea, or choose **Enhanced Panel** in the drawer. On Jellyfin 12, choose **Jellyfin Enhanced** in the avatar menu. If the panel opens, JE’s web tools have loaded.
 
 > [!IMPORTANT]
-> Current JE builds target **Jellyfin 12.x and 10.11.x** (12.x first; 10.11.x is best-effort, and Jellyfin 13 isn't supported yet). The same repository URL serves every version, and Jellyfin installs the build that matches your server. Something not working? See the [installation guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/) and [troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/).
+> Current JE builds target **Jellyfin 12.x and 10.11.x**. The same repository URL serves every version, and Jellyfin installs the build that matches your server. Something not working? See the [installation guide](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/installation/) and [troubleshooting](https://n00bcodr.github.io/Jellyfin-Enhanced/installation/troubleshooting/).
 
 <details>
 <summary>First admin settings and defaults</summary>

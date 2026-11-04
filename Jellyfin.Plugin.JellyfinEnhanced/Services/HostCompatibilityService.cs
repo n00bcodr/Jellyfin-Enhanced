@@ -55,6 +55,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The one manifest that serves every Jellyfin line; Jellyfin's own ABI filter picks the right build.</summary>
         public const string ManifestUrl = "https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json";
 
+        /// <summary>Public releases page, where a release that supports a newer Jellyfin line will be listed.</summary>
+        public const string ReleasesUrl = "https://github.com/n00bcodr/Jellyfin-Enhanced/releases";
+
         private readonly IServerApplicationHost _appHost;
 
         public HostCompatibilityService(IServerApplicationHost appHost)
@@ -157,9 +160,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var unsupported = $"This release of Jellyfin Enhanced does not support Jellyfin {HostVersion.Major}.x yet " +
                     $"(the server is Jellyfin {HostVersionString}; this copy was built for Jellyfin {BuiltForLine}). " +
-                    "Features may fail unpredictably. Stay on Jellyfin 12.x, or install a Jellyfin Enhanced release " +
-                    $"that lists Jellyfin {HostVersion.Major} support" +
-                    (includeInstallAdvice ? $" from {ManifestUrl}." : ".");
+                    "Features may fail unpredictably. Stay on Jellyfin 12.x" +
+                    // The config page shows its own releases link under the message.
+                    (includeInstallAdvice
+                        ? $" until a Jellyfin Enhanced release lists Jellyfin {HostVersion.Major} support; see {ReleasesUrl}."
+                        : ".");
                 return isStale
                     ? unsupported + " The plugin file on disk was also replaced after Jellyfin loaded it; stop and start " +
                       "the Jellyfin service or container (e.g. systemctl restart jellyfin, docker restart <container>) to load it."

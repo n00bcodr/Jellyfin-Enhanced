@@ -174,17 +174,20 @@ public class CoreHostCompatibilityTests
         var message = service.GetCompatibilityMessage(stale)!;
         Assert.Contains("does not support Jellyfin 13.x yet", message);
         Assert.Contains($"the server is Jellyfin {version}", message);
-        Assert.Contains("Stay on Jellyfin 12.x", message);
-        Assert.Contains("lists Jellyfin 13 support.", message);
+        // The config page adds its own releases link, so the shown message stops at the advice.
+        Assert.Contains("Stay on Jellyfin 12.x.", message);
+        Assert.DoesNotContain("lists Jellyfin 13 support", message);
         Assert.DoesNotContain(".zip", message);
         Assert.DoesNotContain("Install ", message);
         Assert.DoesNotContain(HostCompatibilityService.ManifestUrl, message);
+        Assert.DoesNotContain(HostCompatibilityService.ReleasesUrl, message);
         // Swapping builds cannot help here, so the build-swap restart advice is not repeated.
         Assert.DoesNotContain("Both builds share one version number", message);
         Assert.Equal(stale, message.Contains("plugin file on disk was also replaced", StringComparison.Ordinal));
 
         var logged = service.GetCompatibilityMessage(stale, includeInstallAdvice: true)!;
-        Assert.Contains($"lists Jellyfin 13 support from {HostCompatibilityService.ManifestUrl}.", logged);
+        Assert.Contains($"Stay on Jellyfin 12.x until a Jellyfin Enhanced release lists Jellyfin 13 support; see {HostCompatibilityService.ReleasesUrl}.", logged);
+        Assert.DoesNotContain(HostCompatibilityService.ManifestUrl, logged);
         Assert.DoesNotContain(".zip", logged);
     }
 }

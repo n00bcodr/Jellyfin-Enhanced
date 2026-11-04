@@ -109,8 +109,8 @@
                         <a id="je-host-mismatch-link" target="_blank" rel="noopener noreferrer"></a>.
                     </div>
                     <div id="je-host-unsupported-check" style="margin-top:8px; display:none;">
-                        Check the Jellyfin Enhanced releases for a build that lists <span id="je-host-unsupported-line"></span> support, in the plugin repository
-                        <a id="je-host-unsupported-link" target="_blank" rel="noopener noreferrer"></a>.
+                        Check the Jellyfin Enhanced releases for a build that lists <span id="je-host-unsupported-line"></span> support:
+                        <a id="je-host-unsupported-link" href="https://github.com/n00bcodr/Jellyfin-Enhanced/releases" target="_blank" rel="noopener noreferrer">https://github.com/n00bcodr/Jellyfin-Enhanced/releases</a>.
                     </div>
                 </div>
             </div>
@@ -9082,15 +9082,13 @@
                 var hostMajor = parseInt(String(data.hostVersion || ''), 10);
                 document.getElementById('je-host-unsupported-check').style.display = unsupported ? '' : 'none';
                 document.getElementById('je-host-unsupported-line').textContent = isNaN(hostMajor) ? 'this Jellyfin version' : 'Jellyfin ' + hostMajor;
-                ['je-host-mismatch-link', 'je-host-unsupported-link'].forEach(function(id) {
-                    var link = document.getElementById(id);
-                    link.textContent = data.manifestUrl || '';
-                    if (/^https:\/\//i.test(data.manifestUrl || '')) {
-                        link.href = data.manifestUrl;
-                    } else {
-                        link.removeAttribute('href');
-                    }
-                });
+                var link = document.getElementById('je-host-mismatch-link');
+                link.textContent = data.manifestUrl || '';
+                if (/^https:\/\//i.test(data.manifestUrl || '')) {
+                    link.href = data.manifestUrl;
+                } else {
+                    link.removeAttribute('href');
+                }
                 banner.style.display = '';
             }).catch(function(err) {
                 console.warn('[JE] host-compat check failed:', err);
