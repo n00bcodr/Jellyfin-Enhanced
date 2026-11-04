@@ -402,6 +402,10 @@
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="rule"] { color: var(--je-mtp-rule, #7fd3ff); }
         #jellyfin-enhanced-panel .je-mtp-meta .je-mtp-look { display: block; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mtp-foot { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--je-mtp-muted, rgba(255,255,255,0.7)); }
+        #jellyfin-enhanced-panel .je-mtp-foot p { margin: 0; }
+        #jellyfin-enhanced-panel .je-mtp-why { margin-top: 4px; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary { display: inline-flex; align-items: center; min-height: 32px; cursor: pointer; color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary:focus-visible { outline: 2px solid var(--je-mtp-strong, #fff); outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mtp-foot strong { color: var(--je-mtp-strong, #fff); }
         #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: var(--je-mtp-lock, #ffd166); }
         #jellyfin-enhanced-panel .je-mtp-note[hidden] { display: none; }
@@ -510,7 +514,7 @@
         grid.className = 'je-mtp-samples';
         const figures = SAMPLES.map((sample) => buildSample(sample));
         grid.append(...figures);
-        const foot = document.createElement('p');
+        const foot = document.createElement('div');
         foot.className = 'je-mtp-foot';
         const note = document.createElement('p');
         note.className = 'je-mtp-note';
@@ -602,8 +606,22 @@
             strong.textContent = preset ? `${defaultLook} · ${preset}` : defaultLook;
             // The admin page's preview (drawn from a seeded new user) speaks of the new-user default, not the viewer's own.
             const forNewUsers = !!options.source;
-            foot.replaceChildren(document.createTextNode(`${JE.t(forNewUsers ? 'admin_tags_preview_default' : 'panel_media_tags_preview_default')} `), strong,
-                document.createTextNode(`. ${JE.t(forNewUsers ? 'admin_tags_preview_existing' : 'panel_media_tags_preview_precedence')}`));
+            const line = document.createElement('p');
+            line.append(document.createTextNode(`${JE.t(forNewUsers ? 'admin_tags_preview_default' : 'panel_media_tags_preview_default')} `), strong,
+                document.createTextNode(forNewUsers ? `. ${JE.t('admin_tags_preview_existing')}.` : '.'));
+            if (forNewUsers) foot.replaceChildren(line);
+            else {
+                // How a card's look is chosen: on request, so the preview stays short.
+                const why = document.createElement('details');
+                why.className = 'je-mtp-why';
+                why.open = foot.querySelector('.je-mtp-why')?.hasAttribute('open') || false;
+                const summary = document.createElement('summary');
+                summary.textContent = JE.t('panel_media_tags_preview_why');
+                const text = document.createElement('p');
+                text.textContent = JE.t('panel_media_tags_preview_precedence');
+                why.append(summary, text);
+                foot.replaceChildren(line, why);
+            }
             interaction.sync();
             drawStrip();
         };

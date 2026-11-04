@@ -265,7 +265,8 @@
             : '';
         return `
             <section class="je-mth-card" aria-labelledby="jeMthLayoutTitle">
-                <h4 class="je-mth-card-title" id="jeMthLayoutTitle">${tx('common_layout')}</h4>
+                <div class="je-mth-card-head"><h4 class="je-mth-card-title" id="jeMthLayoutTitle">${tx('common_layout')}</h4>
+                    <button type="button" class="je-mth-button je-mth-jump" data-je-jump="jeMthPresetsTitle"><span class="material-icons" aria-hidden="true">auto_awesome</span>${tx('panel_media_tags_browse_presets')}</button></div>
                 <p class="je-mth-hint">${tx('panel_media_tags_layout_desc')}</p>
                 <div class="je-mth-tiles" id="jeTagLayoutChoice" role="radiogroup" aria-labelledby="jeMthLayoutTitle" aria-describedby="jeMthLayoutDesc">${tiles}</div>
                 <p class="je-mth-desc" id="jeMthLayoutDesc" aria-live="polite">${tx(`panel_settings_ui_tag_layout_${conf.layout}`)}</p>
@@ -497,6 +498,9 @@
         #jellyfin-enhanced-panel .je-mth-card { margin: 0 0 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: var(--je-mth-box); }
         #jellyfin-enhanced-panel .je-mth-card .je-tge { margin: 0; padding: 0; background: none; border: 0; }
         #jellyfin-enhanced-panel .je-mth-card-title { margin: 0 0 4px; font-size: 16px; font-weight: 600; color: #fff; }
+        #jellyfin-enhanced-panel .je-mth-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+        #jellyfin-enhanced-panel .je-mth-jump { min-height: 32px; padding: 0 10px; font-size: 13px; }
+        #jellyfin-enhanced-panel #jeMthPresetsTitle { scroll-margin-top: 72px; }
         #jellyfin-enhanced-panel .je-mth-card-title:focus { outline: none; }
         #jellyfin-enhanced-panel .je-mth-card-title:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mth-hint { margin: 0 0 8px; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
@@ -655,7 +659,7 @@
             #jellyfin-enhanced-panel .je-mth-tab { justify-content: center; min-height: 44px; padding: 8px 2px 9px; font-size: 13px; min-width: 0; }
             #jellyfin-enhanced-panel .je-mth-tab-long, #jellyfin-enhanced-panel .je-mth-tab .je-mth-admin-chip { display: none; }
             #jellyfin-enhanced-panel .je-mth-tab-short { display: inline; overflow: hidden; text-overflow: ellipsis; }
-            #jellyfin-enhanced-panel .je-mth-tab--admin::before { content: ''; position: absolute; top: 8px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: #ffb74d; }
+            #jellyfin-enhanced-panel .je-mth-tab--admin::before { content: 'admin_panel_settings'; position: absolute; top: 2px; right: 0; font-family: 'Material Icons'; font-size: 13px; line-height: 1; color: #ffb74d; font-feature-settings: 'liga'; }
             #jellyfin-enhanced-panel .je-mth-body { grid-template-columns: minmax(0, 1fr); gap: 10px; }
             #jellyfin-enhanced-panel .je-mth-preview { grid-column: 1; grid-row: auto; position: static; display: none; }
             #jellyfin-enhanced-panel .je-mth-panels { grid-row: auto; }
@@ -676,7 +680,8 @@
             /* Phone reading size for help and descriptions (preview metadata stays small). */
             #jellyfin-enhanced-panel :is(.je-mth-hint, .je-mth-switch-desc, .je-mth-badge-desc, .je-tge-hint, .je-tge-summary) { font-size: 14px; line-height: 1.45; }
             #jellyfin-enhanced-panel .je-mth-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            #jellyfin-enhanced-panel .je-mth-pill, #jellyfin-enhanced-panel .je-mth-button { min-height: 44px; }
+            #jellyfin-enhanced-panel .je-mth-pill, #jellyfin-enhanced-panel .je-mth-button, #jellyfin-enhanced-panel .je-mth-strip-toggle { min-height: 44px; }
+            #jellyfin-enhanced-panel .je-mtp .je-mtp-view button { min-height: 44px; font-size: 13px; }
             #jellyfin-enhanced-panel .je-mth-density > .je-mth-pills { margin-left: 0; }
             #jellyfin-enhanced-panel .je-mth-pointer { flex-wrap: wrap; }
             #jellyfin-enhanced-panel .je-mth-badge { position: relative; display: block; }
@@ -918,6 +923,17 @@
         });
         hub.addEventListener('click', (e) => {
             const target = /** @type {HTMLElement} */ (e.target);
+            // "Browse presets": straight to the presets card, focus on its heading.
+            const jump = /** @type {HTMLElement|null} */ (target.closest('[data-je-jump]'));
+            if (jump) {
+                const heading = /** @type {HTMLElement|null} */ (hub.querySelector(`#${jump.dataset.jeJump}`));
+                if (heading) {
+                    heading.tabIndex = -1;
+                    heading.scrollIntoView?.({ block: 'start' });
+                    heading.focus({ preventScroll: true });
+                }
+                return;
+            }
             const goto = /** @type {HTMLElement|null} */ (target.closest('[data-je-goto]'));
             if (goto && goto.dataset.jeGoto?.startsWith('groups:')) {
                 const group = goto.dataset.jeGoto.slice(7);

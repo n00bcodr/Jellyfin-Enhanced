@@ -401,6 +401,7 @@
                         <button type="button" class="je-tge-move" data-dir="up" ${index === 0 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_move_up', { group: name }))}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
                         <button type="button" class="je-tge-move" data-dir="down" ${index === GROUP_IDS.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_move_down', { group: name }))}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
                     </div>
+                    <label class="je-tge-enable-hit"><input type="checkbox" class="je-tge-enable" id="${meta.toggleId}" ${JE.currentSettings?.[meta.settingKey] ? 'checked' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_enable', { group: name }))}" style="accent-color:${ctx.toggleAccentColor};"></label>
                     <span class="je-tge-swatch" aria-hidden="true"></span>
                     <button type="button" class="je-tge-expand" aria-expanded="false" aria-controls="${bodyId}">
                         <span class="je-tge-text">
@@ -410,7 +411,6 @@
                         <span class="material-icons je-tge-chevron" aria-hidden="true">expand_more</span>
                     </button>
                     ${badges}
-                    <label class="je-tge-enable-hit"><input type="checkbox" class="je-tge-enable" id="${meta.toggleId}" ${JE.currentSettings?.[meta.settingKey] ? 'checked' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_enable', { group: name }))}" style="accent-color:${ctx.toggleAccentColor};"></label>
                 </div>
                 <div class="je-tge-body" id="${bodyId}" hidden>
                     <div class="je-tge-hint">${escapeHtml(JE.t(meta.descKey))}</div>
@@ -652,7 +652,7 @@
         #jellyfin-enhanced-panel .je-tge-expand[aria-expanded="true"] .je-tge-chevron { transform: rotate(180deg); }
         #jellyfin-enhanced-panel .je-tge-enable { width: 18px; height: 18px; margin: 0; flex-shrink: 0; cursor: pointer; }
         /* The switch's own 44px target: it only turns the group on or off (the name opens the row). */
-        #jellyfin-enhanced-panel .je-tge-enable-hit { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; margin: -6px -6px -6px 2px; border-radius: 8px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-tge-enable-hit { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; margin: -6px 0 -6px -6px; border-radius: 8px; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-enable-hit:hover { background: rgba(255,255,255,0.06); }
         #jellyfin-enhanced-panel .je-tge-enable-hit:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: -2px; }
         #jellyfin-enhanced-panel .je-tge .je-tge-enable-hit input:focus-visible { outline: none; }
@@ -701,10 +701,10 @@
             #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-cats) .je-tge-cat .je-cat-btn { display: none; }
             #jellyfin-enhanced-panel .je-tge-cats { margin-top: 8px; }
             #jellyfin-enhanced-panel .je-tge-body { padding: 12px 10px 14px; }
-            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-row[data-group="status"] .je-tge-row-head { grid-template-columns: auto minmax(0, 1fr) auto; }
-            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-badges { grid-column: 2; }
-            #jellyfin-enhanced-panel .je-tge-row[data-group="status"] .je-tge-row-head { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 4px; }
-            #jellyfin-enhanced-panel .je-tge-badges { grid-column: 3; grid-row: 2; justify-self: start; min-height: 44px; }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-row[data-group="status"] .je-tge-row-head { grid-template-columns: auto auto minmax(0, 1fr); }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-badges { grid-column: 3; }
+            #jellyfin-enhanced-panel .je-tge-row[data-group="status"] .je-tge-row-head { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); row-gap: 4px; }
+            #jellyfin-enhanced-panel .je-tge-badges { grid-column: 4; grid-row: 2; justify-self: start; min-height: 44px; }
             #jellyfin-enhanced-panel .je-tge-expand { min-height: 44px; }
             #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step, #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 44px; height: 44px; }
             #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill, #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill { min-height: 44px; }

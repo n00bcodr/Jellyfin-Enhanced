@@ -48,14 +48,14 @@
         .je-tag-looks-otherwise .je-tag-looks-text { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
         .je-tag-looks button, .je-tag-looks select, .je-tag-looks input {
             font: inherit; font-size: 13px; color: #fff; background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 7px; min-height: 32px; box-sizing: border-box;
+            border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; padding: 4px 8px; min-height: 36px; box-sizing: border-box;
         }
         .je-tag-looks button { cursor: pointer; font-weight: 600; }
         .je-tag-looks button:hover:not(:disabled) { background: rgba(255,255,255,0.16); }
         .je-tag-looks button:disabled { opacity: 0.4; cursor: default; }
         .je-tag-looks button:focus-visible, .je-tag-looks select:focus-visible, .je-tag-looks input:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
         .je-tag-looks select option { background: #222; color: #fff; }
-        .je-tag-looks-move { width: 28px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; }
+        .je-tag-looks-move { width: 36px; padding: 0 !important; display: inline-flex; align-items: center; justify-content: center; }
         .je-tag-looks-move .material-icons { font-size: 16px; }
         .je-tag-looks-pill[aria-pressed="true"] { background: rgba(76,175,80,0.35); border-color: rgba(76,175,80,0.8); }
         .je-tag-looks-danger { color: #ff8a80 !important; }
@@ -99,7 +99,7 @@
         .je-tag-looks-error:empty { display: none; }
         .je-tag-looks-buttons { position: static; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 -12px -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 8px 8px; background: rgb(22, 30, 34); }
         .je-tag-looks-form.je-form-visible .je-tag-looks-buttons { position: sticky; }
-        .je-tag-looks-buttons .je-tag-looks-save { background: #0b7fb0; border-color: #0b7fb0; min-height: 36px; padding: 0 14px; font-size: 13px; }
+        .je-tag-looks-buttons .je-tag-looks-save { background: #0077a3; border-color: #0077a3; min-height: 36px; padding: 0 14px; font-size: 13px; }
         .je-tag-looks-buttons-hint { font-size: 13px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
         /* The settings column of the hub (not the whole pane): too narrow for the rule list beside the form. */
@@ -108,8 +108,8 @@
         }
         @container je-mth (max-width: 679px) {
             .je-tag-looks-cols { grid-template-columns: minmax(0, 1fr); }
-            .je-tag-looks button, .je-tag-looks select, .je-tag-looks input { min-height: 40px; }
-            .je-tag-looks-move { width: 40px; }
+            .je-tag-looks button, .je-tag-looks select, .je-tag-looks input { min-height: 44px; }
+            .je-tag-looks-move { width: 44px; }
             .je-tag-looks-locks-toggle { display: inline-flex; margin-left: auto; }
             .je-tag-looks-locks:not(.je-open) .je-tag-looks-locks-body { display: none; }
             .je-tag-looks-locks-head .je-tag-looks-unlock-all { margin-left: 0; }

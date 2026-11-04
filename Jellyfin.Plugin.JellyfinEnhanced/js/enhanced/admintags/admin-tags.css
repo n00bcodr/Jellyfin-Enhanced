@@ -131,6 +131,8 @@
 .je-tag-admin[data-tab="server"] .je-ta-body { grid-template-columns: minmax(0, 1fr); }
 .je-tag-admin[data-tab="server"] .je-ta-preview { display: none; }
 .je-ta-preview-toggle { display: none; }
+.je-ta-preview-why { margin-top: 8px; font-size: 12px; }
+.je-ta-preview-why > summary { display: inline-flex; align-items: center; min-height: 32px; cursor: pointer; font-weight: 600; color: var(--je-ta-text); }
 .je-ta-preview-note { margin: 10px 0 0; font-size: 12px; line-height: 1.45; color: var(--je-ta-muted); }
 .je-ta-native { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--je-ta-border); font-size: 12px; color: var(--je-ta-muted); }
 .je-ta-native strong { color: var(--je-ta-text); }
@@ -595,7 +597,6 @@
     .je-ta-panel > .je-ta-hint { display: none; }
     .je-ta-preview:not(.je-ta-preview-open) { padding: 0 10px; }
     #tagStylesBody { margin-top: 8px !important; }
-    .je-tag-admin .je-ts-sample-note { display: none; }
     :not(.je-ta-reordering) > .je-ta-lrows .je-ta-lrow-move { display: none; }
     .je-ta-reorder[aria-pressed="false"] + .je-ta-order :is(.je-ta-icon-btn, .je-ta-rank) { display: none; }
     .je-ta-order li { min-height: 52px; padding: 8px 12px; }

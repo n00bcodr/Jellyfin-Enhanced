@@ -219,14 +219,26 @@ test('the editor starts from the look the item has now, shows it live and keeps 
   h.change(h.$('.je-tie input[value="bands"]'), true);
   await h.settle();
   assert.equal(h.JE.core.tagLayout.resolveLayout(h.$('.je-tie-card .je-tag-host')).layout, 'bands');
-  assert.equal(h.$('[data-tie-status]').textContent, 'tag_item_editor_not_kept', 'says it will not stick');
+  assert.equal(h.$('[data-tie-status]').textContent, 'tag_item_editor_lock_save_hint', 'says Save will lock it');
+  assert.equal(h.$('[data-tie-save]').textContent, 'tag_item_editor_lock_save');
 
-  // Save without Keep: nothing written.
+  // "Lock & save for me": the edit is kept as the user's lock.
   h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  assert.equal(h.writes.length, 1, 'one settings save');
+  assert.equal(h.editor(), null);
+  assert.match(h.toasts.join('|'), /tag_item_editor_kept/);
+});
+
+test('Cancel still leaves an edit unkept', async t => {
+  const h = setup(t, { settings: { tagLookRules: [kidsRule] } });
+  await h.open(MOVIE);
+  h.change(h.$('.je-tie input[value="bands"]'), true);
+  await h.settle();
+  h.click(h.$('.je-tie-foot [data-tie-close]'));
   await h.settle();
   assert.equal(h.writes.length, 0);
   assert.equal(h.editor(), null);
-  assert.deepEqual(h.toasts, ['tag_item_editor_nothing_kept']);
 });
 
 test('Keep saves layout, density, every slot, hidden groups, Show up to, size, gap and edge spacing as the item\'s lock', async t => {
@@ -801,7 +813,7 @@ test('the editor asks where the look is kept before the edits, and Save says whe
 
   h.change(h.$('.je-tie input[value="bands"]'), true);
   await h.settle();
-  assert.equal(save(), 'tag_item_editor_save_none', 'an edit with nowhere to keep it says so');
+  assert.equal(save(), 'tag_item_editor_lock_save', 'an edit with nowhere to go yet offers to lock it');
   h.change(h.$('[data-tie-keep]'), true);
   await h.settle();
   assert.equal(save(), 'tag_item_editor_save_mine');

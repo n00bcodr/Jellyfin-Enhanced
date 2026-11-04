@@ -22,6 +22,7 @@
                 <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span>
                     <button type="button" class="je-ts-target-toggle" id="tagStyleTargetToggle" aria-expanded="false" aria-controls="tagStyleTargetBox"></button></div>
                 <div class="je-ts-sample" id="tagStyleSample" aria-hidden="true"></div>
+                <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
                 <div class="je-ts-target-box" id="tagStyleTargetBox" hidden>
                 <p class="je-ts-target-hint" id="tagStyleTargetHint"></p>
                 <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
@@ -29,7 +30,6 @@
                 </div>
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
                 <div id="tagStyleRows" class="je-ts-rows"></div>
-                <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
             </div>
             <button type="button" class="je-ts-preview-toggle" id="tagStylePreviewToggle" aria-expanded="false" aria-controls="tagStylePreview"><span class="je-ts-section-label" id="tagStylePreviewLabel"></span><span class="je-ts-preview-toggle-name"></span><span class="material-icons" aria-hidden="true">expand_more</span></button>
             <div id="tagStylePreview" class="je-ts-preview" aria-hidden="true" hidden></div>
@@ -863,7 +863,7 @@
             }
             if (!label) return;
             box.appendChild(chip(current, label, effective(current, label.key)));
-            box.appendChild(el('span', 'je-ts-sample-note', target === ALL ? 'Lowest-contrast tag in the group: ' + label.name : 'Editing this tag'));
+            box.appendChild(el('span', 'je-ts-sample-note', target === ALL ? 'Lowest-contrast sample' : 'Editing this tag'));
         }
 
         /** @returns {void} */

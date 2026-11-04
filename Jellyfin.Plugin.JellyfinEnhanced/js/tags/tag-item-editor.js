@@ -688,9 +688,9 @@
         };
         /** @type {string} a failed save's message, shown until the next change */
         let saveError = '';
-        /** The footer line: a failed save, else whether the changes will stick. */
+        /** The footer line: a failed save, else what Save will do with an edit nothing keeps yet. */
         const showStatus = () => {
-            statusEl.textContent = saveError || (!serverMode && !keep && !everyone && dirty ? JE.t('tag_item_editor_not_kept') : '');
+            statusEl.textContent = saveError || (saveLabelKey() === 'tag_item_editor_lock_save' ? JE.t('tag_item_editor_lock_save_hint') : '');
             saveButton.textContent = JE.t(saveLabelKey());
         };
         /** @returns {string} Save's label: where the look goes, a removal, or that nothing is kept. */
@@ -702,7 +702,8 @@
             const target = targetOf();
             const removes = !!keptAt(target) || (target !== id && !!own) || (!!everyoneBox && !!overrideAt(target));
             if (removes) return 'elsewhere_settings_save';
-            return dirty ? 'tag_item_editor_save_none' : 'tag_item_editor_done';
+            // An edit with nowhere to go yet: Save locks it for this user (the button says so).
+            return dirty ? 'tag_item_editor_lock_save' : 'tag_item_editor_done';
         };
         /** Coalesce bursts of changes (a stepper held down) into one re-present. */
         const schedule = () => {
@@ -928,6 +929,11 @@
                 options.onSave?.(chosen, targetId);
                 finish();
                 return;
+            }
+            // "Lock & save for me": the edit is kept as this user's lock.
+            if (saveLabelKey() === 'tag_item_editor_lock_save') {
+                keep = true;
+                if (keepBox) keepBox.checked = true;
             }
             saveButton.disabled = true;
             statusEl.textContent = JE.t('hidden_content_admin_loading');

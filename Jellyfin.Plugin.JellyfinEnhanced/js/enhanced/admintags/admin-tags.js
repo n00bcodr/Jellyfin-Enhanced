@@ -785,7 +785,7 @@
             <div class="je-ta-body">
                 <aside class="je-ta-preview" id="jeTaPreview" aria-label="${tx('admin_tags_preview')}">
                     <button type="button" class="je-ta-preview-toggle" aria-expanded="false" aria-controls="jeTaPreviewBody">${tx('admin_tags_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
-                    <div class="je-ta-preview-body" id="jeTaPreviewBody"><div class="je-ta-preview-mount"></div><p class="je-ta-preview-note">${tx('admin_tags_preview_note')}</p><p class="je-ta-native" id="jeTaNative"></p></div>
+                    <div class="je-ta-preview-body" id="jeTaPreviewBody"><div class="je-ta-preview-mount"></div><details class="je-ta-preview-why"><summary>${tx('panel_media_tags_preview_why')}</summary><p class="je-ta-preview-note">${tx('admin_tags_preview_note')}</p></details><p class="je-ta-native" id="jeTaNative"></p></div>
                 </aside>
                 <div class="je-ta-panels">${panels}</div>
             </div>
@@ -810,9 +810,10 @@
                 + '<div class="je-ta-grow-head">'
                 // The switch gets its own 44px target; it only turns the group on or off.
                 + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}"></label>` : '')
-                + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}</span><span class="je-ta-grow-sum"></span></div>`
+                // Turning a group on or off sets new users' default; say so beside it.
+                + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` <span class="je-ta-scope" data-scope="new">${tx('admin_tags_scope_new')}</span>` : ''}</span><span class="je-ta-grow-sum"></span></div>`
                 + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
-                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('common_open')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
+                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('tag_shapes_edit')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
                 + '</div>'
                 + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
                 // Where it goes and how many show live on Layout defaults: say so, and go there.
@@ -1123,7 +1124,8 @@
             body.hidden = !open;
             button.setAttribute('aria-expanded', String(open));
             const text = button.querySelector('.je-ta-expand-text');
-            if (text) text.textContent = JE.t(open ? 'awards_close' : 'common_open');
+            // "Edit" as on every other group row; the chevron and aria-expanded carry open / closed.
+            if (text) text.textContent = JE.t('tag_shapes_edit');
             const s = sections.find((x) => x.group?.id === group);
             if (open && s?.show) s.show(ctx, bodyOf(s));
             if (open && opts.focus) {
