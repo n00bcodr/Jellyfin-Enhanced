@@ -15,7 +15,7 @@
 
     // Within-category sort orders (more important = lower index inside each category).
     const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '576p', '480p', 'LOW-RES', 'SD'];
-    const sourceOrder = ['REMUX', 'BluRay', 'WEB', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'Physical', 'CAM', 'TS', 'TC', 'SCR'];
+    const sourceOrder = ['REMUX', 'BluRay', 'WEB', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'SDTV', 'Physical', 'CAM', 'TS', 'TC', 'SCR'];
     const EDITION_PREFIX = 'edition:';
     const editionOrder = [];
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HLG', 'HDR', 'SDR'];
@@ -117,6 +117,12 @@
         'Uncensored': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Open Matte': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Rogue Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Producer\'s Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Alternate Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Assembly Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'International Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Restored': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Hybrid': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Black and Chrome': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Masters of Cinema': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'BluRay': { bg: 'rgba(0, 102, 204, 0.95)', text: '#ffffff' },
@@ -124,6 +130,7 @@
         'DVD': { bg: 'rgba(102, 102, 102, 0.95)', text: '#ffffff' },
         'VHS': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
         'HDTV': { bg: 'rgba(69, 90, 100, 0.95)', text: '#ffffff' },
+        'SDTV': { bg: 'rgba(69, 90, 100, 0.95)', text: '#ffffff' },
         'Physical': { bg: 'rgba(102, 102, 102, 0.9)', text: '#ffffff' },
         'Mixed': { bg: '#546e7a', text: '#ffffff' }
     };
@@ -278,7 +285,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 19 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 20 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -431,7 +438,7 @@
     }
 
     // Full words are translatable; compact edition codes and proper nouns are literals.
-    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"], "Rogue Cut": [null, "Rogue"], "Black and Chrome": [null, "B&C"], "Masters of Cinema": [null, "MoC"]};
+    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"], "Rogue Cut": [null, "Rogue"], "Producer's Cut": [null, "PC"], "Alternate Cut": [null, "Alt"], "Assembly Cut": [null, "Asm"], "International Cut": [null, "Intl"], "Restored": [null, "Rest"], "Hybrid": [null, "Hyb"], "Black and Chrome": [null, "B&C"], "Masters of Cinema": [null, "MoC"]};
     /** @param {string} label Canonical edition. @returns {string} Its full display name. */
     function editionLabel(label) {
         const row = Object.hasOwn(EDITIONS, label) && EDITIONS[label];
@@ -965,8 +972,10 @@
                 qualities.add(resolutionTag);
             } else {
                 // Priority 2: Dimension Fallback
-                const height = primaryVideoStream.Height || 0;
-                const width = primaryVideoStream.Width || 0;
+                // A portrait frame (a phone video, 1080x1920) is measured by its short and long sides.
+                const portrait = (primaryVideoStream.Height || 0) > (primaryVideoStream.Width || 0) && (primaryVideoStream.Width || 0) > 0;
+                const height = portrait ? primaryVideoStream.Width : primaryVideoStream.Height || 0;
+                const width = portrait ? primaryVideoStream.Height : primaryVideoStream.Width || 0;
                 if (height >= 3000 || width >= 7000) {
                     resolutionTag = '8K';
                 } else if (height >= 1550 || width >= 3500) {
@@ -1543,7 +1552,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 19, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 20, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1581,7 +1590,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 19, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 20, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

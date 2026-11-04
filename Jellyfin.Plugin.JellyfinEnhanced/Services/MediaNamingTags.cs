@@ -18,13 +18,17 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     [
         (Token(@"(?:bd" + OptionalSeparator + @")?remux|bdremux"), "REMUX"),
         // Full discs (Radarr's BR-DISK; BD25/BD50 images) are Blu-ray sources.
-        (Token(@"blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)"), "BluRay"),
+        // Anime releases write a bare BD ("[BD 1080p HEVC FLAC]").
+        (Token(@"blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)?"), "BluRay"),
         (Token(@"hd" + OptionalSeparator + "dvd(?:" + OptionalSeparator + "rip)?"), "HD DVD"),
         (Token(@"web" + OptionalSeparator + @"(?:dl|rip)"), "WEB"),
         // Broadcast captures: HDTV, its rips, PDTV and Sonarr's Raw-HD.
         (Token(@"hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + "hd"), "HDTV"),
+        // Standard-definition captures: Sonarr's SDTV, TV/satellite/DVB rips.
+        (Token(@"sdtv|(?:tv|sat|dvb)" + OptionalSeparator + "rip"), "SDTV"),
         (Token(@"dvd" + OptionalSeparator + "scr"), "SCR"),
-        (Token(@"dvd(?:" + OptionalSeparator + @"rip)?"), "DVD"),
+        (Token(@"dvd(?:" + OptionalSeparator + @"(?:rip|r))?|dvd[59]"), "DVD"),
+        (Token(@"vhs(?:" + OptionalSeparator + "rip)?"), "VHS"),
         (Token(@"(?:hd" + OptionalSeparator + @")?cam(?:rip)?"), "CAM"),
         (Token(@"(?:hd" + OptionalSeparator + @")?ts|telesync"), "TS"),
         (Token(@"tc|telecine"), "TC"),
@@ -59,6 +63,13 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token(@"rogue" + Separator + @"cut"), "Rogue Cut"),
         (Token(@"black" + Separator + @"(?:and|&)" + Separator + @"chrome"), "Black and Chrome"),
         (Token(@"masters" + Separator + @"of" + Separator + @"cinema|moc"), "Masters of Cinema"),
+        (Token(@"producer(?:['’]s|s)?" + Separator + @"cut"), "Producer's Cut"),
+        (Token(@"alternat(?:e|ive)" + Separator + @"cut"), "Alternate Cut"),
+        (Token(@"assembly" + Separator + @"cut"), "Assembly Cut"),
+        (Token(@"international" + Separator + @"cut"), "International Cut"),
+        (Token("restored"), "Restored"),
+        // TRaSH's Hybrid: a release merged from several sources.
+        (Token("hybrid"), "Hybrid"),
     ];
     // Where the title ends: after the year in brackets ("(2019)"), else after the first year that
     // does not open the name ("2001 A Space Odyssey 1968"), and for an episode after its SxxEyy
@@ -68,11 +79,18 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     // (2004)", "Cam (2018)", "Remux (2024)" or an episode called "The Director's Cut" carry none.
     private static readonly Regex BracketYearToken = new(@"[(\[](?:19|20)\d{2}[)\]]", Options, Timeout);
     private static readonly Regex YearToken = new(@"(?:^|[. _\-\[\](){}])(?:19|20)\d{2}(?=$|[. _\-\[\](){}])", Options, Timeout);
-    private static readonly Regex EpisodeToken = new(@"(?:^|[. _\-\[\](){}])s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*(?=$|[. _\-\[\](){}])", Options, Timeout);
+    // An episode marker: SxxEyy, Sonarr's 1x05, a daily air date (2024-03-15) or an absolute number between
+    // " - " separators (anime and absolute naming, " - 105 - " or " - 05 [").
+    private static readonly Regex EpisodeToken = new(@"(?:^|[. _\-\[\](){}])(?:s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*|\d{1,2}x\d{2,4}(?:-\d{1,2}x\d{2,4})*|(?:19|20)\d{2}[.\-](?:0[1-9]|1[0-2])[.\-](?:0[1-9]|[12]\d|3[01]))(?=$|[. _\-\[\](){}])"
+        + @"|\s-\s\d{1,4}(?=\s-\s|\s*[\[(]|\s*$)", Options, Timeout);
+    // A scene release group closing the name after its last codec, audio, resolution or source token
+    // ("...WEB.H264-TS", "...DTS-HD.MA.5.1-GRP"): its letters are a name, not a release word, so a group called
+    // TS or CAM never outranks the release's own source. Compounds such as BD-REMUX, WEB-DL or HD-DVD stay whole.
+    private static readonly Regex TrailingGroup = new(@"(?<=(?:^|[. _\-\[\](){}])(?:[xh]\.?26[45]|hevc|avc|av1|vp9|xvid|divx|mpeg2|aac|ac3|e?ac3|dts|ma|ddp?|flac|opus|atmos|truehd|\d\.\d|\d{3,4}p|web|webrip|web" + OptionalSeparator + @"dl|bluray|remux|hdtv|dvdrip|10bit|hdr|hdr10|dv|sdr))-[A-Za-z0-9]{2,}$", Options, Timeout);
     private static readonly Regex ReleaseBoundary = new(@"\[|" + Token(string.Join("|", QualityTagRules.ResolutionTokens.Concat(QualityTagRules.CodecTokens).Select(Regex.Escape)
-        .Append(@"remux|bdremux|blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)|web" + OptionalSeparator + @"(?:dl|rip)|web|hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + @"hd|hd" + OptionalSeparator + @"dvd|dvd(?:" + OptionalSeparator + @"rip)?|[hx]" + OptionalSeparator + "26[45]|1080i"))), Options, Timeout);
+        .Append(@"remux|bdremux|blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)|web" + OptionalSeparator + @"(?:dl|rip)|web|hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + @"hd|sdtv|(?:tv|sat|dvb)" + OptionalSeparator + @"rip|vhs(?:" + OptionalSeparator + @"rip)?|dvd[59]|hd" + OptionalSeparator + @"dvd|dvd(?:" + OptionalSeparator + @"rip)?|[hx]" + OptionalSeparator + "26[45]|1080i"))), Options, Timeout);
     private static readonly string[] ResolutionOrder = ["8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD"];
-    private static readonly string[] SourceOrder = ["REMUX", "BluRay", "WEB", "HDTV", "DVD", "SCR", "TC", "TS", "CAM"];
+    private static readonly string[] SourceOrder = ["REMUX", "BluRay", "WEB", "HDTV", "DVD", "SDTV", "VHS", "SCR", "TC", "TS", "CAM"];
 
     /// <summary>Same resolution buckets as the quality renderer; source quality breaks equal-resolution ties.</summary>
     internal static MediaNamingTags Detect(string? itemPath, IReadOnlyList<MediaSourceInfo> sources, string? itemName = null, string? originalTitle = null)
@@ -181,7 +199,9 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static string? SourceIn(string name)
     {
         var release = ReleasePart(name);
-        return Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(release)).Label ?? (BareWeb.IsMatch(release) ? "WEB" : null);
+        static string? Source(string text) => Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(text)).Label ?? (BareWeb.IsMatch(text) ? "WEB" : null);
+        // The group only counts when nothing else names a source ("Movie.2007.HD-DVD").
+        return Source(TrailingGroup.Replace(release, string.Empty)) ?? Source(release);
     }
 
     /// <summary>The part of a file or folder name after its title (see <see cref="YearToken"/>); the whole name when no boundary is known.</summary>
@@ -192,10 +212,11 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     {
         var stripped = name.StartsWith(TitleRemoved, StringComparison.Ordinal);
         var part = stripped ? " " + name[TitleRemoved.Length..] : name;
-        var bracketYear = BracketYearToken.Match(part);
-        var year = bracketYear.Success ? bracketYear : YearToken.Matches(part).FirstOrDefault(m => m.Index > 0);
-        if (year != null) part = part[(year.Index + year.Length)..];
+        // An episode marker ends the series title first: a daily air date would otherwise read as a year.
         var episode = EpisodeToken.Match(part);
+        var bracketYear = BracketYearToken.Match(part);
+        var year = episode.Success ? null : bracketYear.Success ? bracketYear : YearToken.Matches(part).FirstOrDefault(m => m.Index > 0);
+        if (year != null) part = part[(year.Index + year.Length)..];
         // Without a year or episode marker, a name only counts when it has a release word, unless the item's own
         // title was already read past ("Film.Extended" for the movie "Film").
         if (year == null && !episode.Success) return stripped || ReleaseBoundary.IsMatch(part) ? part : string.Empty;
@@ -216,7 +237,8 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         var value = explicitTag.Success ? explicitTag.Groups[1].Value.Trim() : ReleasePart(name);
         // Explicit custom labels are bounded, plain text and never accept path separators or controls.
         var nonImax = NonImax.IsMatch(value);
-        var known = Editions.FirstOrDefault(rule => (rule.Label != "IMAX" || !nonImax) && rule.Pattern.IsMatch(value)).Label;
+        string? Known(string text) => Editions.FirstOrDefault(rule => (rule.Label != "IMAX" || !nonImax) && rule.Pattern.IsMatch(text)).Label;
+        var known = explicitTag.Success ? Known(value) : Known(TrailingGroup.Replace(value, string.Empty)) ?? Known(value);
         if (known != null) return known;
         return explicitTag.Success && value.Length > 0 && !value.Any(char.IsControl) ? value : null;
     }

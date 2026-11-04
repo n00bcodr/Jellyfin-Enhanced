@@ -84,7 +84,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly Regex TrailingLayoutRegex = new(@"([0-9])\.([0-9])(?:\.([0-9]))?\z", Options);
 
         private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD" };
-        private static readonly string[] SourceOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "Physical", "CAM", "TS", "TC", "SCR" };
+        private static readonly string[] SourceOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "SDTV", "Physical", "CAM", "TS", "TC", "SCR" };
         private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HLG", "HDR", "SDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "VVC", "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "VC-1", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA", "ProRes" };
@@ -666,6 +666,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 };
             }
 
+            // A portrait frame (a phone video, 1080x1920) is measured by its short and long sides, so it is 1080p, not 4K.
+            if (height > width && width > 0) (height, width) = (width, height);
             // Width covers cropped scope encodes (1920x800 is 1080p, a cropped DVD 720x304 is 480p).
             // 1440p needs a 1440-class height: a 2560-wide frame is usually ultrawide 1080p (2560x1080).
             if (height >= 3000 || width >= 7000) return "8K";

@@ -1118,6 +1118,136 @@
     "edition": null
   },
   {
+    "path": "TV/The Daily Show/Season 2024/The Daily Show - 2024-03-15 - Extended Interview with Guest [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Extended Interview with Guest"
+  },
+  {
+    "path": "TV/The Daily Show/Season 2024/The Daily Show - 2024-03-15 - Extended Interview with Guest [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Episode 2024-03-15"
+  },
+  {
+    "path": "TV/Late Show/Season 2024/Late Show - 2024-03-15 - Uncensored Bits [WEBDL-1080p].mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show - 1x05 - The Director's Cut [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "The Director's Cut"
+  },
+  {
+    "path": "TV/Show/Season 1/Show - 1x05 - The Director's Cut [HDTV-720p].mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show - 105 - Extended Family [WEBDL-1080p].mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Anime/Anime/Season 1/Anime - 05 - Remastered Memories [Bluray-1080p].mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Anime/Anime/Season 1/[Group] Anime - 01 [BD 1080p HEVC FLAC].mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.1080p.WEB.H264-TS.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.1080p.BluRay.x264-CAM.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.TELESYNC.x264-GRP.mkv",
+    "source": "TS",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2007)/Movie.2007.1080p.HD-DVD.mkv",
+    "source": "HD DVD",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.DVD9.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.DVD5.x264.mkv",
+    "source": "DVD",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show.S01E01.SDTV.x264.mkv",
+    "source": "SDTV",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 1/Show.S01E01.TVRip.XviD.mkv",
+    "source": "SDTV",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (1985)/Movie.1985.VHSRip.mkv",
+    "source": "VHS",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.1080p.BluRay.Hybrid.x264-GRP.mkv",
+    "source": "BluRay",
+    "edition": "Hybrid"
+  },
+  {
+    "path": "Movies/Movie (1992)/Movie.1992.Producers.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Producer's Cut"
+  },
+  {
+    "path": "Movies/Movie (2019)/Movie.2019.Alternate.Cut.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Alternate Cut"
+  },
+  {
+    "path": "Movies/Movie (1992)/Movie.1992.Assembly.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Assembly Cut"
+  },
+  {
+    "path": "Movies/Movie (2006)/Movie.2006.International.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "International Cut"
+  },
+  {
+    "path": "Movies/Movie (1960)/Movie.1960.Restored.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Restored"
+  },
+  {
+    "path": "Movies/Hybrid (2021)/Hybrid (2021) Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": null,
+    "itemName": "Hybrid"
+  },
+  {
+    "path": "Movies/Restored (2010)/Restored.2010.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Restored"
+  },
+  {
     "path": "Show/Season 01/Show.S01E01.The.Web.mkv",
     "source": null,
     "edition": null,

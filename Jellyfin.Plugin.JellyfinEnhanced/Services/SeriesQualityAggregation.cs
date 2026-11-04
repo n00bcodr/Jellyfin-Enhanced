@@ -21,7 +21,10 @@ internal static class SeriesQualityAggregation
             Labels = QualityTagRules.DetectNonAudio(streams);
             SingleAudioLanguage = streams.Streams?.Where(stream => stream?.Type == "Audio").Select(stream => stream.Language).Distinct(StringComparer.OrdinalIgnoreCase).Take(2).Count() <= 1;
             var videos = streams.Streams?.Where(stream => stream?.Type == "Video").ToList();
-            if (videos is not { Count: > 1 }) return;
+            // One video that the first version already described needs nothing more; a lone video
+            // from another version (the first one unprobed) still speaks for the container.
+            if (videos is not { Count: > 0 } || (videos.Count == 1 && Labels.Any(label => QualityTagRules.CategoryOf(label)
+                is QualityTagRules.Resolution or QualityTagRules.DynamicRange or QualityTagRules.VideoCodec))) return;
             // Media versions are already flattened in StreamData. Each category
             // can select a different version without opening any media again.
             var candidates = videos.SelectMany(video => QualityTagRules.DetectNonAudio(new TagStreamData { Streams = new() { video } })).ToList();

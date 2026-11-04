@@ -309,4 +309,38 @@ public class SeriesQualityAggregationTests
         var snapshot = JsonDocument.Parse(File.ReadAllText(Path.Combine(f.Core.ConfigRoot, "tag-cache.json")));
         Assert.Equal(TagCacheService.CurrentCacheSchemaVersion, snapshot.RootElement.GetProperty("SchemaVersion").GetInt32());
     }
+
+    [Theory]
+    [InlineData("best")]
+    [InlineData("latest")]
+    [InlineData("mixed")]
+    public void AnAlternateVersionsVideoSpeaksForTheContainerWhenTheFirstVersionIsUnprobed(string policy)
+    {
+        TagStreamData Data(bool firstProbed, bool secondProbed, bool reversed = false)
+        {
+            var sources = new List<TagMediaSource> { new() { Id = "a", Source = "WEB" }, new() { Id = "b", Source = "REMUX" } };
+            if (reversed) sources.Reverse();
+            var streams = new List<TagMediaStream>();
+            if (firstProbed) streams.Add(new() { Type = "Video", SourceId = "a", Width = 1920, Height = 1080, Codec = "h264", VideoRangeType = "SDR" });
+            if (secondProbed) streams.Add(new() { Type = "Video", SourceId = "b", Width = 3840, Height = 2160, Codec = "hevc", VideoRangeType = "HDR10" });
+            return new TagStreamData { Sources = sources, Streams = streams };
+        }
+        List<string> Resolved(TagStreamData data, string type = "Series") => SeriesQualityAggregation.Resolve(new TagCacheEntry { Type = type, StreamData = data,
+            QualitySummary = SeriesQualityAggregation.Build([new("episode", 1, data)], 100) }, policy, null);
+        foreach (var type in new[] { "Series", "Season" })
+        {
+            // Only the alternate (second) version is probed: its 4K HDR10 HEVC describes the container.
+            var alternate = Resolved(Data(false, true), type);
+            Assert.Contains("4K", alternate); Assert.Contains("HDR10", alternate); Assert.Contains("HEVC", alternate);
+            Assert.DoesNotContain(alternate, label => label.Contains(':', StringComparison.Ordinal) && label.StartsWith("mixed", StringComparison.Ordinal));
+            // Listed first, the same probed version reads the same; with nothing probed nothing is invented.
+            Assert.Contains("4K", Resolved(Data(false, true, reversed: true), type));
+            var none = Resolved(Data(false, false), type);
+            Assert.DoesNotContain(none, label => label is "4K" or "1080p" or "HEVC" or "H264" or "HDR10" or "SDR");
+            // Both probed: the best of them, as before.
+            Assert.Contains("4K", Resolved(Data(true, true), type));
+        }
+        // A movie card still describes its first version only.
+        Assert.DoesNotContain("4K", QualityTagRules.Detect(Data(false, true), null));
+    }
 }

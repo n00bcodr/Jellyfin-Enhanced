@@ -2007,6 +2007,58 @@
     "Dolby Vision",
     "HEVC"
    ]
+  },
+  {
+   "name": "A portrait phone video is measured by its short side",
+   "why": "1080x1920 is a 1080p frame turned on its side, not 4K",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1080,
+     "Height": 1920,
+     "Codec": "h264",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "H264"
+   ],
+   "legacy": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "A portrait 4K video stays 4K, not 8K",
+   "why": "2160x3840 is a 4K frame turned on its side",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 2160,
+     "Height": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
   }
  ]
 }
