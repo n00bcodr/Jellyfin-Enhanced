@@ -459,11 +459,11 @@
                     <div class="je-mth-strip" id="jeMthStrip">
                         <button type="button" class="je-mth-strip-toggle" id="jeMthStripToggle" aria-expanded="false" aria-controls="jeMthPreview">${tx('common_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
                         <div class="je-mth-strip-thumb" aria-hidden="true"></div>
-                        <span class="material-icons je-mth-strip-saved" role="img" aria-label="${tx('panel_media_tags_autosave')}" title="${tx('panel_media_tags_autosave')}">cloud_done</span>
                         <div class="je-mth-strip-info">
                             <div class="je-mth-strip-text"></div>
                             <div class="je-mth-strip-chips"></div>
                         </div>
+                        <span class="material-icons je-mth-strip-saved" role="img" aria-label="${tx('panel_media_tags_autosave')}" title="${tx('panel_media_tags_autosave')}">cloud_done</span>
                     </div>
                     <div class="je-mth-body">
                         <aside class="je-mth-preview" id="jeMthPreview" aria-label="${tx('panel_media_tags_preview')}"></aside>
@@ -649,7 +649,7 @@
            collapses into a one-line strip under the tabs that expands on tap. */
         /* Phone: the panel's Back button sits on the Media Tags title row instead of a row of its own. */
         @media (max-width: 760px) {
-            #jellyfin-enhanced-panel .je-panel-main:has(.je-pane.active[data-pane="media-tags"], .je-pane[data-pane="media-tags"].active) > .je-pane-back { position: absolute; top: 6px; left: 14px; z-index: 4; width: 40px; height: 40px; margin: 0; }
+            #jellyfin-enhanced-panel .je-panel-main:has(.je-pane.active[data-pane="media-tags"], .je-pane[data-pane="media-tags"].active) > .je-pane-back { position: sticky; top: 6px; z-index: 6; float: left; width: 40px; height: 40px; margin: 6px 0 -46px 0; }
             /* The section select above already names Media Tags: the title stays for screen readers; the tabs sit beside Back. */
             #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-top .je-pane-title { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-tabs { margin-left: 50px; min-height: 44px; }
