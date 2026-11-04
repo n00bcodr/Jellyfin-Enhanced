@@ -987,4 +987,27 @@ public class RatingSourceTests
         Assert.False(service.NeedsFetch("movie", "123"));
         Assert.Equal(1, batches);
     }
+
+    [Fact]
+    public void ATitleIsPendingOnlyWhileItsNamedSourceScoresAreStillDue()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("[]")));
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var cold = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var noId = new Movie { Id = Guid.NewGuid() };
+        var library = new Mock<ILibraryManager>();
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        Assert.True(cache.SourceRatingsPending(cold));
+        Assert.False(cache.SourceRatingsPending(noId));
+        service.MergeMediaBatchIntoCache("movie", ["123"], new Dictionary<string, MdblistCacheEntry> { ["123"] = new() { Found = true, Confirmed = true, FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() } });
+        Assert.False(cache.SourceRatingsPending(cold));
+        // Nobody names a source, or there is no key: nothing is ever pending.
+        f.Plugin.Configuration.RatingTagsSources = ["community", "critic"];
+        cache.OnRatingSourceSettingsChanged();
+        Assert.False(cache.SourceRatingsPending(new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "999" } }));
+    }
 }

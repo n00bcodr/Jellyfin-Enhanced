@@ -136,6 +136,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
         }
 
+        /// <summary>
+        /// Whether the named-source scores <paramref name="item"/> shows are still being fetched: someone
+        /// names a source, the title (or its series) has a TMDB id, and MDBList has no current answer for it.
+        /// A tag-data answer says so, so a browser keeps that answer only briefly and asks again.
+        /// </summary>
+        public bool SourceRatingsPending(BaseItem item)
+        {
+            var service = _mdblistService;
+            if (service == null || !HasSourceRatingDemand()
+                || string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return false;
+            var owner = RatingOwner(item);
+            var id = owner == null ? null : RatingTmdbId(owner);
+            return id != null && service.NeedsFetch(owner is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", id);
+        }
+
         private (string MediaType, string Id)[] RatingTitles(IEnumerable<BaseItem> items) => items.Select(RatingOwner).OfType<BaseItem>()
             .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", Id: RatingTmdbId(item)))
             .Where(title => title.Id != null)

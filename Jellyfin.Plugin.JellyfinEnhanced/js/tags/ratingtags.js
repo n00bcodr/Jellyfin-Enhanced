@@ -10,6 +10,8 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Rating Tags:';
     const containerClass = 'rating-overlay-container';
     const tagClass = 'rating-tag';
+    // How long a batch answer given while the server was still fetching named-source scores counts as a hit.
+    const PENDING_RETRY_MS = 60 * 1000;
 
     /**
      * Normalize a raw critic rating to a 0-100 integer percentage.
@@ -165,6 +167,8 @@
     function getCachedEntry(ctx, itemId) {
         const entry = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
         if (!entry) return null;
+        // An answer given while the server was still fetching the scores counts only briefly.
+        if (typeof entry === 'object' && Number.isFinite(entry.pendingUntil) && Date.now() >= entry.pendingUntil) return null;
         if (typeof entry === 'string' || typeof entry === 'number') {
             return { tmdb: String(entry), critic: null };
         }
@@ -349,7 +353,9 @@
                 const tmdbId = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb || null;
                 const seriesTmdbId = extras?.parentSeries?.ProviderIds?.Tmdb || extras?.parentSeries?.ProviderIds?.tmdb || null;
                 const tmdbMediaType = item.Type === 'Series' ? 'tv' : 'movie';
-                setCachedEntry(ctx, itemId, { ...rating, tmdbId, seriesTmdbId, tmdbMediaType,
+                // The server was still fetching the named-source scores: keep this answer only for a minute.
+                const pending = item.RatingsPending === true ? { pendingUntil: Date.now() + PENDING_RETRY_MS } : {};
+                setCachedEntry(ctx, itemId, { ...rating, ...pending, tmdbId, seriesTmdbId, tmdbMediaType,
                     seasonNumber: item.IndexNumber ?? null,
                     episodeNumber: item.Type === 'Episode' ? item.IndexNumber : null,
                     parentSeasonNumber: item.Type === 'Episode' ? item.ParentIndexNumber : null,

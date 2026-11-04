@@ -15,7 +15,7 @@ const cases = [
   ['custom', 'Custom', 'customtags', 'custom-tag', { CustomTags: [rules[0].Id] }],
   ['status', 'Status', 'statustags', 'status-tag', { Leaving: {} }],
 ];
-async function page(t, group, store, prefetched, answer, responseStamp = prefetched) {
+async function page(t, group, store, prefetched, answer, responseStamp = prefetched, { now } = {}) {
   const [name, init, file, chip] = group;
   const idle = [], timers = new Map(), saves = [], calls = [];
   let seq = 0;
@@ -30,6 +30,7 @@ async function page(t, group, store, prefetched, answer, responseStamp = prefetc
     apiClient: { ajax: async o => { calls.push(o.url); return { Items: [{ Id: id, Type: 'Movie', ...answer }], StripRevision: responseStamp }; } },
     globals: { requestIdleCallback: f => idle.push(f), setTimeout: (f,ms) => { timers.set(++seq,{ f,ms }); return seq; }, clearTimeout: n => timers.delete(n) } });
   Object.defineProperty(h.window, 'localStorage', { value: storage, configurable: true });
+  if (now !== undefined) h.window.Date.now = () => now;
   t.after(() => h.close());
   for (const f of ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/rating-sources.js', 'tags/tag-pipeline.js', 'tags/status-vocabulary.js', `tags/${file}.js`]) h.load(f);
   h.JE[`initialize${init}Tags`](); h.JE.tagPipeline.initialize();
@@ -93,4 +94,19 @@ test('a failed bootstrap read and a missing response stamp stay unknown and cann
   assert.equal(failed.h.JE._hotCache.genre.size,0,'unknown response provenance never authorizes a hot write');
   const next=await page(t,group,store,undefined,group[4],null);
   assert.equal(next.calls.length,1,'unknown provenance requires a fresh answer on the next page');
+});
+
+test('a rating answer given while the server was still fetching scores is asked again after a minute', async t => {
+  const group = cases.find(c => c[0] === 'rating'), store = new Map(), start = Date.UTC(2026, 10, 5, 12);
+  const first = await page(t, group, store, 'none', { RatingsPending: true }, 'none', { now: start });
+  assert.equal(first.calls.length, 1); assert.equal(first.chips(), 0);
+  // Within the minute the empty answer still stands: no request storm while MDBList is busy.
+  const soon = await page(t, group, store, 'none', { CommunityRating: 8.1 }, 'none', { now: start + 30000 });
+  assert.equal(soon.calls.length, 0); assert.equal(soon.chips(), 0);
+  // After it, the next view asks again and shows the scores the server has by now.
+  const later = await page(t, group, store, 'none', { CommunityRating: 8.1 }, 'none', { now: start + 61000 });
+  assert.equal(later.calls.length, 1); assert.ok(later.chips() > 0);
+  // A complete answer persists as before.
+  const again = await page(t, group, store, 'none', { CommunityRating: 8.1 }, 'none', { now: start + 10 * 60000 });
+  assert.equal(again.calls.length, 0); assert.ok(again.chips() > 0);
 });

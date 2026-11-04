@@ -9933,6 +9933,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
                     Ratings = _tagCacheService.GetSourceRatings(item),
+                    // Scores still on their way from MDBList: the browser re-asks soon instead of keeping this answer.
+                    RatingsPending = _tagCacheService.SourceRatingsPending(item) ? true : (bool?)null,
                     Awards = _tagCacheService.GetAwards(item),
                     Logos = _tagCacheService.GetLogos(item),
                     OfficialRating = ResolveTagDataOfficialRating(item),
