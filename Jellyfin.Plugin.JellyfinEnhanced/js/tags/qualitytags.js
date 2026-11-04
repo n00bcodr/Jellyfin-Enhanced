@@ -116,6 +116,9 @@
         'Anniversary': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Uncensored': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Open Matte': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Rogue Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Black and Chrome': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Masters of Cinema': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'BluRay': { bg: 'rgba(0, 102, 204, 0.95)', text: '#ffffff' },
         'HD DVD': { bg: 'rgba(128, 0, 32, 0.95)', text: '#ffffff' },
         'DVD': { bg: 'rgba(102, 102, 102, 0.95)', text: '#ffffff' },
@@ -275,7 +278,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 16 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 17 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -410,7 +413,7 @@
     }
 
     // Full words are translatable; compact edition codes and proper nouns are literals.
-    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"]};
+    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"], "Rogue Cut": [null, "Rogue"], "Black and Chrome": [null, "B&C"], "Masters of Cinema": [null, "MoC"]};
     /** @param {string} label Canonical edition. @returns {string} Its full display name. */
     function editionLabel(label) {
         const row = Object.hasOwn(EDITIONS, label) && EDITIONS[label];
@@ -776,7 +779,8 @@
         // An unrecognised type string still counts as a hint, after the title.
         const title = `${video?.DisplayTitle || ''} ${type}`.toLowerCase();
         const word = (pattern) => new RegExp(`(?:^|[^a-z0-9_])(?:${pattern})(?![a-z0-9_])`).test(title);
-        if (word('dolby\\s*vision|dovi|dv')) return { range: 'Dolby Vision', base: null, sdr: false };
+        // Jellyfin's DOVIInvalid says the Dolby Vision metadata is unusable: a DV word in the title cannot claim it.
+        if (type !== 'doviinvalid' && word('dolby\\s*vision|dovi|dv')) return { range: 'Dolby Vision', base: null, sdr: false };
         if (/(?:^|[^a-z0-9_])hdr10(?:\+|plus(?![a-z0-9_]))/.test(title)) return { range: 'HDR10+', base: null, sdr: false };
         if (word('hdr10')) return { range: 'HDR10', base: null, sdr: false };
         if (word('hlg')) return { range: 'HLG', base: null, sdr: false };
@@ -1515,7 +1519,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 16, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 17, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1553,7 +1557,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 16, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 17, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

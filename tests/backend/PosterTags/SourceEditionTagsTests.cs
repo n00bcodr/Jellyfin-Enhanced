@@ -51,13 +51,13 @@ public class SourceEditionTagsTests
 
     [Theory]
     [MemberData(nameof(QualityTokens))]
-    public void BareWebAcceptsEveryQualityRuleTokenWithTokenBoundaries(string token)
+    public void BareWebIsAWholeWordWhateverFollowsIt(string token)
     {
         foreach (var spelling in new[] { token, token.ToUpperInvariant() })
         {
             Assert.Equal("WEB", MediaNamingTags.FromPath($"Movie.2020.WEB.{spelling}.mkv").Source);
             Assert.Equal("WEB", MediaNamingTags.FromPath($"Movie 2020 [WEB] [{spelling}].mkv").Source);
-            Assert.Null(MediaNamingTags.FromPath($"Movie.2020.WEB.{spelling}ish.mkv").Source);
+            Assert.Equal("WEB", MediaNamingTags.FromPath($"Movie.2020.WEB.{spelling}ish.mkv").Source);
             Assert.Null(MediaNamingTags.FromPath($"Movie.2020.WEBSITE.{spelling}.mkv").Source);
             Assert.Null(MediaNamingTags.FromPath($"Webb.{spelling}.mkv").Source);
         }

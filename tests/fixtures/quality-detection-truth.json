@@ -1854,6 +1854,30 @@
    "legacy": [
     "TRUEHD 2.0"
    ]
+  },
+  {
+   "name": "Invalid Dolby Vision is not claimed as Dolby Vision",
+   "why": "Jellyfin's DOVIInvalid means the DV metadata is unusable; the title's DV word cannot claim it",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "hevc",
+     "Width": 3840,
+     "Height": 2160,
+     "VideoRangeType": "DOVIInvalid",
+     "DisplayTitle": "4K DV HDR10"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR10",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR10",
+    "HEVC"
+   ]
   }
  ]
 }

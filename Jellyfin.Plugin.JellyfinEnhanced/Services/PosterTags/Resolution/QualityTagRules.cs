@@ -153,7 +153,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (RangeTypes.TryGetValue(type, out var known)) return known;
             // An unrecognised type string still counts as a hint, after the title.
             var title = JsText.ToLower((video.DisplayTitle ?? string.Empty) + " " + type);
-            if (TitleDolbyVisionRegex.IsMatch(title)) return new("Dolby Vision", null, false);
+            // Jellyfin's DOVIInvalid says the Dolby Vision metadata is unusable: a DV word in the title cannot claim it.
+            if (type != "doviinvalid" && TitleDolbyVisionRegex.IsMatch(title)) return new("Dolby Vision", null, false);
             if (TitleHdr10PlusRegex.IsMatch(title)) return new("HDR10+", null, false);
             if (TitleHdr10Regex.IsMatch(title)) return new("HDR10", null, false);
             if (TitleHlgRegex.IsMatch(title)) return new("HLG", null, false);
@@ -673,9 +674,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return height > 0 ? "LOW-RES" : null;
         }
 
-        /// <summary>The coarse VideoRange worth storing: HDR or SDR, only when the VideoRangeType is unknown or missing.</summary>
+        /// <summary>The coarse VideoRange worth storing: HDR or SDR, only when the VideoRangeType is unknown, missing or invalid Dolby Vision.</summary>
         internal static string? CoarseRange(string? rangeType, string? range)
-            => (string.IsNullOrEmpty(rangeType) || string.Equals(rangeType, "Unknown", StringComparison.OrdinalIgnoreCase))
+            => (string.IsNullOrEmpty(rangeType) || string.Equals(rangeType, "Unknown", StringComparison.OrdinalIgnoreCase) || string.Equals(rangeType, "DOVIInvalid", StringComparison.OrdinalIgnoreCase))
                 && range is "HDR" or "SDR" ? range : null;
 
         private static readonly Regex DivxTagRegex = new("divx|dx50|div[3-6]", Options);

@@ -275,6 +275,76 @@
     "edition": "Special Edition"
   },
   {
+    "path": "Movie.2020.2160p.WEB.DV.HDR10.DDP5.1.Atmos.HEVC-GRP.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.1080p.WEB.DDP5.1.H.264-GRP.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.1080p.WEB.AAC.x264-GRP.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movie (2020) WEB.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Charlotte's Web (2006) 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.1080p.BR-DISK.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.BD50.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HD-DVD.1080p.mkv",
+    "source": "HD DVD",
+    "edition": null
+  },
+  {
+    "path": "Show.S01E01.720p.PDTV.x264.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Show.S01E01.Raw-HD.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.HDTVRip.mkv",
+    "source": "HDTV",
+    "edition": null
+  },
+  {
+    "path": "Movie.2015.Rogue.Cut.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Rogue Cut"
+  },
+  {
+    "path": "Mad.Max.Fury.Road.2015.Black.and.Chrome.Edition.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Black and Chrome"
+  },
+  {
+    "path": "Movie.2020.Masters.of.Cinema.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Masters of Cinema"
+  },
+  {
     "path": "Apocalypse.Now.1979.Redux.1080p.BluRay.mkv",
     "source": "BluRay",
     "edition": "Redux"
@@ -426,7 +496,7 @@
   },
   {
     "path": "Movie.2020.WEB.8kish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -441,7 +511,7 @@
   },
   {
     "path": "Movie.2020.WEB.4320pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -456,7 +526,7 @@
   },
   {
     "path": "Movie.2020.WEB.4kish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -471,7 +541,7 @@
   },
   {
     "path": "Movie.2020.WEB.2160pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -486,7 +556,7 @@
   },
   {
     "path": "Movie.2020.WEB.1440pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -496,7 +566,7 @@
   },
   {
     "path": "Movie.2020.WEB.1080pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -506,7 +576,7 @@
   },
   {
     "path": "Movie.2020.WEB.1080iish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -521,7 +591,7 @@
   },
   {
     "path": "Movie.2020.WEB.720pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -536,7 +606,7 @@
   },
   {
     "path": "Movie.2020.WEB.576pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -551,7 +621,7 @@
   },
   {
     "path": "Movie.2020.WEB.480pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -566,7 +636,7 @@
   },
   {
     "path": "Movie.2020.WEB.360pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -581,7 +651,7 @@
   },
   {
     "path": "Movie.2020.WEB.404pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -596,7 +666,7 @@
   },
   {
     "path": "Movie.2020.WEB.384pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -611,7 +681,7 @@
   },
   {
     "path": "Movie.2020.WEB.520pish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -621,7 +691,7 @@
   },
   {
     "path": "Movie.2020.WEB.HEVCish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -636,7 +706,7 @@
   },
   {
     "path": "Movie.2020.WEB.H265ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -651,7 +721,7 @@
   },
   {
     "path": "Movie.2020.WEB.H264ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -666,7 +736,7 @@
   },
   {
     "path": "Movie.2020.WEB.AVCish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -681,7 +751,7 @@
   },
   {
     "path": "Movie.2020.WEB.AV1ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -696,7 +766,7 @@
   },
   {
     "path": "Movie.2020.WEB.VP9ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -711,7 +781,7 @@
   },
   {
     "path": "Movie.2020.WEB.x264ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -726,7 +796,7 @@
   },
   {
     "path": "Movie.2020.WEB.x265ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -741,7 +811,7 @@
   },
   {
     "path": "Movie.2020.WEB.VP8ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -756,7 +826,7 @@
   },
   {
     "path": "Movie.2020.WEB.XVIDish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -771,7 +841,7 @@
   },
   {
     "path": "Movie.2020.WEB.DIVXish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -786,7 +856,7 @@
   },
   {
     "path": "Movie.2020.WEB.WMVish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -801,7 +871,7 @@
   },
   {
     "path": "Movie.2020.WEB.VC1ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -816,7 +886,7 @@
   },
   {
     "path": "Movie.2020.WEB.MPEG2ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -831,7 +901,7 @@
   },
   {
     "path": "Movie.2020.WEB.MPEG4ish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -846,7 +916,7 @@
   },
   {
     "path": "Movie.2020.WEB.MJPEGish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {
@@ -861,7 +931,7 @@
   },
   {
     "path": "Movie.2020.WEB.THEORAish.mkv",
-    "source": null,
+    "source": "WEB",
     "edition": null
   },
   {

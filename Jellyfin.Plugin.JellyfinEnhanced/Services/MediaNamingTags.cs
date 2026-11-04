@@ -13,16 +13,17 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private const string Separator = @"[. _\-\[\]()]+";
     private const string OptionalSeparator = @"[. _\-\[\]()]*";
     private static readonly TimeSpan Timeout = TimeSpan.FromMilliseconds(100);
-    /// <summary>Bare "WEB" needs a following quality token: the quality rules' resolutions and codecs, plus 1080i and x264/h.265 spellings.</summary>
-    private static readonly string WebQualityTokens = string.Join("|", QualityTagRules.ResolutionTokens
-        .Concat(QualityTagRules.CodecTokens).Select(Regex.Escape).Append("1080i").Append(@"[hx]" + OptionalSeparator + "26[45]"));
     private static Regex Token(string pattern) => new(@"(?:^|[. _\-\[\](){}])(?:" + pattern + @")(?=$|[. _\-\[\](){}])", Options, Timeout);
     private static readonly (Regex Pattern, string Label)[] Sources =
     [
         (Token(@"(?:bd" + OptionalSeparator + @")?remux|bdremux"), "REMUX"),
-        (Token(@"blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip"), "BluRay"),
-        (Token(@"web" + OptionalSeparator + @"(?:dl|rip)|web(?=" + Separator + "(?:" + WebQualityTokens + @")(?:$|[. _\-\[\]()]))"), "WEB"),
-        (Token("hdtv"), "HDTV"),
+        // Full discs (Radarr's BR-DISK; BD25/BD50 images) are Blu-ray sources.
+        (Token(@"blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)"), "BluRay"),
+        (Token(@"hd" + OptionalSeparator + "dvd(?:" + OptionalSeparator + "rip)?"), "HD DVD"),
+        // A bare WEB counts anywhere after the title boundary (TRaSH's \bWEB\b): 1080p.WEB.DDP5.1 is a web release.
+        (Token(@"web(?:" + OptionalSeparator + @"(?:dl|rip))?"), "WEB"),
+        // Broadcast captures: HDTV, its rips, PDTV and Sonarr's Raw-HD.
+        (Token(@"hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + "hd"), "HDTV"),
         (Token(@"dvd" + OptionalSeparator + "scr"), "SCR"),
         (Token(@"dvd(?:" + OptionalSeparator + @"rip)?"), "DVD"),
         (Token(@"(?:hd" + OptionalSeparator + @")?cam(?:rip)?"), "CAM"),
@@ -52,6 +53,9 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token(@"(?:\d{1,3}(?:st|nd|rd|th)" + Separator + @")?anniversary" + Separator + @"edition|\d{1,3}(?:st|nd|rd|th)" + Separator + @"anniversary"), "Anniversary"),
         (Token("uncensored"), "Uncensored"),
         (Token(@"open" + Separator + @"matte"), "Open Matte"),
+        (Token(@"rogue" + Separator + @"cut"), "Rogue Cut"),
+        (Token(@"black" + Separator + @"(?:and|&)" + Separator + @"chrome"), "Black and Chrome"),
+        (Token(@"masters" + Separator + @"of" + Separator + @"cinema|moc"), "Masters of Cinema"),
     ];
     // Where the title ends: after the year in brackets ("(2019)"), else after the first year that
     // does not open the name ("2001 A Space Odyssey 1968"), and for an episode after its SxxEyy
@@ -63,7 +67,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static readonly Regex YearToken = new(@"(?:^|[. _\-\[\](){}])(?:19|20)\d{2}(?=$|[. _\-\[\](){}])", Options, Timeout);
     private static readonly Regex EpisodeToken = new(@"(?:^|[. _\-\[\](){}])s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*(?=$|[. _\-\[\](){}])", Options, Timeout);
     private static readonly Regex ReleaseBoundary = new(@"\[|" + Token(string.Join("|", QualityTagRules.ResolutionTokens.Concat(QualityTagRules.CodecTokens).Select(Regex.Escape)
-        .Append(@"remux|bdremux|blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|web" + OptionalSeparator + @"(?:dl|rip)|web|hdtv|dvd(?:" + OptionalSeparator + @"rip)?|[hx]" + OptionalSeparator + "26[45]|1080i"))), Options, Timeout);
+        .Append(@"remux|bdremux|blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)|web" + OptionalSeparator + @"(?:dl|rip)|web|hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + @"hd|hd" + OptionalSeparator + @"dvd|dvd(?:" + OptionalSeparator + @"rip)?|[hx]" + OptionalSeparator + "26[45]|1080i"))), Options, Timeout);
     private static readonly string[] ResolutionOrder = ["8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD"];
     private static readonly string[] SourceOrder = ["REMUX", "BluRay", "WEB", "HDTV", "DVD", "SCR", "TC", "TS", "CAM"];
 

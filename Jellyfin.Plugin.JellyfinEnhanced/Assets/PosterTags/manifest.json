@@ -289,7 +289,7 @@
   "Jellyfin.Plugin.JellyfinEnhanced/js/fonts/materialsymbolsrounded.woff2": "05cc9b9f8de1f641e9f8e54106c8fa665a834c7fbfab573b4f5a81704e78170a",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/awardstags.js": "5ea90904e27ae720458f6031ce72bec79bfd853afedcd6a3b34f8ef9c4904e30",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/genretags.js": "0d2e7c5f84d91ee8d7ef30a1bbaff5f3c1dbd386b54917ac3d1058f1881c7bd1",
-  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "fd86c2cc28d4a89d778bb0075666b472120046c8efa86680d928c26b2a7e9fef",
+  "Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js": "43acc0e75575a637807469ebf793c4331b381c8bbf6484a2bff306d24e3e1c65",
   "Jellyfin.Plugin.JellyfinEnhanced/js/tags/rating-sources.js": "ff7874f3c8bb2941c799390ae05a6b1439bdaaa22df0ce5bc90696f0016e727d",
   "css/ratings.css": "b87ae170cda8c05175fd03f49d7a090e3d704e06fcc47425bbc02e86b726fdf2"
  },
@@ -1342,8 +1342,8 @@
    "sha256": "a249cbadf75c4df7a63d0dc1b42d70be21bbf98f3a749b6db2a80016ebda9640"
   },
   "quality-colours.json": {
-   "bytes": 5378,
-   "sha256": "620fcb2470efbfd4ba334b07c51b2bfdef65cfb0b49d9ce112208efd1b9c4614"
+   "bytes": 5609,
+   "sha256": "2e8f7a98d93c4b5074bc39b3a25e824174bd0a38ea198a58a0412841bc92099b"
   },
   "rating-source-icons.json": {
    "bytes": 1450,

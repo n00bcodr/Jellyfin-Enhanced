@@ -250,6 +250,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var exact = label switch {
                 "Director's Cut" => "DC", "Extended" => "Ext", "Unrated" => "Unr", "Remastered" => "Rem", "Criterion" => "CC",
                 "Ultimate" => "Ult", "Collector's Edition" => "CE", "Anniversary" => "Anniv", "Uncensored" => "Unc", "Open Matte" => "OM",
+                "Rogue Cut" => "Rogue", "Black and Chrome" => "B&C", "Masters of Cinema" => "MoC",
                 "Special Edition" => StatusRules.Text("quality_edition_special_compact", settings.StatusCulture), "Mixed" => "±", _ => null };
             return exact ?? QualityTagRules.CompactLabel(label);
         }
