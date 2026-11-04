@@ -57,7 +57,7 @@
     // The server's tag-cache entry schema (TagCacheService
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
     // from another schema is never restored. The current schema includes Awards, Logos and Custom matches.
-    const ENTRY_SCHEMA = 39;
+    const ENTRY_SCHEMA = 40;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;

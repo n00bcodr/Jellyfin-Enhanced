@@ -1878,6 +1878,76 @@
     "HDR10",
     "HEVC"
    ]
+  },
+  {
+   "name": "A layout field that contradicts the channel count gives way to the count",
+   "why": "Two channels cannot be 7.1, whichever field says so",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 2,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - TrueHD"
+    }
+   ],
+   "highest": [
+    "TRUEHD 2.0"
+   ],
+   "all": [
+    "TRUEHD 2.0"
+   ]
+  },
+  {
+   "name": "The dca codec name is DTS",
+   "why": "dca is ffmpeg's name for the DTS decoder",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dca",
+     "Channels": 6
+    }
+   ],
+   "highest": [
+    "DTS 5.1"
+   ],
+   "all": [
+    "DTS 5.1"
+   ]
+  },
+  {
+   "name": "An audio track's title is not IMAX evidence",
+   "why": "Only the video, the item and its file names speak for the picture",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "h264",
+     "Width": 1920,
+     "Height": 1080,
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "1080p H264 SDR"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "Title": "Commentary about IMAX cameras",
+     "DisplayTitle": "Commentary about IMAX cameras - AAC - Stereo"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "H264"
+   ]
   }
  ]
 }

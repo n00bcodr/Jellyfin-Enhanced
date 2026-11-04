@@ -514,9 +514,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var paren = layout.IndexOf('(', StringComparison.Ordinal);
             if (paren >= 0 && layout.EndsWith(')')) layout = layout[..paren];
             layout = JsText.Trim(layout);
-            if (NamedLayouts.TryGetValue(layout, out var named)) return named;
+            // Jellyfin's layout field, like a title, only counts when it agrees with the track's channel count.
+            if (NamedLayouts.TryGetValue(layout, out var named) && AgreesWithCount(named, stream.Channels)) return named;
             var numeric = NumericLayoutRegex.Match(layout);
-            if (numeric.Success) return Layout(numeric);
+            if (numeric.Success && AgreesWithCount(Layout(numeric), stream.Channels)) return Layout(numeric);
             // A title layout only counts when the track's own channel count is unknown or agrees with it (its bed,
             // or bed plus heights), so a stereo encode titled "5.1" stays 2.0 (trackChannels in qualitytags.js).
             var title = JsText.ToLower(stream.DisplayTitle ?? string.Empty);
@@ -633,9 +634,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 }
             }
 
+            // Only video tracks speak for the picture: an audio track titled "Commentary about IMAX cameras" is not IMAX.
             foreach (var stream in streams)
             {
-                if (stream?.Type != "Subtitle") yield return stream?.DisplayTitle;
+                if (stream?.Type == "Video") yield return stream?.DisplayTitle;
             }
         }
 
@@ -720,7 +722,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             (new(@"(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:ma|xll|master[ -]?audio)(?![a-z_])", Options), "DTS-HD MA"),
             (new(@"(?:^|[^a-z0-9_])dts[-_. ]?hd(?![a-z_])", Options), "DTS-HD"),
             (new(@"(?:^|[^a-z0-9_])dts[-_. ]?es(?![a-z_])", Options), "DTS"),
-            (new(@"(?:^|[^a-z0-9_])dts(?![a-z_])", Options), "DTS"),
+            (new(@"(?:^|[^a-z0-9_])(?:dts|dca)(?![a-z_])", Options), "DTS"),
             (new(@"(?:^|[^a-z0-9_])(?:ddp(?:lus)?|dd\+|e[-_. ]?ac-?3|dolby" + JsSpace + @"*digital(?:" + JsSpace + @"*plus|" + JsSpace + @"*\+))(?![a-z_])", Options), "Dolby Digital+"),
             (new(@"(?:^|[^a-z0-9_])(?:dd(?!" + JsSpace + @"*\+)|dolby" + JsSpace + @"*digital(?!" + JsSpace + @"*(?:plus|\+)))(?![a-z_])|(?:^|[^a-z0-9_-])ac-?3(?![a-z_])", Options), "Dolby Digital"),
             (new(@"(?:^|[^a-z0-9_])flac(?![a-z_])", Options), "FLAC"),

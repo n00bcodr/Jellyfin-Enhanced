@@ -1088,6 +1088,24 @@
     "itemName": "Cam"
   },
   {
+    "path": "media/Film.Extended.mkv",
+    "source": null,
+    "edition": "Extended",
+    "itemName": "Film"
+  },
+  {
+    "path": "media/Film.Directors.Cut.mkv",
+    "source": null,
+    "edition": "Director's Cut",
+    "itemName": "Film"
+  },
+  {
+    "path": "media/Film.Uncut.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Uncut",
+    "itemName": "Film"
+  },
+  {
     "path": "Show/Season 01/Show.S01E01.The.Web.720p.HDTV.mkv",
     "source": "HDTV",
     "edition": null,

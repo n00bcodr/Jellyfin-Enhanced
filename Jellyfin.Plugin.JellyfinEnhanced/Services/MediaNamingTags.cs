@@ -140,7 +140,8 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     /// <summary>
     /// The name after a leading copy of the item's title (its words in order, any separators
     /// between them, case-insensitive), or the name itself when it does not start with the title.
-    /// The remainder keeps a separator in front, so the year and release rules still see a boundary.
+    /// The remainder is marked as following a removed title (ReleasePart then reads it all as release text) and
+    /// keeps a separator in front, so the year and release rules still see a boundary.
     /// </summary>
     internal static string WithoutTitle(string name, string? itemName)
     {
@@ -149,7 +150,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         if (words.Length == 0) return name;
         var joined = string.Join(@"[^\p{L}\p{N}]+", words);
         var title = new Regex(@"^[^\p{L}\p{N}]*" + joined + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name);
-        if (title.Success) return " " + name[title.Length..];
+        if (title.Success) return TitleRemoved + name[title.Length..];
         // An episode's own title right after its SxxEyy marker ("Show.S01E01.The.Web.720p.HDTV" for the episode
         // "The Web") is read past too, so its words never become a source or an edition.
         var episode = new Regex(@"(?:^|[. _\-\[\](){}])s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*(?=[^\p{L}\p{N}])", Options, Timeout).Match(name);
@@ -181,14 +182,20 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     }
 
     /// <summary>The part of a file or folder name after its title (see <see cref="YearToken"/>); the whole name when no boundary is known.</summary>
+    // Marks a name whose leading title WithoutTitle removed: everything after it is release text, with or without a year.
+    private const string TitleRemoved = "\u0001";
+
     internal static string ReleasePart(string name)
     {
-        var part = name;
+        var stripped = name.StartsWith(TitleRemoved, StringComparison.Ordinal);
+        var part = stripped ? " " + name[TitleRemoved.Length..] : name;
         var bracketYear = BracketYearToken.Match(part);
         var year = bracketYear.Success ? bracketYear : YearToken.Matches(part).FirstOrDefault(m => m.Index > 0);
         if (year != null) part = part[(year.Index + year.Length)..];
         var episode = EpisodeToken.Match(part);
-        if (year == null && !episode.Success) return ReleaseBoundary.IsMatch(part) ? part : string.Empty;
+        // Without a year or episode marker, a name only counts when it has a release word, unless the item's own
+        // title was already read past ("Film.Extended" for the movie "Film").
+        if (year == null && !episode.Success) return stripped || ReleaseBoundary.IsMatch(part) ? part : string.Empty;
         if (episode.Success)
         {
             var rest = part[(episode.Index + episode.Length)..];

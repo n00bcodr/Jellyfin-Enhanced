@@ -278,7 +278,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 17 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 18 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -604,7 +604,7 @@
         [/(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:ma|xll|master[ -]?audio)(?![a-z_])/, 'DTS-HD MA'],
         [/(?:^|[^a-z0-9_])dts[-_. ]?hd(?![a-z_])/, 'DTS-HD'],
         [/(?:^|[^a-z0-9_])dts[-_. ]?es(?![a-z_])/, 'DTS'],
-        [/(?:^|[^a-z0-9_])dts(?![a-z_])/, 'DTS'],
+        [/(?:^|[^a-z0-9_])(?:dts|dca)(?![a-z_])/, 'DTS'],
         [/(?:^|[^a-z0-9_])(?:ddp(?:lus)?|dd\+|e[-_. ]?ac-?3|dolby\s*digital(?:\s*plus|\s*\+))(?![a-z_])/, 'Dolby Digital+'],
         [/(?:^|[^a-z0-9_])(?:dd(?!\s*\+)|dolby\s*digital(?!\s*(?:plus|\+)))(?![a-z_])|(?:^|[^a-z0-9_-])ac-?3(?![a-z_])/, 'Dolby Digital'],
         [/(?:^|[^a-z0-9_])flac(?![a-z_])/, 'FLAC'],
@@ -699,17 +699,18 @@
      * @returns {string|null} Layout such as "6.1", "4.0", "1.0" or "7.1.4".
      */
     function trackChannels(stream) {
-        const layout = String(stream.ChannelLayout || '').toLowerCase().replace(/\(.*\)$/, '').trim();
-        if (Object.hasOwn(NAMED_LAYOUTS, layout)) return NAMED_LAYOUTS[layout];
-        const numeric = /^(\d)\.(\d)(?:\.(\d))?$/.exec(layout);
-        if (numeric) return numeric.slice(1).filter(Boolean).join('.');
-        // A title layout only counts when the track's own channel count is unknown or agrees with it (its bed,
-        // or bed plus heights: TrueHD Atmos 7.1.4 over 8 channels), so a stereo encode titled "5.1" stays 2.0.
+        // A layout, from Jellyfin's layout field or the title, only counts when the track's own channel count is
+        // unknown or agrees with it (its bed, or bed plus heights: TrueHD Atmos 7.1.4 over 8 channels), so a stereo
+        // encode titled or labelled "5.1"/"7.1" stays 2.0.
         const count = Number(stream.Channels) > 0 ? Number(stream.Channels) : 0;
         const agrees = found => {
             const [bed, lfe, height = 0] = found.split('.').map(Number);
             return !count || bed + lfe === count || bed + lfe + height === count;
         };
+        const layout = String(stream.ChannelLayout || '').toLowerCase().replace(/\(.*\)$/, '').trim();
+        if (Object.hasOwn(NAMED_LAYOUTS, layout) && agrees(NAMED_LAYOUTS[layout])) return NAMED_LAYOUTS[layout];
+        const numeric = /^(\d)\.(\d)(?:\.(\d))?$/.exec(layout);
+        if (numeric && agrees(numeric.slice(1).filter(Boolean).join('.'))) return numeric.slice(1).filter(Boolean).join('.');
         const title = String(stream.DisplayTitle || '').toLowerCase();
         const named = /(?:^|[^a-z0-9_])([1-7])[. ]([01])(?:\.([246]))?(?![a-z0-9_])/.exec(title);
         const fromTitle = named ? named.slice(1).filter(Boolean).join('.')
@@ -893,8 +894,9 @@
                 imaxSignals.push(source?.Path || '', source?.Name || '');
             });
         }
+        // Only video tracks speak for the picture: an audio track titled "Commentary about IMAX cameras" is not IMAX.
         if (Array.isArray(mediaStreams)) {
-            mediaStreams.filter(stream => stream?.Type !== 'Subtitle').forEach((stream) => {
+            mediaStreams.filter(stream => stream?.Type === 'Video').forEach((stream) => {
                 imaxSignals.push(stream?.DisplayTitle || '', stream?.Title || '');
             });
         }
@@ -1519,7 +1521,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 17, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 18, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1557,7 +1559,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 17, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 18, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

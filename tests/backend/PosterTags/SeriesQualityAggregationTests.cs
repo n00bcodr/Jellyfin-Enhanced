@@ -33,8 +33,10 @@ public class SeriesQualityAggregationTests
     public void NonAudioDetectionRetainsSourceAndFormatSignalsWhileAggregationRanksEachAudioTrack()
     {
         var streams = Streams(2160, "hevc", "Dolby Vision");
-        // Audio titles still contribute format signals even when audio label detection is skipped.
-        streams.Streams!.Add(new() { Type = "Audio", Language = "deu", DisplayTitle = "IMAX TRUEHD 7.1", Channels = 8 });
+        // The video title and file names keep their format signals when audio label detection is skipped;
+        // an audio title never speaks for the picture.
+        streams.Streams![0].DisplayTitle = "2160p IMAX HEVC";
+        streams.Streams.Add(new() { Type = "Audio", Language = "deu", DisplayTitle = "IMAX TRUEHD 7.1", Channels = 8 });
         streams.Sources = [new() { Path = "/movies/film.3d.hsbs.mkv" }];
         var nonAudio = QualityTagRules.DetectNonAudio(streams);
         Assert.Equal(QualityTagRules.Detect(streams, null).Where(label => QualityTagRules.CategoryOf(label) != QualityTagRules.AudioInfo), nonAudio);
