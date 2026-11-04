@@ -131,6 +131,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrCsrfHandler.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/Jellyseerr/SeerrHttpHelper.cs",
       "category": "Helpers"
     },
@@ -7829,7 +7833,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 359,
+    "files": 360,
     "routes": 180,
     "configuration_properties": 533,
     "storage_references": 70,
