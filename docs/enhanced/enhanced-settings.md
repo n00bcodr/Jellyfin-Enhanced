@@ -372,7 +372,7 @@ Use the admin configuration page to turn server features on and set starting pre
 
 ??? info "How it works"
 
-    The tabs are **Overview**, **Display**, **Playback**, **Pages**, **Seerr**, **\*arr**, **Elsewhere & Reviews**, **Extras**, **Keyboard**, **Admin**, and **Docs**. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`.
+    The tabs are **Overview**, **Display**, **Elsewhere & Reviews**, **Playback**, **Pages**, **Extras**, **Keyboard**, **Services**, **Seerr**, **\*arr**, **Admin**, **Credits**, and **Docs**. The sidebar groups them and lists each tab's cards underneath. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`.
 
     Some server effects happen immediately. Page integrations can have additional requirements, described below.
 
@@ -386,10 +386,12 @@ Use the admin configuration page to turn server features on and set starting pre
 
 Admin Display/Playback preferences generally supply starting values when a user settings file is missing. Existing personal values take precedence; ordinary **Save Settings** does not keep enforcing those defaults.
 
-To replace existing preferences:
+To change existing users, a setting that users also hold personally (marked with a small people icon) shows a banner in its card when you change it. **Apply the above** copies only the listed settings to every user. **Apply all plugin settings** replaces all personal preferences with the admin values.
+
+To replace all existing preferences from the Overview instead:
 
 1. Set and save the intended defaults.
-2. Choose **Overview** → **Quick Actions** → **Overwrite everyone's personal settings**.
+2. Choose **Overview** → **Quick Actions** → **Apply all plugin settings to every user**.
 3. Confirm the action.
 
 !!! warning
@@ -440,7 +442,7 @@ Under **Display** → **Default Language**, choose the starting interface langua
 
 Set starting playback preferences for your users, including tab switching, auto-skip, and subtitles. Users can override the personal preferences in **Playback Settings**, **Auto-Skip Settings**, and **Subtitle Settings**.
 
-Open **Playback** → **Playback & Tab Switch** to set these starting preferences. The playback-start rating badge is a server setting with no personal toggle.
+Open **Playback** → **Player Behaviour** to set these starting preferences. The playback-start rating badge is a server setting with no personal toggle.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -509,7 +511,7 @@ Users choose their own pinned source; no admin control sets it. See [Random Butt
 
 Set the server's keyboard bindings, which users inherit until they choose personal overrides. You can also disable ordinary JE shortcuts.
 
-1. Open **Keyboard** → **Keyboard Config**.
+1. Open **Keyboard** → **Keyboard Shortcuts**.
 2. Click a key and press a combination. ++delete++ disables the server binding; ++backspace++ restores its stock key.
 3. Save your admin edits.
 
@@ -623,7 +625,7 @@ All settings below are admin server settings, with no personal-panel counterpart
 | **Use Custom Tabs** | Off | Enables the Activity Custom Tabs embed. |
 | **Add the Custom Tabs entry for me** | Off | Creates the matching managed Custom Tabs entry on save. |
 
-For the live section, also configure these admin server settings under **Extras** → **UI Tweaks**:
+For the live section, also configure these admin server settings under **Extras** → **Active Streams**:
 
 | Setting | Default | What it does |
 | --- | --- | --- |

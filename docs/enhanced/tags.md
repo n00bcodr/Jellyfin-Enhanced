@@ -29,7 +29,7 @@ Tables below show factory defaults. Rows marked “Admin / personal” give both
     **Hide Tags on Hover** follows the admin value for new users, and overwriting personal settings applies it too.
 
 !!! warning "Replacing everyone's preferences"
-    **Overview** → **Quick Actions** → **Overwrite everyone's personal settings** replaces saved personal preferences with the current admin values. It also replaces other Enhanced display/playback preferences, so each user would need to reapply their customizations. Read [Settings Overview](../getting-started/settings-overview.md) before using it.
+    **Overview** → **Quick Actions** → **Apply all plugin settings to every user** replaces saved personal preferences with the current admin values. It also replaces other Enhanced display/playback preferences, so each user would need to reapply their customizations. Read [Settings Overview](../getting-started/settings-overview.md) before using it.
 
 ### Where tags appear
 
@@ -301,7 +301,7 @@ To contribute, open an eligible detail page and click **Write a Review**. Choose
 |---|---|---|
 | **Enable User Written Reviews** | Off | Enables JE's stored user reviews; independent of Elsewhere and TMDB Reviews being enabled |
 | **Show average user rating on poster cards** | Off | Adds the average-review chip to eligible cards with Rating Tags enabled |
-| **Show "—" on posters for unrated items** | On | Shows a dash when no visible aggregate star rating exists; off removes that chip |
+| **Show a dash on posters for unrated items** | On | Shows a dash when no visible aggregate star rating exists; off removes that chip |
 | **Hide reviews from hidden users** | On | Hides those authors' reviews from other non-admin viewers; self-view and admin exceptions apply |
 | **Hide reviews from disabled users** | On | Applies the same visibility rule to disabled accounts |
 | **Also save review star ratings as the user's Jellyfin rating** | Off | Mirrors movie/series review stars to Jellyfin's personal /10 rating, independently of the displayed average |
@@ -386,7 +386,7 @@ You can show scores in the web video player's controls and an age-classification
 **How to use:**
 
 1. Configure score chips under **Display** → **Media Tags**.
-2. Configure the playback-start classification badge under **Playback** → **Playback & Tab Switch**.
+2. Configure the playback-start classification badge under **Playback** → **Player Behaviour**.
 3. Click **Save Settings**, then refresh the web client.
 
 | Setting | Default | What it does |

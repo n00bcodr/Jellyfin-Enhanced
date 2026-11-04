@@ -142,8 +142,8 @@ Connect only the services your chosen features need. The table shows where to se
 | Feature | Requires | Where to configure |
 | --- | --- | --- |
 | Seerr search, requests, issues, and discovery | Enabled Seerr integration, reachable Seerr URL and API key; a linked, unblocked user with the relevant Seerr permissions | **Seerr → Seerr Connection Setup** and **Users**; [Seerr settings](../seerr/seerr-settings.md) and [permission audit](../seerr/permission-audit.md) |
-| Automatic season requests | Configured Seerr and the automatic request switches, eligible playback, and permitted linked users | **Seerr → Automatic Requests**; [Seerr features](../seerr/seerr-features.md) |
-| Automatic movie requests | Configured Seerr plus **TMDB API Key** for movie discovery, eligible playback, and permitted linked users | **Seerr → Seerr Connection Setup** and **Automatic Requests** |
+| Automatic season requests | Configured Seerr and the automatic request switches, eligible playback, and permitted linked users | **Seerr → Auto Season Requests**; [Seerr features](../seerr/seerr-features.md) |
+| Automatic movie requests | Configured Seerr plus **TMDB API Key** for movie discovery, eligible playback, and permitted linked users | **Seerr → Seerr Connection Setup** and **Auto Movie Requests** |
 | Requests page | **Enable Requests Page**; Seerr for requests/issues, enabled Sonarr/Radarr instances with API keys for downloads/history | **Pages → Requests Page**, **Seerr**, and **\*arr**; [*arr settings](../arr/arr-settings.md) |
 | Calendar | **Enable Calendar Page** and at least one configured source: enabled Sonarr/Radarr instance with API key, or Shoko URL and API key | **Pages → Calendar Page** and **\*arr → Sonarr / Radarr / Shoko**; [*arr features](../arr/arr-features.md) |
 | Sonarr/Radarr item links and tag synchronization | Enabled instances with **URL** and **API Key**. Item links also need a Jellyfin administrator account and **Enable \*arr Links on Detail Pages**. Sync needs **Enable Tags Sync** and its scheduled task. | **\*arr → Sonarr / Radarr**, **\*arr UI Links**, and **Tags Sync** |

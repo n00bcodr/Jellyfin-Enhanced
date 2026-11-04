@@ -528,7 +528,7 @@ Everything is configured from **Dashboard → Plugins → Jellyfin Enhanced**, w
 <details>
 <summary>Replacing personal settings and where choices are saved</summary>
 
-To replace everyone’s choices, save the admin changes first. Then use **Overwrite everyone's personal settings** under **Overview → Quick Actions**. Personal settings are stored on the server; theme choices and Catch Up dismissals use browser storage.
+To change only the settings you just edited for everyone, use **Apply the above** in that card's banner. To replace everyone’s choices, save the admin changes first. Then use **Apply all plugin settings to every user** under **Overview → Quick Actions**. Personal settings are stored on the server; theme choices and Catch Up dismissals use browser storage.
 
 </details>
 

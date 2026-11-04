@@ -7,7 +7,7 @@ Use the admin configuration page for server features, service connections, and s
 The admin page controls server features, service connections, and starting preferences for users. Use its tabs to set up the parts of JE you want.
 
 1. Sign in as an administrator and open **Dashboard → Plugins → Jellyfin Enhanced**. On Jellyfin 12, plugin navigation can take you directly to the configuration page. On 10.11, open the installed plugin's configuration.
-2. Use **Search settings...** or the section shortcuts within a tab to find a control. Use **Descriptions** to show or hide explanatory text.
+2. Use **Search settings...** or the sidebar to find a control. Pick a tab to see its cards; pick a card or a group under it to show just that, and pick the tab name again to show everything. On a phone the sidebar opens from the menu button. Use **Descriptions** to show or hide explanatory text.
 3. Check the unsaved indicator, then click **Save Settings**.
 4. Refresh affected web clients.
 
@@ -15,16 +15,18 @@ The admin page controls server features, service connections, and starting prefe
 
 | Tab | What you'll find | Detailed guide |
 | --- | --- | --- |
-| **Overview** | **Service Status**, **Optional Dependencies**, **Features**, and **Quick Actions** for connection tests, overwriting personal settings, and clearing client tag caches | [Defaults and resets](#admin-defaults-and-personal-overrides), [compatibility](compatibility.md) |
+| **Overview** | **Service Status** (with the remaining request budget for MDBList and DoesTheDogDie), **Optional Dependencies**, **Features**, and **Quick Actions** for connection tests, applying all plugin settings to users, and clearing client tag caches | [Defaults and resets](#admin-defaults-and-personal-overrides), [compatibility](compatibility.md) |
 | **Display** | Watch progress, file information, poster/detail tags and their styles, native poster tags, Spoiler Guard, icons/theme, random-button defaults, language, awards, and MDBList ratings | [Enhanced settings](../enhanced/enhanced-settings.md), [Tags & badges](../enhanced/tags.md), [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md) |
 | **Playback** | Tab-switch playback behavior, pause screen, long-press speed, automatic intro/outro skipping, subtitle defaults, and panel/toast timing | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Pages** | Enablement, content options, and placement for Bookmarks, Hidden Content, Requests, Calendar, Recommendations, Activity, and Catch Up | [JE pages & tabs](pages-and-tabs.md) |
+| **Services** | TMDB, AniList, MDBList and DoesTheDogDie in one place. Each card is a linked copy of the one in its feature tab, so changing it in either place changes both | [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md), [Tags & badges](../enhanced/tags.md) |
 | **Seerr** | Connection and shared TMDB key, URL mappings, search/discovery, automatic requests, recently-added scan, watchlist sync, user import/blocking, permission audit, and response-cache diagnostics | [Seerr settings](../seerr/seerr-settings.md), [permission audit](../seerr/permission-audit.md) |
 | **\*arr** | Sonarr/Radarr instances, one URL-only Bazarr endpoint, Shoko Calendar source, browser URL mappings, item links for administrators, and tag synchronization | [*arr settings](../arr/arr-settings.md) |
 | **Elsewhere & Reviews** | Streaming providers, regions, shared TMDB key, provider branding, TMDB reviews, release dates, and user reviews | [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) |
 | **Extras** | UI tweaks, header shortcuts, active streams, plugin icons, Letterboxd links, and **Custom Image Assets** | [Other settings](../other/other-settings.md) |
 | **Keyboard** | **Disable Keyboard Shortcuts** and the server's shortcut bindings; click a key to edit it | [Enhanced features](../enhanced/enhanced-features.md#playback-controls) and [personal shortcut controls](#admin-defaults-and-personal-overrides) |
 | **Admin** | Optional usage statistics, maintenance mode, tag-cache operations, and **Dev Mode** | [Other settings](../other/other-settings.md), [Community Analytics](../advanced/community-analytics.md), [Tags & badges](../enhanced/tags.md) |
+| **Credits** | The community projects the plugin's features build on | |
 | **Docs** | **Documentation** embedded from the hosted site, with **Open in new tab** | [Quick start](index.md) |
 
 Select a tab to see it on the admin page.
@@ -148,13 +150,20 @@ To set starting preferences for accounts that haven't loaded JE yet, change them
 
 ### Apply defaults to existing users
 
-Use this action when you want existing users to start over with the current defaults. It replaces saved personal preferences.
+Saving admin defaults changes what new users start with. Existing users keep their saved choices until you apply the change.
 
-!!! warning "Back up before overwriting preferences"
+A setting that users also hold personally shows a small people icon. When you change one, a banner appears in its card with two actions:
+
+- **Apply the above** copies only the settings listed in the banner to every existing user. Their other personal settings stay as they are.
+- **Apply all plugin settings** replaces every personal preference with the current admin values, the same as **Overview → Quick Actions → Apply all plugin settings to every user**.
+
+Use the second action when you want existing users to start over with the current defaults. It replaces saved personal preferences.
+
+!!! warning "Back up before replacing all preferences"
 
     There is no per-user undo. Restore a backup or have users reapply their choices.
 
-1. Open **Overview → Quick Actions → Overwrite everyone's personal settings**.
+1. Open **Overview → Quick Actions → Apply all plugin settings to every user**, or use **Apply all plugin settings** in a card's banner.
 2. Confirm the action to save the current form and reset existing users' preferences.
 3. Have users refresh their clients.
 
@@ -262,7 +271,7 @@ To restore:
 
     User documents follow Jellyfin user IDs. Restoring JE data alone doesn't recreate accounts or give a new account its old ID. Include Jellyfin's own account/server backup when moving the whole installation.
 
-**Overwrite everyone's personal settings** resets preferences; it doesn't restore a backup.
+**Apply all plugin settings to every user** resets preferences; it doesn't restore a backup.
 
 ## Account deletion and retained data
 

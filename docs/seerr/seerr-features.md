@@ -782,7 +782,7 @@ Server automations can request the next season or collection movie based on play
 
 **How to use:**
 
-1. Enable the desired feature under **Seerr** → **Automatic Requests**.
+1. Enable the desired feature under **Seerr** → **Auto Season Requests** or **Auto Movie Requests**.
 2. Save, then restart Jellyfin or run **Jellyfin Enhanced Startup** once to start monitoring playback.
 
 !!! warning "Review automation access"
