@@ -655,7 +655,7 @@
             #jellyfin-enhanced-panel .je-mth-tab { justify-content: center; min-height: 44px; padding: 8px 2px 9px; font-size: 13px; min-width: 0; }
             #jellyfin-enhanced-panel .je-mth-tab-long, #jellyfin-enhanced-panel .je-mth-tab .je-mth-admin-chip { display: none; }
             #jellyfin-enhanced-panel .je-mth-tab-short { display: inline; overflow: hidden; text-overflow: ellipsis; }
-            #jellyfin-enhanced-panel .je-mth-tab--admin::before { content: ''; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #ffb74d; flex-shrink: 0; }
+            #jellyfin-enhanced-panel .je-mth-tab--admin::before { content: ''; position: absolute; top: 8px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: #ffb74d; }
             #jellyfin-enhanced-panel .je-mth-body { grid-template-columns: minmax(0, 1fr); gap: 10px; }
             #jellyfin-enhanced-panel .je-mth-preview { grid-column: 1; grid-row: auto; position: static; display: none; }
             #jellyfin-enhanced-panel .je-mth-panels { grid-row: auto; }
