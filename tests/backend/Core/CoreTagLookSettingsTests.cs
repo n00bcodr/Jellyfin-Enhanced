@@ -170,6 +170,35 @@ public class CoreTagLookSettingsTests
     }
 
     [Fact]
+    public void SeasonsAndEpisodesKeepTheirOwnScoresAndOnlyBorrowWhenTheyHaveNone()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var series = new Series { Id = Guid.NewGuid(), Name = "Series", CommunityRating = 8, CriticRating = 90 };
+        var season = new Season { Id = Guid.NewGuid(), ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1, Name = "Season 1", CriticRating = 20 };
+        var critic = new Episode { Id = Guid.NewGuid(), ParentId = season.Id, SeriesId = series.Id, SeasonId = season.Id, IndexNumber = 1, ParentIndexNumber = 1, Name = "Critic only", CriticRating = 20 };
+        var bare = new Episode { Id = Guid.NewGuid(), ParentId = season.Id, SeriesId = series.Id, SeasonId = season.Id, IndexNumber = 2, ParentIndexNumber = 1, Name = "No scores" };
+        var all = new BaseItem[] { series, season, critic, bare };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
+        library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(i => i.Id == id));
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(new List<BaseItem>());
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(new List<Guid>());
+        library.Setup(l => l.GetCollectionFolders(It.IsAny<BaseItem>())).Returns(new List<Folder>());
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+
+        foreach (var child in new BaseItem[] { season, critic })
+        {
+            var entry = cache.BuildEntryOnDemand(child)!;
+            Assert.Null(entry.CommunityRating); // never the series' 8 next to the child's own critic score
+            Assert.Equal(20, entry.CriticRating);
+        }
+        var borrowed = cache.BuildEntryOnDemand(bare)!;
+        Assert.Equal(8, borrowed.CommunityRating);
+        Assert.Equal(90, borrowed.CriticRating);
+    }
+
+    [Fact]
     public void CacheEntriesCarryTheLibraryOfTheItemOrItsSeries()
     {
         using var f = new ApiPluginFixture();

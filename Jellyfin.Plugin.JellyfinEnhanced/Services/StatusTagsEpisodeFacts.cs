@@ -38,6 +38,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly DateTime _now;
         private DateTime? _nextPremiere;
 
+        /// <summary>
+        /// How far ahead of UTC the earliest time zone is (UTC+14). A premiere dated up to this far in the
+        /// future is already today somewhere, so its season premiere is recorded and each viewer's local day
+        /// decides (StatusRules.AiredWithin); latest-aired facts still wait for the UTC instant.
+        /// </summary>
+        internal static readonly TimeSpan EarliestDayLead = TimeSpan.FromHours(14);
+
         /// <param name="isSeason">Whether the container is a Season (else a Series).</param>
         /// <param name="containerSeason">The Season's own number, used when an episode has none.</param>
         public StatusTagsEpisodeFacts(bool isSeason, int? containerSeason, DateTime? now = null)
@@ -80,7 +87,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (!_isSeason && (season == null || season <= 0)) return;
             if (aired > _now)
             {
-                if (_nextPremiere == null || aired < _nextPremiere) _nextPremiere = aired;
+                // Refresh when the premiere's day first begins somewhere, then again at the instant itself.
+                var early = aired - EarliestDayLead;
+                var boundary = early > _now ? early : aired;
+                if (_nextPremiere == null || boundary < _nextPremiere) _nextPremiere = boundary;
+                if (aired <= _now + EarliestDayLead) NoteSeasonFirst(season, episodeNumber, aired, id);
                 return;
             }
 
@@ -94,6 +105,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _latestEpisode = episodeNumber;
             }
 
+            NoteSeasonFirst(season, episodeNumber, aired, id);
+        }
+
+        private void NoteSeasonFirst(int? season, int? episodeNumber, DateTime aired, Guid id)
+        {
             if (episodeNumber == 1 && season is { } s && (!_seasonFirstAired.TryGetValue(s, out var first) || aired < first.Aired))
             {
                 _seasonFirstAired[s] = (aired, id);
@@ -119,7 +135,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _lastAdded = newest;
         }
 
-        /// <summary>Next relevant premiere boundary (Unix ms), for time-driven refresh.</summary>
+        /// <summary>Next instant the facts change (Unix ms), for time-driven refresh: a premiere's day starting somewhere, or its UTC instant.</summary>
         public long? NextPremiere => TagCacheService.ToUnixMilliseconds(_nextPremiere);
 
         /// <summary>Newest air date (Unix ms), or null.</summary>

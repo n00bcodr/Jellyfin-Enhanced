@@ -101,7 +101,9 @@ internal static class SeriesQualityAggregation
             NextPremiere = episodes.Select(e => e.Aired).Where(date => date > boundary).Min(),
             EpisodeCount = episodes.Count, Categories = categories, AudioByLanguage = audio, AudioRegionFallback = regionFallback,
             LegacyAudio = AudioFacts(null, true), LegacyAudioByLanguage = legacyByLanguage, LegacyAudioRegionFallback = legacyRegionFallback,
-            LatestExtras = latest < 0 ? Array.Empty<string>() : QualityTagRules.Detect(episodes[latest].Streams, null, episodes[latest].Source, episodes[latest].Edition).Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToArray(),
+            // A version count describes the latest episode, never the series or season.
+            LatestExtras = latest < 0 ? Array.Empty<string>() : QualityTagRules.Detect(episodes[latest].Streams, null, episodes[latest].Source, episodes[latest].Edition)
+                .Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label)) && QualityTagRules.CategoryOf(label) != QualityTagRules.Versions).ToArray(),
         };
     }
 
@@ -139,7 +141,8 @@ internal static class SeriesQualityAggregation
         if (entry.Type is "Series" or "Season") representative.RemoveAll(label => label.StartsWith(QualityTagRules.Versions + ":", StringComparison.Ordinal));
         if (entry.Type is not ("Series" or "Season") || entry.QualitySummary == null || Normalize(policy) == "representative") return representative;
         var summary = entry.QualitySummary;
-        var result = policy == "latest" ? summary.LatestExtras.ToList() : representative.Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToList();
+        var result = policy == "latest" ? summary.LatestExtras.Where(label => QualityTagRules.CategoryOf(label) != QualityTagRules.Versions).ToList()
+            : representative.Where(label => !Categories.Contains(QualityTagRules.CategoryOf(label))).ToList();
         var mixed = false;
         foreach (var pair in EffectiveCategories(summary, preferred, legacyAudio))
         {

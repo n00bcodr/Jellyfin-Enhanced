@@ -1139,8 +1139,11 @@
         const summary = entry.QualitySummary;
         if (!['Series', 'Season'].includes(entry.Type) || !summary || policy === 'representative') return representative;
         const categoryKeys = { resolution: 'resolution', dynamicRange: 'dynamicRange', videoCodec: 'videoCodec', audioInfo: 'audio' };
-        const qualities = policy === 'latest' ? [...(summary.LatestExtras || [])]
-            : representative.filter(label => !['resolution', 'dynamicRange', 'videoCodec', 'audio'].includes(categorize(label)));
+        // A version count describes one episode, never the series or season (QualitySummary.LatestExtras
+        // stored before schema 31 may still carry one).
+        const qualities = (policy === 'latest' ? [...(summary.LatestExtras || [])]
+            : representative.filter(label => !['resolution', 'dynamicRange', 'videoCodec', 'audio'].includes(categorize(label))))
+            .filter(label => !label.startsWith('versions:'));
         const preferred = resolvePreferredAudioLanguage();
         const match = JE.core.mediaLanguage?.matchesLanguage;
         const audioVariants = Object.entries((legacyFullAudio() ? summary.LegacyAudioByLanguage : summary.AudioByLanguage) || {});

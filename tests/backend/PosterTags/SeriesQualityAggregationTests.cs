@@ -173,6 +173,28 @@ public class SeriesQualityAggregationTests
     }
 
     [Fact]
+    public void NoPolicyGivesASeriesOrSeasonTheLatestEpisodesVersionCount()
+    {
+        var streams = new TagStreamData
+        {
+            Streams = [new() { Type = "Video", SourceId = "a", Height = 1080, Codec = "h264" }, new() { Type = "Video", SourceId = "b", Height = 2160, Codec = "hevc" }],
+            Sources = [new() { Id = "a" }, new() { Id = "b" }],
+        };
+        var summary = SeriesQualityAggregation.Build([new("two-versions", 1, streams)], 100);
+        Assert.DoesNotContain(summary.LatestExtras, label => label.StartsWith("versions:", StringComparison.Ordinal));
+        var json = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(summary))!;
+        json["LatestExtras"] = new System.Text.Json.Nodes.JsonArray("versions:2"); // a summary stored by an earlier build
+        var stored = json.Deserialize<TagQualitySummary>()!;
+        Assert.Equal(["versions:2"], stored.LatestExtras);
+        foreach (var type in new[] { "Series", "Season" })
+        foreach (var policy in new[] { "representative", "latest", "best", "shared", "mixed" })
+        {
+            var entry = new TagCacheEntry { Type = type, StreamData = streams, QualitySummary = stored };
+            Assert.DoesNotContain(SeriesQualityAggregation.Resolve(entry, policy, null), label => label.StartsWith("versions:", StringComparison.Ordinal));
+        }
+    }
+
+    [Fact]
     public void AggregateVideoCategoriesIncludeEveryAlreadyLoadedMediaVersion()
     {
         var streams = Streams(720);

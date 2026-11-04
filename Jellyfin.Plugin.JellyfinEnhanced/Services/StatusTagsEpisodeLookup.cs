@@ -77,6 +77,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 q.MaxPremiereDate = now;
             }
 
+            // A season premiere counts once its day has begun in the earliest time zone (StatusTagsEpisodeFacts.EarliestDayLead).
+            void AiredSomewhereToday(InternalItemsQuery q)
+            {
+                q.MinPremiereDate = AfterUnset;
+                q.MaxPremiereDate = now + StatusTagsEpisodeFacts.EarliestDayLead;
+            }
+
             const ItemSortBy Aired = ItemSortBy.PremiereDate, Added = ItemSortBy.DateCreated, SeasonNo = ItemSortBy.ParentIndexNumber, EpisodeNo = ItemSortBy.IndexNumber;
             const JSortOrder desc = JSortOrder.Descending, asc = JSortOrder.Ascending;
 
@@ -128,8 +135,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // The first aired episode 1 of the seasons the premiere is read from.
             foreach (var season in new[] { isSeason ? own : null, newestSeason }.OfType<int>().Distinct())
             {
-                Note(First(q => { q.IndexNumber = 1; AiredByNow(q); q.ParentIndexNumber = season; }, (Aired, asc)));
-                if (season == own) Note(Unnumbered(q => { q.IndexNumber = 1; AiredByNow(q); }, (SeasonNo, asc), (Aired, asc)));
+                Note(First(q => { q.IndexNumber = 1; AiredSomewhereToday(q); q.ParentIndexNumber = season; }, (Aired, asc)));
+                if (season == own) Note(Unnumbered(q => { q.IndexNumber = 1; AiredSomewhereToday(q); }, (SeasonNo, asc), (Aired, asc)));
             }
 
             if (isSeason)

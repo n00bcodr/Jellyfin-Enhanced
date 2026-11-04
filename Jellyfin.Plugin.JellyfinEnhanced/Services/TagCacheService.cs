@@ -334,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 30;
+        internal const int CurrentCacheSchemaVersion = 31;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2760,16 +2760,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         entry.SdhSubtitleLanguages = sdhLanguages;
                     }
 
-                    if (kind == BaseItemKind.Season && entry.CommunityRating == null)
+                    if (kind == BaseItemKind.Season && series != null)
                     {
-                        if (series != null)
+                        if (entry.CommunityRating == null && (entry.Genres == null || entry.Genres.Length == 0))
+                        {
+                            entry.Genres = series.Genres;
+                        }
+
+                        // Only a season with no score of its own shows its series' scores (ratingtags.js).
+                        if (entry.CommunityRating is null or 0 && entry.CriticRating is null or 0)
                         {
                             entry.CommunityRating = series.CommunityRating;
                             entry.CriticRating = series.CriticRating;
-                            if (entry.Genres == null || entry.Genres.Length == 0)
-                            {
-                                entry.Genres = series.Genres;
-                            }
                         }
                     }
 
@@ -2816,13 +2818,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         episodeScans[item.Id] = new EpisodeScan(streams.Any(s => s.Type is "Video" or "Audio") ? languages : null, entry.StreamData, EpisodePlacement.Of(scanned), namingTags, subtitles);
                     }
 
-                    if (kind == BaseItemKind.Episode && entry.CommunityRating == null)
+                    // Only an episode with no score of its own shows its series' scores (ratingtags.js).
+                    if (kind == BaseItemKind.Episode && series != null && entry.CommunityRating is null or 0 && entry.CriticRating is null or 0)
                     {
-                        if (series != null)
-                        {
-                            entry.CommunityRating = series.CommunityRating;
-                            entry.CriticRating = series.CriticRating;
-                        }
+                        entry.CommunityRating = series.CommunityRating;
+                        entry.CriticRating = series.CriticRating;
                     }
 
                     // For Episode: store parent series TMDB ID + season/episode numbers for user review key

@@ -130,6 +130,19 @@ for (const [category, setting] of [['resolution', 'showResolutionTag'], ['dynami
   });
 }
 
+for (const type of ['Series', 'Season']) test(`${type} never shows the latest episode's version count under any policy`, t => {
+  const h = setup(t, 'latest');
+  h.JE.currentSettings.showVersionsTag = true;
+  h.JE.reinitializeQualityTags();
+  const data = { ...entry(), Type: type };
+  data.QualitySummary.LatestExtras = ['IMAX', 'versions:2']; // stored before schema 31
+  data.StreamData = { Streams: [{ Type: 'Video', SourceId: 'a', Height: 1080, Codec: 'h264' }, { Type: 'Video', SourceId: 'b', Height: 2160, Codec: 'hevc' }], Sources: [{ Id: 'a' }, { Id: 'b' }] };
+  for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed']) {
+    h.JE.currentSettings.seriesQualityAggregation = policy;
+    assert.ok(!h.render(data).some(label => /version|×/.test(label)), policy);
+  }
+});
+
 const audioAggregation = JSON.parse(readFileSync(new URL('../../fixtures/audio-aggregation.json', import.meta.url)));
 for (const row of audioAggregation) for (const type of ['Series', 'Season']) {
   test(`${type} ${row.name} audio preserves every aggregation policy, language tier and display mode under the caller gate`, t => {

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
@@ -83,5 +84,43 @@ public class StatusPremiereDayTests
         var settings = PosterTagSettings.FromUserSettings(new() { StatusTagsEnabled = true, NativePosterTimeZone = zone }, config, null);
         var entry = new TagCacheEntry { Type = "Movie", PremiereDate = DateTimeOffset.Parse("2026-11-05T00:00:00Z").ToUnixTimeMilliseconds() };
         Assert.Equal(expected, StatusRules.Resolve(entry, settings, new(DateTimeOffset.Parse(now)))?.Key);
+    }
+
+    /// <summary>
+    /// A new season dated 5 November: at 16:30 UTC on 4 November it is already 00:30 on the 5th in Perth,
+    /// so the series facts carry the premiere and Perth shows New Season while Los Angeles (still the 4th) does not.
+    /// </summary>
+    [Theory]
+    [InlineData("Australia/Perth", "2026-11-04T16:30:00Z", "new_season")]
+    [InlineData("Pacific/Kiritimati", "2026-11-04T10:30:00Z", "new_season")] // UTC+14: 00:30 on the 5th
+    [InlineData("America/Los_Angeles", "2026-11-04T16:30:00Z", null)]
+    [InlineData("UTC", "2026-11-04T16:30:00Z", null)]
+    [InlineData("America/Los_Angeles", "2026-11-05T08:30:00Z", "new_season")]
+    public void ASeasonPremiereCountsFromTheViewersOwnMidnight(string zone, string now, string? expected)
+    {
+        var at = DateTimeOffset.Parse(now);
+        var facts = new StatusTagsEpisodeFacts(false, null, at.UtcDateTime);
+        facts.Note(Guid.NewGuid(), at.UtcDateTime.AddDays(-400), DateTime.Parse("2025-09-01T00:00:00Z").ToUniversalTime(), 1, 1);
+        facts.Note(Guid.NewGuid(), at.UtcDateTime.AddDays(-1), DateTime.Parse("2026-11-05T00:00:00Z").ToUniversalTime(), 2, 1);
+        var entry = new TagCacheEntry { Type = "Series" };
+        facts.ApplyTo(entry);
+        Assert.Equal(2, entry.SeasonPremiere?.Season);
+        var config = new PluginConfiguration { StatusTagsEnabled = true };
+        var settings = PosterTagSettings.FromUserSettings(new() { StatusTagsEnabled = true, NativePosterTimeZone = zone }, config, null);
+        Assert.Equal(expected, StatusRules.Resolve(entry, settings, new(at))?.Key);
+    }
+
+    [Fact]
+    public void AFuturePremiereRefreshesWhenItsDayFirstBeginsThenAtItsInstant()
+    {
+        var premiere = DateTime.Parse("2026-11-05T00:00:00Z").ToUniversalTime();
+        var early = new StatusTagsEpisodeFacts(false, null, DateTime.Parse("2026-11-03T12:00:00Z").ToUniversalTime());
+        early.Note(Guid.NewGuid(), DateTime.UtcNow, premiere, 2, 1);
+        Assert.Equal(new DateTimeOffset(premiere.AddHours(-14)).ToUnixTimeMilliseconds(), early.NextPremiere);
+        Assert.Null(early.SeasonPremiere);
+        var late = new StatusTagsEpisodeFacts(false, null, DateTime.Parse("2026-11-04T16:30:00Z").ToUniversalTime());
+        late.Note(Guid.NewGuid(), DateTime.UtcNow, premiere, 2, 1);
+        Assert.Equal(new DateTimeOffset(premiere).ToUnixTimeMilliseconds(), late.NextPremiere);
+        Assert.Equal(2, late.SeasonPremiere?.Season);
     }
 }
