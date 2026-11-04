@@ -164,7 +164,7 @@
         const summary = slot === 'off' || fixed ? where : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where, cap: capText });
         // Collapsed, a row says where the group goes and its limit; one row's controls open at a time.
         const open = openGroups.get(ctx) === g;
-        return `<li class="je-ta-lrow" data-group="${g}" data-off="${off}" data-open="${open}">
+        return `<li class="je-ta-lrow" data-group="${g}" data-off="${off}" data-open="${open}" data-je-anchor="placement-${g}">
             <span class="je-ta-lrow-move">
                 <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="-1" aria-label="${ctx.esc(JE.t('admin_tags_move_up', { name }))}" ${index === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
                 <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="1" aria-label="${ctx.esc(JE.t('admin_tags_move_down', { name }))}" ${index === count - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
@@ -173,12 +173,13 @@
             <span class="je-ta-lrow-sum">${ctx.esc(summary)}</span>
             <button type="button" class="je-ta-button je-ta-lrow-open" data-act="open" data-dir="0" aria-expanded="${open}" aria-controls="jeTaLrow-${g}" aria-label="${ctx.esc(JE.t('tag_item_editor_group_edit', { group: name }))}">${ctx.tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
             <span class="je-ta-lrow-detail" id="jeTaLrow-${g}" ${open ? '' : 'hidden'}>
-            ${fixed ? '' : `<span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(JE.t('admin_tags_limit_for', { group: name }))}">${ctx.tx('admin_tags_limit')}
+            <span class="je-ta-lrow-slots">${slots}</span>
+            ${fixed ? '' : `<span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(JE.t('admin_tags_limit_for', { group: name }))}">${ctx.tx('panel_settings_ui_tag_editor_show_up_to')}
                 <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="-1" aria-label="${ctx.esc(JE.t('tag_shapes_fewer', { group: name }))}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">remove</span></button>
-                <output aria-live="polite">${cap === 0 ? ctx.tx('panel_settings_ui_tag_editor_summary_all') : cap}</output>
+                <output aria-live="polite">${cap === 0 ? ctx.tx('panel_settings_ui_tag_editor_cap_all') : cap}</output>
                 <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="1" aria-label="${ctx.esc(JE.t('tag_shapes_more', { group: name }))}" ${stepCap(cap, 1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">add</span></button>
             </span>`}
-            <span class="je-ta-lrow-slots">${slots}</span>
+            ${groupSettingsLink(ctx, g, name)}
             </span>
         </li>`;
     }
@@ -192,9 +193,10 @@
         fields: [
             { id: 'tagLayout', key: 'TagLayout', type: 'custom', label: 'admin_tags_layout_default' },
             { id: 'tagLabelDensity', key: 'TagLabelDensity', type: 'pills', label: 'panel_settings_ui_tag_density', desc: 'panel_settings_ui_tag_density_desc', options: [['full', 'panel_settings_ui_tag_density_full'], ['compact', 'panel_settings_ui_tag_density_compact']], read: (v) => (String(v || '').toLowerCase() === 'compact' ? 'compact' : 'full') },
-            { id: 'tagScale', key: 'TagScale', type: 'select', label: 'admin_tags_tagScale', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
-            { id: 'tagGap', key: 'TagGap', type: 'select', label: 'admin_tags_tagGap', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
-            { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'select', label: 'admin_tags_tagEdgeSpacing', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
+            // Size, gap and edge as the hub shows them: a row of choices with its help line.
+            { id: 'tagScale', key: 'TagScale', type: 'pills', label: 'admin_tags_tagScale', desc: 'tag_scale_desc', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
+            { id: 'tagGap', key: 'TagGap', type: 'pills', label: 'admin_tags_tagGap', desc: 'tag_gap_desc', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
+            { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'pills', label: 'admin_tags_tagEdgeSpacing', desc: 'panel_settings_ui_tag_edge_desc', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
         ],
         render(ctx, body) {
             const card = body.closest('.je-ta-card');
@@ -227,6 +229,17 @@
         if (!g) return null;
         const own = el.dataset.slot ? `[data-slot="${el.dataset.slot}"]` : el.dataset.act ? `[data-act="${el.dataset.act}"][data-dir="${el.dataset.dir}"]` : null;
         return own && `.je-ta-lrow[data-group="${g}"] ${own}`;
+    }
+
+    /**
+     * The link from a placement row to the group's own settings on the Groups tab.
+     * @param {Object} ctx
+     * @param {string} g
+     * @param {string} name
+     * @returns {string}
+     */
+    function groupSettingsLink(ctx, g, name) {
+        return `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="groups:${g}">${ctx.esc(JE.t('admin_tags_goto_group', { group: name }))}<span class="material-icons" aria-hidden="true">arrow_forward</span></a>`;
     }
 
     /** Per page view: the group row whose controls are open. */

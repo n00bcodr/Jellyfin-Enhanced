@@ -271,7 +271,7 @@
                     + `<span class="je-ta-field-control"><textarea id="${esc(f.id)}" ${data} rows="${f.rows || 4}" spellcheck="false"${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${esc(value)}</textarea></span></div>`;
             case 'pills':
                 return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><span class="je-ta-switch-name" id="${esc(f.id)}Label" data-je-label>${tx(f.label)}</span>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
-                    + `<span class="je-ta-field-control"><span class="je-ta-pills" role="radiogroup" id="${esc(f.id)}" ${data} aria-labelledby="${esc(f.id)}Label"${described}>${(f.options || []).map(([v, k]) => `<label class="je-ta-pill"><input type="radio" name="${esc(f.id)}" value="${esc(v)}" ${String(v) === String(value) ? 'checked' : ''}><span>${tx(k)}</span></label>`).join('')}</span></span></div>`;
+                    + `<span class="je-ta-field-control"><span class="je-ta-pills" role="radiogroup" id="${esc(f.id)}" ${data} aria-labelledby="${esc(f.id)}Label"${described}>${(f.options || []).map(([v, k]) => `<label class="je-ta-pill"><input type="radio" name="${esc(f.id)}" value="${esc(v)}" ${String(v) === String(value) ? 'checked' : ''}><span>${k.startsWith('=') ? esc(k.slice(1)) : tx(k)}</span></label>`).join('')}</span></span></div>`;
             default:
                 return '';
         }
@@ -716,6 +716,9 @@
             const option = Array.from(control.options).find((o) => o.value === String(value ?? ''));
             if (option) return option.textContent || String(value);
         }
+        // Pills: the chosen option's own label.
+        const radio = control ? Array.from(control.querySelectorAll('input[type="radio"]')).find((r) => /** @type {HTMLInputElement} */ (r).value === String(value ?? '')) : null;
+        if (radio) return radio.closest('label')?.textContent?.trim() || String(value);
         return value === null || value === undefined || value === '' ? JE.t('tag_portable_value_inherit') : String(typeof value === 'object' ? JSON.stringify(value) : value);
     }
 
@@ -811,7 +814,10 @@
                 + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
                 + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('common_open')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
                 + '</div>'
-                + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}${fieldsHtml(s.fields, config)}<div class="je-ta-section-body"></div></div></div>`;
+                + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
+                // Where it goes and how many show live on Layout defaults: say so, and go there.
+                + (JE.core?.tagLayout?.GROUPS?.includes(s.group.id) ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}">${tx('admin_tags_goto_placement', { group: name })}<span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '')
+                + `${fieldsHtml(s.fields, config)}<div class="je-ta-section-body"></div></div></div>`;
         }
 
         const tabs = /** @type {HTMLElement[]} */ (Array.from(root.querySelectorAll('[role="tab"]')));
@@ -1099,11 +1105,14 @@
         function setGroupOpen(group, open, opts = {}) {
             const row = /** @type {HTMLElement|null} */ (root.querySelector(`.je-ta-grow[data-group="${group}"]`));
             if (!row) {
-                // Not a group: a section marked data-je-anchor (e.g. layout:apply).
-                const anchor = /** @type {HTMLElement|null} */ (root.querySelector(`[data-je-anchor="${group}"]`));
+                // Not a group: a section marked data-je-anchor (e.g. layout:apply, layout:placement-quality).
+                let anchor = /** @type {HTMLElement|null} */ (root.querySelector(`[data-je-anchor="${group}"]`));
                 if (anchor && opts.focus) {
+                    // A collapsed placement row opens first (it is drawn again when it does).
+                    const opener = /** @type {HTMLElement|null} */ (anchor.querySelector('[data-act="open"][aria-expanded="false"]'));
+                    if (opener) { opener.click(); anchor = /** @type {HTMLElement|null} */ (root.querySelector(`[data-je-anchor="${group}"]`)) || anchor; }
                     anchor.scrollIntoView?.({ block: 'start' });
-                    /** @type {HTMLElement|null} */ (anchor.querySelector('button, input, select'))?.focus({ preventScroll: true });
+                    /** @type {HTMLElement|null} */ (anchor.querySelector('[data-act="open"], button, input, select'))?.focus({ preventScroll: true });
                 }
                 return;
             }

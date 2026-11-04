@@ -696,7 +696,7 @@
         @container je-mth (max-width: 560px) {
             /* Phone: reordering is its own mode, so the rows give their width to names and summaries. */
             #jellyfin-enhanced-panel .je-tge-reorder { display: inline-flex; min-height: 44px; }
-            #jellyfin-enhanced-panel .je-tge-reorder[aria-pressed="true"] { background: var(--je-tge-sel); border-color: var(--je-tge-sel); }
+            #jellyfin-enhanced-panel .je-tge-reorder[aria-pressed="true"] { background: rgba(255,255,255,0.12); border-width: 2px; }
             #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-moves { display: none; }
             #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-cats) .je-tge-cat .je-cat-btn { display: none; }
             #jellyfin-enhanced-panel .je-tge-cats { margin-top: 8px; }

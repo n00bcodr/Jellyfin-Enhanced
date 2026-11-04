@@ -590,6 +590,9 @@
         /* Not a .status-overlay-container: the status module removes every one of those when it re-initialises. */
         #jellyfin-enhanced-panel .je-mth-badge-sample { display: inline-flex; flex-shrink: 0; max-width: 45%; }
         #jellyfin-enhanced-panel .je-mth-badge:not(:has(input:checked)) .je-mth-badge-sample { opacity: 0.35; filter: grayscale(1); }
+        /* The samples keep a chip shape even while the Status module (and its stylesheet) is off; dimmed then. */
+        #jellyfin-enhanced-panel .je-mth-panel:has(#jeMthBadgesOff:not([hidden])) .je-mth-badge-sample .status-tag { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; background: #2b2f38; color: #fff; font-size: 12px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mth-panel:has(#jeMthBadgesOff:not([hidden])) .je-mth-badge-sample { opacity: 0.35; filter: grayscale(1); }
         #jellyfin-enhanced-panel .je-mth-actions { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 10px; }
         #jellyfin-enhanced-panel .je-mth-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.46); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mth-button:hover { background: rgba(255,255,255,0.12); }
@@ -640,7 +643,10 @@
         /* Phone: the panel's Back button sits on the Media Tags title row instead of a row of its own. */
         @media (max-width: 760px) {
             #jellyfin-enhanced-panel .je-panel-main:has(.je-pane.active[data-pane="media-tags"], .je-pane[data-pane="media-tags"].active) > .je-pane-back { position: absolute; top: 6px; left: 14px; z-index: 4; width: 40px; height: 40px; margin: 0; }
-            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-top .je-pane-title { min-height: 44px; margin: 2px 0 4px 50px; }
+            /* The section select above already names Media Tags: the title stays for screen readers; the tabs sit beside Back. */
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-top .je-pane-title { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-tabs { margin-left: 50px; min-height: 44px; }
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-autosave { order: 3; flex: 1 1 100%; margin: 4px 0 6px; justify-content: flex-end; }
         }
         @container je-mth (max-width: 679px) {
             #jellyfin-enhanced-panel .je-mth-top { gap: 0; }
@@ -649,7 +655,7 @@
             #jellyfin-enhanced-panel .je-mth-tab { justify-content: center; min-height: 44px; padding: 8px 2px 9px; font-size: 13px; min-width: 0; }
             #jellyfin-enhanced-panel .je-mth-tab-long, #jellyfin-enhanced-panel .je-mth-tab .je-mth-admin-chip { display: none; }
             #jellyfin-enhanced-panel .je-mth-tab-short { display: inline; overflow: hidden; text-overflow: ellipsis; }
-            #jellyfin-enhanced-panel .je-mth-tab--admin { color: #ffb74d; }
+            #jellyfin-enhanced-panel .je-mth-tab--admin::before { content: ''; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #ffb74d; flex-shrink: 0; }
             #jellyfin-enhanced-panel .je-mth-body { grid-template-columns: minmax(0, 1fr); gap: 10px; }
             #jellyfin-enhanced-panel .je-mth-preview { grid-column: 1; grid-row: auto; position: static; display: none; }
             #jellyfin-enhanced-panel .je-mth-panels { grid-row: auto; }

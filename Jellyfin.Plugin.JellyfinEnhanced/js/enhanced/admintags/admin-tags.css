@@ -59,7 +59,7 @@
     --je-ta-border-strong: rgba(0, 0, 0, 0.28);
     --je-ta-control-border: rgba(0, 0, 0, 0.56);
     --je-ta-input: #fff;
-    --je-ta-admin: #b26a00;
+    --je-ta-admin: #7a4a00;
     --je-ta-accent: #0077a3;
     --je-ta-warn: #7a4a00;
     --je-ta-bad: #c62828;
@@ -82,6 +82,10 @@
 .je-tag-admin :is(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--je-ta-text); outline-offset: 2px; }
 .je-tag-admin .material-icons { font-size: 18px; vertical-align: middle; }
 .je-tag-admin [hidden] { display: none !important; }
+
+/* Jellyfin's dashboard gives the page's content wrapper overflow: hidden, which makes it
+   the sticky tabs' scroll container (it never scrolls): clip keeps the clipping, not that. */
+#JellyfinEnhancedMediaTagsPage > [data-role="content"] { overflow: clip; }
 
 /* ── Header ── */
 .je-ta-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 0 6px; }
@@ -262,6 +266,8 @@
 .je-ta-lrow-move { grid-area: move; display: flex; gap: 4px; }
 .je-ta-lrow-name { grid-area: name; font-size: 14px; font-weight: 600; }
 .je-ta-lrow-name small { display: block; font-weight: 400; font-size: 13px; color: var(--je-ta-muted); }
+.je-ta-crosslink { align-self: flex-start; min-height: 36px; font-size: 13px; }
+.je-ta-grow-body > .je-ta-crosslink { margin: 0 0 8px; }
 .je-ta-lrow-cap { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--je-ta-muted); }
 .je-ta-lrow-cap output { min-width: 2.2em; text-align: center; font-weight: 700; font-size: 14px; color: var(--je-ta-text); }
 .je-ta-lrow-slots { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -380,7 +386,7 @@
 .je-tag-admin .je-ts-editing-head .je-ts-section-label { margin-top: 0; }
 .je-tag-admin .je-ts-editing-now { font-size: 15px; font-weight: 600; color: var(--je-ta-text); }
 .je-tag-admin .je-ts-target-toggle { margin-left: auto; min-height: 36px; padding: 0 14px; border: 1px solid var(--je-ta-control-border); border-radius: 6px; background: var(--je-ta-surface-2); color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
-.je-tag-admin .je-ts-target-toggle[aria-expanded="true"] { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); }
+.je-tag-admin .je-ts-target-toggle[aria-expanded="true"] { background: var(--je-ta-surface-2); }
 .je-tag-admin .je-ts-target-box { display: flex; flex-direction: column; gap: 8px; }
 /* The tag being edited, in its current colours (on the tag list's dark well). */
 .je-tag-admin .je-ts-sample { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 8px; background: #262626; }
@@ -450,7 +456,7 @@
 .je-tag-admin .je-ts-field-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 44px; }
 .je-tag-admin .je-ts-value { flex: 1 1 160px; min-width: 0; font-size: 13px; color: var(--je-ta-muted); font-variant-numeric: tabular-nums; }
 .je-tag-admin .je-ts-edit { min-height: 36px; padding: 0 14px; border: 1px solid var(--je-ta-control-border); border-radius: 6px; background: var(--je-ta-surface-2); color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
-.je-tag-admin .je-ts-edit[aria-expanded="true"] { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); }
+.je-tag-admin .je-ts-edit[aria-expanded="true"] { background: var(--je-ta-surface-2); border-width: 2px; }
 .je-tag-admin .je-ts-field-body { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 0 2px; border-top: 1px dashed var(--je-border); }
 .je-tag-admin .je-ts-field-body[hidden] { display: none; }
 .je-tag-admin .je-ts-opacity-note { font-size: 13px; color: var(--je-ta-muted); }
@@ -581,7 +587,15 @@
     .je-tag-admin .je-ts-group-panel { padding: 12px; }
     .je-tag-admin .je-ts-rows { border: 0; border-radius: 0; background: none; }
     .je-tag-admin .je-ts-field-row { padding: 10px 0; }
-    .je-ta-reorder[aria-pressed="true"] { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); }
+    .je-ta-reorder[aria-pressed="true"] { background: var(--je-ta-surface-2); border-width: 2px; }
+    /* Phone header: less framing before the settings. */
+    .je-ta-head { padding: 6px 0 4px; gap: 6px 12px; }
+    .je-ta-intro { margin-bottom: 6px; }
+    .je-ta-panel > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    .je-ta-panel > .je-ta-hint { display: none; }
+    .je-ta-preview:not(.je-ta-preview-open) { padding: 0 10px; }
+    #tagStylesBody { margin-top: 8px !important; }
+    .je-tag-admin .je-ts-sample-note { display: none; }
     :not(.je-ta-reordering) > .je-ta-lrows .je-ta-lrow-move { display: none; }
     .je-ta-reorder[aria-pressed="false"] + .je-ta-order :is(.je-ta-icon-btn, .je-ta-rank) { display: none; }
     .je-ta-order li { min-height: 52px; padding: 8px 12px; }
@@ -711,7 +725,8 @@
 .je-tie-light :is(.je-tie-tile, .je-tie-pill, .je-tie-anchor):has(input:focus-visible) { outline-color: #111; }
 .je-tie-light .je-tie-card-title { color: #111; }
 .je-tie-light .je-tie-source strong { color: #006f99; }
-.je-tie-light .je-tie-chip { border-color: #b26a00; color: #b26a00; }
+.je-tie-light .je-tie-chip { border-color: #7a4a00; color: #7a4a00; }
+.je-tie-light .je-tie-tile:has(input:checked) { border-color: #0077a3; background: rgba(0, 119, 163, 0.1); }
 .je-tie-light .je-tie-keep { border-color: rgba(0, 119, 163, 0.45); }
 .je-tie-light .je-tie-keep[data-everyone] { border-color: rgba(178, 106, 0, 0.5); }
 .je-tie-light .je-tie-gsum { color: #555; }

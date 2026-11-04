@@ -137,7 +137,7 @@
         const changes = preview.changes || [];
         const skipped = preview.skipped || [];
         const rows = changes.map((c) => `<li class="je-pt-change"><span class="je-pt-field" data-je-field="${esc(c.field)}">${esc(fieldName(c.field))}</span>`
-            + `<span class="je-pt-values"><span class="je-pt-from">${esc(valueText(c.from, c.field))}</span><span class="je-pt-arrow" aria-label="${tx('tag_portable_becomes')}">→</span><span class="je-pt-to">${esc(valueText(c.to, c.field))}</span></span></li>`).join('');
+            + `<span class="je-pt-values"><span class="je-pt-sr">${tx('tag_portable_was')} </span><span class="je-pt-from">${esc(valueText(c.from, c.field))}</span><span class="je-pt-arrow" aria-hidden="true">→</span><span class="je-pt-sr"> ${tx('tag_portable_becomes')} </span><span class="je-pt-to">${esc(valueText(c.to, c.field))}</span></span></li>`).join('');
         const skips = skipped.map((s) => `<li class="je-pt-skip"><span class="je-pt-field" data-je-field="${esc(s.field)}">${esc(fieldName(s.field))}</span>`
             + `<span class="je-pt-reason">${tx(`tag_portable_skip_${['unknown', 'secret', 'signal', 'invalid'].includes(s.reason) ? s.reason : 'unknown'}`)}${s.detail ? ` <span class="je-pt-detail">(${esc(s.detail)})</span>` : ''}</span></li>`).join('');
         return (opts.summary === false ? '' : `<p class="je-pt-summary" data-je-summary>${tx(changes.length ? 'tag_portable_changes_count' : 'tag_portable_no_changes', { count: changes.length })}</p>`)
@@ -371,6 +371,7 @@
         .je-pt-from { color: rgba(255,255,255,0.62); text-decoration: line-through; overflow-wrap: anywhere; }
         .je-pt-to { color: #8fe3a5; font-weight: 600; overflow-wrap: anywhere; }
         .je-pt-arrow { color: rgba(255,255,255,0.5); }
+        .je-pt-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
         .je-pt-reason { color: #ffd699; font-size: 13px; }
         .je-pt-detail { color: rgba(255,255,255,0.6); }
         .je-pt-status { min-height: 18px; margin: 8px 16px 0; font-size: 13px; color: #8fe3a5; }
@@ -759,7 +760,7 @@
             const offerRetry = () => {
                 const retry = /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'));
                 if (retry) { retry.removeAttribute('aria-disabled'); return; }
-                d.foot.innerHTML = buttonHtml('retry', 'admin_tags_retry', { primary: true }) + buttonHtml('close', 'awards_close');
+                d.foot.innerHTML = buttonHtml('close', 'awards_close') + buttonHtml('retry', 'admin_tags_retry', { primary: true });
                 /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
             };
             const load = async () => {
@@ -799,7 +800,7 @@
                 <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_portable_show_document', { count: Object.keys(document?.settings || {}).length })}</summary>
                 <label class="je-pt-label" for="jePtExport">${tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
                 <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea></details>`;
-            d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('close', 'awards_close');
+            d.foot.innerHTML = buttonHtml('close', 'awards_close') + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true });
             const area = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'));
             d.foot.onclick = async (e) => {
                 const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');

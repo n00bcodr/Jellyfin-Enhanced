@@ -80,7 +80,7 @@
         .je-tie-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
         .je-tie-card-title { font-size: 12px; padding: 4px 2px 0; color: rgba(255,255,255,0.9); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .je-tie-source { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.7); }
-        .je-tie-source strong { color: #7fd3ff; }
+        .je-tie-source strong { color: #fff; font-weight: 600; }
         .je-tie-note { margin: 6px 0 0; font-size: 13px; color: #ffd699; }
         .je-tie-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
         .je-tie-box { margin: 0; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
@@ -165,8 +165,9 @@
         .je-tie-cap button { width: 36px; min-height: 36px; padding: 0; }
         .je-tie-cap button:disabled { opacity: 0.35; cursor: default; }
         .je-tie-cap output { min-width: 26px; text-align: center; font-weight: 600; }
-        .je-tie-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-        .je-tie-row3 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; min-width: 0; }
+        /* Size and spacing: one row each, label left and the whole choice readable on the right. */
+        .je-tie-row3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+        .je-tie-row3 label { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: center; gap: 12px; font-size: 14px; font-weight: 600; min-width: 0; }
         .je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #80868f; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
         .je-tie select option { background: #222; color: #fff; }
         /* Where Save keeps the look: first in the form, so the choice comes before the edits. */
@@ -182,8 +183,18 @@
         .je-tie button:focus-visible, .je-tie select:focus-visible, .je-tie-switch input:focus-visible, .je-tie-toast button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-toast { position: fixed; left: 50%; bottom: 24px; z-index: 100001; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 12px 10px 16px; border-radius: 8px; background: #2b2f38; color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.5); font-size: 14px; }
         .je-tie-toast button { padding: 0 12px; color: #7fd3ff; }
+        /* Desktop: title and actions stay in view; the form scrolls between them. */
+        @media (min-width: 641px) {
+            .je-tie { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); overflow: hidden; }
+            .je-tie-head, .je-tie-foot { flex-shrink: 0; }
+            .je-tie-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+            .je-tie-foot { min-height: 64px; box-sizing: border-box; padding: 12px 16px; }
+            .je-tie-foot button { min-height: 44px; }
+        }
         @media (max-width: 640px) {
             .je-tie-backdrop { padding: 0; }
+            .je-tie-row3 label { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+            .je-tie-close { width: 44px; height: 44px; }
             .je-tie { border-radius: 0; min-height: 100%; border: 0; }
             .je-tie-body { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
             .je-tie-side { position: static; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; align-items: start; }
@@ -788,7 +799,8 @@
         };
         for (const [key, spec] of Object.entries(selectOptions)) {
             const select = /** @type {HTMLSelectElement} */ (dialog.querySelector(`[data-tie-select="${key}"]`));
-            select.innerHTML = `<option value="">${tx('tag_item_editor_same_as_default', { value: spec.label(spec.base) })}</option>`
+            // Inherited: the viewer's own value; for the server-wide look each user keeps theirs.
+            select.innerHTML = `<option value="">${serverMode ? tx('tag_item_editor_same_as_user') : tx('tag_item_editor_same_as_default', { value: spec.label(spec.base) })}</option>`
                 + spec.values.map((v) => `<option value="${v}">${esc(spec.label(v))}</option>`).join('');
             select.value = draft[key] || '';
             select.addEventListener('change', () => {
