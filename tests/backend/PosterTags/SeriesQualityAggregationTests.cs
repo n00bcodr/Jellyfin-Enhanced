@@ -24,7 +24,7 @@ public class SeriesQualityAggregationTests
     private static TagStreamData Streams(int height, string codec = "h264", string range = "SDR", string audio = "DTS 5.1") => new()
     {
         Streams = [new() { Type = "Video", Height = height, Codec = codec, VideoRangeType = range },
-            new() { Type = "Audio", Language = "eng", DisplayTitle = audio, Channels = 6 }],
+            new() { Type = "Audio", Language = "eng", DisplayTitle = audio, Channels = audio.EndsWith("7.1", StringComparison.Ordinal) ? 8 : 6 }],
     };
     private static SeriesQualityAggregation.Episode Fact(int height, long? aired, string codec = "h264", string range = "SDR", string audio = "DTS 5.1") =>
         new(Guid.NewGuid().ToString("N"), aired, Streams(height, codec, range, audio));

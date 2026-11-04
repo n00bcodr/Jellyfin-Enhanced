@@ -275,7 +275,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 13 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 14 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -468,6 +468,10 @@
                 tag = '2.0';
             }
 
+            // A layout the track's reported channel count cannot hold is ignored (a stereo track titled 7.1).
+            const needs = { '7.1': 8, '5.1': 6, '2.0': 2 };
+            if (tag && channels > 0 && channels < needs[tag]) tag = null;
+
             if (tag && (!detectedLayoutTag || rank[tag] > rank[detectedLayoutTag])) {
                 detectedLayoutTag = tag;
             }
@@ -627,6 +631,10 @@
      */
     function atmosCarrier(label, stream) {
         if (label !== 'ATMOS') return label;
+        // The stream codec names the carrier first: a TrueHD title cannot hide an E-AC-3 JOC track's Atmos.
+        const codec = String(stream.Codec || '').toLowerCase();
+        if (/^(?:truehd|mlp)/.test(codec)) return 'TRUEHD ATMOS';
+        if (/^(?:e-?ac-?3|ddp)/.test(codec)) return 'DD+ ATMOS';
         const text = [stream.Codec, stream.Profile, stream.DisplayTitle].filter(Boolean).join(' ').toLowerCase();
         if (/(?:^|[^a-z0-9_])(?:true[ .-]?hd|mlp)(?![a-z_])/.test(text)) return 'TRUEHD ATMOS';
         if (/(?:^|[^a-z0-9_])(?:e[-_. ]?ac-?3|ddp(?:a|lus)?|dd\+|dolby\s*digital\s*(?:plus|\+))(?![a-z_])/.test(text)) return 'DD+ ATMOS';
@@ -650,11 +658,19 @@
         if (Object.hasOwn(NAMED_LAYOUTS, layout)) return NAMED_LAYOUTS[layout];
         const numeric = /^(\d)\.(\d)(?:\.(\d))?$/.exec(layout);
         if (numeric) return numeric.slice(1).filter(Boolean).join('.');
+        // A title layout only counts when the track's own channel count is unknown or agrees with it (its bed,
+        // or bed plus heights: TrueHD Atmos 7.1.4 over 8 channels), so a stereo encode titled "5.1" stays 2.0.
+        const count = Number(stream.Channels) > 0 ? Number(stream.Channels) : 0;
+        const agrees = found => {
+            const [bed, lfe, height = 0] = found.split('.').map(Number);
+            return !count || bed + lfe === count || bed + lfe + height === count;
+        };
         const title = String(stream.DisplayTitle || '').toLowerCase();
         const named = /(?:^|[^a-z0-9_])([1-7])[. ]([01])(?:\.([246]))?(?![a-z0-9_])/.exec(title);
-        if (named) return named.slice(1).filter(Boolean).join('.');
-        if (/(?:^|[^a-z0-9_])stereo(?![a-z0-9_])/.test(title)) return '2.0';
-        if (/(?:^|[^a-z0-9_])mono(?![a-z0-9_])/.test(title)) return '1.0';
+        const fromTitle = named ? named.slice(1).filter(Boolean).join('.')
+            : /(?:^|[^a-z0-9_])stereo(?![a-z0-9_])/.test(title) ? '2.0'
+            : /(?:^|[^a-z0-9_])mono(?![a-z0-9_])/.test(title) ? '1.0' : null;
+        if (fromTitle && agrees(fromTitle)) return fromTitle;
         return COUNT_LAYOUTS[stream.Channels] || null;
     }
 
@@ -940,27 +956,18 @@
                 const dtsRegex = /\bdts\b/i;
                 const ddpRegex = /dolby\s*digital\+/i;
 
+                // The earlier vocabulary keeps its labels but never a carrier the stream codec cannot be.
+                const legacyAllows = tag => carrierAllows(tag === 'ATMOS' ? 'DD+ ATMOS' : tag, stream.Codec) || (tag === 'ATMOS' && carrierAllows('TRUEHD ATMOS', stream.Codec));
                 const atmosMatch = displayTitle.match(atmosRegex);
                 const truehdMatch = displayTitle.match(truehd);
                 const dtsxMatch = displayTitle.match(dtsxRegex);
                 const dtsMatch = displayTitle.match(dtsRegex);
                 const ddpMatch = displayTitle.match(ddpRegex);
 
-                if (atmosMatch) {
-                    audioTag = 'ATMOS';
+                const titled = atmosMatch ? 'ATMOS' : truehdMatch ? 'TRUEHD' : dtsxMatch ? 'DTS-X' : dtsMatch ? 'DTS' : ddpMatch ? 'Dolby Digital+' : null;
+                if (titled && legacyAllows(titled)) {
+                    audioTag = titled;
                     break; // Stop all further audio checks
-                } else if (truehdMatch) {
-                    audioTag = 'TRUEHD';
-                    break;
-                } else if (dtsxMatch) {
-                    audioTag = 'DTS-X';
-                    break;
-                } else if (dtsMatch) {
-                    audioTag = 'DTS';
-                    break;
-                } else if (ddpMatch) {
-                    audioTag = 'Dolby Digital+';
-                    break;
                 }
             }
 
@@ -1465,7 +1472,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 13, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 14, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1503,7 +1510,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 13, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 14, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

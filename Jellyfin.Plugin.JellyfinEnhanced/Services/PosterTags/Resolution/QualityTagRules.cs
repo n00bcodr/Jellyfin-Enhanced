@@ -517,12 +517,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (NamedLayouts.TryGetValue(layout, out var named)) return named;
             var numeric = NumericLayoutRegex.Match(layout);
             if (numeric.Success) return Layout(numeric);
+            // A title layout only counts when the track's own channel count is unknown or agrees with it (its bed,
+            // or bed plus heights), so a stereo encode titled "5.1" stays 2.0 (trackChannels in qualitytags.js).
             var title = JsText.ToLower(stream.DisplayTitle ?? string.Empty);
             var inTitle = TitleLayoutRegex.Match(title);
-            if (inTitle.Success) return Layout(inTitle);
-            if (TitleStereoRegex.IsMatch(title)) return "2.0";
-            if (TitleMonoRegex.IsMatch(title)) return "1.0";
+            var fromTitle = inTitle.Success ? Layout(inTitle) : TitleStereoRegex.IsMatch(title) ? "2.0" : TitleMonoRegex.IsMatch(title) ? "1.0" : null;
+            if (fromTitle != null && AgreesWithCount(fromTitle, stream.Channels)) return fromTitle;
             return stream.Channels is { } count && CountLayouts.TryGetValue(count, out var usual) ? usual : null;
+        }
+
+        private static bool AgreesWithCount(string layout, int? channels)
+        {
+            if (channels is not > 0) return true;
+            var parts = layout.Split('.');
+            var bed = (parts[0][0] - '0') + (parts[1][0] - '0');
+            var height = parts.Length > 2 ? parts[2][0] - '0' : 0;
+            return bed == channels || bed + height == channels;
         }
 
         private static string Layout(Match match) => string.Join('.', match.Groups.Values.Skip(1).Where(g => g.Success).Select(g => g.Value));
@@ -769,6 +779,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return true;
         }
 
+        private static readonly Regex TrueHdCodecRegex = new("^(?:truehd|mlp)", Options);
+        private static readonly Regex EAc3CodecRegex = new("^(?:e-?ac-?3|ddp)", Options);
         private static readonly Regex TrueHdCarrierRegex = new(@"(?:^|[^a-z0-9_])(?:true[ .-]?hd|mlp)(?![a-z_])", Options);
         private static readonly Regex DolbyDigitalPlusCarrierRegex = new(@"(?:^|[^a-z0-9_])(?:e[-_. ]?ac-?3|ddp(?:a|lus)?|dd\+|dolby" + JsSpace + @"*digital" + JsSpace + @"*(?:plus|\+))(?![a-z_])", Options);
 
@@ -776,6 +788,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static string AtmosCarrier(string label, TagMediaStream stream)
         {
             if (label != "ATMOS") return label;
+            // The stream codec names the carrier first: a TrueHD title cannot hide an E-AC-3 JOC track's Atmos.
+            var codec = JsText.ToLower(stream.Codec ?? string.Empty);
+            if (TrueHdCodecRegex.IsMatch(codec)) return "TRUEHD ATMOS";
+            if (EAc3CodecRegex.IsMatch(codec)) return "DD+ ATMOS";
             var text = JsText.ToLower(string.Join(' ', new[] { stream.Codec, stream.Profile, stream.DisplayTitle }.Where(s => !string.IsNullOrEmpty(s))));
             if (TrueHdCarrierRegex.IsMatch(text)) return "TRUEHD ATMOS";
             return DolbyDigitalPlusCarrierRegex.IsMatch(text) ? "DD+ ATMOS" : label;
@@ -784,15 +800,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static string? DetectAudioCodec(List<TagMediaStream> audioStreams, bool legacyAudio = false)
         {
             if (!legacyAudio) return DetectCurrentAudioCodec(audioStreams);
-            // Priority 1: the first stream whose display title names a codec.
+            // Priority 1: the first stream whose display title names a codec its stream codec can carry (the earlier
+            // vocabulary keeps its labels, never an impossible carrier).
             foreach (var stream in audioStreams)
             {
                 var title = JsText.AsciiLower(stream.DisplayTitle);
-                if (title.Contains("atmos", StringComparison.Ordinal)) return "ATMOS";
-                if (title.Contains("truehd", StringComparison.Ordinal)) return "TRUEHD";
-                if (title.Contains("dts-x", StringComparison.Ordinal)) return "DTS-X";
-                if (DtsRegex.IsMatch(title)) return "DTS";
-                if (DolbyDigitalPlusRegex.IsMatch(title)) return "Dolby Digital+";
+                var titled = title.Contains("atmos", StringComparison.Ordinal) ? "ATMOS"
+                    : title.Contains("truehd", StringComparison.Ordinal) ? "TRUEHD"
+                    : title.Contains("dts-x", StringComparison.Ordinal) ? "DTS-X"
+                    : DtsRegex.IsMatch(title) ? "DTS"
+                    : DolbyDigitalPlusRegex.IsMatch(title) ? "Dolby Digital+" : null;
+                if (titled != null && (CarrierAllows(titled == "ATMOS" ? "DD+ ATMOS" : titled, stream.Codec) || (titled == "ATMOS" && CarrierAllows("TRUEHD ATMOS", stream.Codec)))) return titled;
             }
 
             // Priority 2: codec / profile metadata.
@@ -832,6 +850,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 // a word character, İ becomes "i" + U+0307.
                 var signals = JsText.ToLower((stream.ChannelLayout ?? string.Empty) + " " + (stream.DisplayTitle ?? string.Empty));
                 var tagRank = Channels71Regex.IsMatch(signals) ? 3 : Channels51Regex.IsMatch(signals) ? 2 : Channels20Regex.IsMatch(signals) ? 1 : 0;
+                // A layout the track's reported channel count cannot hold is ignored (getChannelTag in qualitytags.js).
+                if (channels > 0 && channels < tagRank switch { 3 => 8, 2 => 6, 1 => 2, _ => 0 }) tagRank = 0;
                 if (tagRank > rank) rank = tagRank;
             }
 

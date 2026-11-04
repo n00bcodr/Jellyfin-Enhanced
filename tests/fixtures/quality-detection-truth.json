@@ -1624,6 +1624,9 @@
    ],
    "all": [
     "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "5.1"
    ]
   },
   {
@@ -1681,6 +1684,119 @@
    ],
    "all": [
     "DTS-HD MA 7.1"
+   ]
+  },
+  {
+   "name": "A stereo AAC track's title cannot make it surround",
+   "why": "Without a layout, the reported 2 channels beat a title saying 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "DisplayTitle": "English - TrueHD Atmos 7.1"
+    }
+   ],
+   "highest": [],
+   "all": [],
+   "legacy": []
+  },
+  {
+   "name": "A stereo AC-3 track titled 5.1 is Dolby Digital 2.0",
+   "why": "The channel count bounds the title's layout",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 2,
+     "DisplayTitle": "English - Dolby Digital 5.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 2.0"
+   ],
+   "all": [
+    "Dolby Digital 2.0"
+   ]
+  },
+  {
+   "name": "A stereo FLAC track titled 5.1 is FLAC 2.0",
+   "why": "The channel count bounds the title's layout",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "flac",
+     "Channels": 2,
+     "DisplayTitle": "Original 5.1 mix"
+    }
+   ],
+   "highest": [
+    "FLAC 2.0"
+   ],
+   "all": [
+    "FLAC 2.0"
+   ]
+  },
+  {
+   "name": "E-AC-3 JOC titled TrueHD Atmos is DD+ Atmos",
+   "why": "The stream codec names the Atmos carrier, not the title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "JOC",
+     "Channels": 6,
+     "DisplayTitle": "TrueHD Atmos 5.1"
+    }
+   ],
+   "highest": [
+    "DD+ ATMOS 5.1"
+   ],
+   "all": [
+    "DD+ ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "A height layout in the title agrees with its bed channel count",
+   "why": "TrueHD Atmos 7.1.4 over 8 decoded channels keeps its heights",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "DisplayTitle": "English - TrueHD Atmos 7.1.4"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1.4"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1.4"
+   ]
+  },
+  {
+   "name": "A stereo-titled track with six channels is 5.1",
+   "why": "A title saying stereo cannot shrink a reported 6-channel track",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "DisplayTitle": "English - Dolby Digital - Stereo"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
    ]
   }
  ]
