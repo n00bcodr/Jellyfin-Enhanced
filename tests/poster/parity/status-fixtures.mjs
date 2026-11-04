@@ -27,6 +27,8 @@ add('container-new-episode', show({ LatestEpisodeAdded: ago(1) }), 'new_episode'
 add('coming-soon', movie({ PremiereDate: now + day }), 'coming_soon', 'Coming Soon');
 add('popular', movie({ PremiereDate: now + day }), 'trending_today', '#3 Today', { rank: 3 });
 add('no-key-no-popular', movie(), null, null, { rank: 3, plugin: { TMDB_API_KEY: '' } });
+// Seerr's weekly list (TMDB failed or no key): "#N This Week" on web and native alike.
+add('popular-week-seerr', movie(), 'trending_week', '#2 This Week', { rank: 2, rankSource: 'seerr-week', plugin: { TMDB_API_KEY: '', JellyseerrEnabled: true, JellyseerrUrls: 'http://seerr.test', JellyseerrApiKey: 'key' } });
 add('trending-off', movie(), null, null, { rank: 3, settings: { StatusTagsTrending: false } });
 add('admin-trending-off', movie(), null, null, { rank: 3, plugin: { StatusTagsTrending: false } });
 add('native-master-does-not-enable-status', movie({ PremiereDate: ago(2) }), null, null, { settings: { StatusTagsEnabled: false } });
@@ -55,7 +57,8 @@ add('milestone-family-off', season({ SeasonAddedSpan: { First: ago(1), Last: ago
 add('new-family-off', movie({ PremiereDate: ago(1) }), null, null, { settings: { StatusTagsNewRelease: false } });
 add('added-family-off', movie({ DateCreated: ago(1) }), null, null, { settings: { StatusTagsJustAdded: false } });
 add('release-window-boundary', movie({ PremiereDate: ago(30) }), 'new_movie', 'New Movie');
-add('release-window-expired', movie({ PremiereDate: ago(30) - 1 }), null, null);
+// Premiere dates are calendar days: 30 days ago is the last day of a 30-day window, 31 days ago is out.
+add('release-window-expired', movie({ PremiereDate: ago(31) }), null, null);
 add('admin-window', movie({ PremiereDate: ago(3) }), null, null, { plugin: { StatusTagsNewReleaseDays: 2 } });
 add('added-clock-skew-limit', { Type: 'Video', DateCreated: now + day }, 'just_added', 'Just Added');
 add('added-clock-skew-exceeded', { Type: 'Video', DateCreated: now + day + 1 }, null, null);

@@ -64,3 +64,24 @@ public class NativeChipVocabularyTests
         Assert.Equal("no_such_key", StatusRules.Text("no_such_key", CultureInfo.GetCultureInfo("de")));
     }
 }
+
+/// <summary>Premiere dates are calendar days in the viewer's time zone, not UTC instants.</summary>
+[Collection("Plugin singleton")]
+public class StatusPremiereDayTests
+{
+    [Theory]
+    [InlineData("Australia/Sydney", "2026-11-04T21:00:00Z", "new_movie")]    // 08:00 on release day in Sydney
+    [InlineData("Australia/Sydney", "2026-11-05T09:00:00Z", "new_movie")]    // 20:00 on release day
+    [InlineData("Australia/Sydney", "2026-11-04T12:59:00Z", "coming_soon")]  // 23:59 the day before
+    [InlineData("UTC", "2026-11-04T21:00:00Z", "coming_soon")]
+    [InlineData("UTC", "2026-11-05T00:00:00Z", "new_movie")]
+    [InlineData("America/Los_Angeles", "2026-11-05T15:00:00Z", "new_movie")]   // 07:00 on release day
+    [InlineData("America/Los_Angeles", "2026-11-05T07:00:00Z", "coming_soon")] // 23:00 the day before
+    public void ReleaseDayStartsAtLocalMidnight(string zone, string now, string expected)
+    {
+        var config = new PluginConfiguration { StatusTagsEnabled = true };
+        var settings = PosterTagSettings.FromUserSettings(new() { StatusTagsEnabled = true, NativePosterTimeZone = zone }, config, null);
+        var entry = new TagCacheEntry { Type = "Movie", PremiereDate = DateTimeOffset.Parse("2026-11-05T00:00:00Z").ToUnixTimeMilliseconds() };
+        Assert.Equal(expected, StatusRules.Resolve(entry, settings, new(DateTimeOffset.Parse(now)))?.Key);
+    }
+}

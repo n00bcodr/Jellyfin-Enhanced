@@ -579,7 +579,7 @@ int CheckStatus()
             schedule = new(facts["status"]?.GetValue<string>(), facts["lastAired"]?.Deserialize<SeriesEpisodeRef>(options), facts["nextAired"]?.Deserialize<SeriesEpisodeRef>(options),
                 LastRegularAired: facts["lastRegularAired"]?.Deserialize<SeriesEpisodeRef>(options));
         var context = new PosterStatusContext(DateTimeOffset.FromUnixTimeMilliseconds(row["now"]!.GetValue<long>()), schedule,
-            row["rank"]?.GetValue<int>(), row["parent"]?.Deserialize<TagCacheEntry>(options));
+            row["rank"]?.GetValue<int>(), row["parent"]?.Deserialize<TagCacheEntry>(options), row["rankSource"]?.GetValue<string>() == "seerr-week");
         var badge = StatusRules.Resolve(entry, settings, context);
         var expected = row["expected"];
         if (badge?.Key != expected?["key"]?.GetValue<string>() || badge?.Text != expected?["text"]?.GetValue<string>())

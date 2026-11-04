@@ -686,8 +686,12 @@
         const finalRegular = finalRegularEpisode(data, facts);
         const finalDay = airDay(finalRegular?.date);
         const finalAiredRecently = finalDay !== null && finalDay <= today && (today - finalDay) * DAY_MS <= newReleaseMs;
-        const isNewRelease = data.premiere !== null && data.premiere <= now && now - data.premiere <= newReleaseMs;
-        const comingSoon = data.premiere !== null && data.premiere > now;
+        // A premiere date is a calendar day (Jellyfin stores it at midnight UTC): it is compared with
+        // the viewer's own today, so release day starts at local midnight in every time zone.
+        const premiereDay = (ms) => (ms === null || ms === undefined ? null : Math.floor(ms / DAY_MS));
+        const airedWithin = (ms, windowMs) => { const day = premiereDay(ms); return day !== null && day <= today && (today - day) * DAY_MS <= windowMs; };
+        const isNewRelease = airedWithin(data.premiere, newReleaseMs);
+        const comingSoon = data.premiere !== null && premiereDay(data.premiere) > today;
         const addedRecently = isWithin(data.created, now, justAddedMs);
         // "New Episode" on a container: an episode arrived recently in a
         // container that was itself already there before the window (else it
@@ -721,7 +725,7 @@
                     return makeBadge('milestone', 'series_finale');
                 }
                 const sp = data.seasonPremiere;
-                if (showMilestones && sp && sp.s > 1 && sp.aired <= now && isWithin(sp.aired, now, newReleaseMs)) return makeBadge('milestone', 'new_season');
+                if (showMilestones && sp && sp.s > 1 && airedWithin(sp.aired, newReleaseMs)) return makeBadge('milestone', 'new_season');
                 if (showSchedule && daysToNext !== null && daysToNext >= 1 && daysToNext <= AIRS_WITHIN_DAYS) {
                     return makeBadge('schedule', 'airs_date', { date: formatAirDay(/** @type {number} */ (nextDay), daysToNext) });
                 }
@@ -740,7 +744,7 @@
                 if (showMilestones && span && span.count > 0 && span.first <= span.last && isWithin(span.first, now, justAddedMs) && isWithin(span.last, now, justAddedMs)) {
                     return makeBadge('milestone', 'complete_season');
                 }
-                if (showMilestones && data.seasonPremiere && data.seasonPremiere.aired <= now && isWithin(data.seasonPremiere.aired, now, newReleaseMs)) {
+                if (showMilestones && data.seasonPremiere && airedWithin(data.seasonPremiere.aired, newReleaseMs)) {
                     return makeBadge('milestone', 'season_premiere');
                 }
                 const season = data.season ?? data.seasonPremiere?.s ?? data.latestIndex?.s ?? null;
@@ -754,9 +758,9 @@
             }
             case 'Episode': {
                 // Its own air date: a guarded (stripped) episode has none.
-                const airedRecently = data.premiere !== null && data.premiere <= now;
+                const airedRecently = data.premiere !== null && premiereDay(data.premiere) <= today;
                 if (showMilestones && airedRecently && data.episode === 1 && data.season !== null && data.season > 0
-                    && isWithin(data.premiere, now, justAddedMs)) {
+                    && airedWithin(data.premiere, justAddedMs)) {
                     return makeBadge('milestone', 'season_premiere');
                 }
                 if (showMilestones && airedRecently && finalRegular && finalAiredRecently
@@ -766,7 +770,7 @@
                     && data.season === facts.last.season && data.episode === facts.last.episode) {
                     if (lastAiredEndsSeason(facts, data.isLast)) return makeBadge('milestone', 'season_finale');
                 }
-                if (showNew && ((airedRecently && isWithin(data.premiere, now, justAddedMs)) || addedRecently)) return makeBadge('new', 'new_episode');
+                if (showNew && (airedWithin(data.premiere, justAddedMs) || addedRecently)) return makeBadge('new', 'new_episode');
                 break;
             }
             case 'BoxSet':

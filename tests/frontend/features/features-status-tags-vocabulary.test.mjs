@@ -176,8 +176,8 @@ const ROWS = [
     facts({ lastAired: { date: '2026-10-28', season: 2, episode: 10 } }), null],
   ['episode: no fallback finale without a local last episode', episode({ PremiereDate: ago(2), EpisodeIndex: { Season: 3, Episode: 5, IsLast: false } }), {},
     facts({ lastAired: { date: '2026-10-28', season: 3, episode: 5 } }), ['newEpisode', 'New Episode']],
-  ['episode: future air date is not a premiere', episode({ EpisodeNumber: 1, PremiereDate: NOW + DAY / 2 }), {}, null, null],
-  ['series: future season premiere is not a new season', show({ SeasonPremiere: { Season: 2, Aired: NOW + DAY / 2 } }), {}, null, null],
+  ['episode: future air date is not a premiere', episode({ EpisodeNumber: 1, PremiereDate: NOW + 2 * DAY }), {}, null, null],
+  ['series: future season premiere is not a new season', show({ SeasonPremiere: { Season: 2, Aired: NOW + 2 * DAY } }), {}, null, null],
   ['series: Jellyfin continuing is authoritative', show({ Status: 'Continuing' }), { statusTagsSeriesStatus: true }, facts({ status: 'Ended' }), ['returning', 'Returning']],
   // Others: Just Added only
   ['boxset: just added', { Type: 'BoxSet', DateCreated: ago(1) }, {}, null, ['added', 'Just Added']],

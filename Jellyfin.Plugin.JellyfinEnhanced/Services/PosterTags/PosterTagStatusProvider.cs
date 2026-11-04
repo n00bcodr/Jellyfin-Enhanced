@@ -29,11 +29,14 @@ public sealed class PosterTagStatusProvider
     {
         var config = JellyfinEnhanced.Instance!.Configuration;
         int? rank = null;
+        var weekly = false;
         if (settings.StatusTrending && entry.Type is "Movie" or "Series" && entry.TmdbId != null)
         {
             var list = _remote.GetTrending(config);
             var ranks = entry.Type == "Movie" ? list.Movies : list.Series;
             if (ranks.TryGetValue(entry.TmdbId, out var found)) rank = found;
+            // Seerr's weekly list reads "#N This Week", as on the web.
+            weekly = list.Source == "seerr-week";
         }
 
         var tmdb = entry.Type == "Series" ? entry.TmdbId : entry.SeriesTmdbId;
@@ -55,6 +58,6 @@ public sealed class PosterTagStatusProvider
 
         // A stable five-minute instant keeps equal requests in the composite cache.
         var now = statusInstant ?? DateTimeOffset.UtcNow;
-        return new PosterStatusContext(DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds() / 300 * 300), schedule, rank, parent);
+        return new PosterStatusContext(DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds() / 300 * 300), schedule, rank, parent, weekly);
     }
 }

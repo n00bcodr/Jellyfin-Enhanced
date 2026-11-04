@@ -21,7 +21,7 @@ for (const row of rows) {
         JE: { currentSettings: settings, pluginConfig: plugin, t: translate, helpers: { onBodyMutation() { return ()=>{}; }, onNavigate() {} }, session: { getUserId: ()=> 'fixture', onUserChange() {} },
             tagPipeline: { registerRenderer: (name,r)=>renderers.set(name,r), getRenderer: name=>renderers.get(name), peekItemFacts: ()=>row.parent || null, peekServerEntry: ()=>row.parent || null, clearProcessed() {}, scheduleScan() {} } },
         apiClient: { getUrl: (path, params)=>`${path}?${new URLSearchParams(params)}`, ajax: async ({url}) => url.includes('/trending')
-            ? { source:plugin.TMDB_API_KEY?'tmdb-day':null,movies:plugin.TMDB_API_KEY && row.rank?{'1':row.rank}:{},series:plugin.TMDB_API_KEY && row.rank?{'1':row.rank}:{} }
+            ? { source:row.rankSource||(plugin.TMDB_API_KEY?'tmdb-day':null),movies:(plugin.TMDB_API_KEY||row.rankSource) && row.rank?{'1':row.rank}:{},series:(plugin.TMDB_API_KEY||row.rankSource) && row.rank?{'1':row.rank}:{} }
             : { [seriesId]: row.schedule || null } }
     });
     try {
@@ -35,7 +35,7 @@ for (const row of rows) {
         await new Promise(resolve=>setTimeout(resolve,80));
         const chip = host.querySelector('.status-tag');
         row.web = chip ? { key: chip.dataset.jeStatus, text: chip.textContent } : null;
-        const aliases = {just_added:'added',new_movie:'newMovie',new_series:'newSeries',new_episode:'newEpisode',trending_today:'trending',
+        const aliases = {just_added:'added',new_movie:'newMovie',new_series:'newSeries',new_episode:'newEpisode',trending_today:'trending',trending_week:'trending',
             leaving_soon:'leaving',leaving_today:'leaving',leaving_tomorrow:'leaving',leaving_days:'leaving'};
         const expected = row.expected ? { key:aliases[row.expected.key] || row.expected.key, text:row.expected.text } : null;
         assert.deepEqual(row.web, expected, row.name);

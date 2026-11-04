@@ -10,7 +10,8 @@ using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 
 /// <summary>Live, caller-filtered inputs for the pure status decision. No remote data is persisted in the tag cache.</summary>
-public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null);
+/// <param name="WeeklyRank">The rank came from Seerr's weekly list ("#N This Week"), not TMDB's daily one.</param>
+public sealed record PosterStatusContext(DateTimeOffset Now, SeriesSchedule? Schedule = null, int? Rank = null, TagCacheEntry? Series = null, bool WeeklyRank = false);
 
 /// <summary>
 /// The statustags.js first-match decision, with the same embedded vocabulary, thresholds and translated labels.
@@ -65,8 +66,11 @@ public static class StatusRules
         var showAdded = settings.StatusJustAdded;
         var showSchedule = settings.StatusSchedule;
         var showMilestones = settings.StatusMilestones;
-        var newRelease = data.PremiereDate is { } premiere && premiere <= now && now - premiere <= newReleaseMs;
-        var comingSoon = data.PremiereDate > now;
+        // A premiere date is a calendar day (Jellyfin stores it at midnight UTC): it is compared with
+        // the viewer's own today, so release day starts at local midnight in every time zone.
+        bool AiredWithin(long? ms, long windowMs) => PremiereDay(ms) is { } day && day <= today && (long)(today.DayNumber - day.DayNumber) * Thresholds.DayMs <= windowMs;
+        var newRelease = AiredWithin(data.PremiereDate, newReleaseMs);
+        var comingSoon = PremiereDay(data.PremiereDate) > today;
         var addedRecently = Within(data.DateCreated, now, justAddedMs);
         var newEpisode = Within(data.LatestEpisodeAdded, now, justAddedMs) && data.DateCreated is { } created && now - created > justAddedMs;
         var nextDay = AirDate(facts?.NextAired?.Date);
@@ -81,7 +85,7 @@ public static class StatusRules
         if (settings.StatusLeaving && data.Leaving is { } leaving && data.Type is "Movie" or "Series" or "Season" or "Episode")
             return LeavingBadge(leaving, settings, context.Now);
         if (data.Type is "Movie" or "Series" && settings.StatusTrending && context.Rank is > 0)
-            return Make("trending_today", settings, rank: context.Rank);
+            return Make(context.WeeklyRank ? "trending_week" : "trending_today", settings, rank: context.Rank);
         switch (data.Type)
         {
             case "Movie":
@@ -93,7 +97,7 @@ public static class StatusRules
                 if (showMilestones && final != null && Ended(facts!.Status) && finalRecently
                     && data.LatestEpisodeIndex is { } index && index.Season == final.Season && index.Episode == final.Episode)
                     return Badge("series_finale");
-                if (showMilestones && data.SeasonPremiere is { Season: > 1 } sp && sp.Aired <= now && Within(sp.Aired, now, newReleaseMs)) return Badge("new_season");
+                if (showMilestones && data.SeasonPremiere is { Season: > 1 } sp && AiredWithin(sp.Aired, newReleaseMs)) return Badge("new_season");
                 if (showSchedule && daysToNext is >= 1 && daysToNext <= Thresholds.AirsWithinDays)
                     return Badge("airs_date", FormatAirDay(nextDay!.Value, daysToNext.Value, settings));
                 if (showSchedule && daysToNext is >= 1 && daysToNext <= Thresholds.ReturnsWithinDays
@@ -106,8 +110,7 @@ public static class StatusRules
             case "Season":
                 if (showMilestones && data.SeasonAddedSpan is { Count: > 0 } span && span.First <= span.Last
                     && Within(span.First, now, justAddedMs) && Within(span.Last, now, justAddedMs)) return Badge("complete_season");
-                if (showMilestones && data.SeasonPremiere is { } seasonPremiere && seasonPremiere.Aired <= now
-                    && Within(seasonPremiere.Aired, now, newReleaseMs)) return Badge("season_premiere");
+                if (showMilestones && data.SeasonPremiere is { } seasonPremiere && AiredWithin(seasonPremiere.Aired, newReleaseMs)) return Badge("season_premiere");
                 var season = data.SeasonNumber ?? data.SeasonPremiere?.Season ?? data.LatestEpisodeIndex?.Season;
                 if (showMilestones && facts?.LastAired is { } last && lastRecently && season != null && last.Season == season
                     && data.LatestEpisodeIndex is { } latest && latest.Season == season && latest.Episode == last.Episode
@@ -115,15 +118,15 @@ public static class StatusRules
                 if (showNew && newEpisode) return Badge("new_episode");
                 break;
             case "Episode":
-                var aired = data.PremiereDate != null && data.PremiereDate <= now;
+                var aired = PremiereDay(data.PremiereDate) <= today;
                 var episodeSeason = data.EpisodeIndex?.Season ?? data.SeasonNumber;
                 var episode = data.EpisodeIndex?.Episode ?? data.EpisodeNumber;
-                if (showMilestones && aired && episode == 1 && episodeSeason is > 0 && Within(data.PremiereDate, now, justAddedMs)) return Badge("season_premiere");
+                if (showMilestones && aired && episode == 1 && episodeSeason is > 0 && AiredWithin(data.PremiereDate, justAddedMs)) return Badge("season_premiere");
                 if (showMilestones && aired && final != null && finalRecently && episodeSeason == final.Season
                     && episode == final.Episode && Ended(facts!.Status)) return Badge("series_finale");
                 if (showMilestones && aired && facts?.LastAired is { } lastEpisode && lastRecently
                     && episodeSeason == lastEpisode.Season && episode == lastEpisode.Episode && LastEndsSeason(facts, data.EpisodeIndex?.IsLast == true)) return Badge("season_finale");
-                if (showNew && ((aired && Within(data.PremiereDate, now, justAddedMs)) || addedRecently)) return Badge("new_episode");
+                if (showNew && (AiredWithin(data.PremiereDate, justAddedMs) || addedRecently)) return Badge("new_episode");
                 break;
             case "BoxSet":
             case "Video":
@@ -168,6 +171,9 @@ public static class StatusRules
     private static bool Within(long? value, long now, long window) => value is { } ms && ms <= now + Thresholds.DayMs && now - ms <= window;
     private static bool RecentDay(DateOnly? value, DateOnly today, long window) => value is { } day && day <= today && (today.DayNumber - day.DayNumber) * Thresholds.DayMs <= window;
     private static DateOnly LocalDate(DateTimeOffset instant, TimeZoneInfo zone) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, zone).DateTime);
+
+    /// <summary>The calendar day of a premiere date (stored at midnight UTC), or null (premiereDay in statustags.js).</summary>
+    private static DateOnly? PremiereDay(long? ms) => ms is { } value ? DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(value).UtcDateTime) : null;
     private static DateOnly? AirDate(string? value) => DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null;
     private static bool LastEndsSeason(SeriesSchedule facts, bool isLast) => facts.LastAired is { } last && (last.Type != null
         ? last.Type == "finale" : isLast && (facts.NextAired == null || facts.NextAired.Season > last.Season));
