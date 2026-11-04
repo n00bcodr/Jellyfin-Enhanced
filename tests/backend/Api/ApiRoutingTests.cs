@@ -55,7 +55,8 @@ public class ApiRoutingTests
     [Theory]
     [InlineData("script", "application/javascript")]
     [InlineData("js/component-scripts.json", "application/json")]
-    [InlineData("Configuration/configPage.css", "text/css")]
+    [InlineData("Configuration/jeAdmin.css", "text/css")]
+    [InlineData("Configuration/jeAdmin.js", "application/javascript")]
     [InlineData("locales/de-DE.json", "application/json")]
     [InlineData("fonts/materialsymbolsrounded-subset.woff2", "font/woff2")]
     public async Task PublicAssetsRouteAndExecuteWithoutAuthentication(string route, string mime)

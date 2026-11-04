@@ -136,4 +136,24 @@ public class ApiAssetTests
         var changed = ClientScriptBundle.GetBundle("next-version", false, fixture.Logger);
         Assert.Contains("v=next-version", Encoding.UTF8.GetString(changed.SourceMap));
     }
+
+    [Fact]
+    public void AdminSchemaScriptAndStylesheetAreServedAsOneConcatenatedFileEach()
+    {
+        using var fixture = new CoreFixture();
+        var controller = Controller(fixture);
+
+        var script = Assert.IsType<ContentResult>(controller.GetAdminScript());
+        Assert.Equal("application/javascript", script.ContentType);
+        // Engine first, then every embedded Configuration/admin/*.js section file.
+        Assert.Contains("window.JEAdmin", script.Content);
+        Assert.Contains("JEAdmin.define(", script.Content);
+        Assert.Contains("JEAdmin.setPerUser(", script.Content);
+        Assert.True(script.Content.IndexOf("window.JEAdmin = {", StringComparison.Ordinal) < script.Content.IndexOf("JEAdmin.setPerUser(", StringComparison.Ordinal));
+
+        var styles = Assert.IsType<ContentResult>(controller.GetAdminStylesheet());
+        Assert.Equal("text/css", styles.ContentType);
+        Assert.Contains(".jea-section", styles.Content);
+        Assert.Equal("public, max-age=31536000, immutable", controller.Response.Headers.CacheControl);
+    }
 }

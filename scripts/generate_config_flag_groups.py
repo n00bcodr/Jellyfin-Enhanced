@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Derives docs/advanced/config-flag-groups.json from configPage.html's own
-fieldset/legend/label structure, so the Community Analytics dashboard's
+Derives docs/advanced/config-flag-groups.json from the rendered config page's own
+fieldset/legend/label structure (configPage.html plus the sections jeAdmin.js builds from Configuration/admin/*.js; see
+scripts/render_config_page.mjs), so the Community Analytics dashboard's
 setting groupings and display labels stay in sync automatically. A new
 setting is grouped and labeled correctly the moment it's added to the right
 fieldset with a real label on the config page, which already has to happen
@@ -26,6 +27,7 @@ CI (.github/workflows/docs.yml) runs this before every docs build.
 """
 import json
 import re
+import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -363,8 +365,23 @@ def extract_defaults(cs_source):
     return defaults
 
 
+def render_config_page():
+    """The config page as the browser builds it. Most settings are rendered from Configuration/admin/*.js by jeAdmin.js, so the
+    raw configPage.html no longer has their fieldsets; scripts/render_config_page.mjs (Node + jsdom, from `npm ci`) returns the
+    finished markup. Fails loudly instead of falling back to the raw file, which would silently drop most of the settings."""
+    try:
+        result = subprocess.run(
+            ["node", str(REPO_ROOT / "scripts" / "render_config_page.mjs")],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", "") or str(exc)
+        raise RuntimeError("Could not render the config page (needs Node and `npm ci`): " + detail) from exc
+    return result.stdout
+
+
 def main():
-    markup = CONFIG_PAGE.read_text(encoding="utf-8")
+    markup = render_config_page()
     parser = ConfigPageParser()
     parser.feed(markup)
 

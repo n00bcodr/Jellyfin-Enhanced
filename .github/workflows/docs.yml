@@ -53,6 +53,9 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d
 
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts
+
       - name: Generate config flag groups
         run: python scripts/generate_config_flag_groups.py
 
