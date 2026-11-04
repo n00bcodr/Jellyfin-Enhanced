@@ -28,7 +28,7 @@ The **Media Tags** page gathers every server-wide tag setting, laid out like the
 | Tab | What it holds |
 |---|---|
 | **Overview** | Which tag groups new users start with (select one to open it), the default look, the server tag cache (items cached, last change, **Rebuild cache**), Native Poster Tags and tag colours at a glance, and quick links |
-| **Layout defaults** | Default layout, **Label Density**, **Tag size**, **Tag gap** and **Edge spacing**, each group's order, limit and position (nine anchors for Corners, the layout's slots otherwise), **Card shapes** for episode thumbnails and list rows, **Hide tags on hover**, **No tags on the search page**, and **Apply defaults to all users** |
+| **Layout defaults** | Default layout, **Label density**, **Tag size**, **Tag gap** and **Edge spacing**, each group's order, limit and position (nine anchors for Corners, the layout's slots otherwise), **Card shapes** for episode thumbnails and list rows, **Hide tags on hover**, **No tags on the search page**, and **Apply defaults to all users** |
 | **Groups** | One row per group (Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People) with its switch for new users; open a row for its server settings |
 | **Rules** | The default [tag look rules](#rules-and-locked-items): a list, a form to add one, and **Edit as JSON**; and the [server-wide item looks](#one-items-look) with **Edit** and remove |
 | **Colours** | The [Tag Styles](#tag-styles-and-css) editor |
@@ -43,7 +43,7 @@ The **Media Tags** page gathers every server-wide tag setting, laid out like the
 Tables below show factory defaults. Rows marked “Admin / personal” give both exact labels for the same preference. Most admin defaults become the starting values for new personal settings. Saved personal values take precedence, so changing a server default does not overwrite a user's choice.
 
 !!! note "Hover hiding starts off"
-    **Hide Tags on Hover** follows the admin value for new users, and overwriting personal settings applies it too.
+    **Hide tags on hover** follows the admin value for new users, and overwriting personal settings applies it too.
 
 ### The Media Tags section
 
@@ -53,7 +53,7 @@ Every personal poster tag setting lives in one section of the panel, **Media Tag
 
 | Tab | What you set there |
 |---|---|
-| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label Density** (**Full** / **Compact**), **Tag size**, **Gap**, per-shape looks for **Episode thumbnails** and **List rows**, and the quick switches **Hide Tags on Hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags**. |
+| **Layout** | Your default look: one tile per [layout](#layouts) with a line describing the selected one, **Label density** (**Full** / **Compact**), **Tag size**, **Gap**, per-shape looks for **Episode thumbnails** and **List rows**, and the quick switches **Hide tags on hover**, **Show Tags in Native Clients (Experimental)** (only while the administrator has [Native Poster Tags](#native-poster-tags-experimental) on), **Show People Tags**. |
 | **Groups** | The [tag groups](#tag-groups-order-position-limits) in priority order: move buttons, the on/off switch, and per group its position, **Show up to** and **Include** choices, plus **Reset to defaults**. The Status row's **Badges** button opens the next tab. |
 | **Status badges** | Which [status badges](#status-tags) the Status group may show: **Just Added**, **New releases**, **Trending**, **Schedule**, **Milestones**, **Series status**, **Leaving soon** and **Direct-play warning**, each with a sample badge. The two time windows the administrator chose are shown beside Just Added and New releases. **Status position and limit in Groups** goes back to the Status row. |
 | **Rules & locks** | Your [rules and locked items](#rules-and-locked-items) on the left, the **Add a rule** form on the right. |
@@ -107,7 +107,7 @@ A layout decides where the poster groups appear and how much of each you see. Pi
 
 **How to use — personal preferences:**
 
-1. In **Media Tags**, on the **Layout** tab, pick a layout tile, a **Label Density** and, for Corners, an **Edge Spacing**. The live preview shows your layout as you change it.
+1. In **Media Tags**, on the **Layout** tab, pick a layout tile, a **Label density** and, for Corners, an **Edge spacing**. The live preview shows your layout as you change it.
 2. On the **Groups** tab, open a group to choose where it goes in that layout and how many tags it shows. Use the arrow buttons to change the priority order.
 
 **How to use — admin defaults:** on the Media Tags settings page, open **Layout defaults** and set the starting layout, density, size, gap, edge spacing, order, positions and limits. Changes save as you make them.
@@ -154,7 +154,7 @@ At left centre or right centre, a group can use the poster's width when the oppo
 
 #### Tag size and spacing
 
-On **Media Tags** → **Layout**, below **Label Density**, choose **Tag size** and **Gap**. The live preview and the cards already on screen update immediately; the choices save to your account.
+On **Media Tags** → **Layout**, below **Label density**, choose **Tag size** and **Gap**. The live preview and the cards already on screen update immediately; the choices save to your account.
 
 | Setting | Choices | Default |
 |---|---|---|
@@ -171,7 +171,7 @@ An enabled shape override has its own **Tag size** and **Gap** selectors. **Same
 
 #### Edge spacing
 
-**Edge Spacing** sets how close the Corners layout puts tags to the poster edge, on all nine anchors:
+**Edge spacing** sets how close the Corners layout puts tags to the poster edge, on all nine anchors:
 
 | Edge Spacing | Distance from the edge | Notes |
 |---|---|---|
@@ -232,11 +232,11 @@ The limit applies after each group's own filtering (quality categories, language
 | Setting | Default | What it does |
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
-| Personal: **Label Density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital 5.1` → `DD 5.1`, `Dolby Digital+ 5.1` → `DD+ 5.1`) and hides the critic score when a community score is shown |
+| Personal: **Label density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital 5.1` → `DD 5.1`, `Dolby Digital+ 5.1` → `DD+ 5.1`) and hides the critic score when a community score is shown |
 | **Tag Groups** order | Status, quality, rating, age rating, language, genre, awards, logos, custom | Priority order of the groups |
 | **Show up to** | Genre 3, language 3, awards 2, custom 3; quality, rating and two-logo groups all | Hidden for single-chip Status and Age rating, and for Logos when **Logos per title** is 1; these groups always cap at 1 |
 | **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
-| Admin / personal: **Hide Tags on Hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
+| Admin / personal: **Hide tags on hover** | Off | Fades web poster tags when you hover over a card, making its buttons easier to see; new and overwritten personal settings take the admin value |
 | Admin: **Disable Tags on Search Page** | Off | Suppresses the poster tags on Jellyfin web search results, including age-rating and review chips; useful for compatibility with Gelato |
 
 Compact quality vocabulary is shared by web and native rendering. The canonical Full label remains the colour identity; normalized layouts detect AC-3 and DTS-HD explicitly. Audio aliases follow the [TRaSH-Guides Audio Formats](https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats) vocabulary, adapted from release names to stream titles, codecs and profiles: Atmos and Plus forms win before plain DD, and DTS-HD before DTS. E-AC-3, EAC3, DDP, DD+ and Dolby Digital Plus share the DD+ identity.
@@ -260,7 +260,7 @@ Top-right groups move below Jellyfin's watched or unplayed-count indicator. Top 
 
 At the left and right centre anchors, genre names appear toward the inside of the card on hover.
 
-With **Hide Tags on Hover** off, genre names expand beside their icons on hover. Turn it on to fade poster tags instead.
+With **Hide tags on hover** off, genre names expand beside their icons on hover. Turn it on to fade poster tags instead.
 
 <figure class="je-video">
   <video autoplay loop muted playsinline controls preload="metadata" aria-label="Genre labels expand and poster tags fade on hover">
@@ -283,7 +283,7 @@ The **Layout defaults** tab of the Media Tags settings page sets what new users 
     - The **Bands** bottom band keeps to two rows (then `+N`), or to the rows that fit below the top band's chips on short images such as episode thumbnails at the larger tag sizes, and on cards narrower than 160px both bands use compact labels.
     - In **Minimal**'s status and score stacks and **Caption**'s poster stack every chip stays whole and inside the card: one wider than the card keeps its rounded box 6px from the edges and ends its label with an ellipsis. On a card too narrow for the quality dots and the scores side by side, the scores sit just above the dots; on a short image (an episode still) with several rating sources, the scores that do not fit inside the image appear when you hover the card.
     - The **Summary** pill drops its lowest-priority facts when the card is too narrow for all of them; its tooltip keeps every fact. The hover reveal of **Summary** and **Minimal** always uses compact labels and keeps to two rows at the bottom of the poster (then `+N`), clear of the play button; on short cards such as episode thumbnails it shows only the rows that fit in the bottom 40% of the image. Jellyfin's card buttons stay on top and clickable.
-    - **Hide Tags on Hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
+    - **Hide tags on hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
     - Settings saved before layouts keep the **Default** edge spacing whatever the administrator picks; the first layout change pins it, so only a later Edge Spacing change moves the tags.
     - [Native Poster Tags](#native-poster-tags-experimental) draw Corners or Bands. Caption, Summary and Minimal use the saved Corners profile with Full labels. Bands follows its positions, hidden groups, order and limits with its own padding; Corners follows edge spacing. Both respect the chosen Full or Compact label density, as on the web; settings saved before layouts (version 0) keep their previous labels.
 
@@ -347,10 +347,10 @@ Any movie, series, season, episode, collection or video can have its own look. O
 
 **How to use:**
 
-1. Pick a **Layout** and **Label Density**. Under **Groups**, switch groups on or off, choose where each one goes (the nine anchors on Corners, the layout's places otherwise) and how many tags it shows (**Show up to**). **Size and spacing** changes tag size, gap and edge spacing for this item only.
+1. Pick a **Layout** and **Label density**. Under **Group placement**, switch groups on or off for this item and open a group's **Edit** to choose where it goes (the nine named positions on Corners, the layout's places otherwise) and how many tags it shows (**Show up to**); groups you turned off in your Media Tags settings are listed under **Hidden by your settings**. **Size and spacing** changes tag size, gap and edge spacing for this item only (**Yours (…)** follows your settings).
 2. For a series, season or episode, choose **Apply to**: **This series and its seasons and episodes** keeps one look on the series that its seasons and episodes share; **This episode only** (or **This series poster only**) keeps it to the one card.
-3. Turn on **Keep this look for this item** and click **Save**. Nothing is kept while it is off: the item follows your rules and default. Turning it off on a kept item and saving releases it; the message offers **Undo**. Undo restores only the released looks, keeps unrelated changes made since, and keeps a newer look on the same item.
-4. Administrators also see **For everyone (server-wide)**: the look becomes the item's look for every user, unless they keep their own. The Media Tags settings page lists these looks on its **Rules** tab.
+3. Choose where the look goes at the top of the editor: **Lock this look for me** keeps it as your lock. If you change the look without choosing, the button reads **Lock & save for me** and saving locks it for you; **Cancel** leaves it unkept. The save button always names what it does (**Save for me**, **Save for everyone**, **Save for me and everyone**). Turning the lock off on a locked item and saving releases it; the message offers **Undo**. Undo restores only the released looks, keeps unrelated changes made since, and keeps a newer look on the same item.
+4. Administrators also see **For everyone (server-wide)**: the look becomes the item's look for every user, unless they lock their own. The Media Tags settings page lists these looks on its **Rules** tab.
 
 On a phone the editor fills the screen, with the poster beside the item's name at the top and **Save** always in reach:
 
@@ -358,11 +358,11 @@ On a phone the editor fills the screen, with the poster beside the item's name a
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Layout**, **Label Density** | The item's current look | The look the item gets |
+| **Layout**, **Label density** | The item's current look | The look the item gets |
 | **Groups** | The item's current look | On/off, place and **Show up to** per group; groups you switched off in your settings say so and show nothing |
 | **Size and spacing** | **Your default: …** | Tag size, gap and edge spacing for this item; **Your default** follows your own setting |
 | **Apply to** | Series: the series and its episodes; season or episode: this one only | Where the look is kept |
-| **Keep this look for this item** | Off (on for a kept item) | Saves the look as your lock; off releases it |
+| **Lock this look for me** | Off (on for a locked item) | Saves the look as your lock; off releases it |
 | Admin: **For everyone (server-wide)** | Off | Saves the look as the item's server-wide look |
 
 ??? info "Limits and details"
@@ -572,7 +572,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 **How to use:**
 
 1. Turn on the **Genre** group on the **Groups** tab of **Media Tags** and choose its position.
-2. Leave **Hide Tags on Hover** off to see expanded names.
+2. Leave **Hide tags on hover** off to see expanded names.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -583,7 +583,7 @@ Genre Tags show up to three genres (the genre limit of your [layout](#layouts)) 
 
     With **Server-Side Tag Cache** on, series and season cards keep their own genres when present and use episode or parent-series genres only when their own are missing. In batch fallback, season cards prefer the parent series' genres whenever available, even if the season has its own. Series cards without genres use the first episode.
 
-    With **Hide Tags on Hover** on, names do not expand on the poster and the overlays fade out instead; the Summary and Minimal hover reveal still lists each genre by name, and a caption strip still shows names on hover. There is no genre-name expansion in a static native poster image.
+    With **Hide tags on hover** on, names do not expand on the poster and the overlays fade out instead; the Summary and Minimal hover reveal still lists each genre by name, and a caption strip still shows names on hover. There is no genre-name expansion in a static native poster image.
 
 ## Language Tags
 
@@ -642,7 +642,7 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 ??? info "Flag grouping, coverage, and regions"
     Flags come through Jellyfin Enhanced's asset service. Tracks marked `zxx` (no linguistic content) use the **No dialogue** symbol.
 
-    Languages sharing a flag are grouped before the three-flag limit. Their names are stored in the flag's title/alt text. Hover a flag or code to read those names. Tags remain visible on hover unless **Hide Tags on Hover** is enabled.
+    Languages sharing a flag are grouped before the three-flag limit. Their names are stored in the flag's title/alt text. Hover a flag or code to read those names. Tags remain visible on hover unless **Hide tags on hover** is enabled.
 
     Priority filtering also operates on grouped flags: a matching flag can represent additional languages sharing it. An empty priority list leaves flags unchanged even with strict filtering on. A personal list overrides the administrator list. Strict mode follows the personal override when set, otherwise the administrator value.
 
@@ -1218,7 +1218,7 @@ If a custom web wrapper shows tags twice, add its name as shown under **Dashboar
 
 ??? info "Layout, Spoiler Guard, and image caching"
 
-    - **Static layout:** genre hover names and **Hide Tags on Hover** do not apply. Size follows the image width rather than the app's final display size; landscape episode images use an adjusted layout.
+    - **Static layout:** genre hover names and **Hide tags on hover** do not apply. Size follows the image width rather than the app's final display size; landscape episode images use an adjusted layout.
     - **No page or row context:** **Disable Tags on Search Page** and the **Continue Watching row** / **Next Up row** rating scopes do not apply. Item-type scopes still apply. Tags can appear anywhere the app reuses that Primary image, including search and detail pages. If an episode card uses a series poster, its tags describe that image's owner.
     - **Spoiler-safe data:** native composition applies the user's Spoiler Guard stripping policy. Artwork follows the configured stock-card/blur policy, rather than always using blur. Spoiler-scoped responses use `no-store` so an old poster is not retained under a changed policy.
     - **Remote status:** cold or expired trending/schedule snapshots omit remote badges for that render and refresh in the background; image delivery never waits for TMDB.
@@ -1377,7 +1377,7 @@ Styles change colours, not size, shape, position or visibility. For web layout, 
     The saved fields are `TagStylesEnabled`, `TagStyleTarget` (`both`, `web` or `native`), `TagStylePreset` (`default`, `glass`, `outline`, `dark`, `light`, `mono` or `poster`), `TagStylesAllowUserPreset`, and `TagStyleOverrides`: an empty string, or a version 2 document `{"v":2,"preset":…,"groups":{…},"labels":{…}}` holding only the colours you set. Settings saved before this editor (version 1, with colours per quality label, age board, rating chip and genre) still load and look exactly as before: each tag you had changed keeps the colours it was drawn with, and the preset becomes **Default**, because the old presets were already baked into those colours. They are converted to version 2 on the next save. `TagStyleApplyScope` is no longer used. Each user's choice is `TagStylePreset` in their settings (`null` follows the admin). Saving checks the document, in either version: anything that is not a colour, an unknown group, tag or field, or a document over 32 KB keeps the current styles. See the [API reference](../advanced/api.md#style-and-native-preview-contracts) for the full format.
 
 ??? info "Web CSS behavior"
-    Saved Tag Styles use stronger important colour rules than simple CSS recipes, but sufficiently specific important custom CSS can override them. Status chips carry `data-je-status` (`added`, `newMovie`, `newSeries`, `newEpisode`, `trending`, or a schedule/milestone/series-state key such as `season_finale`) if you want to target one kind yourself. Prefer the corner controls to transforms that can disrupt shared-corner stacking. Genre-name styling requires **Hide Tags on Hover** off. Hiding a displayed flag with CSS does not make a fourth flag appear.
+    Saved Tag Styles use stronger important colour rules than simple CSS recipes, but sufficiently specific important custom CSS can override them. Status chips carry `data-je-status` (`added`, `newMovie`, `newSeries`, `newEpisode`, `trending`, or a schedule/milestone/series-state key such as `season_finale`) if you want to target one kind yourself. Prefer the corner controls to transforms that can disrupt shared-corner stacking. Genre-name styling requires **Hide tags on hover** off. Hiding a displayed flag with CSS does not make a fourth flag appear.
 
 ??? info "Style API routes"
     The effective web colours are available through authenticated `GET /JellyfinEnhanced/tag-styles` (empty when disabled or targeting native posters only; optional `preset` for a user's own preset). The shipped defaults and preset palettes are administrator-only `GET /JellyfinEnhanced/tag-styles/catalog`.

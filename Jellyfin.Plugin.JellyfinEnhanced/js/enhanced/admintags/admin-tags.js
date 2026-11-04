@@ -845,6 +845,8 @@
         const drawUnsaved = () => {
             const open = (store.state === 'conflict' || store.state === 'error') && !chipInView;
             unsaved.hidden = !open;
+            // The sticky preview moves down while the row is shown, so neither covers the other.
+            root.classList.toggle('je-ta-unsaved-on', open);
             if (open) /** @type {HTMLElement} */ (unsaved.querySelector('[data-je-unsaved-text]')).textContent = JE.t('admin_tags_unsaved_count', { count: Math.max(1, store.conflicts.size || store.failed.length || store.values.size) });
         };
         if (typeof IntersectionObserver === 'function') {
