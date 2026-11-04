@@ -2,6 +2,7 @@
    Everything is scoped to .je-tag-admin; the hub's look (js/enhanced/settingspanel/
    ui-panel-media-tags.js) on the dashboard's surfaces. */
 .je-tag-admin {
+    position: relative;
     --je-ta-accent: var(--primary-accent-color, #00a4dc);
     --je-ta-admin: #ffb74d;
     --je-ta-text: #fff;
@@ -137,6 +138,8 @@
 .je-ta-label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 600; }
 .je-ta-off { margin: 4px 0 10px; padding: 8px 10px; border-radius: 6px; background: rgba(255, 183, 77, 0.12); color: #ffd699; font-size: 13px; }
 .je-ta-light .je-ta-off { color: #7a4a00; }
+/* Nothing here yet (a normal state): neutral, not a warning. */
+.je-ta-empty { margin: 4px 0 10px; padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--je-ta-border-strong); color: var(--je-ta-muted); font-size: 13px; }
 .je-ta-sub { margin: 16px 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.05em; color: var(--je-ta-muted); text-transform: uppercase; }
 
 /* ── Controls ── */
@@ -360,14 +363,15 @@
 .je-tag-admin .je-ts-tab:hover { background: var(--je-ta-surface-2); }
 .je-tag-admin .je-ts-tab.active { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); font-weight: 600; }
 .je-tag-admin .je-ts-group-panel { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--je-border); border-radius: 10px; background: var(--je-ta-sunken); }
-.je-tag-admin .je-ts-targets { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 8px; max-height: 232px; overflow-y: auto; overscroll-behavior: contain; background: #262626; border-radius: 6px; }
+.je-tag-admin .je-ts-targets { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 8px; max-height: 260px; overflow-y: auto; overscroll-behavior: contain; background: #262626; border-radius: 6px; }
 .je-tag-admin .je-ts-target { position: relative; display: inline-flex; align-items: center; padding: 4px; border: 2px solid transparent; border-radius: 8px; background: transparent; color: #fff; cursor: pointer; font: inherit; }
 .je-tag-admin .je-ts-target-all { padding: 4px 10px; border-color: rgba(255, 255, 255, 0.25); }
 .je-tag-admin .je-ts-target.active { border-color: #fff; background: rgba(0, 0, 0, 0.45); box-shadow: 0 0 0 2px var(--je-ta-accent); }
 .je-tag-admin .je-ts-target.changed::after { content: ""; position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--je-ta-accent); }
 .je-tag-admin .je-ts-target[hidden] { display: none; }
 /* Genre: one icon tile per genre, with its name where there is room; a filter box above. */
-.je-tag-admin .je-ts-target-filter { width: min(100%, 22em); min-height: 40px; margin: 0 0 8px; padding: 4px 9px; border: 1px solid var(--je-ta-border-strong); border-radius: 6px; background: var(--je-ta-input); color: var(--je-ta-text); font: inherit; font-size: 13px; box-sizing: border-box; }
+.je-tag-admin .je-ts-target-hint { margin: -4px 0 0; font-size: 13px; color: var(--je-ta-muted); }
+.je-tag-admin .je-ts-target-filter { width: min(100%, 22em); min-height: 40px; margin: 0; padding: 4px 9px; border: 1px solid var(--je-ta-border-strong); border-radius: 6px; background: var(--je-ta-input); color: var(--je-ta-text); font: inherit; font-size: 13px; box-sizing: border-box; }
 .je-tag-admin .je-ts-targets-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); align-content: start; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
 .je-tag-admin .je-ts-targets-tiles .je-ts-target { gap: 8px; min-width: 0; }
 .je-tag-admin .je-ts-targets-tiles .je-ts-target-all { justify-content: center; }
@@ -463,6 +467,8 @@
     .je-ta-tab > span:not(.material-icons) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
     .je-ta-tab[aria-selected="true"]::after { left: 4px; right: 4px; }
     .je-ta-head-spacer { display: none; }
+    /* The quiet saved state sits on the back-link row; a refused save stays a full-width banner. */
+    .je-ta-saved:is([data-state="saved"], [data-state="saving"]) { position: absolute; top: 14px; right: 0; min-height: 32px; }
     .je-ta-saved:is([data-state="error"], [data-state="conflict"]) { flex: 1 1 100%; }
 }
 @container je-ta (max-width: 520px) {
@@ -478,7 +484,11 @@
     .je-tag-admin .je-ts-row-name { min-width: 0; flex: 1 1 auto; }
     .je-tag-admin .je-ts-value { order: 5; flex-basis: 100%; }
     .je-tag-admin .je-ts-field-body .je-ts-swatch { width: 40px; height: 40px; }
-    .je-tag-admin :is(.je-ts-edit, .je-ts-reset, .je-ts-opacity-pill) { min-height: 44px; }
+    .je-tag-admin :is(.je-ts-edit, .je-ts-reset, .je-ts-opacity-pill, .je-ts-tab) { min-height: 44px; }
+    .je-tag-admin .je-ts-tab { font-size: 14px; }
+    .je-tag-admin .je-ts-target-filter { width: 100%; min-height: 44px; }
+    .je-tag-admin .je-ts-targets { gap: 8px; max-height: 280px; }
+    .je-tag-admin .je-ts-target { min-height: 44px; min-width: 44px; justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) {
     .je-tag-admin * { transition: none !important; }
@@ -601,3 +611,13 @@
 .je-tie-light .je-tie-chip { border-color: #b26a00; color: #b26a00; }
 .je-tie-light .je-tie-keep { border-color: rgba(0, 119, 163, 0.45); }
 .je-tie-light .je-tie-keep[data-everyone] { border-color: rgba(178, 106, 0, 0.5); }
+.je-tie-light .je-tie-gsum { color: #555; }
+.je-tie-light .je-tie-group[data-on="0"] .je-tie-gsum { color: #666; }
+.je-tie-light .je-tie-gopen { color: #111; border-color: #888; background: transparent; }
+.je-tie-light .je-tie-gopen:hover { background: rgba(0, 0, 0, 0.06); }
+.je-tie-light .je-tie-group[data-open="1"] { border-color: rgba(0, 0, 0, 0.25); background: rgba(0, 0, 0, 0.04); }
+.je-tie-light :is(.je-tie-detail, .je-tie-group) { border-color: rgba(0, 0, 0, 0.12); }
+.je-tie-light .je-tie-anchor:hover { background: rgba(0, 0, 0, 0.05); }
+.je-tie-light .je-tie-gname small { color: #555; }
+.je-tie-light :is(.je-tie-card, .je-tie-gopen):focus-visible { outline: 2px solid #111; outline-offset: 2px; }
+.je-tie-light .je-tie-cap output, .je-tie-light .je-tie-switch { color: #111; }

@@ -32,8 +32,8 @@
         .je-tag-looks-cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; align-items: start; }
         .je-tag-looks-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 6px; }
         .je-tag-looks-heading { margin: 0; font-size: 14px; font-weight: 600; color: #fff; }
-        .je-tag-looks-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: rgba(255,255,255,0.12); font-size: 12px; font-weight: 600; }
-        .je-tag-looks-sub { font-size: 12px; color: rgba(255,255,255,0.6); }
+        .je-tag-looks-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: rgba(255,255,255,0.12); font-size: 13px; font-weight: 600; }
+        .je-tag-looks-sub { font-size: 13px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
         .je-tag-looks-row { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.18); }
         .je-tag-looks-row[data-off="1"] .je-tag-looks-text { opacity: 0.55; }
@@ -41,13 +41,13 @@
         .je-tag-looks-text { min-width: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
         .je-tag-looks-outcome { color: #7fd3ff; font-weight: 600; }
         .je-tag-looks-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-        .je-tag-looks-empty { margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.18); font-size: 12px; color: rgba(255,255,255,0.65); }
+        .je-tag-looks-empty { margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px dashed rgba(255,255,255,0.18); font-size: 13px; color: rgba(255,255,255,0.65); }
         .je-tag-looks-empty:focus { outline: none; }
         .je-tag-looks-empty:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tag-looks-otherwise { margin-top: 8px; border-style: dashed; }
         .je-tag-looks-otherwise .je-tag-looks-text { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
         .je-tag-looks button, .je-tag-looks select, .je-tag-looks input {
-            font: inherit; font-size: 12px; color: #fff; background: rgba(255,255,255,0.08);
+            font: inherit; font-size: 13px; color: #fff; background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 4px 7px; min-height: 32px; box-sizing: border-box;
         }
         .je-tag-looks button { cursor: pointer; font-weight: 600; }
@@ -65,20 +65,20 @@
         .je-tag-looks-locks-head .je-tag-looks-unlock-all { margin-left: auto; }
         .je-tag-looks-locked-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow: auto; }
         .je-tag-looks-locked-list li { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18); }
-        .je-tag-looks-locked-list li > span { flex: 1 1 auto; min-width: 0; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+        .je-tag-looks-locked-list li > span { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
         .je-tag-looks-locked-list li strong { display: block; font-size: 13px; color: #fff; }
         .je-tag-looks-locked-list li > .je-tag-looks-actions { flex: 0 0 auto; flex-wrap: nowrap; }
         .je-tag-looks-form { padding: 12px; border-radius: 8px; border: 1px solid rgba(0,164,220,0.45); background: rgba(0,164,220,0.06); display: flex; flex-direction: column; gap: 10px; }
         .je-tag-looks-form-title { margin: 0; font-size: 14px; font-weight: 600; }
-        .je-tag-looks-form-hint { margin: -6px 0 0; font-size: 12px; color: rgba(255,255,255,0.6); }
+        .je-tag-looks-form-hint { margin: -6px 0 0; font-size: 13px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-form fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-        .je-tag-looks-form legend { font-size: 12px; font-weight: 600; padding: 0; margin-bottom: 4px; }
+        .je-tag-looks-form legend { font-size: 13px; font-weight: 600; padding: 0; margin-bottom: 4px; }
         /* Condition N / [field] [✕] / is [value]: two lines, so both selects keep their width. */
         .je-tag-looks-cond { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 6px; align-items: center; }
-        .je-tag-looks-cond-label { grid-column: 1 / -1; grid-row: 1; font-size: 12px; color: rgba(255,255,255,0.7); }
+        .je-tag-looks-cond-label { grid-column: 1 / -1; grid-row: 1; font-size: 13px; color: rgba(255,255,255,0.7); }
         .je-tag-looks-cond > [data-je-cond-field] { grid-column: 1 / 3; grid-row: 2; }
         .je-tag-looks-cond > [data-je-cond-remove] { grid-column: 3; grid-row: 2; }
-        .je-tag-looks-cond-is { grid-column: 1; grid-row: 3; font-size: 12px; color: rgba(255,255,255,0.7); }
+        .je-tag-looks-cond-is { grid-column: 1; grid-row: 3; font-size: 13px; color: rgba(255,255,255,0.7); }
         .je-tag-looks-cond > [data-je-cond-value] { grid-column: 2 / 4; grid-row: 3; }
         .je-tag-looks-cond > select, .je-tag-looks-cond > input { min-width: 0; width: 100%; }
         .je-tag-looks-cond + .je-tag-looks-cond { margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); }
@@ -92,16 +92,20 @@
             .je-tag-looks-cond > [data-je-cond-remove] { grid-column: 4; grid-row: 2; }
         }
         .je-tag-looks-cond [aria-invalid="true"] { border-color: #ff8a80; }
-        .je-tag-looks-add-cond { display: flex; align-items: center; gap: 8px; font-size: 12px; color: rgba(255,255,255,0.6); }
+        .je-tag-looks-add-cond { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-outcome-row { display: flex; flex-wrap: wrap; gap: 8px; }
-        .je-tag-looks-outcome-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; flex: 1 1 120px; min-width: 0; }
-        .je-tag-looks-error { color: #ff8a80; font-size: 12px; }
+        .je-tag-looks-outcome-row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; flex: 1 1 120px; min-width: 0; }
+        .je-tag-looks-error { color: #ff8a80; font-size: 13px; }
         .je-tag-looks-error:empty { display: none; }
         .je-tag-looks-buttons { position: static; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 -12px -12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid rgba(255,255,255,0.1); border-radius: 0 0 8px 8px; background: rgb(22, 30, 34); }
         .je-tag-looks-form.je-form-visible .je-tag-looks-buttons { position: sticky; }
         .je-tag-looks-buttons .je-tag-looks-save { background: #0b7fb0; border-color: #0b7fb0; min-height: 36px; padding: 0 14px; font-size: 13px; }
-        .je-tag-looks-buttons-hint { font-size: 12px; color: rgba(255,255,255,0.6); }
+        .je-tag-looks-buttons-hint { font-size: 13px; color: rgba(255,255,255,0.6); }
         .je-tag-looks-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+        /* The settings column of the hub (not the whole pane): too narrow for the rule list beside the form. */
+        @container je-mth-panels (max-width: 560px) {
+            .je-tag-looks-cols { grid-template-columns: minmax(0, 1fr); }
+        }
         @container je-mth (max-width: 679px) {
             .je-tag-looks-cols { grid-template-columns: minmax(0, 1fr); }
             .je-tag-looks button, .je-tag-looks select, .je-tag-looks input { min-height: 40px; }

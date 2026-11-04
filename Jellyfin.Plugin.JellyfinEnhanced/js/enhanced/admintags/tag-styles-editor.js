@@ -18,6 +18,7 @@
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
                 <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span></div>
+                <p class="je-ts-target-hint" id="tagStyleTargetHint"></p>
                 <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
                 <div id="tagStyleTargets" class="je-ts-targets" role="radiogroup" aria-labelledby="tagStyleTargetsLabel"></div>
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
@@ -553,6 +554,8 @@
             box.onkeydown = onTargetKey;
             const tiles = TILE_GROUPS.includes(current);
             box.classList.toggle('je-ts-targets-tiles', tiles);
+            const hint = root.querySelector('#tagStyleTargetHint');
+            if (hint) hint.textContent = tr('admin_tags_colours_target_hint');
             const search = root.querySelector('#tagStyleTargetFilter');
             if (search) {
                 // Any group with more labels than a glance takes gets the filter (genres name the box after themselves).

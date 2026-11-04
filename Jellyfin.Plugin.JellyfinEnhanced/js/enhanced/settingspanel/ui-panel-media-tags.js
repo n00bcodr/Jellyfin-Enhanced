@@ -366,17 +366,17 @@
         if (presetsAllowed()) {
             const mine = PRESETS.includes(JE.currentSettings.tagStylePreset) ? JE.currentSettings.tagStylePreset : '';
             const server = PRESETS.includes(JE.pluginConfig.TagStylePreset) ? JE.pluginConfig.TagStylePreset : 'default';
-            const tile = (value, name) => `
+            const tile = (value, name, sub = '') => `
                 <label class="je-mth-preset">
                     <input type="radio" name="jeTagPreset" value="${value}" ${mine === value ? 'checked' : ''}>
                     <span class="je-mth-preset-chips" data-preset="${value || 'server'}" aria-hidden="true">
                         <span class="je-mth-chip" data-chip="quality">4K</span><span class="je-mth-chip" data-chip="status">${tx('status_tag_compact_added')}</span><span class="je-mth-chip" data-chip="rating">★ 8.1</span><span class="je-mth-chip je-mth-chip-genre" data-chip="genre" data-je-genre="${GENRE_SAMPLE}"><i class="je-mth-chip-glyph">${escapeHtml(JE.genreTags?.iconFor(GENRE_SAMPLE) || 'theater_comedy')}</i></span>
                     </span>
-                    <span class="je-mth-preset-name" data-je-label>${escapeHtml(name)}</span>
+                    <span class="je-mth-preset-name" data-je-label>${escapeHtml(name)}</span>${sub ? `<span class="je-mth-preset-sub">${escapeHtml(sub)}</span>` : ''}
                 </label>`;
             presets = `
                 <div class="je-mth-presets" id="jeTagPresetChoice" role="radiogroup" aria-labelledby="jeMthColoursTitle" aria-describedby="jeMthColoursDesc">
-                    ${tile('', JE.t('panel_settings_ui_tag_style_preset_server', { preset: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[server]) }))}
+                    ${tile('', JE.t('panel_settings_ui_tag_style_preset_follow'), JE.t('panel_settings_ui_tag_style_preset_server', { preset: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[server]) }))}
                     ${PRESETS.map((id) => tile(id, JE.t(JE.core.tagLayout.VOCABULARY_KEYS.preset[id]))).join('')}
                 </div>`;
         } else {
@@ -486,7 +486,7 @@
         #jellyfin-enhanced-panel .je-mth-tab--admin[aria-selected="true"]::after { background: #ffb74d; }
         #jellyfin-enhanced-panel .je-mth-admin-chip { display: inline-block; padding: 1px 5px; border: 1px solid #ffb74d; border-radius: 4px; color: #ffb74d; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
         #jellyfin-enhanced-panel .je-mth-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(288px, 30cqi, 400px); gap: 16px; align-items: start; }
-        #jellyfin-enhanced-panel .je-mth-panels { grid-column: 1; grid-row: 1; min-width: 0; }
+        #jellyfin-enhanced-panel .je-mth-panels { grid-column: 1; grid-row: 1; min-width: 0; container: je-mth-panels / inline-size; }
         #jellyfin-enhanced-panel .je-mth-preview { grid-column: 2; grid-row: 1; position: sticky; top: 8px; padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); }
         #jellyfin-enhanced-panel .je-mth[data-tab="server"] .je-mth-body { grid-template-columns: minmax(0, 1fr); }
         #jellyfin-enhanced-panel .je-mth[data-tab="server"] :is(.je-mth-preview, .je-mth-strip) { display: none !important; }
@@ -602,6 +602,7 @@
         #jellyfin-enhanced-panel .je-mth-chip-genre { justify-content: center; flex-shrink: 0; width: 18px; height: 18px; margin-left: auto; padding: 0; border-radius: 50%; box-sizing: border-box; }
         #jellyfin-enhanced-panel .je-mth-chip-glyph { font-family: 'JE Material Symbols Outlined'; font-style: normal; font-weight: normal; font-size: 12px; line-height: 1; letter-spacing: normal; text-transform: none; direction: ltr; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; }
         #jellyfin-enhanced-panel .je-mth-preset-name { font-size: 13px; font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mth-preset-sub { margin-top: -6px; font-size: 12px; color: rgba(255,255,255,0.68); }
         #jellyfin-enhanced-panel .je-mth-admin { background: rgba(255,183,77,0.05); border-color: rgba(255,183,77,0.25); }
         #jellyfin-enhanced-panel .je-mth-pointers { list-style: none; margin: 0; padding: 0; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
         #jellyfin-enhanced-panel .je-mth-pointer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -633,11 +634,16 @@
         #jellyfin-enhanced-panel .je-mth-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
         /* Narrow pane (phone, or a small window): one column, the preview
            collapses into a one-line strip under the tabs that expands on tap. */
+        /* Phone: the panel's Back button sits on the Media Tags title row instead of a row of its own. */
+        @media (max-width: 760px) {
+            #jellyfin-enhanced-panel .je-panel-main:has(> .je-pane.active[data-pane="media-tags"]) > .je-pane-back { position: absolute; top: 6px; left: 14px; z-index: 4; width: 40px; height: 40px; margin: 0; }
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-top .je-pane-title { min-height: 44px; margin: 2px 0 4px 50px; }
+        }
         @container je-mth (max-width: 679px) {
             #jellyfin-enhanced-panel .je-mth-top { gap: 0; }
             #jellyfin-enhanced-panel .je-mth-top .je-pane-title { margin: 2px 0 8px; font-size: 16px; }
             #jellyfin-enhanced-panel .je-mth-tabs { flex: 1 1 100%; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 2px; }
-            #jellyfin-enhanced-panel .je-mth-tab { justify-content: center; padding: 8px 2px 9px; font-size: 13px; min-width: 0; }
+            #jellyfin-enhanced-panel .je-mth-tab { justify-content: center; min-height: 44px; padding: 8px 2px 9px; font-size: 13px; min-width: 0; }
             #jellyfin-enhanced-panel .je-mth-tab-long, #jellyfin-enhanced-panel .je-mth-tab .je-mth-admin-chip { display: none; }
             #jellyfin-enhanced-panel .je-mth-tab-short { display: inline; overflow: hidden; text-overflow: ellipsis; }
             #jellyfin-enhanced-panel .je-mth-tab--admin { color: #ffb74d; }
@@ -645,10 +651,10 @@
             #jellyfin-enhanced-panel .je-mth-preview { grid-column: 1; grid-row: auto; position: static; display: none; }
             #jellyfin-enhanced-panel .je-mth-panels { grid-row: auto; }
             #jellyfin-enhanced-panel .je-mth.je-mth-strip-open .je-mth-preview { display: block; }
-            #jellyfin-enhanced-panel .je-mth-strip { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgb(28, 28, 28); }
+            #jellyfin-enhanced-panel .je-mth-strip { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 4px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgb(28, 28, 28); }
             #jellyfin-enhanced-panel .je-mth-strip-toggle { display: inline-flex; align-items: center; gap: 2px; flex-shrink: 0; min-height: 40px; padding: 0 8px 0 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
             #jellyfin-enhanced-panel .je-mth-strip-toggle[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
-            #jellyfin-enhanced-panel .je-mth-strip-thumb { position: relative; flex-shrink: 0; width: 30px; height: 45px; border-radius: 3px; background: #4a5160; margin-bottom: 6px; }
+            #jellyfin-enhanced-panel .je-mth-strip-thumb { position: relative; flex-shrink: 0; width: 28px; height: 42px; border-radius: 3px; background: #4a5160; }
             #jellyfin-enhanced-panel .je-mth-strip-thumb[data-shape="thumb"] { width: 48px; height: 27px; }
             #jellyfin-enhanced-panel .je-mth-strip-info { min-width: 0; flex: 1; font-size: 12px; line-height: 1.35; }
             #jellyfin-enhanced-panel .je-mth-strip-text { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

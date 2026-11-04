@@ -105,6 +105,7 @@
                 #jellyfin-enhanced-panel .je-pane.active { display: block; }
                 #jellyfin-enhanced-panel .je-pane-title { display: flex; align-items: center; gap: 8px; margin: 14px 0 12px 0; font-size: 17px; font-weight: 700; color: #fff; font-family: inherit; }
                 #jellyfin-enhanced-panel .je-pane-back { display: none; align-items: center; justify-content: center; margin: 12px 0 0 0; padding: 8px; border: none; border-radius: 50%; background: rgba(255,255,255,0.08); color: #fff; font-family: inherit; cursor: pointer; align-self: flex-start; }
+                #jellyfin-enhanced-panel .je-pane-back:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
                 #jellyfin-enhanced-panel .je-panel-dock { display: none; }
                 @media (max-width: 760px) {
                     #jellyfin-enhanced-panel .je-panel-dock { position: relative; display: flex; flex: 0 0 auto; gap: 8px; padding: 8px 12px; background: ${panelBgColor}; z-index: 3; }
@@ -139,7 +140,7 @@
                     <div class="je-panel-nav-items"></div>
                 </nav>
                 <div class="je-panel-main">
-                <button id="jePanelBack" class="je-pane-back" type="button"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
+                <button id="jePanelBack" class="je-pane-back" type="button" aria-label="${escapeHtml(tWithFallback('panel_back_to_sections', 'Back to settings sections'))}"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
                  ${!JE.pluginConfig.DisableAllShortcuts ? `
                  <div id="shortcuts-content" class="tab-content je-pane" data-pane="shortcuts" data-pane-label="${escapeHtml(JE.t('panel_shortcuts_tab'))}" style="padding-top: 4px; padding-bottom: 20px;">
                  <h3 class="je-pane-title">${JE.icon(JE.IconName.KEYBOARD)} ${JE.t('panel_shortcuts_tab')}</h3>

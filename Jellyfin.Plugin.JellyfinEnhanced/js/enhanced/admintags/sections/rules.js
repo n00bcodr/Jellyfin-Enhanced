@@ -168,7 +168,7 @@
         ],
         render(ctx, body) {
             body.innerHTML = `
-                <p class="je-ta-off" data-rules-empty>${ctx.tx('admin_tags_rules_none')}</p>
+                <p class="je-ta-empty" data-rules-empty>${ctx.tx('admin_tags_rules_none')}</p>
                 <ol class="je-ta-rules" data-rules></ol>
                 <h4 class="je-ta-sub" id="jeTaRuleAddTitle">${ctx.tx('tag_looks_add_a_rule')}</h4>
                 <div class="je-ta-rule-form" role="group" aria-labelledby="jeTaRuleAddTitle">
@@ -391,7 +391,7 @@
         render(ctx, body) {
             const heading = body.closest('[data-section]')?.querySelector('h3');
             if (heading) heading.tabIndex = -1;
-            body.innerHTML = `<p class="je-ta-off" data-item-looks-empty>${ctx.tx('admin_tags_item_looks_none')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
+            body.innerHTML = `<p class="je-ta-empty" data-item-looks-empty>${ctx.tx('admin_tags_item_looks_none')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
             body.querySelector('[data-item-looks]')?.addEventListener('click', (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('button[data-act]'));
                 const row = /** @type {HTMLElement|null} */ (button?.closest('[data-item]') || null);

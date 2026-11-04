@@ -117,6 +117,7 @@
         .je-tie-pills { display: flex; flex-wrap: wrap; gap: 6px; }
         .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
         .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
+        .je-tie-groups-hint { margin: -2px 0 10px; }
         .je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
         .je-tie-group { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; min-height: 56px; box-sizing: border-box; padding: 8px 10px 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
         .je-tie-group[data-open="1"] { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
@@ -573,7 +574,7 @@
                         ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
                     <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
                         ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
-                    <section class="je-tie-box" aria-labelledby="${uid}Groups"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><ul class="je-tie-groups" data-tie-groups></ul></section>
+                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx('tag_item_editor_groups_hint')}</p><ul class="je-tie-groups" data-tie-groups></ul></section>
                     <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
                         <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
@@ -693,7 +694,7 @@
                     : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where: slotLabel(draft.layout, slot), cap: capText }))
                     : JE.t('panel_settings_ui_tag_slot_off');
                 return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}" data-open="${open ? 1 : 0}">
-                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}>${esc(gname)}</label>${groupOn(group) ? '' : `<small>${tx(serverMode ? 'tag_item_editor_group_off_for_you_server' : 'tag_item_editor_group_off_for_you')}</small>`}</div>
+                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}${groupOn(group) ? '' : ` aria-describedby="${uid}-${group}-off"`}>${esc(gname)}</label>${groupOn(group) ? '' : `<small id="${uid}-${group}-off">${tx(serverMode ? 'tag_item_editor_group_off_for_you_server' : 'tag_item_editor_group_off_for_you')}</small>`}</div>
                     <span class="je-tie-gsum">${esc(summary)}</span>
                     <button type="button" class="je-tie-gopen" data-tie-open data-tie-key="${group}-open" aria-expanded="${open}" aria-controls="${uid}-${group}-detail" aria-label="${tx('tag_item_editor_group_edit', { group: gname })}" ${on ? '' : 'disabled'}>${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
                     <div class="je-tie-detail" id="${uid}-${group}-detail" ${open && on ? '' : 'hidden'}><div class="je-tie-where">${where}</div>${stepper}</div></li>`;
