@@ -821,7 +821,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         {
             if (tag.Code is not null || tag.CountBadge is not null || tag.Subtitle)
             {
-                var text = tag.CountBadge ?? (tag.Subtitle ? tag.Sdh ? "SDH " : "CC " : string.Empty) + (tag.Code ?? string.Empty);
+                var text = tag.CountBadgeText ?? tag.CountBadge ?? (tag.Subtitle ? tag.Sdh ? "SDH " : "CC " : string.Empty) + (tag.Code ?? string.Empty);
                 var layout = _text.Layout(text, css.QualityFontSize, smallCaps: true, letterSpacing: 0f);
                 float flagWidth = tag.Code is null && tag.CountBadge is null ? PosterTagCss.Lu(css.FlagWidth) : 0;
                 var flagCode = PosterTagRenderer.FlagAssetCode(tag.FlagCode);

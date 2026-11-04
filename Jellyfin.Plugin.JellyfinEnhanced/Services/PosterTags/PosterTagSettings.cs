@@ -1290,6 +1290,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["status.locale"] = StatusCulture.Name;
                 values["status.timeZone"] = StatusTimeZone.Id;
             }
+            // Translated chip text (Dual/Multi, Mixed, editions) follows the same culture; English keeps its tokens.
+            if (StatusCulture.Name is { Length: > 0 } textCulture && !textCulture.StartsWith("en", StringComparison.Ordinal)
+                && (Shows(PosterTagGroup.Quality) || Shows(PosterTagGroup.Language)))
+            {
+                values["text.locale"] = textCulture;
+            }
             if (Shows(PosterTagGroup.Logos))
             {
                 values["logos.enabled"] = "1";

@@ -1082,6 +1082,20 @@ Neither setting requires poster Rating Tags or Age Rating Tags. Poster scope swi
 
     Advisories are selected from matching Jellyfin metadata tags. Episodes also use series genres when their own are missing and incorporate series tags. Missing advisories or genres omit only their respective lines. **Colored Ratings Backgrounds** can color its classification box.
 
+## Languages
+
+Media Tags follow the language Jellyfin Enhanced's text uses (your Jellyfin display language, else the Jellyfin Enhanced display language, else the browser's):
+
+| What | Web | Native posters |
+|---|---|---|
+| Chip words (status badges, `Dual`/`Multi`, `Mixed`, editions such as `Extended`) | Your language | The language saved with your web settings (the one their dates use) |
+| Scores (`8,1` in German, Persian digits in Persian) | Your language's decimal separator and digits | Same, from the saved language |
+| Dates (`Airs Nov 6`) and time zones | Your language and the browser's time zone | The saved language and time zone |
+| Language names in tooltips (`Audio: japonais`) | Your language | No tooltips |
+| Codecs, sources, resolutions, brand names (`HEVC`, `REMUX`, `4K`, `IMDb Top 250`) | Unchanged | Unchanged |
+
+A string not yet translated into your language appears in English. Translations come from the project's [Weblate](https://hosted.weblate.org/engage/jellyfinenhanced/) contributors; most Media Tags strings are new and only in English so far. To see how far each language is, run `node scripts/tag-translation-coverage.mjs` in a checkout: it lists the translated Media Tags strings per language, and the test suite checks that every translated string keeps the `{placeholders}` of the English one.
+
 ## Server-Side Tag Cache
 
 The server cache prepares tags for supported items in included libraries, so each page avoids repeating metadata requests. You receive only data allowed by your library access and Spoiler Guard policy. Each entry also records the item's library (a season's or episode's is its series'), which [tag look rules](#rules-and-locked-items) match on.

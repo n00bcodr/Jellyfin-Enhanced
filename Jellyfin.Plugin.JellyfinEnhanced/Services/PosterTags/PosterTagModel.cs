@@ -74,8 +74,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Canonical displayed code for chip colour overrides; absent on flag images.</summary>
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public string? StyleLabel { get; init; }
-        /// <summary>Dual/Multi audio count label, or null for a language chip.</summary>
+        /// <summary>Dual/Multi audio count label (the style key), or null for a language chip.</summary>
         public string? CountBadge { get; init; }
+
+        /// <summary>The count label as drawn, in the user's language (language_tags_dual / language_tags_multi).</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? CountBadgeText { get; init; }
     }
 
     /// <summary>

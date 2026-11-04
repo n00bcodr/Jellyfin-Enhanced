@@ -51,6 +51,23 @@ const SCRIPTS = [
 const sources = Object.fromEntries(SCRIPTS.map((s) => [s, readFileSync(join(jsRoot, s), 'utf8')]));
 
 const english = JSON.parse(readFileSync(join(jsRoot, 'locales/en.json'), 'utf8'));
+const localeCache = new Map();
+/**
+ * The strings of a profile's display language (exact file, else its base language), or {}.
+ * @param {Object} settings Web (or raw) settings of the profile.
+ * @returns {Object<string, string>}
+ */
+function localeStrings(settings) {
+    const tag = settings?.displayLanguage || settings?.DisplayLanguage || settings?.nativePosterDateLocale || settings?.NativePosterDateLocale || 'en';
+    if (!localeCache.has(tag)) {
+        let strings = {};
+        for (const name of [tag, String(tag).split('-')[0]]) {
+            try { strings = JSON.parse(readFileSync(join(jsRoot, `locales/${name}.json`), 'utf8')); break; } catch { /* try the base language */ }
+        }
+        localeCache.set(tag, strings);
+    }
+    return localeCache.get(tag);
+}
 
 // Quality category arrays, read from qualitytags.js itself (only to label categories).
 const qualitySource = sources['tags/qualitytags.js'];
@@ -185,7 +202,8 @@ function createSandbox(profile, pluginConfig, webSettings, reviews) {
     const JE = {
         pluginConfig: pluginConfig,
         userConfig: { settings: toCamelCase(webSettings) },
-        t: (k) => english[k] || k,
+        // The page's strings: the profile's language over English, as JE.t loads them.
+        t: (k) => localeStrings(webSettings)[k] || english[k] || k,
         cdn: {
             url: (a, b) => `cdn/${a}/${b}`,
             font: (f) => `cdn/font/${f}`,

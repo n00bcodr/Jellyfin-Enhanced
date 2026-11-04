@@ -228,6 +228,9 @@ public static class StatusRules
     }
 
     /// <summary>Use the same embedded locale resources and English missing-key fallback as JE.t().</summary>
+    /// <summary>A web string (js/locales) in the culture, falling back to English, then the key: the vocabulary posters share with the web.</summary>
+    internal static string Text(string key, CultureInfo culture) => Translate(key, culture);
+
     private static string Translate(string key, CultureInfo culture)
     {
         var name = string.IsNullOrEmpty(culture.Name) ? "en" : culture.Name;

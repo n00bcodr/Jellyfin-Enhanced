@@ -37,3 +37,30 @@ public class ScoreNumbersTests
         Assert.NotEqual(Settings(null).Digest, Settings("de-DE").Digest);
     }
 }
+
+/// <summary>Native chip words (Dual/Multi, Mixed, editions) come from the same vocabulary the web translates.</summary>
+[Collection("Plugin singleton")]
+public class NativeChipVocabularyTests
+{
+    [Fact]
+    public void CountBadgeKeepsItsStyleKeyAndDrawsTheVocabularyText()
+    {
+        var entry = new TagCacheEntry { Type = "Movie", AudioLanguages = ["eng", "fre", "ger"] };
+        foreach (var locale in new[] { "en-US", "de-DE", "ar-SA" })
+        {
+            var settings = PosterTagSettings.FromUserSettings(new() { LanguageTagsEnabled = true, LanguageTagsCountBadge = "only", NativePosterDateLocale = locale }, new PluginConfiguration(), null);
+            var badge = Assert.Single(LanguageFlagRules.ResolveGroup(entry, settings)!.OfType<LanguageTag>(), t => t.CountBadge != null);
+            Assert.Equal("Multi", badge.CountBadge);
+            Assert.Equal(StatusRules.Text("language_tags_multi", settings.StatusCulture), badge.CountBadgeText);
+        }
+    }
+
+    [Fact]
+    public void VocabularyFallsBackToEnglishThenTheKey()
+    {
+        Assert.Equal("Dual", StatusRules.Text("language_tags_dual", CultureInfo.GetCultureInfo("en")));
+        Assert.Equal(StatusRules.Text("calendar_tomorrow", CultureInfo.GetCultureInfo("de")), StatusRules.Text("calendar_tomorrow", CultureInfo.GetCultureInfo("de-AT")));
+        Assert.NotEqual(StatusRules.Text("calendar_tomorrow", CultureInfo.GetCultureInfo("en")), StatusRules.Text("calendar_tomorrow", CultureInfo.GetCultureInfo("de")));
+        Assert.Equal("no_such_key", StatusRules.Text("no_such_key", CultureInfo.GetCultureInfo("de")));
+    }
+}

@@ -218,9 +218,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             where T : PosterTag
         {
             List<PosterTag> list = tags is List<PosterTag> same ? same : tags.ConvertAll(t => (PosterTag)t);
+            if (!settings.CompactLabels && group == PosterTagGroup.Quality && settings.StatusCulture.Name is { Length: > 0 } culture && !culture.StartsWith("en", StringComparison.Ordinal))
+            {
+                list = list.Select(t => t is QualityTag q && q.DisplayText is null && FullQuality(q.Label, settings) is { } text ? q with { DisplayText = text } : t).ToList();
+            }
+
             if (settings.CompactLabels)
             {
-                if (group == PosterTagGroup.Quality) list = list.Select(t => t is QualityTag q ? q with { DisplayText = q.Category is QualityTagRules.Runtime or QualityTagRules.AspectRatio or QualityTagRules.FrameRate ? TechnicalQualityRules.Compact(q.Label, q.Category) : CompactQuality(q.Label) } : t).ToList();
+                if (group == PosterTagGroup.Quality) list = list.Select(t => t is QualityTag q ? q with { DisplayText = q.Category is QualityTagRules.Runtime or QualityTagRules.AspectRatio or QualityTagRules.FrameRate ? TechnicalQualityRules.Compact(q.Label, q.Category) : CompactQuality(q.Label, settings) } : t).ToList();
                 if (group == PosterTagGroup.Rating && list.OfType<RatingTag>().Any(t => t.Source == PosterRatingSource.Community))
                     list.RemoveAll(t => t is RatingTag { Source: PosterRatingSource.Critic });
             }
@@ -230,11 +235,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         /// <summary>The web's compact quality labels, retaining the full label for colour identity.</summary>
-        private static string CompactQuality(string label)
+        private static string CompactQuality(string label, PosterTagSettings settings)
         {
             var exact = label switch {
-                "Director's Cut" => "DC", "Extended" => "Ext", "Unrated" => "Unr", "Remastered" => "Rem", "Criterion" => "CC", "Special Edition" => "Special", "Mixed" => "±", _ => null };
+                "Director's Cut" => "DC", "Extended" => "Ext", "Unrated" => "Unr", "Remastered" => "Rem", "Criterion" => "CC",
+                "Special Edition" => StatusRules.Text("quality_edition_special_compact", settings.StatusCulture), "Mixed" => "±", _ => null };
             return exact ?? QualityTagRules.CompactLabel(label);
+        }
+
+        // Full words the web translates (qualitytags.js EDITIONS and the Mixed marker); codecs and proper nouns stay literal.
+        private static readonly Dictionary<string, string> TranslatedQualityLabels = new(StringComparer.Ordinal)
+        {
+            ["Director's Cut"] = "quality_edition_directors_cut", ["Extended"] = "quality_edition_extended", ["Unrated"] = "quality_edition_unrated",
+            ["Theatrical"] = "quality_edition_theatrical", ["Remastered"] = "quality_edition_remastered", ["Uncut"] = "quality_edition_uncut",
+            ["Final Cut"] = "quality_edition_final_cut", ["Special Edition"] = "quality_edition_special", ["Mixed"] = "series_quality_mixed",
+        };
+
+        /// <summary>A Full-density quality label in the user's language where the web translates it, else null (the label itself).</summary>
+        private static string? FullQuality(string label, PosterTagSettings settings)
+        {
+            if (!TranslatedQualityLabels.TryGetValue(label, out var key)) return null;
+            var text = StatusRules.Text(key, settings.StatusCulture);
+            return text == label ? null : text;
         }
 
         private static int IndexOf(IReadOnlyList<PosterTagGroup> order, PosterTagGroup group)

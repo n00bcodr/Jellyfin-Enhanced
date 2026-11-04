@@ -331,7 +331,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 ? ResolveTracks(entry.AudioLanguages, entry.PartialAudioLanguages, true)?.Select(f => { Parse(f.Code, out var parsed); return CanonicalBase(parsed.Base); }).Where(c => c != "zxx").Distinct().Count() ?? 0 : 0;
             bool badge = settings.LanguageCountBadge != "off" && count >= 2;
             var tags = new List<PosterTag>();
-            if (badge) tags.Add(new LanguageTag(string.Empty, string.Empty, false) { CountBadge = count == 2 ? "Dual" : "Multi" });
+            // The style key stays Dual/Multi; the text is the shared vocabulary in the user's language.
+            if (badge) tags.Add(new LanguageTag(string.Empty, string.Empty, false)
+            {
+                CountBadge = count == 2 ? "Dual" : "Multi",
+                CountBadgeText = StatusRules.Text(count == 2 ? "language_tags_dual" : "language_tags_multi", settings.StatusCulture),
+            });
             void Add(List<FlagInfo>? flags, bool subtitle)
             {
                 foreach (var flag in flags ?? new List<FlagInfo>())
