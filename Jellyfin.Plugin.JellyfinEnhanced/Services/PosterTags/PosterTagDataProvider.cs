@@ -348,7 +348,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         }
 
         // An episode change can change its season's and series' entries (quality
-        // source, language union), mirroring TagCacheMonitor.
+        // source, language union), mirroring TagCacheMonitor; a series change reaches
+        // the children that inherit its scores and age rating.
         private void OnItemChanged(object? sender, ItemChangeEventArgs e)
         {
             if (e?.Item == null || (_memo.IsEmpty && _building.IsEmpty)) return;
@@ -364,6 +365,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                         break;
                     case Season season:
                         if (season.SeriesId != Guid.Empty) _memo.TryRemove(season.SeriesId, out _);
+                        break;
+                    case Series series:
+                        // Seasons and episodes copy a series' scores and age rating (TagCacheService.InheritFromSeries).
+                        var seriesKey = series.Id.ToString("N");
+                        foreach (var pair in _memo)
+                        {
+                            if (pair.Value.Entry?.SeriesId == seriesKey) _memo.TryRemove(pair.Key, out _);
+                        }
+
                         break;
                 }
             }

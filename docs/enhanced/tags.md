@@ -1107,7 +1107,7 @@ Media Tags follow the language Jellyfin Enhanced's text uses (your Jellyfin disp
 | What | Web | Native posters |
 |---|---|---|
 | Chip words (status badges, `Dual`/`Multi`, `Mixed`, editions such as `Extended`, award captions such as `Oscar winner`) | Your language | The language saved with your web settings (the one their dates use) |
-| Scores (`8,1` in German, Persian digits in Persian) | Your language's decimal separator and digits | Same, from the saved language; text is laid out with the Unicode bidirectional algorithm, as the browser draws it: numbers read left to right in Arabic and Persian, and Hebrew or Arabic words mixed with numbers or Latin names keep their reading order |
+| Scores (`8,1` in German, Persian digits in Persian) | Your language's decimal separator and digits | Same, from the saved language; text is laid out with the Unicode bidirectional algorithm, as the browser draws it: numbers read left to right in Arabic and Persian, Hebrew or Arabic words mixed with numbers or Latin names keep their reading order, and bracket pairs resolve together |
 | Dates (`Airs Nov 6`) and time zones | Your language and the browser's time zone | The saved language and time zone |
 | Language names in tooltips (`Audio: japonais`) | Your language | No tooltips |
 | Codecs, sources, resolutions, brand names (`HEVC`, `REMUX`, `4K`, `IMDb Top 250`) | Unchanged | Unchanged |
@@ -1144,7 +1144,7 @@ The retained cache grows with the number of included items. Exclude large librar
 ??? info "Cache lifecycle and excluded libraries"
     When poster review chips are enabled, visible review averages travel with the filtered cache data.
 
-    At startup, JE restores `tag-cache.json` from `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/`. If no usable cache is available, it queues **Refresh Tag Cache** to build one. Library item additions, updates, and removals keep entries current. A series edit that changes its scores or age rating also updates the seasons and episodes that take them from it (re-reading their metadata, not their media), on the same update or reconcile. The scheduled task normally reconciles changes rather than recomputing every item. Its default daily trigger is 03:00.
+    At startup, JE restores `tag-cache.json` from `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/`. If no usable cache is available, it queues **Refresh Tag Cache** to build one. Library item additions, updates, and removals keep entries current. A series edit that changes its scores or age rating also updates the seasons and episodes that take them from it (re-reading their metadata, not their media), on the same update or reconcile; native posters built while the cache is off drop those children's remembered entries at once. The scheduled task normally reconciles changes rather than recomputing every item. Its default daily trigger is 03:00.
 
     Excluded libraries do not lose access or forcibly lose their web tags. Cards without a server entry can use per-page batch fallback. Exclusions also bypass the normal cache-update audio-language synchronization path; the standalone language-sync task can still process those items.
 

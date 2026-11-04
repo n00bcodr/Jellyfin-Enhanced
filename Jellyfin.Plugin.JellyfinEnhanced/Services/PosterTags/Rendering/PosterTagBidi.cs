@@ -4,10 +4,11 @@ using System.Globalization;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 {
     /// <summary>
-    /// The Unicode bidirectional algorithm (UAX #9) for one line of tag text, without explicit embeddings: the
-    /// paragraph direction comes from the first strong letter (as <c>dir="auto"</c>), numbers stay left to right
-    /// inside right-to-left text, neutrals take the direction around them, and the level runs come back in visual
-    /// order. Text without right-to-left letters or Arabic-Indic digits is one left-to-right run.
+    /// The Unicode bidirectional algorithm (UAX #9) for one line of tag text, without explicit embeddings or
+    /// isolates: the paragraph direction comes from the first strong letter (as <c>dir="auto"</c>), numbers stay left
+    /// to right inside right-to-left text, bracket pairs resolve together, neutrals take the direction around them,
+    /// and the level runs come back in visual order (HarfBuzz mirrors brackets in right-to-left runs). Text without
+    /// right-to-left letters or Arabic-Indic digits is one left-to-right run.
     /// </summary>
     internal static class PosterTagBidi
     {
@@ -30,6 +31,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
             var sor = paragraph == 1 ? Kind.R : Kind.L;
             ResolveWeak(types, sor);
+            ResolvePairedBrackets(text, types, paragraph, sor);
             ResolveNeutrals(types, paragraph);
 
             // I1/I2: implicit levels.
@@ -140,6 +142,66 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             {
                 if (t[i] is Kind.L or Kind.R) last = t[i];
                 else if (t[i] == Kind.EN && last == Kind.L) t[i] = Kind.L;
+            }
+        }
+
+        /// <summary>
+        /// N0: a bracket pair ((), [], {}) resolves as one. A strong direction inside that matches the paragraph's wins;
+        /// otherwise the opposite direction inside wins when it also comes before the opening bracket; else the
+        /// paragraph's. A pair with nothing strong inside stays neutral. Numbers count as R.
+        /// </summary>
+        private static void ResolvePairedBrackets(string text, Kind[] t, int paragraph, Kind sor)
+        {
+            var embedding = paragraph == 1 ? Kind.R : Kind.L;
+            var opposite = paragraph == 1 ? Kind.L : Kind.R;
+            Kind? Strong(Kind k) => k is Kind.L ? Kind.L : k is Kind.R or Kind.EN or Kind.AN ? Kind.R : null;
+            var stack = new List<(char Close, int Open)>();
+            var pairs = new List<(int Open, int Close)>();
+            for (int i = 0; i < text.Length; i++)
+            {
+                if (t[i] != Kind.ON) continue;
+                var close = text[i] switch { '(' => ')', '[' => ']', '{' => '}', _ => '\0' };
+                if (close != '\0')
+                {
+                    if (stack.Count == 63) break; // BD16: give up on deeper nesting
+                    stack.Add((close, i));
+                    continue;
+                }
+
+                for (int k = stack.Count - 1; k >= 0; k--)
+                {
+                    if (stack[k].Close != text[i]) continue;
+                    pairs.Add((stack[k].Open, i));
+                    stack.RemoveRange(k, stack.Count - k);
+                    break;
+                }
+            }
+
+            pairs.Sort((a, b) => a.Open.CompareTo(b.Open));
+            foreach (var (open, close) in pairs)
+            {
+                bool hasEmbedding = false, hasOpposite = false;
+                for (int i = open + 1; i < close; i++)
+                {
+                    var strong = Strong(t[i]);
+                    if (strong == embedding) hasEmbedding = true;
+                    else if (strong == opposite) hasOpposite = true;
+                }
+
+                Kind? resolved = null;
+                if (hasEmbedding) resolved = embedding;
+                else if (hasOpposite)
+                {
+                    var before = sor;
+                    for (int i = open - 1; i >= 0; i--)
+                    {
+                        if (Strong(t[i]) is { } found) { before = found; break; }
+                    }
+
+                    resolved = before == opposite ? opposite : embedding;
+                }
+
+                if (resolved is { } direction) t[open] = t[close] = direction;
             }
         }
 

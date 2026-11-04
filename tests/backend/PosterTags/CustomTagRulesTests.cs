@@ -241,6 +241,39 @@ public class CustomTagRulesTests
     }
 
     [Fact]
+    public async Task ASeriesEditDropsItsChildrenFromTheNativeOnDemandMemo()
+    {
+        // Cache off: native posters build entries on demand and keep them for a while.
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = false;
+        var library = new Library();
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Mock.Object;
+        try
+        {
+            var series = new Series { Id = Guid.NewGuid(), Name = "Show", CommunityRating = 8, CriticRating = 90, OfficialRating = "TV-14" };
+            var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+            var episode = new Episode { Id = Guid.NewGuid(), Name = "Pilot", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id, IndexNumber = 1, ParentIndexNumber = 1 };
+            library.Items.AddRange(new BaseItem[] { series, season, episode });
+            using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            using var native = new PosterTagDataProvider(cache, library.Mock.Object, null!, null!, null!, f.Core.Logger);
+            var get = typeof(PosterTagDataProvider).GetMethod("GetOrBuildAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            async Task<TagCacheEntry?> Entry(BaseItem item) => await (Task<TagCacheEntry?>)get.Invoke(native, new object[] { item, CancellationToken.None })!;
+            Assert.Equal(8f, (await Entry(episode))!.CommunityRating);
+
+            series.CommunityRating = 5; series.CriticRating = 20; series.OfficialRating = "TV-MA";
+            library.Mock.Raise(l => l.ItemUpdated += null, library.Mock.Object, new ItemChangeEventArgs { Item = series });
+            var rebuilt = (await Entry(episode))!;
+            Assert.Equal((5f, 20f, "TV-MA"), (rebuilt.CommunityRating, rebuilt.CriticRating, rebuilt.OfficialRating));
+            Assert.Equal("TV-MA", (await Entry(season))!.OfficialRating);
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+        }
+    }
+
+    [Fact]
     public void TheCacheMatchesTagsInheritedTagsAndCollectionsAndFollowsLibraryChanges()
     {
         using var f = new ApiPluginFixture();

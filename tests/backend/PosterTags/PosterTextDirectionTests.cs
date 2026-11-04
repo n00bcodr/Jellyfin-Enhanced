@@ -22,6 +22,9 @@ public class PosterTextDirectionTests
     [InlineData("يعرض ٥/١١", "٥/١١ ضرعي")]     // an Arabic date stays day/month in order
     [InlineData("פרק (12)", ")12( קרפ")]        // brackets resolve with the Hebrew around them (mirrored when drawn)
     [InlineData("שלום HDR 4K", "HDR 4K םולש")]  // a Latin phrase inside RTL text keeps its own order
+    [InlineData("שלום (HDR) 4K", "4K )HDR( םולש")]       // a bracket pair resolves as one (drawn mirrored: 4K (HDR) םולש)
+    [InlineData("שלום (HDR) hello", "hello )HDR( םולש")]
+    [InlineData("abc (שלום) def", "abc (םולש) def")]       // RTL inside brackets in LTR text
     public void RunsComeBackInVisualOrder(string text, string visual) => Assert.Equal(visual, Visual(text));
 
     [Theory]
