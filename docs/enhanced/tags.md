@@ -1106,8 +1106,8 @@ Media Tags follow the language Jellyfin Enhanced's text uses (your Jellyfin disp
 
 | What | Web | Native posters |
 |---|---|---|
-| Chip words (status badges, `Dual`/`Multi`, `Mixed`, editions such as `Extended`) | Your language | The language saved with your web settings (the one their dates use) |
-| Scores (`8,1` in German, Persian digits in Persian) | Your language's decimal separator and digits | Same, from the saved language |
+| Chip words (status badges, `Dual`/`Multi`, `Mixed`, editions such as `Extended`, award captions such as `Oscar winner`) | Your language | The language saved with your web settings (the one their dates use) |
+| Scores (`8,1` in German, Persian digits in Persian) | Your language's decimal separator and digits | Same, from the saved language; numbers read left to right in Arabic and Persian too, as the browser draws them |
 | Dates (`Airs Nov 6`) and time zones | Your language and the browser's time zone | The saved language and time zone |
 | Language names in tooltips (`Audio: japonais`) | Your language | No tooltips |
 | Codecs, sources, resolutions, brand names (`HEVC`, `REMUX`, `4K`, `IMDb Top 250`) | Unchanged | Unchanged |

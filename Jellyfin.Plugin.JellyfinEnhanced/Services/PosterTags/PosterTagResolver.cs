@@ -129,11 +129,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (settings.Shows(PosterTagGroup.Awards) && entry.Awards is { } awards)
             {
                 var tags = new List<PosterTag>();
-                if (settings.AwardsImdb && awards.ImdbRank is > 0 and <= 250) tags.Add(new AwardTag("imdbTop250", "Top 250"));
-                if (settings.AwardsCertifiedFresh && awards.CertifiedFresh) tags.Add(new AwardTag("certifiedFresh", "Certified Fresh"));
-                if (settings.AwardsOscar && awards.OscarWinner) tags.Add(new AwardTag("oscar", "Oscar winner"));
-                if (settings.AwardsEmmy && awards.EmmyWinner) tags.Add(new AwardTag("emmy", "Emmy winner"));
-                if (settings.AwardsLetterboxd && awards.LetterboxdRank is > 0 and <= 250) tags.Add(new AwardTag("letterboxdTop250", "Top 250"));
+                // Captions come from the vocabulary the web translates (awardstags.js CAPTION_KEYS).
+                string Caption(string key) => StatusRules.Text(key, settings.StatusCulture);
+                if (settings.AwardsImdb && awards.ImdbRank is > 0 and <= 250) tags.Add(new AwardTag("imdbTop250", Caption("awards_tags_label_imdbTop250")));
+                if (settings.AwardsCertifiedFresh && awards.CertifiedFresh) tags.Add(new AwardTag("certifiedFresh", Caption("awards_tags_label_certifiedFresh")));
+                if (settings.AwardsOscar && awards.OscarWinner) tags.Add(new AwardTag("oscar", Caption("awards_tags_oscar")));
+                if (settings.AwardsEmmy && awards.EmmyWinner) tags.Add(new AwardTag("emmy", Caption("awards_tags_emmy")));
+                if (settings.AwardsLetterboxd && awards.LetterboxdRank is > 0 and <= 250) tags.Add(new AwardTag("letterboxdTop250", Caption("awards_tags_label_imdbTop250")));
                 if (tags.Count > 0) groups.Add(Group(PosterTagGroup.Awards, settings, tags));
             }
             if (groups.Count == 0) return null;

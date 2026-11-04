@@ -41,7 +41,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// Version of the resolution rules, part of <see cref="Digest"/>. Bump it when a change to
         /// the resolver changes the tags produced for the same settings and data.
         /// </summary>
-        public const string ResolverVersion = "18";
+        public const string ResolverVersion = "19";
 
         private static readonly JsonSerializerSettings LenientRead = new() { NullValueHandling = NullValueHandling.Ignore };
 
@@ -1303,9 +1303,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["status.locale"] = StatusCulture.Name;
                 values["status.timeZone"] = StatusTimeZone.Id;
             }
-            // Translated chip text (Dual/Multi, Mixed, editions) follows the same culture; English keeps its tokens.
+            // Translated chip text (Dual/Multi, Mixed, editions, award captions) follows the same culture; English keeps its tokens.
             if (StatusCulture.Name is { Length: > 0 } textCulture && !textCulture.StartsWith("en", StringComparison.Ordinal)
-                && (Shows(PosterTagGroup.Quality) || Shows(PosterTagGroup.Language)))
+                && (Shows(PosterTagGroup.Quality) || Shows(PosterTagGroup.Language) || Shows(PosterTagGroup.Awards)))
             {
                 values["text.locale"] = textCulture;
             }

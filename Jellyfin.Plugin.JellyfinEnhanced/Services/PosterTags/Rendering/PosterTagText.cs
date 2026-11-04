@@ -382,7 +382,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             [MethodImpl(MethodImplOptions.NoInlining)]
             public static bool Shape(IDisposable shaper, string text, SKFont font, out ushort[] glyphs, out float[] advances, out float[]? offsetsY)
             {
-                var result = ((SKShaper)shaper).Shape(text, font);
+                using var buffer = new HarfBuzzSharp.Buffer();
+                buffer.AddUtf16(text);
+                buffer.GuessSegmentProperties();
+                // HarfBuzz takes the direction from the script, so Arabic-Indic digits ("٧٫٥") would come out right to
+                // left. Unicode bidi keeps numbers left to right; only text with right-to-left letters is shaped RTL.
+                if (buffer.Direction == HarfBuzzSharp.Direction.RightToLeft && !HasRightToLeftLetters(text)) buffer.Direction = HarfBuzzSharp.Direction.LeftToRight;
+                var result = ((SKShaper)shaper).Shape(buffer, font);
                 int n = result.Codepoints.Length;
                 glyphs = new ushort[n];
                 advances = new float[n];
@@ -400,6 +406,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
 
                 return n > 0 || text.Length == 0;
+            }
+
+            /// <summary>Whether the text has a letter of a right-to-left script (Hebrew, Arabic, Syriac, Thaana, N'Ko and their extensions).</summary>
+            private static bool HasRightToLeftLetters(string text)
+            {
+                foreach (var c in text)
+                {
+                    if (char.IsLetter(c) && (c is >= '\u0590' and <= '\u08FF' || c is >= '\uFB1D' and <= '\uFDFF' || c is >= '\uFE70' and <= '\uFEFF')) return true;
+                }
+
+                return false;
             }
         }
     }
