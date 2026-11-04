@@ -327,7 +327,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v24 recomputes per-track quality facts with structured detection: dynamic range from
         // VideoRangeType (HLG, Dolby Vision with its base layer, unknown is not SDR), VC-1/VVC/ProRes,
         // FLAC/PCM, and a sound chip that takes codec and channels from one track.
-        internal const int CurrentCacheSchemaVersion = 24;
+        // v25 leaves commentary/audio-description audio out of AudioLanguages and forced-only languages
+        // out of SubtitleLanguages, and reads edition and low-quality source words only after a title.
+        internal const int CurrentCacheSchemaVersion = 25;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -3014,10 +3016,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         var effectiveLanguage = resolved.Language;
 
                         // Subtitle tracks only feed SubtitleLanguages: one entry per
-                        // language however many forced / SDH tracks carry it.
+                        // language however many SDH tracks carry it. A forced track
+                        // (signs, foreign dialogue) is not a subtitle option for the title.
                         if (s.Type == MediaStreamType.Subtitle)
                         {
-                            if (NormalizeAudioLanguage(effectiveLanguage) is { } subtitle) subtitles.Add(subtitle);
+                            if (!s.IsForced && NormalizeAudioLanguage(effectiveLanguage) is { } subtitle) subtitles.Add(subtitle);
                         }
 
                         if (s.Type != MediaStreamType.Subtitle && s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
@@ -3054,7 +3057,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             DisplayTitle = s.DisplayTitle
                         });
 
-                        if (s.Type == MediaStreamType.Audio && NormalizeAudioLanguage(effectiveLanguage) is { } lang)
+                        // A commentary or audio-description track is not a dub.
+                        if (s.Type == MediaStreamType.Audio && !Helpers.TrackRoles.IsSecondaryAudio(s.Title, s.DisplayTitle)
+                            && NormalizeAudioLanguage(effectiveLanguage) is { } lang)
                         {
                             languages.Add(lang);
                         }
@@ -3106,14 +3111,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var type = resolved.Stream.Type;
                     if (type == MediaStreamType.Subtitle)
                     {
-                        if (NormalizeAudioLanguage(resolved.Language) is { } subtitle) subtitles.Add(subtitle);
+                        if (!resolved.Stream.IsForced && NormalizeAudioLanguage(resolved.Language) is { } subtitle) subtitles.Add(subtitle);
                         continue;
                     }
 
                     if (type != MediaStreamType.Video && type != MediaStreamType.Audio) continue;
 
                     hasStreams = true;
-                    if (type == MediaStreamType.Audio && NormalizeAudioLanguage(resolved.Language) is { } lang)
+                    if (type == MediaStreamType.Audio && !Helpers.TrackRoles.IsSecondaryAudio(resolved.Stream.Title, resolved.Stream.DisplayTitle)
+                        && NormalizeAudioLanguage(resolved.Language) is { } lang)
                     {
                         languages.Add(lang);
                     }

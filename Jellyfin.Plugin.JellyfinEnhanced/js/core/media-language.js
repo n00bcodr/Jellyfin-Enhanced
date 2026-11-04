@@ -33,6 +33,9 @@
         Greek: 'gr', ell: 'gr', el: 'gr', Finnish: 'fi', fin: 'fi', fi: 'fi', Hebrew: 'il', heb: 'il', he: 'il',
         Hungarian: 'hu', hun: 'hu', hu: 'hu', Indonesian: 'id', ind: 'id', id: 'id',
         Norwegian: 'no', nor: 'no', no: 'no', Polish: 'pl', pol: 'pl', pl: 'pl',
+        // Bokmål and Nynorsk share Norway's flag; Cantonese, Swiss German and Irish their region's.
+        'Norwegian Bokmål': 'no', nob: 'no', nb: 'no', 'Norwegian Nynorsk': 'no', nno: 'no', nn: 'no',
+        Cantonese: 'hk', yue: 'hk', 'Swiss German': 'ch', gsw: 'ch', Irish: 'ie', gle: 'ie', ga: 'ie',
         Persian: 'ir', per: 'ir', fas: 'ir', fa: 'ir', Romanian: 'ro', ron: 'ro', rum: 'ro', ro: 'ro',
         Swedish: 'se', swe: 'se', sv: 'se', Thai: 'th', tha: 'th', th: 'th', Turkish: 'tr', tur: 'tr', tr: 'tr',
         Ukrainian: 'ua', ukr: 'ua', uk: 'ua', Vietnamese: 'vn', vie: 'vn', vi: 'vn',

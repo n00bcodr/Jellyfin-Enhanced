@@ -243,6 +243,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/TrackRoles.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/UserHelper.cs",
       "category": "Helpers"
     },
@@ -9929,7 +9933,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 456,
+    "files": 457,
     "routes": 194,
     "configuration_properties": 720,
     "storage_references": 85,

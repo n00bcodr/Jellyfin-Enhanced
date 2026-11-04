@@ -106,6 +106,76 @@ public class TagCacheSubtitleLanguagesTests
     }
 
     [Fact]
+    public void ForcedOnlySubtitlesAndCommentaryOrDescriptionAudioAreNotLanguageOptions()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var series = new Series { Id = Guid.NewGuid(), Name = "Series" };
+        var season = new Season { Id = Guid.NewGuid(), ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1, Name = "Season" };
+        MediaStream Audio(string language, string? title = null) => new() { Type = MediaStreamType.Audio, Language = language, Title = title };
+        Episode Make(int n, params MediaStream[] streams) => new()
+        {
+            Id = Guid.NewGuid(), Name = "Episode " + n, IndexNumber = n, ParentIndexNumber = 1, PremiereDate = new DateTime(2025, 1, n),
+            SeriesId = series.Id, ParentId = season.Id, SeasonId = season.Id,
+            Sources = [new() { MediaStreams = [new() { Type = MediaStreamType.Video, Height = 1080 }, .. streams] }],
+        };
+        var episodes = new[]
+        {
+            // Japanese film: an English commentary is not an English dub; English forced signs are not English subtitles.
+            Make(1, Audio("jpn"), Audio("eng", "Commentary by the director"), Sub("eng", forced: true), Sub("fre")),
+            // Audio description (AD) is not a dub either; a full English track next to forced English still counts.
+            Make(2, Audio("jpn"), Audio("deu", "Deutsch AD"), Audio("spa", "Audio Description"), Sub("eng", forced: true), Sub("eng")),
+            // An "Ad" in a title is not the AD abbreviation.
+            Make(3, Audio("jpn"), Audio("ita", "Ad-free mix")),
+        };
+        var all = new BaseItem[] { series, season }.Concat(episodes).ToArray();
+        var library = Library(all, series.Id);
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        cache.BuildFullCache(null, CancellationToken.None);
+
+        Assert.True(cache.TryGetEntry(episodes[0].Id, out var first));
+        Assert.Equal(new[] { "jpn" }, first.AudioLanguages);
+        Assert.Equal(new[] { "fre" }, first.SubtitleLanguages);
+        Assert.True(cache.TryGetEntry(episodes[1].Id, out var second));
+        Assert.Equal(new[] { "jpn" }, second.AudioLanguages);
+        Assert.Equal(new[] { "eng" }, second.SubtitleLanguages);
+        Assert.True(cache.TryGetEntry(episodes[2].Id, out var third));
+        Assert.Equal(new[] { "jpn", "ita" }, third.AudioLanguages);
+        foreach (var container in new BaseItem[] { series, season })
+        {
+            Assert.True(cache.TryGetEntry(container.Id, out var built));
+            Assert.Equal(new[] { "ita", "jpn" }, built.AudioLanguages!.Order(StringComparer.Ordinal));
+            Assert.Equal(new[] { "eng", "fre" }, built.SubtitleLanguages!.Order(StringComparer.Ordinal));
+            Assert.Equal(built.AudioLanguages, cache.BuildEntryOnDemand(container)!.AudioLanguages);
+        }
+    }
+
+    [Theory]
+    [InlineData("nb", "no")]
+    [InlineData("nob", "no")]
+    [InlineData("nn", "no")]
+    [InlineData("nno", "no")]
+    [InlineData("yue", "hk")]
+    [InlineData("gsw", "ch")]
+    [InlineData("ga", "ie")]
+    [InlineData("gle", "ie")]
+    public void NorwegianCantoneseSwissGermanAndIrishHaveFlags(string code, string flag)
+        => Assert.Equal(flag, Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.LanguageFlagRules.ResolveFlag(code, string.Empty));
+
+    [Theory]
+    [InlineData("Commentary by director", null, true)]
+    [InlineData(null, "English - Director's Commentary - AC3 - Stereo", true)]
+    [InlineData("English (AD)", null, true)]
+    [InlineData("Descriptive Audio", null, true)]
+    [InlineData("Audio Description", null, true)]
+    [InlineData("Described Video", null, true)]
+    [InlineData("Ad-free", null, false)]
+    [InlineData("Headphones mix", null, false)]
+    [InlineData(null, "English - Dolby Digital - 5.1 - Default", false)]
+    public void SecondaryAudioRolesComeFromTheTrackTitle(string? title, string? displayTitle, bool secondary)
+        => Assert.Equal(secondary, TrackRoles.IsSecondaryAudio(title, displayTitle));
+
+    [Fact]
     public void SubtitleLanguagesTakePartInContentEqualityAndClones()
     {
         var a = new TagCacheEntry { Type = "Movie", SubtitleLanguages = ["eng"] };

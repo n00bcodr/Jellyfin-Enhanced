@@ -4,7 +4,7 @@ import { createHarness } from '../helpers/harness.mjs';
 function setup(t,pluginConfig){const h=createHarness({JE:{pluginConfig,cdn:{flagSvg:code=>`/flags/${code}.svg`},t:key=>key==='audio_language_no_dialogue'?'No dialogue':key}});t.after(()=>h.close());h.load('core/media-language.js');return h.JE.core.mediaLanguage;}
 test('audio flag resolution honors explicit regions, scripts, aliases and unknown languages',t=>{
  const m=setup(t);
- for(const [input,expected] of [['en','gb'],['en-US','us'],['en-UK','gb'],['pt','pt'],['pt-BR','br'],['pob','br'],['es-419','mx'],['en-419','gb'],['zh-Hant','tw'],['zh-Hans','cn'],['ja-Hans','jp'],['pt-XA','pt'],['und-US',null],['eo-FR',null],['ca-ES','es-ct'],['zxx-US','zxx'],[null,null],[{Code:'fra'},'fr'],[{name:'Japanese'},'jp']]) assert.equal(m.resolveFlag(input),expected,JSON.stringify(input));
+ for(const [input,expected] of [['en','gb'],['en-US','us'],['en-UK','gb'],['pt','pt'],['pt-BR','br'],['pob','br'],['es-419','mx'],['en-419','gb'],['zh-Hant','tw'],['zh-Hans','cn'],['ja-Hans','jp'],['pt-XA','pt'],['und-US',null],['eo-FR',null],['ca-ES','es-ct'],['zxx-US','zxx'],[null,null],[{Code:'fra'},'fr'],[{name:'Japanese'},'jp'],['nb','no'],['nob','no'],['nn','no'],['nno','no'],['nb-NO','no'],['yue','hk'],['gsw','ch'],['ga','ie'],['gle','ie'],[{name:'Cantonese'},'hk']]) assert.equal(m.resolveFlag(input),expected,JSON.stringify(input));
 });
 test('merging regional variants resolves every tag to its base language flag',t=>{
  const m=setup(t,{LanguageTagsMergeRegions:true});

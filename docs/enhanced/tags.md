@@ -552,7 +552,7 @@ The server stores policy-independent summaries with both legacy and current soun
 
     Multi-version source selection uses the quality resolution buckets, highest first. Equal-resolution versions prefer REMUX, BluRay, WEB, HDTV, DVD, SCR, TC, TS, then CAM, with stable server order for equal ranks. Edition follows that same selected version. For series and seasons, **Latest episode** uses that episode’s source and edition. **Representative episode**, **Best quality**, **Only what every episode has** and **Best, marked when mixed** keep the representative episode’s naming labels. This does not select the version used for playback.
 
-    **Edition:** Explicit `{edition-…}` markers in the file name, then the parent folder, take precedence over known edition words in those names. For example, `Movie (2020) {edition-Director's Cut}/Movie.1080p.WEB-DL.mkv` shows **WEB** and **Director's Cut**. Custom explicit edition labels are plain text, limited to 64 characters, and cannot include path separators. Directory paths stay on the server; clients receive labels and the existing basename-only legacy signals.
+    **Edition:** Explicit `{edition-…}` markers in the file name, then the parent folder, take precedence over known edition words in those names. Known edition words, and the low-quality source words `CAM`, `TS`, `TC` and `SCR`, only count after the title: after the last year in the name (`Uncut Gems (2019)` has no edition, `Movie (2020) Extended Cut` does), and for an episode after its episode title, at the first `[` or quality token (`Show - S01E05 - The Director's Cut [WEBDL-1080p]` has none). A word that could be either, such as `Show.S01E03.Extended.1080p`, is read as the episode title; use `{edition-Extended}` to mark it. For example, `Movie (2020) {edition-Director's Cut}/Movie.1080p.WEB-DL.mkv` shows **WEB** and **Director's Cut**. Custom explicit edition labels are plain text, limited to 64 characters, and cannot include path separators. Directory paths stay on the server; clients receive labels and the existing basename-only legacy signals.
 
     Full density keeps full edition labels. Compact density uses **BD**, **DC**, **Ext**, **Unr**, **Rem**, **CC**, and **Special** for BluRay, Director's Cut, Extended, Unrated, Remastered, Criterion, and Special Edition. If both the special-format and edition categories would show IMAX, the special-format chip wins; disabling that category leaves the edition chip eligible. Native Poster Tags apply the same detection, category toggles/order and low-quality gate, with the chosen label density in both Corners and Bands.
 
@@ -631,7 +631,7 @@ Administrators can set the shared fallback under **Priority Languages**. Existin
 | Setting | Default | What it does |
 |---|---|---|
 | Admin: **Enable Language Tags** / personal: **Language** switch | Off | Shows distinct flags/symbols on supported cards (three by default; see [Layouts](#layouts)) |
-| **Include: Audio / Subtitles** | Audio on, subtitles off | Choose either or both track types; repeated forced/SDH tracks count once per language |
+| **Include: Audio / Subtitles** | Audio on, subtitles off | Choose either or both track types; repeated SDH tracks count once per language. A commentary or audio-description track is not a dub, and a language with only forced subtitles (signs, foreign dialogue) is not a subtitle option, so neither adds a chip or counts toward Dual/Multi |
 | **Style: Flags / Codes** | Flags | Codes use uppercase ISO 639-1 where available, otherwise the three-letter code (for example `TL`, `NB`, `NN`, `FIL`); audio equivalence still governs deduplication and counting. Both styles have full-name tooltips identifying Audio or Subtitles |
 | **Audio count badge** | Off | **Badge only** replaces audio chips when two or more audio languages qualify; **Badge and flags** keeps them (or codes with Codes style). Selected subtitles remain. Counts distinct canonical audio languages after priority filtering and before the cap; regional versions and no-dialogue tracks do not increase the count |
 | Personal: **Priority** → **Follow server policy** | On | Follows the live administrator list; turn off for an ordered list of up to 12 ISO 639-1/639-2 languages. An empty personal list has no priorities. |
@@ -647,7 +647,7 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 ![Language priorities and series coverage indicators](../images/tags/language-coverage.webp)
 
 ??? info "Flag grouping, coverage, and regions"
-    Flags come through Jellyfin Enhanced's asset service. Tracks marked `zxx` (no linguistic content) use the **No dialogue** symbol.
+    Flags come through Jellyfin Enhanced's asset service. Tracks marked `zxx` (no linguistic content) use the **No dialogue** symbol. Norwegian Bokmål and Nynorsk (`nb`, `nob`, `nn`, `nno`) use Norway's flag, Cantonese (`yue`) Hong Kong's, Swiss German (`gsw`) Switzerland's and Irish (`ga`, `gle`) Ireland's.
 
     Languages sharing a flag are grouped before the three-flag limit. Their names are stored in the flag's title/alt text. Hover a flag or code to read those names. Tags remain visible on hover unless **Hide Tags on Hover** is enabled.
 

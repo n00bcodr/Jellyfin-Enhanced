@@ -9381,12 +9381,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // Subtitle languages for the Language Tags overlay, the way the server
             // tag cache stores them (TagCacheService.ExtractMediaData): lower-cased,
-            // "und"/"root" dropped, one per language however many forced / SDH
-            // tracks carry it. Subtitle languages are Jellyfin's own (the Matroska
-            // BCP-47 reader only aligns audio tracks).
+            // "und"/"root" dropped, one per language however many SDH tracks carry
+            // it, forced-only languages left out. Subtitle languages are Jellyfin's
+            // own (the Matroska BCP-47 reader only aligns audio tracks).
             static string[] TagDataSubtitleLanguages(List<MediaSourceInfo> sources) => sources
                 .SelectMany(source => (IEnumerable<MediaStream>?)source.MediaStreams ?? Array.Empty<MediaStream>())
-                .Where(stream => stream.Type == MediaStreamType.Subtitle)
+                .Where(stream => stream.Type == MediaStreamType.Subtitle && !stream.IsForced)
                 .Select(stream => Services.TagCacheService.NormalizeStreamLanguage(stream.Language))
                 .OfType<string>()
                 .Distinct(StringComparer.Ordinal)

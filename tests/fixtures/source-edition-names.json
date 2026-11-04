@@ -220,7 +220,7 @@
     "edition": "Director's Cut"
   },
   {
-    "path": "Movie.2020.Director’s Cut.BluRay.mkv",
+    "path": "Movie.2020.Director\u2019s Cut.BluRay.mkv",
     "source": "BluRay",
     "edition": "Director's Cut"
   },
@@ -832,6 +832,66 @@
   {
     "path": "Charlotte's Web (2006) 1080p.mkv",
     "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Uncut Gems (2019)/Uncut Gems (2019) Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/The Final Cut (2004)/The Final Cut (2004).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Extended Family (2015)/Extended Family (2015) WEBDL-1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movies/Unrated (2009)/Unrated (2009).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Remastered Who Shot the Sheriff (2018)/Remastered Who Shot the Sheriff (2018) WEBRip-1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "Movies/Cam (2018)/Cam (2018) WEBDL-1080p.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 01/Show - S01E05 - The Director's Cut [WEBDL-1080p].mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show/Season 02/Show.S02E01.Final.Cut.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null
+  },
+  {
+    "path": "TV/Show (2010)/Season 01/Show (2010) - S01E02 - Uncut [Bluray-1080p].mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movies/Movie (2020)/Movie (2020) Extended Cut Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "Movies/2001 A Space Odyssey (1968)/2001 A Space Odyssey (1968) Remastered Bluray-2160p.mkv",
+    "source": "BluRay",
+    "edition": "Remastered"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.S01E03.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
     "edition": null
   }
 ]
