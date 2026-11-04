@@ -591,6 +591,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagBidi.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Rendering/PosterTagCss.cs",
       "category": "Services"
     },
@@ -792,6 +796,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheCustomTags.cs",
+      "category": "Services"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/TagCacheInheritance.cs",
       "category": "Services"
     },
     {
@@ -9977,7 +9985,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 459,
+    "files": 461,
     "routes": 194,
     "configuration_properties": 724,
     "storage_references": 86,
