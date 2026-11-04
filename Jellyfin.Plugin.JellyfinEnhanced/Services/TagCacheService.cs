@@ -1476,7 +1476,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             RaiseMaxLastUpdated(entry.LastUpdated);
             StoreEntry(key, entry);
             // A series-only edit (scores, age rating) reaches the seasons and episodes that inherit it.
-            if (kind == BaseItemKind.Series && existing != null && InheritedFactsChanged(existing, entry)) PatchInheritedFacts(item, CancellationToken.None);
+            if (kind == BaseItemKind.Series && existing != null && InheritedFactsChanged(existing, entry)) PatchInheritedFacts(item, existing.Genres, CancellationToken.None);
             return true;
         }
 
@@ -1783,6 +1783,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var scan = ScanContainerEpisodes(container, null, user);
                 filtered.QualitySummary = scan.QualitySummary;
+                filtered.AudioLanguages = scan.Languages;
+                filtered.PartialAudioLanguages = scan.Partial;
+                filtered.SubtitleLanguages = scan.Subtitles;
                 filtered.SdhSubtitleLanguages = scan.SdhSubtitles;
                 filtered.StreamData = scan.FirstEpisode?.StreamData;
                 filtered.Source = scan.FirstEpisode?.NamingTags?.Source;
@@ -1795,6 +1798,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     ?? visible.FirstOrDefault(episode => episode.StreamData?.Streams?.Count > 0);
                 filtered.StreamData = representative?.StreamData;
                 filtered.SdhSubtitleLanguages = visible.SelectMany(e => e.SdhSubtitleLanguages ?? Array.Empty<string>()).Distinct(StringComparer.Ordinal).ToArray();
+                // Languages from the visible episodes only, by the same union and partial rule as the full scan.
+                var languages = new ContainerLanguages(entry.Type == "Season", LanguageIdentity);
+                foreach (var episode in visible) languages.Add(episode.SeasonNumber, episode.AudioLanguages, episode.SubtitleLanguages);
+                (filtered.AudioLanguages, filtered.PartialAudioLanguages, filtered.SubtitleLanguages) = languages.Result();
                 filtered.Source = representative?.Source;
                 filtered.Edition = representative?.Edition;
             }
@@ -3130,6 +3137,75 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// A container's audio-language union, its partial languages and its subtitle union, from its episodes in walk
+        /// order (<see cref="ScanContainerEpisodes"/> and the per-user filter of a restricted container both feed it, so a
+        /// user's languages come only from the episodes that user can see).
+        /// </summary>
+        private sealed class ContainerLanguages
+        {
+            private readonly bool _isSeason;
+            private readonly Func<string, string> _identity;
+            // Union keeps insertion order (deterministic for a stable library), so
+            // the order-sensitive ContentEquals compare stays no-op on re-saves.
+            private readonly HashSet<string> _union = new();
+            // Subtitle languages: a plain union over the episodes with streams
+            // (same insertion-order rule), with no partial list.
+            private readonly HashSet<string> _subtitles = new();
+            // Distinct per-episode identity sets: a series has a handful of
+            // track layouts however many episodes it has, so these stay tiny.
+            private readonly Dictionary<string, string[]> _regularSets = new(StringComparer.Ordinal);
+            private readonly Dictionary<string, string[]> _specialSets = new(StringComparer.Ordinal);
+
+            public ContainerLanguages(bool isSeason, Func<string, string> identity)
+            {
+                _isSeason = isSeason;
+                _identity = identity;
+            }
+
+            /// <summary>One episode's contribution, in walk order; the result is the "usable streams" answer the representative pick needs.</summary>
+            public bool Add(int? parentIndexNumber, string[]? languages, string[]? subtitles)
+            {
+                if (languages == null) return false; // no streams: not a tag source
+                if (subtitles != null) _subtitles.UnionWith(subtitles);
+                if (languages.Length == 0) return true; // streams but untagged audio: neutral
+
+                _union.UnionWith(languages);
+                var identities = languages.Select(_identity).Distinct().OrderBy(id => id, StringComparer.Ordinal).ToArray();
+                var isSpecial = parentIndexNumber == 0 && !_isSeason;
+                (isSpecial ? _specialSets : _regularSets).TryAdd(string.Join('|', identities), identities);
+                return true;
+            }
+
+            public (string[] Languages, string[]? Partial, string[] Subtitles) Result()
+            {
+                // Two regional variants are separate dubs only when some episode
+                // carries both as separate tracks; otherwise they're one dub tagged
+                // differently from one release to the next.
+                var separateDubs = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var set in _regularSets.Values.Concat(_specialSets.Values))
+                {
+                    for (var i = 0; i < set.Length; i++)
+                    {
+                        for (var j = i + 1; j < set.Length; j++)
+                        {
+                            if (SubtagVariants(set[i], set[j])) separateDubs.Add(set[i] + "|" + set[j]);
+                        }
+                    }
+                }
+
+                var counted = _regularSets.Count > 0 ? _regularSets.Values : _specialSets.Values;
+                var partial = _union
+                    .Where(lang =>
+                    {
+                        var identity = _identity(lang);
+                        return !counted.All(set => Covers(set, identity, separateDubs));
+                    })
+                    .ToArray();
+                return (_union.ToArray(), partial.Length > 0 ? partial : null, _subtitles.ToArray());
+            }
+        }
+
+        /// <summary>
         /// One pass over a Series/Season's episodes: picks the representative
         /// episode (same rule as <see cref="TagEpisodeSelector.GetFirstEpisode"/>)
         /// and aggregates audio languages across every episode with streams.
@@ -3185,32 +3261,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 }
             }
 
-            // Union keeps insertion order (deterministic for a stable library), so
-            // the order-sensitive ContentEquals compare stays no-op on re-saves.
-            var union = new HashSet<string>();
-            // Subtitle languages: a plain union over the episodes with streams
-            // (same insertion-order rule), with no partial list.
-            var subtitleUnion = new HashSet<string>();
-            // Distinct per-episode identity sets: a series has a handful of
-            // track layouts however many episodes it has, so these stay tiny.
-            var regularSets = new Dictionary<string, string[]>(StringComparer.Ordinal);
-            var specialSets = new Dictionary<string, string[]>(StringComparer.Ordinal);
             var containerIsSeason = container is MediaBrowser.Controller.Entities.TV.Season;
-
-            // One episode's contribution, in scan order; the result is the
-            // "usable streams" answer the representative pick needs.
-            bool Accumulate(int? parentIndexNumber, string[]? languages, string[]? subtitles)
-            {
-                if (languages == null) return false; // no streams: not a tag source
-                if (subtitles != null) subtitleUnion.UnionWith(subtitles);
-                if (languages.Length == 0) return true; // streams but untagged audio: neutral
-
-                union.UnionWith(languages);
-                var identities = languages.Select(LanguageIdentity).Distinct().OrderBy(id => id, StringComparer.Ordinal).ToArray();
-                var isSpecial = parentIndexNumber == 0 && !containerIsSeason;
-                (isSpecial ? specialSets : regularSets).TryAdd(string.Join('|', identities), identities);
-                return true;
-            }
+            var containerLanguages = new ContainerLanguages(containerIsSeason, LanguageIdentity);
+            bool Accumulate(int? parentIndexNumber, string[]? languages, string[]? subtitles) => containerLanguages.Add(parentIndexNumber, languages, subtitles);
 
             try
             {
@@ -3290,31 +3343,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             episodeScans != null && episodeScans.TryGetValue(first.Id, out var namingScan) ? namingScan.NamingTags : null);
                 }
 
-                // Two regional variants are separate dubs only when some episode
-                // carries both as separate tracks; otherwise they're one dub tagged
-                // differently from one release to the next.
-                var separateDubs = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var set in regularSets.Values.Concat(specialSets.Values))
-                {
-                    for (var i = 0; i < set.Length; i++)
-                    {
-                        for (var j = i + 1; j < set.Length; j++)
-                        {
-                            if (SubtagVariants(set[i], set[j])) separateDubs.Add(set[i] + "|" + set[j]);
-                        }
-                    }
-                }
-
-                var counted = regularSets.Count > 0 ? regularSets.Values : specialSets.Values;
-                var partial = union
-                    .Where(lang =>
-                    {
-                        var identity = LanguageIdentity(lang);
-                        return !counted.All(set => Covers(set, identity, separateDubs));
-                    })
-                    .ToArray();
-                return (firstEp, union.ToArray(), partial.Length > 0 ? partial : null, ToUnixMilliseconds(latestAdded), latestAdded == null ? null : latestId.ToString("N"), statusFacts,
-                    SeriesQualityAggregation.Build(qualityEpisodes), qualityEpisodes.Select(episode => episode.Id).ToArray(), subtitleUnion.ToArray(),
+                var (languagesUnion, partial, subtitleLanguages) = containerLanguages.Result();
+                return (firstEp, languagesUnion, partial, ToUnixMilliseconds(latestAdded), latestAdded == null ? null : latestId.ToString("N"), statusFacts,
+                    SeriesQualityAggregation.Build(qualityEpisodes), qualityEpisodes.Select(episode => episode.Id).ToArray(), subtitleLanguages,
                     qualityEpisodes.SelectMany(episode => SubtitleAccessibility.Languages(episode.Streams?.Streams)).Distinct(StringComparer.Ordinal).ToArray());
             }
             catch (Exception ex)

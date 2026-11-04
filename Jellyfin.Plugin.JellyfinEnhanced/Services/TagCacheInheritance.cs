@@ -9,7 +9,7 @@ using MediaBrowser.Controller.Entities;
 namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 {
     /// <summary>
-    /// Facts a season or episode takes from its series (scores, age rating). The full build and
+    /// Facts a season or episode takes from its series (scores, age rating; a season's genres). The full build and
     /// on-demand entries apply them through <see cref="InheritFromSeries"/>; a series-only edit
     /// reapplies them to the cached children (<see cref="PatchInheritedFacts"/>), so a corrected
     /// series score or rating never stays on its seasons and episodes until a full rebuild.
@@ -38,14 +38,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Whether a rebuilt series entry changed a fact its seasons and episodes inherit.</summary>
         private static bool InheritedFactsChanged(TagCacheEntry? before, TagCacheEntry after)
             => before == null || before.CommunityRating != after.CommunityRating || before.CriticRating != after.CriticRating
-                || !string.Equals(before.OfficialRating, after.OfficialRating, StringComparison.Ordinal);
+                || !string.Equals(before.OfficialRating, after.OfficialRating, StringComparison.Ordinal)
+                || !(before.Genres ?? Array.Empty<string>()).SequenceEqual(after.Genres ?? Array.Empty<string>(), StringComparer.Ordinal);
 
         /// <summary>
         /// Reapply <see cref="InheritFromSeries"/> to every cached season and episode of a series, from their own
         /// metadata (read in pages, never their streams). Rebuild lock held, inside an in-place write scope;
         /// the caller advances the version when this returns true.
         /// </summary>
-        private bool PatchInheritedFacts(BaseItem series, CancellationToken cancellationToken)
+        /// <param name="series">The series, with its new metadata.</param>
+        /// <param name="previousGenres">The series' genres before the edit: a season showing exactly those, with none of its own, took them.</param>
+        /// <param name="cancellationToken">Cancellation.</param>
+        private bool PatchInheritedFacts(BaseItem series, string[]? previousGenres, CancellationToken cancellationToken)
         {
             var seriesKey = series.Id.ToString("N");
             var ids = new List<Guid>();
@@ -67,8 +71,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     updated.CriticRating = item.CriticRating;
                     updated.OfficialRating = string.IsNullOrWhiteSpace(item.OfficialRating) ? null : item.OfficialRating;
                     InheritFromSeries(updated, item.GetBaseItemKind(), series);
+                    // A season without genres of its own (or a first episode's) shows its series' genres.
+                    if (item.GetBaseItemKind() == BaseItemKind.Season && (item.Genres == null || item.Genres.Length == 0) && item.CommunityRating == null
+                        && previousGenres is { Length: > 0 } && (entry.Genres ?? Array.Empty<string>()).SequenceEqual(previousGenres, StringComparer.Ordinal))
+                        updated.Genres = series.Genres;
                     if (updated.CommunityRating == entry.CommunityRating && updated.CriticRating == entry.CriticRating
-                        && string.Equals(updated.OfficialRating, entry.OfficialRating, StringComparison.Ordinal)) continue;
+                        && string.Equals(updated.OfficialRating, entry.OfficialRating, StringComparison.Ordinal)
+                        && (updated.Genres ?? Array.Empty<string>()).SequenceEqual(entry.Genres ?? Array.Empty<string>(), StringComparer.Ordinal)) continue;
                     updated.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     RaiseMaxLastUpdated(updated.LastUpdated);
                     StoreEntry(key, updated);

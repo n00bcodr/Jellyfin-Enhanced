@@ -270,6 +270,56 @@ public class CustomTagRulesTests
     }
 
     [Fact]
+    public void ASeriesGenreEditReachesASeasonThatTookItsGenres()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Mock.Object;
+        try
+        {
+            var series = new Series { Id = Guid.NewGuid(), Name = "Show", Genres = ["Drama"] };
+            var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+            var own = new Season { Id = Guid.NewGuid(), Name = "Season 2", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 2, Genres = ["Documentary"] };
+            library.Items.AddRange(new BaseItem[] { series, season, own });
+            using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            cache.BuildFullCache(null, CancellationToken.None);
+            string[]? Genres(BaseItem item) => cache.TryGetEntry(item.Id, out var entry) ? entry.Genres : throw new InvalidOperationException(item.Name);
+            Assert.Equal(["Drama"], Genres(season));
+
+            series.Genres = ["Comedy"];
+            cache.EnqueueUpdate(series.Id);
+            Flush(cache);
+            Assert.Equal(["Comedy"], Genres(season));
+            Assert.Equal(["Documentary"], Genres(own)); // its own genres stay
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+        }
+    }
+
+    [Fact]
+    public void ARestrictedUsersSeriesLanguagesComeOnlyFromEpisodesTheyCanSee()
+    {
+        using var f = new ApiPluginFixture();
+        var library = new Library();
+        using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        var english = new TagCacheEntry { Type = "Episode", SeasonNumber = 1, AudioLanguages = ["en"], SubtitleLanguages = ["en"] };
+        var japanese = new TagCacheEntry { Type = "Episode", SeasonNumber = 1, AudioLanguages = ["ja"], SubtitleLanguages = ["ja"] };
+        var series = new TagCacheEntry { Type = "Series", QualityEpisodeIds = ["e1", "e2"], AudioLanguages = ["en", "ja"], PartialAudioLanguages = ["en", "ja"], SubtitleLanguages = ["en", "ja"] };
+        var entries = new Dictionary<string, TagCacheEntry> { ["e1"] = english, ["e2"] = japanese };
+        var filter = typeof(TagCacheService).GetMethod("FilterQuality", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var filtered = (TagCacheEntry)filter.Invoke(cache, new object?[] { series, new HashSet<string> { "e1" }, entries, null, null })!;
+        Assert.Equal(["en"], filtered.AudioLanguages);
+        Assert.Null(filtered.PartialAudioLanguages); // English is on every episode this user can see
+        Assert.Equal(["en"], filtered.SubtitleLanguages);
+        var everyone = (TagCacheEntry)filter.Invoke(cache, new object?[] { series, new HashSet<string> { "e1", "e2" }, entries, null, null })!;
+        Assert.Same(series, everyone);
+    }
+
+    [Fact]
     public async Task ASeriesEditDropsItsChildrenFromTheNativeOnDemandMemo()
     {
         // Cache off: native posters build entries on demand and keep them for a while.
