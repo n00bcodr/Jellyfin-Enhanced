@@ -44,8 +44,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddHttpClient(Helpers.Jellyseerr.SeerrHttpHelper.NamedClient)
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
-                    AllowAutoRedirect = false
-                });
+                    AllowAutoRedirect = false,
+                    UseCookies = false
+                })
+                .AddHttpMessageHandler(() => new Helpers.Jellyseerr.SeerrCsrfHandler());
             serviceCollection.AddSingleton<Logger>();
             serviceCollection.AddSingleton<UserConfigurationManager>();
             // Auto-detects newly added config-page settings by diffing the
