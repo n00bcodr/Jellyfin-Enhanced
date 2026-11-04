@@ -4404,6 +4404,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "ShowVersionsTag",
+      "type": "bool",
+      "initializer": "false",
+      "constructor_assignment": "false",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "ShowAspectRatioTag",
       "type": "bool",
       "initializer": "false",
@@ -4432,6 +4440,14 @@
       "type": "int",
       "initializer": "8",
       "constructor_assignment": "8",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
+      "name": "VersionsTagOrder",
+      "type": "int",
+      "initializer": "11",
+      "constructor_assignment": "11",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
     },
     {
@@ -7860,6 +7876,14 @@
     },
     {
       "class": "JellyfinEnhancedUserSettings",
+      "name": "ShowVersionsTag",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
       "name": "ShowAspectRatioTag",
       "type": "bool?",
       "initializer": null,
@@ -7885,6 +7909,14 @@
     {
       "class": "JellyfinEnhancedUserSettings",
       "name": "RuntimeTagOrder",
+      "type": "int?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "VersionsTagOrder",
       "type": "int?",
       "initializer": null,
       "constructor_assignment": null,
@@ -9947,7 +9979,7 @@
     "build_targets": 2,
     "files": 459,
     "routes": 194,
-    "configuration_properties": 720,
+    "configuration_properties": 724,
     "storage_references": 86,
     "scheduled_tasks": 15,
     "locales": 33

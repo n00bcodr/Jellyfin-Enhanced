@@ -14,6 +14,7 @@
         ['ShowSpecialFormatTag', 'SpecialFormatTagOrder'], ['ShowVideoCodecTag', 'VideoCodecTagOrder'], ['ShowAudioInfoTag', 'AudioInfoTagOrder'],
         ['ShowEditionTag', 'EditionTagOrder'],
         ['ShowRuntimeTag', 'RuntimeTagOrder'], ['ShowAspectRatioTag', 'AspectRatioTagOrder'], ['ShowFrameRateTag', 'FrameRateTagOrder'],
+        ['ShowVersionsTag', 'VersionsTagOrder'],
     ];
 
     A.registerSection({
@@ -45,6 +46,7 @@
             { id: 'showRuntimeTag', key: 'ShowRuntimeTag', type: 'ordered', orderKey: 'RuntimeTagOrder', defaultOrder: 8, label: 'panel_settings_ui_quality_tags_runtime' },
             { id: 'showAspectRatioTag', key: 'ShowAspectRatioTag', type: 'ordered', orderKey: 'AspectRatioTagOrder', defaultOrder: 9, label: 'panel_settings_ui_quality_tags_aspect_ratio' },
             { id: 'showFrameRateTag', key: 'ShowFrameRateTag', type: 'ordered', orderKey: 'FrameRateTagOrder', defaultOrder: 10, label: 'panel_settings_ui_quality_tags_frame_rate' },
+            { id: 'showVersionsTag', key: 'ShowVersionsTag', type: 'ordered', orderKey: 'VersionsTagOrder', defaultOrder: 11, label: 'panel_settings_ui_quality_tags_versions' },
             { id: 'showLowQualitySourceTag', key: 'ShowLowQualitySourceTag', type: 'switch', label: 'panel_settings_ui_quality_tags_low_source', desc: 'admin_tags_quality_low_source_desc' },
             { id: 'qualityAudioDisplayMode', key: 'QualityAudioDisplayMode', type: 'select', label: 'quality_display_audio', fallback: 'highest', options: [['highest', 'quality_display_highest'], ['all', 'quality_display_all']] },
             { id: 'qualityVideoCodecDisplayMode', key: 'QualityVideoCodecDisplayMode', type: 'select', label: 'quality_display_video', fallback: 'highest', options: [['highest', 'quality_display_highest'], ['all', 'quality_display_all']] },

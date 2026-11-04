@@ -257,11 +257,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         public bool ShowRuntimeTag { get; private init; } = false;
         public bool ShowAspectRatioTag { get; private init; } = false;
         public bool ShowFrameRateTag { get; private init; } = false;
+        /// <summary>Whether the version count chip ("2 versions") is shown.</summary>
+        public bool ShowVersionsTag { get; private init; } = false;
         /// <summary>Stack order of edition chips.</summary>
         public int EditionTagOrder { get; private init; } = 7;
         public int RuntimeTagOrder { get; private init; } = 8;
         public int AspectRatioTagOrder { get; private init; } = 9;
         public int FrameRateTagOrder { get; private init; } = 10;
+        public int VersionsTagOrder { get; private init; } = 11;
         /// <summary>Whether CAM, TS, TC and SCR sources are eligible.</summary>
         public bool ShowLowQualitySourceTag { get; private init; }
 
@@ -587,10 +590,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowRuntimeTag = user.ShowRuntimeTag ?? config.ShowRuntimeTag,
                 ShowAspectRatioTag = user.ShowAspectRatioTag ?? config.ShowAspectRatioTag,
                 ShowFrameRateTag = user.ShowFrameRateTag ?? config.ShowFrameRateTag,
+                ShowVersionsTag = user.ShowVersionsTag ?? config.ShowVersionsTag,
                 EditionTagOrder = user.EditionTagOrder ?? config.EditionTagOrder,
                 RuntimeTagOrder = user.RuntimeTagOrder ?? config.RuntimeTagOrder,
                 AspectRatioTagOrder = user.AspectRatioTagOrder ?? config.AspectRatioTagOrder,
                 FrameRateTagOrder = user.FrameRateTagOrder ?? config.FrameRateTagOrder,
+                VersionsTagOrder = user.VersionsTagOrder ?? config.VersionsTagOrder,
                 ShowLowQualitySourceTag = user.ShowLowQualitySourceTag ?? config.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = user.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = user.ShowSpecialFormatTag,
@@ -900,6 +905,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             QualityTagRules.Source => ShowSourceTag,
             QualityTagRules.Edition => ShowEditionTag,
             QualityTagRules.FrameRate => ShowFrameRateTag,
+            QualityTagRules.Versions => ShowVersionsTag,
             QualityTagRules.AspectRatio => ShowAspectRatioTag,
             QualityTagRules.Runtime => ShowRuntimeTag,
             QualityTagRules.DynamicRange => ShowDynamicRangeTag,
@@ -916,6 +922,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             QualityTagRules.Source => SourceTagOrder,
             QualityTagRules.Edition => EditionTagOrder,
             QualityTagRules.FrameRate => FrameRateTagOrder,
+            QualityTagRules.Versions => VersionsTagOrder,
             QualityTagRules.AspectRatio => AspectRatioTagOrder,
             QualityTagRules.Runtime => RuntimeTagOrder,
             QualityTagRules.DynamicRange => DynamicRangeTagOrder,
@@ -1082,10 +1089,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 ShowRuntimeTag = config.ShowRuntimeTag,
                 ShowAspectRatioTag = config.ShowAspectRatioTag,
                 ShowFrameRateTag = config.ShowFrameRateTag,
+                ShowVersionsTag = config.ShowVersionsTag,
                 EditionTagOrder = config.EditionTagOrder,
                 RuntimeTagOrder = config.RuntimeTagOrder,
                 AspectRatioTagOrder = config.AspectRatioTagOrder,
                 FrameRateTagOrder = config.FrameRateTagOrder,
+                VersionsTagOrder = config.VersionsTagOrder,
                 ShowLowQualitySourceTag = config.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = config.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = config.ShowSpecialFormatTag,
@@ -1193,6 +1202,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["quality.order.edition"] = Int(EditionTagOrder);
                 values["quality.show.frameRate"] = Bool(ShowFrameRateTag);
                 values["quality.order.frameRate"] = Int(FrameRateTagOrder);
+                // Only when on, so every existing variant keeps its token.
+                if (ShowVersionsTag) values["quality.versions"] = Int(VersionsTagOrder);
                 values["quality.show.aspectRatio"] = Bool(ShowAspectRatioTag);
                 values["quality.order.aspectRatio"] = Int(AspectRatioTagOrder);
                 values["quality.show.runtime"] = Bool(ShowRuntimeTag);

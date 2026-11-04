@@ -82,6 +82,7 @@
     "ShowRuntimeTag",
     "ShowSourceTag",
     "ShowSpecialFormatTag",
+    "ShowVersionsTag",
     "ShowVideoCodecTag",
     "SourceTagOrder",
     "SpecialFormatTagOrder",
@@ -120,6 +121,7 @@
     "TagStylesEnabled",
     "TagsCacheTtlDays",
     "TagsHideOnHover",
+    "VersionsTagOrder",
     "VideoCodecTagOrder"
   ]
 }

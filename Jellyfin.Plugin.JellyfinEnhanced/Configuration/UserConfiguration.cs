@@ -45,11 +45,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// <summary>Show the edition quality category; absent values inherit the admin default.</summary>
         public bool? ShowEditionTag { get; set; }
         public bool? ShowRuntimeTag { get; set; }
+        public bool? ShowVersionsTag { get; set; }
         public bool? ShowAspectRatioTag { get; set; }
         public bool? ShowFrameRateTag { get; set; }
         /// <summary>Edition stack position after the six existing quality categories.</summary>
         public int? EditionTagOrder { get; set; }
         public int? RuntimeTagOrder { get; set; }
+        public int? VersionsTagOrder { get; set; }
         public int? AspectRatioTagOrder { get; set; }
         public int? FrameRateTagOrder { get; set; }
         /// <summary>Allow CAM, TS, TC and SCR source tags; absent values inherit the admin default.</summary>

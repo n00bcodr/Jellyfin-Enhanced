@@ -410,3 +410,17 @@ for (const row of audioAliases) for (const density of ['full', 'compact']) {
     }
   });
 }
+
+test('the Versions chip counts an item\'s versions; series and seasons never show one', t => {
+  const h = setup(t);
+  Object.assign(h.JE.currentSettings, { showVersionsTag: true });
+  const sources = [{ Id: 'first' }, { Id: 'second' }];
+  const movieEntry = { Type: 'Movie', StreamData: { Streams: [{ Type: 'Video', Height: 1080, Codec: 'h264', SourceId: 'first' }, { Type: 'Video', Height: 2160, Codec: 'hevc', SourceId: 'second' }], Sources: sources } };
+  assert.ok(h.render(movieEntry, 'movie').includes('2 versions'));
+  const chip = h.document.querySelector('[data-je-quality-category="versions"]');
+  assert.equal(chip.dataset.jeCompact, '×2');
+  assert.ok(!h.render({ Type: 'Movie', StreamData: { Streams: [{ Type: 'Video', Height: 1080, Codec: 'h264', SourceId: 'first' }], Sources: [sources[0]] } }, 'single').some(label => /versions/.test(label)));
+  assert.ok(!h.render({ ...movieEntry, Type: 'Series' }, 'series').some(label => /versions/.test(label)));
+  h.JE.currentSettings.showVersionsTag = false;
+  assert.ok(!h.render(movieEntry, 'off').some(label => /versions/.test(label)));
+});

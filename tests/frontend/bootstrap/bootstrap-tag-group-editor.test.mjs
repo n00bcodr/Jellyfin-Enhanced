@@ -175,7 +175,7 @@ test('rating source checkboxes save ordered sources and re-render rating tags; t
 
   // Quality and the others have nothing (or their own controls) to include.
   assert.ok(h.row('genre').textContent.includes('panel_settings_ui_tag_editor_nothing_to_include'));
-  assert.equal(h.row('quality').querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row').length, 10);
+  assert.equal(h.row('quality').querySelectorAll('#qualityTagsSubToggles .je-quality-cat-row').length, 11);
 });
 
 test('reset restores the administrator\'s layout defaults and keeps the enable toggles and includes', async t => {
@@ -412,9 +412,9 @@ test('the Follow server policy and Follow server settings make the quality field
 
   await h.click(h.$('#qualityTagsFollowServer'));
   const saved = h.saved();
-  assert.equal(h.JE.inheritedSettingKeys.length, 21);
+  assert.equal(h.JE.inheritedSettingKeys.length, 23);
   for (const key of h.JE.inheritedSettingKeys) assert.equal(saved[key], null, key);
-  for (const key of ['showRuntimeTag', 'showAspectRatioTag', 'showFrameRateTag']) assert.equal(h.$(`[data-cat-key="${key}"] input`).checked, false, key);
+  for (const key of ['showRuntimeTag', 'showAspectRatioTag', 'showFrameRateTag', 'showVersionsTag']) assert.equal(h.$(`[data-cat-key="${key}"] input`).checked, false, key);
   for (const key of ['qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr']) assert.equal(h.$(`#${key}Select`).value, '', key);
   assert.equal(h.$('#showEditionTagToggle').checked, true);
   assert.equal(h.$('#showLowQualitySourceTagToggle').checked, false);

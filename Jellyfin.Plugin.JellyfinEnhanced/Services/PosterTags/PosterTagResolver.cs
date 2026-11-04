@@ -218,6 +218,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             where T : PosterTag
         {
             List<PosterTag> list = tags is List<PosterTag> same ? same : tags.ConvertAll(t => (PosterTag)t);
+            if (group == PosterTagGroup.Quality)
+            {
+                // "2 versions" in the user's language; Compact "×2" (qualitytags.js versionsText).
+                list = list.Select(t => t is QualityTag { Category: QualityTagRules.Versions } q
+                    ? q with { DisplayText = settings.CompactLabels ? "×" + q.Label : StatusRules.Text("quality_versions_count", settings.StatusCulture).Replace("{count}", q.Label, StringComparison.Ordinal) }
+                    : t).ToList();
+            }
+
             if (!settings.CompactLabels && group == PosterTagGroup.Quality && settings.StatusCulture.Name is { Length: > 0 } culture && !culture.StartsWith("en", StringComparison.Ordinal))
             {
                 list = list.Select(t => t is QualityTag q && q.DisplayText is null && FullQuality(q.Label, settings) is { } text ? q with { DisplayText = text } : t).ToList();
@@ -225,7 +233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             if (settings.CompactLabels)
             {
-                if (group == PosterTagGroup.Quality) list = list.Select(t => t is QualityTag q ? q with { DisplayText = q.Category is QualityTagRules.Runtime or QualityTagRules.AspectRatio or QualityTagRules.FrameRate ? TechnicalQualityRules.Compact(q.Label, q.Category) : CompactQuality(q.Label, settings) } : t).ToList();
+                if (group == PosterTagGroup.Quality) list = list.Select(t => t is QualityTag q && q.Category != QualityTagRules.Versions ? q with { DisplayText = q.Category is QualityTagRules.Runtime or QualityTagRules.AspectRatio or QualityTagRules.FrameRate ? TechnicalQualityRules.Compact(q.Label, q.Category) : CompactQuality(q.Label, settings) } : t).ToList();
                 if (group == PosterTagGroup.Rating && list.OfType<RatingTag>().Any(t => t.Source == PosterRatingSource.Community))
                     list.RemoveAll(t => t is RatingTag { Source: PosterRatingSource.Critic });
             }

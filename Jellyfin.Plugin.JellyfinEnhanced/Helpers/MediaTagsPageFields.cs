@@ -211,11 +211,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 case "RuntimeTagOrder":
                 case "AspectRatioTagOrder":
                 case "FrameRateTagOrder":
+                case "VersionsTagOrder":
 
                     return InRange((int)value!, 1, MaxTagOrder, out error);
                 case "ShowRuntimeTag":
                 case "ShowAspectRatioTag":
                 case "ShowFrameRateTag":
+                case "ShowVersionsTag":
                 case "StatusTagsScenes":
                     if (value is bool) return true;
                     error = "must be a boolean";

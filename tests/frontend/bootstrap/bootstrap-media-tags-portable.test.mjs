@@ -371,8 +371,8 @@ const EXPLICIT = {
   UseNativePosterTags: false,
   ShowEditionTag: false, EditionTagOrder: 1, ShowLowQualitySourceTag: true,
   ResolutionTagOrder: 7, SourceTagOrder: 6, DynamicRangeTagOrder: 5, SpecialFormatTagOrder: 4, VideoCodecTagOrder: 3, AudioInfoTagOrder: 2,
-  ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
-  RuntimeTagOrder: 10, AspectRatioTagOrder: 9, FrameRateTagOrder: 8,
+  ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true, ShowVersionsTag: true,
+  RuntimeTagOrder: 10, AspectRatioTagOrder: 9, FrameRateTagOrder: 8, VersionsTagOrder: 11,
   QualityAudioDisplayMode: 'all', QualityVideoCodecDisplayMode: 'all', QualityHdrDisplayMode: 'all', QualityMinimumResolution: '4k', QualityHideSdr: true,
   SeriesQualityAggregation: 'mixed',
   RatingTagsSources: ['community'],
@@ -386,7 +386,7 @@ const EXPLICIT = {
 const ADMIN = {
   ShowEditionTag: true, EditionTagOrder: 3, ShowLowQualitySourceTag: false,
   ResolutionTagOrder: 2, SourceTagOrder: 1, DynamicRangeTagOrder: 4, SpecialFormatTagOrder: 5, VideoCodecTagOrder: 7, AudioInfoTagOrder: 6,
-  ShowRuntimeTag: false, ShowAspectRatioTag: false, ShowFrameRateTag: false, RuntimeTagOrder: 8, AspectRatioTagOrder: 10, FrameRateTagOrder: 9,
+  ShowRuntimeTag: false, ShowAspectRatioTag: false, ShowFrameRateTag: false, ShowVersionsTag: false, RuntimeTagOrder: 8, AspectRatioTagOrder: 10, FrameRateTagOrder: 9, VersionsTagOrder: 11,
   QualityAudioDisplayMode: 'highest', QualityVideoCodecDisplayMode: 'highest', QualityHdrDisplayMode: 'highest', QualityMinimumResolution: '1080p', QualityHideSdr: false,
   SeriesQualityAggregation: 'best', LanguageTagsPriority: 'fr', LanguageTagsPriorityStrict: true, TagScale: 'smaller', TagGap: 'tight',
 };

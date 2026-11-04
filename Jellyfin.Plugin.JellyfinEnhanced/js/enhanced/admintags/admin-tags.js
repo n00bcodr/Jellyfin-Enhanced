@@ -91,7 +91,7 @@
      * the ApplyDefaults helpers it calls), PascalCase on the server.
      */
     const SEEDED_KEYS = [
-        'QualityTagsEnabled', 'ShowResolutionTag', 'ShowSourceTag', 'ShowEditionTag', 'EditionTagOrder', 'ShowRuntimeTag', 'RuntimeTagOrder', 'ShowAspectRatioTag', 'AspectRatioTagOrder', 'ShowFrameRateTag', 'FrameRateTagOrder', 'ShowLowQualitySourceTag',
+        'QualityTagsEnabled', 'ShowResolutionTag', 'ShowSourceTag', 'ShowEditionTag', 'EditionTagOrder', 'ShowRuntimeTag', 'RuntimeTagOrder', 'ShowAspectRatioTag', 'AspectRatioTagOrder', 'ShowFrameRateTag', 'FrameRateTagOrder', 'ShowVersionsTag', 'VersionsTagOrder', 'ShowLowQualitySourceTag',
         'ShowDynamicRangeTag', 'ShowSpecialFormatTag', 'ShowVideoCodecTag', 'ShowAudioInfoTag', 'ResolutionTagOrder', 'SourceTagOrder',
         'DynamicRangeTagOrder', 'SpecialFormatTagOrder', 'VideoCodecTagOrder', 'AudioInfoTagOrder', 'GenreTagsEnabled', 'LanguageTagsEnabled',
         'RatingTagsEnabled', 'AgeRatingTagsEnabled', 'StatusTagsEnabled', 'PeopleTagsEnabled', 'TagsHideOnHover', 'QualityTagsPosition',

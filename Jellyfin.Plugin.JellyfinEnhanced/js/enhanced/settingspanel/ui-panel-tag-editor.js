@@ -50,6 +50,7 @@
         { id: 'showRuntimeTagToggle', settingKey: 'showRuntimeTag', pluginKey: 'ShowRuntimeTag', orderKey: 'runtimeTagOrder', orderPluginKey: 'RuntimeTagOrder', defaultOrder: 8, labelKey: 'panel_settings_ui_quality_tags_runtime', fallback: false, sample: ['1h 52m', '1h 52m', 'other-quality'] },
         { id: 'showAspectRatioTagToggle', settingKey: 'showAspectRatioTag', pluginKey: 'ShowAspectRatioTag', orderKey: 'aspectRatioTagOrder', orderPluginKey: 'AspectRatioTagOrder', defaultOrder: 9, labelKey: 'panel_settings_ui_quality_tags_aspect_ratio', fallback: false, sample: ['2.39:1', '2.39:1', 'other-quality'] },
         { id: 'showFrameRateTagToggle', settingKey: 'showFrameRateTag', pluginKey: 'ShowFrameRateTag', orderKey: 'frameRateTagOrder', orderPluginKey: 'FrameRateTagOrder', defaultOrder: 10, labelKey: 'panel_settings_ui_quality_tags_frame_rate', fallback: false, sample: ['24p', '24p', 'other-quality'] },
+        { id: 'showVersionsTagToggle', settingKey: 'showVersionsTag', pluginKey: 'ShowVersionsTag', orderKey: 'versionsTagOrder', orderPluginKey: 'VersionsTagOrder', defaultOrder: 11, labelKey: 'panel_settings_ui_quality_tags_versions', fallback: false, sample: ['2 versions', '×2', 'other-quality'] },
     ];
 
     const escapeHtml = (value) => JE.escapeHtml(String(value));

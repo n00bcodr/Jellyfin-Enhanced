@@ -1465,6 +1465,8 @@
     "quality_display_help": "All shows distinct values in rank order. Sound follows your audio language. Show up to limits the whole Quality group.",
     "quality_sdr_show": "Show SDR",
     "panel_settings_ui_quality_tags_runtime": "Runtime",
+    "panel_settings_ui_quality_tags_versions": "Versions (2 versions, 3 versions …)",
+    "quality_versions_count": "{count} versions",
     "panel_settings_ui_quality_tags_aspect_ratio": "Aspect ratio",
     "panel_settings_ui_quality_tags_frame_rate": "Frame rate",
     "language_tags_subtitles_sdh": "Subtitles (SDH)",

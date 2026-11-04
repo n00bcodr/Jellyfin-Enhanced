@@ -374,6 +374,10 @@ for (const DisplayLanguage of ['de', 'fa', 'ar-SA']) {
         RatingTagsSources: ['community', 'critic', 'imdb', 'letterboxd', 'metacritic'] });
 }
 
+// Version count chips ("2 versions" / "×2") on items with several media versions; series and seasons never show one.
+synth('quality-versions', { QualityTagsEnabled: true, TagLayoutSettingsVersion: 1, ShowVersionsTag: true, VersionsTagOrder: 1 });
+synth('quality-versions-compact', { QualityTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLabelDensity: 'compact', ShowVersionsTag: true });
+
 synth('all-on-defaults', { ...allOn });
 for (const TagScale of ['smaller', 'larger', 'largest']) {
     synth(`tag-scale-${TagScale}`, { ...allOn, TagLayoutSettingsVersion: 1, TagScale });

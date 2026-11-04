@@ -54,3 +54,36 @@ public class QualityDetectionTruthTests
         }
     }
 }
+
+/// <summary>The Versions chip (a count of an item's versions) on native posters.</summary>
+[Collection("Plugin singleton")]
+public class QualityVersionsChipTests
+{
+    private static TagCacheEntry Entry(string type, int versions) => new()
+    {
+        Type = type,
+        StreamData = new()
+        {
+            Streams = Enumerable.Range(0, versions).Select(i => new TagMediaStream { Type = "Video", Height = 1080, Codec = "h264", SourceId = "v" + i }).ToList(),
+            Sources = Enumerable.Range(0, versions).Select(i => new TagMediaSource { Id = "v" + i }).ToList(),
+        },
+    };
+
+    private static QualityTag[] Tags(TagCacheEntry entry, bool on, string density = "full") => PosterTagResolver.Resolve(entry,
+        PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, TagLayoutSettingsVersion = 1, TagLabelDensity = density, ShowVersionsTag = on }, new(), null),
+        new(entry.Type ?? "Movie", false, null, null, null), false)?.Groups.SelectMany(g => g.Tags).OfType<QualityTag>().ToArray() ?? [];
+
+    [Fact]
+    public void ItemsWithSeveralVersionsCountThemAndContainersNever()
+    {
+        var chip = Assert.Single(Tags(Entry("Movie", 3), on: true), t => t.Category == QualityTagRules.Versions);
+        Assert.Equal(("3", "3 versions"), (chip.Label, chip.DisplayText));
+        Assert.Equal("×2", Assert.Single(Tags(Entry("Episode", 2), on: true, "compact"), t => t.Category == QualityTagRules.Versions).DisplayText);
+        Assert.DoesNotContain(Tags(Entry("Movie", 1), on: true), t => t.Category == QualityTagRules.Versions);
+        Assert.DoesNotContain(Tags(Entry("Series", 2), on: true), t => t.Category == QualityTagRules.Versions);
+        Assert.DoesNotContain(Tags(Entry("Movie", 2), on: false), t => t.Category == QualityTagRules.Versions);
+        // Off by default, and an off chip leaves the poster digest (and every existing poster URL) unchanged.
+        Assert.Equal(PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true }, new(), null).Digest,
+            PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, ShowVersionsTag = false }, new(), null).Digest);
+    }
+}

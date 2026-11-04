@@ -84,7 +84,7 @@ public class ApiMediaTagsPortableTests
         Assert.Equal(1, (int)exported["v"]!);
         Assert.Equal("je-media-tags-user", (string?)exported["kind"]);
         var settings = exported["settings"]!.AsObject();
-        Assert.Equal(86, MediaTagsPortable.UserFields.Count);
+        Assert.Equal(88, MediaTagsPortable.UserFields.Count);
         Assert.Equal(MediaTagsPortable.UserFields, settings.Select(p => p.Key));
 
         // The same document again changes nothing and skips nothing.

@@ -42,6 +42,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         public const string Runtime = "runtime";
         public const string AspectRatio = "aspectRatio";
         public const string FrameRate = "frameRate";
+
+        /// <summary>How many versions (media sources) an item has, from two up.</summary>
+        public const string Versions = "versions";
         internal const string EditionPrefix = "edition:";
 
         /// <summary>Dolby Vision / HDR.</summary>
@@ -170,6 +173,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             new(Runtime, Array.Empty<string>(), 8),
             new(AspectRatio, Array.Empty<string>(), 9),
             new(FrameRate, Array.Empty<string>(), 10),
+            new(Versions, Array.Empty<string>(), 11),
         };
 
         /// <summary>
@@ -281,6 +285,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         private static List<string> Detect(TagStreamData? data, string? preferredAudioLanguage, string? releaseSource, string? edition, bool includeAudio, bool legacyAudio = false)
         {
+            var versions = VersionCount(data);
             data = SelectSource(data);
             var version = data?.Sources?.FirstOrDefault(s => !string.IsNullOrEmpty(s?.Id));
             if (version != null) { releaseSource = version.Source; edition = version.Edition; }
@@ -288,6 +293,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (data?.Streams is null)
             {
                 AddNamingTags(qualities, releaseSource, edition);
+                if (versions > 1) Add(qualities, Versions + ":" + versions.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 return qualities;
             }
 
@@ -376,7 +382,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (releaseSource is not null) Add(qualities, releaseSource);
             else if (stub is not null) Add(qualities, stub);
             if (edition is not null) Add(qualities, EditionPrefix + edition);
+            if (versions > 1) Add(qualities, Versions + ":" + versions.ToString(System.Globalization.CultureInfo.InvariantCulture));
             return qualities;
+        }
+
+        /// <summary>
+        /// How many versions an item has: its listed sources with an id, else the distinct source ids of
+        /// its streams (versionCount in qualitytags.js). Series and seasons drop the fact: it would
+        /// describe their representative episode.
+        /// </summary>
+        internal static int VersionCount(TagStreamData? data)
+        {
+            var listed = data?.Sources?.Where(s => !string.IsNullOrEmpty(s?.Id)).Select(s => s!.Id).Distinct(StringComparer.Ordinal).Count() ?? 0;
+            return listed > 0 ? listed : data?.Streams?.Where(s => !string.IsNullOrEmpty(s?.SourceId)).Select(s => s!.SourceId).Distinct(StringComparer.Ordinal).Count() ?? 0;
         }
 
         /// <summary>

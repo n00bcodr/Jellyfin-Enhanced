@@ -108,10 +108,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             // Source and edition defaults.
             ShowEditionTag = true;
             ShowRuntimeTag = false;
+            ShowVersionsTag = false;
             ShowAspectRatioTag = false;
             ShowFrameRateTag = false;
             EditionTagOrder = 7;
             RuntimeTagOrder = 8;
+            VersionsTagOrder = 11;
             AspectRatioTagOrder = 9;
             FrameRateTagOrder = 10;
             ShowLowQualitySourceTag = false;
@@ -697,10 +699,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // Source and edition defaults.
         public bool ShowEditionTag { get; set; } = true;
         public bool ShowRuntimeTag { get; set; } = false;
+
+        /// <summary>Quality category: how many versions (media sources) a movie or episode has, from two up ("2 versions").</summary>
+        public bool ShowVersionsTag { get; set; } = false;
         public bool ShowAspectRatioTag { get; set; } = false;
         public bool ShowFrameRateTag { get; set; } = false;
         public int EditionTagOrder { get; set; } = 7;
         public int RuntimeTagOrder { get; set; } = 8;
+
+        public int VersionsTagOrder { get; set; } = 11;
         public int AspectRatioTagOrder { get; set; } = 9;
         public int FrameRateTagOrder { get; set; } = 10;
         public bool ShowLowQualitySourceTag { get; set; } = false;

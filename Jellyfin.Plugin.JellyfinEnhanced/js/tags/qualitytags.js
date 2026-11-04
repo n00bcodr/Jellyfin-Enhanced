@@ -35,6 +35,7 @@
         { key: 'runtime', items: [], settingKey: 'showRuntimeTag', pluginKey: 'ShowRuntimeTag', orderUserKey: 'runtimeTagOrder', orderPluginKey: 'RuntimeTagOrder', defaultOrder: 8, fallback: false },
         { key: 'aspectRatio', items: [], settingKey: 'showAspectRatioTag', pluginKey: 'ShowAspectRatioTag', orderUserKey: 'aspectRatioTagOrder', orderPluginKey: 'AspectRatioTagOrder', defaultOrder: 9, fallback: false },
         { key: 'frameRate', items: [], settingKey: 'showFrameRateTag', pluginKey: 'ShowFrameRateTag', orderUserKey: 'frameRateTagOrder', orderPluginKey: 'FrameRateTagOrder', defaultOrder: 10, fallback: false },
+        { key: 'versions', items: [], settingKey: 'showVersionsTag', pluginKey: 'ShowVersionsTag', orderUserKey: 'versionsTagOrder', orderPluginKey: 'VersionsTagOrder', defaultOrder: 11, fallback: false },
     ];
 
     const TAG_TO_CATEGORY = new Map();
@@ -361,14 +362,14 @@
         const normalizedLabel = normalizeQualityLabel(label);
         const badge = document.createElement('div');
         const category = categorize(label);
-        const technical = ['runtime', 'aspectRatio', 'frameRate'].includes(category);
+        const technical = ['runtime', 'aspectRatio', 'frameRate', 'versions'].includes(category);
         const edition = label.startsWith(EDITION_PREFIX);
         const displayLabel = edition || technical ? label.slice(label.indexOf(':') + 1) : label;
-        badge.textContent = edition ? editionLabel(displayLabel) : displayLabel;
+        badge.textContent = edition ? editionLabel(displayLabel) : category === 'versions' ? versionsText(displayLabel) : displayLabel;
         if (technical) {
             badge.dataset.jeQualityCategory = category;
-            badge.dataset.jeCompact = compactTechnical(displayLabel, category);
-            badge.title = displayLabel;
+            badge.dataset.jeCompact = category === 'versions' ? `×${displayLabel}` : compactTechnical(displayLabel, category);
+            badge.title = badge.textContent;
         }
         badge.className = overlayClass;
         if (label === 'Mixed') badge.textContent = JE.t('series_quality_mixed');
@@ -473,6 +474,28 @@
         if (maxChannels >= 2) return '2.0';
 
         return null;
+    }
+
+    /**
+     * "2 versions" in the user's language (native posters: PosterTagResolver, quality_versions_count).
+     * @param {string} count Number of versions.
+     * @returns {string}
+     */
+    function versionsText(count) {
+        const text = JE.t('quality_versions_count', { count });
+        return (text === 'quality_versions_count' ? '{count} versions' : text).replace('{count}', count);
+    }
+
+    /**
+     * How many versions an item has: its listed sources with an id, else the distinct source ids of
+     * its streams (QualityTagRules.VersionCount).
+     * @param {Object[]} [streams]
+     * @param {Object[]} [sources]
+     * @returns {number}
+     */
+    function versionCount(streams, sources) {
+        const listed = new Set((sources || []).map(s => s?.Id).filter(Boolean));
+        return listed.size || new Set((streams || []).map(s => s?.SourceId).filter(Boolean)).size;
     }
 
     /** Compact technical text; values stay identical across densities. */
@@ -692,6 +715,7 @@
     function getEnhancedQuality(mediaStreams, mediaSources, itemData = null, singleTrack = false, sourceId = '') {
         if (!mediaStreams && !mediaSources && !itemData?.Source && !itemData?.Edition) return [];
 
+        const versions = versionCount(mediaStreams, mediaSources);
         // Narrow raw streams, cached per-track sets and filename/technical facts together.
         // The browser's pick, else the first version Jellyfin lists (an unprobed first version
         // then has no stream facts: it never borrows another version's).
@@ -995,6 +1019,7 @@
             qualities.add(itemData.Source);
         }
         if (itemData?.Edition) qualities.add(EDITION_PREFIX + itemData.Edition);
+        if (!singleTrack && versions > 1) qualities.add(`versions:${versions}`);
         if (!singleTrack && displayModeKey() !== '000') {
             const distinct = itemData?.DistinctQualities || distinctQualities(videoStreams, audioStreams);
             for (const category of ['audio', 'videoCodec', 'dynamicRange']) {
@@ -1367,7 +1392,9 @@
                 const srcId = selectedSourceFor(itemId);
                 if (item.Type === 'Series' || item.Type === 'Season') {
                     if (extras.firstEpisode) {
-                        qualities = getEnhancedQuality(extras.firstEpisode.MediaStreams, extras.firstEpisode.MediaSources, extras.firstEpisode);
+                        // A version count would describe the first episode, not the series or season.
+                        qualities = getEnhancedQuality(extras.firstEpisode.MediaStreams, extras.firstEpisode.MediaSources, extras.firstEpisode)
+                            .filter(label => !label.startsWith('versions:'));
                     }
                 } else {
                     qualities = getEnhancedQuality(item.MediaStreams, item.MediaSources, item, false, srcId);
@@ -1412,7 +1439,9 @@
                 const audioLang = audioPreferenceKey();
                 const srcId = selectedSourceFor(itemId);
                 const sd = entry.StreamData;
-                const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
+                const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId)
+                    // A version count would describe the representative episode, not the series or season.
+                    .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
                 serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 10, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
