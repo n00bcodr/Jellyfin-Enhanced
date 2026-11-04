@@ -23,7 +23,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
 
         private readonly SKTypeface _primary;
         private readonly ConcurrentDictionary<LayoutKey, PosterTagTextLayout> _layouts = new();
-        private readonly ConcurrentDictionary<(SKTypeface Face, string Text), ShapedRun> _shapes = new();
+        private readonly ConcurrentDictionary<(SKTypeface Face, string Text, bool Rtl), ShapedRun> _shapes = new();
         private readonly ConcurrentDictionary<int, SKTypeface?> _fallbacks = new();
         private readonly HashSet<SKTypeface> _fallbackFaces = new(ReferenceEqualityComparer.Instance);
         private readonly Dictionary<SKTypeface, IDisposable> _shapers = new();
@@ -134,11 +134,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         {
             var runs = new List<PosterTagTextRun>();
             float pen = 0f;
-            foreach (var (runText, face, small) in Segment(text, smallCaps))
+            // Bidi level runs in visual order (PosterTagBidi); a right-to-left run lays its font segments out last first.
+            var segments = new List<(string Text, SKTypeface Face, bool Small, bool Rtl)>();
+            foreach (var (start, length, rtl) in PosterTagBidi.VisualRuns(text))
+            {
+                var part = Segment(text.Substring(start, length), smallCaps);
+                if (rtl) part.Reverse();
+                foreach (var (segmentText, segmentFace, segmentSmall) in part) segments.Add((segmentText, segmentFace, segmentSmall, rtl));
+            }
+
+            foreach (var (runText, face, small, rtl) in segments)
             {
                 // Blink's synthetic small caps font: lroundf(computed size * 0.7) (SimpleFontData::CreateScaledFontData).
                 float size = small ? PosterTagCss.RoundHalfUp(fontSize * PosterTagCss.SmallCapsScale) : fontSize;
-                var shaped = Shape(face, runText);
+                var shaped = Shape(face, runText, rtl);
                 var positions = new float[shaped.Glyphs.Length];
                 float[]? offsetsY = shaped.OffsetsY is null ? null : new float[shaped.Glyphs.Length];
                 for (int i = 0; i < shaped.Glyphs.Length; i++)
@@ -163,7 +172,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         }
 
         /// <summary>Splits text into runs of one typeface and one small-caps state, uppercasing small-caps runs.</summary>
-        private IEnumerable<(string Text, SKTypeface Face, bool Small)> Segment(string text, bool smallCaps)
+        private List<(string Text, SKTypeface Face, bool Small)> Segment(string text, bool smallCaps)
         {
             var sb = new StringBuilder();
             SKTypeface? runFace = null;
@@ -275,9 +284,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 && a.FontSlant == b.FontSlant;
 
         /// <summary>Glyphs, nominal advances, kerning and vertical mark offsets of one run, per 1px of font size.</summary>
-        private ShapedRun Shape(SKTypeface face, string text)
+        private ShapedRun Shape(SKTypeface face, string text, bool rtl)
         {
-            if (_shapes.TryGetValue((face, text), out var cached))
+            if (_shapes.TryGetValue((face, text, rtl), out var cached))
             {
                 return cached;
             }
@@ -288,7 +297,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             ushort[] glyphs;
             float[]? shapedAdvances = null;
             float[]? offsetsY = null;
-            if (!HarfBuzzUnavailable && TryShapeWithHarfBuzz(face, text, font, out var hbGlyphs, out var hbAdvances, out var hbOffsetsY))
+            if (!HarfBuzzUnavailable && TryShapeWithHarfBuzz(face, text, rtl, font, out var hbGlyphs, out var hbAdvances, out var hbOffsetsY))
             {
                 glyphs = hbGlyphs;
                 shapedAdvances = hbAdvances;
@@ -304,6 +313,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             else
             {
                 glyphs = font.GetGlyphs(text);
+                // Unshaped, a right-to-left run still reads in visual order.
+                if (rtl) Array.Reverse(glyphs);
             }
 
             var nominal = font.GetGlyphWidths(glyphs);
@@ -326,10 +337,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 _shapes.Clear();
             }
 
-            return _shapes.GetOrAdd((face, text), run);
+            return _shapes.GetOrAdd((face, text, rtl), run);
         }
 
-        private bool TryShapeWithHarfBuzz(SKTypeface face, string text, SKFont font, out ushort[] glyphs, out float[] advances, out float[]? offsetsY)
+        private bool TryShapeWithHarfBuzz(SKTypeface face, string text, bool rtl, SKFont font, out ushort[] glyphs, out float[] advances, out float[]? offsetsY)
         {
             glyphs = Array.Empty<ushort>();
             advances = Array.Empty<float>();
@@ -345,7 +356,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                         _shapers[face] = shaper;
                     }
 
-                    return HarfBuzzBridge.Shape(shaper, text, font, out glyphs, out advances, out offsetsY);
+                    return HarfBuzzBridge.Shape(shaper, text, rtl, font, out glyphs, out advances, out offsetsY);
                 }
             }
             catch (ObjectDisposedException)
@@ -380,14 +391,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             /// when all are zero.
             /// </remarks>
             [MethodImpl(MethodImplOptions.NoInlining)]
-            public static bool Shape(IDisposable shaper, string text, SKFont font, out ushort[] glyphs, out float[] advances, out float[]? offsetsY)
+            public static bool Shape(IDisposable shaper, string text, bool rtl, SKFont font, out ushort[] glyphs, out float[] advances, out float[]? offsetsY)
             {
                 using var buffer = new HarfBuzzSharp.Buffer();
                 buffer.AddUtf16(text);
                 buffer.GuessSegmentProperties();
-                // HarfBuzz takes the direction from the script, so Arabic-Indic digits ("٧٫٥") would come out right to
-                // left. Unicode bidi keeps numbers left to right; only text with right-to-left letters is shaped RTL.
-                if (buffer.Direction == HarfBuzzSharp.Direction.RightToLeft && !HasRightToLeftLetters(text)) buffer.Direction = HarfBuzzSharp.Direction.LeftToRight;
+                // The direction comes from the bidi run (PosterTagBidi), not the script: Arabic-Indic digits are a
+                // left-to-right run even though HarfBuzz would guess right to left from their script.
+                buffer.Direction = rtl ? HarfBuzzSharp.Direction.RightToLeft : HarfBuzzSharp.Direction.LeftToRight;
                 var result = ((SKShaper)shaper).Shape(buffer, font);
                 int n = result.Codepoints.Length;
                 glyphs = new ushort[n];
@@ -406,17 +417,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
 
                 return n > 0 || text.Length == 0;
-            }
-
-            /// <summary>Whether the text has a letter of a right-to-left script (Hebrew, Arabic, Syriac, Thaana, N'Ko and their extensions).</summary>
-            private static bool HasRightToLeftLetters(string text)
-            {
-                foreach (var c in text)
-                {
-                    if (char.IsLetter(c) && (c is >= '\u0590' and <= '\u08FF' || c is >= '\uFB1D' and <= '\uFDFF' || c is >= '\uFE70' and <= '\uFEFF')) return true;
-                }
-
-                return false;
             }
         }
     }
