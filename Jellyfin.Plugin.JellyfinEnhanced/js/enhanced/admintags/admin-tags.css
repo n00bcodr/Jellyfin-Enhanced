@@ -305,7 +305,9 @@
 .je-ta-rule-n { min-width: 1.8em; font-weight: 700; color: var(--je-ta-muted); }
 .je-ta-rule-text { flex: 1 1 260px; min-width: 0; font-size: 13.5px; }
 .je-ta-rule-text strong { font-weight: 600; }
-.je-ta-rule-tools { display: inline-flex; gap: 4px; align-items: center; }
+.je-ta-rule-text .je-ta-rule-title { display: block; font-size: 14px; }
+.je-ta-rule-meta { display: block; margin-top: 4px; font-size: 13px; color: var(--je-ta-muted); }
+.je-ta-rule-tools { display: inline-flex; gap: 8px; align-items: center; }
 .je-ta-rule-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; align-items: end; margin-top: 10px; }
 .je-ta-rule-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--je-ta-muted); }
 .je-ta-rule-form select, .je-ta-rule-form input { width: 100%; }
@@ -352,6 +354,19 @@
 .je-tag-admin .je-ts-target-toggle { margin-left: auto; min-height: 36px; padding: 0 14px; border: 1px solid var(--je-border-strong); border-radius: 6px; background: var(--je-ta-surface-2); color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
 .je-tag-admin .je-ts-target-toggle[aria-expanded="true"] { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); }
 .je-tag-admin .je-ts-target-box { display: flex; flex-direction: column; gap: 8px; }
+/* The tag being edited, in its current colours (on the tag list's dark well). */
+.je-tag-admin .je-ts-sample { display: flex; align-items: center; min-height: 44px; padding: 8px 12px; border-radius: 8px; background: #262626; }
+.je-tag-admin .je-ts-sample:empty { display: none; }
+.je-tag-admin .je-ts-inspect { min-height: 32px; padding: 0 12px; border: 1px solid var(--je-border-strong); border-radius: 6px; background: var(--je-ta-surface-2); color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.je-tag-admin .je-ts-preset-head { margin-top: 4px; }
+.je-tag-admin .je-ts-preview-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--je-border); border-radius: 8px; background: var(--je-ta-surface); color: inherit; cursor: pointer; font: inherit; text-align: left; }
+.je-tag-admin .je-ts-preview-toggle .je-ts-section-label { margin: 0; }
+.je-tag-admin .je-ts-preview-toggle-name { flex: 1; font-size: 14px; font-weight: 600; }
+.je-tag-admin .je-ts-preview-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+.je-tag-admin .je-ts-preview-toggle[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
+.je-tag-admin .je-ts-preview[hidden] { display: none; }
+.je-ta-light .je-pt-file:focus-within { outline: 2px solid #111; outline-offset: 2px; }
+.je-ta-light .je-ts-target:focus-visible, .je-ta-light .je-ts-sample :focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .je-tag-admin .je-ts-pills, .je-tag-admin .je-ts-opacity { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .je-tag-admin .je-ts-pill { min-height: 32px; padding: 4px 12px; border: 1px solid var(--je-border-strong); border-radius: 16px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
 .je-tag-admin .je-ts-pill.active { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); font-weight: 600; }
@@ -463,7 +478,8 @@
 @container je-ta (max-width: 640px) {
     /* Every tab in view: equal columns, icon over a short label. */
     .je-ta-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; overflow: visible; }
-    .je-ta-tab { flex-direction: column; justify-content: center; gap: 2px; min-width: 0; min-height: 54px; padding: 6px 0 8px; font-size: 11px; letter-spacing: -0.01em; }
+    .je-ta-tab { flex-direction: column; justify-content: center; gap: 2px; min-width: 0; min-height: 54px; padding: 6px 0 8px; font-size: 12px; letter-spacing: -0.02em; }
+    .je-tag-admin select, .je-ta-preview .je-mtp-view button, .je-ta-pill, .je-ts-inspect { min-height: 44px; }
     .je-ta-tab .material-icons { font-size: 20px; }
     .je-ta-tab:has(.je-ta-tab-short) .je-ta-tab-long { display: none; }
     .je-ta-tab-short { display: inline; }

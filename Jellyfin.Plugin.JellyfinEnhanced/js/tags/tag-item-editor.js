@@ -186,7 +186,7 @@
             .je-tie-gopen { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; }
             .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
             .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
-            .je-tie-foot button, .je-tie-gopen { min-height: 44px; }
+            .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }
         }
     `;
 
@@ -360,9 +360,11 @@
      * @param {HTMLElement} target - The sample's render target.
      * @param {string} id
      * @param {Object|null} entry - The server tag-cache entry, or null.
+     * @param {Object|null} [item] - The item's /tag-data answer, drawn when there is no entry or card
+     *   (the admin page shows no cards of the item).
      * @returns {boolean} Whether any group was drawn.
      */
-    function drawTags(target, id, entry) {
+    function drawTags(target, id, entry, item = null) {
         const L = layoutApi();
         const pipeline = JE.tagPipeline;
         L.ensureHost(target);
@@ -384,6 +386,7 @@
             if (!renderer || !renderer.isEnabled?.()) continue;
             try {
                 if (entry && renderer.renderFromServerCache) renderer.renderFromServerCache(target, entry, id);
+                else if (item && renderer.render) renderer.render(target, item, { renderTarget: target, stripRevision: pipeline.tagStripRevision?.() ?? null });
                 else if (renderer.renderFromCache) renderer.renderFromCache(target, id);
             } catch (err) {
                 console.warn(`${logPrefix} the item editor's sample could not draw ${name}:`, err);
@@ -481,7 +484,9 @@
         // Where the item's look comes from now, and the look it has.
         const serverEntry = JE.tagPipeline?.peekServerEntry?.(id) || null;
         let facts = serverEntry;
-        if (!facts && !serverMode) {
+        // The server-wide editor opens from the admin page, where no card of the item
+        // was drawn: its /tag-data answer is what the preview draws.
+        if (!facts) {
             try { facts = await JE.tagPipeline?.itemLookFacts?.(id); } catch { facts = null; }
             if (!live()) return abandon();
             // An editor another open mounted meanwhile is replaced.
@@ -580,7 +585,7 @@
                         ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
                     <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
                         ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
-                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><ul class="je-tie-groups" data-tie-groups></ul></section>
+                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('tag_item_editor_groups_title')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><ul class="je-tie-groups" data-tie-groups></ul></section>
                     <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
                         <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
@@ -617,7 +622,7 @@
         // The poster (the episode's still) under the tags.
         const image = item.ImageTags?.Primary ? ApiClient.getScaledImageUrl(id, { type: 'Primary', maxHeight: 480, tag: item.ImageTags.Primary }) : '';
         if (image) target.style.backgroundImage = `url("${image}")`;
-        const drawn = drawTags(target, id, serverEntry);
+        const drawn = drawTags(target, id, serverEntry, serverEntry ? null : facts);
         noteEl.hidden = drawn;
         noteEl.textContent = drawn ? '' : JE.t('tag_item_editor_no_tags');
         // Nothing to show at rest or on hover: the switch would only look useful.

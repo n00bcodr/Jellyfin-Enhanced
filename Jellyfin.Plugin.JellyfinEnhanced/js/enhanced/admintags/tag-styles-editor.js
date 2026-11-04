@@ -13,12 +13,14 @@
     /** The editor's markup (the old configuration page's, without the controls the Colours section owns). */
     const EDITOR_HTML = `
         <div id="tagStyleEditor" class="je-ts-editor">
-            <div class="je-ts-section-label" id="tagStylePresetLabel"></div>
-            <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel"><div class="je-ta-hint"></div></div>
+            <div class="je-ts-editing-head je-ts-preset-head"><div class="je-ts-section-label" id="tagStylePresetLabel"></div><span class="je-ts-editing-now" id="tagStylePresetNow"></span>
+                <button type="button" class="je-ts-target-toggle" id="tagStylePresetToggle" aria-expanded="false" aria-controls="tagStylePresets"></button></div>
+            <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel" hidden><div class="je-ta-hint"></div></div>
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
                 <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span>
                     <button type="button" class="je-ts-target-toggle" id="tagStyleTargetToggle" aria-expanded="false" aria-controls="tagStyleTargetBox"></button></div>
+                <div class="je-ts-sample" id="tagStyleSample" aria-hidden="true"></div>
                 <div class="je-ts-target-box" id="tagStyleTargetBox" hidden>
                 <p class="je-ts-target-hint" id="tagStyleTargetHint"></p>
                 <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
@@ -28,8 +30,8 @@
                 <div id="tagStyleRows" class="je-ts-rows"></div>
                 <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
             </div>
-            <div class="je-ts-section-label" id="tagStylePreviewLabel"></div>
-            <div id="tagStylePreview" class="je-ts-preview" aria-hidden="true"></div>
+            <button type="button" class="je-ts-preview-toggle" id="tagStylePreviewToggle" aria-expanded="false" aria-controls="tagStylePreview"><span class="je-ts-section-label" id="tagStylePreviewLabel"></span><span class="je-ts-preview-toggle-name"></span><span class="material-icons" aria-hidden="true">expand_more</span></button>
+            <div id="tagStylePreview" class="je-ts-preview" aria-hidden="true" hidden></div>
         </div>`;
 
     // Tag Styles editor: preset → group → label. State mirrors the stored document
@@ -84,6 +86,9 @@
         let openField = null;
         /** Whether the tag list (pick one tag of the group) is open. */
         let targetsOpen = false;
+        /** Whether the preset tiles, and the poster samples, are open. */
+        let presetsOpen = false;
+        let previewOpen = false;
         let canvas = null;
         // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
         let legacy = null;
@@ -442,6 +447,26 @@
             const bar = root.querySelector('#tagStylePresets');
             rebuildKeepingFocus(bar, () => buildPresets(bar));
             rove(bar, '.je-ts-preset', 'aria-checked');
+            // Closed, the preset reads as one line with Change; the tiles open on request.
+            bar.hidden = !presetsOpen;
+            const now = root.querySelector('#tagStylePresetNow');
+            if (now) now.textContent = PRESET_TITLES[state.preset] || state.preset || '';
+            const toggle = root.querySelector('#tagStylePresetToggle');
+            if (toggle) {
+                toggle.textContent = presetsOpen ? tr('admin_tags_colours_presets_close') : tr('admin_tags_colours_presets_open');
+                toggle.setAttribute('aria-expanded', String(presetsOpen));
+                toggle.onclick = () => { presetsOpen = !presetsOpen; renderPresets(); if (presetsOpen) bar.querySelector('.je-ts-preset[tabindex="0"]')?.focus(); };
+            }
+            const previewToggle = root.querySelector('#tagStylePreviewToggle');
+            if (previewToggle && !previewToggle.onclick) {
+                const name = previewToggle.querySelector('.je-ts-preview-toggle-name');
+                if (name) name.textContent = tr('admin_tags_colours_poster_samples');
+                previewToggle.onclick = () => {
+                    previewOpen = !previewOpen;
+                    previewToggle.setAttribute('aria-expanded', String(previewOpen));
+                    root.querySelector('#tagStylePreview').hidden = !previewOpen;
+                };
+            }
         }
 
         /**
@@ -777,7 +802,7 @@
                     const c = effective(current, label.key);
                     ratio = contrastRatio(c.text, c.background);
                 }
-                if (ratio !== null && (!worst || ratio < worst.ratio)) worst = { ratio, name: label.name, poster };
+                if (ratio !== null && (!worst || ratio < worst.ratio)) worst = { ratio, name: label.name, key: label.key, poster };
             });
             if (!worst) return;
             const grade = contrastLevel(worst.ratio);
@@ -792,6 +817,36 @@
             box.appendChild(el('span', 'je-ts-contrast-hint', !sampled ? hint
                 : worst.poster ? 'Worst case over any artwork: ' + artwork
                 : hint + '. Its colours are all set here; tags without their own take them from the poster they sit on'));
+            // Whole group: open the tag that reads worst (choosing it changes nothing).
+            if (target === ALL && worst.key && grade.level !== 'aa') {
+                const inspect = el('button', 'je-ts-inspect', 'Inspect ' + worst.name);
+                inspect.type = 'button';
+                inspect.addEventListener('click', () => { target = worst.key; targetsOpen = true; renderGroup(); root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]')?.focus(); });
+                box.appendChild(inspect);
+            }
+        }
+
+        /**
+         * The tag being edited, drawn in its current colours next to its controls (Whole
+         * group: the tag that reads worst, else the first).
+         * @returns {void}
+         */
+        function renderSample() {
+            const box = root.querySelector('#tagStyleSample');
+            if (!box) return;
+            box.textContent = '';
+            const labels = labelsOf(current);
+            let label = target === ALL ? null : labels.find((l) => l.key === target);
+            if (!label) {
+                let low = null;
+                labels.forEach((l) => {
+                    const c = effective(current, l.key);
+                    const ratio = contrastRatio(c.text, c.background);
+                    if (ratio !== null && (!low || ratio < low.ratio)) low = { ratio, l };
+                });
+                label = (low && low.l) || labels[0];
+            }
+            if (label) box.appendChild(chip(current, label, effective(current, label.key)));
         }
 
         /** @returns {void} */
@@ -801,6 +856,7 @@
             root.querySelector('#tagStyleGroupNote').textContent = [state.preset === 'poster' && (current !== 'language' || target !== 'flag') ? POSTER_NOTE : '', note].filter(Boolean).join(' ');
             renderRows();
             renderContrast();
+            renderSample();
         }
 
         /**

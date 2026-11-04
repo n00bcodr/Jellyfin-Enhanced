@@ -202,16 +202,15 @@
      */
     function qualityIncludeHtml() {
         const sorted = sortedQualityCats();
-        const up = escapeHtml(JE.t('panel_settings_ui_quality_tags_move_up'));
-        const down = escapeHtml(JE.t('panel_settings_ui_quality_tags_move_down'));
+        // Each pair is named by its category ("Move HDR up"), as on the admin page.
         return `<div id="qualityTagsSubToggles" class="je-tge-cats">${sorted.map((c, idx) => `
             <div class="je-quality-cat-row je-tge-cat" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}">
                 <label class="je-tge-toggle-pill">
                     <input type="checkbox" id="${c.id}" ${effectiveBool(c.settingKey, c.pluginKey, c.fallback ?? true) ? 'checked' : ''}>
                     <span>${escapeHtml(JE.t(c.labelKey))}</span>
                 </label>
-                <button type="button" class="je-cat-btn je-cat-up" ${idx === 0 ? 'disabled' : ''} aria-label="${up}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
-                <button type="button" class="je-cat-btn je-cat-down" ${idx === sorted.length - 1 ? 'disabled' : ''} aria-label="${down}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
+                <button type="button" class="je-cat-btn je-cat-up" ${idx === 0 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_quality_tags_move_up_named', { name: JE.t(c.labelKey) }))}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
+                <button type="button" class="je-cat-btn je-cat-down" ${idx === sorted.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_quality_tags_move_down_named', { name: JE.t(c.labelKey) }))}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
             </div>`).join('')}
         </div>`;
     }
@@ -689,7 +688,7 @@
         @container je-mth (max-width: 560px) {
             #jellyfin-enhanced-panel .je-tge-row[data-group="status"] .je-tge-row-head { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 4px; }
             #jellyfin-enhanced-panel .je-tge-badges { grid-column: 3; grid-row: 2; justify-self: start; min-height: 40px; }
-            #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step, #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 40px; height: 40px; }
+            #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step, #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 44px; height: 44px; }
             #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill, #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill { min-height: 44px; }
         }
     `;

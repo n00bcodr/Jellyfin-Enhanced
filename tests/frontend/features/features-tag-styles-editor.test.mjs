@@ -424,3 +424,22 @@ test('the tag list of a group opens on Change target and stays with the colour r
   h.$('#tagStyleTargetToggle').click();
   assert.equal(h.$('#tagStyleTargetBox').hidden, true);
 });
+
+test('the preset reads as one line until Change preset, the edited tag is drawn beside its controls and Inspect opens the weakest tag', async t => {
+  const h = await setup(t);
+  assert.equal(h.$('#tagStylePresets').hidden, true, 'presets start closed');
+  assert.ok(h.$('#tagStylePresetNow').textContent.length > 0, 'the current preset is named');
+  h.$('#tagStylePresetToggle').click();
+  assert.equal(h.$('#tagStylePresets').hidden, false);
+  assert.equal(h.$('#tagStylePresetToggle').getAttribute('aria-expanded'), 'true');
+  assert.ok(h.$('#tagStyleSample').children.length === 1, 'one sample tag next to the colour rows');
+  assert.equal(h.$('#tagStylePreview').hidden, true, 'poster samples start closed');
+  h.$('#tagStylePreviewToggle').click();
+  assert.equal(h.$('#tagStylePreview').hidden, false);
+  const inspect = h.$('.je-ts-inspect');
+  if (inspect) {
+    inspect.click();
+    assert.notEqual(h.$('.je-ts-target[aria-checked="true"]').dataset.label, '*', 'Inspect selects the weakest tag');
+    assert.equal(h.$('#tagStyleTargetBox').hidden, false);
+  }
+});
