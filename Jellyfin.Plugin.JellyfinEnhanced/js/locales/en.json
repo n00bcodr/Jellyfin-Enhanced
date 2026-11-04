@@ -1616,6 +1616,8 @@
     "common_preview": "Preview",
     "common_on": "On",
     "admin_tags_tab_overview_desc": "What new users get today, and the state of the tag cache.",
+    "media_tags_docs_link": "Learn more",
+    "media_tags_docs_link_label": "Learn more about {name} in the documentation (opens in a new tab)",
     "admin_tags_tab_layout_desc": "The layout, label density, group order, positions and limits new users start with.",
     "admin_tags_tab_groups_desc": "Turn each tag group on or off for new users, and open a group for its server settings.",
     "admin_tags_tab_rules_desc": "Give some cards a different look by library, type, genre or age rating.",

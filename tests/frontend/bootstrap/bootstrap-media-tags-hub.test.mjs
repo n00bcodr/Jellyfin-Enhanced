@@ -207,7 +207,8 @@ test('a user sees the status windows read-only, without the configuration page l
   await h.open();
   assert.match(h.$('#jeMthPanel-badges').textContent, /panel_media_tags_badge_window_new:21/);
   assert.match(h.$('#jeMthPanel-badges').textContent, /panel_media_tags_badge_window_added:7/, 'the built-in window when the admin set none');
-  assert.equal(h.$('#jeMthPanel-badges a'), null);
+  // Only the user-guide link, never the configuration page.
+  assert.deepEqual([...h.$('#jeMthPanel-badges').querySelectorAll('a')].map(a => a.getAttribute('href')), ['https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/tags/#badges-and-priority']);
 });
 
 test('every hub control keeps writing the setting it always did', async t => {

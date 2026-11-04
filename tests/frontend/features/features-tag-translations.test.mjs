@@ -23,7 +23,8 @@ test('every rendered admin tab name and description resolves independently', t =
     assert.equal(typeof english[tab.descKey], 'string', `${tab.id} description`);
     const panel = host.querySelector(`#jeTaPanel-${tab.id}`);
     assert.equal(panel.querySelector('h2').textContent, english[tab.nameKey]);
-    assert.equal(panel.querySelector(':scope > .je-ta-hint').textContent, english[tab.descKey]);
+    assert.equal(panel.querySelector(':scope > .je-ta-hint').textContent, `${english[tab.descKey]} ${english.media_tags_docs_link}`);
+    assert.match(panel.querySelector(':scope > .je-ta-hint .je-ta-docs').getAttribute('href'), /^https:\/\/n00bcodr\.github\.io\/Jellyfin-Enhanced\/enhanced\/tags\/#[a-z-]+$/);
   }
   assert.deepEqual([...missing], [], 'no raw translation keys on any tab');
 });

@@ -85,6 +85,10 @@
         { id: 'server', icon: 'dns', nameKey: 'common_server', descKey: 'admin_tags_tab_server_desc' },
     ];
 
+    /** The user guide section behind each tab (docs/enhanced/tags.md headings). */
+    const DOCS_URL = 'https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/tags/';
+    const DOCS_ANCHORS = { overview: 'set-up-your-tags', layout: 'layouts', groups: 'tag-groups-order-position-limits', rules: 'rules-and-locked-items', colours: 'tag-styles-and-css', badges: 'badges-and-priority', server: 'server-side-tag-cache' };
+
     /**
      * The tag settings a new user's document copies from the configuration
      * (Controllers/JellyfinEnhancedController.cs LoadUserSettingsDocument and
@@ -737,7 +741,7 @@
             const own = sections.filter((s) => s.tab === tab.id && !s.group);
             const rows = tab.id === 'groups' ? `<div class="je-ta-grows">${groupSections.map((s) => groupRowHtml(s)).join('')}</div>` : '';
             return `<div class="je-ta-panel" role="tabpanel" id="jeTaPanel-${tab.id}" data-tab="${tab.id}" aria-labelledby="jeTaTab-${tab.id}" ${i === 0 ? '' : 'hidden'}>`
-                + `<h2 tabindex="-1">${tx(tab.nameKey)}</h2><p class="je-ta-hint">${tx(tab.descKey)}</p>`
+                + `<h2 tabindex="-1">${tx(tab.nameKey)}</h2><p class="je-ta-hint">${tx(tab.descKey)} <a class="je-ta-docs" href="${DOCS_URL}#${DOCS_ANCHORS[tab.id]}" target="_blank" rel="noopener" aria-label="${tx('media_tags_docs_link_label', { name: JE.t(tab.nameKey) })}">${tx('media_tags_docs_link')}</a></p>`
                 + own.map((s) => sectionHtml(s)).join('') + rows + '</div>';
         }).join('');
         root.innerHTML = `

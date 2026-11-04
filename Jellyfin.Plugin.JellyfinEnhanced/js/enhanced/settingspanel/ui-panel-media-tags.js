@@ -101,6 +101,10 @@
         return tabs;
     }
 
+    /** The user guide section behind each tab (docs/enhanced/tags.md headings). */
+    const DOCS_URL = 'https://n00bcodr.github.io/Jellyfin-Enhanced/enhanced/tags/';
+    const DOCS_ANCHORS = { layout: 'layouts', groups: 'tag-groups-order-position-limits', badges: 'badges-and-priority', rules: 'rules-and-locked-items', colours: 'tag-styles-and-css', server: 'server-side-tag-cache' };
+
     /**
      * Resolve a boolean setting: user override, then admin default, then the built-in default.
      * @param {string} userKey
@@ -428,8 +432,9 @@
                 + (tab.admin ? `<span class="je-mth-admin-chip" aria-hidden="true">${tx('common_admin')}</span>` : '')
                 + '</button>';
         }).join('');
+        const docsLink = (tab) => `<p class="je-mth-docs"><a href="${DOCS_URL}#${DOCS_ANCHORS[tab.id]}" target="_blank" rel="noopener" aria-label="${tx('media_tags_docs_link_label', { name: JE.t(tab.nameKey) })}"><span class="material-icons" aria-hidden="true">menu_book</span>${tx('media_tags_docs_link')}</a></p>`;
         const panels = tabs.map((tab, i) => `
-            <div class="je-mth-panel" role="tabpanel" id="jeMthPanel-${tab.id}" data-tab="${tab.id}" aria-labelledby="jeMthTab-${tab.id}" ${i === 0 ? '' : 'hidden'}>${content[tab.id]()}</div>`).join('');
+            <div class="je-mth-panel" role="tabpanel" id="jeMthPanel-${tab.id}" data-tab="${tab.id}" aria-labelledby="jeMthTab-${tab.id}" ${i === 0 ? '' : 'hidden'}>${content[tab.id]()}${docsLink(tab)}</div>`).join('');
         return `
             <section class="je-pane" data-pane="media-tags">
                 <div class="je-mth" id="jeMediaTagsHub" data-tab="${tabs[0].id}">
@@ -460,6 +465,9 @@
         #jellyfin-enhanced-panel .je-mth-top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 20px; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom: 12px; }
         #jellyfin-enhanced-panel .je-mth-top .je-pane-title { margin: 14px 0 10px; }
         #jellyfin-enhanced-panel .je-mth-tabs { display: flex; gap: 2px; min-width: 0; }
+        #jellyfin-enhanced-panel .je-mth-docs { margin: 16px 0 0; font-size: 13px; }
+        #jellyfin-enhanced-panel .je-mth-docs a { display: inline-flex; align-items: center; gap: 6px; color: rgba(255,255,255,0.72); }
+        #jellyfin-enhanced-panel .je-mth-docs .material-icons { font-size: 16px; }
         #jellyfin-enhanced-panel .je-mth-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 10px 10px 11px; min-height: 40px; background: transparent; border: 0; color: rgba(255,255,255,0.72); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; border-radius: 6px 6px 0 0; }
         #jellyfin-enhanced-panel .je-mth-tab:hover { color: #fff; background: rgba(255,255,255,0.05); }
         #jellyfin-enhanced-panel .je-mth-tab[aria-selected="true"] { color: var(--je-mth-accent); }

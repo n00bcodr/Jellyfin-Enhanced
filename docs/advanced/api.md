@@ -1125,7 +1125,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | **Server-Side Tag Cache** | `true` | `TagCacheServerMode`; gates cached delivery and rebuild. |
 | **Enable Tag Styles** | `false` | `TagStylesEnabled`; enables effective overrides. |
 | **Apply to** (Tag Styles) | `"both"` | `TagStyleTarget`; `both`, `web`, or `native`. |
-| **Preset** (Tag Styles) | `"default"` | `TagStylePreset`; `default`, `glass`, `outline`, `dark`, `light` or `mono`. |
+| **Preset** (Tag Styles) | `"default"` | `TagStylePreset`; `default`, `glass`, `outline`, `dark`, `light`, `mono` or `poster`. |
 | **Let users pick their own preset** | `false` | `TagStylesAllowUserPreset`; honours each user's `TagStylePreset` (below). |
 | **Enable Native Poster Tags (Experimental)** | `false` | `NativePosterTagsEnabled`; delivery toggle, rather than a preview prerequisite. |
 
