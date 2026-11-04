@@ -39,6 +39,9 @@ test('an oversized chip in a Minimal or Caption stack ellipsizes at the slot edg
           const style = label && getComputedStyle(label);
           return { card: sample.dataset.sample, text: chip.textContent, left: r.left - host.left, right: host.right - r.right, width: r.width, cardWidth: host.width,
             spills: chip.scrollWidth > chip.clientWidth + 1,
+            // A label wider than its box must be cut with an ellipsis; one that fits the capped chip
+            // exactly (CI's Firefox fonts are narrower) has nothing to cut.
+            overflows: !!label && label.scrollWidth > label.clientWidth,
             ellipsis: !!label && label.scrollWidth > label.clientWidth && style.textOverflow === 'ellipsis' && style.overflowX === 'hidden' };
         });
       }, { layout, slot, scale });
@@ -46,7 +49,7 @@ test('an oversized chip in a Minimal or Caption stack ellipsizes at the slot edg
         const where = `${layout}/${slot}/${scale} ${c.card} "${c.text}" (${Math.round(c.width)}px on a ${Math.round(c.cardWidth)}px card)`;
         if (c.left < 6 - 0.5 || c.right < 6 - 0.5) failures.push(`${where}: outside the 6px inset (${c.left.toFixed(1)} / ${c.right.toFixed(1)})`);
         if (c.spills) failures.push(`${where}: label spills out of the chip`);
-        if (c.width > c.cardWidth - 12 - 0.5 && !c.ellipsis) failures.push(`${where}: no ellipsis`);
+        if (c.overflows && !c.ellipsis) failures.push(`${where}: no ellipsis`);
         if (c.ellipsis) fitted++;
       }
     }
