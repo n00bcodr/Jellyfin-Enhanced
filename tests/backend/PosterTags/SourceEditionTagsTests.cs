@@ -236,3 +236,34 @@ public class SourceEditionTagsTests
             Assert.True(TagStyleCatalog.IsLabel("quality", label), label);
     }
 }
+
+/// <summary>Jellyfin's own disc and 3D facts stand in where the names say nothing.</summary>
+public class StructuredSourceFactsTests
+{
+    [Theory]
+    [InlineData(VideoType.BluRay, null, "BluRay")]
+    [InlineData(VideoType.Dvd, null, "DVD")]
+    [InlineData(VideoType.Iso, IsoType.BluRay, "BluRay")]
+    [InlineData(VideoType.Iso, IsoType.Dvd, "DVD")]
+    [InlineData(VideoType.VideoFile, null, null)]
+    public void ADiscStructureNamesItsSource(VideoType type, IsoType? iso, string? expected)
+    {
+        var source = new MediaSourceInfo { Id = "a", Path = "/movies/Movie (2020)/Movie (2020)", VideoType = type, IsoType = iso };
+        Assert.Equal(expected, MediaNamingTags.Detect(source.Path, new[] { source }, "Movie").Source);
+    }
+
+    [Fact]
+    public void ANamedSourceStillWinsOverTheDiscStructure()
+    {
+        var source = new MediaSourceInfo { Id = "a", Path = "/movies/Movie (2020) 1080p REMUX/Movie (2020) 1080p REMUX", VideoType = VideoType.BluRay };
+        Assert.Equal("REMUX", MediaNamingTags.Detect(source.Path, new[] { source }, "Movie").Source);
+    }
+
+    [Fact]
+    public void JellyfinsThreeDimensionalFormatMarksAVersion3D()
+    {
+        var streams = new List<TagMediaStream> { new() { Type = "Video", Height = 1080, Width = 1920, Codec = "h264" } };
+        Assert.Contains("3D", QualityTagRules.Detect(new TagStreamData { Streams = streams, Sources = [new() { Id = "a", Path = "Movie.mkv", Is3D = true }] }, null));
+        Assert.DoesNotContain("3D", QualityTagRules.Detect(new TagStreamData { Streams = streams, Sources = [new() { Id = "a", Path = "Movie.mkv" }] }, null));
+    }
+}

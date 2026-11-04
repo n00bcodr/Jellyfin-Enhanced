@@ -47,7 +47,7 @@ public class NativeStatusBandTests
     [Fact]
     public void Status_urls_retire_each_five_minutes_even_when_settings_snapshot_is_cached()
     {
-        Assert.Equal("24", PosterTagSettings.ResolverVersion);
+        Assert.Equal("25", PosterTagSettings.ResolverVersion);
         var on = Settings("{statusTagsEnabled:true}");
         var off = Settings("{qualityTagsEnabled:true}");
         Assert.NotEqual(on.DigestAt(Now), on.DigestAt(Now.AddMinutes(5)));

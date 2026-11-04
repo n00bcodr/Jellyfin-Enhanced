@@ -274,7 +274,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             {
                 if (source == null) return labels;
                 var path = JsText.ToLower(source.Path ?? string.Empty);
-                if (path.Contains("3d", StringComparison.Ordinal) && ContainsAny(path, "hsbs", "fsbs", "htab", "ftab", "mvc")) break;
+                if (source.Is3D == true || (path.Contains("3d", StringComparison.Ordinal) && ContainsAny(path, "hsbs", "fsbs", "htab", "ftab", "mvc"))) break;
             }
             foreach (var category in new[] { AudioInfo, VideoCodec, DynamicRange })
             {
@@ -374,9 +374,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 {
                     // source.Path on null throws, which drops every quality tag of the card.
                     if (source is null) return new List<string>(0);
-                    if (string.IsNullOrEmpty(source.Path)) continue;
-                    var path = JsText.ToLower(source.Path);
-                    if (path.Contains("3d", StringComparison.Ordinal) && ContainsAny(path, "hsbs", "fsbs", "htab", "ftab", "mvc"))
+                    // Jellyfin's own 3D format first, else 3D release words in the file name.
+                    var path = JsText.ToLower(source.Path ?? string.Empty);
+                    if (source.Is3D == true || (path.Contains("3d", StringComparison.Ordinal) && ContainsAny(path, "hsbs", "fsbs", "htab", "ftab", "mvc")))
                     {
                         Add(qualities, "3D");
                         break;

@@ -275,7 +275,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 14 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 15 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -1017,15 +1017,13 @@
         // --- 3D VIDEO LOGIC ---
         if (mediaSources) {
             for (const source of mediaSources) {
-                if (source.Path) {
-                    const path = source.Path.toLowerCase();
-                    const has3D = path.includes('3d');
-                    const has3DFormat = /hsbs|fsbs|htab|ftab|mvc/.test(path);
-
-                    if (has3D && has3DFormat) {
-                        qualities.add('3D');
-                        break; // Found 3D, no need to check other sources
-                    }
+                // Jellyfin's own 3D format first (Is3D in cached facts, Video3DFormat on items), else 3D release words.
+                const path = String(source.Path || '').toLowerCase();
+                const has3D = path.includes('3d');
+                const has3DFormat = /hsbs|fsbs|htab|ftab|mvc/.test(path);
+                if (source.Is3D === true || source.Video3DFormat || (has3D && has3DFormat)) {
+                    qualities.add('3D');
+                    break; // Found 3D, no need to check other sources
                 }
             }
         }
@@ -1472,7 +1470,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 14, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 15, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1510,7 +1508,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 14, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 15, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

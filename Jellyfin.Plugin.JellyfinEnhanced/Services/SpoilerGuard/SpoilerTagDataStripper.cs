@@ -546,6 +546,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         RunTimeTicks = source.RunTimeTicks,
                         Path = null,
                         Name = null,
+                        Is3D = source.Is3D,
                     }).ToList(),
                 };
                 stripped.StreamData = clonedSd;

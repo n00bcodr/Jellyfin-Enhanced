@@ -79,6 +79,9 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
             Index = index,
         }).OrderBy(s => s.Resolution).ThenBy(s => Rank(SourceOrder, s.Tags.Source)).ThenBy(s => s.Index).FirstOrDefault();
         var tags = selected?.Tags ?? FromPath(itemPath, itemName, originalTitle);
+        // A disc structure Jellyfin recognised (a BDMV or VIDEO_TS folder, a Blu-ray or DVD image) names its source
+        // when the names do not.
+        if (tags.Source == null && selected != null && DiscSource(sources[selected.Index]) is { } disc) tags = tags with { Source = disc };
         // A physical stub takes precedence over release labels in any other version.
         var stub = new[] { itemPath }.Concat(sources.Select(s => s.Path)).FirstOrDefault(IsStub);
         return stub == null ? tags : tags with
@@ -87,6 +90,10 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
                 .Concat(sources.Where(s => string.Equals(s.Path, stub, StringComparison.OrdinalIgnoreCase)).Select(s => s.Name)))),
         };
     }
+
+    private static string? DiscSource(MediaSourceInfo source)
+        => source.VideoType == VideoType.BluRay || source.IsoType == IsoType.BluRay ? "BluRay"
+            : source.VideoType == VideoType.Dvd || source.IsoType == IsoType.Dvd ? "DVD" : null;
 
     /// <summary>Portable basename for the legacy filename signals sent to the client.</summary>
     internal static string? FileName(string? path) => string.IsNullOrEmpty(path) ? null : path.Replace('\\', '/').Split('/')[^1];

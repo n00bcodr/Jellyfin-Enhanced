@@ -471,12 +471,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string? Path { get; set; }
         public string? Name { get; set; }
 
+        /// <summary>True when Jellyfin reports a 3D format for this version (its Video3DFormat), else null.</summary>
+        public bool? Is3D { get; set; }
+
         /// <summary>
         /// Value-compare for the no-op-rebuild check (see TagCacheEntry.ContentEquals).
         /// Compares EVERY property — an omitted field hides real changes from clients.
         /// </summary>
         public static bool ContentEquals(TagMediaSource a, TagMediaSource b) =>
             a.Id == b.Id && a.Source == b.Source && a.Edition == b.Edition
-            && a.RunTimeTicks == b.RunTimeTicks && a.Path == b.Path && a.Name == b.Name;
+            && a.RunTimeTicks == b.RunTimeTicks && a.Path == b.Path && a.Name == b.Name && a.Is3D == b.Is3D;
     }
 }

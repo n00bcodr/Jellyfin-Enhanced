@@ -8,7 +8,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 
 const dir = new URL('../Jellyfin.Plugin.JellyfinEnhanced/js/locales/', import.meta.url);
 /** Key families the Media Tags feature (cards, panel, admin page, native posters) uses. */
-export const TAG_KEY = /^(tag_|tags_|admin_tags_|admin_status_tags_|status_tag|quality_|series_quality_|language_tags_|rating_tags_|awards_tags_|logo_tags|custom_tags|media_tags_|native_poster|panel_settings_ui_tag|tag_look)/;
+export const TAG_KEY = /^(tag_|tags_|admin_tags_|admin_status_tags_|status_tag|quality_|series_quality_|language_tags_|rating_tags_|awards_tags_|logo_tags|custom_tags|media_tags_|native_poster|panel_settings_ui_tag|tag_look|panel_media_tags_|panel_settings_ui_[a-z_]*tags|toast_tag_|feature_[a-z_]*tags|rating_sources_|language_priority_|audio_language_no_dialogue)/;
 const placeholders = text => [...String(text).matchAll(/\{[a-zA-Z]+\}/g)].map(m => m[0]).sort().join(' ');
 
 /**

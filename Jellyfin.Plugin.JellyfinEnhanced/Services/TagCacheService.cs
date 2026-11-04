@@ -336,7 +336,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 35;
+        internal const int CurrentCacheSchemaVersion = 36;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2997,7 +2997,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Edition = versionNaming.Edition,
                         RunTimeTicks = source.RunTimeTicks,
                         Path = string.IsNullOrEmpty(source.Path) ? null : MediaNamingTags.FileName(source.Path),
-                        Name = sourceName
+                        Name = sourceName,
+                        Is3D = source.Video3DFormat != null ? true : null,
                     });
 
                     foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path, _languageCache))

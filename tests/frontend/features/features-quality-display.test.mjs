@@ -371,16 +371,16 @@ for (const density of [undefined, 'full', 'compact']) test(`version transition i
   assert.deepEqual(h.render(entry), ['5.1']);
 });
 
-for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
+for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
   const payload = { namingVersion, legacyAudio: false, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['Dolby Digital 5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'full', { old: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
-  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 14);
-  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 14 ? 1 : 0);
+  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 15);
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 15 ? 1 : 0);
 });
 
 test('persisted current naming labels are still invalidated by a legacy-version transition', t => {
-  const payload = { namingVersion: 14, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
+  const payload = { namingVersion: 15, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'compact', { saved: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
   h.JE.currentSettings.tagLayoutSettingsVersion = 0;
@@ -423,4 +423,12 @@ test('the Versions chip counts an item\'s versions; series and seasons never sho
   assert.ok(!h.render({ ...movieEntry, Type: 'Series' }, 'series').some(label => /versions/.test(label)));
   h.JE.currentSettings.showVersionsTag = false;
   assert.ok(!h.render(movieEntry, 'off').some(label => /versions/.test(label)));
+});
+
+test("Jellyfin's own 3D format marks a version 3D without release words in its name", t => {
+  const h = setup(t);
+  const streams = [{ Type: 'Video', Height: 1080, Width: 1920, Codec: 'h264' }];
+  assert.ok(h.render({ Type: 'Movie', StreamData: { Streams: streams, Sources: [{ Id: 'a', Path: 'Movie.mkv', Is3D: true }] } }, 'm1').includes('3D'));
+  assert.ok(!h.render({ Type: 'Movie', StreamData: { Streams: streams, Sources: [{ Id: 'a', Path: 'Movie.mkv' }] } }, 'm2').includes('3D'));
+  assert.ok(h.render({ Type: 'Movie', StreamData: { Streams: streams, Sources: [{ Id: 'a', Path: 'Movie.3D.HSBS.mkv' }] } }, 'm3').includes('3D'));
 });
