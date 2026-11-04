@@ -33,7 +33,7 @@ public class PosterLayoutTests
             Streams =
             [
                 new() { Type = "Video", Height = 2160, Codec = "hevc", VideoRangeType = "DOVIWithHDR10", DisplayTitle = "4K HEVC Dolby Vision Profile 8.1 (HDR10)" },
-                new() { Type = "Audio", Codec = "truehd", Channels = 8, Profile = "Dolby TrueHD + Dolby Atmos" },
+                new() { Type = "Audio", Codec = "dts", Channels = 8, ChannelLayout = "7.1", DisplayTitle = "English - DTS - 7.1" }, // legacy and current vocabularies agree
             ],
         },
     };

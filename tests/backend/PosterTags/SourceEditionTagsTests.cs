@@ -32,14 +32,17 @@ public class SourceEditionTagsTests
         using var stream = typeof(SourceEditionTagsTests).Assembly.GetManifestResourceStream("SourceEditionNames.json")!;
         using var document = JsonDocument.Parse(stream);
         return document.RootElement.EnumerateArray().Select(row => new object?[]
-        { row.GetProperty("path").GetString(), row.GetProperty("source").GetString(), row.GetProperty("edition").GetString() }).ToArray();
+        {
+            row.GetProperty("path").GetString(), row.GetProperty("source").GetString(), row.GetProperty("edition").GetString(),
+            row.TryGetProperty("itemName", out var name) ? name.GetString() : null,
+        }).ToArray();
     }
 
     [Theory]
     [MemberData(nameof(Names))]
-    public void NamingTable(string path, string? source, string? edition)
+    public void NamingTable(string path, string? source, string? edition, string? itemName)
     {
-        Assert.Equal(new MediaNamingTags(source, edition), MediaNamingTags.FromPath(path));
+        Assert.Equal(new MediaNamingTags(source, edition), MediaNamingTags.FromPath(path, itemName));
     }
 
     public static IEnumerable<object[]> QualityTokens() => QualityTagRules.ResolutionTokens

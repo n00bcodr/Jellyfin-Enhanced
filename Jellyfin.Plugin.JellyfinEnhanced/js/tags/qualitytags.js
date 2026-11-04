@@ -21,7 +21,7 @@
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HLG', 'HDR', 'SDR'];
     const specialFormatOrder = ['IMAX', '3D'];
     const codecOrder = ['VVC', 'AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'VC-1', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA', 'ProRes'];
-    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'PCM', 'FLAC', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '6.1', '5.1'];
+    const audioOrder = ['TRUEHD ATMOS', 'ATMOS', 'DD+ ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'PCM', 'FLAC', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '6.1', '5.1'];
 
     // showXxxTag = enable, xxxTagOrder = 1..N stack position.
     const CATEGORIES = [
@@ -61,6 +61,8 @@
         'Dolby Vision': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
         'IMAX': { bg: 'rgba(0, 114, 206, 0.9)', text: '#ffffff' },
         'ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
+        'TRUEHD ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
+        'DD+ ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
         'DTS-X': { bg: 'rgba(255, 100, 0, 0.9)', text: '#ffffff' },
         'DTS-HD MA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
         'DTS-HD HRA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
@@ -264,7 +266,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 9 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 10 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -419,7 +421,7 @@
     function normalizeQualityLabel(label) {
         if (!label || typeof label !== 'string') return label;
 
-        const audioBases = ['Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS', 'PCM', 'FLAC'];
+        const audioBases = ['TRUEHD ATMOS', 'DD+ ATMOS', 'Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS', 'PCM', 'FLAC'];
         for (const base of audioBases) {
             if (label === base || label.startsWith(`${base} `)) {
                 return base;
@@ -546,13 +548,28 @@
     function detectCurrentAudioCodec(streams) {
         for (const stream of streams) {
             const title = audioCodecFromText(stream.DisplayTitle);
-            if (title) return audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title;
+            if (title) return atmosCarrier(audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title, stream);
         }
         for (const stream of streams) {
             const label = audioCodecFromText([stream.Codec, stream.Profile].filter(Boolean).join(' '));
-            if (label) return label;
+            if (label) return atmosCarrier(label, stream);
         }
         return null;
+    }
+
+    /**
+     * Atmos with the carrier that holds it (TRaSH's TrueHD Atmos and DD+ Atmos): lossless TrueHD,
+     * lossy E-AC-3, or plain ATMOS when the track does not say (QualityTagRules.AtmosCarrier).
+     * @param {string} label Detected codec label.
+     * @param {Object} stream The same track.
+     * @returns {string} The label, with its carrier when it is ATMOS.
+     */
+    function atmosCarrier(label, stream) {
+        if (label !== 'ATMOS') return label;
+        const text = [stream.Codec, stream.Profile, stream.DisplayTitle].filter(Boolean).join(' ').toLowerCase();
+        if (/(?:^|[^a-z0-9_])(?:true[ .-]?hd|mlp)(?![a-z_])/.test(text)) return 'TRUEHD ATMOS';
+        if (/(?:^|[^a-z0-9_])(?:e[-_. ]?ac-?3|ddp(?:a|lus)?|dd\+|dolby\s*digital\s*(?:plus|\+))(?![a-z_])/.test(text)) return 'DD+ ATMOS';
+        return label;
     }
 
     // ffmpeg channel layout names → the layout they are (the "(side)"/"(back)"/"(wide)" variants share it).
@@ -617,7 +634,7 @@
         doviwithhdr10: { range: 'Dolby Vision', base: 'HDR10', sdr: false },
         doviwithhdr10plus: { range: 'Dolby Vision', base: 'HDR10+', sdr: false },
         doviwithhlg: { range: 'Dolby Vision', base: 'HLG', sdr: false },
-        doviwithsdr: { range: 'Dolby Vision', base: null, sdr: false },
+        doviwithsdr: { range: 'Dolby Vision', base: 'SDR', sdr: false },
         doviwithel: { range: 'Dolby Vision', base: 'HDR10', sdr: false },
         doviwithelhdr10plus: { range: 'Dolby Vision', base: 'HDR10+', sdr: false },
     };
@@ -676,8 +693,10 @@
         if (!mediaStreams && !mediaSources && !itemData?.Source && !itemData?.Edition) return [];
 
         // Narrow raw streams, cached per-track sets and filename/technical facts together.
+        // The browser's pick, else the first version Jellyfin lists (an unprobed first version
+        // then has no stream facts: it never borrows another version's).
         const versionId = sourceId && (mediaStreams?.some(s => s?.SourceId === sourceId) || mediaSources?.some(s => s?.Id === sourceId))
-            ? sourceId : mediaStreams?.find(s => s?.SourceId)?.SourceId || mediaSources?.[0]?.Id;
+            ? sourceId : mediaSources?.find(s => s?.Id)?.Id || mediaStreams?.find(s => s?.SourceId)?.SourceId;
         if (versionId) {
             const version = mediaSources?.find(s => s?.Id === versionId);
             const tagged = mediaStreams?.some(s => s?.SourceId);
@@ -1359,7 +1378,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 9, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 10, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1395,7 +1414,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 9, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 10, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

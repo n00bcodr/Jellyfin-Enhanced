@@ -332,7 +332,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v26 records each track's own channel layout (1.0, 4.0, 5.0, 6.1, ...) in the per-track facts.
         // v27 keeps forced subtitle tracks out of the stored subtitle facts and commentary/description
         // audio out of the per-track sound facts of versions with an ordinary track.
-        internal const int CurrentCacheSchemaVersion = 27;
+        // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
+        // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
+        internal const int CurrentCacheSchemaVersion = 28;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2981,7 +2983,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var streams = new List<TagMediaStream>();
             var sources = new List<TagMediaSource>();
             var languages = new HashSet<string>();
-            var namingTags = MediaNamingTags.FromPath(item.Path);
+            var namingTags = MediaNamingTags.FromPath(item.Path, item.Name);
             var subtitles = new HashSet<string>();
 
             try

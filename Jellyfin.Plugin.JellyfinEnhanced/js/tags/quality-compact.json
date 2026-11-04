@@ -10,6 +10,8 @@
   "Dolby Atmos": ["Atmos", true],
   "DTS:X": ["DTS:X", true],
   "ATMOS": ["ATMOS", false],
+  "TRUEHD ATMOS": ["ATMOS", false],
+  "DD+ ATMOS": ["ATMOS", false],
   "DTS-X": ["DTS-X", false],
   "TRUEHD": ["TRUEHD", false],
   "DTS": ["DTS", false]

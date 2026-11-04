@@ -928,5 +928,41 @@
     "path": "media/1917.2019.2160p.UHD.BluRay.REMUX.mkv",
     "source": "REMUX",
     "edition": null
+  },
+  {
+    "path": "media/Uncut Gems 1080p WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Uncut Gems"
+  },
+  {
+    "path": "media/The Final Cut 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": null,
+    "itemName": "The Final Cut"
+  },
+  {
+    "path": "media/Cam 1080p.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Cam"
+  },
+  {
+    "path": "media/Movie.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended",
+    "itemName": "Movie"
+  },
+  {
+    "path": "Movies/Uncut Gems (2019)/Uncut Gems (2019) Remastered Bluray-2160p.mkv",
+    "source": "BluRay",
+    "edition": "Remastered",
+    "itemName": "Uncut Gems"
+  },
+  {
+    "path": "media/Remux 2160p HEVC.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Remux"
   }
 ]

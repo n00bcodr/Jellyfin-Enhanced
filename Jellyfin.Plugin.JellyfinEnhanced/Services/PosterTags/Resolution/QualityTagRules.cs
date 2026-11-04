@@ -85,8 +85,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HLG", "HDR", "SDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "VVC", "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "VC-1", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA", "ProRes" };
-        private static readonly string[] AudioOrder = { "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "PCM", "FLAC", "DTS-HD HRA", "DTS", "Dolby Digital+", "Dolby Digital", "7.1", "6.1", "5.1" };
-        private static readonly string[] AudioBases = { "Dolby Digital+", "Dolby Digital", "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "DTS-HD HRA", "DTS", "PCM", "FLAC" };
+        private static readonly string[] AudioOrder = { "TRUEHD ATMOS", "ATMOS", "DD+ ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "PCM", "FLAC", "DTS-HD HRA", "DTS", "Dolby Digital+", "Dolby Digital", "7.1", "6.1", "5.1" };
+        private static readonly string[] AudioBases = { "TRUEHD ATMOS", "DD+ ATMOS", "Dolby Digital+", "Dolby Digital", "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "DTS-HD HRA", "DTS", "PCM", "FLAC" };
 
         // Video codec detection order (first match wins), on the lowercased Codec then DisplayTitle.
         // The bare-WEB filename vocabulary (CodecTokens); detection uses CurrentCodecNeedles.
@@ -123,7 +123,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             ["doviwithhdr10"] = new("Dolby Vision", "HDR10", false),
             ["doviwithhdr10plus"] = new("Dolby Vision", "HDR10+", false),
             ["doviwithhlg"] = new("Dolby Vision", "HLG", false),
-            ["doviwithsdr"] = new("Dolby Vision", null, false),
+            ["doviwithsdr"] = new("Dolby Vision", "SDR", false),
             ["doviwithel"] = new("Dolby Vision", "HDR10", false),
             ["doviwithelhdr10plus"] = new("Dolby Vision", "HDR10+", false),
         };
@@ -218,8 +218,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         internal static TagStreamData? SelectSource(TagStreamData? data, string? sourceId = null)
         {
             if (data?.Streams == null) return data;
+            // The requested version, else the first one Jellyfin lists (an unprobed first version
+            // then has no stream facts: it never borrows another version's).
             var id = !string.IsNullOrEmpty(sourceId) && data.Streams.Any(s => s?.SourceId == sourceId)
-                ? sourceId : data.Streams.FirstOrDefault(s => !string.IsNullOrEmpty(s?.SourceId))?.SourceId;
+                ? sourceId : data.Sources?.FirstOrDefault(s => !string.IsNullOrEmpty(s?.Id))?.Id ?? data.Streams.FirstOrDefault(s => !string.IsNullOrEmpty(s?.SourceId))?.SourceId;
             if (id == null) return data;
             var source = data.Sources?.FirstOrDefault(s => s?.Id == id);
             return new TagStreamData
@@ -684,14 +686,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             foreach (var stream in streams)
             {
                 var title = AudioCodecFromText(stream.DisplayTitle);
-                if (title != null) return AudioCodecFromText(stream.DisplayTitle + " " + stream.Codec + " " + stream.Profile) ?? title;
+                if (title != null) return AtmosCarrier(AudioCodecFromText(stream.DisplayTitle + " " + stream.Codec + " " + stream.Profile) ?? title, stream);
             }
             foreach (var stream in streams)
             {
                 var label = AudioCodecFromText(stream.Codec + " " + stream.Profile);
-                if (label != null) return label;
+                if (label != null) return AtmosCarrier(label, stream);
             }
             return null;
+        }
+
+        private static readonly Regex TrueHdCarrierRegex = new(@"(?:^|[^a-z0-9_])(?:true[ .-]?hd|mlp)(?![a-z_])", Options);
+        private static readonly Regex DolbyDigitalPlusCarrierRegex = new(@"(?:^|[^a-z0-9_])(?:e[-_. ]?ac-?3|ddp(?:a|lus)?|dd\+|dolby" + JsSpace + @"*digital" + JsSpace + @"*(?:plus|\+))(?![a-z_])", Options);
+
+        /// <summary>Atmos with the carrier that holds it (TRaSH's TrueHD Atmos and DD+ Atmos), else plain ATMOS (atmosCarrier in qualitytags.js).</summary>
+        private static string AtmosCarrier(string label, TagMediaStream stream)
+        {
+            if (label != "ATMOS") return label;
+            var text = JsText.ToLower(string.Join(' ', new[] { stream.Codec, stream.Profile, stream.DisplayTitle }.Where(s => !string.IsNullOrEmpty(s))));
+            if (TrueHdCarrierRegex.IsMatch(text)) return "TRUEHD ATMOS";
+            return DolbyDigitalPlusCarrierRegex.IsMatch(text) ? "DD+ ATMOS" : label;
         }
 
         private static string? DetectAudioCodec(List<TagMediaStream> audioStreams, bool legacyAudio = false)

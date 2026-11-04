@@ -278,9 +278,9 @@ test('minimal draws quality dots with one label, rating in the corner, status on
   const host = h.render();
   const dots = host.querySelector('.je-tag-slot[data-je-slot="dots"] .je-tag-dots');
   assert.deepEqual(Array.from(dots.children, d => d.dataset.jeDot), ['resolution', 'range', 'codec', 'audio']);
-  assert.deepEqual(Array.from(dots.children, d => d.title), ['4K', 'Dolby Vision', 'HEVC', 'ATMOS 7.1']);
+  assert.deepEqual(Array.from(dots.children, d => d.title), ['4K', 'Dolby Vision', 'HEVC', 'TRUEHD ATMOS 7.1']);
   assert.equal(dots.getAttribute('role'), 'img');
-  assert.equal(dots.getAttribute('aria-label'), '4K, Dolby Vision, HEVC, ATMOS 7.1');
+  assert.equal(dots.getAttribute('aria-label'), '4K, Dolby Vision, HEVC, TRUEHD ATMOS 7.1');
   assert.ok(Array.from(dots.children).every(d => d.getAttribute('aria-hidden') === 'true'));
   assert.deepEqual(h.slot('corner'), ['rating']);
   assert.deepEqual(h.slot('top'), ['status']);
@@ -890,7 +890,7 @@ test('bands on a card under 160px switch to compact labels and keep the bottom b
   const host = h.render();
   const bottom = () => host.querySelector('.je-tag-slot[data-je-slot="bottom"]');
   const labels = () => Array.from(host.querySelectorAll('.quality-overlay-label'), l => l.textContent);
-  assert.deepEqual(labels(), ['4K', 'Dolby Vision', 'HEVC', 'ATMOS 7.1'], 'full labels until the card is measured');
+  assert.deepEqual(labels(), ['4K', 'Dolby Vision', 'HEVC', 'TRUEHD ATMOS 7.1'], 'full labels until the card is measured');
   withLayout(h, { card: 112 }, () => h.layout.flushFit()); // 6px side padding: 100px for chips
   assert.deepEqual(labels(), ['4K', 'DV', 'HEVC', 'ATMOS'], 'compact labels on a narrow card');
   assert.equal(host.querySelector('.rating-tag-critic'), null);
@@ -902,7 +902,7 @@ test('bands on a card under 160px switch to compact labels and keep the bottom b
   // A wider card (the window grew) gets its full labels back.
   h.layout.refreshPresentation(host);
   withLayout(h, { card: 400 }, () => h.layout.flushFit());
-  assert.deepEqual(labels(), ['4K', 'Dolby Vision', 'HEVC', 'ATMOS 7.1']);
+  assert.deepEqual(labels(), ['4K', 'Dolby Vision', 'HEVC', 'TRUEHD ATMOS 7.1']);
   assert.equal(bottom().querySelectorAll('[data-je-overflow]').length, 1, 'only the unneeded "+N" chip is hidden');
   assert.ok(bottom().lastElementChild.hasAttribute('data-je-overflow'));
 });

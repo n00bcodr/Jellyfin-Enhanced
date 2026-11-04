@@ -132,6 +132,7 @@
    "all": [
     "4K",
     "Dolby Vision",
+    "SDR",
     "HEVC"
    ],
    "legacy": [
@@ -514,10 +515,10 @@
     }
    ],
    "highest": [
-    "ATMOS 7.1"
+    "TRUEHD ATMOS 7.1"
    ],
    "all": [
-    "ATMOS 7.1",
+    "TRUEHD ATMOS 7.1",
     "Dolby Digital 5.1"
    ],
    "legacy": [
@@ -546,10 +547,10 @@
     }
    ],
    "highest": [
-    "ATMOS 7.1"
+    "TRUEHD ATMOS 7.1"
    ],
    "all": [
-    "ATMOS 7.1",
+    "TRUEHD ATMOS 7.1",
     "Dolby Digital 5.1"
    ],
    "legacy": [
@@ -991,6 +992,154 @@
     "PCM 3.0"
    ],
    "legacy": []
+  },
+  {
+   "name": "DD+ Atmos and TrueHD Atmos are different sound facts",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "Dolby Digital Plus + Dolby Atmos",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus + Dolby Atmos - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 7.1"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1",
+    "DD+ ATMOS 5.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "DD+ Atmos alone",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "Dolby Digital Plus + Dolby Atmos",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus + Dolby Atmos - 5.1"
+    }
+   ],
+   "highest": [
+    "DD+ ATMOS 5.1"
+   ],
+   "all": [
+    "DD+ ATMOS 5.1"
+   ],
+   "legacy": [
+    "ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "Atmos without a known carrier",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Atmos - 7.1"
+    }
+   ],
+   "highest": [
+    "ATMOS 7.1"
+   ],
+   "all": [
+    "ATMOS 7.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "A German commentary track never stands for the soundtrack",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "ger",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Deutsch - Dolby Digital - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "ger",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Audiokommentar",
+     "DisplayTitle": "Audiokommentar - Deutsch - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "French and Spanish audio description are not the soundtrack",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Fran\u00e7ais - Dolby Digital+ - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "dts",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Audiodescription",
+     "DisplayTitle": "Audiodescription - DTS - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "spa",
+     "Codec": "dts",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Audiodescripci\u00f3n",
+     "DisplayTitle": "Audiodescripci\u00f3n - DTS - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
+    "Dolby Digital+ 5.1"
+   ],
+   "legacy": [
+    "Dolby Digital+ 5.1"
+   ]
   }
  ]
 }

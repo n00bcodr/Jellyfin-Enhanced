@@ -9,8 +9,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 /// </summary>
 internal static class TrackRoles
 {
+    // Word stems, matched inside longer words too (German "Audiokommentar", "Kommentarspur"): English,
+    // French, Italian and Dutch "comment…", German/Nordic "kommentar", Spanish/Portuguese/Catalan
+    // "comentari/comentári", Polish/Czech "komentar/komentář", Finnish "kommentti", Russian
+    // "комментар"; audio description in those languages ("audiodescription", "audiodescripción",
+    // "Audiodeskription", "Hörfilm", "syntolkning", "synstolkning", "kuvailutulkkaus").
     private static readonly Regex SecondaryAudioWords = new(
-        @"(?<![a-z0-9])(?:commentar(?:y|ies)|audio[ -]?descri(?:ption|bed)|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired)(?![a-z0-9])",
+        @"comment|kommentar|comentari|comentári|komentar|komentář|kommentti|комментар|audio[ -]?descri|audio[ -]?deskri|description[ -]audio|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired|hörfilm|syntolk|synstolk|kuvailutulk",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     // "AD" only as an upper-case word, so "Ad" or "ad-free" never match.

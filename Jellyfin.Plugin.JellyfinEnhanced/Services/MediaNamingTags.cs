@@ -64,13 +64,13 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     {
         var selected = sources.Select((source, index) => new
         {
-            Tags = FromPath(string.IsNullOrWhiteSpace(source.Path) ? itemPath : source.Path),
+            Tags = FromPath(string.IsNullOrWhiteSpace(source.Path) ? itemPath : source.Path, itemName),
             Resolution = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video)
                 .Select(s => QualityTagRules.DetectResolution(new TagMediaStream { Height = s.Height, Width = s.Width, DisplayTitle = s.DisplayTitle }))
                 .Select(label => Rank(ResolutionOrder, label)).DefaultIfEmpty(int.MaxValue).Min() ?? int.MaxValue,
             Index = index,
         }).OrderBy(s => s.Resolution).ThenBy(s => Rank(SourceOrder, s.Tags.Source)).ThenBy(s => s.Index).FirstOrDefault();
-        var tags = selected?.Tags ?? FromPath(itemPath);
+        var tags = selected?.Tags ?? FromPath(itemPath, itemName);
         // A physical stub takes precedence over release labels in any other version.
         var stub = new[] { itemPath }.Concat(sources.Select(s => s.Path)).FirstOrDefault(IsStub);
         return stub == null ? tags : tags with
@@ -89,8 +89,12 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         return rank < 0 ? int.MaxValue : rank;
     }
 
-    /// <summary>Detect a file first, then only its immediate parent (both Windows and Unix paths).</summary>
-    internal static MediaNamingTags FromPath(string? path)
+    /// <summary>
+    /// Detect a file first, then only its immediate parent (both Windows and Unix paths). With the
+    /// item's own title, a name that starts with it is read from after the title, so its words
+    /// ("Uncut Gems", "The Final Cut", "Cam") never become labels.
+    /// </summary>
+    internal static MediaNamingTags FromPath(string? path, string? itemName = null)
     {
         if (string.IsNullOrWhiteSpace(path)) return new();
         var parts = path.Replace('\\', '/').TrimEnd('/').Split('/');
@@ -99,8 +103,26 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         if (extension is ".mkv" or ".mp4" or ".avi" or ".ts" or ".m2ts" or ".webm" or ".wmv" or ".mpg" or ".mpeg" or ".iso")
             file = file[..^extension.Length];
         var parent = parts.Length > 1 ? parts[^2] : string.Empty;
-        return new(IsStub(file) ? StubSource(file + " " + parent) : SourceIn(file) ?? SourceIn(parent),
-            EditionIn(file, requireMarker: true) ?? EditionIn(parent, requireMarker: true) ?? EditionIn(file) ?? EditionIn(parent));
+        var fileRest = WithoutTitle(file, itemName);
+        var parentRest = WithoutTitle(parent, itemName);
+        return new(IsStub(file) ? StubSource(file + " " + parent) : SourceIn(fileRest) ?? SourceIn(parentRest),
+            EditionIn(file, requireMarker: true) ?? EditionIn(parent, requireMarker: true) ?? EditionIn(fileRest) ?? EditionIn(parentRest));
+    }
+
+    private static readonly Regex TitleWord = new(@"[\p{L}\p{N}]+", RegexOptions.CultureInvariant, Timeout);
+
+    /// <summary>
+    /// The name after a leading copy of the item's title (its words in order, any separators
+    /// between them, case-insensitive), or the name itself when it does not start with the title.
+    /// The remainder keeps a separator in front, so the year and release rules still see a boundary.
+    /// </summary>
+    internal static string WithoutTitle(string name, string? itemName)
+    {
+        if (string.IsNullOrWhiteSpace(itemName) || string.IsNullOrEmpty(name)) return name;
+        var words = TitleWord.Matches(itemName).Select(m => Regex.Escape(m.Value)).ToArray();
+        if (words.Length == 0) return name;
+        var title = new Regex(@"^[^\p{L}\p{N}]*" + string.Join(@"[^\p{L}\p{N}]+", words) + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name);
+        return title.Success ? " " + name[title.Length..] : name;
     }
 
     private static bool IsStub(string? path) => path?.EndsWith(".disc", StringComparison.OrdinalIgnoreCase) == true;

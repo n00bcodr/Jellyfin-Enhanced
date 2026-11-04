@@ -1013,7 +1013,9 @@
      */
     function isSecondaryAudio(stream) {
         const text = `${stream?.Title || ''} | ${stream?.DisplayTitle || ''}`;
-        return /(?<![a-z0-9])(?:commentar(?:y|ies)|audio[ -]?descri(?:ption|bed)|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired)(?![a-z0-9])/i.test(text)
+        // Word stems in English, French, Italian, Dutch, German, Nordic, Spanish, Portuguese, Polish,
+        // Czech, Finnish and Russian, matched inside longer words too ("Audiokommentar").
+        return /comment|kommentar|comentari|comentári|komentar|komentář|kommentti|комментар|audio[ -]?descri|audio[ -]?deskri|description[ -]audio|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired|hörfilm|syntolk|synstolk|kuvailutulk/i.test(text)
             || /(?<![A-Za-z0-9])AD(?![A-Za-z0-9])/.test(text);
     }
 
