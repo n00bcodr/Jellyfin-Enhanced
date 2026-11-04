@@ -21,7 +21,7 @@
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HLG', 'HDR', 'SDR'];
     const specialFormatOrder = ['IMAX', '3D'];
     const codecOrder = ['VVC', 'AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'VC-1', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA', 'ProRes'];
-    const audioOrder = ['TRUEHD ATMOS', 'ATMOS', 'DD+ ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'PCM', 'FLAC', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '6.1', '5.1'];
+    const audioOrder = ['TRUEHD ATMOS', 'ATMOS', 'DD+ ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'PCM', 'FLAC', 'DTS-HD HRA', 'DTS-HD', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '6.1', '5.1'];
 
     // showXxxTag = enable, xxxTagOrder = 1..N stack position.
     const CATEGORIES = [
@@ -67,6 +67,7 @@
         'DTS-X': { bg: 'rgba(255, 100, 0, 0.9)', text: '#ffffff' },
         'DTS-HD MA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
         'DTS-HD HRA': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
+        'DTS-HD': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
         'Dolby Digital': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
         'DTS': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
         'Dolby Digital+': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
@@ -108,6 +109,12 @@
         'Uncut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Final Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Special Edition': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Redux': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Ultimate': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Collector\'s Edition': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Anniversary': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Uncensored': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Open Matte': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'BluRay': { bg: 'rgba(0, 102, 204, 0.95)', text: '#ffffff' },
         'HD DVD': { bg: 'rgba(128, 0, 32, 0.95)', text: '#ffffff' },
         'DVD': { bg: 'rgba(102, 102, 102, 0.95)', text: '#ffffff' },
@@ -267,7 +274,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 10 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 11 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -402,7 +409,7 @@
     }
 
     // Full words are translatable; compact edition codes and proper nouns are literals.
-    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"]};
+    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"]};
     /** @param {string} label Canonical edition. @returns {string} Its full display name. */
     function editionLabel(label) {
         const row = Object.hasOwn(EDITIONS, label) && EDITIONS[label];
@@ -422,7 +429,7 @@
     function normalizeQualityLabel(label) {
         if (!label || typeof label !== 'string') return label;
 
-        const audioBases = ['TRUEHD ATMOS', 'DD+ ATMOS', 'Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS', 'PCM', 'FLAC'];
+        const audioBases = ['TRUEHD ATMOS', 'DD+ ATMOS', 'Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS-HD', 'DTS', 'PCM', 'FLAC'];
         for (const base of audioBases) {
             if (label === base || label.startsWith(`${base} `)) {
                 return base;
@@ -534,16 +541,18 @@
     // --- CORE LOGIC ---
     // Reference: Radarr/Sonarr audio custom formats, TRaSH-Guides Audio Formats:
     // https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats
-    // Stream aliases use the established chip vocabulary: both Atmos families → ATMOS,
-    // DTS-ES → DTS; lossless FLAC and (L)PCM have their own chips; AAC/Opus/MP3 keep the
-    // channel-only fallback. HRA precedes generic DTS-HD; Plus/Atmos precede plain DD.
-    // Boundaries reject suffixes.
+    // Stream aliases use the established chip vocabulary: both Atmos families (and E-AC-3 JOC) →
+    // ATMOS, DTS-ES → DTS; lossless FLAC and (L)PCM have their own chips; AAC/Opus/MP3 keep the
+    // channel-only fallback. HRA and MA precede a bare DTS-HD, which claims neither (only an MA,
+    // XLL or Master Audio word, in the title or the profile, says lossless); Plus/Atmos precede
+    // plain DD. Boundaries reject suffixes.
     const AUDIO_ALIASES = [
-        [/(?:^|[^a-z0-9_])(?:atmos|ddpa)(?![a-z_])/, 'ATMOS'],
+        [/(?:^|[^a-z0-9_])(?:atmos|ddpa|joc)(?![a-z_])/, 'ATMOS'],
         [/(?:^|[^a-z0-9_])true[ .-]?hd(?![a-z_])/, 'TRUEHD'],
         [/(?:^|[^a-z0-9_])dts[-_.: ]?x7?(?![a-z_])(?![-_. ]?26[456])/, 'DTS-X'],
         [/(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:hra?|hi|high[ -]?resolution)(?![a-z_])/, 'DTS-HD HRA'],
-        [/(?:^|[^a-z0-9_])dts[-_. ]?(?:ma|hd(?:[-_. ]?ma)?|xll|master[ -]?audio)(?![a-z_])/, 'DTS-HD MA'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?(?:ma|hd[-_. ]?ma|xll|master[ -]?audio)(?![a-z_])/, 'DTS-HD MA'],
+        [/(?:^|[^a-z0-9_])dts[-_. ]?hd(?![a-z_])/, 'DTS-HD'],
         [/(?:^|[^a-z0-9_])dts[-_. ]?es(?![a-z_])/, 'DTS'],
         [/(?:^|[^a-z0-9_])dts(?![a-z_])/, 'DTS'],
         [/(?:^|[^a-z0-9_])(?:ddp(?:lus)?|dd\+|e[-_. ]?ac-?3|dolby\s*digital(?:\s*plus|\s*\+))(?![a-z_])/, 'Dolby Digital+'],
@@ -602,32 +611,37 @@
 
     /**
      * One track's actual channel layout: its ChannelLayout, then a layout named in its title, then
-     * the usual layout for its channel count. Unknown stays unknown (QualityTagRules.TrackChannels).
+     * the usual layout for its channel count. Height channels stay ("5.1.2", "7.1.4"). Unknown
+     * stays unknown (QualityTagRules.TrackChannels).
      * @param {Object} stream Audio track.
-     * @returns {string|null} Layout such as "6.1", "4.0" or "1.0".
+     * @returns {string|null} Layout such as "6.1", "4.0", "1.0" or "7.1.4".
      */
     function trackChannels(stream) {
         const layout = String(stream.ChannelLayout || '').toLowerCase().replace(/\(.*\)$/, '').trim();
         if (Object.hasOwn(NAMED_LAYOUTS, layout)) return NAMED_LAYOUTS[layout];
-        const numeric = /^(\d)\.(\d)$/.exec(layout);
-        if (numeric) return `${numeric[1]}.${numeric[2]}`;
+        const numeric = /^(\d)\.(\d)(?:\.(\d))?$/.exec(layout);
+        if (numeric) return numeric.slice(1).filter(Boolean).join('.');
         const title = String(stream.DisplayTitle || '').toLowerCase();
-        const named = /(?:^|[^a-z0-9_])([1-7])[. ]([01])(?![a-z0-9_])/.exec(title);
-        if (named) return `${named[1]}.${named[2]}`;
+        const named = /(?:^|[^a-z0-9_])([1-7])[. ]([01])(?:\.([246]))?(?![a-z0-9_])/.exec(title);
+        if (named) return named.slice(1).filter(Boolean).join('.');
         if (/(?:^|[^a-z0-9_])stereo(?![a-z0-9_])/.test(title)) return '2.0';
         if (/(?:^|[^a-z0-9_])mono(?![a-z0-9_])/.test(title)) return '1.0';
         return COUNT_LAYOUTS[stream.Channels] || null;
     }
 
     /**
-     * One track's own sound label: its codec with its own channels, or a bare surround layout.
+     * One track's own sound label: its codec with its own channels, or a bare surround layout
+     * (its bed only: "5.1.2" without a codec is 5.1).
      * @param {Object} stream Audio track.
      * @returns {string|null} Label such as "ATMOS 7.1", or null.
      */
     function trackAudioLabel(stream) {
         const codec = detectCurrentAudioCodec([stream]);
         const channels = trackChannels(stream);
-        if (!codec) return ['7.1', '6.1', '5.1'].includes(channels) ? channels : null;
+        if (!codec) {
+            const bed = channels?.slice(0, 3);
+            return ['7.1', '6.1', '5.1'].includes(bed) ? bed : null;
+        }
         return channels && !codec.includes(channels) ? `${codec} ${channels}` : codec;
     }
 
@@ -1076,9 +1090,10 @@
     /** @param {string} label Quality label. @param {string} category Web category. @returns {number} Rank; more channels win audio ties. */
     function distinctRank(label, category) {
         const index = CATEGORY_BY_KEY.get(category)?.items.indexOf(normalizeQualityLabel(label)) ?? -1;
-        const layout = /(\d)\.(\d)$/.exec(label);
-        const channels = layout ? Number(layout[1]) + Number(layout[2]) : 0;
-        return (index < 0 ? 999 : index) * 10 + (category === 'audio' ? 9 - Math.min(channels, 8) : 0);
+        // Every channel counts, heights too ("7.1.4" beats "7.1"; QualityTagRules.AggregationRank).
+        const layout = /(\d)\.(\d)(?:\.(\d))?$/.exec(label);
+        const channels = layout ? layout.slice(1).reduce((sum, part) => sum + Number(part || 0), 0) : 0;
+        return (index < 0 ? 999 : index) * 100 + (category === 'audio' ? 99 - Math.min(channels, 99) : 0);
     }
 
     /** @param {string} label Detected resolution. @returns {boolean} Inclusive threshold, unknown settings mean Off. */
@@ -1405,7 +1420,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 10, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 11, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1443,7 +1458,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 10, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 11, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

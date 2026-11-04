@@ -881,7 +881,7 @@
      "Codec": "ac3",
      "Channels": 6,
      "ChannelLayout": "5.1",
-     "DisplayTitle": "Fran\u00e7ais - Dolby Digital - 5.1"
+     "DisplayTitle": "Français - Dolby Digital - 5.1"
     },
     {
      "Type": "Audio",
@@ -1110,7 +1110,7 @@
      "Codec": "eac3",
      "Channels": 6,
      "ChannelLayout": "5.1",
-     "DisplayTitle": "Fran\u00e7ais - Dolby Digital+ - 5.1"
+     "DisplayTitle": "Français - Dolby Digital+ - 5.1"
     },
     {
      "Type": "Audio",
@@ -1127,8 +1127,8 @@
      "Codec": "dts",
      "Channels": 8,
      "ChannelLayout": "7.1",
-     "Title": "Audiodescripci\u00f3n",
-     "DisplayTitle": "Audiodescripci\u00f3n - DTS - 7.1"
+     "Title": "Audiodescripción",
+     "DisplayTitle": "Audiodescripción - DTS - 7.1"
     }
    ],
    "highest": [
@@ -1138,6 +1138,208 @@
     "Dolby Digital+ 5.1"
    ],
    "legacy": [
+    "Dolby Digital+ 5.1"
+   ]
+  },
+  {
+   "name": "E-AC-3 with JOC is DD+ Atmos",
+   "why": "Dolby's object coding on an E-AC-3 track is Atmos, even when the title only says Dolby Digital Plus",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "JOC",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus - 5.1 - Default"
+    }
+   ],
+   "highest": [
+    "DD+ ATMOS 5.1"
+   ],
+   "all": [
+    "DD+ ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "A bare DTS-HD title is not Master Audio",
+   "why": "Without MA, XLL or Master Audio it may be High Resolution; claim neither",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS-HD - 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD 5.1"
+   ],
+   "all": [
+    "DTS-HD 5.1"
+   ]
+  },
+  {
+   "name": "A DTS-HD title with an MA profile is Master Audio",
+   "why": "The same track's profile corroborates lossless",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS-HD - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ]
+  },
+  {
+   "name": "Height channels from the layout stay",
+   "why": "ffmpeg's 5.1.2 layout is not 5.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "5.1.2",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 5.1.2"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 5.1.2"
+   ],
+   "all": [
+    "TRUEHD ATMOS 5.1.2"
+   ]
+  },
+  {
+   "name": "Height channels from the title stay and outrank the bed",
+   "why": "7.1.4 has more channels than 7.1 of the same codec",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - TrueHD Atmos - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 12,
+     "DisplayTitle": "English - TrueHD Atmos 7.1.4"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1.4"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1.4",
+    "TRUEHD ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "A codec-less height layout shows its bed",
+   "why": "AAC 5.1.2 has no codec chip; its surround bed is 5.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 8,
+     "ChannelLayout": "5.1.2",
+     "DisplayTitle": "English - AAC - 5.1.2"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "A Japanese commentary track never stands for the soundtrack",
+   "why": "音声解説 is audio commentary",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "jpn",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "日本語 - Dolby Digital - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "jpn",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "音声解説",
+     "DisplayTitle": "音声解説 - 日本語 - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ]
+  },
+  {
+   "name": "Korean and Chinese commentary tracks never stand for the soundtrack",
+   "why": "코멘터리 and 导演评论 are commentary",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "kor",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "한국어 - Dolby Digital Plus - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "kor",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "감독 코멘터리",
+     "DisplayTitle": "감독 코멘터리 - DTS-HD MA - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "chi",
+     "Codec": "flac",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "导演评论",
+     "DisplayTitle": "导演评论 - FLAC - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
     "Dolby Digital+ 5.1"
    ]
   }

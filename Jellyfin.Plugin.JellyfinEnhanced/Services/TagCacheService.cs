@@ -334,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 28;
+        internal const int CurrentCacheSchemaVersion = 29;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -2983,13 +2983,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var streams = new List<TagMediaStream>();
             var sources = new List<TagMediaSource>();
             var languages = new HashSet<string>();
-            var namingTags = MediaNamingTags.FromPath(item.Path, item.Name);
+            var namingTags = MediaNamingTags.FromPath(item.Path, item.Name, item.OriginalTitle);
             var subtitles = new HashSet<string>();
 
             try
             {
                 var mediaSources = item.GetMediaSources(false);
-                namingTags = MediaNamingTags.Detect(item.Path, mediaSources, item.Name);
+                namingTags = MediaNamingTags.Detect(item.Path, mediaSources, item.Name, item.OriginalTitle);
                 foreach (var source in mediaSources)
                 {
                     // A source's Name is normally its file name without the
@@ -3004,7 +3004,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         sourceName = null;
                     }
 
-                    var versionNaming = MediaNamingTags.Detect(item.Path, new[] { source }, item.Name);
+                    var versionNaming = MediaNamingTags.Detect(item.Path, new[] { source }, item.Name, item.OriginalTitle);
                     sources.Add(new TagMediaSource
                     {
                         Id = source.Id,

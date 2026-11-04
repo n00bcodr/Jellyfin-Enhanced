@@ -94,6 +94,10 @@ const synthetic = {
     q38: movie({ StreamData: sd([video()], [{ Path: 'movie.mkv', Name: 'Movie' }, null], 'Movie', 'movie.mkv') }),
     q39: movie({ StreamData: sd([video()], [{ Name: 'Movie' }, { Path: 'x.3d.mvc.mkv' }, null], 'Movie', 'movie.mkv') }),
     q40: movie({ StreamData: sd([video(), null]) }),
+    q41: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - Dolby Digital Plus - 5.1', Codec: 'eac3', Profile: 'JOC', Channels: 6, ChannelLayout: '5.1' })]) }),
+    q42: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - DTS-HD - 5.1', Codec: 'dts', Profile: '', Channels: 6, ChannelLayout: '5.1' })]) }),
+    q43: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - TrueHD Atmos - 7.1', Codec: 'truehd', Profile: 'Dolby TrueHD + Dolby Atmos', Channels: 8, ChannelLayout: '7.1' }), audio({ DisplayTitle: 'English - TrueHD Atmos 7.1.4', Codec: 'truehd', Profile: 'Dolby TrueHD + Dolby Atmos', Channels: 12, ChannelLayout: '' })]) }),
+    q44: movie({ StreamData: sd([video(), audio({ DisplayTitle: '日本語 - Dolby Digital - 5.1', Codec: 'ac3', Channels: 6, ChannelLayout: '5.1', Language: 'jpn' }), audio({ Title: '音声解説', DisplayTitle: '音声解説 - TrueHD - 7.1', Codec: 'truehd', Channels: 8, ChannelLayout: '7.1', Language: 'jpn' })]) }),
     // Server-derived source and edition facts, including unprobed media and IMAX dedupe.
     ns01: movie({ Source: 'REMUX', Edition: "Director's Cut" }),
     ns02: movie({ Source: 'BluRay', Edition: 'Extended' }),
@@ -106,6 +110,12 @@ const synthetic = {
     ns09: movie({ Source: 'SCR', Edition: 'Uncut' }),
     ns10: movie({ Source: 'WEB', Edition: 'IMAX', StreamData: sd([], [], 'Film.IMAX') }),
     ns11: movie({ Source: 'REMUX', Edition: 'Fan Edit', StreamData: null }),
+    ns12: movie({ Source: 'BluRay', Edition: 'Redux' }),
+    ns13: movie({ Source: 'REMUX', Edition: 'Ultimate' }),
+    ns14: movie({ Source: 'BluRay', Edition: "Collector's Edition" }),
+    ns15: movie({ Source: 'WEB', Edition: 'Anniversary' }),
+    ns16: movie({ Source: 'WEB', Edition: 'Uncensored' }),
+    ns17: movie({ Source: 'WEB', Edition: 'Open Matte' }),
     // Display modes: multi-video/HDR and per-track audio combinations, with duplicates.
     display01: movie({ StreamData: sd([video(), video({ Codec: 'hevc', VideoRangeType: 'HDR10', DisplayTitle: '4K HDR10', Height: 2160 }),
         audio({ Codec: 'dts', DisplayTitle: 'DTS 5.1', Channels: 6, ChannelLayout: '' }),

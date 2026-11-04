@@ -175,6 +175,20 @@ public class TagCacheSubtitleLanguagesTests
     public void SecondaryAudioRolesComeFromTheTrackTitle(string? title, string? displayTitle, bool secondary)
         => Assert.Equal(secondary, TrackRoles.IsSecondaryAudio(title, displayTitle));
 
+    /// <summary>The shared title table (tests/fixtures/track-roles.json, also run against mediaLanguage.isSecondaryAudio).</summary>
+    [Fact]
+    public void SecondaryAudioRolesMatchTheSharedTitleTable()
+    {
+        using var stream = typeof(TagCacheSubtitleLanguagesTests).Assembly.GetManifestResourceStream("TrackRoles.json")!;
+        using var document = JsonDocument.Parse(stream);
+        foreach (var row in document.RootElement.GetProperty("cases").EnumerateArray())
+        {
+            var title = row.GetProperty("title").GetString();
+            var displayTitle = row.GetProperty("displayTitle").GetString();
+            Assert.True(row.GetProperty("secondary").GetBoolean() == TrackRoles.IsSecondaryAudio(title, displayTitle), title ?? displayTitle);
+        }
+    }
+
     [Fact]
     public void SubtitleLanguagesTakePartInContentEqualityAndClones()
     {

@@ -247,6 +247,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             var exact = label switch {
                 "Director's Cut" => "DC", "Extended" => "Ext", "Unrated" => "Unr", "Remastered" => "Rem", "Criterion" => "CC",
+                "Ultimate" => "Ult", "Collector's Edition" => "CE", "Anniversary" => "Anniv", "Uncensored" => "Unc", "Open Matte" => "OM",
                 "Special Edition" => StatusRules.Text("quality_edition_special_compact", settings.StatusCulture), "Mixed" => "±", _ => null };
             return exact ?? QualityTagRules.CompactLabel(label);
         }
@@ -256,7 +257,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             ["Director's Cut"] = "quality_edition_directors_cut", ["Extended"] = "quality_edition_extended", ["Unrated"] = "quality_edition_unrated",
             ["Theatrical"] = "quality_edition_theatrical", ["Remastered"] = "quality_edition_remastered", ["Uncut"] = "quality_edition_uncut",
-            ["Final Cut"] = "quality_edition_final_cut", ["Special Edition"] = "quality_edition_special", ["Mixed"] = "series_quality_mixed",
+            ["Final Cut"] = "quality_edition_final_cut", ["Special Edition"] = "quality_edition_special", ["Ultimate"] = "quality_edition_ultimate",
+            ["Collector's Edition"] = "quality_edition_collectors", ["Anniversary"] = "quality_edition_anniversary", ["Uncensored"] = "quality_edition_uncensored",
+            ["Mixed"] = "series_quality_mixed",
         };
 
         /// <summary>A Full-density quality label in the user's language where the web translates it, else null (the label itself).</summary>

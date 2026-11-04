@@ -58,8 +58,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     /// </remarks>
     public sealed class TagStyleSet
     {
-        /// <summary>The largest stored document accepted on save, in characters.</summary>
-        public const int MaxDocumentLength = 32 * 1024;
+        /// <summary>The largest stored document accepted on save, in characters (every fixed label with all three fields fits).</summary>
+        public const int MaxDocumentLength = 40 * 1024;
 
         private const int MaxEntries = 400;
         private const int MaxKeyLength = 64;

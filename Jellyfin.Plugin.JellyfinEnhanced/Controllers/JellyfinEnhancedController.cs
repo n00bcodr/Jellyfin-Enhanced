@@ -9836,7 +9836,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     var mediaSources =
                         SelectTagDataMediaSources(item.GetMediaSources(false));
-                    namingTags = Services.MediaNamingTags.Detect(item.Path, mediaSources, item.Name);
+                    namingTags = Services.MediaNamingTags.Detect(item.Path, mediaSources, item.Name, item.OriginalTitle);
                     subtitleLanguages = TagDataSubtitleLanguages(mediaSources);
                     sdhSubtitleLanguages = mediaSources.SelectMany(source => source.MediaStreams ?? new List<MediaStream>())
                         .Where(stream => stream.Type == MediaStreamType.Subtitle && !stream.IsForced && SubtitleAccessibility.IsSdh(stream.IsHearingImpaired, stream.Title, stream.DisplayTitle))
@@ -9879,7 +9879,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     trimmedSources = mediaSources
                         .Select(s =>
                         {
-                            var versionNaming = Services.MediaNamingTags.Detect(item.Path, new[] { s }, item.Name);
+                            var versionNaming = Services.MediaNamingTags.Detect(item.Path, new[] { s }, item.Name, item.OriginalTitle);
                             return (object)new
                             {
                                 Id = s.Id,

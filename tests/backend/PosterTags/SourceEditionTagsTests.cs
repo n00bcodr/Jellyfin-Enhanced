@@ -35,14 +35,15 @@ public class SourceEditionTagsTests
         {
             row.GetProperty("path").GetString(), row.GetProperty("source").GetString(), row.GetProperty("edition").GetString(),
             row.TryGetProperty("itemName", out var name) ? name.GetString() : null,
+            row.TryGetProperty("originalTitle", out var original) ? original.GetString() : null,
         }).ToArray();
     }
 
     [Theory]
     [MemberData(nameof(Names))]
-    public void NamingTable(string path, string? source, string? edition, string? itemName)
+    public void NamingTable(string path, string? source, string? edition, string? itemName, string? originalTitle)
     {
-        Assert.Equal(new MediaNamingTags(source, edition), MediaNamingTags.FromPath(path, itemName));
+        Assert.Equal(new MediaNamingTags(source, edition), MediaNamingTags.FromPath(path, itemName, originalTitle));
     }
 
     public static IEnumerable<object[]> QualityTokens() => QualityTagRules.ResolutionTokens
@@ -231,7 +232,7 @@ public class SourceEditionTagsTests
         Assert.Equal(inherited.Digest, seeded.Digest);
         Assert.NotEqual(seeded.Digest, PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true }, config).Digest);
         Assert.NotEqual(inherited.Digest, PosterTagSettings.FromUserSettings(new() { QualityTagsEnabled = true, ShowEditionTag = true, ShowLowQualitySourceTag = false }, config).Digest);
-        foreach (var label in new[] { "REMUX", "WEB", "CAM", "TS", "TC", "SCR", "Director's Cut", "Extended", "Unrated", "Theatrical", "Remastered", "Criterion", "Uncut", "Final Cut", "Special Edition" })
+        foreach (var label in new[] { "REMUX", "WEB", "CAM", "TS", "TC", "SCR", "Director's Cut", "Extended", "Unrated", "Theatrical", "Remastered", "Criterion", "Uncut", "Final Cut", "Special Edition", "Redux", "Ultimate", "Collector's Edition", "Anniversary", "Uncensored", "Open Matte", "DTS-HD" })
             Assert.True(TagStyleCatalog.IsLabel("quality", label), label);
     }
 }

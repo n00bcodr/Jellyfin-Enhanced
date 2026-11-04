@@ -44,6 +44,14 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token("uncut"), "Uncut"),
         (Token(@"final" + Separator + @"cut"), "Final Cut"),
         (Token(@"special" + Separator + @"edition"), "Special Edition"),
+        // Kometa's edition overlays and TRaSH's edition formats; a bare "Ultimate", "Collector's" or
+        // "Anniversary" needs its Cut/Edition word, an anniversary may lead with its number ("25th").
+        (Token("redux"), "Redux"),
+        (Token(@"ultimate" + Separator + @"(?:cut|edition)"), "Ultimate"),
+        (Token(@"collector(?:['’]s|s)?" + Separator + @"edition"), "Collector's Edition"),
+        (Token(@"(?:\d{1,3}(?:st|nd|rd|th)" + Separator + @")?anniversary" + Separator + @"edition|\d{1,3}(?:st|nd|rd|th)" + Separator + @"anniversary"), "Anniversary"),
+        (Token("uncensored"), "Uncensored"),
+        (Token(@"open" + Separator + @"matte"), "Open Matte"),
     ];
     // Where the title ends: after the year in brackets ("(2019)"), else after the first year that
     // does not open the name ("2001 A Space Odyssey 1968"), and for an episode after its SxxEyy
@@ -60,17 +68,17 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static readonly string[] SourceOrder = ["REMUX", "BluRay", "WEB", "HDTV", "DVD", "SCR", "TC", "TS", "CAM"];
 
     /// <summary>Same resolution buckets as the quality renderer; source quality breaks equal-resolution ties.</summary>
-    internal static MediaNamingTags Detect(string? itemPath, IReadOnlyList<MediaSourceInfo> sources, string? itemName = null)
+    internal static MediaNamingTags Detect(string? itemPath, IReadOnlyList<MediaSourceInfo> sources, string? itemName = null, string? originalTitle = null)
     {
         var selected = sources.Select((source, index) => new
         {
-            Tags = FromPath(string.IsNullOrWhiteSpace(source.Path) ? itemPath : source.Path, itemName),
+            Tags = FromPath(string.IsNullOrWhiteSpace(source.Path) ? itemPath : source.Path, itemName, originalTitle),
             Resolution = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video)
                 .Select(s => QualityTagRules.DetectResolution(new TagMediaStream { Height = s.Height, Width = s.Width, DisplayTitle = s.DisplayTitle }))
                 .Select(label => Rank(ResolutionOrder, label)).DefaultIfEmpty(int.MaxValue).Min() ?? int.MaxValue,
             Index = index,
         }).OrderBy(s => s.Resolution).ThenBy(s => Rank(SourceOrder, s.Tags.Source)).ThenBy(s => s.Index).FirstOrDefault();
-        var tags = selected?.Tags ?? FromPath(itemPath, itemName);
+        var tags = selected?.Tags ?? FromPath(itemPath, itemName, originalTitle);
         // A physical stub takes precedence over release labels in any other version.
         var stub = new[] { itemPath }.Concat(sources.Select(s => s.Path)).FirstOrDefault(IsStub);
         return stub == null ? tags : tags with
@@ -91,10 +99,11 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
 
     /// <summary>
     /// Detect a file first, then only its immediate parent (both Windows and Unix paths). With the
-    /// item's own title, a name that starts with it is read from after the title, so its words
-    /// ("Uncut Gems", "The Final Cut", "Cam") never become labels.
+    /// item's own title (its name, else its original title, so a file named in the original language
+    /// under localised metadata counts too), a name that starts with it is read from after the title,
+    /// so its words ("Uncut Gems", "The Final Cut", "Cam") never become labels.
     /// </summary>
-    internal static MediaNamingTags FromPath(string? path, string? itemName = null)
+    internal static MediaNamingTags FromPath(string? path, string? itemName = null, string? originalTitle = null)
     {
         if (string.IsNullOrWhiteSpace(path)) return new();
         var parts = path.Replace('\\', '/').TrimEnd('/').Split('/');
@@ -103,10 +112,16 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         if (extension is ".mkv" or ".mp4" or ".avi" or ".ts" or ".m2ts" or ".webm" or ".wmv" or ".mpg" or ".mpeg" or ".iso")
             file = file[..^extension.Length];
         var parent = parts.Length > 1 ? parts[^2] : string.Empty;
-        var fileRest = WithoutTitle(file, itemName);
-        var parentRest = WithoutTitle(parent, itemName);
+        var fileRest = WithoutTitles(file, itemName, originalTitle);
+        var parentRest = WithoutTitles(parent, itemName, originalTitle);
         return new(IsStub(file) ? StubSource(file + " " + parent) : SourceIn(fileRest) ?? SourceIn(parentRest),
             EditionIn(file, requireMarker: true) ?? EditionIn(parent, requireMarker: true) ?? EditionIn(fileRest) ?? EditionIn(parentRest));
+    }
+
+    private static string WithoutTitles(string name, string? itemName, string? originalTitle)
+    {
+        var rest = WithoutTitle(name, itemName);
+        return ReferenceEquals(rest, name) ? WithoutTitle(name, originalTitle) : rest;
     }
 
     private static readonly Regex TitleWord = new(@"[\p{L}\p{N}]+", RegexOptions.CultureInvariant, Timeout);

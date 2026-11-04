@@ -15,6 +15,7 @@ internal static class QualityCompactLabels
             ["Dolby Digital+"] = ("DD+", true),
             ["DTS-HD MA"] = ("DTS-HD", true),
             ["DTS-HD HRA"] = ("DTS-HD", true),
+            ["DTS-HD"] = ("DTS-HD", true),
             ["Dolby TrueHD"] = ("TrueHD", true),
             ["Dolby Atmos"] = ("Atmos", true),
             ["DTS:X"] = ("DTS:X", true),

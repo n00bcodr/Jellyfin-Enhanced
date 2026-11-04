@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createHarness } from '../helpers/harness.mjs';
 function setup(t,pluginConfig){const h=createHarness({JE:{pluginConfig,cdn:{flagSvg:code=>`/flags/${code}.svg`},t:key=>key==='audio_language_no_dialogue'?'No dialogue':key}});t.after(()=>h.close());h.load('core/media-language.js');return h.JE.core.mediaLanguage;}
 test('audio flag resolution honors explicit regions, scripts, aliases and unknown languages',t=>{
@@ -30,4 +31,11 @@ test('scores and language names follow the user locale while matching keeps Engl
  h.load('core/media-language.js');
  assert.equal(h.JE.core.mediaLanguage.localName('ja'), 'japonais');
  assert.equal(h.JE.core.mediaLanguage.displayName('ja'), 'Japanese');
+});
+
+// Shared with TagCacheSubtitleLanguagesTests (Helpers/TrackRoles.cs).
+const roles = JSON.parse(readFileSync(new URL('../../fixtures/track-roles.json', import.meta.url)));
+test('commentary and audio-description titles are secondary audio in every listed script', t => {
+ const m = setup(t);
+ for (const row of roles.cases) assert.equal(m.isSecondaryAudio({ Title: row.title, DisplayTitle: row.displayTitle }), row.secondary, JSON.stringify(row));
 });

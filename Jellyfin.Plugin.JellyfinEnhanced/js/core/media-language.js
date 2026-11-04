@@ -1014,8 +1014,9 @@
     function isSecondaryAudio(stream) {
         const text = `${stream?.Title || ''} | ${stream?.DisplayTitle || ''}`;
         // Word stems in English, French, Italian, Dutch, German, Nordic, Spanish, Portuguese, Polish,
-        // Czech, Finnish and Russian, matched inside longer words too ("Audiokommentar").
-        return /comment|kommentar|comentari|comentári|komentar|komentář|kommentti|комментар|audio[ -]?descri|audio[ -]?deskri|description[ -]audio|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired|hörfilm|syntolk|synstolk|kuvailutulk/i.test(text)
+        // Czech, Hungarian, Estonian, Finnish, Russian, Ukrainian, Greek, Turkish, Arabic, Hebrew,
+        // Japanese, Chinese and Korean, matched inside longer words too ("Audiokommentar", "音声解説").
+        return /comment|kommentar|kommentár|kommentaar|comentari|comentári|komentar|komentář|kommentti|комментар|коментар|σχόλι|yorum|تعليق|פרשנות|解説|解说|解說|评论|評論|コメンタリー|코멘터리|해설|audio[ -]?descri|audio[ -]?deskri|description[ -]audio|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired|hörfilm|syntolk|synstolk|kuvailutulk|аудиоопис|аудіоопис|sesli betimleme|音声ガイド|口述影像|音频描述|音訊描述/i.test(text)
             || /(?<![A-Za-z0-9])AD(?![A-Za-z0-9])/.test(text);
     }
 

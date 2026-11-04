@@ -275,6 +275,76 @@
     "edition": "Special Edition"
   },
   {
+    "path": "Apocalypse.Now.1979.Redux.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Redux"
+  },
+  {
+    "path": "Movie.2020.Ultimate.Cut.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Ultimate"
+  },
+  {
+    "path": "Movie (2020) Ultimate Edition 1080p WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Ultimate"
+  },
+  {
+    "path": "Movie.2020.Collectors.Edition.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Collector's Edition"
+  },
+  {
+    "path": "Movie (2020) Collector's Edition 2160p REMUX.mkv",
+    "source": "REMUX",
+    "edition": "Collector's Edition"
+  },
+  {
+    "path": "Movie (2020) 25th Anniversary Edition 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Anniversary"
+  },
+  {
+    "path": "Movie.2020.40th.Anniversary.Remux.mkv",
+    "source": "REMUX",
+    "edition": "Anniversary"
+  },
+  {
+    "path": "Movie.2020.Anniversary.Edition.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Anniversary"
+  },
+  {
+    "path": "Movie.2020.Uncensored.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Uncensored"
+  },
+  {
+    "path": "Movie.2020.Open.Matte.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Open Matte"
+  },
+  {
+    "path": "Movie (2020) {edition-Ultimate Cut}.mkv",
+    "source": null,
+    "edition": "Ultimate"
+  },
+  {
+    "path": "The Ultimate Gift (2006) 1080p BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Ultimate.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
+    "path": "Movie.2020.Anniversary.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null
+  },
+  {
     "path": "/movies/Movie (2020) {edition-Director's Cut}/Movie.WEB-DL.mkv",
     "source": "WEB",
     "edition": "Director's Cut"
@@ -946,6 +1016,27 @@
     "source": null,
     "edition": null,
     "itemName": "Cam"
+  },
+  {
+    "path": "media/Uncut.Gems.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Der schwarze Diamant",
+    "originalTitle": "Uncut Gems"
+  },
+  {
+    "path": "media/Cam 1080p.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Kamera",
+    "originalTitle": "Cam"
+  },
+  {
+    "path": "media/Movie.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended",
+    "itemName": "Film",
+    "originalTitle": "Movie"
   },
   {
     "path": "media/Movie.Extended.1080p.BluRay.mkv",

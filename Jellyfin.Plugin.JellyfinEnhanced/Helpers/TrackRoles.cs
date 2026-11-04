@@ -10,12 +10,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 internal static class TrackRoles
 {
     // Word stems, matched inside longer words too (German "Audiokommentar", "Kommentarspur"): English,
-    // French, Italian and Dutch "comment…", German/Nordic "kommentar", Spanish/Portuguese/Catalan
-    // "comentari/comentári", Polish/Czech "komentar/komentář", Finnish "kommentti", Russian
-    // "комментар"; audio description in those languages ("audiodescription", "audiodescripción",
-    // "Audiodeskription", "Hörfilm", "syntolkning", "synstolkning", "kuvailutulkkaus").
+    // French, Italian and Dutch "comment…", German/Nordic "kommentar", Hungarian "kommentár",
+    // Estonian "kommentaar", Spanish/Portuguese/Catalan "comentari/comentári", Polish/Czech
+    // "komentar/komentář", Finnish "kommentti", Russian "комментар", Ukrainian "коментар", Greek
+    // "σχόλια", Turkish "yorum", Arabic "تعليق", Hebrew "פרשנות", Japanese "解説/コメンタリー", Chinese
+    // "解说/解說/评论/評論", Korean "코멘터리/해설"; audio description in those languages
+    // ("audiodescription", "audiodescripción", "Audiodeskription", "Hörfilm", "syntolkning",
+    // "synstolkning", "kuvailutulkkaus", "аудиоопис", "sesli betimleme", "音声ガイド", "口述影像", "音频描述").
     private static readonly Regex SecondaryAudioWords = new(
-        @"comment|kommentar|comentari|comentári|komentar|komentář|kommentti|комментар|audio[ -]?descri|audio[ -]?deskri|description[ -]audio|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired|hörfilm|syntolk|synstolk|kuvailutulk",
+        @"comment|kommentar|kommentár|kommentaar|comentari|comentári|komentar|komentář|kommentti|комментар|коментар|σχόλι|yorum|تعليق|פרשנות|解説|解说|解說|评论|評論|コメンタリー|코멘터리|해설|audio[ -]?descri|audio[ -]?deskri|description[ -]audio|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired|hörfilm|syntolk|synstolk|kuvailutulk|аудиоопис|аудіоопис|sesli betimleme|音声ガイド|口述影像|音频描述|音訊描述",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     // "AD" only as an upper-case word, so "Ad" or "ad-free" never match.
