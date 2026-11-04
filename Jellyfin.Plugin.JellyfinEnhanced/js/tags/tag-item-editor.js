@@ -199,6 +199,7 @@
             .je-tie-head { position: sticky; top: 0; z-index: 3; background: #1d2026; }
             /* Keyboard scrolling keeps focus clear of the sticky title and footer. */
             .je-tie-backdrop { scroll-padding: 76px 0 84px; }
+            .je-tie-hint, .je-tie-gsum { font-size: 14px; line-height: 1.45; }
             .je-tie-jump:not([hidden]) { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 44px; padding: 0 12px 0 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
             .je-tie-jump-thumb { width: 22px; height: 33px; border-radius: 3px; background: #2b303a center / cover no-repeat; }
             .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }

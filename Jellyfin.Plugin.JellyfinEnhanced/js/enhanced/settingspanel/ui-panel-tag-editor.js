@@ -203,7 +203,8 @@
     function qualityIncludeHtml() {
         const sorted = sortedQualityCats();
         // Each pair is named by its category ("Move HDR up"), as on the admin page.
-        return `<div id="qualityTagsSubToggles" class="je-tge-cats">${sorted.map((c, idx) => `
+        return `<button type="button" class="je-tge-reset je-tge-reorder" data-tge-reorder="cats" aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reorder_categories'))}</span></button>
+        <div id="qualityTagsSubToggles" class="je-tge-cats">${sorted.map((c, idx) => `
             <div class="je-quality-cat-row je-tge-cat" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}">
                 <label class="je-tge-toggle-pill">
                     <input type="checkbox" id="${c.id}" ${effectiveBool(c.settingKey, c.pluginKey, c.fallback ?? true) ? 'checked' : ''}>
@@ -453,6 +454,7 @@
                         <div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_desc'))}</div>
                     </div>
                     <button type="button" class="je-tge-reset" id="jeTgeReset"><span class="material-icons" aria-hidden="true">restart_alt</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reset'))}</span></button>
+                    <button type="button" class="je-tge-reset je-tge-reorder" data-tge-reorder="groups" aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reorder_groups'))}</span></button>
                 </div>
                 <ol class="je-tge-rows" aria-labelledby="jeTgeTitle">${rows}</ol>
             </div>`;
@@ -690,7 +692,17 @@
         #jellyfin-enhanced-panel .je-tge :is(button, select, input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         @media (prefers-reduced-motion: reduce) { #jellyfin-enhanced-panel .je-tge-chevron { transition: none; } }
         /* A narrow pane puts Badges on its own line under the Status name, clear of the checkbox. */
+        #jellyfin-enhanced-panel .je-tge-reorder { display: none; }
         @container je-mth (max-width: 560px) {
+            /* Phone: reordering is its own mode, so the rows give their width to names and summaries. */
+            #jellyfin-enhanced-panel .je-tge-reorder { display: inline-flex; min-height: 44px; }
+            #jellyfin-enhanced-panel .je-tge-reorder[aria-pressed="true"] { background: var(--je-tge-sel); border-color: var(--je-tge-sel); }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-moves { display: none; }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-cats) .je-tge-cat .je-cat-btn { display: none; }
+            #jellyfin-enhanced-panel .je-tge-cats { margin-top: 8px; }
+            #jellyfin-enhanced-panel .je-tge-body { padding: 12px 10px 14px; }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-row[data-group="status"] .je-tge-row-head { grid-template-columns: auto minmax(0, 1fr) auto; }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-badges { grid-column: 2; }
             #jellyfin-enhanced-panel .je-tge-row[data-group="status"] .je-tge-row-head { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 4px; }
             #jellyfin-enhanced-panel .je-tge-badges { grid-column: 3; grid-row: 2; justify-self: start; min-height: 44px; }
             #jellyfin-enhanced-panel .je-tge-expand { min-height: 44px; }
@@ -982,6 +994,18 @@
                 return;
             }
 
+            // Phone: the order buttons show only in reorder mode (one switch for groups, one for categories).
+            const reorder = /** @type {HTMLElement|null} */ (target.closest('[data-tge-reorder]'));
+            if (reorder) {
+                const kind = reorder.dataset.tgeReorder;
+                const on = !root.classList.contains(`je-tge--reorder-${kind}`);
+                root.classList.toggle(`je-tge--reorder-${kind}`, on);
+                root.querySelectorAll(`[data-tge-reorder="${kind}"]`).forEach((b) => {
+                    b.setAttribute('aria-pressed', String(on));
+                    /** @type {HTMLElement} */ (b.lastElementChild).textContent = JE.t(on ? 'panel_settings_ui_tag_editor_reorder_done' : (kind === 'groups' ? 'panel_settings_ui_tag_editor_reorder_groups' : 'panel_settings_ui_tag_editor_reorder_categories'));
+                });
+                return;
+            }
             if (target.closest('#jeTgeReset')) {
                 resetToDefaults();
                 sync();

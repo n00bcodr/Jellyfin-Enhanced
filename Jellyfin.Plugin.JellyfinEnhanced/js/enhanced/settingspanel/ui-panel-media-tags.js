@@ -580,8 +580,8 @@
         #jellyfin-enhanced-panel .je-mth-switch-text, #jellyfin-enhanced-panel .je-mth-badge-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
         #jellyfin-enhanced-panel .je-mth-switch-name, #jellyfin-enhanced-panel .je-mth-badge-name { font-size: 14px; font-weight: 500; }
         #jellyfin-enhanced-panel .je-mth-switch-desc, #jellyfin-enhanced-panel .je-mth-badge-desc { font-size: 13px; color: rgba(255,255,255,0.66); line-height: 1.4; }
-        #jellyfin-enhanced-panel .je-mth-switch-desc { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-        #jellyfin-enhanced-panel .je-mth-switch:focus-within .je-mth-switch-desc, #jellyfin-enhanced-panel .je-mth-switch:hover .je-mth-switch-desc { -webkit-line-clamp: unset; }
+        /* Two lines at rest; the row never changes height under the pointer. */
+        #jellyfin-enhanced-panel .je-mth-switch-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         #jellyfin-enhanced-panel .je-mth-badges { display: flex; flex-direction: column; gap: 6px; }
         #jellyfin-enhanced-panel .je-mth-badge { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.18); }
         #jellyfin-enhanced-panel .je-mth-badge-main { display: flex; align-items: flex-start; gap: 12px; min-width: 0; cursor: pointer; flex: 1; }
@@ -667,6 +667,8 @@
             #jellyfin-enhanced-panel .je-mth-tile-name { font-size: 13px; }
             #jellyfin-enhanced-panel .je-mtp-view button { min-height: 44px; }
             #jellyfin-enhanced-panel .je-mth-switch-desc { -webkit-line-clamp: 3; }
+            /* Phone reading size for help and descriptions (preview metadata stays small). */
+            #jellyfin-enhanced-panel :is(.je-mth-hint, .je-mth-switch-desc, .je-mth-badge-desc, .je-tge-hint, .je-tge-summary) { font-size: 14px; line-height: 1.45; }
             #jellyfin-enhanced-panel .je-mth-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             #jellyfin-enhanced-panel .je-mth-pill, #jellyfin-enhanced-panel .je-mth-button { min-height: 44px; }
             #jellyfin-enhanced-panel .je-mth-density > .je-mth-pills { margin-left: 0; }

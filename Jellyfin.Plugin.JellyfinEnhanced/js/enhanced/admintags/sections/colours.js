@@ -49,7 +49,7 @@
                     const allow = /** @type {HTMLInputElement|null} */ (more.querySelector('#tagStylesAllowUserPreset'));
                     const parts = [JE.t('admin_tags_colours_options')];
                     // Apply to counts while tag colours are on (its row is shown then).
-                    if (target && ctx.config.TagStylesEnabled === true) parts.push(target.closest('label')?.textContent?.trim() || '');
+                    if (target && ctx.config.TagStylesEnabled === true) parts.push(JE.t(`admin_tags_colours_applies_${['web', 'native', 'both'].includes(target.value) ? target.value : 'both'}`));
                     if (allow) parts.push(JE.t(allow.checked ? 'admin_tags_colours_presets_on' : 'admin_tags_colours_presets_off'));
                     /** @type {HTMLElement} */ (more.querySelector('[data-more-text]')).textContent = parts.filter(Boolean).join(' · ');
                 };

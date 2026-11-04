@@ -286,7 +286,7 @@
 .je-tag-admin .je-ta-grow-check input:focus-visible { outline: none; }
 .je-ta-grow-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .je-ta-grow-name { font-size: 15px; font-weight: 600; }
-.je-ta-grow-sum { font-size: 12.5px; color: var(--je-ta-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.je-ta-grow-sum { font-size: 13px; color: var(--je-ta-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .je-ta-grow-sample { flex: 0 1 auto; display: inline-flex; gap: 4px; align-items: center; min-width: 0; overflow: hidden; }
 .je-ta-grow-sample .je-ta-chip { flex: 0 0 auto; }
 .je-ta-grow[data-enabled="false"] .je-ta-grow-sample { opacity: 0.35; filter: grayscale(1); }
@@ -567,6 +567,21 @@
     .je-tag-admin .je-ts-target-filter { width: 100%; min-height: 44px; }
     .je-tag-admin .je-ts-targets { gap: 8px; max-height: 280px; }
     .je-tag-admin .je-ts-target { min-height: 44px; min-width: 44px; justify-content: center; }
+}
+/* Reordering on a phone is its own mode (Layout defaults' group rows). */
+.je-ta-reorder { display: none; }
+@container je-ta (max-width: 520px) {
+    .je-ta-reorder { display: inline-flex; min-height: 44px; margin: 0 0 8px; }
+    /* Phone reading size for help, descriptions and summaries. */
+    .je-tag-admin :is(.je-ta-hint, .je-ta-switch-desc, .je-ts-value, .je-ts-contrast-hint, .je-ta-lrow-sum, .je-ta-grow-sum, .je-ts-target-hint, .je-ts-sample-note) { font-size: 14px; line-height: 1.45; }
+    .je-tag-admin .je-ta-grow-sum { white-space: normal; overflow: visible; text-overflow: clip; }
+    /* Colours: one frame less around the property rows. */
+    .je-tag-admin .je-ts-group-panel { padding: 12px; }
+    .je-tag-admin .je-ts-rows { border: 0; border-radius: 0; background: none; }
+    .je-tag-admin .je-ts-field-row { padding: 10px 0; }
+    .je-ta-reorder[aria-pressed="true"] { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); }
+    :not(.je-ta-reordering) > .je-ta-lrows .je-ta-lrow-move { display: none; }
+    :not(.je-ta-reordering) > .je-ta-lrows .je-ta-lrow { grid-template-areas: "name open" "sum open" "detail detail"; grid-template-columns: minmax(0, 1fr) auto; }
 }
 @container je-ta (max-width: 360px) {
     .je-ta-lrow-move { flex-direction: column; }

@@ -251,7 +251,15 @@
             { id: 'customTagsPosition', key: 'CustomTagsPosition', type: 'custom', label: 'admin_tags_customTagsPosition' },
         ],
         render(ctx, body) {
-            body.innerHTML = '<p class="je-ta-hint" data-layout-note></p><ol class="je-ta-lrows" id="tagGroupAdminRows"></ol>';
+            body.innerHTML = `<p class="je-ta-hint" data-layout-note></p><button type="button" class="je-ta-button je-ta-reorder" data-reorder aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${ctx.tx('panel_settings_ui_tag_editor_reorder_groups')}</span></button><ol class="je-ta-lrows" id="tagGroupAdminRows"></ol>`;
+            // Phone: the order buttons show only in reorder mode.
+            body.querySelector('[data-reorder]')?.addEventListener('click', (e) => {
+                const toggle = /** @type {HTMLElement} */ (e.currentTarget);
+                const on = !body.classList.contains('je-ta-reordering');
+                body.classList.toggle('je-ta-reordering', on);
+                toggle.setAttribute('aria-pressed', String(on));
+                /** @type {HTMLElement} */ (toggle.lastElementChild).textContent = JE.t(on ? 'panel_settings_ui_tag_editor_reorder_done' : 'panel_settings_ui_tag_editor_reorder_groups');
+            });
             // One Tab stop per position picker; arrow keys, Home and End move along it (Enter or Space picks).
             body.addEventListener('keydown', (e) => {
                 const cell = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.je-ta-anchors [data-slot]'));
