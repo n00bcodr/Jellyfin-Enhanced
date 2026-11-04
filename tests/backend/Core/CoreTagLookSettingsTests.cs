@@ -50,17 +50,18 @@ public class CoreTagLookSettingsTests
             null,
         })!;
 
-        Assert.Equal(3, rules.Count);
+        // The first "kids" rule has an unknown condition (mood): dropping only that condition would
+        // widen the rule to every episode in the library, so the whole rule goes.
+        Assert.Equal(2, rules.Count);
         Assert.Equal("kids", rules[0].Id);
-        Assert.Equal("caption", rules[0].Layout);
-        Assert.Equal(new[] { ("library", Library), ("type", "Episode") }, rules[0].When.Select(c => (c.Field, c.Value)));
-        Assert.Equal("rule-2", rules[1].Id); // a repeated id is replaced, deterministically
+        Assert.Equal("minimal", rules[0].Layout);
         Assert.Equal(new[] { "kids", "rule-2", "rule-3" }, TagLookValidation.NormalizeRules(new[] { Rule("kids", "caption", When("type", "Movie")), Rule("kids", "bands", When("type", "Movie")), Rule("", "bands", When("type", "Movie")) })!.Select(r => r.Id));
-        Assert.Equal(new[] { ("genre", "Animation"), ("ageRating", "PG") }, rules[1].When.Select(c => (c.Field, c.Value)));
-        Assert.Equal("full", rules[2].Density);
-        Assert.False(rules[2].Enabled);
-        Assert.Null(rules[2].ColourPreset);
-        Assert.Equal(("ageRating", "pill"), (rules[2].Slots!.Single().Group, rules[2].Slots!.Single().Slot));
+        Assert.Equal(new[] { ("library", Library), ("type", "Episode") }, TagLookValidation.NormalizeRules(new[] { Rule("kids", " CAPTION ", When("LIBRARY", "01234567-89AB-CDEF-0123-456789ABCDEF"), When("type", "episode")) })!.Single().When.Select(c => (c.Field, c.Value)));
+        Assert.Equal(new[] { ("genre", "Animation"), ("ageRating", "PG") }, rules[0].When.Select(c => (c.Field, c.Value)));
+        Assert.Equal("full", rules[1].Density);
+        Assert.False(rules[1].Enabled);
+        Assert.Null(rules[1].ColourPreset);
+        Assert.Equal(("ageRating", "pill"), (rules[1].Slots!.Single().Group, rules[1].Slots!.Single().Slot));
 
         Assert.Null(TagLookValidation.NormalizeRules(null));
         Assert.Empty(TagLookValidation.NormalizeRules(Array.Empty<TagLookRule>())!);
@@ -70,11 +71,13 @@ public class CoreTagLookSettingsTests
     public void RulesAreCappedAtFiftyWithFiveConditionsEach()
     {
         var many = Enumerable.Range(0, 60).Select(i => Rule("r" + i, "bands",
-            Enumerable.Range(0, 8).Select(j => When("genre", "G" + j)).ToArray()));
+            Enumerable.Range(0, TagLookValidation.MaxConditions).Select(j => When("genre", "G" + j)).ToArray()));
         var rules = TagLookValidation.NormalizeRules(many)!;
         Assert.Equal(TagLookValidation.MaxRules, rules.Count);
         Assert.All(rules, r => Assert.Equal(TagLookValidation.MaxConditions, r.When.Count));
         Assert.Equal("r49", rules[^1].Id);
+        // A rule with more conditions than allowed is dropped rather than cut short (which would widen it).
+        Assert.Empty(TagLookValidation.NormalizeRules(new[] { Rule("six", "bands", Enumerable.Range(0, TagLookValidation.MaxConditions + 1).Select(j => When("genre", "G" + j)).ToArray()) })!);
     }
 
     [Fact]

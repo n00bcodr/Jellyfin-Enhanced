@@ -26,7 +26,7 @@
    ],
    "legacy": [
     "4K",
-    "HDR",
+    "HLG",
     "HEVC"
    ]
   },
@@ -53,6 +53,7 @@
    ],
    "legacy": [
     "4K",
+    "Dolby Vision",
     "HEVC"
    ]
   },
@@ -80,7 +81,7 @@
    ],
    "legacy": [
     "4K",
-    "HDR10",
+    "Dolby Vision",
     "HEVC"
    ]
   },
@@ -108,6 +109,7 @@
    ],
    "legacy": [
     "4K",
+    "Dolby Vision",
     "HEVC"
    ]
   },
@@ -134,6 +136,7 @@
    ],
    "legacy": [
     "4K",
+    "Dolby Vision",
     "HEVC"
    ]
   },
@@ -218,7 +221,7 @@
    ],
    "legacy": [
     "4K",
-    "HDR10",
+    "HDR10+",
     "HEVC"
    ]
   },
@@ -388,7 +391,7 @@
     "HEVC"
    ],
    "legacy": [
-    "8K",
+    "1080p",
     "HEVC"
    ]
   },
@@ -414,7 +417,7 @@
    ],
    "legacy": [
     "1080p",
-    "WMV"
+    "VC-1"
    ]
   },
   {
@@ -459,7 +462,8 @@
     "VVC"
    ],
    "legacy": [
-    "4K"
+    "4K",
+    "VVC"
    ]
   },
   {
@@ -483,7 +487,8 @@
     "ProRes"
    ],
    "legacy": [
-    "1080p"
+    "1080p",
+    "ProRes"
    ]
   },
   {
@@ -692,7 +697,7 @@
     "H264"
    ],
    "legacy": [
-    "720p",
+    "1080p",
     "H264"
    ]
   },
@@ -837,6 +842,153 @@
    ],
    "all": [
     "Dolby Digital"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "DVD title on an SDR stream is not Dolby Vision for any account",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 480,
+     "Width": 720,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "480p DVD MPEG2 SDR"
+    }
+   ],
+   "highest": [
+    "480p",
+    "MPEG2"
+   ],
+   "all": [
+    "480p",
+    "SDR",
+    "MPEG2"
+   ],
+   "legacy": [
+    "480p",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "A commentary track never stands for the soundtrack",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Fran\u00e7ais - Dolby Digital - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Commentary by the director",
+     "DisplayTitle": "Commentary by the director - English - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "Audio description is not the soundtrack either",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital+ - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "English (AD)",
+     "DisplayTitle": "English (AD) - DTS - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
+    "Dolby Digital+ 5.1"
+   ],
+   "legacy": [
+    "Dolby Digital+ 5.1"
+   ]
+  },
+  {
+   "name": "A file with only a commentary track still has a sound chip",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "Title": "Commentary",
+     "DisplayTitle": "Commentary - Dolby Digital - Stereo"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 2.0"
+   ],
+   "all": [
+    "Dolby Digital 2.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "A 4.0 layout named only in the title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 4,
+     "DisplayTitle": "English - PCM - 4.0"
+    }
+   ],
+   "highest": [
+    "PCM 4.0"
+   ],
+   "all": [
+    "PCM 4.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "A 3.0 layout named only in the title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 3,
+     "DisplayTitle": "English - PCM - 3.0"
+    }
+   ],
+   "highest": [
+    "PCM 3.0"
+   ],
+   "all": [
+    "PCM 3.0"
    ],
    "legacy": []
   }

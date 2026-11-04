@@ -207,9 +207,9 @@
 
     /**
      * Rules normalised the way the server stores them: rules with an unknown
-     * layout or density or without a valid condition are dropped, invalid
-     * conditions are dropped from their rule, missing/repeated ids replaced,
-     * at most 50 rules of at most 5 conditions.
+     * layout or density, without conditions, with an invalid condition (dropping
+     * it would widen the rule) or with more than 5 conditions are dropped,
+     * missing/repeated ids replaced, at most 50 rules.
      * @param {*} raw
      * @returns {TagLookRule[]}
      */
@@ -225,8 +225,8 @@
             const density = normalizeDensity(pick(rule, 'density'));
             if (!layout || !density) continue;
             const whenRaw = pick(rule, 'when');
-            const when = (Array.isArray(whenRaw) ? whenRaw : []).map(normalizeCondition).filter(Boolean).slice(0, MAX_CONDITIONS);
-            if (when.length === 0) continue;
+            const when = (Array.isArray(whenRaw) ? whenRaw : []).map(normalizeCondition);
+            if (when.length === 0 || when.length > MAX_CONDITIONS || when.includes(null)) continue;
             let id = String(pick(rule, 'id') ?? '').trim();
             if (!RULE_ID.test(id) || ids.has(id)) id = newRuleId(ids);
             ids.add(id);

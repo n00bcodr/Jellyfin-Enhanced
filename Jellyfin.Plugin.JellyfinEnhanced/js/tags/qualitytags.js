@@ -264,7 +264,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 8 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 9 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -339,6 +339,9 @@
      * @returns {Array}
      */
     function selectAudioStreamsForLanguage(audioStreams, preferred) {
+        // Commentary and audio description never stand for the soundtrack while an ordinary track exists.
+        const secondary = JE.core.mediaLanguage?.isSecondaryAudio;
+        if (typeof secondary === 'function' && audioStreams.some((s) => !secondary(s))) audioStreams = audioStreams.filter((s) => !secondary(s));
         const match = JE.core.mediaLanguage?.matchesLanguage;
         if (!preferred || !audioStreams.length || typeof match !== 'function') return audioStreams;
         const exact = audioStreams.filter((s) => match(s.Language, preferred, { requireRegion: true }));
@@ -569,7 +572,7 @@
         const numeric = /^(\d)\.(\d)$/.exec(layout);
         if (numeric) return `${numeric[1]}.${numeric[2]}`;
         const title = String(stream.DisplayTitle || '').toLowerCase();
-        const named = /(?:^|[^a-z0-9_])([5-7])[. ]([01])(?![a-z0-9_])/.exec(title);
+        const named = /(?:^|[^a-z0-9_])([1-7])[. ]([01])(?![a-z0-9_])/.exec(title);
         if (named) return `${named[1]}.${named[2]}`;
         if (/(?:^|[^a-z0-9_])stereo(?![a-z0-9_])/.test(title)) return '2.0';
         if (/(?:^|[^a-z0-9_])mono(?![a-z0-9_])/.test(title)) return '1.0';
@@ -641,16 +644,14 @@
     }
 
     /**
-     * Video codec label. Legacy documents keep VC-1 as WMV and know no VVC/ProRes.
+     * Video codec label (first match on the codec, then on the display title).
      * @param {Object} video Video stream.
-     * @param {boolean} legacy Version-0 vocabulary.
      * @returns {string|null} Codec label.
      */
-    function detectVideoCodec(video, legacy) {
-        const needles = [['hevc', 'HEVC'], ['h265', 'H265'], ['h264', 'H264'], ['avc', 'H264'], ['av1', 'AV1'], ['vp9', 'VP9'],
-            ['vp8', 'VP8'], ['xvid', 'XVID'], ['divx', 'DIVX'], ['wmv', 'WMV'], ['vc1', legacy ? 'WMV' : 'VC-1'], ['mpeg2', 'MPEG2'],
-            ['mpeg4', 'MPEG4'], ['mjpeg', 'MJPEG'], ['theora', 'THEORA']];
-        const current = legacy ? needles : [['vvc', 'VVC'], ['h266', 'VVC'], ...needles, ['prores', 'ProRes']];
+    function detectVideoCodec(video) {
+        const current = [['vvc', 'VVC'], ['h266', 'VVC'], ['hevc', 'HEVC'], ['h265', 'H265'], ['h264', 'H264'], ['avc', 'H264'], ['av1', 'AV1'], ['vp9', 'VP9'],
+            ['vp8', 'VP8'], ['xvid', 'XVID'], ['divx', 'DIVX'], ['wmv', 'WMV'], ['vc1', 'VC-1'], ['mpeg2', 'MPEG2'],
+            ['mpeg4', 'MPEG4'], ['mjpeg', 'MJPEG'], ['theora', 'THEORA'], ['prores', 'ProRes']];
         const codec = String(video.Codec || '').toLowerCase();
         const codecTag = String(video.CodecTag || '').toLowerCase();
         for (const [needle, label] of current) {
@@ -713,10 +714,9 @@
 
         // Get primary video stream for analysis
         const primaryVideoStream = videoStreams[0];
-        // Version-0 documents retain the detector they already used; per-track facts
-        // (All mode, series summaries) always use the current one, as the server does.
+        // Version-0 documents keep their audio vocabulary; every account gets the current video
+        // detection (range type, codec, dimensions), as the server does.
         const legacyAudio = legacyFullAudio();
-        const legacyVideo = legacyAudio && !singleTrack;
         for (const label of technicalLabels(itemData?.RunTimeTicks, primaryVideoStream)) qualities.add(label);
 
         // --- IMAX TAG LOGIC ---
@@ -762,17 +762,9 @@
             const resolutionMatch = displayTitle.match(resolutionRegex);
 
             const displayTitleHeight = primaryVideoStream.Height || 0;
-            const isFalsely4k = resolutionMatch &&
-                ['4k', '2160p'].includes(resolutionMatch[1].toLowerCase()) &&
-                displayTitleHeight > 0 && displayTitleHeight < 1250;
-            // Current vocabularies also reject an 8K hint on a known sub-8K picture.
-            const isFalsely8k = !legacyVideo && resolutionMatch &&
-                ['8k', '4320p'].includes(resolutionMatch[1].toLowerCase()) &&
-                displayTitleHeight > 0 && displayTitleHeight < 2500;
-
-            // Current vocabularies trust known dimensions; a title hint only names an unknown size.
-            const knownSize = (primaryVideoStream.Height || 0) > 0 || (primaryVideoStream.Width || 0) > 0;
-            if (resolutionMatch && !isFalsely4k && !isFalsely8k && (legacyVideo || !knownSize)) {
+            // Known dimensions decide; a title hint only names an unknown size.
+            const knownSize = displayTitleHeight > 0 || (primaryVideoStream.Width || 0) > 0;
+            if (resolutionMatch && !knownSize) {
                 const found = resolutionMatch[1].toLowerCase();
                 if (found === '8k' || found === '4320p') {
                     resolutionTag = '8K';
@@ -825,21 +817,13 @@
 
         // --- VIDEO CODEC LOGIC ---
         if (primaryVideoStream) {
-            const detectedCodec = detectVideoCodec(primaryVideoStream, legacyVideo);
+            const detectedCodec = detectVideoCodec(primaryVideoStream);
             if (detectedCodec) qualities.add(detectedCodec);
         }
 
         // --- VIDEO DYNAMIC RANGE LOGIC ---
-        if (primaryVideoStream && !legacyVideo) {
+        if (primaryVideoStream) {
             const range = videoRangeFacts(primaryVideoStream).range;
-            if (range) qualities.add(range);
-        } else if (primaryVideoStream) {
-            // Version-0 detector: unbounded text matches, as before.
-            const displayTitle = primaryVideoStream.DisplayTitle || '';
-            const videoRangeType = primaryVideoStream.VideoRangeType || '';
-            const test = (regex) => regex.test(displayTitle) || regex.test(videoRangeType);
-            const range = test(/dolby\s*vision|dv/i) ? 'Dolby Vision' : test(/hdr10plus/i) ? 'HDR10+'
-                : test(/hdr10/i) ? 'HDR10' : test(/\bhdr\b/i) ? 'HDR' : null;
             if (range) qualities.add(range);
         }
 
@@ -1375,7 +1359,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 8, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 9, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1411,7 +1395,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 8, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 9, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

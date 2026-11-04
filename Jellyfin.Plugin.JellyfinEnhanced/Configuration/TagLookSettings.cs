@@ -208,13 +208,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 var layout = NormalizeLayoutStrict(rule.Layout);
                 var density = NormalizeDensityStrict(rule.Density);
                 if (layout == null || density == null) continue;
-                var when = (rule.When ?? new List<TagLookCondition>())
-                    .Select(NormalizeCondition)
-                    .Where(c => c != null)
-                    .Take(MaxConditions)
-                    .Cast<TagLookCondition>()
-                    .ToList();
-                if (when.Count == 0) continue;
+                // Every condition must be valid: dropping one would silently widen the rule.
+                var raw = rule.When ?? new List<TagLookCondition>();
+                var when = raw.Select(NormalizeCondition).ToList();
+                if (when.Count == 0 || when.Count > MaxConditions || when.Contains(null)) continue;
                 var id = (rule.Id ?? string.Empty).Trim();
                 if (!RuleIdPattern.IsMatch(id) || ids.Contains(id))
                 {
@@ -233,7 +230,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 {
                     Id = id,
                     Enabled = rule.Enabled,
-                    When = when,
+                    When = when.Cast<TagLookCondition>().ToList(),
                     Layout = layout,
                     Density = density,
                     ColourPreset = NormalizePreset(rule.ColourPreset),

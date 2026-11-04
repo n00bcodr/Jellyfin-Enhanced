@@ -893,5 +893,40 @@
     "path": "TV/Show/Season 01/Show.S01E03.Extended.1080p.BluRay.mkv",
     "source": "BluRay",
     "edition": null
+  },
+  {
+    "path": "Movies/Uncut Gems/Uncut Gems.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Remux (2024)/Remux (2024).mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "Movies/Film (2020)/Film (2020) Extended 2024 BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "media/The.Final.Cut.2004.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "media/CAM.2018.mkv",
+    "source": null,
+    "edition": null
+  },
+  {
+    "path": "media/Movie.Extended.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": "Extended"
+  },
+  {
+    "path": "media/1917.2019.2160p.UHD.BluRay.REMUX.mkv",
+    "source": "REMUX",
+    "edition": null
   }
 ]

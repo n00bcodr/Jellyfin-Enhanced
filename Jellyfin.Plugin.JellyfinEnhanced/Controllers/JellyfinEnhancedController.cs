@@ -9833,7 +9833,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     namingTags = Services.MediaNamingTags.Detect(item.Path, mediaSources, item.Name);
                     subtitleLanguages = TagDataSubtitleLanguages(mediaSources);
                     sdhSubtitleLanguages = mediaSources.SelectMany(source => source.MediaStreams ?? new List<MediaStream>())
-                        .Where(stream => stream.Type == MediaStreamType.Subtitle && SubtitleAccessibility.IsSdh(stream.IsHearingImpaired, stream.Title, stream.DisplayTitle))
+                        .Where(stream => stream.Type == MediaStreamType.Subtitle && !stream.IsForced && SubtitleAccessibility.IsSdh(stream.IsHearingImpaired, stream.Title, stream.DisplayTitle))
                         .Select(stream => Services.TagCacheService.NormalizeStreamLanguage(stream.Language)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
@@ -9841,7 +9841,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         .Where(resolved =>
                             resolved.Resolved.Stream.Type == MediaStreamType.Video
                             || resolved.Resolved.Stream.Type == MediaStreamType.Audio
-                            || resolved.Resolved.Stream.Type == MediaStreamType.Subtitle)
+                            || (resolved.Resolved.Stream.Type == MediaStreamType.Subtitle && !resolved.Resolved.Stream.IsForced))
                         .Select(resolved =>
                         {
                             var s = resolved.Resolved.Stream;

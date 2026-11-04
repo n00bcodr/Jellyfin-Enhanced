@@ -45,15 +45,17 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token(@"final" + Separator + @"cut"), "Final Cut"),
         (Token(@"special" + Separator + @"edition"), "Special Edition"),
     ];
-    // Where the title ends: after the last year token, and for an episode after its SxxEyy marker
-    // and episode title (at the first '[' or quality token). Known edition words and low-quality
-    // source words only count from there, so titles such as "Uncut Gems (2019)", "The Final Cut
-    // (2004)", "Cam (2018)" or an episode called "The Director's Cut" carry no label.
+    // Where the title ends: after the year in brackets ("(2019)"), else after the first year that
+    // does not open the name ("2001 A Space Odyssey 1968"), and for an episode after its SxxEyy
+    // marker and episode title (at the first '[' or quality token). Without a year or an episode
+    // marker, a name only counts when it carries some release token. Known edition and source
+    // words only count from there, so "Uncut Gems (2019)", "Uncut Gems.mkv", "The Final Cut
+    // (2004)", "Cam (2018)", "Remux (2024)" or an episode called "The Director's Cut" carry none.
+    private static readonly Regex BracketYearToken = new(@"[(\[](?:19|20)\d{2}[)\]]", Options, Timeout);
     private static readonly Regex YearToken = new(@"(?:^|[. _\-\[\](){}])(?:19|20)\d{2}(?=$|[. _\-\[\](){}])", Options, Timeout);
     private static readonly Regex EpisodeToken = new(@"(?:^|[. _\-\[\](){}])s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*(?=$|[. _\-\[\](){}])", Options, Timeout);
     private static readonly Regex ReleaseBoundary = new(@"\[|" + Token(string.Join("|", QualityTagRules.ResolutionTokens.Concat(QualityTagRules.CodecTokens).Select(Regex.Escape)
         .Append(@"remux|bdremux|blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|web" + OptionalSeparator + @"(?:dl|rip)|web|hdtv|dvd(?:" + OptionalSeparator + @"rip)?|[hx]" + OptionalSeparator + "26[45]|1080i"))), Options, Timeout);
-    private static readonly HashSet<string> LowQualitySources = new(StringComparer.Ordinal) { "CAM", "TS", "TC", "SCR" };
     private static readonly string[] ResolutionOrder = ["8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD"];
     private static readonly string[] SourceOrder = ["REMUX", "BluRay", "WEB", "HDTV", "DVD", "SCR", "TC", "TS", "CAM"];
 
@@ -119,16 +121,18 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static string? SourceIn(string name)
     {
         var release = ReleasePart(name);
-        return Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(LowQualitySources.Contains(rule.Label) ? release : name)).Label;
+        return Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(release)).Label;
     }
 
     /// <summary>The part of a file or folder name after its title (see <see cref="YearToken"/>); the whole name when no boundary is known.</summary>
     internal static string ReleasePart(string name)
     {
         var part = name;
-        var years = YearToken.Matches(part);
-        if (years.Count > 0) part = part[(years[^1].Index + years[^1].Length)..];
+        var bracketYear = BracketYearToken.Match(part);
+        var year = bracketYear.Success ? bracketYear : YearToken.Matches(part).FirstOrDefault(m => m.Index > 0);
+        if (year != null) part = part[(year.Index + year.Length)..];
         var episode = EpisodeToken.Match(part);
+        if (year == null && !episode.Success) return ReleaseBoundary.IsMatch(part) ? part : string.Empty;
         if (episode.Success)
         {
             var rest = part[(episode.Index + episode.Length)..];

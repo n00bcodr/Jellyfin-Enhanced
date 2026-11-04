@@ -1005,7 +1005,20 @@
         return name;
     }
 
+    /**
+     * A commentary or audio-description audio track is not a dub or the main soundtrack
+     * (Helpers/TrackRoles.cs on the server).
+     * @param {Object} stream Audio stream.
+     * @returns {boolean} True when the track's title names that role.
+     */
+    function isSecondaryAudio(stream) {
+        const text = `${stream?.Title || ''} | ${stream?.DisplayTitle || ''}`;
+        return /(?<![a-z0-9])(?:commentar(?:y|ies)|audio[ -]?descri(?:ption|bed)|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired)(?![a-z0-9])/i.test(text)
+            || /(?<![A-Za-z0-9])AD(?![A-Za-z0-9])/.test(text);
+    }
+
     JE.core.mediaLanguage = {
+        isSecondaryAudio,
         uiLocale,
         formatNumberText,
         localName,

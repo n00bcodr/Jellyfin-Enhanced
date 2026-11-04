@@ -330,7 +330,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v25 leaves commentary/audio-description audio out of AudioLanguages and forced-only languages
         // out of SubtitleLanguages, and reads edition and low-quality source words only after a title.
         // v26 records each track's own channel layout (1.0, 4.0, 5.0, 6.1, ...) in the per-track facts.
-        internal const int CurrentCacheSchemaVersion = 26;
+        // v27 keeps forced subtitle tracks out of the stored subtitle facts and commentary/description
+        // audio out of the per-track sound facts of versions with an ordinary track.
+        internal const int CurrentCacheSchemaVersion = 27;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -3026,6 +3028,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
                         if (s.Type != MediaStreamType.Subtitle && s.Type != MediaStreamType.Video && s.Type != MediaStreamType.Audio)
                             continue;
+
+                        // A forced track is kept out of the subtitle facts entirely, so it cannot
+                        // mark a full subtitle of its language SDH either.
+                        if (s.Type == MediaStreamType.Subtitle && s.IsForced) continue;
 
                         // Only a video stream's range is read (for the HDR /
                         // Dolby Vision tag); an audio stream's is always

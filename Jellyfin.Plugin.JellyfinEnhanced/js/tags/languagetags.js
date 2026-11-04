@@ -39,17 +39,6 @@
     // zh-Hant → Taiwanese — while a bare pt/es/zh keeps its default flag.
 
     /**
-     * A commentary or audio-description audio track is not a dub (Helpers/TrackRoles.cs on the server).
-     * @param {Object} stream Audio stream.
-     * @returns {boolean} True when the track's title names that role.
-     */
-    function isSecondaryAudio(stream) {
-        const text = `${stream.Title || ''} | ${stream.DisplayTitle || ''}`;
-        return /(?<![a-z0-9])(?:commentar(?:y|ies)|audio[ -]?descri(?:ption|bed)|described[ -]video|descriptive[ -](?:audio|video|track)|visually[ -]impaired)(?![a-z0-9])/i.test(text)
-            || /(?<![A-Za-z0-9])AD(?![A-Za-z0-9])/.test(text);
-    }
-
-    /**
      * Extracts languages of one track type from a Jellyfin item's media sources.
      * @param {Object} sourceItem - The item (or first episode) to extract languages from.
      * @param {string} [type='Audio'] - Audio or Subtitle.
@@ -63,7 +52,7 @@
         const processStreams = function(streams) {
             if (!streams) return;
             // Commentary/description audio and forced subtitles are not language options.
-            streams.filter(function(s) { return s.Type === type && !(type === 'Audio' ? isSecondaryAudio(s) : s.IsForced === true); }).forEach(function(stream) {
+            streams.filter(function(s) { return s.Type === type && !(type === 'Audio' ? JE.core.mediaLanguage.isSecondaryAudio(s) : s.IsForced === true); }).forEach(function(stream) {
                 var langCode = stream.Language;
                 if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
                     languages.add(JSON.stringify({ name: displayName(langCode), code: langCode, sdh: type === 'Subtitle' && (stream.IsHearingImpaired === true || /\b(SDH|CC)\b/i.test(`${stream.Title || ''} ${stream.DisplayTitle || ''}`)) }));

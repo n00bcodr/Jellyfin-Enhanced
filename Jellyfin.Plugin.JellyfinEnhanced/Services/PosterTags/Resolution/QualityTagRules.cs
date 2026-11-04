@@ -72,8 +72,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly Regex ResolutionRegex = new(WordStart + "(" + string.Join("|", ResolutionTokens) + ")" + WordEnd, Options);
         private static readonly Regex ImaxRegex = new(WordStart + "imax(?:[ ._-]?enhanced)?" + WordEnd, Options);
         private static readonly Regex NonImaxRegex = new(WordStart + "non[ ._-]?imax" + WordEnd, Options);
-        private static readonly Regex DolbyVisionRegex = new("dolby" + JsSpace + "*vision|dv", Options);
-        private static readonly Regex HdrRegex = new(WordStart + "hdr" + WordEnd, Options);
         private static readonly Regex DtsRegex = new(WordStart + "dts" + WordEnd, Options);
         private static readonly Regex DolbyDigitalPlusRegex = new("dolby" + JsSpace + @"*digital\+", Options);
         private static readonly Regex Channels71Regex = new(WordStart + "7[. ]?1" + WordEnd, Options);
@@ -91,7 +89,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly string[] AudioBases = { "Dolby Digital+", "Dolby Digital", "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "DTS-HD HRA", "DTS", "PCM", "FLAC" };
 
         // Video codec detection order (first match wins), on the lowercased Codec then DisplayTitle.
-        // Version-0 vocabulary: VC-1 reads WMV and VVC/ProRes are unknown.
+        // The bare-WEB filename vocabulary (CodecTokens); detection uses CurrentCodecNeedles.
         private static readonly (string Needle, string Label)[] CodecNeedles =
         {
             ("hevc", "HEVC"), ("h265", "H265"), ("h264", "H264"), ("avc", "H264"), ("av1", "AV1"), ("vp9", "VP9"),
@@ -189,12 +187,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         internal static List<TagStreamQuality> DetectDistinct(IEnumerable<TagMediaStream>? streams, bool legacyAudio = false)
         {
             var values = new List<TagStreamQuality>();
-            foreach (var stream in streams ?? Array.Empty<TagMediaStream>())
+            var all = (streams ?? Array.Empty<TagMediaStream>()).ToList();
+            // Versions with an ordinary audio track list no commentary or audio-description facts.
+            var ordinary = all.Where(s => s?.Type == "Audio" && !Helpers.TrackRoles.IsSecondaryAudio(s.Title, s.DisplayTitle)).Select(s => s.SourceId).ToHashSet();
+            foreach (var stream in all)
             {
                 if (stream == null) continue;
+                if (stream.Type == "Audio" && ordinary.Contains(stream.SourceId) && Helpers.TrackRoles.IsSecondaryAudio(stream.Title, stream.DisplayTitle)) continue;
                 if (stream.Type == "Video")
                 {
-                    var codec = DetectCodec(stream, legacy: false);
+                    var codec = DetectCodec(stream);
                     if (codec != null) values.Add(new(VideoCodec, codec, SourceId: stream.SourceId));
                     // Unknown stays unknown: only a known SDR stream is SDR; a Dolby Vision
                     // stream also lists the base layer other displays fall back to.
@@ -320,13 +322,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             {
                 if (TechnicalQualityRules.Aspect(primaryVideo) is { } aspect) Add(qualities, AspectRatio + ":" + aspect);
                 if (TechnicalQualityRules.FrameRate(primaryVideo) is { } rate) Add(qualities, FrameRate + ":" + rate);
-                var resolution = DetectResolution(primaryVideo, legacyAudio);
+                // Every account gets the current video detection; version 0 keeps only its audio vocabulary.
+                var resolution = DetectResolution(primaryVideo);
                 if (resolution is not null) Add(qualities, resolution);
 
-                var codec = DetectCodec(primaryVideo, legacyAudio);
+                var codec = DetectCodec(primaryVideo);
                 if (codec is not null) Add(qualities, codec);
 
-                var hdr = legacyAudio ? DetectLegacyDynamicRange(primaryVideo) : DetectRangeFacts(primaryVideo).Range;
+                var hdr = DetectRangeFacts(primaryVideo).Range;
                 if (hdr is not null) Add(qualities, hdr);
             }
 
@@ -470,7 +473,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly Dictionary<int, string> CountLayouts = new() { [1] = "1.0", [2] = "2.0", [6] = "5.1", [7] = "6.1", [8] = "7.1" };
 
         private static readonly Regex NumericLayoutRegex = new(@"^([0-9])\.([0-9])\z", Options);
-        private static readonly Regex TitleLayoutRegex = new(@"(?:^|[^a-z0-9_])([5-7])[. ]([01])(?![a-z0-9_])", Options);
+        private static readonly Regex TitleLayoutRegex = new(@"(?:^|[^a-z0-9_])([1-7])[. ]([01])(?![a-z0-9_])", Options);
         private static readonly Regex TitleStereoRegex = new(@"(?:^|[^a-z0-9_])stereo(?![a-z0-9_])", Options);
         private static readonly Regex TitleMonoRegex = new(@"(?:^|[^a-z0-9_])mono(?![a-z0-9_])", Options);
 
@@ -565,6 +568,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         private static List<TagMediaStream> SelectAudioStreamsForLanguage(List<TagMediaStream> audioStreams, string? preferred)
         {
+            // Commentary and audio description never stand for the soundtrack while an ordinary track exists.
+            if (audioStreams.Exists(s => !Helpers.TrackRoles.IsSecondaryAudio(s.Title, s.DisplayTitle)))
+                audioStreams = audioStreams.FindAll(s => !Helpers.TrackRoles.IsSecondaryAudio(s.Title, s.DisplayTitle));
             if (string.IsNullOrEmpty(preferred) || audioStreams.Count == 0) return audioStreams;
             var exact = audioStreams.FindAll(s => LanguageFlagRules.MatchesLanguage(s.Language, preferred, requireRegion: true));
             if (exact.Count > 0) return exact;
@@ -591,18 +597,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
         }
 
-        internal static string? DetectResolution(TagMediaStream video, bool legacy = false)
+        internal static string? DetectResolution(TagMediaStream video)
         {
             var displayTitle = JsText.AsciiLower(video.DisplayTitle);
             var height = video.Height ?? 0;
             var width = video.Width ?? 0;
             var match = ResolutionRegex.Match(displayTitle);
             var found = match.Success ? match.Groups[1].Value : null;
-            var falsely4K = found is "4k" or "2160p" && height > 0 && height < 1250;
-            // Current vocabularies also reject an 8K hint on a known sub-8K picture.
-            var falsely8K = !legacy && found is "8k" or "4320p" && height > 0 && height < 2500;
-            // Current vocabularies trust known dimensions; a title hint only names an unknown size.
-            if (found is not null && !falsely4K && !falsely8K && (legacy || (height <= 0 && width <= 0)))
+            // Known dimensions decide; a title hint only names an unknown size.
+            if (found is not null && height <= 0 && width <= 0)
             {
                 return found switch
                 {
@@ -628,9 +631,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return height > 0 ? "LOW-RES" : null;
         }
 
-        private static string? DetectCodec(TagMediaStream video, bool legacy)
+        private static string? DetectCodec(TagMediaStream video)
         {
-            var needles = legacy ? CodecNeedles : CurrentCodecNeedles;
+            var needles = CurrentCodecNeedles;
             var codec = JsText.ToLower(video.Codec ?? string.Empty);
             var codecTag = JsText.ToLower(video.CodecTag ?? string.Empty);
             foreach (var (needle, label) in needles)
@@ -646,18 +649,6 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 if (displayTitle.Contains(needle, StringComparison.Ordinal)) return label;
             }
 
-            return null;
-        }
-
-        /// <summary>Version-0 detector: unbounded text matches on the title and range type.</summary>
-        private static string? DetectLegacyDynamicRange(TagMediaStream video)
-        {
-            var displayTitle = JsText.AsciiLower(video.DisplayTitle);
-            var rangeType = JsText.AsciiLower(video.VideoRangeType);
-            if (DolbyVisionRegex.IsMatch(displayTitle) || DolbyVisionRegex.IsMatch(rangeType)) return "Dolby Vision";
-            if (displayTitle.Contains("hdr10plus", StringComparison.Ordinal) || rangeType.Contains("hdr10plus", StringComparison.Ordinal)) return "HDR10+";
-            if (displayTitle.Contains("hdr10", StringComparison.Ordinal) || rangeType.Contains("hdr10", StringComparison.Ordinal)) return "HDR10";
-            if (HdrRegex.IsMatch(displayTitle) || HdrRegex.IsMatch(rangeType)) return "HDR";
             return null;
         }
 

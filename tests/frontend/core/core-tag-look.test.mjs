@@ -453,3 +453,11 @@ test('saveItemOverride sends only affected entries, retries once on a conflict a
   assert.equal(await h.look.saveItemOverride(MOVIE, { layout: 'bands' }, { api: { get: async () => ({}), patch: async () => { throw Object.assign(new Error('forbidden'), { status: 403 }); } } }), false);
   assert.equal(await h.look.saveItemOverride('nope', { layout: 'bands' }, { api }), false);
 });
+
+test('a rule with an invalid or surplus condition is dropped instead of widened', t => {
+  const h = setup(t);
+  const rule = (when) => ({ id: 'r', when, layout: 'bands', density: 'full' });
+  assert.deepEqual(plain(h.look.normalizeRules([rule([{ field: 'type', value: 'Movie' }, { field: 'watched', value: 'true' }])])), []);
+  assert.deepEqual(plain(h.look.normalizeRules([rule(Array.from({ length: 6 }, (_, i) => ({ field: 'genre', value: `G${i}` })))])), []);
+  assert.equal(h.look.normalizeRules([rule(Array.from({ length: 5 }, (_, i) => ({ field: 'genre', value: `G${i}` })))])[0].when.length, 5);
+});
