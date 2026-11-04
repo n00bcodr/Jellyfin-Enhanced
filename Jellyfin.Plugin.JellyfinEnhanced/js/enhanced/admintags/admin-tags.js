@@ -75,6 +75,16 @@
     ];
 
     /** The tabs, in order. */
+    /**
+     * Who each card's settings reach: 'new' = the defaults a brand-new user
+     * starts with, 'all' = every user now (shared, server-wide).
+     */
+    const SECTION_SCOPES = {
+        'layout-look': 'new', 'layout-groups': 'new', 'layout-shapes': 'new', rules: 'new', 'badges-families': 'new',
+        'layout-apply': 'all', colours: 'all', 'badges-windows': 'all', 'badges-tmdb': 'all', 'badges-leaving': 'all',
+        'item-looks': 'all', 'server-cache': 'all', 'server-native': 'all', 'server-presets': 'all',
+    };
+
     const TABS = [
         { id: 'overview', icon: 'dashboard', nameKey: 'admin_tags_tab_overview', descKey: 'admin_tags_tab_overview_desc' },
         { id: 'layout', icon: 'view_quilt', nameKey: 'admin_tags_tab_layout', shortKey: 'common_layout', descKey: 'admin_tags_tab_layout_desc' },
@@ -778,8 +788,11 @@
 
         /** @param {Object} s @returns {string} A section card. */
         function sectionHtml(s) {
-            return `<section class="je-ta-card" data-section="${esc(s.id)}" aria-labelledby="jeTaSec-${esc(s.id)}">`
-                + `<h3 class="je-ta-card-title" id="jeTaSec-${esc(s.id)}">${tx(s.title)}</h3>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
+            // Who a card's settings reach: brand-new users' starting point, or everyone now.
+            const scope = SECTION_SCOPES[s.id];
+            const chip = scope ? ` <span class="je-ta-scope" data-scope="${scope}">${tx(scope === 'new' ? 'admin_tags_scope_new' : 'admin_tags_scope_all')}</span>` : '';
+            return `<section class="je-ta-card${s.note ? ' je-ta-card--note' : ''}" data-section="${esc(s.id)}" aria-labelledby="jeTaSec-${esc(s.id)}">`
+                + `<h3 class="je-ta-card-title" id="jeTaSec-${esc(s.id)}">${tx(s.title)}${chip}</h3>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
                 + fieldsHtml(s.fields, config) + '<div class="je-ta-section-body"></div></section>';
         }
 

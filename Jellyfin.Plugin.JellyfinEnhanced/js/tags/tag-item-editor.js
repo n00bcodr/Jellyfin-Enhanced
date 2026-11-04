@@ -61,6 +61,7 @@
         .je-tie-chip { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid #ffb74d; border-radius: 4px; color: #ffb74d; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
         .je-tie-close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
         .je-tie-close:hover { background: rgba(255,255,255,0.08); }
+        .je-tie-jump { display: none; }
         .je-tie-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 14px 16px; }
         .je-tie-side { position: sticky; top: 0; align-self: start; }
         .je-tie-card { position: relative; width: 100%; }
@@ -123,6 +124,15 @@
         .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
         .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
         .je-tie-groups-hint { margin: -2px 0 10px; }
+        .je-tie-hidden { margin-top: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
+        .je-tie-hidden-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; border-radius: 8px; }
+        .je-tie-hidden-toggle::-webkit-details-marker { display: none; }
+        .je-tie-hidden-toggle:hover { background: rgba(255,255,255,0.05); }
+        .je-tie-hidden-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        .je-tie-hidden-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        .je-tie-hidden[open] > .je-tie-hidden-toggle .material-icons { transform: rotate(180deg); }
+        .je-tie-hidden > .je-tie-hint { margin: 0 12px 10px; }
+        .je-tie-hidden > .je-tie-groups { padding: 0 8px 8px; }
         .je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
         .je-tie-group { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; min-height: 56px; box-sizing: border-box; padding: 8px 10px 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
         .je-tie-group[data-open="1"] { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
@@ -186,6 +196,9 @@
             .je-tie-gopen { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; }
             .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
             .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
+            .je-tie-head { position: sticky; top: 0; z-index: 3; background: #1d2026; }
+            .je-tie-jump:not([hidden]) { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 44px; padding: 0 12px 0 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+            .je-tie-jump-thumb { width: 22px; height: 33px; border-radius: 3px; background: #2b303a center / cover no-repeat; }
             .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }
         }
     `;
@@ -535,6 +548,8 @@
         for (const layout of LAYOUTS) draft.slots[layout] = { ...base.profiles[layout] };
         /** @type {string|null} the group row whose position and limit are open (one at a time) */
         let openGroup = null;
+        /** Whether the list of groups the user's settings hide is open. */
+        let hiddenOpen = false;
         /** @type {Object<string, string>} "layout:group" → the position a group had before it was switched off */
         const lastSlot = {};
         draft.slots[startLayout] = { ...effective.slots };
@@ -561,6 +576,7 @@
         const titleKey = serverMode ? 'tag_item_editor_title_server' : 'tag_item_editor_title';
         backdrop.innerHTML = `<div class="je-tie" role="dialog" aria-modal="true" aria-labelledby="${uid}Title" tabindex="-1">
             <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title"><span data-tie-title></span>${serverMode ? `<span class="je-tie-chip">${tx('common_admin')}</span>` : ''}</h3>
+                <button type="button" class="je-tie-jump" data-tie-jump hidden aria-label="${tx('tag_item_editor_show_preview')}"><span class="je-tie-jump-thumb" aria-hidden="true"></span>${tx('common_preview')}</button>
                 <button type="button" class="je-tie-close" data-tie-close aria-label="${tx('awards_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>
             <div class="je-tie-body">
                 <div class="je-tie-side">
@@ -585,7 +601,7 @@
                         ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
                     <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
                         ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
-                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('tag_item_editor_groups_title')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><ul class="je-tie-groups" data-tie-groups></ul></section>
+                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('tag_item_editor_groups_title')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><div data-tie-groups></div></section>
                     <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
                         <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
@@ -622,6 +638,18 @@
         // The poster (the episode's still) under the tags.
         const image = item.ImageTags?.Primary ? ApiClient.getScaledImageUrl(id, { type: 'Primary', maxHeight: 480, tag: item.ImageTags.Primary }) : '';
         if (image) target.style.backgroundImage = `url("${image}")`;
+        // Phone: once the preview scrolls away, the sticky title row offers a way back to it.
+        const jump = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-jump]'));
+        if (image) /** @type {HTMLElement} */ (jump.firstElementChild).style.backgroundImage = `url("${image}")`;
+        jump.addEventListener('click', () => {
+            dialog.querySelector('.je-tie-side')?.scrollIntoView?.({ block: 'start' });
+            /** @type {HTMLElement|null} */ (dialog.querySelector('.je-tie-card'))?.focus({ preventScroll: true });
+        });
+        const sideWatch = typeof IntersectionObserver === 'function'
+            ? new IntersectionObserver(([entry]) => { jump.hidden = !!entry?.isIntersecting; }, { root: backdrop, threshold: 0 })
+            : null;
+        const side = dialog.querySelector('.je-tie-side');
+        if (sideWatch && side) sideWatch.observe(side);
         const drawn = drawTags(target, id, serverEntry, serverEntry ? null : facts);
         noteEl.hidden = drawn;
         noteEl.textContent = drawn ? '' : JE.t('tag_item_editor_no_tags');
@@ -680,7 +708,9 @@
             // The groups that draw for this user first, the ones switched off in their settings after.
             const ordered = base.order || L.DEFAULT_ORDER;
             const order = [...ordered.filter((g) => groupOn(g)), ...ordered.filter((g) => !groupOn(g))];
-            groupsList.innerHTML = order.map((group) => {
+            // Personal editor: groups the user's settings hide go in their own closed list.
+            const tucked = (group) => !serverMode && !groupOn(group);
+            const rowHtml = (group) => {
                 const meta = GROUPS[group];
                 if (!meta) return '';
                 const slot = slots[group] || 'off';
@@ -707,13 +737,18 @@
                     : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where: slotLabel(draft.layout, slot), cap: capText }))
                     : JE.t('panel_settings_ui_tag_slot_off');
                 // The server-wide look's rows describe the draft; the admin's own switches are not the point there.
-                const offNote = groupOn(group) || serverMode ? '' : 'tag_item_editor_group_off_for_you';
+                const offNote = tucked(group);
                 return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}" data-open="${open ? 1 : 0}">
-                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}${offNote ? ` aria-describedby="${uid}-${group}-off"` : ''}>${esc(gname)}</label>${offNote ? `<small id="${uid}-${group}-off">${tx(offNote)}</small>` : ''}</div>
+                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''} aria-label="${tx('tag_item_editor_include_group', { group: gname })}"${offNote ? ` aria-describedby="${uid}HiddenHint"` : ''}>${esc(gname)}</label></div>
                     <span class="je-tie-gsum">${esc(summary)}</span>
                     <button type="button" class="je-tie-gopen" data-tie-open data-tie-key="${group}-open" aria-expanded="${open}" aria-controls="${uid}-${group}-detail" aria-label="${tx('tag_item_editor_group_edit', { group: gname })}" ${on ? '' : 'disabled'}>${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
                     <div class="je-tie-detail" id="${uid}-${group}-detail" ${open && on ? '' : 'hidden'}><div class="je-tie-where">${where}</div>${stepper}</div></li>`;
-            }).join('');
+            };
+            const shown = order.filter((g) => GROUPS[g] && !tucked(g));
+            const hidden = order.filter((g) => GROUPS[g] && tucked(g));
+            groupsList.innerHTML = `<ul class="je-tie-groups">${shown.map(rowHtml).join('')}</ul>`
+                + (hidden.length ? `<details class="je-tie-hidden" data-tie-hidden ${hiddenOpen ? 'open' : ''}><summary class="je-tie-hidden-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_item_editor_hidden_groups', { n: hidden.length })}</summary>`
+                    + `<p class="je-tie-hint" id="${uid}HiddenHint">${tx('tag_item_editor_hidden_groups_hint')}</p><ul class="je-tie-groups">${hidden.map(rowHtml).join('')}</ul></details>` : '');
             if (!focusKey) return;
             const usable = (el) => !!el && !/** @type {HTMLButtonElement} */ (el).disabled && !el.closest('[hidden]');
             let next = /** @type {HTMLElement|null} */ (groupsList.querySelector(`[data-tie-key="${focusKey}"]`));
@@ -786,6 +821,9 @@
             saveError = '';
             schedule();
         });
+        groupsList.addEventListener('toggle', (e) => {
+            if (/** @type {HTMLElement} */ (e.target).matches?.('[data-tie-hidden]')) hiddenOpen = /** @type {HTMLDetailsElement} */ (e.target).open;
+        }, true);
         groupsList.addEventListener('click', (e) => {
             const opener = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tie-open]'));
             if (opener && !opener.disabled) {
@@ -825,6 +863,7 @@
             document.removeEventListener('focusin', onFocusIn, true);
             window.removeEventListener('hashchange', onNavigate);
             interaction.dispose();
+            sideWatch?.disconnect();
             L.setPreviewLook(target, null);
             L.clearCard(target);
             backdrop.remove();

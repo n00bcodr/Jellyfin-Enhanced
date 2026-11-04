@@ -509,13 +509,16 @@ test('Show up to steps like the hub: All → 10 … 1, and back up to All only f
   assert.equal(step(3, 1, { capFixed: true }), null);
 });
 
-test('groups that draw for the user come first; groups switched off in their settings follow and say so', async t => {
+test('groups that draw for the user come first; groups switched off in their settings follow in their own closed list', async t => {
   const h = setup(t, { settings: { qualityTagsEnabled: false, genreTagsEnabled: true, ratingTagsEnabled: true } });
   await h.open(MOVIE);
-  const rows = Array.from(h.document.querySelectorAll('.je-tie-group'), (li) => [li.dataset.group, !!li.querySelector('small')]);
+  const rows = Array.from(h.document.querySelectorAll('.je-tie-group'), (li) => [li.dataset.group, !!li.closest('[data-tie-hidden]')]);
   assert.deepEqual(rows.slice(0, 2), [['rating', false], ['genre', false]]);
-  assert.ok(rows.slice(2).every(([, off]) => off), 'the rest are off for this user');
+  assert.ok(rows.slice(2).every(([, off]) => off), 'the rest are under "Hidden by your settings"');
+  assert.equal(h.$('[data-tie-hidden]').open, false, 'that list starts closed');
+  assert.match(h.$('[data-tie-hidden] summary').textContent, /tag_item_editor_hidden_groups/);
   assert.ok(rows.some(([g]) => g === 'quality'), 'still editable for the item');
+  assert.match(h.$('.je-tie-group[data-group="quality"] [data-tie-on]').getAttribute('aria-label'), /tag_item_editor_include_group/, 'the switch says it includes the group in this look');
 });
 
 test('focus goes back to the redrawn control when the opener was replaced meanwhile', async t => {

@@ -846,7 +846,9 @@
                 });
                 label = (low && low.l) || labels[0];
             }
-            if (label) box.appendChild(chip(current, label, effective(current, label.key)));
+            if (!label) return;
+            box.appendChild(chip(current, label, effective(current, label.key)));
+            box.appendChild(el('span', 'je-ts-sample-note', target === ALL ? 'Lowest-contrast tag in the group: ' + label.name : 'Editing this tag'));
         }
 
         /** @returns {void} */

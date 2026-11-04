@@ -286,7 +286,6 @@
                     <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
                 </div>
             </section>
-            ${internal.buildTagPortableHtml?.() || ''}
             <div class="je-mth-shapes">${shapesHtml()}</div>
             <p class="je-mth-hint je-mth-shapes-note">${tx('tag_shapes_limitations')}</p>
             <section class="je-mth-card" aria-labelledby="jeMthSwitchesTitle">
@@ -297,7 +296,8 @@
                     ${native}
                     ${switchRow('peopleTagsToggle', !!JE.currentSettings.peopleTagsEnabled, 'panel_settings_ui_people_tags', 'panel_settings_ui_people_tags_desc')}
                 </div>
-            </section>`;
+            </section>
+            ${internal.buildTagPortableHtml?.() || ''}`;
     }
 
     /**
@@ -674,7 +674,8 @@
             #jellyfin-enhanced-panel .je-mth-badge { position: relative; display: block; }
             #jellyfin-enhanced-panel .je-mth-badge-sample { position: absolute; top: 10px; right: 12px; max-width: 40%; }
             #jellyfin-enhanced-panel .je-mth-badge-name { display: block; min-height: 22px; padding-right: 40%; }
-            #jellyfin-enhanced-panel .je-mth-autosave { display: none; }
+            #jellyfin-enhanced-panel .je-mth-autosave { order: 1; flex: 1 1 100%; margin: 0 0 8px; color: rgba(255,255,255,0.7); }
+            #jellyfin-enhanced-panel .je-mth-tabs { order: 2; }
         }
     `;
 

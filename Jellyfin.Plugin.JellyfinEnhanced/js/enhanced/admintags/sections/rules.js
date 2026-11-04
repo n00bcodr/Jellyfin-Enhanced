@@ -309,7 +309,9 @@
     A.registerSection({
         id: 'rules-locks',
         tab: 'rules',
-        order: 20,
+        // A pointer, not a list: after the server-wide item looks, drawn as a note.
+        order: 40,
+        note: true,
         title: 'tag_looks_locked_heading',
         hint: 'admin_tags_locks_desc',
     });

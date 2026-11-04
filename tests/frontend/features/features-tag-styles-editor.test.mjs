@@ -432,7 +432,8 @@ test('the preset reads as one line until Change preset, the edited tag is drawn 
   h.$('#tagStylePresetToggle').click();
   assert.equal(h.$('#tagStylePresets').hidden, false);
   assert.equal(h.$('#tagStylePresetToggle').getAttribute('aria-expanded'), 'true');
-  assert.ok(h.$('#tagStyleSample').children.length === 1, 'one sample tag next to the colour rows');
+  assert.equal(h.$('#tagStyleSample').querySelectorAll('.je-ts-chip').length, 1, 'one sample tag next to the colour rows');
+  assert.match(h.$('#tagStyleSample .je-ts-sample-note').textContent, /^Lowest-contrast tag in the group: /, 'it says why this tag');
   assert.equal(h.$('#tagStylePreview').hidden, true, 'poster samples start closed');
   h.$('#tagStylePreviewToggle').click();
   assert.equal(h.$('#tagStylePreview').hidden, false);
