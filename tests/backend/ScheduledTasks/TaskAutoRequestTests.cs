@@ -260,6 +260,140 @@ public class TaskAutoRequestTests
     }
 
     [Theory]
+    // A 4K request is blocked by a pending, processing or available 4K copy (status4k), like status blocks today.
+    [InlineData("custom", 1, 2, 0)]
+    [InlineData("custom", 1, 3, 0)]
+    [InlineData("custom", 1, 5, 0)]
+    [InlineData("original", -1, 2, 0)]
+    [InlineData("original", -1, 5, 0)]
+    // Other 4K states still request.
+    [InlineData("custom", 1, 1, 1)]
+    [InlineData("custom", 1, 4, 1)]
+    // A non-4K request ignores status4k.
+    [InlineData("custom", 0, 2, 1)]
+    [InlineData("custom", 0, 5, 1)]
+    [InlineData("default", -1, 2, 1)]
+    [InlineData("default", -1, 5, 1)]
+    public async Task FourKRequestHonoursCollectionStatus4k(string mode, int serverId, int status4k, int expectedPosts)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.AutoMovieRequestEnabled = true;
+        config.JellyseerrEnabled = true;
+        config.TMDB_API_KEY = "test-tmdb";
+        config.JellyseerrUrls = "http://seerr.test";
+        config.JellyseerrApiKey = "test-seerr";
+        config.AutoMovieRequestCheckReleaseDate = false;
+        config.AutoMovieRequestQualityMode = mode;
+        config.AutoMovieRequestFallbackOn4k = false;
+        config.AutoMovieRequestCustomServerId = serverId;
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        int? nextStatus4k = status4k;
+        var posts = 0;
+        using var transport = new IntegrationTransport((request, ct) =>
+        {
+            switch (request.RequestUri!.AbsolutePath)
+            {
+                case "/3/movie/123": return Task.FromResult(IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}"));
+                case "/api/v1/collection/9": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01", mediaInfo = new { status = 5 } }, new { id = 124, title = "Second", releaseDate = "2001-01-01", mediaInfo = new { status = 1, status4k = nextStatus4k } } } })));
+                // The watched movie's own 4K request, read by "original" mode.
+                case "/api/v1/movie/123": return Task.FromResult(IntegrationTransport.Response("{\"mediaInfo\":{\"requests\":[{\"serverId\":1,\"profileId\":9,\"rootFolder\":\"/uhd\",\"is4k\":true}]}}"));
+                case "/api/v1/service/radarr": return Task.FromResult(IntegrationTransport.Response(RadarrServers));
+                case "/api/v1/user": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } })));
+                case "/api/v1/request":
+                    posts++;
+                    return Task.FromResult(IntegrationTransport.Response("{}", 201));
+                default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
+            }
+        });
+        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!);
+        await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
+        Assert.Equal(expectedPosts, posts);
+        if (expectedPosts == 0)
+        {
+            // A blocked 4K request leaves no per-user cache entry, so once the 4K request is gone the
+            // next play requests again within the hour.
+            nextStatus4k = null;
+            await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
+            Assert.Equal(1, posts);
+        }
+    }
+
+    [Fact]
+    public async Task RadarrServerListCacheFollowsApiKeyAndKeepsSeerrDetailsOutOfTheLog()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.AutoMovieRequestEnabled = true;
+        config.JellyseerrEnabled = true;
+        config.TMDB_API_KEY = "test-tmdb";
+        config.JellyseerrUrls = "http://seerr-admin:url-secret@seerr.test";
+        config.JellyseerrApiKey = "seerr-key-one";
+        config.AutoMovieRequestCheckReleaseDate = false;
+        config.AutoMovieRequestQualityMode = "custom";
+        config.AutoMovieRequestCustomServerId = 1;
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var listKeys = new List<string>();
+        var lookup = "ok";
+        var bodies = new List<string>();
+        using var transport = new IntegrationTransport(async (request, ct) =>
+        {
+            switch (request.RequestUri!.AbsolutePath)
+            {
+                case "/3/movie/123": return IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}");
+                case "/api/v1/collection/9": return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new[] { new { id = 123, title = "First", releaseDate = "2000-01-01", mediaInfo = new { status = 5 } }, new { id = 124, title = "Second", releaseDate = "2001-01-01", mediaInfo = new { status = 1 } } } }));
+                case "/api/v1/service/radarr":
+                    listKeys.Add(request.Headers.GetValues("X-Api-Key").Single());
+                    return lookup switch
+                    {
+                        "ok" => IntegrationTransport.Response(RadarrServers),
+                        "unexpected" => IntegrationTransport.Response("{}"),
+                        _ => throw new HttpRequestException("connection refused for " + request.RequestUri!.OriginalString + " "),
+                    };
+                case "/api/v1/user": return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } }));
+                case "/api/v1/request":
+                    bodies.Add(await request.Content!.ReadAsStringAsync(ct));
+                    return IntegrationTransport.Response("{}", 201);
+                default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
+            }
+        });
+        var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!);
+        async Task Play()
+        {
+            service.ClearRequestCache();
+            await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
+        }
+
+        await Play();
+        await Play();
+        Assert.Equal(new[] { "seerr-key-one" }, listKeys);
+        // A new key behind the same URL reads the list again instead of reusing the old key's entry.
+        config.JellyseerrApiKey = "seerr-key-two";
+        await Play();
+        Assert.Equal(new[] { "seerr-key-one", "seerr-key-two" }, listKeys);
+        // Failed reads are not cached and log neither the Seerr URL nor the key.
+        config.JellyseerrApiKey = "seerr-key-three";
+        lookup = "throw";
+        await Play();
+        lookup = "unexpected";
+        await Play();
+        Assert.Equal(new[] { "seerr-key-one", "seerr-key-two", "seerr-key-three", "seerr-key-three" }, listKeys);
+        Assert.Equal(5, bodies.Count);
+        var log = string.Concat(Directory.GetFiles(f.Core.Root, "JellyfinEnhanced_*.log").Select(File.ReadAllText));
+        Assert.Contains("Error reading Radarr server list from Seerr URL #1: HttpRequestException", log, StringComparison.Ordinal);
+        Assert.Contains("Unexpected Radarr server list from Seerr URL #1", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("seerr.test", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("url-secret", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("seerr-key-", log, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(false, true)][InlineData(true, false)][InlineData(true, true)]
     public async Task DisabledAutomaticRequestsDoNotConsultUsersOrNetwork(bool feature, bool seerr)
     {
