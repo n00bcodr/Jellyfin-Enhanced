@@ -27,6 +27,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
         private readonly object _userIdCacheLock = new();
 
+        // 4K flag per Radarr server id from Seerr's /service/radarr, cached briefly so custom-mode
+        // requests don't re-read the server list every time. Keyed by the configured Seerr URLs.
+        private static readonly TimeSpan RadarrServerCacheTtl = TimeSpan.FromMinutes(5);
+        private (string Urls, Dictionary<int, bool> Is4kById, DateTime CachedAt)? _radarrServerCache;
+        private readonly object _radarrServerCacheLock = new();
+
         public AutoMovieRequestService(
             IHttpClientFactory httpClientFactory,
             Logger logger,
@@ -509,6 +515,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Only return if at least one value is set
                 if (settings.ServerId.HasValue || settings.ProfileId.HasValue || !string.IsNullOrEmpty(settings.RootFolder))
                 {
+                    // Seerr matches serverId against its 4K or non-4K server list depending on is4k,
+                    // so a 4K server has to be requested as a 4K request.
+                    if (settings.ServerId.HasValue)
+                    {
+                        settings.Is4k = await IsRadarrServer4kAsync(settings.ServerId.Value);
+                    }
                     return settings;
                 }
 
@@ -522,6 +534,92 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"[Auto-Movie-Request] Unrecognized quality mode '{mode}', treating as default");
             }
             return null;
+        }
+
+        // Returns whether the given Radarr server is a 4K server in Seerr. If the server list can't be
+        // read or doesn't contain the id, logs a warning and returns false (request sent without is4k).
+        private async Task<bool> IsRadarrServer4kAsync(int serverId)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return false;
+            }
+
+            Dictionary<int, bool>? is4kById = null;
+            lock (_radarrServerCacheLock)
+            {
+                if (_radarrServerCache is { } cached &&
+                    cached.Urls == config.JellyseerrUrls &&
+                    DateTime.UtcNow - cached.CachedAt < RadarrServerCacheTtl)
+                {
+                    is4kById = cached.Is4kById;
+                }
+            }
+
+            if (is4kById == null)
+            {
+                var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+                foreach (var url in GetConfiguredUrls(config.JellyseerrUrls))
+                {
+                    try
+                    {
+                        var requestUrl = $"{url}/api/v1/service/radarr";
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                        using var response = await httpClient.SendAsync(request);
+                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
+                        if (error != null)
+                        {
+                            _logger.Debug($"[Auto-Movie-Request] Radarr server list fetch failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
+                            continue;
+                        }
+
+                        using (JsonDocument doc = JsonDocument.Parse(content!))
+                        {
+                            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                            {
+                                _logger.Debug($"[Auto-Movie-Request] Unexpected Radarr server list from {url}");
+                                continue;
+                            }
+
+                            var servers = new Dictionary<int, bool>();
+                            foreach (var server in doc.RootElement.EnumerateArray())
+                            {
+                                if (server.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
+                                {
+                                    servers[id.GetInt32()] = server.TryGetProperty("is4k", out var is4k) && is4k.ValueKind == JsonValueKind.True;
+                                }
+                            }
+                            is4kById = servers;
+                        }
+
+                        lock (_radarrServerCacheLock)
+                        {
+                            _radarrServerCache = (config.JellyseerrUrls, is4kById, DateTime.UtcNow);
+                        }
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Debug($"[Auto-Movie-Request] Error reading Radarr server list from {url}: {ex.Message}");
+                    }
+                }
+            }
+
+            if (is4kById == null)
+            {
+                _logger.Warning($"[Auto-Movie-Request] Could not read the Radarr server list from Jellyseerr; requesting with custom server {serverId} as a non-4K request");
+                return false;
+            }
+
+            if (!is4kById.TryGetValue(serverId, out var isServer4k))
+            {
+                _logger.Warning($"[Auto-Movie-Request] Custom Radarr server {serverId} was not found in Jellyseerr; requesting it as a non-4K request");
+                return false;
+            }
+
+            return isServer4k;
         }
 
         // Gets TMDB ID from movie metadata

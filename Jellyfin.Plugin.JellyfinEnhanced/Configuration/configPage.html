@@ -4900,7 +4900,7 @@
                 var serverList = Array.isArray(servers) ? servers : [servers];
                 serverList.forEach(function(server) {
                     if (server && typeof server.id === 'number') {
-                        addSelectOption(serverSelect, server.id, server.name || ('Server ' + server.id));
+                        addSelectOption(serverSelect, server.id, (server.name || ('Server ' + server.id)) + (server.is4k ? ' (4K)' : ''));
                     }
                 });
 
