@@ -193,7 +193,8 @@
     /**
      * Deduplicated chips for one track type, full coverage first, then personal/server priority.
      * Flags preserve country grouping; codes group canonical languages, retaining
-     * explicit regions unless the administrator merges regional variants.
+     * explicit regions unless the administrator merges regional variants. A
+     * language without a flag keeps a code chip in Flags style rather than vanishing.
      * @param {Array} languages
      * @param {string} style
      * @returns {Array}
@@ -204,11 +205,12 @@
             const countryCode = JE.core.mediaLanguage.resolveFlag(lang);
             const code = JE.core.mediaLanguage.displayCode(lang.code);
             const parsed = JE.core.mediaLanguage.parseLanguageTag(lang.code);
-            const key = style === 'codes' ? JE.core.mediaLanguage.canonicalBase(parsed?.base) + (JE.pluginConfig?.LanguageTagsMergeRegions ? '' : ':' + (parsed?.region || parsed?.script || '')) : countryCode;
-            if (!key || (style === 'codes' && !code)) continue;
+            const asCode = style === 'codes' || countryCode == null;
+            const key = asCode ? 'code:' + JE.core.mediaLanguage.canonicalBase(parsed?.base) + (JE.pluginConfig?.LanguageTagsMergeRegions ? '' : ':' + (parsed?.region || parsed?.script || '')) : countryCode;
+            if (!key || (asCode && !code)) continue;
             const name = lang.name || lang.code.toUpperCase();
             const existing = unique.get(key);
-            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, sdh: !!lang.sdh, allCodes: [lang.code], allLanguages: [name], labels: [languageLabel({ name, code: lang.code, partial: lang.partial })] });
+            if (!existing) unique.set(key, { countryCode, asCode, code: lang.code, text: code, partial: !!lang.partial, sdh: !!lang.sdh, allCodes: [lang.code], allLanguages: [name], labels: [languageLabel({ name, code: lang.code, partial: lang.partial })] });
             else {
                 existing.partial = existing.partial && !!lang.partial;
                 existing.sdh ||= !!lang.sdh;
@@ -246,11 +248,12 @@
         const wrap = document.createElement('div');
         wrap.className = containerClass;
         const visible = cap > 0 ? chips.slice(0, cap) : chips;
-        if (conf.style === 'flags' && visible.some(chip => !chip.badge && typeof chip.countryCode !== 'string')) return wrap;
+        if (visible.some(chip => !chip.badge && !chip.asCode && typeof chip.countryCode !== 'string')) return wrap;
         for (const info of chips) {
-            if (!info.badge && conf.style === 'flags' && typeof info.countryCode !== 'string') continue;
-            const chip = document.createElement(info.badge || info.subtitle || conf.style === 'codes' ? 'span' : 'img');
-            chip.className = info.badge ? 'language-count-badge language-chip' : conf.style === 'codes' ? 'language-code language-chip' : info.subtitle ? 'language-subtitle language-chip' : flagClass;
+            if (!info.badge && !info.asCode && typeof info.countryCode !== 'string') continue;
+            const asCode = !info.badge && info.asCode;
+            const chip = document.createElement(info.badge || info.subtitle || asCode ? 'span' : 'img');
+            chip.className = info.badge ? 'language-count-badge language-chip' : asCode ? 'language-code language-chip' : info.subtitle ? 'language-subtitle language-chip' : flagClass;
             if (info.partial) { chip.classList.add(partialFlagClass); chip.dataset.partial = 'true'; }
             chip.dataset.jeLanguage = info.badge ? 'countBadge' : info.subtitle ? 'subtitles' : 'flag';
             if (chip.tagName !== 'IMG') chip.dataset.jeLanguageLabel = info.badge || info.text.toLowerCase();
@@ -261,7 +264,7 @@
                 const label = info.labels.join(', ');
                 chip.title = `${JE.t(info.subtitle ? info.sdh ? 'language_tags_subtitles_sdh' : 'jellyseerr_report_issue_type_subtitles' : 'jellyseerr_report_issue_type_audio')}: ${label}`;
                 chip.dataset.langName = info.allLanguages.join(', ');
-                chip.dataset.lang = conf.style === 'codes' ? info.text.toLowerCase() : info.countryCode.toLowerCase();
+                chip.dataset.lang = asCode ? info.text.toLowerCase() : info.countryCode.toLowerCase();
                 if (info.subtitle) {
                     const cc = document.createElement('span');
                     cc.className = 'language-cc';
@@ -270,7 +273,7 @@
                     cc.setAttribute('aria-hidden', 'true');
                     chip.appendChild(cc);
                 }
-                if (conf.style === 'codes') chip.appendChild(document.createTextNode(info.text));
+                if (asCode) chip.appendChild(document.createTextNode(info.text));
                 else {
                     const img = info.subtitle ? document.createElement('img') : chip;
                     img.src = flagSource(info.countryCode);

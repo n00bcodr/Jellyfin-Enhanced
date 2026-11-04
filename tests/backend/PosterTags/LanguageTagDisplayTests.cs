@@ -35,6 +35,18 @@ public class LanguageTagDisplayTests
         Assert.True(tags[2].Subtitle);
     }
 
+    [Fact]
+    public void FlagsStyleKeepsLanguagesWithoutAFlagAsCodeChips()
+    {
+        var entry = new TagCacheEntry { Type = "Movie", AudioLanguages = ["eng", "epo", "cym", "bos", "khm"], SubtitleLanguages = ["epo"] };
+        var tags = Resolve(entry, ",\"LanguageTagsShowSubtitles\":true,\"TagGroupCaps\":{\"language\":0},\"TagLayoutSettingsVersion\":1")!.Groups.Single().Tags.Cast<LanguageTag>().ToArray();
+        // Bosnian and Khmer have their flags; Esperanto and Welsh have none and fall back to codes.
+        Assert.Equal(new[] { "gb", "", "", "ba", "kh", "" }, tags.Select(t => t.FlagCode));
+        Assert.Equal(new[] { null, "EO", "CY", null, null, "EO" }, tags.Select(t => t.Code));
+        Assert.Equal("eo", tags[1].StyleLabel);
+        Assert.True(tags[5].Subtitle);
+    }
+
     [Theory]
     [InlineData("tl", "TL")]
     [InlineData("tgl", "TL")]

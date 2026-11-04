@@ -40,6 +40,8 @@
         Swedish: 'se', swe: 'se', sv: 'se', Thai: 'th', tha: 'th', th: 'th', Turkish: 'tr', tur: 'tr', tr: 'tr',
         Ukrainian: 'ua', ukr: 'ua', uk: 'ua', Vietnamese: 'vn', vie: 'vn', vi: 'vn',
         Malay: 'my', msa: 'my', may: 'my', ms: 'my', Swahili: 'ke', swa: 'ke', sw: 'ke',
+        Bosnian: 'ba', bos: 'ba', bs: 'ba', Khmer: 'kh', khm: 'kh', km: 'kh', Lao: 'la', lao: 'la', lo: 'la',
+        Burmese: 'mm', mya: 'mm', bur: 'mm', my: 'mm', Luxembourgish: 'lu', ltz: 'lu', lb: 'lu',
         Tagalog: 'ph', tgl: 'ph', tl: 'ph', Filipino: 'ph', Tamil: 'in', tam: 'in', ta: 'in',
         Telugu: 'in', tel: 'in', te: 'in', Marathi: 'in', mar: 'in', mr: 'in', Punjabi: 'in', pan: 'in', pa: 'in',
         Urdu: 'pk', urd: 'pk', ur: 'pk', Gujarati: 'in', guj: 'in', gu: 'in', Kannada: 'in', kan: 'in', kn: 'in',

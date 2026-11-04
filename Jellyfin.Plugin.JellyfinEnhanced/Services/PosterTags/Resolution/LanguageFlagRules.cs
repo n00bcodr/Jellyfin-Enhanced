@@ -41,6 +41,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             ["Swedish"] = "se", ["swe"] = "se", ["sv"] = "se", ["Thai"] = "th", ["tha"] = "th", ["th"] = "th", ["Turkish"] = "tr", ["tur"] = "tr", ["tr"] = "tr",
             ["Ukrainian"] = "ua", ["ukr"] = "ua", ["uk"] = "ua", ["Vietnamese"] = "vn", ["vie"] = "vn", ["vi"] = "vn",
             ["Malay"] = "my", ["msa"] = "my", ["may"] = "my", ["ms"] = "my", ["Swahili"] = "ke", ["swa"] = "ke", ["sw"] = "ke",
+            ["Bosnian"] = "ba", ["bos"] = "ba", ["bs"] = "ba", ["Khmer"] = "kh", ["khm"] = "kh", ["km"] = "kh", ["Lao"] = "la", ["lao"] = "la", ["lo"] = "la",
+            ["Burmese"] = "mm", ["mya"] = "mm", ["bur"] = "mm", ["my"] = "mm", ["Luxembourgish"] = "lu", ["ltz"] = "lu", ["lb"] = "lu",
             ["Tagalog"] = "ph", ["tgl"] = "ph", ["tl"] = "ph", ["Filipino"] = "ph", ["Tamil"] = "in", ["tam"] = "in", ["ta"] = "in",
             ["Telugu"] = "in", ["tel"] = "in", ["te"] = "in", ["Marathi"] = "in", ["mar"] = "in", ["mr"] = "in", ["Punjabi"] = "in", ["pan"] = "in", ["pa"] = "in",
             ["Urdu"] = "pk", ["urd"] = "pk", ["ur"] = "pk", ["Gujarati"] = "in", ["guj"] = "in", ["gu"] = "in", ["Kannada"] = "in", ["kan"] = "in", ["kn"] = "in",
@@ -126,6 +128,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             public string CountryCode { get; }
 
             public string Code { get; }
+
+            /// <summary>The grouping key: the country, or <c>code:</c> and the language identity for a code chip.</summary>
+            public string Key { get; init; } = string.Empty;
+
+            /// <summary>Drawn as a code chip: Codes style, or a language without a flag in Flags style.</summary>
+            public bool AsCode { get; init; }
 
             public bool Partial { get; set; }
 
@@ -275,13 +283,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 var partial = partialCodes is not null && Array.IndexOf(partialCodes, code) >= 0;
                 var name = info.Name;
                 var countryCode = flag;
-                if (countryCode is null && !codesStyle) continue;
-                if (codesStyle && ShortCode(code).Length == 0) continue;
-                var key = codesStyle ? CodeIdentity(code, mergeRegions) : countryCode;
-                var existing = flags.Find(f => (codesStyle ? CodeIdentity(f.Code, mergeRegions) : f.CountryCode) == key);
+                // A language without a flag keeps a code chip in Flags style rather than vanishing.
+                var asCode = codesStyle || countryCode is null;
+                if (asCode && ShortCode(code).Length == 0) continue;
+                var key = asCode ? "code:" + CodeIdentity(code, mergeRegions) : countryCode!;
+                var existing = flags.Find(f => f.Key == key);
                 if (existing is null)
                 {
-                    flags.Add(new FlagInfo(countryCode ?? string.Empty, code, name, partial));
+                    flags.Add(new FlagInfo(countryCode ?? string.Empty, code, name, partial) { Key = key, AsCode = asCode });
                 }
                 else
                 {
@@ -342,7 +351,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 foreach (var flag in flags ?? new List<FlagInfo>())
                 {
                     tags.Add(new LanguageTag(ToFlagCode(flag.CountryCode), string.Join(", ", flag.AllLanguages), flag.Partial)
-                    { Subtitle = subtitle, Sdh = subtitle && flag.AllCodes.Any(code => (entry.SdhSubtitleLanguages ?? Array.Empty<string>()).Any(sdh => MatchesLanguage(code, sdh, requireRegion: true))), Code = codes ? ShortCode(flag.Code) : null, StyleLabel = codes || subtitle ? ShortCode(flag.Code).ToLowerInvariant() : null });
+                    { Subtitle = subtitle, Sdh = subtitle && flag.AllCodes.Any(code => (entry.SdhSubtitleLanguages ?? Array.Empty<string>()).Any(sdh => MatchesLanguage(code, sdh, requireRegion: true))), Code = codes || flag.AsCode ? ShortCode(flag.Code) : null, StyleLabel = codes || subtitle || flag.AsCode ? ShortCode(flag.Code).ToLowerInvariant() : null });
                 }
             }
             if (!badge || settings.LanguageCountBadge != "only") Add(audio, false);

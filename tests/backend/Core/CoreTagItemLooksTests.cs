@@ -185,7 +185,7 @@ public class CoreTagItemLooksTests
         Assert.True(legacy.LegacyAudioFacts);
         Assert.False(current.LegacyAudioFacts);
         Assert.NotEqual(legacy.Digest, current.Digest);
-        Assert.Equal("29", PosterTagSettings.ResolverVersion);
+        Assert.Equal("30", PosterTagSettings.ResolverVersion);
         Assert.Equal("flush", legacy.EdgeSpacing);
     }
 

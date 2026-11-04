@@ -43,6 +43,17 @@ test('Codes use canonical ISO codes, keep partial treatment and three-letter fal
   assert.equal(chips[3].querySelector('.language-cc').textContent, 'CC');
 });
 
+test('Flags style keeps languages without a flag as code chips', t => {
+  const h = setup(t, { languageTagsShowSubtitles: true, tagGroupCaps: { language: 0 }, tagLayoutSettingsVersion: 1 });
+  h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['eng', 'epo', 'cym', 'bos', 'khm'], SubtitleLanguages: ['epo'] });
+  const chips = h.chips();
+  assert.deepEqual(chips.map(el => el.tagName === 'IMG' ? el.dataset.lang : el.textContent), ['gb', 'EO', 'CY', 'ba', 'kh', 'CCEO']);
+  assert.ok(chips[1].classList.contains('language-code'));
+  assert.equal(chips[1].dataset.jeLanguageLabel, 'eo');
+  assert.match(chips[1].title, /Audio: Esperanto/);
+  assert.equal(chips[5].querySelector('img'), null);
+});
+
 for (const [audio, expected] of [[['en'], null], [['eng', 'en'], null], [['en', 'ja'], 'Dual'], [['hi', 'ta', 'te'], 'Multi'], [['en-US', 'en-GB', 'zxx'], null]]) {
   test(`badge threshold after language dedupe: ${audio.join(',')}`, t => {
     const h = setup(t, { languageTagsCountBadge: 'both' });
