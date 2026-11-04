@@ -29,10 +29,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// (net9) DLL does not load on the .NET 8 runtime of 10.10 and older
     /// (that historical line is frozen at plugin 10.11.1.0 and is not built
     /// from this source). So the host is classified into just two lines,
-    /// plus "unsupported" for Jellyfin 13 and newer: 13 is an ABI boundary
-    /// (its milestone shifts BaseItemKind values and removes network
-    /// configuration APIs this DLL compiles against), and Jellyfin loads a
-    /// plugin built for an older ABI without complaint,
+    /// plus "unsupported" for Jellyfin 13 and newer: 13 is expected to be an
+    /// ABI boundary (open v13.0 pull requests would shift BaseItemKind values
+    /// and remove network-configuration APIs this DLL compiles against), and
+    /// Jellyfin loads a plugin built for an older ABI without complaint,
     /// so neither build may silently pass as a match there.
     ///
     /// Depends only on IServerApplicationHost, which Jellyfin registers before
@@ -73,7 +73,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// "jf12" for the 12 line, <see cref="UnsupportedTarget"/> for 13 and
-        /// newer (a different ABI that no build of this release targets), and
+        /// newer (a line no build of this release targets), and
         /// "jf10" for everything older that can load this DLL at all (11.x
         /// never shipped).
         /// </summary>
