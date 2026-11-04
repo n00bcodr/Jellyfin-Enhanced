@@ -636,7 +636,7 @@
            collapses into a one-line strip under the tabs that expands on tap. */
         /* Phone: the panel's Back button sits on the Media Tags title row instead of a row of its own. */
         @media (max-width: 760px) {
-            #jellyfin-enhanced-panel .je-panel-main:has(> .je-pane.active[data-pane="media-tags"]) > .je-pane-back { position: absolute; top: 6px; left: 14px; z-index: 4; width: 40px; height: 40px; margin: 0; }
+            #jellyfin-enhanced-panel .je-panel-main:has(.je-pane.active[data-pane="media-tags"], .je-pane[data-pane="media-tags"].active) > .je-pane-back { position: absolute; top: 6px; left: 14px; z-index: 4; width: 40px; height: 40px; margin: 0; }
             #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-top .je-pane-title { min-height: 44px; margin: 2px 0 4px 50px; }
         }
         @container je-mth (max-width: 679px) {
