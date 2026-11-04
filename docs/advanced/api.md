@@ -1185,6 +1185,8 @@ Use the returned `timestamp` as the next `since` cursor, rather than an ISO time
 
 If `filterRevision` changes, fetch a full response and replace your copy because access/stripping changes can invalidate entries absent from a delta. Successful responses support ETag revalidation with `Cache-Control: no-cache`.
 
+The plugin does not compress responses itself: Jellyfin's response compression encodes JSON with Brotli or gzip whenever the request's `Accept-Encoding` allows it (`Content-Encoding: br`, `Vary: Accept-Encoding`). Browsers always send it; send `Accept-Encoding: br, gzip` from scripts. A reverse proxy must pass the header through and must not strip the encoding. Measured on a 3,882-entry library (85 series, 231 seasons, 3,447 episodes, 119 movies): a full response is 14.7 MB of JSON and 1.39 MB with Brotli (1.33 MB with gzip), about 360 bytes per entry on the wire.
+
 `reviewRatings` maps `mediaType:tmdbKey` to `{average,count}` under the **caller's** review visibility rules. It is present only when both **Enable User Written Reviews** and **Show average user rating on poster cards** are enabled; otherwise it is null/omitted.
 
 It contains the full aggregate map even on deltas; absent keys mean no visible rated reviews.

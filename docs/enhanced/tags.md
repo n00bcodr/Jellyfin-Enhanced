@@ -1143,6 +1143,8 @@ The server cache prepares tags for supported items in included libraries, so eac
 
 The retained cache grows with the number of included items. Exclude large libraries or disable server mode if its memory cost is unsuitable.
 
+Jellyfin compresses the cache response with Brotli or gzip, so a browser downloads about a tenth of its JSON size. On a 3,882-entry test library a full download was 14.7 MB of JSON and 1.39 MB on the wire, about 360 bytes per entry; at that rate 50,000 entries are roughly 18 MB once, after which the browser fetches only changed entries. Each browser profile downloads in full once, then again only after a rebuild swap, a removed item or an access change. If you put Jellyfin behind a reverse proxy, let it pass `Accept-Encoding` through so compression stays on.
+
 ??? info "Cache lifecycle and excluded libraries"
     When poster review chips are enabled, visible review averages travel with the filtered cache data.
 
