@@ -278,14 +278,22 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 18 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 19 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
-    // per browser. Library posters and the details poster show that version's
-    // badges; an item with no pick keeps showing its first version.
+    // in this browser for each server and user (`je-quality-source:<server>:<user>`).
+    // Library posters and the details poster show that version's badges; an item
+    // with no pick keeps showing its first version. The earlier browser-wide key
+    // belonged to no one in particular, so it is retired rather than inherited.
     const SOURCE_PREF_KEY = 'je-quality-source';
     const SOURCE_PREF_MAX = 500;
+
+    /** @returns {string} The signed-in user's storage key, or '' without one (picks then last until reload). */
+    function sourcePrefKey() {
+        const userId = JE.session?.getUserId?.() || '';
+        return userId ? `${SOURCE_PREF_KEY}:${JE.session?.getServerId?.() || ''}:${userId}` : '';
+    }
 
     /** @returns {string} Lowercase hexadecimal item id, or '' when unusable. */
     function normItemId(id) {
@@ -294,11 +302,20 @@
 
     let sourcePrefs = new Map();
     let sourcePrefsMemoryOnly = false;
-    /** @returns {Map<string, string>} Valid picks from the existing JSON object format. */
+    let sourcePrefsOwner = null;
+    /** @returns {Map<string, string>} The current user's valid picks, from the JSON object format. */
     function readSourcePrefs() {
+        const key = sourcePrefKey();
+        if (key !== sourcePrefsOwner) {
+            // Another user (or none): nothing of the previous user's picks carries over.
+            sourcePrefsOwner = key;
+            sourcePrefs = new Map();
+            sourcePrefsMemoryOnly = !key;
+            try { localStorage.removeItem(SOURCE_PREF_KEY); } catch { /* storage unavailable */ }
+        }
         if (sourcePrefsMemoryOnly) return sourcePrefs;
         try {
-            const parsed = JSON.parse(localStorage.getItem(SOURCE_PREF_KEY) || '{}');
+            const parsed = JSON.parse(localStorage.getItem(key) || '{}');
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
                 sourcePrefs = new Map();
                 for (const [key, value] of Object.entries(parsed)) {
@@ -327,8 +344,9 @@
         prefs.delete(id); // re-insert so the newest pick sits last
         prefs.set(id, sourceId);
         while (prefs.size > SOURCE_PREF_MAX) prefs.delete(prefs.keys().next().value);
+        if (sourcePrefsMemoryOnly) return;
         try {
-            localStorage.setItem(SOURCE_PREF_KEY, JSON.stringify(Object.fromEntries(prefs)));
+            localStorage.setItem(sourcePrefsOwner, JSON.stringify(Object.fromEntries(prefs)));
         } catch { sourcePrefsMemoryOnly = true; /* the pick lasts until reload */ }
     }
 
@@ -781,8 +799,12 @@
         const title = `${video?.DisplayTitle || ''} ${type}`.toLowerCase();
         const word = (pattern) => new RegExp(`(?:^|[^a-z0-9_])(?:${pattern})(?![a-z0-9_])`).test(title);
         // Jellyfin's DOVIInvalid says the Dolby Vision metadata is unusable: a DV word in the title cannot claim it.
-        if (type !== 'doviinvalid' && word('dolby\\s*vision|dovi|dv')) return { range: 'Dolby Vision', base: null, sdr: false };
-        if (/(?:^|[^a-z0-9_])hdr10(?:\+|plus(?![a-z0-9_]))/.test(title)) return { range: 'HDR10+', base: null, sdr: false };
+        const hdr10Plus = /(?:^|[^a-z0-9_])hdr10(?:\+|plus(?![a-z0-9_]))/.test(title);
+        // A title naming a base layer too ("Dolby Vision HDR10") keeps it, as the structured DOVIWith… types do.
+        if (type !== 'doviinvalid' && word('dolby\\s*vision|dovi|dv')) {
+            return { range: 'Dolby Vision', base: hdr10Plus ? 'HDR10+' : word('hdr10') ? 'HDR10' : word('hlg') ? 'HLG' : null, sdr: false };
+        }
+        if (hdr10Plus) return { range: 'HDR10+', base: null, sdr: false };
         if (word('hdr10')) return { range: 'HDR10', base: null, sdr: false };
         if (word('hlg')) return { range: 'HLG', base: null, sdr: false };
         if (word('hdr')) return { range: 'HDR', base: null, sdr: false };
@@ -1521,7 +1543,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 18, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 19, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1559,7 +1581,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 18, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 19, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {
@@ -1593,6 +1615,8 @@
         if (versionPickerWatched) return;
         versionPickerWatched = true;
         const detailId = () => new URLSearchParams(location.hash.split('?')[1] || '').get('id');
+        // A restore in flight belongs to the user who opened the page.
+        JE.session?.onUserChange?.('quality-version-picker', () => clearInterval(versionPickerTimer));
 
         document.addEventListener('change', (e) => {
             const select = e.target;
@@ -1608,10 +1632,11 @@
             const id = detailId();
             const want = id && selectedSourceFor(id);
             if (!want) return;
+            const owner = sourcePrefKey();
             // Jellyfin fills the picker after the page shows.
             let tries = 0;
             const timer = versionPickerTimer = setInterval(() => {
-                if (detailId() !== id) { clearInterval(timer); return; }
+                if (detailId() !== id || sourcePrefKey() !== owner) { clearInterval(timer); return; }
                 const select = document.querySelector('#itemDetailPage:not(.hide) .selectSource');
                 if (select && select.options.length > 1) {
                     clearInterval(timer);

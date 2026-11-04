@@ -965,11 +965,6 @@
     "edition": null
   },
   {
-    "path": "Charlotte's Web (2006) 1080p BluRay.mkv",
-    "source": "BluRay",
-    "edition": null
-  },
-  {
     "path": "Charlotte's Web (2006) 1080p.mkv",
     "source": null,
     "edition": null
@@ -1110,6 +1105,17 @@
     "source": "HDTV",
     "edition": null,
     "itemName": "The Web"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.The.Web.720p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Episode 1"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.Web.of.Lies.720p.DVDRip.mkv",
+    "source": "DVD",
+    "edition": null
   },
   {
     "path": "Show/Season 01/Show.S01E01.The.Web.mkv",

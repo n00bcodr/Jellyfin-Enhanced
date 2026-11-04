@@ -20,8 +20,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         // Full discs (Radarr's BR-DISK; BD25/BD50 images) are Blu-ray sources.
         (Token(@"blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)"), "BluRay"),
         (Token(@"hd" + OptionalSeparator + "dvd(?:" + OptionalSeparator + "rip)?"), "HD DVD"),
-        // A bare WEB counts anywhere after the title boundary (TRaSH's \bWEB\b): 1080p.WEB.DDP5.1 is a web release.
-        (Token(@"web(?:" + OptionalSeparator + @"(?:dl|rip))?"), "WEB"),
+        (Token(@"web" + OptionalSeparator + @"(?:dl|rip)"), "WEB"),
         // Broadcast captures: HDTV, its rips, PDTV and Sonarr's Raw-HD.
         (Token(@"hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + "hd"), "HDTV"),
         (Token(@"dvd" + OptionalSeparator + "scr"), "SCR"),
@@ -31,6 +30,10 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token(@"tc|telecine"), "TC"),
         (Token(@"scr|screener|dvd" + OptionalSeparator + @"scr"), "SCR"),
     ];
+    // A bare WEB counts anywhere after the title boundary (TRaSH's \bWEB\b): 1080p.WEB.DDP5.1 is a web release.
+    // It is also an ordinary word, so any other source word in the name wins over it
+    // (Show.S01E01.The.Web.720p.HDTV is HDTV even when the episode title is unknown).
+    private static readonly Regex BareWeb = Token("web");
     private static readonly Regex ExplicitEdition = new(@"\{edition-([^{}\r\n/\\]{1,64})\}", Options, Timeout);
     private static readonly Regex NonImax = Token(@"non" + OptionalSeparator + "imax");
     private static readonly (Regex Pattern, string Label)[] Editions =
@@ -178,7 +181,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static string? SourceIn(string name)
     {
         var release = ReleasePart(name);
-        return Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(release)).Label;
+        return Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(release)).Label ?? (BareWeb.IsMatch(release) ? "WEB" : null);
     }
 
     /// <summary>The part of a file or folder name after its title (see <see cref="YearToken"/>); the whole name when no boundary is known.</summary>

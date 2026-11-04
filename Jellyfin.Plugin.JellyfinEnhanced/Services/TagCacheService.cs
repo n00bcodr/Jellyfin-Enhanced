@@ -346,7 +346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 40;
+        internal const int CurrentCacheSchemaVersion = 41;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -792,13 +792,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             foreach (var season in episodeScans.Where(pair => pair.Value.Placement is { SeasonId: var seasonId } && seasonId != Guid.Empty)
                 .GroupBy(pair => pair.Value.Placement!.Value.SeasonId))
             {
-                var last = season.Max(pair => pair.Value.Placement!.Value.IndexNumber ?? -1);
+                var last = season.Max(pair => pair.Value.Placement!.Value.IndexNumberEnd ?? pair.Value.Placement!.Value.IndexNumber ?? -1);
                 var sources = season.Select(pair => pair.Key.ToString("N")).Order(StringComparer.Ordinal).ToArray();
                 foreach (var pair in season)
                 {
                     if (newCache.TryGetValue(pair.Key.ToString("N"), out var entry) && entry.EpisodeIndex is { } index)
                     {
-                        entry.EpisodeIndex = index with { IsLast = index.Episode == last };
+                        entry.EpisodeIndex = index with { IsLast = (index.EpisodeEnd ?? index.Episode) == last };
                         entry.StatusEpisodeIds = sources;
                     }
                 }
@@ -2944,7 +2944,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             // The full build already records every placement. Resolve
                             // season boundaries after that pass, without N queries.
                             entry.EpisodeIndex = ep.ParentIndexNumber is { } sn && ep.IndexNumber is { } en
-                                ? new TagEpisodeIndex { Season = sn, Episode = en } : null;
+                                ? new TagEpisodeIndex { Season = sn, Episode = en, EpisodeEnd = TagEpisodeIndex.EndOf(en, ep.IndexNumberEnd) } : null;
                         }
                         else
                         {
@@ -2975,11 +2975,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             sources = null;
             if (episode.ParentIndexNumber is not { } season || episode.IndexNumber is not { } number) return null;
-            if (episode.SeasonId == Guid.Empty) return new TagEpisodeIndex { Season = season, Episode = number };
+            var end = TagEpisodeIndex.EndOf(number, episode.IndexNumberEnd);
+            if (episode.SeasonId == Guid.Empty) return new TagEpisodeIndex { Season = season, Episode = number, EpisodeEnd = end };
             var siblings = StatusSiblings(episode.SeasonId, user, memo);
             sources = siblings.Sources;
-            return new TagEpisodeIndex { Season = season, Episode = number,
-                IsLast = siblings.Episodes.Length > 0 ? number == siblings.Last : null };
+            return new TagEpisodeIndex { Season = season, Episode = number, EpisodeEnd = end,
+                IsLast = siblings.Episodes.Length > 0 ? (end ?? number) == siblings.Last : null };
         }
 
         /// <summary>One shared sibling query per affected season and update pass.</summary>
@@ -3004,7 +3005,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
             // Unchanged sets need no sorting; changed sets are sorted once per pass.
             sources ??= sourceSet.Order(StringComparer.Ordinal).ToArray();
-            var facts = new StatusSiblingFacts(siblings, sources, siblings.Select(e => e.IndexNumber ?? -1).DefaultIfEmpty(-1).Max());
+            var facts = new StatusSiblingFacts(siblings, sources, siblings.Select(e => e.IndexNumberEnd ?? e.IndexNumber ?? -1).DefaultIfEmpty(-1).Max());
             if (memo != null) memo.StatusSiblings[seasonId] = facts;
             return facts;
         }
@@ -3023,7 +3024,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var key = episode.Id.ToString("N");
                 if (!_cache.TryGetValue(key, out var old)) continue;
                 var index = episode.ParentIndexNumber is { } season && episode.IndexNumber is { } number
-                    ? new TagEpisodeIndex { Season = season, Episode = number, IsLast = number == siblings.Last } : null;
+                    ? new TagEpisodeIndex { Season = season, Episode = number, EpisodeEnd = TagEpisodeIndex.EndOf(number, episode.IndexNumberEnd),
+                        IsLast = (TagEpisodeIndex.EndOf(number, episode.IndexNumberEnd) ?? number) == siblings.Last } : null;
                 var sameSources = false;
                 if (old.StatusEpisodeIds is { } previous)
                 {
@@ -3189,20 +3191,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         /// <summary>
         /// Lower-cases a stream language for the tag cache, or returns null when
-        /// the track carries no usable language (empty, "und", "root").
+        /// the track carries no usable language (see <see cref="NormalizeStreamLanguage"/>).
         /// </summary>
         private static string? NormalizeAudioLanguage(string? language) => NormalizeStreamLanguage(language);
 
         /// <summary>
         /// Lower-cases an audio or subtitle stream language as the tag cache and
         /// the tag-data batch store it, or returns null when the track carries no
-        /// usable language (empty, "und", "root").
+        /// usable language: empty, "und" (undetermined), "root", "mul" (several
+        /// languages), "mis" (uncoded) or ISO 639-2's local-use range "qaa"–"qtz"
+        /// (DVB's "original version" track is "qaa"), with or without a region.
         /// </summary>
         internal static string? NormalizeStreamLanguage(string? language)
         {
             if (string.IsNullOrEmpty(language)) return null;
             var lang = language.ToLowerInvariant();
-            return lang == "und" || lang == "root" ? null : lang;
+            var end = lang.IndexOfAny(['-', '_']);
+            var code = end < 0 ? lang : lang[..end];
+            return code is "und" or "root" or "mul" or "mis" || (code.Length == 3 && code[0] == 'q' && code[1] is >= 'a' and <= 't' && code[2] is >= 'a' and <= 'z') ? null : lang;
         }
 
         /// <summary>

@@ -54,7 +54,7 @@
             // Commentary/description audio and forced subtitles are not language options.
             streams.filter(function(s) { return s.Type === type && !(type === 'Audio' ? JE.core.mediaLanguage.isSecondaryAudio(s) : s.IsForced === true); }).forEach(function(stream) {
                 var langCode = stream.Language;
-                if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
+                if (langCode && !JE.core.mediaLanguage.isLanguageless(langCode)) {
                     languages.add(JSON.stringify({ name: displayName(langCode), code: langCode, sdh: type === 'Subtitle' && (stream.IsHearingImpaired === true || /\b(SDH|CC)\b/i.test(`${stream.Title || ''} ${stream.DisplayTitle || ''}`)) }));
                 }
             });

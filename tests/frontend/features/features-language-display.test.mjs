@@ -43,6 +43,13 @@ test('Codes use canonical ISO codes, keep partial treatment and three-letter fal
   assert.equal(chips[3].querySelector('.language-cc').textContent, 'CC');
 });
 
+test('languageless codes match the server: und, root, mul, mis and qaa–qtz never count', t => {
+  const h = setup(t);
+  const of = h.JE.core.mediaLanguage.isLanguageless;
+  for (const code of ['', 'und', 'UND', 'root', 'mul', 'mis', 'qaa', 'qtz', 'qaa-FR']) assert.equal(of(code), true, code);
+  for (const code of ['eng', 'pt-BR', 'zxx', 'qu', 'que', 'qub']) assert.equal(of(code), false, code);
+});
+
 test('Flags style keeps languages without a flag as code chips', t => {
   const h = setup(t, { languageTagsShowSubtitles: true, tagGroupCaps: { language: 0 }, tagLayoutSettingsVersion: 1 });
   h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['eng', 'epo', 'cym', 'bos', 'khm'], SubtitleLanguages: ['epo'] });

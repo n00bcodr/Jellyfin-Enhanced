@@ -262,6 +262,13 @@ public class CustomTagRulesTests
             Assert.Equal(10, built.SeasonAddedSpan?.CoveredThrough);
             Assert.Equal(10, built.LatestEpisodeIndex?.Episode);
             Assert.Equal(built.SeasonAddedSpan, cache.BuildEntryOnDemand(season)!.SeasonAddedSpan);
+            // Each file's own card carries its range, and the file holding the season's last episode is its last.
+            var last = library.Items.OfType<Episode>().Single(e => e.IndexNumber == 9);
+            Assert.True(cache.TryGetEntry(last.Id, out var lastEntry));
+            Assert.Equal(new TagEpisodeIndex { Season = 1, Episode = 9, EpisodeEnd = 10, IsLast = true }, lastEntry.EpisodeIndex);
+            Assert.Equal(lastEntry.EpisodeIndex, cache.BuildEntryOnDemand(last)!.EpisodeIndex);
+            Assert.True(lastEntry.EpisodeIndex!.Covers(10));
+            Assert.False(lastEntry.EpisodeIndex.Covers(8));
         }
         finally
         {

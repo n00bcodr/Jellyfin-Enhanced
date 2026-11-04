@@ -9389,7 +9389,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // Subtitle languages for the Language Tags overlay, the way the server
             // tag cache stores them (TagCacheService.ExtractMediaData): lower-cased,
-            // "und"/"root" dropped, one per language however many SDH tracks carry
+            // languageless codes ("und", "mul", "qaa"…) dropped, one per language however many SDH tracks carry
             // it, forced-only languages left out. Subtitle languages are Jellyfin's
             // own (the Matroska BCP-47 reader only aligns audio tracks).
             static string[] TagDataSubtitleLanguages(List<MediaSourceInfo> sources) => sources

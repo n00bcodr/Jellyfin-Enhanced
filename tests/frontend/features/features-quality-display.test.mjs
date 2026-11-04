@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { createHarness } from '../helpers/harness.mjs';
 
+// The harness signs in user 'a' on server 's'.
+const SRC_KEY = 'je-quality-source:s:a';
+
 /** Real renderer, streams and summary, with only pipeline discovery stubbed. */
 function setup(t, policy = 'representative', density = 'full', stored = null) {
   const renderers = new Map();
@@ -208,9 +211,9 @@ for (const cachedFacts of [true, false]) test(`merged selection filters every ca
   const h = setup(t); Object.assign(h.JE.currentSettings, all, { showSourceTag: true, showEditionTag: true });
   const entry = mergedMovie(); if (!cachedFacts) delete entry.StreamData.DistinctQualities;
   assert.deepEqual(h.render(entry, movieId), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
-  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'second' }));
+  h.window.localStorage.setItem(SRC_KEY, JSON.stringify({ [movieId]: 'second' }));
   assert.deepEqual(h.render(entry, movieId), ['4K', 'REMUX', 'HDR10', 'IMAX', 'HEVC', 'ATMOS 7.1', 'Extended']);
-  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'removed-version' }));
+  h.window.localStorage.setItem(SRC_KEY, JSON.stringify({ [movieId]: 'removed-version' }));
   assert.deepEqual(h.render(entry, movieId), ['1080p', 'WEB', 'SDR', 'H264', 'DTS 5.1']);
 });
 
@@ -222,13 +225,13 @@ test('batch hot and persistent caches miss on version changes and recompute usin
   const renderer = h.renderers.get('quality'), clear = () => { h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged; };
   renderer.render(h.card, item);
   assert.ok(h.document.querySelector('[data-quality="H264"]'));
-  clear(); h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'second' }));
+  clear(); h.window.localStorage.setItem(SRC_KEY, JSON.stringify({ [movieId]: 'second' }));
   assert.equal(renderer.renderFromCache(h.card, movieId), false);
   renderer.render(h.card, item);
   assert.deepEqual([...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.textContent), ['4K', 'REMUX', 'HDR10', 'IMAX', 'HEVC', 'ATMOS 7.1', 'Extended']);
   clear(); renderer.renderFromCache(h.card, movieId);
   assert.ok(h.document.querySelector('[data-quality="HEVC"]'));
-  clear(); h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'first' }));
+  clear(); h.window.localStorage.setItem(SRC_KEY, JSON.stringify({ [movieId]: 'first' }));
   assert.equal(renderer.renderFromCache(h.card, movieId), false);
   renderer.render(h.card, { ...item, MediaStreams: undefined });
   assert.ok(h.document.querySelector('[data-quality="H264"]'));
@@ -240,20 +243,43 @@ test('version picker changes are normalized, remembered, and idempotently watche
   h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="first">First</option><option value="second">Second</option></select>');
   const select = h.document.querySelector('.selectSource');
   h.JE.initializeQualityTags(); select.value = 'second'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
-  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('je-quality-source')), { [movieId]: 'second' });
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem(SRC_KEY)), { [movieId]: 'second' });
   assert.ok(h.render(mergedMovie(), movieId).includes('HEVC'));
   const reloaded = setup(t);
-  reloaded.window.localStorage.setItem('je-quality-source', h.window.localStorage.getItem('je-quality-source'));
+  reloaded.window.localStorage.setItem(SRC_KEY, h.window.localStorage.getItem(SRC_KEY));
   assert.ok(reloaded.render(mergedMovie(), dashedMovieId).includes('HEVC'), 'the JSON object survives a fresh module load');
   select.value = 'first'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
   assert.ok(h.render(mergedMovie(), movieId).includes('H264'));
+});
+
+test('a remembered version belongs to its server and user and never reaches another account', t => {
+  const h = setup(t); Object.assign(h.JE.currentSettings, all);
+  // A pick stored under the earlier browser-wide key belongs to no one: it is retired, not inherited.
+  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'second' }));
+  assert.ok(h.render(mergedMovie(), movieId).includes('H264'));
+  assert.equal(h.window.localStorage.getItem('je-quality-source'), null);
+  h.window.location.hash = `#/details?id=${movieId}`;
+  h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="first">First</option><option value="second">Second</option></select>');
+  const select = h.document.querySelector('.selectSource');
+  h.JE.initializeQualityTags(); select.value = 'second'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.ok(h.render(mergedMovie(), movieId).includes('HEVC'), 'Alice sees her pick');
+  let user = 'b';
+  h.JE.session.getUserId = () => user;
+  assert.ok(h.render(mergedMovie(), movieId).includes('H264'), 'Bob, with no pick, sees the first version');
+  assert.equal(h.window.localStorage.getItem('je-quality-source:s:b'), null);
+  user = 'a';
+  assert.ok(h.render(mergedMovie(), movieId).includes('HEVC'), 'Alice keeps her pick on her return');
+  // Signed out: a pick lasts in memory only.
+  user = '';
+  select.value = 'second'; select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
+  assert.deepEqual(Object.keys(h.window.localStorage).filter(key => key.startsWith('je-quality-source')).sort(), [SRC_KEY]);
 });
 
 test('stored source preferences ignore hostile keys and non-string values while keeping valid picks', t => {
   const h = setup(t);
   const stored = JSON.parse('{"__proto__":"second","constructor":"second","prototype":"second","":"second"}');
   Object.assign(stored, { [movieId]: 'second', a1: null, a2: 42, a3: true, a4: {}, a5: ['second'] });
-  h.window.localStorage.setItem('je-quality-source', JSON.stringify(stored));
+  h.window.localStorage.setItem(SRC_KEY, JSON.stringify(stored));
   for (const id of ['cc', 'e', 'a1', 'a2', 'a3', 'a4', 'a5']) {
     assert.ok(h.render(mergedMovie(), id).includes('H264'), `no pick from a hostile key or non-string value for ${id}`);
   }
@@ -261,31 +287,31 @@ test('stored source preferences ignore hostile keys and non-string values while 
   h.window.location.hash = `#/details?id=${movieId}`;
   h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="first">First</option></select>');
   h.document.querySelector('.selectSource').dispatchEvent(new h.window.Event('change', { bubbles: true }));
-  assert.deepEqual(JSON.parse(h.window.localStorage.getItem('je-quality-source')), { [movieId]: 'first' });
+  assert.deepEqual(JSON.parse(h.window.localStorage.getItem(SRC_KEY)), { [movieId]: 'first' });
 });
 
 test('item ids with no hexadecimal characters neither select nor remember a source', t => {
   const h = setup(t);
   const stored = '{"":"second"}';
-  h.window.localStorage.setItem('je-quality-source', stored);
+  h.window.localStorage.setItem(SRC_KEY, stored);
   for (const id of ['', 'XYZ-!_']) assert.ok(h.render(mergedMovie(), id).includes('H264'));
   h.window.location.hash = '#/details?id=XYZ-!_';
   h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="second">Second</option></select>');
   h.document.querySelector('.selectSource').dispatchEvent(new h.window.Event('change', { bubbles: true }));
-  assert.equal(h.window.localStorage.getItem('je-quality-source'), stored, 'no preference write for an empty normalized id');
+  assert.equal(h.window.localStorage.getItem(SRC_KEY), stored, 'no preference write for an empty normalized id');
 });
 
 test('source preferences trim the oldest pick and keep a refreshed pick among the newest 500', t => {
   const h = setup(t);
   const ids = Array.from({ length: 501 }, (_, n) => `a${n.toString(16).padStart(31, '0')}`);
-  h.window.localStorage.setItem('je-quality-source', JSON.stringify(Object.fromEntries(ids.slice(0, 500).map(id => [id, 'first']))));
+  h.window.localStorage.setItem(SRC_KEY, JSON.stringify(Object.fromEntries(ids.slice(0, 500).map(id => [id, 'first']))));
   h.document.body.insertAdjacentHTML('beforeend', '<select class="selectSource"><option value="second">Second</option></select>');
   const select = h.document.querySelector('.selectSource');
   for (const id of [ids[0], ids[500]]) {
     h.window.location.hash = `#/details?id=${id}`;
     select.dispatchEvent(new h.window.Event('change', { bubbles: true }));
   }
-  const stored = JSON.parse(h.window.localStorage.getItem('je-quality-source'));
+  const stored = JSON.parse(h.window.localStorage.getItem(SRC_KEY));
   assert.deepEqual(Object.keys(stored), [...ids.slice(2, 500), ids[0], ids[500]]);
   assert.equal(stored[ids[0]], 'second');
   assert.equal(stored[ids[500]], 'second');
@@ -294,7 +320,7 @@ test('source preferences trim the oldest pick and keep a refreshed pick among th
 });
 
 for (const stored of ['null', '[]', '42', '"invalid"', '{broken']) test(`invalid version preference document ${stored} falls back safely`, t => {
-  const h = setup(t); h.window.localStorage.setItem('je-quality-source', stored);
+  const h = setup(t); h.window.localStorage.setItem(SRC_KEY, stored);
   assert.ok(h.render(mergedMovie(), movieId).includes('H264'));
 });
 
@@ -308,7 +334,7 @@ test('an unavailable preference write retains the chosen version in memory', t =
 
 test('returning to details restores the remembered picker option and cancels an obsolete page restore', async t => {
   const h = setup(t); h.window.location.hash = `#/details?id=${movieId}`;
-  h.window.localStorage.setItem('je-quality-source', JSON.stringify({ [movieId]: 'second' }));
+  h.window.localStorage.setItem(SRC_KEY, JSON.stringify({ [movieId]: 'second' }));
   h.document.body.insertAdjacentHTML('beforeend', '<div id="itemDetailPage"><select class="selectSource"><option value="first">First</option><option value="second">Second</option></select></div>');
   h.document.dispatchEvent(new h.window.Event('viewshow'));
   await new Promise(resolve => h.window.setTimeout(resolve, 350));
@@ -371,16 +397,16 @@ for (const density of [undefined, 'full', 'compact']) test(`version transition i
   assert.deepEqual(h.render(entry), ['5.1']);
 });
 
-for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
+for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
   const payload = { namingVersion, legacyAudio: false, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['Dolby Digital 5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'full', { old: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
-  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 18);
-  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 18 ? 1 : 0);
+  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 19);
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 19 ? 1 : 0);
 });
 
 test('persisted current naming labels are still invalidated by a legacy-version transition', t => {
-  const payload = { namingVersion: 18, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
+  const payload = { namingVersion: 19, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'compact', { saved: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
   h.JE.currentSettings.tagLayoutSettingsVersion = 0;

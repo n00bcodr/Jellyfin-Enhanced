@@ -327,8 +327,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
     {
         public int Season { get; init; }
         public int Episode { get; init; }
+        /// <summary>The last episode a combined file covers (Jellyfin's IndexNumberEnd, S01E09-E10 → 10); null for one episode.</summary>
+        public int? EpisodeEnd { get; init; }
         /// <summary>True for the last known episode of its season; null when not resolved.</summary>
         public bool? IsLast { get; init; }
+
+        /// <summary>Whether this file holds episode <paramref name="number"/> (its first, its last or one between).</summary>
+        public bool Covers(int number) => number >= Episode && number <= (EpisodeEnd ?? Episode);
+
+        /// <summary>The range of a combined file, or null for one episode.</summary>
+        internal static int? EndOf(int number, int? indexNumberEnd) => indexNumberEnd > number ? indexNumberEnd : null;
     }
 
     /// <summary>A season number and the air date (Unix ms UTC) of its first aired episode (Status Tags).</summary>

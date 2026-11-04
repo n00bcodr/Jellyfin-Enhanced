@@ -1008,6 +1008,19 @@
     }
 
     /**
+     * Whether a stream language names no language a viewer could pick: empty,
+     * und (undetermined), root, mul (several), mis (uncoded) or ISO 639-2's
+     * local-use range qaa–qtz (DVB's "original version" is qaa), with or
+     * without a region. The server's NormalizeStreamLanguage drops the same.
+     * @param {string} code
+     * @returns {boolean}
+     */
+    function isLanguageless(code) {
+        const base = String(code || '').toLowerCase().split(/[-_]/)[0];
+        return !base || ['und', 'root', 'mul', 'mis'].includes(base) || /^q[a-t][a-z]$/.test(base);
+    }
+
+    /**
      * A commentary or audio-description audio track is not a dub or the main soundtrack
      * (Helpers/TrackRoles.cs on the server).
      * @param {Object} stream Audio stream.
@@ -1024,6 +1037,7 @@
 
     JE.core.mediaLanguage = {
         isSecondaryAudio,
+        isLanguageless,
         uiLocale,
         formatNumberText,
         localName,

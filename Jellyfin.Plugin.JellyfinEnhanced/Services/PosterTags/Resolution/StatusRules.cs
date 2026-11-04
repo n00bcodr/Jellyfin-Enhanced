@@ -122,10 +122,12 @@ public static class StatusRules
                 var episodeSeason = data.EpisodeIndex?.Season ?? data.SeasonNumber;
                 var episode = data.EpisodeIndex?.Episode ?? data.EpisodeNumber;
                 if (showMilestones && aired && episode == 1 && episodeSeason is > 0 && AiredWithin(data.PremiereDate, justAddedMs)) return Badge("season_premiere");
+                // A combined file (S01E09-E10) is the finale when it holds the final episode.
+                bool Holds(int? number) => episode != null && number >= episode && number <= (data.EpisodeIndex?.EpisodeEnd ?? episode);
                 if (showMilestones && aired && final != null && finalRecently && episodeSeason == final.Season
-                    && episode == final.Episode && Ended(facts!.Status)) return Badge("series_finale");
+                    && Holds(final.Episode) && Ended(facts!.Status)) return Badge("series_finale");
                 if (showMilestones && aired && facts?.LastAired is { } lastEpisode && lastRecently
-                    && episodeSeason == lastEpisode.Season && episode == lastEpisode.Episode && LastEndsSeason(facts, data.EpisodeIndex?.IsLast == true)) return Badge("season_finale");
+                    && episodeSeason == lastEpisode.Season && Holds(lastEpisode.Episode) && LastEndsSeason(facts, data.EpisodeIndex?.IsLast == true)) return Badge("season_finale");
                 if (showNew && (AiredWithin(data.PremiereDate, justAddedMs) || addedRecently)) return Badge("new_episode");
                 break;
             case "BoxSet":

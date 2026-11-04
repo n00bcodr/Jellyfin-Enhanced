@@ -35,6 +35,28 @@ public class LanguageTagDisplayTests
         Assert.True(tags[2].Subtitle);
     }
 
+    [Theory]
+    [InlineData("eng", "eng")]
+    [InlineData("pt-BR", "pt-br")]
+    [InlineData("zxx", "zxx")]
+    [InlineData("qu", "qu")]
+    [InlineData("que", "que")]
+    [InlineData("qub", "qub")]
+    [InlineData("und", null)]
+    [InlineData("UND", null)]
+    [InlineData("root", null)]
+    [InlineData("mul", null)]
+    [InlineData("mis", null)]
+    [InlineData("qaa", null)]
+    [InlineData("qtz", null)]
+    [InlineData("qaa-FR", null)]
+    [InlineData("", null)]
+    public void LanguagelessCodesAreNotLanguages(string input, string? expected)
+    {
+        // Quechua (qu/que) and its varieties outside qaa–qtz remain languages; no dialogue (zxx) keeps its symbol.
+        Assert.Equal(expected, Jellyfin.Plugin.JellyfinEnhanced.Services.TagCacheService.NormalizeStreamLanguage(input));
+    }
+
     [Fact]
     public void FlagsStyleKeepsLanguagesWithoutAFlagAsCodeChips()
     {

@@ -52,6 +52,11 @@ add('season-finale', season({ LatestEpisodeIndex: { Season: 2, Episode: 5, IsLas
 add('episode-finale', episode(), 'season_finale', 'Season Finale', { schedule: schedule(ep('2026-10-29')) });
 add('series-finale', show({ LatestEpisodeIndex: { Season: 2, Episode: 5 } }), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
 add('episode-series-finale', episode(), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
+// A combined file (S02E04-E05) holds the final episode on its own card; its premiere identity stays E04.
+add('combined-file-series-finale', episode({ EpisodeNumber: 4, EpisodeIndex: { Season: 2, Episode: 4, EpisodeEnd: 5, IsLast: true } }), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
+add('combined-file-season-finale', episode({ EpisodeNumber: 4, EpisodeIndex: { Season: 2, Episode: 4, EpisodeEnd: 5, IsLast: true } }), 'season_finale', 'Season Finale', { schedule: schedule(ep('2026-10-29')) });
+add('combined-file-before-finale', episode({ EpisodeNumber: 3, EpisodeIndex: { Season: 2, Episode: 3, EpisodeEnd: 4 } }), 'new_episode', 'New Episode', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });
+add('combined-file-premiere', episode({ EpisodeNumber: 1, EpisodeIndex: { Season: 2, Episode: 1, EpisodeEnd: 2 } }), 'season_premiere', 'Season Premiere');
 add('regular-finale-before-special', episode(), 'series_finale', 'Series Finale', { schedule: { ...schedule(ep('2026-10-29', 0, 1), null, 'Ended'), lastRegularAired: ep('2026-10-28') } });
 add('parent-regular-aggregate-wins', episode(), 'series_finale', 'Series Finale', { parent: { LatestEpisodeIndex: { Season: 2, Episode: 5 }, LatestEpisodeAired: ago(2) }, schedule: { ...schedule(ep('2026-10-29', 0, 1), null, 'Ended'), seasonEpisodes: { 1: 8, 2: 5 } } });
 // Without TMDB's counts the library's latest episode proves nothing.

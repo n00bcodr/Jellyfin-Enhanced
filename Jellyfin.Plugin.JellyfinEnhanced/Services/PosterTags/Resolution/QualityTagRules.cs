@@ -154,7 +154,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             // An unrecognised type string still counts as a hint, after the title.
             var title = JsText.ToLower((video.DisplayTitle ?? string.Empty) + " " + type);
             // Jellyfin's DOVIInvalid says the Dolby Vision metadata is unusable: a DV word in the title cannot claim it.
-            if (type != "doviinvalid" && TitleDolbyVisionRegex.IsMatch(title)) return new("Dolby Vision", null, false);
+            // A title naming a base layer too ("Dolby Vision HDR10") keeps it, as the structured DOVIWith… types do.
+            if (type != "doviinvalid" && TitleDolbyVisionRegex.IsMatch(title))
+                return new("Dolby Vision", TitleHdr10PlusRegex.IsMatch(title) ? "HDR10+" : TitleHdr10Regex.IsMatch(title) ? "HDR10" : TitleHlgRegex.IsMatch(title) ? "HLG" : null, false);
             if (TitleHdr10PlusRegex.IsMatch(title)) return new("HDR10+", null, false);
             if (TitleHdr10Regex.IsMatch(title)) return new("HDR10", null, false);
             if (TitleHlgRegex.IsMatch(title)) return new("HLG", null, false);

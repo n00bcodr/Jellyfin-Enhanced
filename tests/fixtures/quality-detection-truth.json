@@ -1948,6 +1948,65 @@
     "SDR",
     "H264"
    ]
+  },
+  {
+   "name": "A video title naming Dolby Vision and HDR10 keeps both when the range type is unknown",
+   "why": "The title is the only range evidence; it names the base layer as the structured type would",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "Unknown",
+     "DisplayTitle": "4K Dolby Vision HDR10 HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A video title naming Dolby Vision alone gives no base layer",
+   "why": "Nothing names one",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "Unknown",
+     "DisplayTitle": "4K Dolby Vision HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
   }
  ]
 }

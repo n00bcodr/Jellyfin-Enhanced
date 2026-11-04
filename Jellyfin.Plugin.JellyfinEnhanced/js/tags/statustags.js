@@ -58,7 +58,7 @@
     // the persistent cache only answers for this long before a re-fetch.
     const CACHE_FRESH_MS = 60 * 60 * 1000;
     // Shape of the fallback cache entries; older entries count as misses.
-    const CACHE_ENTRY_VERSION = 3;
+    const CACHE_ENTRY_VERSION = 4;
     const TRENDING_TTL_MS = 30 * 60 * 1000;
     // A failed or empty trending fetch is retried sooner than a good list expires.
     const TRENDING_RETRY_MS = 5 * 60 * 1000;
@@ -195,6 +195,7 @@
      *   and the highest N with every episode 1..N in the library (null when not read).
      * @property {number|null} season - Season/Episode: season number.
      * @property {number|null} episode - Episode: episode number.
+     * @property {number|null} episodeEnd - Episode: the last episode a combined file covers (S01E09-E10 → 10), else null.
      * @property {boolean|null} isLast - Whether this is the last locally available episode in its season.
      * @property {string|null} seriesId - The series whose TMDB schedule applies (Series: itself).
      * @property {string|null|undefined} seriesTmdb - That series' TMDB id; undefined when unknown.
@@ -382,6 +383,7 @@
             ...readFacts(entry),
             season: toInt(entry.EpisodeIndex?.Season ?? entry.SeasonNumber),
             episode: type === 'Episode' ? toInt(entry.EpisodeIndex?.Episode ?? entry.EpisodeNumber) : null,
+            episodeEnd: type === 'Episode' ? toInt(entry.EpisodeIndex?.EpisodeEnd) : null,
             seriesId: type === 'Series' ? normId(itemId) : normId(entry.SeriesId),
             // The cache records the series' TMDB id on its seasons and episodes,
             // so a missing one means the series has none.
@@ -413,6 +415,7 @@
             ...readFacts(item),
             season: type === 'Episode' ? toInt(item.EpisodeIndex?.Season ?? item.ParentIndexNumber) : type === 'Season' ? toInt(item.IndexNumber) : null,
             episode: type === 'Episode' ? toInt(item.EpisodeIndex?.Episode ?? item.IndexNumber) : null,
+            episodeEnd: type === 'Episode' ? toInt(item.EpisodeIndex?.EpisodeEnd ?? item.IndexNumberEnd) : null,
             seriesId: type === 'Series' ? normId(item.Id) : normId(item.SeriesId),
             // A season/episode item does not say whether its series has a TMDB
             // id; the server answers only for those that do.
@@ -791,11 +794,13 @@
                     && airedWithin(data.premiere, justAddedMs)) {
                     return makeBadge('milestone', 'season_premiere');
                 }
+                // A combined file (S01E09-E10) is the finale when it holds the final episode.
+                const holds = number => data.episode !== null && number >= data.episode && number <= (data.episodeEnd ?? data.episode);
                 if (showMilestones && airedRecently && finalRegular && finalAiredRecently
-                    && data.season === finalRegular.season && data.episode === finalRegular.episode
+                    && data.season === finalRegular.season && holds(finalRegular.episode)
                     && TMDB_ENDED.has(facts.status || '')) return makeBadge('milestone', 'series_finale');
                 if (showMilestones && airedRecently && facts?.last && lastAiredRecently
-                    && data.season === facts.last.season && data.episode === facts.last.episode) {
+                    && data.season === facts.last.season && holds(facts.last.episode)) {
                     if (lastAiredEndsSeason(facts, data.isLast)) return makeBadge('milestone', 'season_finale');
                 }
                 if (showNew && (airedWithin(data.premiere, justAddedMs) || addedRecently)) return makeBadge('new', 'new_episode');
@@ -862,6 +867,7 @@
             addedSpan: Array.isArray(entry.as) ? { first: entry.as[0], last: entry.as[1], count: entry.as[2], coveredThrough: entry.as[3] ?? null } : null,
             season: entry.sn ?? null,
             episode: entry.en ?? null,
+            episodeEnd: entry.ee ?? null,
             seriesId: entry.si ?? null,
             // Stored only when known (null and undefined both mean "unknown" here).
             seriesTmdb: entry.stm ?? (entry.t === 'Series' ? null : undefined),
@@ -892,6 +898,7 @@
         if (data.addedSpan) entry.as = [data.addedSpan.first, data.addedSpan.last, data.addedSpan.count, data.addedSpan.coveredThrough];
         if (data.season !== null) entry.sn = data.season;
         if (data.episode !== null) entry.en = data.episode;
+        if (data.episodeEnd != null) entry.ee = data.episodeEnd;
         if (data.seriesId) entry.si = data.seriesId;
         if (data.seriesTmdb) entry.stm = data.seriesTmdb;
         if (data.leaving) entry.lv = [data.leaving.deleteAt];
