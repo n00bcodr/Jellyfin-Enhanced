@@ -213,6 +213,8 @@
             }
         } catch { /* fall back */ }
         if (!fallback) return false;
+        // The document may sit in a closed disclosure: show it to select it.
+        fallback.closest('details')?.setAttribute('open', '');
         fallback.focus();
         fallback.select();
         try { return window.document.execCommand('copy'); } catch { return false; }
@@ -344,13 +346,21 @@
         .je-pt-body { padding: 0 16px; max-height: min(60vh, 520px); overflow-y: auto; }
         .je-pt-hint { margin: 4px 0 10px; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.7); }
         .je-pt-label { display: block; margin: 10px 0 4px; font-size: 13px; font-weight: 600; }
-        .je-pt-text, .je-pt-input { box-sizing: border-box; width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #5a606b; background: #12141a; color: #fff; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .je-pt-text, .je-pt-input { box-sizing: border-box; width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #80868f; background: #12141a; color: #fff; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .je-pt-input { font: inherit; font-size: 14px; min-height: 40px; }
         .je-pt-text[readonly] { color: #d6dbe4; }
         .je-pt-file { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 6px; border: 1px dashed rgba(255,255,255,0.35); cursor: pointer; font-size: 13px; font-weight: 600; }
         .je-pt-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
         .je-pt-file:focus-within { outline: 2px solid #fff; outline-offset: 2px; }
         .je-pt-summary { margin: 4px 0 8px; font-weight: 600; }
+        .je-pt-doc { margin: 4px 0 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; }
+        .je-pt-doc > :not(summary) { margin-left: 10px; margin-right: 10px; }
+        .je-pt-doc > textarea { width: calc(100% - 20px); margin-bottom: 10px; }
+        .je-pt-doc-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px 0 6px; list-style: none; cursor: pointer; font-weight: 600; border-radius: 8px; }
+        .je-pt-doc-toggle::-webkit-details-marker { display: none; }
+        .je-pt-doc-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        .je-pt-doc-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        .je-pt-doc[open] > .je-pt-doc-toggle .material-icons { transform: rotate(180deg); }
         .je-pt-subtitle { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: #ffd699; }
         .je-pt-changes, .je-pt-skips { list-style: none; margin: 0 0 6px; padding: 0; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
         .je-pt-change, .je-pt-skip { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; padding: 9px 12px; font-size: 14px; }
@@ -366,7 +376,7 @@
         .je-pt-status:empty { min-height: 0; margin-top: 0; }
         .je-pt-status[data-kind="error"] { color: #ff8a80; }
         .je-pt-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
-        .je-pt-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        .je-pt-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.46); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .je-pt-btn:hover { background: rgba(255,255,255,0.12); }
         .je-pt-btn[data-primary] { background: #0077a3; border-color: #0077a3; }
         .je-pt-btn[data-primary]:hover { background: #00688f; }
@@ -377,6 +387,7 @@
             .je-pt-backdrop { padding: 8px; }
             .je-pt-foot .je-pt-btn { flex: 1 1 auto; justify-content: center; }
             .je-pt-btn, .je-pt-file { min-height: 44px; }
+            .je-pt-close { width: 44px; height: 44px; }
         }
     `;
 
@@ -784,8 +795,9 @@
         const showExport = (d, document) => {
             const text = JSON.stringify(document, null, 2);
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p>
+                <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_portable_show_document', { count: Object.keys(document?.settings || {}).length })}</summary>
                 <label class="je-pt-label" for="jePtExport">${tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
-                <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea>`;
+                <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea></details>`;
             d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('close', 'awards_close');
             const area = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'));
             d.foot.onclick = async (e) => {

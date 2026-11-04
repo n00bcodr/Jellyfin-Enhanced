@@ -17,6 +17,7 @@
                 <button type="button" class="je-ts-target-toggle" id="tagStylePresetToggle" aria-expanded="false" aria-controls="tagStylePresets"></button></div>
             <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel" hidden><div class="je-ta-hint"></div></div>
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
+            <label class="je-ts-group-select"><span class="je-ts-section-label" id="tagStyleGroupSelectLabel"></span><select id="tagStyleGroupSelect"></select></label>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
                 <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span>
                     <button type="button" class="je-ts-target-toggle" id="tagStyleTargetToggle" aria-expanded="false" aria-controls="tagStyleTargetBox"></button></div>
@@ -535,6 +536,14 @@
                 });
             });
             rove(tabs, '.je-ts-tab', 'aria-selected');
+            // A phone shows the groups as one select (the tabs wrap into rows there).
+            const select = root.querySelector('#tagStyleGroupSelect');
+            if (select) {
+                select.innerHTML = GROUPS.map((g) => '<option value="' + g.key + '"' + (g.key === current ? ' selected' : '') + '>' + g.title + '</option>').join('');
+                select.onchange = () => tabs.querySelector('.je-ts-tab[data-group="' + select.value + '"]')?.click();
+                const label = root.querySelector('#tagStyleGroupSelectLabel');
+                if (label) label.textContent = tr('admin_tags_colours_group');
+            }
             root.querySelector('#tagStyleGroupPanel')?.setAttribute('aria-labelledby', 'tagStyleTab-' + current);
         }
 

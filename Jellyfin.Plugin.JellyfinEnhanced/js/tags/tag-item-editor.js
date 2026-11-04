@@ -91,8 +91,8 @@
         .je-tie-hint { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
         .je-tie input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
         .je-tie-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-        .je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); background: transparent; cursor: pointer; font-size: 13px; font-weight: 400; text-align: center; }
-        .je-tie-tile { flex-direction: column; gap: 6px; padding: 10px 4px 8px; border-radius: 8px; border-color: rgba(255,255,255,0.16); background: rgba(0,0,0,0.2); font-weight: 600; }
+        .je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; font-weight: 400; text-align: center; }
+        .je-tie-tile { flex-direction: column; gap: 6px; padding: 10px 4px 8px; border-radius: 8px; border-color: rgba(255,255,255,0.46); background: rgba(0,0,0,0.2); font-weight: 600; }
         .je-tie-tile:hover, .je-tie-pill:hover { background: rgba(255,255,255,0.06); }
         .je-tie-pill:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
         .je-tie-tile:has(input:checked) { border: 2px solid #00a4dc; padding: 9px 3px 7px; background: rgba(0,164,220,0.14); }
@@ -138,7 +138,7 @@
         .je-tie-group[data-open="1"] { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
         .je-tie-gsum { min-width: 0; font-size: 13px; color: rgba(255,255,255,0.72); }
         .je-tie-group[data-on="0"] .je-tie-gsum { color: rgba(255,255,255,0.5); }
-        .je-tie-gopen { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px 0 12px; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,0.22); border-radius: 6px; cursor: pointer; }
+        .je-tie-gopen { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px 0 12px; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; cursor: pointer; }
         .je-tie-gopen:hover { background: rgba(255,255,255,0.06); }
         .je-tie-gopen:disabled { opacity: 0.4; cursor: default; }
         .je-tie-gopen .material-icons { font-size: 20px; transition: transform 0.2s ease; }
@@ -154,19 +154,19 @@
         .je-tie-where .je-tie-pill { min-height: 30px; padding: 2px 8px; font-size: 12px; }
         /* Corners positions by name in a 3 × 3 grid, as on the hub and the admin page. */
         .je-tie-anchors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 420px; }
-        .je-tie-anchor { position: relative; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 2px 6px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.25); background: transparent; cursor: pointer; font-size: 13px; line-height: 1.2; text-align: center; }
+        .je-tie-anchor { position: relative; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 2px 6px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; line-height: 1.2; text-align: center; }
         .je-tie-anchor:hover { background: rgba(255,255,255,0.06); }
         .je-tie-anchor:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
         .je-tie-group[data-on="0"] :is(.je-tie-anchor, .je-tie-pill) { cursor: default; }
         .je-tie-anchor:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
         .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 13px; white-space: nowrap; }
-        .je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
+        .je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
         .je-tie-cap button { width: 36px; min-height: 36px; padding: 0; }
         .je-tie-cap button:disabled { opacity: 0.35; cursor: default; }
         .je-tie-cap output { min-width: 26px; text-align: center; font-weight: 600; }
         .je-tie-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
         .je-tie-row3 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; min-width: 0; }
-        .je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #5a606b; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
+        .je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #80868f; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
         .je-tie select option { background: #222; color: #fff; }
         /* Where Save keeps the look: first in the form, so the choice comes before the edits. */
         .je-tie-keeps { display: flex; flex-direction: column; gap: 8px; }

@@ -174,8 +174,9 @@
             const showExport = (d, document) => {
                 const text = JSON.stringify(document, null, 2);
                 d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p>
+                    <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${ctx.tx('tag_portable_show_document', { count: Object.keys(document?.settings || {}).length })}</summary>
                     <label class="je-pt-label" for="jeTaExportText">${ctx.tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
-                    <textarea id="jeTaExportText" class="je-pt-text" rows="12" readonly spellcheck="false">${ctx.esc(text)}</textarea>`;
+                    <textarea id="jeTaExportText" class="je-pt-text" rows="12" readonly spellcheck="false">${ctx.esc(text)}</textarea></details>`;
                 d.foot.innerHTML = P.buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + P.buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + P.buttonHtml('close', 'awards_close');
                 d.foot.onclick = async (e) => {
                     const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');

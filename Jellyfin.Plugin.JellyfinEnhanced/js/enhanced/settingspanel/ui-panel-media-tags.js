@@ -509,7 +509,7 @@
         #jellyfin-enhanced-panel .je-mth-off--action[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-mth input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
         #jellyfin-enhanced-panel .je-mth-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
-        #jellyfin-enhanced-panel .je-mth-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; min-height: 40px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.2); cursor: pointer; text-align: center; }
+        #jellyfin-enhanced-panel .je-mth-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; min-height: 40px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.46); background: rgba(0,0,0,0.2); cursor: pointer; text-align: center; }
         #jellyfin-enhanced-panel .je-mth-tile:hover { background: rgba(255,255,255,0.06); }
         #jellyfin-enhanced-panel .je-mth-tile:has(input:checked) { border: 2px solid var(--je-mth-accent); padding: 9px 3px 7px; background: color-mix(in srgb, var(--je-mth-accent) 16%, transparent); }
         #jellyfin-enhanced-panel :is(.je-mth-tile, .je-mth-pill, .je-mth-preset):has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
@@ -570,7 +570,7 @@
         #jellyfin-enhanced-panel .je-mth-field-text .je-mth-hint { margin: 0; }
         #jellyfin-enhanced-panel .je-mth-density > .je-mth-pills { margin-left: auto; }
         #jellyfin-enhanced-panel .je-mth-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-        #jellyfin-enhanced-panel .je-mth-pill { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); font-size: 13px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-mth-pill { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.46); font-size: 13px; cursor: pointer; }
         #jellyfin-enhanced-panel .je-mth-pill:hover { background: rgba(255,255,255,0.06); }
         #jellyfin-enhanced-panel .je-mth-pill:has(input:checked) { background: var(--je-mth-sel); border-color: var(--je-mth-sel); color: #fff; font-weight: 600; }
         #jellyfin-enhanced-panel .je-mth-switches { border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; }
@@ -591,7 +591,7 @@
         #jellyfin-enhanced-panel .je-mth-badge-sample { display: inline-flex; flex-shrink: 0; max-width: 45%; }
         #jellyfin-enhanced-panel .je-mth-badge:not(:has(input:checked)) .je-mth-badge-sample { opacity: 0.35; filter: grayscale(1); }
         #jellyfin-enhanced-panel .je-mth-actions { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 10px; }
-        #jellyfin-enhanced-panel .je-mth-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mth-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.46); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mth-button:hover { background: rgba(255,255,255,0.12); }
         #jellyfin-enhanced-panel :is(.je-mth-button, .je-mth-link, .je-mth-strip-toggle):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mth-button .material-icons, #jellyfin-enhanced-panel .je-mth-link .material-icons { font-size: 16px; }
@@ -668,13 +668,13 @@
             #jellyfin-enhanced-panel .je-mtp-view button { min-height: 44px; }
             #jellyfin-enhanced-panel .je-mth-switch-desc { -webkit-line-clamp: 3; }
             #jellyfin-enhanced-panel .je-mth-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            #jellyfin-enhanced-panel .je-mth-pill, #jellyfin-enhanced-panel .je-mth-button { min-height: 40px; }
+            #jellyfin-enhanced-panel .je-mth-pill, #jellyfin-enhanced-panel .je-mth-button { min-height: 44px; }
             #jellyfin-enhanced-panel .je-mth-density > .je-mth-pills { margin-left: 0; }
             #jellyfin-enhanced-panel .je-mth-pointer { flex-wrap: wrap; }
             #jellyfin-enhanced-panel .je-mth-badge { position: relative; display: block; }
             #jellyfin-enhanced-panel .je-mth-badge-sample { position: absolute; top: 10px; right: 12px; max-width: 40%; }
             #jellyfin-enhanced-panel .je-mth-badge-name { display: block; min-height: 22px; padding-right: 40%; }
-            #jellyfin-enhanced-panel .je-mth-autosave { order: 1; flex: 1 1 100%; margin: 0 0 8px; color: rgba(255,255,255,0.7); }
+            #jellyfin-enhanced-panel .je-mth-autosave { order: 1; flex: 0 1 auto; align-self: center; margin: 0 0 4px auto; color: rgba(255,255,255,0.7); }
             #jellyfin-enhanced-panel .je-mth-tabs { order: 2; }
         }
     `;

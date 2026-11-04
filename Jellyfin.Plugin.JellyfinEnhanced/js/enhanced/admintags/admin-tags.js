@@ -833,10 +833,14 @@
                 const keys = Array.from(store.conflicts.keys());
                 // One field: say what each side holds, so Keep mine / Take theirs is an informed choice.
                 const one = keys.length === 1 && store.values.has(keys[0]);
+                const theirs = one ? valueLabel(keys[0], store.conflicts.get(keys[0])) : '';
+                const mine = one ? valueLabel(keys[0], store.values.get(keys[0])) : '';
                 html = `<span>${one
-                    ? tx('admin_tags_conflict_one', { field: fieldName(keys[0]), theirs: valueLabel(keys[0], store.conflicts.get(keys[0])), mine: valueLabel(keys[0], store.values.get(keys[0])) })
+                    ? tx('admin_tags_conflict_one', { field: fieldName(keys[0]), theirs, mine })
                     : tx('admin_tags_conflict', { fields: names(keys) })}</span>`
-                    + `<button type="button" data-je-keep>${tx('admin_tags_keep_mine')}</button><button type="button" data-je-theirs>${tx('admin_tags_take_theirs')}</button>`;
+                    // One field: each button names the value it keeps.
+                    + `<button type="button" data-je-keep>${one ? tx('admin_tags_keep_value', { value: mine }) : tx('admin_tags_keep_mine')}</button>`
+                    + `<button type="button" data-je-theirs>${one ? tx('admin_tags_use_value', { value: theirs }) : tx('admin_tags_take_theirs')}</button>`;
             } else if (state === 'error') {
                 const fields = names(store.failed.length ? store.failed : Array.from(store.values.keys()));
                 html = `<span>${fields ? tx('admin_tags_save_failed_fields', { fields }) : tx('admin_tags_save_failed')}</span><button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`;
@@ -1383,6 +1387,31 @@
         if (back && sameSession(mark) && !onMediaTagsPage()) window.location.href = pageUrl();
     }
 
+    /** The root whose sticky offset follows Jellyfin's toolbar (one listener for the document). */
+    let toolbarRoot = null;
+    /**
+     * Sticky tabs and the collapsed preview sit under Jellyfin's fixed
+     * toolbar, not behind it: its bottom edge becomes --je-ta-toolbar.
+     * @param {HTMLElement} root
+     */
+    function followToolbar(root) {
+        const measure = () => {
+            if (!toolbarRoot?.isConnected) return;
+            let bottom = 0;
+            for (const bar of document.querySelectorAll('.skinHeader, .MuiAppBar-root')) {
+                const style = getComputedStyle(bar);
+                if (style.position !== 'fixed' && style.position !== 'sticky') continue;
+                const box = bar.getBoundingClientRect();
+                if (box.height > 0 && box.top <= 0) bottom = Math.max(bottom, Math.round(box.bottom));
+            }
+            toolbarRoot.style.setProperty('--je-ta-toolbar', `${bottom}px`);
+        };
+        if (!toolbarRoot) window.addEventListener('resize', () => measure(), { passive: true });
+        toolbarRoot = root;
+        measure();
+        setTimeout(measure, 300);
+    }
+
     /**
      * Theme: Jellyfin's themes swap a stylesheet, so tell light from dark by
      * the page background (as configPage.html does).
@@ -1457,6 +1486,7 @@
     async function show(page) {
         const root = /** @type {HTMLElement} */ (page.querySelector('.je-tag-admin'));
         detectTheme(root);
+        followToolbar(root);
         // Another administrator (or server) since the last view: start from nothing.
         const mark = sessionMark();
         const again = () => (signedIn() ? show(page) : null);
