@@ -1279,6 +1279,8 @@
 .je-note-banner, .je-mobile-banner, .je-dep-banner {
     background-color: rgba(255,193,7,0.1); border-left-color: #ffc107;
 }
+/* The browser-default link blue is unreadable on the dark amber tint; the URL wraps at phone width. */
+#je-host-unsupported-link { color: var(--primary-accent-color, #00a4dc); overflow-wrap: anywhere; }
 .je-danger-banner {
     background-color: rgba(220,53,69,0.15); border-left-color: #ff6b6b;
 }

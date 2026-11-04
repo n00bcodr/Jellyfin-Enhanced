@@ -144,7 +144,7 @@
                 const link = createSeerrLink(tmdbId, mediaType);
                 if (!link) return;
 
-                anchorElement.appendChild(document.createTextNode(' '));
+                anchorElement.appendChild(document.createTextNode(JE.pluginConfig.JellyseerrShowDetailPageLinkAsText ? ', ' : ' '));
                 anchorElement.appendChild(link);
             } finally {
                 isAddingLink = false;

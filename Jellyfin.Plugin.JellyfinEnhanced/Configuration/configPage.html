@@ -108,6 +108,10 @@
                         Install <code id="je-host-mismatch-asset"></code> instead, from the plugin repository
                         <a id="je-host-mismatch-link" target="_blank" rel="noopener noreferrer"></a>.
                     </div>
+                    <div id="je-host-unsupported-check" style="margin-top:8px; display:none;">
+                        Check the Jellyfin Enhanced releases for a build that lists <span id="je-host-unsupported-line"></span> support:
+                        <a id="je-host-unsupported-link" href="https://github.com/n00bcodr/Jellyfin-Enhanced/releases" target="_blank" rel="noopener noreferrer">https://github.com/n00bcodr/Jellyfin-Enhanced/releases</a>.
+                    </div>
                 </div>
             </div>
 
@@ -8297,12 +8301,19 @@
                     banner.style.display = 'none';
                     return;
                 }
+                // No build of this release supports the host (Jellyfin 13+); a missing expected asset is the fallback signal.
+                var unsupported = !!data.mismatch && (data.hostTarget === 'unsupported' || !data.expectedAsset);
                 document.getElementById('je-host-mismatch-title').textContent = data.stale
                     ? 'Plugin restart required'
-                    : 'Wrong plugin build for this Jellyfin version';
+                    : unsupported
+                        ? 'This Jellyfin version is not supported yet'
+                        : 'Wrong plugin build for this Jellyfin version';
                 document.getElementById('je-host-mismatch-msg').textContent = ' ' + (data.message || '');
-                document.getElementById('je-host-mismatch-install').style.display = data.mismatch ? '' : 'none';
+                document.getElementById('je-host-mismatch-install').style.display = data.mismatch && !unsupported ? '' : 'none';
                 document.getElementById('je-host-mismatch-asset').textContent = data.expectedAsset || '';
+                var hostMajor = parseInt(String(data.hostVersion || ''), 10);
+                document.getElementById('je-host-unsupported-check').style.display = unsupported ? '' : 'none';
+                document.getElementById('je-host-unsupported-line').textContent = isNaN(hostMajor) ? 'this Jellyfin version' : 'Jellyfin ' + hostMajor;
                 var link = document.getElementById('je-host-mismatch-link');
                 link.textContent = data.manifestUrl || '';
                 if (/^https:\/\//i.test(data.manifestUrl || '')) {

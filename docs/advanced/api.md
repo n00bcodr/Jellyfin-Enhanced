@@ -1508,7 +1508,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
 
 Private configuration is `no-store`. Admin fields are strings `SonarrUrl`, `RadarrUrl`, `BazarrUrl`, `SonarrUrlMappings`, `RadarrUrlMappings`, `BazarrUrlMappings`, `ShokoUrl`, `ShokoUrlMappings`; arrays `SonarrInstances`, `RadarrInstances` of `{Name,Url,UrlMappings,Enabled}` and `CustomTagRuleSources` of `{Id,Match,Value}` (what each Custom tag rule matches); and booleans `SonarrInstancesCorrupt`, `RadarrInstancesCorrupt`. This is selected link configuration and diagnostics, rather than the complete saved model. The separate admin `jellyseerr/settings/{type}` endpoint can return upstream API keys.
 
-Host compatibility returns `{builtFor,hostTarget,hostVersion,pluginVersion,mismatch,expectedAsset,manifestUrl,message}`. It diagnoses an installed artifact targeting a different Jellyfin version; no feature toggle is required.
+Host compatibility returns `{builtFor,hostTarget,hostVersion,pluginVersion,mismatch,expectedAsset,manifestUrl,message}`. It diagnoses an installed artifact targeting a different Jellyfin version; no feature toggle is required. On Jellyfin 13 and newer, `hostTarget` is `unsupported`, `mismatch` is true and `expectedAsset` is absent, because no build of the release supports that host.
 
 ### Static-resource limits and caching
 
