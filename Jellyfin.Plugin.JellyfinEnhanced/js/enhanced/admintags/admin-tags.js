@@ -255,22 +255,24 @@
         const descId = f.desc ? `${f.id}Desc` : '';
         const described = descId ? ` aria-describedby="${descId}"` : '';
         const data = `data-je-field="${esc(f.key)}" data-je-setting-id="${esc(f.id)}"`;
-        const text = `<span class="je-ta-switch-text"><span class="je-ta-switch-name" data-je-label>${tx(f.label)}</span>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`;
+        // A shared setting inside a card of new-user defaults says who it reaches.
+        const label = tx(f.label) + (f.scope === 'all' ? ` <span class="je-ta-scope" data-scope="all">${tx('admin_tags_scope_all')}</span>` : '');
+        const text = `<span class="je-ta-switch-text"><span class="je-ta-switch-name" data-je-label>${label}</span>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`;
         switch (f.type) {
             case 'switch':
                 return `<label class="je-ta-switch" data-field-row="${esc(f.id)}"><input type="checkbox" id="${esc(f.id)}" ${data} ${value ? 'checked' : ''}${described}>${text}</label>`;
             case 'select':
-                return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${tx(f.label)}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
+                return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${label}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><select id="${esc(f.id)}" ${data}${described}>${(f.options || []).map(([v, k]) => `<option value="${esc(v)}" ${String(v) === String(value) ? 'selected' : ''}>${k.startsWith('=') ? esc(k.slice(1)) : tx(k)}</option>`).join('')}</select></span></div>`;
             case 'number':
             case 'text':
-                return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${tx(f.label)}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
+                return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${label}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><input type="${f.secret ? 'password' : f.type}" id="${esc(f.id)}" ${data} value="${esc(value)}"${f.secret ? ' autocomplete="new-password" spellcheck="false"' : ''}${f.type === 'number' ? ` min="${f.min}" max="${f.max}" inputmode="numeric"` : ''}${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${f.unit ? `<span class="je-ta-unit">${tx(f.unit)}</span>` : ''}</span></div>`;
             case 'textarea':
-                return `<div class="je-ta-field je-ta-field--block" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${tx(f.label)}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
+                return `<div class="je-ta-field je-ta-field--block" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${esc(f.id)}" data-je-label>${label}</label>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><textarea id="${esc(f.id)}" ${data} rows="${f.rows || 4}" spellcheck="false"${f.pattern ? ` pattern="${esc(f.pattern)}"` : ''}${f.placeholder ? ` placeholder="${tx(f.placeholder)}"` : ''}${described}>${esc(value)}</textarea></span></div>`;
             case 'pills':
-                return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><span class="je-ta-switch-name" id="${esc(f.id)}Label" data-je-label>${tx(f.label)}</span>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
+                return `<div class="je-ta-field" data-field-row="${esc(f.id)}"><span class="je-ta-switch-text"><span class="je-ta-switch-name" id="${esc(f.id)}Label" data-je-label>${label}</span>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`
                     + `<span class="je-ta-field-control"><span class="je-ta-pills" role="radiogroup" id="${esc(f.id)}" ${data} aria-labelledby="${esc(f.id)}Label"${described}>${(f.options || []).map(([v, k]) => `<label class="je-ta-pill"><input type="radio" name="${esc(f.id)}" value="${esc(v)}" ${String(v) === String(value) ? 'checked' : ''}><span>${k.startsWith('=') ? esc(k.slice(1)) : tx(k)}</span></label>`).join('')}</span></span></div>`;
             default:
                 return '';
@@ -782,6 +784,7 @@
             </div>
             <p class="je-ta-intro">${tx('admin_tags_intro')}</p>
             <div class="je-ta-tabs" role="tablist" aria-label="${tx('common_media_tags')}">${tabButtons}</div>
+            <div class="je-ta-unsaved" data-je-unsaved hidden><span class="material-icons" aria-hidden="true">sync_problem</span><span data-je-unsaved-text></span><button type="button" class="je-ta-button" data-je-review>${tx('admin_tags_review')}</button></div>
             <div class="je-ta-body">
                 <aside class="je-ta-preview" id="jeTaPreview" aria-label="${tx('admin_tags_preview')}">
                     <button type="button" class="je-ta-preview-toggle" aria-expanded="false" aria-controls="jeTaPreviewBody">${tx('admin_tags_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
@@ -803,6 +806,8 @@
 
         /** @param {Object} s @returns {string} A Groups tab row (head + closed panel). */
         function groupRowHtml(s) {
+            // Fields the server keeps for everyone (not copied into a new user's settings) are marked so.
+            for (const f of s.fields || []) if (f.key && f.type !== 'enable' && f.type !== 'custom' && !SEEDED_KEYS.includes(f.key)) f.scope = 'all';
             const enable = (s.fields || []).find((f) => f.type === 'enable');
             const on = enable ? config[enable.key] === true : true;
             const name = JE.t(s.title);
@@ -834,8 +839,26 @@
          * the same button if it is drawn again, else the first one, else the
          * indicator itself.
          */
+        // A refused or conflicting save stays in view under the sticky tabs once the banner has scrolled away.
+        const unsaved = /** @type {HTMLElement} */ (root.querySelector('[data-je-unsaved]'));
+        let chipInView = true;
+        const drawUnsaved = () => {
+            const open = (store.state === 'conflict' || store.state === 'error') && !chipInView;
+            unsaved.hidden = !open;
+            if (open) /** @type {HTMLElement} */ (unsaved.querySelector('[data-je-unsaved-text]')).textContent = JE.t('admin_tags_unsaved_count', { count: Math.max(1, store.conflicts.size || store.failed.length || store.values.size) });
+        };
+        if (typeof IntersectionObserver === 'function') {
+            const watch = new IntersectionObserver(([entry]) => { chipInView = !!entry?.isIntersecting; drawUnsaved(); });
+            watch.observe(savedChip);
+            signal.addEventListener('abort', () => watch.disconnect());
+        }
+        unsaved.querySelector('[data-je-review]')?.addEventListener('click', () => {
+            savedChip.scrollIntoView?.({ block: 'center' });
+            /** @type {HTMLElement} */ (savedChip.querySelector('button') || savedChip).focus({ preventScroll: true });
+        }, { signal });
         const drawSaveState = () => {
             const state = store.state;
+            queueMicrotask(drawUnsaved);
             savedChip.dataset.state = state;
             const names = (keys) => Array.from(new Set(keys.map(fieldName))).join(', ');
             let html;

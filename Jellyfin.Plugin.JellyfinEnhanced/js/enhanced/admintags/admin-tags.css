@@ -31,8 +31,9 @@
     --je-mtp-strong: #fff;
     --je-mtp-line: rgba(255, 255, 255, 0.22);
     --je-mtp-surface: rgba(255, 255, 255, 0.05);
-    --je-mtp-pressed-bg: rgba(255, 255, 255, 0.9);
-    --je-mtp-pressed-text: #111;
+    /* A view switch, not a setting: a quiet pressed state like the panel's size switch. */
+    --je-mtp-pressed-bg: rgba(255, 255, 255, 0.16);
+    --je-mtp-pressed-text: #fff;
     --je-mtp-lock: #ffd166;
     --je-mtp-rule: #7fd3ff;
     /* Tokens the moved Tag Styles editor rules use. */
@@ -70,8 +71,8 @@
     --je-mtp-strong: #000;
     --je-mtp-line: rgba(0, 0, 0, 0.28);
     --je-mtp-surface: rgba(0, 0, 0, 0.05);
-    --je-mtp-pressed-bg: #111;
-    --je-mtp-pressed-text: #fff;
+    --je-mtp-pressed-bg: rgba(0, 0, 0, 0.1);
+    --je-mtp-pressed-text: #111;
     --je-mtp-lock: #7a4a00;
     --je-mtp-rule: #00618a;
     --je-border-focus: rgba(0, 0, 0, 0.6);
@@ -122,6 +123,11 @@
 .je-ta-tab[aria-selected="true"]::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 3px; border-radius: 3px; background: var(--je-ta-accent); }
 .je-ta-tab .material-icons { font-size: 18px; }
 .je-ta-tab-short { display: none; }
+.je-ta-unsaved { position: sticky; top: calc(var(--je-ta-toolbar, 0px) + 46px); z-index: 4; display: flex; align-items: center; gap: 8px; min-height: 44px; margin: -6px 0 12px; padding: 4px 6px 4px 12px; border-radius: 8px; border: 1px solid var(--je-ta-warn); background: linear-gradient(rgba(255, 209, 102, 0.12), rgba(255, 209, 102, 0.12)), var(--je-ta-page-bg); color: var(--je-ta-warn); font-size: 14px; }
+.je-ta-unsaved[hidden] { display: none !important; }
+.je-ta-unsaved > span:not(.material-icons) { flex: 1 1 auto; }
+.je-ta-unsaved .je-ta-button { color: inherit; border-color: currentColor; }
+[data-section="layout-shapes"] .je-ta-field-control select { width: min(100%, 360px); }
 .je-ta-tab:focus-visible { outline-offset: -2px; }
 
 /* ── Body: panels + preview column ── */
@@ -162,7 +168,7 @@
 .je-ta-scope[data-scope="all"] { color: #ffb74d; }
 .je-ta-light .je-ta-scope[data-scope="new"] { color: #006f99; }
 .je-ta-light .je-ta-scope[data-scope="all"] { color: #7a4a00; }
-.je-ta-hint { margin: 0 0 8px; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
+.je-ta-hint { margin: 0 0 8px; max-width: 80ch; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
 .je-ta-label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 600; }
 .je-ta-off { margin: 4px 0 10px; padding: 8px 10px; border-radius: 6px; background: rgba(255, 183, 77, 0.12); color: #ffd699; font-size: 13px; }
 .je-ta-light .je-ta-off { color: #7a4a00; }
@@ -177,7 +183,7 @@
 .je-ta-switch input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--je-ta-accent); cursor: pointer; }
 .je-ta-switch-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .je-ta-switch-name { font-size: 14px; font-weight: 500; }
-.je-ta-switch-desc { font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
+.je-ta-switch-desc { max-width: 80ch; font-size: 13px; line-height: 1.45; color: var(--je-ta-muted); }
 .je-ta-switch:has(input:disabled) { cursor: default; opacity: 0.55; }
 .je-ta-fields { border: 1px solid var(--je-ta-border); border-radius: 8px; }
 .je-ta-field { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 12px; min-height: 44px; }
@@ -589,6 +595,10 @@
     .je-tag-admin .je-ts-group-panel { padding: 12px; }
     .je-tag-admin .je-ts-rows { border: 0; border-radius: 0; background: none; }
     .je-tag-admin .je-ts-field-row { padding: 10px 0; }
+    /* Colours on a phone: the switch reads on its own; the contrast badge and Inspect say the rest. */
+    [data-field-row="tagStylesEnabled"] .je-ta-switch-desc, .je-tag-admin .je-ts-contrast-hint { display: none; }
+    /* Typing size on a phone (no zoom-on-focus). */
+    .je-tag-admin :is(input[type="text"], input[type="search"], input[type="number"], textarea, .je-pt-text, .je-pt-input) { font-size: 16px; }
     .je-ta-reorder[aria-pressed="true"] { background: var(--je-ta-surface-2); border-width: 2px; }
     /* Phone header: less framing before the settings. */
     .je-ta-head { padding: 6px 0 4px; gap: 6px 12px; }
@@ -742,4 +752,4 @@
 .je-tie-light .je-tie-cap output, .je-tie-light .je-tie-switch { color: #111; }
 .je-tie-light .je-tie-view.je-tie-pills { border-color: rgba(0, 0, 0, 0.28); }
 .je-tie-light .je-tie-view .je-tie-pill { background: transparent; }
-.je-tie-light .je-tie-view .je-tie-pill[aria-pressed="true"] { background: #111; color: #fff; }
+.je-tie-light .je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(0, 0, 0, 0.1); color: #111; }

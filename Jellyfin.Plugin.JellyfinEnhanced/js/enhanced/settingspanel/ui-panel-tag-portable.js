@@ -390,6 +390,7 @@
             .je-pt-foot .je-pt-btn { flex: 1 1 auto; justify-content: center; }
             .je-pt-btn, .je-pt-file { min-height: 44px; }
             .je-pt-close { width: 44px; height: 44px; }
+            .je-pt-text, .je-pt-input { font-size: 16px; }
         }
     `;
 

@@ -91,13 +91,14 @@
      */
     function tabsFor() {
         const tabs = [
-            { id: 'layout', nameKey: 'common_layout' },
-            { id: 'groups', nameKey: 'common_groups' },
-            { id: 'badges', nameKey: 'panel_media_tags_tab_badges', shortKey: 'common_badges' },
-            { id: 'rules', nameKey: 'panel_media_tags_tab_rules', shortKey: 'common_rules' },
+            // The admin page's icons for the same sections.
+            { id: 'layout', nameKey: 'common_layout', icon: 'view_quilt' },
+            { id: 'groups', nameKey: 'common_groups', icon: 'label' },
+            { id: 'badges', nameKey: 'panel_media_tags_tab_badges', shortKey: 'common_badges', icon: 'new_releases' },
+            { id: 'rules', nameKey: 'panel_media_tags_tab_rules', shortKey: 'common_rules', icon: 'rule' },
         ];
-        if (presetsAllowed() || isAdmin()) tabs.push({ id: 'colours', nameKey: 'common_colours' });
-        if (isAdmin()) tabs.push({ id: 'server', nameKey: 'common_server', admin: true });
+        if (presetsAllowed() || isAdmin()) tabs.push({ id: 'colours', nameKey: 'common_colours', icon: 'palette' });
+        if (isAdmin()) tabs.push({ id: 'server', nameKey: 'common_server', admin: true, icon: 'dns' });
         return tabs;
     }
 
@@ -441,7 +442,7 @@
             // The accessible name always contains the visible (short) label.
             const label = tab.admin ? JE.t('panel_media_tags_tab_server_name', { name }) : name;
             return `<button type="button" role="tab" class="je-mth-tab${tab.admin ? ' je-mth-tab--admin' : ''}" id="jeMthTab-${tab.id}" data-tab="${tab.id}" aria-controls="jeMthPanel-${tab.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" aria-label="${escapeHtml(label)}">`
-                + `<span class="je-mth-tab-long">${escapeHtml(name)}</span><span class="je-mth-tab-short" aria-hidden="true">${escapeHtml(short)}</span>`
+                + `<span class="material-icons je-mth-tab-icon" aria-hidden="true">${tab.icon}</span><span class="je-mth-tab-long">${escapeHtml(name)}</span><span class="je-mth-tab-short" aria-hidden="true">${escapeHtml(short)}</span>`
                 + (tab.admin ? `<span class="je-mth-admin-chip" aria-hidden="true">${tx('common_admin')}</span>` : '')
                 + '</button>';
         }).join('');
@@ -458,6 +459,7 @@
                     <div class="je-mth-strip" id="jeMthStrip">
                         <button type="button" class="je-mth-strip-toggle" id="jeMthStripToggle" aria-expanded="false" aria-controls="jeMthPreview">${tx('common_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
                         <div class="je-mth-strip-thumb" aria-hidden="true"></div>
+                        <span class="material-icons je-mth-strip-saved" role="img" aria-label="${tx('panel_media_tags_autosave')}" title="${tx('panel_media_tags_autosave')}">cloud_done</span>
                         <div class="je-mth-strip-info">
                             <div class="je-mth-strip-text"></div>
                             <div class="je-mth-strip-chips"></div>
@@ -484,10 +486,11 @@
         #jellyfin-enhanced-panel .je-mth-tab[aria-selected="true"]::after { content: ''; position: absolute; left: 6px; right: 6px; bottom: -1px; height: 3px; border-radius: 3px; background: var(--je-mth-accent); }
         #jellyfin-enhanced-panel .je-mth-tab:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
         #jellyfin-enhanced-panel .je-mth-tab-short { display: none; }
+        #jellyfin-enhanced-panel .je-mth-tab-icon { font-size: 18px; }
+        #jellyfin-enhanced-panel .je-mth-strip-saved { display: none; }
         #jellyfin-enhanced-panel .je-mth-autosave { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 12px auto; font-size: 12px; color: rgba(255,255,255,0.62); white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mth-autosave .material-icons { font-size: 16px; }
-        #jellyfin-enhanced-panel .je-mth-tab--admin[aria-selected="true"] { color: #ffb74d; }
-        #jellyfin-enhanced-panel .je-mth-tab--admin[aria-selected="true"]::after { background: #ffb74d; }
+
         #jellyfin-enhanced-panel .je-mth-admin-chip { display: inline-block; padding: 1px 5px; border: 1px solid #ffb74d; border-radius: 4px; color: #ffb74d; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
         #jellyfin-enhanced-panel .je-mth-body { display: grid; grid-template-columns: minmax(0, 1fr) clamp(288px, 30cqi, 400px); gap: 16px; align-items: start; }
         #jellyfin-enhanced-panel .je-mth-panels { grid-column: 1; grid-row: 1; min-width: 0; container: je-mth-panels / inline-size; }
@@ -595,7 +598,7 @@
         #jellyfin-enhanced-panel .je-mth-badge-sample { display: inline-flex; flex-shrink: 0; max-width: 45%; }
         #jellyfin-enhanced-panel .je-mth-badge:not(:has(input:checked)) .je-mth-badge-sample { opacity: 0.35; filter: grayscale(1); }
         /* The samples keep a chip shape even while the Status module (and its stylesheet) is off; dimmed then. */
-        #jellyfin-enhanced-panel .je-mth-panel:has(#jeMthBadgesOff:not([hidden])) .je-mth-badge-sample .status-tag { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 6px; background: #2b2f38; color: #fff; font-size: 12px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mth-panel:has(#jeMthBadgesOff:not([hidden])) .je-mth-badge-sample .status-tag { display: inline-flex; gap: 0.3em; align-items: center; padding: 3px 8px; border-radius: 6px; background: #2b2f38; color: #fff; font-size: 12px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mth-panel:has(#jeMthBadgesOff:not([hidden])) .je-mth-badge-sample { opacity: 0.35; filter: grayscale(1); }
         #jellyfin-enhanced-panel .je-mth-actions { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 10px; }
         #jellyfin-enhanced-panel .je-mth-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.46); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; text-decoration: none; cursor: pointer; white-space: nowrap; }
@@ -650,7 +653,11 @@
             /* The section select above already names Media Tags: the title stays for screen readers; the tabs sit beside Back. */
             #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-top .je-pane-title { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
             #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-tabs { margin-left: 50px; min-height: 44px; }
-            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-autosave { order: 3; flex: 1 1 100%; margin: 4px 0 6px; justify-content: flex-end; }
+            /* The tab row stays at the top while a long tab scrolls; the preview strip sits under it. */
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-top { position: sticky; top: 0; z-index: 5; background: rgb(24, 24, 24); }
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-strip { top: 58px; }
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-autosave { display: none; }
+            #jellyfin-enhanced-panel .je-pane[data-pane="media-tags"] .je-mth-strip-saved { display: inline-block; flex-shrink: 0; margin-left: auto; font-size: 20px; color: rgba(255,255,255,0.6); }
         }
         @container je-mth (max-width: 679px) {
             #jellyfin-enhanced-panel .je-mth-top { gap: 0; }
@@ -659,7 +666,10 @@
             #jellyfin-enhanced-panel .je-mth-tab { justify-content: center; min-height: 44px; padding: 8px 2px 9px; font-size: 13px; min-width: 0; }
             #jellyfin-enhanced-panel .je-mth-tab-long, #jellyfin-enhanced-panel .je-mth-tab .je-mth-admin-chip { display: none; }
             #jellyfin-enhanced-panel .je-mth-tab-short { display: inline; overflow: hidden; text-overflow: ellipsis; }
-            #jellyfin-enhanced-panel .je-mth-tab--admin::before { content: 'admin_panel_settings'; position: absolute; top: 2px; right: 0; font-family: 'Material Icons'; font-size: 13px; line-height: 1; color: #ffb74d; font-feature-settings: 'liga'; }
+            /* Icon over a short label; the admin section's icon is amber (its name says admin to screen readers). */
+            #jellyfin-enhanced-panel .je-mth-tab { flex-direction: column; gap: 2px; padding: 6px 1px 8px; font-size: 12px; }
+            #jellyfin-enhanced-panel .je-mth-tab-icon { font-size: 20px; }
+            #jellyfin-enhanced-panel .je-mth-tab--admin .je-mth-tab-icon { color: #ffb74d; }
             #jellyfin-enhanced-panel .je-mth-body { grid-template-columns: minmax(0, 1fr); gap: 10px; }
             #jellyfin-enhanced-panel .je-mth-preview { grid-column: 1; grid-row: auto; position: static; display: none; }
             #jellyfin-enhanced-panel .je-mth-panels { grid-row: auto; }

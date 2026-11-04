@@ -392,7 +392,7 @@
         else include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_nothing_to_include'))}</div>`;
         // The Status row opens the hub's Status badges tab (its include list).
         const badges = group === 'status'
-            ? `<button type="button" class="je-tge-badges" data-je-goto="badges">${escapeHtml(JE.t('common_badges'))}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>`
+            ? `<button type="button" class="je-tge-badges" data-je-goto="badges">${escapeHtml(JE.t('panel_media_tags_choose_badges'))}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>`
             : '';
         return `
             <li class="je-tge-row" data-group="${group}" style="--je-tge-swatch:${meta.color};">
@@ -410,10 +410,10 @@
                         </span>
                         <span class="material-icons je-tge-chevron" aria-hidden="true">expand_more</span>
                     </button>
-                    ${badges}
                 </div>
                 <div class="je-tge-body" id="${bodyId}" hidden>
                     <div class="je-tge-hint">${escapeHtml(JE.t(meta.descKey))}</div>
+                    ${badges}
                     <div class="je-tge-field" role="group" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position'))}">
                         <div class="je-tge-label je-tge-section" aria-hidden="true">${escapeHtml(JE.t('panel_settings_subtitles_position'))}</div>
                         <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
@@ -619,7 +619,7 @@
         #jellyfin-enhanced-panel .je-tge-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
         #jellyfin-enhanced-panel .je-tge-top > div { flex: 1 1 220px; min-width: 0; }
         #jellyfin-enhanced-panel .je-tge-title { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
-        #jellyfin-enhanced-panel .je-tge-badges { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-tge-badges { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-badges .material-icons { font-size: 16px; }
         #jellyfin-enhanced-panel .je-tge-hint { font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); margin: 2px 0 6px; }
         #jellyfin-enhanced-panel .je-tge-label { display: block; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.88); margin-bottom: 6px; }
@@ -643,7 +643,9 @@
         #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.46); color: rgba(255,255,255,0.85); border-radius: 6px; width: 32px; height: 32px; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
         #jellyfin-enhanced-panel .je-tge-move .material-icons, #jellyfin-enhanced-panel .je-tge-step .material-icons { font-size: 16px; }
         #jellyfin-enhanced-panel .je-tge-move:disabled, #jellyfin-enhanced-panel .je-tge-step:disabled { opacity: 0.35; cursor: not-allowed; }
-        #jellyfin-enhanced-panel .je-tge-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--je-tge-swatch); }
+        /* The group's colour is an edge bar (a round dot reads as on / off elsewhere). */
+        #jellyfin-enhanced-panel .je-tge-swatch { display: none; }
+        #jellyfin-enhanced-panel .je-tge-row { border-left: 3px solid var(--je-tge-swatch); }
         #jellyfin-enhanced-panel .je-tge-expand { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: transparent; border: 0; color: #fff; text-align: left; padding: 4px; font: inherit; cursor: pointer; border-radius: 4px; }
         #jellyfin-enhanced-panel .je-tge-text { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
         #jellyfin-enhanced-panel .je-tge-name { font-size: 14px; font-weight: 600; }
@@ -694,6 +696,7 @@
         /* A narrow pane puts Badges on its own line under the Status name, clear of the checkbox. */
         #jellyfin-enhanced-panel .je-tge-reorder { display: none; }
         @container je-mth (max-width: 560px) {
+            #jellyfin-enhanced-panel .je-tge-badges, #jellyfin-enhanced-panel .je-tge-reset { min-height: 44px; }
             /* Phone: reordering is its own mode, so the rows give their width to names and summaries. */
             #jellyfin-enhanced-panel .je-tge-reorder { display: inline-flex; min-height: 44px; }
             #jellyfin-enhanced-panel .je-tge-reorder[aria-pressed="true"] { background: rgba(255,255,255,0.12); border-width: 2px; }
@@ -701,10 +704,8 @@
             #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-cats) .je-tge-cat .je-cat-btn { display: none; }
             #jellyfin-enhanced-panel .je-tge-cats { margin-top: 8px; }
             #jellyfin-enhanced-panel .je-tge-body { padding: 12px 10px 14px; }
-            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-row[data-group="status"] .je-tge-row-head { grid-template-columns: auto auto minmax(0, 1fr); }
-            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-badges { grid-column: 3; }
-            #jellyfin-enhanced-panel .je-tge-row[data-group="status"] .je-tge-row-head { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); row-gap: 4px; }
-            #jellyfin-enhanced-panel .je-tge-badges { grid-column: 4; grid-row: 2; justify-self: start; min-height: 44px; }
+
+
             #jellyfin-enhanced-panel .je-tge-expand { min-height: 44px; }
             #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step, #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 44px; height: 44px; }
             #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill, #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill { min-height: 44px; }

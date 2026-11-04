@@ -71,7 +71,7 @@
         /* Resting / Hover: one joined control, as on the hub's and the admin page's previews. */
         .je-tie-view.je-tie-pills { display: inline-flex; flex-wrap: nowrap; gap: 0; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; overflow: hidden; }
         .je-tie-view .je-tie-pill { min-height: 32px; padding: 0 14px; border: 0; border-radius: 0; background: transparent; font-size: 13px; font-weight: 400; }
-        .je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(255,255,255,0.9); color: #111; font-weight: 600; }
+        .je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(255,255,255,0.16); color: #fff; font-weight: 600; }
         .je-tie-view .je-tie-pill:disabled { opacity: 0.45; cursor: default; }
         .je-tie-view .je-tie-pill:focus-visible { outline-offset: -3px; }
         .je-tie-card .cardBox { margin: 0; }

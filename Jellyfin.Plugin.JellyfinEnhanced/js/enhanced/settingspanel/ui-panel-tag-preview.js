@@ -367,10 +367,10 @@
     const PREVIEW_CSS = (JE.awardsTags?.CSS || '') + `
         #jellyfin-enhanced-panel .je-mtp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
         #jellyfin-enhanced-panel .je-mtp-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; margin: 0; }
-        #jellyfin-enhanced-panel .je-mtp-title::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
+
         #jellyfin-enhanced-panel .je-mtp-view { display: inline-flex; border: 1px solid var(--je-mtp-line, rgba(255,255,255,0.22)); border-radius: 999px; overflow: hidden; }
         #jellyfin-enhanced-panel .je-mtp-view button { background: transparent; color: var(--je-mtp-text, rgba(255,255,255,0.85)); border: 0; padding: 5px 12px; min-height: 30px; font: inherit; font-size: 12px; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-mtp-view button[aria-pressed="true"] { background: var(--je-mtp-pressed-bg, rgba(255,255,255,0.9)); color: var(--je-mtp-pressed-text, #111); font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-view button[aria-pressed="true"] { background: var(--je-mtp-pressed-bg, rgba(255,255,255,0.16)); color: var(--je-mtp-pressed-text, #fff); font-weight: 600; }
         #jellyfin-enhanced-panel .je-mtp-view button:focus-visible { outline: 2px solid var(--je-mtp-strong, #fff); outline-offset: -3px; }
         #jellyfin-enhanced-panel .je-mtp-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
         #jellyfin-enhanced-panel .je-mtp-sample { margin: 0; min-width: 0; }
@@ -396,7 +396,7 @@
         #jellyfin-enhanced-panel .je-mtp-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
         #jellyfin-enhanced-panel .je-mtp-card-title { font-size: 12px; padding: 3px 2px 0; color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         #jellyfin-enhanced-panel .je-mtp-meta { font-size: 12px; line-height: 1.35; color: var(--je-mtp-muted, rgba(255,255,255,0.7)); padding: 2px 2px 0; overflow-wrap: anywhere; }
-        #jellyfin-enhanced-panel .je-mtp-meta strong { color: var(--je-mtp-strong, #fff); font-weight: 600; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mtp-meta strong { color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 400; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="lock"] { color: var(--je-mtp-lock, #ffd166); }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="shape"] { white-space: normal; }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="rule"] { color: var(--je-mtp-rule, #7fd3ff); }
@@ -404,7 +404,11 @@
         #jellyfin-enhanced-panel .je-mtp-foot { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--je-mtp-muted, rgba(255,255,255,0.7)); }
         #jellyfin-enhanced-panel .je-mtp-foot p { margin: 0; }
         #jellyfin-enhanced-panel .je-mtp-why { margin-top: 4px; }
-        #jellyfin-enhanced-panel .je-mtp-why > summary { display: inline-flex; align-items: center; min-height: 32px; cursor: pointer; color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 6px 0 2px; border-radius: 6px; cursor: pointer; list-style: none; color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary::-webkit-details-marker { display: none; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary::before { content: 'expand_more'; font-family: 'Material Icons'; font-size: 18px; font-weight: normal; line-height: 1; font-feature-settings: 'liga'; transition: transform 0.2s ease; }
+        #jellyfin-enhanced-panel .je-mtp-why[open] > summary::before { transform: rotate(180deg); }
+        #jellyfin-enhanced-panel .je-mtp-why > summary:hover { background: var(--je-mtp-surface, rgba(255,255,255,0.05)); }
         #jellyfin-enhanced-panel .je-mtp-why > summary:focus-visible { outline: 2px solid var(--je-mtp-strong, #fff); outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mtp-foot strong { color: var(--je-mtp-strong, #fff); }
         #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: var(--je-mtp-lock, #ffd166); }
