@@ -36,6 +36,15 @@
         const t = (score - 5) / 2.5;
         return '#' + [255 + (102 - 255) * t, 179 + (187 - 179) * t, 0 + 106 * t].map(n => Math.round(n).toString(16).padStart(2, '0')).join('');
     }
+    /**
+     * A score in the user's locale through the shared media-language core (ASCII where it is absent).
+     * @param {string} text
+     * @returns {string}
+     */
+    function localNumber(text) {
+        const format = JE.core?.mediaLanguage?.formatNumberText;
+        return typeof format === 'function' ? format(text) : String(text);
+    }
     /** Build ordered semantic scores before caps/density are applied by the layout controller. */
     function resolve(community, critic, ratings, conf = settings()) {
         return conf.sources.flatMap(id => {
@@ -45,8 +54,9 @@
             const score = value * 10 / maximum(id);
             if (score < conf.minimum) return [];
             const text = id === 'community' && value === 0 ? '—'
-                : maximum(id) <= 10 ? value.toFixed(1)
-                : Math.round(value) + (id === 'metacritic' ? '' : '%');
+                // In the user's locale (decimal separator and digits), as native posters write it.
+                : localNumber(maximum(id) <= 10 ? value.toFixed(1)
+                    : Math.round(value) + (id === 'metacritic' ? '' : '%'));
             return [{ id, value, text, color: conf.color ? scoreColor(score) : null }];
         });
     }

@@ -655,6 +655,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/ScoreNumbers.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/StatusRules.cs",
       "category": "Services"
     },
@@ -1780,6 +1784,10 @@
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/ratingtags.js",
+      "category": "js"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/js/tags/score-numbers.json",
       "category": "js"
     },
     {
@@ -9605,6 +9613,10 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/GenreIcons.cs"
     },
     {
+      "literal": "Jellyfin.Plugin.JellyfinEnhanced.js.tags.score-numbers.json",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/Resolution/ScoreNumbers.cs"
+    },
+    {
       "literal": "age-rating-colours.json",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/TagStyles.cs"
     },
@@ -9933,10 +9945,10 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 457,
+    "files": 459,
     "routes": 194,
     "configuration_properties": 720,
-    "storage_references": 85,
+    "storage_references": 86,
     "scheduled_tasks": 15,
     "locales": 33
   }

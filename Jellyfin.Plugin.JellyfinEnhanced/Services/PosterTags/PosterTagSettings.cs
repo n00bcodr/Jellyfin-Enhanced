@@ -1245,6 +1245,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["rating.showCommunity"] = Bool(RatingTagsShowCommunity);
                 values["rating.showCritic"] = Bool(RatingTagsShowCritic);
                 values["rating.sources"] = RatingTagsSources == null ? "legacy" : string.Join(",", RatingTagsSources);
+                // Only for a locale that writes numbers differently, so English variants keep their tokens.
+                var numbers = ScoreNumbers.FormatKey(StatusCulture);
+                if (numbers != "default") values["rating.numbers"] = numbers;
                 values["rating.minimum"] = RatingTagsMinScore.ToString(CultureInfo.InvariantCulture);
                 values["rating.color"] = Bool(RatingTagsColorByScore);
                 values["rating.compact"] = Bool(RatingTagsCompact && RatingTagsSources?.Any(id => id is not ("community" or "critic")) == true);

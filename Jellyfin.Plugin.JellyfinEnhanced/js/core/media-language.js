@@ -932,7 +932,83 @@
         return priorityChoicesCache;
     }
 
+    /**
+     * The locale tag text follows: the user's Jellyfin display language (the one JE's strings
+     * follow), else JE's display language setting, else the page's; undefined lets Intl use the
+     * browser's. statustags.js dateLocale reads the same sources for dates.
+     * @returns {string|undefined}
+     */
+    function uiLocale() {
+        let uiLanguage = null;
+        try {
+            const userId = JE.session?.getUserId?.();
+            if (userId) uiLanguage = localStorage.getItem(`${userId}-language`);
+        } catch {
+            // Storage blocked: fall through to the other sources.
+        }
+        for (const candidate of [uiLanguage, JE.currentSettings?.displayLanguage, document.documentElement?.getAttribute('lang')]) {
+            if (!candidate) continue;
+            try {
+                if (Intl.NumberFormat.supportedLocalesOf(candidate).length > 0) return candidate;
+            } catch {
+                // Not a valid language tag; try the next one.
+            }
+        }
+        return undefined;
+    }
+
+    /** @type {Map<string, {decimal: string, digits: string[]}>} */
+    const numberFormats = new Map();
+
+    /**
+     * A score text ("8.1", "81%") with the locale's decimal separator and digits ("8,1" in German,
+     * Arabic-Indic digits where the locale uses them). Native posters use the same ICU data
+     * (Services/PosterTags/Resolution/ScoreNumbers.cs, scripts/generate_score_numbers.mjs).
+     * @param {string} text Text with ASCII digits and an optional full stop.
+     * @returns {string}
+     */
+    function formatNumberText(text) {
+        const locale = uiLocale();
+        let format = numberFormats.get(locale || '');
+        if (!format) {
+            const formatter = new Intl.NumberFormat(locale, { useGrouping: false });
+            format = { decimal: formatter.formatToParts(1.5).find(p => p.type === 'decimal')?.value || '.', digits: Array.from({ length: 10 }, (_, i) => formatter.format(i)) };
+            numberFormats.set(locale || '', format);
+        }
+        if (format.decimal === '.' && format.digits.join('') === '0123456789') return String(text);
+        return String(text).replace(/[0-9.]/g, c => (c === '.' ? format.decimal : format.digits[Number(c)]));
+    }
+
+    /** @type {Map<string, string>} */
+    const localNames = new Map();
+
+    /**
+     * A language's name in the user's language for tooltips and screen readers ("Japonais" in
+     * French). Matching and grouping keep the English names (displayName).
+     * @param {string} code
+     * @returns {string} The name, or '' when the tag has none.
+     */
+    function localName(code) {
+        const locale = uiLocale() || 'en';
+        const key = `${locale}|${code}`;
+        let name = localNames.get(key);
+        if (name === undefined) {
+            // A malformed tag (PT_BR) has no name; the caller keeps its own English name.
+            try {
+                name = parseLanguageTag(code)?.base === 'zxx' ? JE.t('audio_language_no_dialogue')
+                    : new Intl.DisplayNames([locale, 'en'], { type: 'language' }).of(code) || '';
+            } catch {
+                name = '';
+            }
+            localNames.set(key, name);
+        }
+        return name;
+    }
+
     JE.core.mediaLanguage = {
+        uiLocale,
+        formatNumberText,
+        localName,
         parseLanguageTag,
         canonicalBase,
         displayCode,

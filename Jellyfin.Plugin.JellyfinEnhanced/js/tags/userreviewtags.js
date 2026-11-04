@@ -282,7 +282,7 @@
         // rating is a 1-5 float average — convert to /10, drop trailing .0
         const raw = rating !== null ? rating * 2 : null;
         const displayText = raw !== null
-            ? (Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`)
+            ? (JE.core?.mediaLanguage?.formatNumberText || String)(Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`)
             : '—';
 
         const tag = document.createElement('div');

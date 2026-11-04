@@ -136,7 +136,9 @@
      * @returns {string}
      */
     function languageLabel(lang) {
-        return lang.partial ? `${lang.name} (${JE.t('language_tags_partial_tooltip')})` : lang.name;
+        // Shown in the user's language; matching keeps the English name.
+        const name = (lang.code && JE.core.mediaLanguage?.localName?.(lang.code)) || lang.name;
+        return lang.partial ? `${name} (${JE.t('language_tags_partial_tooltip')})` : name;
     }
 
     /**
@@ -217,13 +219,13 @@
             if (!key || (style === 'codes' && !code)) continue;
             const name = lang.name || lang.code.toUpperCase();
             const existing = unique.get(key);
-            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, sdh: !!lang.sdh, allCodes: [lang.code], allLanguages: [name], labels: [languageLabel({ name, partial: lang.partial })] });
+            if (!existing) unique.set(key, { countryCode, code: lang.code, text: code, partial: !!lang.partial, sdh: !!lang.sdh, allCodes: [lang.code], allLanguages: [name], labels: [languageLabel({ name, code: lang.code, partial: lang.partial })] });
             else {
                 existing.partial = existing.partial && !!lang.partial;
                 existing.sdh ||= !!lang.sdh;
                 if (!existing.allCodes.includes(lang.code)) existing.allCodes.push(lang.code);
                 if (!existing.allLanguages.includes(name)) existing.allLanguages.push(name);
-                const label = languageLabel({ name, partial: lang.partial });
+                const label = languageLabel({ name, code: lang.code, partial: lang.partial });
                 if (!existing.labels.includes(label)) existing.labels.push(label);
             }
         }

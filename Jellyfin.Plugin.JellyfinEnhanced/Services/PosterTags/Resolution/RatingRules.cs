@@ -47,7 +47,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                     ? JsText.ToFixed(value, 1)
                     : JsText.MathRound(value).ToString(CultureInfo.InvariantCulture) + (id == "metacritic" ? "" : "%");
                 if (!Enum.TryParse<PosterRatingSource>(id, true, out var source)) continue;
-                tags.Add(new RatingTag(source, text, value >= FreshThreshold,
+                tags.Add(new RatingTag(source, ScoreNumbers.Localize(text, settings.StatusCulture), value >= FreshThreshold,
                     settings.RatingTagsColorByScore ? ScoreColor(score) : null, settings.RatingTagsCompact && source is not (PosterRatingSource.Community or PosterRatingSource.Critic)));
             }
 
@@ -99,7 +99,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var text = Math.Floor(raw) == raw && Math.Abs(raw) < 1e21
                 ? ((decimal)raw).ToString(CultureInfo.InvariantCulture)
                 : JsText.ToFixed(raw, 1);
-            return new RatingTag(PosterRatingSource.UserReview, text, false);
+            return new RatingTag(PosterRatingSource.UserReview, ScoreNumbers.Localize(text, settings.StatusCulture), false);
         }
     }
 }

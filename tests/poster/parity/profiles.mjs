@@ -368,6 +368,12 @@ synthLooks('look-rules-empty-personal', { ...allOn, TagLayoutSettingsVersion: 1,
 synthLooks('look-rules-legacy-admin', { ...allOn }, { TagLookRules: lookRules });
 synthLooks('look-rules-legacy-own', { ...allOn, TagLookRules: lookRules.slice(3) });
 
+// Score numbers in the user's language: decimal separator and digits (web Intl, native ScoreNumbers).
+for (const DisplayLanguage of ['de', 'fa', 'ar-SA']) {
+    synth(`rating-locale-${DisplayLanguage}`, { RatingTagsEnabled: true, TagLayoutSettingsVersion: 1, DisplayLanguage,
+        RatingTagsSources: ['community', 'critic', 'imdb', 'letterboxd', 'metacritic'] });
+}
+
 synth('all-on-defaults', { ...allOn });
 for (const TagScale of ['smaller', 'larger', 'largest']) {
     synth(`tag-scale-${TagScale}`, { ...allOn, TagLayoutSettingsVersion: 1, TagScale });

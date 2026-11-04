@@ -17,3 +17,17 @@ test('audio preference matching canonicalizes ISO names while preserving region 
 test('no-dialogue flags remain self-contained and localized; regular flags use CDN',t=>{
  const m=setup(t);assert.match(m.flagSrc('zxx'),/^data:image\/svg\+xml,/);assert.equal(m.flagSrc('br'),'/flags/br.svg');assert.equal(m.displayName('zxx'),'No dialogue');assert.equal(m.displayName('en'),'English');
 });
+
+test('scores and language names follow the user locale while matching keeps English names', t => {
+ for (const [locale, text, expected] of [[undefined, '8.1', '8.1'], ['de', '8.1', '8,1'], ['de-CH', '8.1', '8.1'], ['fr-CA', '81%', '81%'], ['ar-SA', '8.1', '٨٫١'], ['fa', '81%', '۸۱%'], ['de', '—', '—']]) {
+  const h = createHarness({ JE: { currentSettings: { displayLanguage: locale }, t: key => key } });
+  t.after(() => h.close());
+  h.load('core/media-language.js');
+  assert.equal(h.JE.core.mediaLanguage.formatNumberText(text), expected, `${locale} ${text}`);
+ }
+ const h = createHarness({ JE: { currentSettings: { displayLanguage: 'fr' }, t: key => key } });
+ t.after(() => h.close());
+ h.load('core/media-language.js');
+ assert.equal(h.JE.core.mediaLanguage.localName('ja'), 'japonais');
+ assert.equal(h.JE.core.mediaLanguage.displayName('ja'), 'Japanese');
+});
