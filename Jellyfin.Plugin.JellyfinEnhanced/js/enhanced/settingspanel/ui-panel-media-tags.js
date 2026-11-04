@@ -167,7 +167,12 @@
         const own = L.normalizeSettings().shapes[shape];
         const conf = L.resolveLayout({ shape });
         const shapeName = JE.t(`tag_shapes_${shape}`);
+        // Collapsed, the card says what the shape's look is; its fields open on request.
+        const summary = [JE.t(L.VOCABULARY_KEYS.layout[conf.layout]), JE.t(`panel_settings_ui_tag_density_${conf.density}`),
+            own?.tagScale ? L.sizeLabel('scale', own.tagScale) : ''].filter(Boolean).join(' · ');
         const controls = own ? `
+            <details class="je-mth-shape-more" data-shape-more ${openShapes.has(shape) ? 'open' : ''}>
+            <summary class="je-mth-shape-summary"><span class="je-mth-shape-summary-text">${escapeHtml(summary)}</span><span class="je-mth-shape-summary-action">${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></span></summary>
             <div class="je-mth-shape-fields">
                 <label>${tx('panel_settings_ui_tag_layout')}<select data-shape-action="layout" aria-label="${tx('tag_shapes_layout_for', { shape: shapeName })}">
                     ${LAYOUTS.map(id => `<option value="${id}" ${conf.layout === id ? 'selected' : ''}>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[id])}</option>`).join('')}
@@ -199,13 +204,17 @@
                         <button type="button" data-shape-action="cap" data-value="1" ${internal.tagGroupEditorData.stepCap(cap, 1, { capAll: true }) === null ? 'disabled' : ''} aria-label="${tx('tag_shapes_more', { group: groupName })}">+</button>
                     </div>
                 </div>`;
-            }).join('')}</div>` : '';
+            }).join('')}</div>
+            </details>` : '';
         return `<section class="je-mth-card je-mth-shape" data-shape="${shape}" aria-labelledby="jeShape-${shape}">
             <h4 class="je-mth-card-title" id="jeShape-${shape}">${escapeHtml(shapeName)}</h4>
             <label class="je-mth-shape-toggle"><input type="checkbox" data-shape-action="enabled" ${own ? 'checked' : ''}>${tx('tag_shapes_different')}</label>
             ${controls}
         </section>`;
     }
+
+    /** The shape cards opened this session (kept when the cards are drawn again). */
+    const openShapes = new Set();
 
     /** @returns {string} The independently editable looks for landscape cards and list rows. */
     function shapesHtml() {
@@ -277,8 +286,9 @@
                     <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
                 </div>
             </section>
+            ${internal.buildTagPortableHtml?.() || ''}
             <div class="je-mth-shapes">${shapesHtml()}</div>
-            <p class="je-mth-hint">${tx('tag_shapes_limitations')}</p>
+            <p class="je-mth-hint je-mth-shapes-note">${tx('tag_shapes_limitations')}</p>
             <section class="je-mth-card" aria-labelledby="jeMthSwitchesTitle">
                 <h4 class="je-mth-card-title" id="jeMthSwitchesTitle">${tx('panel_media_tags_switches_title')}</h4>
                 <p class="je-mth-hint">${tx('panel_media_tags_switches_desc')}</p>
@@ -287,8 +297,7 @@
                     ${native}
                     ${switchRow('peopleTagsToggle', !!JE.currentSettings.peopleTagsEnabled, 'panel_settings_ui_people_tags', 'panel_settings_ui_people_tags_desc')}
                 </div>
-            </section>
-            ${internal.buildTagPortableHtml?.() || ''}`;
+            </section>`;
     }
 
     /**
@@ -330,7 +339,8 @@
             <section class="je-mth-card" aria-labelledby="jeMthBadgesTitle">
                 <h4 class="je-mth-card-title" id="jeMthBadgesTitle" tabindex="-1">${tx('panel_media_tags_tab_badges')}</h4>
                 <p class="je-mth-hint">${tx('panel_media_tags_badges_desc')}</p>
-                <p class="je-mth-off" id="jeMthBadgesOff" ${JE.currentSettings.statusTagsEnabled ? 'hidden' : ''}>${tx('panel_media_tags_badges_off')}</p>
+                <div class="je-mth-off je-mth-off--action" id="jeMthBadgesOff" ${JE.currentSettings.statusTagsEnabled ? 'hidden' : ''}><span>${tx('panel_media_tags_badges_off')}</span>
+                    <button type="button" class="je-mth-button" data-je-goto="groups:status">${tx('panel_media_tags_badges_turn_on')}<span class="material-icons" aria-hidden="true">arrow_forward</span></button></div>
                 <div id="statusTagsSubToggles" class="je-mth-badges">${rows}</div>
                 <div class="je-mth-actions">
                     <button type="button" class="je-mth-button" data-je-goto="groups:status">${tx('panel_media_tags_badges_to_groups')}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>
@@ -491,6 +501,9 @@
         #jellyfin-enhanced-panel .je-mth-label { font-size: 14px; font-weight: 600; }
         #jellyfin-enhanced-panel .je-mth-off { margin: 4px 0 10px; padding: 8px 10px; border-radius: 6px; background: rgba(255,183,77,0.12); color: #ffd699; font-size: 12px; }
         #jellyfin-enhanced-panel .je-mth-off[hidden] { display: none; }
+        #jellyfin-enhanced-panel .je-mth-off--action { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; font-size: 13px; }
+        #jellyfin-enhanced-panel .je-mth-off--action .je-mth-button { min-height: 40px; }
+        #jellyfin-enhanced-panel .je-mth-off--action[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-mth input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
         #jellyfin-enhanced-panel .je-mth-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
         #jellyfin-enhanced-panel .je-mth-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; min-height: 40px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.2); cursor: pointer; text-align: center; }
@@ -520,7 +533,20 @@
         #jellyfin-enhanced-panel [data-layout="minimal"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 8px; background: #ef5350; }
         #jellyfin-enhanced-panel [data-layout="minimal"] i:nth-child(2) { display: block; left: 3px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #42a5f5; }
         #jellyfin-enhanced-panel [data-layout="minimal"] i:nth-child(3) { display: block; left: 9px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #66bb6a; }
-        #jellyfin-enhanced-panel .je-mth-shape-toggle { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 13px; }
+        #jellyfin-enhanced-panel .je-mth-shape-toggle { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 14px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-mth-shape-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--je-mth-accent); }
+        #jellyfin-enhanced-panel .je-mth-shape-more { margin-top: 6px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
+        #jellyfin-enhanced-panel .je-mth-shape-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 10px 0 12px; list-style: none; cursor: pointer; border-radius: 8px; }
+        #jellyfin-enhanced-panel .je-mth-shape-summary::-webkit-details-marker { display: none; }
+        #jellyfin-enhanced-panel .je-mth-shape-summary:hover { background: rgba(255,255,255,0.05); }
+        #jellyfin-enhanced-panel .je-mth-shape-summary:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        #jellyfin-enhanced-panel .je-mth-shape-summary-text { font-size: 14px; font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mth-shape-summary-action { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; color: rgba(255,255,255,0.75); }
+        #jellyfin-enhanced-panel .je-mth-shape-summary-action .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        #jellyfin-enhanced-panel .je-mth-shape-more[open] .je-mth-shape-summary-action .material-icons { transform: rotate(180deg); }
+        #jellyfin-enhanced-panel .je-mth-shape-more > :not(summary) { margin-left: 12px; margin-right: 12px; }
+        #jellyfin-enhanced-panel .je-mth-shape-more[open] > summary { border-bottom: 1px solid rgba(255,255,255,0.08); border-radius: 8px 8px 0 0; }
+        #jellyfin-enhanced-panel .je-mth-shapes-note { margin: -2px 2px 12px; }
         #jellyfin-enhanced-panel .je-mth-shape-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 8px 0; }
         #jellyfin-enhanced-panel .je-mth-shape-fields label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 120px; font-size: 12px; }
         #jellyfin-enhanced-panel .je-mth-shape-fields select { min-height: 36px; width: 100%; border: 1px solid #666; border-radius: 5px; background: #20242b; color: #fff; font: inherit; padding: 4px; }
@@ -813,7 +839,11 @@
             // Preserve the effective looks of both shapes before promotion.
             L.promoteLegacySettings(JE.currentSettings);
             let look = shapes[shape];
-            if (action === 'enabled') look = control.checked ? L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape] : null;
+            if (action === 'enabled') {
+                look = control.checked ? L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape] : null;
+                // Just turned on: show its fields.
+                if (control.checked) openShapes.add(shape);
+            }
             else if (action === 'recommended') look = L.readShapeOverrides(L.RECOMMENDED_SHAPES)[shape];
             else if (look) {
                 const group = control.closest('[data-shape-group]')?.dataset.shapeGroup;
@@ -840,6 +870,12 @@
             preview?.refresh();
             touch();
         };
+        shapeMount?.addEventListener('toggle', (e) => {
+            const more = /** @type {HTMLDetailsElement} */ (e.target);
+            const shape = more.closest?.('[data-shape]')?.dataset.shape;
+            if (!shape || !more.matches?.('[data-shape-more]')) return;
+            if (more.open) openShapes.add(shape); else openShapes.delete(shape);
+        }, true);
         shapeMount?.addEventListener('change', editShape);
         shapeMount?.addEventListener('click', editShape);
 
@@ -1017,6 +1053,9 @@
                 || /** @type {HTMLElement|null} */ (document.getElementById(`jeMthPanel-${tabId}`)?.querySelector('.je-mth-card-title, .je-tge-title') || null)
                 || tabs.find((t) => t.dataset.tab === tabId)
                 || el;
+            // A control inside a closed disclosure (Quality's More options) is shown first.
+            const closed = /** @type {HTMLDetailsElement|null} */ (target.closest('details:not([open])'));
+            if (closed) closed.open = true;
             if (target !== el && !target.matches('button, input, select, a[href], [tabindex]')) target.tabIndex = -1;
             if (target.matches('[role="group"], [role="radiogroup"]')) {
                 target = /** @type {HTMLElement} */ (target.querySelector('input:checked, button:not(:disabled), input:not(:disabled)') || target);

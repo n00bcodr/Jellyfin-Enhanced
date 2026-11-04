@@ -763,6 +763,11 @@ test('Show up to: stepping to either end keeps keyboard focus in the editor, on 
   await h.open(MOVIE);
   const row = () => h.$('.je-tie [data-group="quality"]');
   const step = (dir) => row().querySelector(`[data-tie-step="${dir}"]`);
+  // The row's position and limit open from its Edit button (one row at a time).
+  assert.equal(row().querySelector('.je-tie-detail').hidden, true, 'collapsed to its summary');
+  h.click(row().querySelector('[data-tie-open]'));
+  assert.equal(row().querySelector('.je-tie-detail').hidden, false);
+  assert.equal(row().querySelector('[data-tie-open]').getAttribute('aria-expanded'), 'true');
   // One step inside the range keeps focus on the same button (by key).
   step('1').focus();
   h.click(step('1'));

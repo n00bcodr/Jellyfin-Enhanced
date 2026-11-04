@@ -388,3 +388,24 @@ test('dragging the any-colour picker keeps its input; the rows are redrawn when 
   assert.equal(again.value, '#123456');
   assert.equal(h.document.activeElement, again, 'focus on the redrawn picker');
 });
+
+test('each colour property reads as its value, opens its palette on Change (one at a time) and is reached by arrow keys between groups', async t => {
+  const h = await setup(t);
+  const row = (field) => h.$(`.je-ts-field-row[data-field="${field}"]`);
+  assert.equal(row('background').querySelector('.je-ts-value').textContent, 'Varies by label', 'a mixed group value is written out');
+  assert.ok(Array.from(h.$$('.je-ts-field-body')).every((body) => body.hidden), 'palettes start closed');
+  row('background').querySelector('.je-ts-edit').click();
+  assert.equal(row('background').querySelector('.je-ts-field-body').hidden, false);
+  assert.equal(row('background').querySelector('.je-ts-edit').getAttribute('aria-expanded'), 'true');
+  row('border').querySelector('.je-ts-edit').click();
+  assert.equal(row('background').querySelector('.je-ts-field-body').hidden, true, 'opening another closes the first');
+  assert.equal(row('border').querySelector('.je-ts-field-body').hidden, false);
+  assert.equal(row('border').querySelector('.je-ts-reset').getAttribute('aria-label'), 'Reset border');
+  // The group strip has one Tab stop, and arrows choose the next group.
+  const tabs = h.$$('.je-ts-tab');
+  assert.deepEqual(tabs.map((tab) => tab.tabIndex), tabs.map((tab) => (tab.getAttribute('aria-selected') === 'true' ? 0 : -1)));
+  const active = h.$('.je-ts-tab.active');
+  active.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  assert.notEqual(h.$('.je-ts-tab.active').dataset.group, active.dataset.group);
+  assert.equal(h.$('#tagStyleGroupPanel').getAttribute('aria-labelledby'), h.$('.je-ts-tab.active').id);
+});

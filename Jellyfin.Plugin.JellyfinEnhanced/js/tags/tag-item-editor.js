@@ -78,7 +78,9 @@
         .je-tie-note { margin: 6px 0 0; font-size: 13px; color: #ffd699; }
         .je-tie-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
         .je-tie-box { margin: 0; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
-        .je-tie-box > legend, .je-tie-h { float: left; width: 100%; padding: 0; margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+        .je-tie-box > legend, .je-tie-h { padding: 0; margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+        /* A legend sits on the fieldset's border by default: float it into the box like the section headings. */
+        .je-tie-box > legend { float: left; width: 100%; }
         .je-tie-box > legend + * { clear: both; }
         .je-tie-hint { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
         .je-tie input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
@@ -116,19 +118,29 @@
         .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
         .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
         .je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-        .je-tie-group { display: grid; grid-template-columns: 150px minmax(0, 1fr) 176px; align-items: center; gap: 6px 10px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
+        .je-tie-group { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; min-height: 56px; box-sizing: border-box; padding: 8px 10px 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
+        .je-tie-group[data-open="1"] { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
+        .je-tie-gsum { min-width: 0; font-size: 13px; color: rgba(255,255,255,0.72); }
+        .je-tie-group[data-on="0"] .je-tie-gsum { color: rgba(255,255,255,0.5); }
+        .je-tie-gopen { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px 0 12px; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,0.22); border-radius: 6px; cursor: pointer; }
+        .je-tie-gopen:hover { background: rgba(255,255,255,0.06); }
+        .je-tie-gopen:disabled { opacity: 0.4; cursor: default; }
+        .je-tie-gopen .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        .je-tie-gopen[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
+        .je-tie-detail { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 10px 0 2px; border-top: 1px solid rgba(255,255,255,0.08); }
+        .je-tie-detail[hidden] { display: none; }
+        .je-tie-detail .je-tie-where { flex: 1 1 280px; }
         .je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; }
         .je-tie-gname { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
         .je-tie-gname small { padding-left: 26px; font-size: 12px; color: rgba(255,255,255,0.62); font-weight: 400; }
         .je-tie-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; min-height: 36px; }
         .je-tie-switch input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #00a4dc; cursor: pointer; }
         .je-tie-where .je-tie-pill { min-height: 30px; padding: 2px 8px; font-size: 12px; }
-        .je-tie-anchors { display: grid; grid-template-columns: repeat(3, 34px); grid-auto-rows: 26px; gap: 4px; }
-        .je-tie-anchor { position: relative; display: block; border-radius: 4px; border: 1px solid rgba(255,255,255,0.25); background: rgba(0,0,0,0.25); cursor: pointer; }
-        .je-tie-anchor:hover { background: rgba(255,255,255,0.08); }
-        .je-tie-anchor::after { content: ''; position: absolute; inset: 8px 11px; border-radius: 2px; background: rgba(255,255,255,0.25); }
-        .je-tie-anchor:has(input:checked) { border-color: #0077a3; background: #0077a3; }
-        .je-tie-anchor:has(input:checked)::after { background: #fff; }
+        /* Corners positions by name in a 3 × 3 grid, as on the hub and the admin page. */
+        .je-tie-anchors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 420px; }
+        .je-tie-anchor { position: relative; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 2px 6px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.25); background: transparent; cursor: pointer; font-size: 13px; line-height: 1.2; text-align: center; }
+        .je-tie-anchor:hover { background: rgba(255,255,255,0.06); }
+        .je-tie-anchor:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
         .je-tie-group[data-on="0"] :is(.je-tie-anchor, .je-tie-pill) { cursor: default; }
         .je-tie-anchor:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
         .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 13px; white-space: nowrap; }
@@ -147,6 +159,7 @@
         .je-tie-keep .je-tie-hint { padding-left: 26px; }
         .je-tie-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
         .je-tie-foot .je-tie-status { flex: 1 1 200px; margin: 0; font-size: 13px; color: #ffd699; }
+        .je-tie-foot .je-tie-status:empty { display: none; }
         .je-tie-foot button { padding: 0 16px; min-height: 40px; }
         .je-tie-foot .je-tie-save { background: #0077a3; border-color: #0077a3; }
         .je-tie button:focus-visible, .je-tie select:focus-visible, .je-tie-switch input:focus-visible, .je-tie-toast button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
@@ -159,12 +172,12 @@
             .je-tie-side { position: static; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; align-items: start; }
             .je-tie-card[data-je-shape="landscape"] { grid-column: 1 / -1; max-width: 260px; }
             .je-tie-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-            .je-tie-anchors { grid-template-columns: repeat(3, 44px); grid-auto-rows: 32px; }
-            .je-tie-anchor::after { inset: 11px 16px; }
-            .je-tie-cap button, .je-tie-pill { min-height: 40px; }
-            .je-tie-cap button { width: 40px; }
+            .je-tie-anchors { max-width: none; }
+            .je-tie-cap button, .je-tie-pill, .je-tie-anchor { min-height: 44px; }
+            .je-tie-cap button { width: 44px; }
             .je-tie-group { grid-template-columns: minmax(0, 1fr) auto; }
-            .je-tie-where { grid-column: 1 / -1; grid-row: 2; }
+            .je-tie-gsum { grid-column: 1; grid-row: 2; padding-left: 26px; }
+            .je-tie-gopen { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; }
             .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
             .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
         }
@@ -508,6 +521,8 @@
             edge: effective.edge === base.edge ? null : effective.edge,
         };
         for (const layout of LAYOUTS) draft.slots[layout] = { ...base.profiles[layout] };
+        /** @type {string|null} the group row whose position and limit are open (one at a time) */
+        let openGroup = null;
         /** @type {Object<string, string>} "layout:group" → the position a group had before it was switched off */
         const lastSlot = {};
         draft.slots[startLayout] = { ...effective.slots };
@@ -662,7 +677,7 @@
                 // An off group's controls are shown dimmed and are not operable (the keyboard skips them too).
                 const off = on ? '' : 'disabled';
                 const where = draft.layout === 'corners'
-                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor" title="${tx(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`])}"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" aria-label="${esc(slotLabel('corners', a))}" ${a === current ? 'checked' : ''} ${off}></label>`).join('')}</div>`
+                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" ${a === current ? 'checked' : ''} ${off}>${esc(slotLabel('corners', a))}</label>`).join('')}</div>`
                     : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''} ${off}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
                 const fixed = L.singleChipGroup(group);
                 const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
@@ -672,16 +687,24 @@
                     <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${!on || stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
                     <output aria-live="polite">${esc(capText)}</output>
                     <button type="button" data-tie-step="1" data-tie-key="${group}-up" aria-label="${tx('tag_item_editor_cap_more', { group: gname })}" ${!on || stepCap(cap, 1, meta) === null ? 'disabled' : ''}>+</button></div>`;
-                return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}">
+                // Collapsed, a row says where the group goes and how many it shows; one row opens at a time.
+                const open = openGroup === group;
+                const summary = on ? (fixed ? slotLabel(draft.layout, slot)
+                    : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where: slotLabel(draft.layout, slot), cap: capText }))
+                    : JE.t('panel_settings_ui_tag_slot_off');
+                return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}" data-open="${open ? 1 : 0}">
                     <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}>${esc(gname)}</label>${groupOn(group) ? '' : `<small>${tx(serverMode ? 'tag_item_editor_group_off_for_you_server' : 'tag_item_editor_group_off_for_you')}</small>`}</div>
-                    <div class="je-tie-where">${where}</div>${stepper}</li>`;
+                    <span class="je-tie-gsum">${esc(summary)}</span>
+                    <button type="button" class="je-tie-gopen" data-tie-open data-tie-key="${group}-open" aria-expanded="${open}" aria-controls="${uid}-${group}-detail" aria-label="${tx('tag_item_editor_group_edit', { group: gname })}" ${on ? '' : 'disabled'}>${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+                    <div class="je-tie-detail" id="${uid}-${group}-detail" ${open && on ? '' : 'hidden'}><div class="je-tie-where">${where}</div>${stepper}</div></li>`;
             }).join('');
             if (!focusKey) return;
-            const usable = (el) => !!el && !/** @type {HTMLButtonElement} */ (el).disabled;
+            const usable = (el) => !!el && !/** @type {HTMLButtonElement} */ (el).disabled && !el.closest('[hidden]');
             let next = /** @type {HTMLElement|null} */ (groupsList.querySelector(`[data-tie-key="${focusKey}"]`));
             if (!usable(next)) {
                 const row = focusGroup ? groupsList.querySelector(`[data-group="${focusGroup}"]`) : null;
-                next = /** @type {HTMLElement|null} */ (row?.querySelector('[data-tie-step]:not([disabled])') || row?.querySelector('[data-tie-on]') || null);
+                // The row's other step button, else its Edit button, else its switch.
+                next = /** @type {HTMLElement|null} */ (['[data-tie-step]', '[data-tie-open]', '[data-tie-on]'].map((sel) => Array.from(row?.querySelectorAll(sel) || []).find(usable)).find(Boolean) || null);
             }
             (usable(next) ? next : dialog).focus({ preventScroll: true });
         };
@@ -748,6 +771,13 @@
             schedule();
         });
         groupsList.addEventListener('click', (e) => {
+            const opener = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tie-open]'));
+            if (opener && !opener.disabled) {
+                const group = /** @type {HTMLElement} */ (opener.closest('[data-group]')).dataset.group || '';
+                openGroup = openGroup === group ? null : group;
+                renderGroups();
+                return;
+            }
             const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tie-step]'));
             if (!button || button.disabled) return;
             const group = /** @type {HTMLElement} */ (button.closest('[data-group]')).dataset.group || '';

@@ -690,6 +690,23 @@
         return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
     }
 
+    /**
+     * A field's value as its control shows it: the option's text, On/Off for
+     * a switch, else the value itself.
+     * @param {string} key - PluginConfiguration field.
+     * @param {*} value
+     * @returns {string}
+     */
+    function valueLabel(key, value) {
+        const control = /** @type {HTMLElement|null} */ (Array.from(document.querySelectorAll('.je-tag-admin [data-je-field]')).find((el) => el.getAttribute('data-je-field') === key) || null);
+        if (typeof value === 'boolean' || (control instanceof HTMLInputElement && control.type === 'checkbox')) return JE.t(value ? 'tag_portable_value_on' : 'tag_portable_value_off');
+        if (control instanceof HTMLSelectElement) {
+            const option = Array.from(control.options).find((o) => o.value === String(value ?? ''));
+            if (option) return option.textContent || String(value);
+        }
+        return value === null || value === undefined || value === '' ? JE.t('tag_portable_value_inherit') : String(typeof value === 'object' ? JSON.stringify(value) : value);
+    }
+
     // ── The page ───────────────────────────────────────────────────────
 
     /**
@@ -800,7 +817,12 @@
             const names = (keys) => Array.from(new Set(keys.map(fieldName))).join(', ');
             let html;
             if (state === 'conflict') {
-                html = `<span>${tx('admin_tags_conflict', { fields: names(Array.from(store.conflicts.keys())) })}</span>`
+                const keys = Array.from(store.conflicts.keys());
+                // One field: say what each side holds, so Keep mine / Take theirs is an informed choice.
+                const one = keys.length === 1 && store.values.has(keys[0]);
+                html = `<span>${one
+                    ? tx('admin_tags_conflict_one', { field: fieldName(keys[0]), theirs: valueLabel(keys[0], store.conflicts.get(keys[0])), mine: valueLabel(keys[0], store.values.get(keys[0])) })
+                    : tx('admin_tags_conflict', { fields: names(keys) })}</span>`
                     + `<button type="button" data-je-keep>${tx('admin_tags_keep_mine')}</button><button type="button" data-je-theirs>${tx('admin_tags_take_theirs')}</button>`;
             } else if (state === 'error') {
                 const fields = names(store.failed.length ? store.failed : Array.from(store.values.keys()));

@@ -17,7 +17,7 @@
             <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel"><div class="je-ta-hint"></div></div>
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
-                <div class="je-ts-section-label" id="tagStyleTargetsLabel"></div>
+                <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span></div>
                 <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
                 <div id="tagStyleTargets" class="je-ts-targets" role="radiogroup" aria-labelledby="tagStyleTargetsLabel"></div>
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
@@ -76,6 +76,8 @@
         let target = ALL;
         // The label filter's text (tile groups with many labels); cleared on a group change.
         let filter = '';
+        /** The colour property whose palette is open (one at a time), or null. */
+        let openField = null;
         let canvas = null;
         // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
         let legacy = null;
@@ -433,6 +435,36 @@
         function renderPresets() {
             const bar = root.querySelector('#tagStylePresets');
             rebuildKeepingFocus(bar, () => buildPresets(bar));
+            rove(bar, '.je-ts-preset', 'aria-checked');
+        }
+
+        /**
+         * One Tab stop for a strip of choices (the selected one); arrow keys, Home and End
+         * choose the next one, as the page's own tab bar does.
+         * @param {Element} box
+         * @param {string} selector
+         * @param {string} attr - aria-checked or aria-selected.
+         * @returns {void}
+         */
+        function rove(box, selector, attr) {
+            const items = Array.from(box.querySelectorAll(selector));
+            items.forEach((item) => { item.tabIndex = item.getAttribute(attr) === 'true' ? 0 : -1; });
+            if (items.length && !items.some((item) => item.tabIndex === 0)) items[0].tabIndex = 0;
+            box.onkeydown = (e) => {
+                const list = Array.from(box.querySelectorAll(selector));
+                const at = list.indexOf(e.target.closest(selector));
+                if (at < 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+                const back = getComputedStyle(box).direction === 'rtl' ? 1 : -1;
+                const step = { ArrowLeft: back, ArrowRight: -back, ArrowUp: -1, ArrowDown: 1 }[e.key];
+                const next = step ? list[(at + step + list.length) % list.length] : e.key === 'Home' ? list[0] : e.key === 'End' ? list[list.length - 1] : null;
+                if (!next) return;
+                e.preventDefault();
+                const key = next.dataset.tsKey;
+                next.click();
+                // Choosing redraws the strip: focus the new choice there.
+                const again = Array.from(box.querySelectorAll(selector)).find((n) => n.dataset.tsKey === key);
+                if (again) again.focus();
+            };
         }
 
         /** @param {Element} bar @returns {void} */
@@ -465,10 +497,14 @@
                     b.setAttribute('aria-selected', String(g.key === current));
                     b.dataset.group = g.key;
                     b.dataset.tsKey = 'tab:' + g.key;
+                    b.id = 'tagStyleTab-' + g.key;
+                    b.setAttribute('aria-controls', 'tagStyleGroupPanel');
                     b.addEventListener('click', () => { current = g.key; target = ALL; filter = ''; renderTabs(); renderGroup(); });
                     tabs.appendChild(b);
                 });
             });
+            rove(tabs, '.je-ts-tab', 'aria-selected');
+            root.querySelector('#tagStyleGroupPanel')?.setAttribute('aria-labelledby', 'tagStyleTab-' + current);
         }
 
         /**
@@ -527,6 +563,13 @@
                 search.value = search.hidden ? '' : filter;
                 search.oninput = () => { filter = search.value; applyFilter(); };
             }
+            // What the colour rows below change, named above the list.
+            const now = root.querySelector('#tagStyleEditingNow');
+            if (now) {
+                const groupTitle = (GROUPS.find((g) => g.key === current) || {}).title || current;
+                const label = target === ALL ? null : labelsOf(current).find((l) => l.key === target);
+                now.textContent = groupTitle + ' · ' + (label ? label.name : 'Whole group');
+            }
             const all = radio('je-ts-target je-ts-target-all' + (state.groups[current] ? ' changed' : ''), target === ALL, () => { target = ALL; renderGroup(); });
             all.textContent = 'Whole group';
             all.dataset.label = ALL;
@@ -578,17 +621,48 @@
             rows.textContent = '';
             const colours = targetColours();
             const own = targetEntry();
+            const shared = target === ALL ? {} : (state.groups[current] || {});
             fieldsOf(current).forEach(([field, name]) => {
                 const varies = !colours[field];
                 const c = parse(colours[field] || 'rgba(0, 0, 0, 0)');
                 const alpha = c.a > 0 && !varies ? c.a : 1;
+                const shownName = current === 'genre' && field === 'text' ? 'Icon' : name;
                 const row = el('div', 'je-ts-field-row');
                 row.dataset.field = field;
-                row.appendChild(el('span', 'je-ts-row-name', current === 'genre' && field === 'text' ? 'Icon' : name));
+                // The row reads as its value: the colour, its opacity and where it comes from.
+                const head = el('div', 'je-ts-field-head');
+                head.appendChild(el('span', 'je-ts-row-name', shownName));
                 const now = el('span', 'je-ts-swatch je-ts-swatch-current' + (varies ? ' je-ts-swatch-varies' : ''));
                 if (!varies) now.style.setProperty('--je-ts-swatch', colours[field]);
-                now.title = varies ? 'Varies by label' : 'Now: ' + colours[field];
-                row.appendChild(now);
+                now.setAttribute('aria-hidden', 'true');
+                head.appendChild(now);
+                const from = own[field] ? 'set here' : shared[field] ? 'from the group' : 'from the preset';
+                head.appendChild(el('span', 'je-ts-value', varies ? 'Varies by label' : toHex(c) + ' · ' + Math.round(c.a * 100) + '% · ' + from));
+                const open = openField === field;
+                const bodyId = 'tagStyleField-' + field;
+                const edit = el('button', 'je-ts-edit', open ? 'Done' : 'Change');
+                edit.type = 'button';
+                edit.setAttribute('aria-expanded', String(open));
+                edit.setAttribute('aria-controls', bodyId);
+                edit.setAttribute('aria-label', (open ? 'Done changing ' : 'Change ') + shownName.toLowerCase());
+                edit.dataset.tsKey = field + ':edit';
+                edit.addEventListener('click', () => { openField = open ? null : field; renderRows(); });
+                head.appendChild(edit);
+                const reset = el('button', 'je-ts-reset', 'Reset');
+                reset.type = 'button';
+                reset.disabled = !own[field];
+                reset.dataset.tsKey = field + ':reset';
+                reset.setAttribute('aria-label', 'Reset ' + shownName.toLowerCase());
+                reset.title = target === ALL ? 'Back to the preset colour' : 'Back to the group or preset colour';
+                reset.addEventListener('click', () => setField(field, null));
+                head.appendChild(reset);
+                row.appendChild(head);
+                // One property's palette open at a time.
+                const body = el('div', 'je-ts-field-body');
+                body.id = bodyId;
+                body.hidden = !open;
+                body.setAttribute('role', 'group');
+                body.setAttribute('aria-label', shownName);
                 const list = el('div', 'je-ts-swatches');
                 SWATCHES.forEach((hex) => {
                     const b = el('button', 'je-ts-swatch');
@@ -597,7 +671,9 @@
                     b.setAttribute('aria-label', name + ' ' + hex);
                     b.dataset.tsKey = field + ':swatch:' + hex;
                     b.title = hex;
-                    if (own[field] && toHex(parse(own[field])) === hex) b.classList.add('active');
+                    const picked = !!own[field] && toHex(parse(own[field])) === hex;
+                    if (picked) b.classList.add('active');
+                    b.setAttribute('aria-pressed', String(picked));
                     b.addEventListener('click', () => setField(field, toCss(Object.assign(parse(hex), { a: alpha }))));
                     list.appendChild(b);
                 });
@@ -610,7 +686,7 @@
                 any.addEventListener('input', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha })), true));
                 any.addEventListener('change', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha }))));
                 list.appendChild(any);
-                row.appendChild(list);
+                body.appendChild(list);
                 const opacity = el('div', 'je-ts-opacity');
                 opacity.setAttribute('role', 'group');
                 opacity.setAttribute('aria-label', name + ' opacity');
@@ -626,14 +702,9 @@
                     b.addEventListener('click', () => setField(field, toCss(Object.assign({}, c, { a: pct / 100 }))));
                     opacity.appendChild(b);
                 });
-                row.appendChild(opacity);
-                const reset = el('button', 'je-ts-reset', 'Default');
-                reset.type = 'button';
-                reset.disabled = !own[field];
-                reset.dataset.tsKey = field + ':reset';
-                reset.title = target === ALL ? 'Back to the preset colour' : 'Back to the group or preset colour';
-                reset.addEventListener('click', () => setField(field, null));
-                row.appendChild(reset);
+                body.appendChild(opacity);
+                if (varies) body.appendChild(el('span', 'je-ts-opacity-note', 'Choose a colour to set its opacity'));
+                row.appendChild(body);
                 rows.appendChild(row);
             });
         }

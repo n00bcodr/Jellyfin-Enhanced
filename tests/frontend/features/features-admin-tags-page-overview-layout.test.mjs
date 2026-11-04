@@ -320,3 +320,18 @@ test('Layout defaults: the limit stepper says the new limit to screen readers an
   await h.save();
   assert.deepEqual(plain(h.server.TagGroupCaps), { Genre: 4 });
 });
+
+test('Layout defaults: each group row reads as a summary and opens one row\'s position and limit at a time', async t => {
+  const h = setup(t);
+  const row = (g) => h.$(`.je-ta-lrow[data-group="${g}"]`);
+  assert.ok(h.$$('.je-ta-lrow-detail').every((d) => d.hidden), 'rows start collapsed');
+  assert.match(row('genre').querySelector('.je-ta-lrow-sum').textContent, /tag_item_editor_group_summary/);
+  row('genre').querySelector('[data-act="open"]').click();
+  assert.equal(row('genre').querySelector('.je-ta-lrow-detail').hidden, false);
+  assert.equal(row('genre').querySelector('[data-act="open"]').getAttribute('aria-expanded'), 'true');
+  assert.equal(h.document.activeElement, row('genre').querySelector('[data-act="open"]'), 'focus stays on the row\'s button');
+  row('quality').querySelector('[data-act="open"]').click();
+  assert.equal(row('genre').querySelector('.je-ta-lrow-detail').hidden, true, 'opening another closes it');
+  assert.equal(row('quality').querySelector('.je-ta-lrow-detail').hidden, false);
+  assert.ok(row('quality').querySelector('.je-ta-anchor').textContent.length > 0, 'positions are named');
+});
