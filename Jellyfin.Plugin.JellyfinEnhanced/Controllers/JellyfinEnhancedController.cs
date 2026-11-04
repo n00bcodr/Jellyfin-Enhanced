@@ -9517,7 +9517,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var accessibleItems = ids.Where(id => Guid.TryParse(id?.Trim(), out _))
                 .Select(id => _libraryManager.GetItemById<BaseItem>(Guid.Parse(id.Trim()), user))
                 .Where(item => item != null).Select(item => item!).ToArray();
-            _tagCacheService.WarmSourceRatingsForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
+            _tagCacheService.WarmSourceRatingsForRequest(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
             _tagCacheService.WarmLogosForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
             _tagCacheService.QueueScenesRefresh(accessibleItems);
             var results = new List<object>(accessibleItems.Length);

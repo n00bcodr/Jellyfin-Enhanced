@@ -569,14 +569,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public async Task WarmTagRatingsAsync(IEnumerable<(string MediaType, string Id)> titles, CancellationToken cancellationToken, int reserve = SafetyMargin, TimeSpan? maxAge = null)
         {
             if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return;
+            bool Due((string MediaType, string Id) t) => NeedsFetch(t.MediaType, t.Id)
+                || (maxAge != null && GetCachedEntry(t.MediaType, t.Id) is { Found: true } entry
+                    && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - entry.FetchedAtUnixMs >= maxAge.Value.TotalMilliseconds
+                    // Kept ratings after a failed refresh wait for their retry time.
+                    && (entry.RetryAfterUnixMs is not { } retryAfter || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= retryAfter));
+            // Titles already fresh never queue behind another caller's fetch.
+            var due = titles.Distinct().Where(Due).ToArray();
+            if (due.Length == 0) return;
             await _tagRatingsGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                foreach (var group in titles.Distinct().Where(t => NeedsFetch(t.MediaType, t.Id)
-                    || (maxAge != null && GetCachedEntry(t.MediaType, t.Id) is { Found: true } entry
-                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - entry.FetchedAtUnixMs >= maxAge.Value.TotalMilliseconds
-                        // Kept ratings after a failed refresh wait for their retry time.
-                        && (entry.RetryAfterUnixMs is not { } retryAfter || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= retryAfter))).GroupBy(t => t.MediaType))
+                // Checked again inside the gate: the caller ahead may have fetched them.
+                foreach (var group in due.Where(Due).GroupBy(t => t.MediaType))
                 {
                     foreach (var chunk in group.Chunk(150))
                     {

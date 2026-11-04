@@ -104,12 +104,42 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public void WarmSourceRatingsForItems(IEnumerable<BaseItem> items, CancellationToken cancellationToken)
         {
             if (_mdblistService == null || !HasSourceRatingDemand()) return;
-            var titles = items.Select(RatingOwner).OfType<BaseItem>()
-                .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", Id: RatingTmdbId(item)))
-                .Where(title => title.Id != null)
-                .Select(title => (title.MediaType, Id: title.Id!)).Distinct().ToArray();
-            _mdblistService.WarmTagRatingsAsync(titles, cancellationToken, JellyfinEnhanced.Instance!.Configuration.MdblistFetchReserve).GetAwaiter().GetResult();
+            _mdblistService.WarmTagRatingsAsync(RatingTitles(items), cancellationToken, JellyfinEnhanced.Instance!.Configuration.MdblistFetchReserve).GetAwaiter().GetResult();
         }
+
+        /// <summary>How long a tag-data request waits for its titles' MDBList scores before answering with the cached ones.</summary>
+        internal TimeSpan RequestRatingWait { get; set; } = TimeSpan.FromSeconds(2);
+
+        /// <summary>
+        /// The tag-data path: warm the request's titles, but answer after at most
+        /// <see cref="RequestRatingWait"/> (or when the request ends) with the scores
+        /// cached by then. A slow or failing MDBList never holds back the item's other
+        /// facts; the fetch carries on in the background, so the next request (or the
+        /// server cache's delta) has the scores.
+        /// </summary>
+        public void WarmSourceRatingsForRequest(IEnumerable<BaseItem> items, CancellationToken requestAborted)
+        {
+            var service = _mdblistService;
+            if (service == null || !HasSourceRatingDemand()) return;
+            var warm = service.WarmTagRatingsAsync(RatingTitles(items), CancellationToken.None, JellyfinEnhanced.Instance!.Configuration.MdblistFetchReserve);
+            try
+            {
+                if (warm.Wait(RequestRatingWait, requestAborted)) return;
+            }
+            catch (OperationCanceledException) { /* the request ended: the fetch goes on */ }
+            catch (AggregateException ex)
+            {
+                _logger.Warning($"[TagCache] MDBList scores for a tag-data request failed: {ex.InnerException?.Message}");
+                return;
+            }
+            warm.ContinueWith(t => _logger.Warning($"[TagCache] Background MDBList scores for a tag-data request failed: {t.Exception?.InnerException?.Message}"),
+                CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        }
+
+        private (string MediaType, string Id)[] RatingTitles(IEnumerable<BaseItem> items) => items.Select(RatingOwner).OfType<BaseItem>()
+            .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", Id: RatingTmdbId(item)))
+            .Where(title => title.Id != null)
+            .Select(title => (title.MediaType, Id: title.Id!)).Distinct().ToArray();
 
         /// <summary>The movie or series whose MDBList scores an item shows (children use their series), or null.</summary>
         private BaseItem? RatingOwner(BaseItem item)

@@ -941,4 +941,50 @@ public class RatingSourceTests
         Assert.Equal(8.1, cache.BuildEntryOnDemand(movie)!.Ratings!.Imdb);
     }
 
+    [Fact]
+    public async Task ATagDataRequestAnswersBeforeAHeldFetchAndAFreshTitleNeverWaitsBehindIt()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var batches = 0;
+        using var transport = new IntegrationTransport(async (request, token) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":1000}");
+            Interlocked.Increment(ref batches);
+            held.TrySetResult();
+            await release.Task.WaitAsync(token);
+            return IntegrationTransport.Response("[{\"ids\":{\"tmdb\":123},\"ratings\":[{\"source\":\"imdb\",\"score\":75}]}]");
+        });
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        // Movie 124 already has fresh scores; movie 123 has none.
+        service.MergeMediaBatchIntoCache("movie", ["124"], new Dictionary<string, MdblistCacheEntry> { ["124"] = new() { Found = true, Confirmed = true, FetchedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() } });
+        var cold = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
+        var fresh = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "124" } };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<Guid>());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns(Array.Empty<BaseItem>());
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service)
+        {
+            RequestRatingWait = TimeSpan.FromMilliseconds(200),
+        };
+        try
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            cache.WarmSourceRatingsForRequest([cold], default);
+            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), "the request answered while MDBList held the batch");
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(service.NeedsFetch("movie", "123"), "still fetching in the background");
+            // A title with fresh scores returns at once, never queued behind the held fetch.
+            await service.WarmTagRatingsAsync([("movie", "124")], default).WaitAsync(TimeSpan.FromSeconds(2));
+            cache.WarmSourceRatingsForRequest([fresh], default);
+        }
+        finally { release.TrySetResult(); }
+        // The background fetch completes for the next request.
+        for (var i = 0; i < 100 && service.NeedsFetch("movie", "123"); i++) await Task.Delay(20);
+        Assert.False(service.NeedsFetch("movie", "123"));
+        Assert.Equal(1, batches);
+    }
 }
