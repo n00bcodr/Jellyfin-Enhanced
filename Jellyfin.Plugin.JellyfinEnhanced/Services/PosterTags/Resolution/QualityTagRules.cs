@@ -88,7 +88,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HLG", "HDR", "SDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "VVC", "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "VC-1", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA", "ProRes" };
-        private static readonly string[] AudioOrder = { "TRUEHD ATMOS", "ATMOS", "DD+ ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "PCM", "FLAC", "DTS-HD HRA", "DTS-HD", "DTS", "Dolby Digital+", "Dolby Digital", "7.1", "6.1", "5.1" };
+        // TRaSH-Guides audio scores, highest first; from Dolby Digital+ on, lossy tracks rank by channels first (audioOrder in qualitytags.js).
+        private static readonly string[] AudioOrder = { "TRUEHD ATMOS", "DTS-X", "ATMOS", "DD+ ATMOS", "TRUEHD", "DTS-HD MA", "PCM", "FLAC", "DTS-HD HRA", "DTS-HD", "Dolby Digital+", "DTS", "Dolby Digital", "7.1", "6.1", "5.1" };
+        private static readonly int LossyAudioFrom = Array.IndexOf(AudioOrder, "Dolby Digital+");
         private static readonly string[] AudioBases = { "TRUEHD ATMOS", "DD+ ATMOS", "Dolby Digital+", "Dolby Digital", "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "DTS-HD HRA", "DTS-HD", "DTS", "PCM", "FLAC" };
 
         // Video codec detection order (first match wins), on the lowercased Codec then DisplayTitle.
@@ -142,7 +144,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         /// <summary>
         /// VideoRangeType first; only a missing or unknown type falls back to word-bounded
-        /// hints in the display title and the type text, so "DVD" or "Advanced" never reads as Dolby Vision.
+        /// hints in the display title and the type text, so "DVD" or "Advanced" never reads as Dolby Vision,
+        /// then to Jellyfin's coarse VideoRange (HDR/SDR).
         /// </summary>
         internal static RangeFacts DetectRangeFacts(TagMediaStream video)
         {
@@ -155,7 +158,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (TitleHdr10Regex.IsMatch(title)) return new("HDR10", null, false);
             if (TitleHlgRegex.IsMatch(title)) return new("HLG", null, false);
             if (TitleHdrRegex.IsMatch(title)) return new("HDR", null, false);
-            return new(null, null, TitleSdrRegex.IsMatch(title));
+            // Jellyfin's coarse VideoRange still says HDR or SDR when the type is unknown.
+            var coarse = (video.VideoRange ?? string.Empty).ToLowerInvariant();
+            if (coarse == "hdr") return new("HDR", null, false);
+            return new(null, null, TitleSdrRegex.IsMatch(title) || coarse == "sdr");
         }
 
         /// <summary>A quality category, as the web's CATEGORIES table.</summary>
@@ -545,7 +551,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             // More channels win ties, heights too ("7.1.4" beats "7.1"; distinctRank in qualitytags.js).
             var layout = TrailingLayoutRegex.Match(label);
             var channels = layout.Success ? layout.Groups.Values.Skip(1).Where(g => g.Success).Sum(g => g.Value[0] - '0') : 0;
-            return (index < 0 ? 999 : index) * 100 + (category == AudioInfo ? 99 - Math.Min(channels, 99) : 0);
+            if (category != AudioInfo) return (index < 0 ? 999 : index) * 100;
+            // Lossy tracks rank by channels before codec; lossless and object tiers by codec first.
+            if (index >= LossyAudioFrom) return LossyAudioFrom * 100 + (99 - Math.Min(channels, 99)) * 10 + (index - LossyAudioFrom);
+            return (index < 0 ? 99900 : index * 100) + 99 - Math.Min(channels, 99);
         }
 
         /// <summary>Composite audio labels ("ATMOS 7.1") normalize to their base ("ATMOS").</summary>
@@ -643,16 +652,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 };
             }
 
-            // Width covers cropped scope encodes (1920x800 is 1080p).
+            // Width covers cropped scope encodes (1920x800 is 1080p, a cropped DVD 720x304 is 480p).
+            // 1440p needs a 1440-class height: a 2560-wide frame is usually ultrawide 1080p (2560x1080).
             if (height >= 3000 || width >= 7000) return "8K";
             if (height >= 1550 || width >= 3500) return "4K";
-            if (height >= 1250 || width >= 2400) return "1440p";
+            if (height >= 1250) return "1440p";
             if (height >= 1000 || width >= 1800) return "1080p";
             if (height >= 700 || width >= 1200) return "720p";
             if (height >= 528) return "576p";
-            if (height >= 400) return "480p";
+            if (height >= 400 || width >= 640) return "480p";
             return height > 0 ? "LOW-RES" : null;
         }
+
+        /// <summary>The coarse VideoRange worth storing: HDR or SDR, only when the VideoRangeType is unknown or missing.</summary>
+        internal static string? CoarseRange(string? rangeType, string? range)
+            => (string.IsNullOrEmpty(rangeType) || string.Equals(rangeType, "Unknown", StringComparison.OrdinalIgnoreCase))
+                && range is "HDR" or "SDR" ? range : null;
+
+        private static readonly Regex DivxTagRegex = new("divx|dx50|div[3-6]", Options);
 
         private static string? DetectCodec(TagMediaStream video)
         {
@@ -662,8 +679,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             foreach (var (needle, label) in needles)
             {
                 if (codec.Contains(needle, StringComparison.Ordinal)) return label;
-                // CodecTag is only consulted for AVC, right after the codec's own h264/avc checks.
+                // CodecTag is consulted for AVC, and for the MPEG-4 Part 2 encoders Jellyfin reports as
+                // "mpeg4" (XviD; DivX as DIVX/DX50/DIV3-6), right after the codec's own check.
                 if (needle == "avc" && codecTag.Contains("avc", StringComparison.Ordinal)) return label;
+                if (needle == "xvid" && codecTag.Contains("xvid", StringComparison.Ordinal)) return label;
+                if (needle == "divx" && DivxTagRegex.IsMatch(codecTag)) return label;
             }
 
             var displayTitle = JsText.ToLower(video.DisplayTitle ?? string.Empty);
@@ -687,7 +707,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             (new(@"(?:^|[^a-z0-9_])true[ .-]?hd(?![a-z_])", Options), "TRUEHD"),
             (new(@"(?:^|[^a-z0-9_])dts[-_.: ]?x7?(?![a-z_])(?![-_. ]?26[456])", Options), "DTS-X"),
             (new(@"(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:hra?|hi|high[ -]?resolution)(?![a-z_])", Options), "DTS-HD HRA"),
-            (new(@"(?:^|[^a-z0-9_])dts[-_. ]?(?:ma|hd[-_. ]?ma|xll|master[ -]?audio)(?![a-z_])", Options), "DTS-HD MA"),
+            (new(@"(?:^|[^a-z0-9_])dts[-_. ]?(?:hd[-_. ]?)?(?:ma|xll|master[ -]?audio)(?![a-z_])", Options), "DTS-HD MA"),
             (new(@"(?:^|[^a-z0-9_])dts[-_. ]?hd(?![a-z_])", Options), "DTS-HD"),
             (new(@"(?:^|[^a-z0-9_])dts[-_. ]?es(?![a-z_])", Options), "DTS"),
             (new(@"(?:^|[^a-z0-9_])dts(?![a-z_])", Options), "DTS"),

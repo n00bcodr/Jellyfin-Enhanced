@@ -1342,6 +1342,269 @@
    "all": [
     "Dolby Digital+ 5.1"
    ]
+  },
+  {
+   "name": "DTS-HD Master Audio spelled out is Master Audio",
+   "why": "The full name, in the title or the profile, says lossless",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS-HD Master Audio - 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 5.1"
+   ],
+   "all": [
+    "DTS-HD MA 5.1"
+   ]
+  },
+  {
+   "name": "A DTS-HD Master Audio profile is Master Audio",
+   "why": "Profile corroborates a bare DTS-HD title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-HD Master Audio",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS-HD - 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 5.1"
+   ],
+   "all": [
+    "DTS-HD MA 5.1"
+   ]
+  },
+  {
+   "name": "DTS-HD XLL is Master Audio",
+   "why": "XLL is the lossless extension",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS-HD XLL - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ]
+  },
+  {
+   "name": "DTS:X outranks a DD+ Atmos compatibility track",
+   "why": "TRaSH scores DTS:X 4500, DD+ Atmos 3000",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "Dolby Digital Plus + Dolby Atmos",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus + Dolby Atmos - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS:X",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS:X - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-X 7.1"
+   ],
+   "all": [
+    "DTS-X 7.1",
+    "DD+ ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "DD+ outranks DTS at the same channels",
+   "why": "TRaSH scores DD+ 1750, DTS 1250",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus - 5.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
+    "Dolby Digital+ 5.1",
+    "DTS 5.1"
+   ]
+  },
+  {
+   "name": "A surround AAC soundtrack beats an AC-3 stereo dub",
+   "why": "Among lossy tracks more channels win before the codec",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - AAC - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "ac3",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "Français - Dolby Digital - Stereo"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1",
+    "Dolby Digital 2.0"
+   ]
+  },
+  {
+   "name": "A cropped DVD is 480p, not low resolution",
+   "why": "720 wide is SD even when cropped to 304 lines",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "mpeg2video",
+     "Width": 720,
+     "Height": 304,
+     "DisplayTitle": "480p MPEG2"
+    }
+   ],
+   "highest": [
+    "480p",
+    "MPEG2"
+   ],
+   "all": [
+    "480p",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "Ultrawide 2560x1080 is 1080p",
+   "why": "1440p needs a 1440-class height",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "h264",
+     "Width": 2560,
+     "Height": 1080,
+     "DisplayTitle": "1080p H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Jellyfin's coarse HDR range counts when the range type is unknown",
+   "why": "VideoRange HDR with VideoRangeType Unknown is HDR, not nothing",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "hevc",
+     "Width": 3840,
+     "Height": 2160,
+     "VideoRangeType": "Unknown",
+     "VideoRange": "HDR",
+     "DisplayTitle": "4K HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "XviD from its codec tag",
+   "why": "Jellyfin reports XviD as mpeg4 with codec tag XVID",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "mpeg4",
+     "CodecTag": "XVID",
+     "Width": 640,
+     "Height": 352,
+     "DisplayTitle": "480p MPEG4"
+    }
+   ],
+   "highest": [
+    "480p",
+    "XVID"
+   ],
+   "all": [
+    "480p",
+    "XVID"
+   ]
+  },
+  {
+   "name": "DivX from its codec tag",
+   "why": "DX50 is DivX 5",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "mpeg4",
+     "CodecTag": "DX50",
+     "Width": 720,
+     "Height": 400,
+     "DisplayTitle": "480p MPEG4"
+    }
+   ],
+   "highest": [
+    "480p",
+    "DIVX"
+   ],
+   "all": [
+    "480p",
+    "DIVX"
+   ]
   }
  ]
 }

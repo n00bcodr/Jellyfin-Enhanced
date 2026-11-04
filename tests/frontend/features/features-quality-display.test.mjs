@@ -173,7 +173,7 @@ test('Bands overflow counts every eligible extra stream value after compact pres
   assert.equal(h.document.querySelector('.je-tag-more').textContent, `+${hidden.length}`);
 });
 
-for (const [width, height, expected] of [[1920, 800, '1080p'], [2560, 1080, '1440p'], [3840, 1600, '4K'], [7680, 2160, '8K'], [1280, 544, '720p'], [0, 800, '720p']]) {
+for (const [width, height, expected] of [[1920, 800, '1080p'], [2560, 1080, '1080p'], [2560, 1440, '1440p'], [720, 304, '480p'], [854, 356, '480p'], [3840, 1600, '4K'], [7680, 2160, '8K'], [1280, 544, '720p'], [0, 800, '720p']]) {
   test(`cropped dimensions ${width}x${height} agree in cached and batch quality paths`, t => {
     const h = setup(t), raw = [{ Type: 'Video', Width: width, Height: height }];
     assert.deepEqual(h.render({ Type: 'Movie', StreamData: { Streams: raw } }), [expected]);
@@ -371,16 +371,16 @@ for (const density of [undefined, 'full', 'compact']) test(`version transition i
   assert.deepEqual(h.render(entry), ['5.1']);
 });
 
-for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
+for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
   const payload = { namingVersion, legacyAudio: false, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['Dolby Digital 5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'full', { old: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
-  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 11);
-  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 11 ? 1 : 0);
+  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 12);
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 12 ? 1 : 0);
 });
 
 test('persisted current naming labels are still invalidated by a legacy-version transition', t => {
-  const payload = { namingVersion: 11, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
+  const payload = { namingVersion: 12, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'compact', { saved: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
   h.JE.currentSettings.tagLayoutSettingsVersion = 0;

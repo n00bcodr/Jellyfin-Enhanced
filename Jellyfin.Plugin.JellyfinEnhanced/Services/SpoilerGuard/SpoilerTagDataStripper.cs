@@ -537,6 +537,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Channels = st.Channels,
                         ChannelLayout = st.ChannelLayout,
                         VideoRangeType = st.VideoRangeType,
+                        VideoRange = st.VideoRange,
                         DisplayTitle = null,
                     }).ToList(),
                     Sources = sd.Sources?.Select(source => new TagMediaSource

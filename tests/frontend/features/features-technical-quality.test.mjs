@@ -73,7 +73,7 @@ test('technical metadata coexists with All display modes in cached and batch pat
   const h = setup(t, { ...onlyTechnical, showResolutionTag: true, showVideoCodecTag: true,
     qualityVideoCodecDisplayMode: 'all', tagGroupCaps: { quality: 0 } });
   const streams = [
-    { Type: 'Video', Codec: 'hevc', Width: 3840, Height: 1200, AspectRatio: '2.35', RealFrameRate: 23.976 },
+    { Type: 'Video', Codec: 'hevc', Width: 3840, Height: 1200, AspectRatio: '2.40', RealFrameRate: 23.976 },
     { Type: 'Video', Codec: 'h264', Height: 1080 }
   ];
   const ticks = 112 * 60 * 10000000;

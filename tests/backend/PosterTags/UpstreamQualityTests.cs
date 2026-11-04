@@ -11,7 +11,12 @@ public class UpstreamQualityTests
 {
     [Theory]
     [InlineData(1920, 800, "1080p")]
-    [InlineData(2560, 1080, "1440p")]
+    [InlineData(2560, 1080, "1080p")]
+    [InlineData(2560, 1440, "1440p")]
+    [InlineData(720, 304, "480p")]
+    [InlineData(854, 356, "480p")]
+    [InlineData(720, 576, "576p")]
+    [InlineData(480, 200, "LOW-RES")]
     [InlineData(3840, 1600, "4K")]
     [InlineData(7680, 2160, "8K")]
     [InlineData(1280, 544, "720p")]

@@ -232,25 +232,25 @@
         }
       },
       "LegacyAudio": {
-        "Best": "DTS 5.1",
-        "Latest": "DTS 5.1",
+        "Best": "7.1",
+        "Latest": "7.1",
         "Values": [
-          "DTS 5.1"
+          "7.1"
         ],
         "AllAgree": true,
         "All": [
-          "DTS 5.1",
           "7.1",
+          "DTS 5.1",
           "5.1"
         ],
         "Shared": [
-          "DTS 5.1",
           "7.1",
+          "DTS 5.1",
           "5.1"
         ],
         "LatestAll": [
-          "DTS 5.1",
           "7.1",
+          "DTS 5.1",
           "5.1"
         ],
         "AllSetsAgree": true
@@ -338,14 +338,14 @@
     }
   },
   "expected": [
-    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "shared", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "mixed", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "all", "policy": "best", "labels": ["DTS 5.1", "7.1", "5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "all", "policy": "latest", "labels": ["DTS 5.1", "7.1", "5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "all", "policy": "shared", "labels": ["DTS 5.1", "7.1", "5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "shared", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "none", "mode": "highest", "policy": "mixed", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "best", "labels": ["7.1", "DTS 5.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "latest", "labels": ["7.1", "DTS 5.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "shared", "labels": ["7.1", "DTS 5.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["7.1", "DTS 5.1", "5.1"]},
     {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "best", "labels": ["7.1"]},
     {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
     {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "shared", "labels": ["7.1"]},
@@ -378,14 +378,14 @@
     {"legacy": true, "preferred": "de", "mode": "all", "policy": "latest", "labels": ["DTS 5.1"]},
     {"legacy": true, "preferred": "de", "mode": "all", "policy": "shared", "labels": ["DTS 5.1"]},
     {"legacy": true, "preferred": "de", "mode": "all", "policy": "mixed", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "best", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "latest", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "shared", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "mixed", "labels": ["DTS 5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["DTS 5.1", "7.1", "5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "latest", "labels": ["DTS 5.1", "7.1", "5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "shared", "labels": ["DTS 5.1", "7.1", "5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "best", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "shared", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "mixed", "labels": ["7.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["7.1", "DTS 5.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "latest", "labels": ["7.1", "DTS 5.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "shared", "labels": ["7.1", "DTS 5.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["7.1", "DTS 5.1", "5.1"]},
     {"legacy": false, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["DTS-HD HRA 5.1"]},
     {"legacy": false, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS-HD HRA 5.1"]},
     {"legacy": false, "preferred": "none", "mode": "highest", "policy": "shared", "labels": ["DTS-HD HRA 5.1"]},
@@ -673,14 +673,14 @@
         "Best": "DTS 7.1",
         "Latest": "DTS 7.1",
         "Values": [
-          "DTS 5.1",
+          "7.1",
           "DTS 7.1"
         ],
         "AllAgree": false,
         "All": [
           "DTS 7.1",
-          "DTS 5.1",
           "7.1",
+          "DTS 5.1",
           "5.1"
         ],
         "Shared": [
@@ -781,10 +781,10 @@
     {"legacy": true, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS 7.1"]},
     {"legacy": true, "preferred": "none", "mode": "highest", "policy": "shared", "labels": []},
     {"legacy": true, "preferred": "none", "mode": "highest", "policy": "mixed", "labels": ["DTS 7.1", "Mixed"]},
-    {"legacy": true, "preferred": "none", "mode": "all", "policy": "best", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "best", "labels": ["DTS 7.1", "7.1", "DTS 5.1", "5.1"]},
     {"legacy": true, "preferred": "none", "mode": "all", "policy": "latest", "labels": ["DTS 7.1", "7.1", "5.1"]},
     {"legacy": true, "preferred": "none", "mode": "all", "policy": "shared", "labels": ["7.1", "5.1"]},
-    {"legacy": true, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1", "Mixed"]},
+    {"legacy": true, "preferred": "none", "mode": "all", "policy": "mixed", "labels": ["DTS 7.1", "7.1", "DTS 5.1", "5.1", "Mixed"]},
     {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "best", "labels": ["7.1"]},
     {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "latest", "labels": ["7.1"]},
     {"legacy": true, "preferred": "eng", "mode": "highest", "policy": "shared", "labels": ["7.1"]},
@@ -821,10 +821,10 @@
     {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "latest", "labels": ["DTS 7.1"]},
     {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "shared", "labels": []},
     {"legacy": true, "preferred": "fra", "mode": "highest", "policy": "mixed", "labels": ["DTS 7.1", "Mixed"]},
-    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "best", "labels": ["DTS 7.1", "7.1", "DTS 5.1", "5.1"]},
     {"legacy": true, "preferred": "fra", "mode": "all", "policy": "latest", "labels": ["DTS 7.1", "7.1", "5.1"]},
     {"legacy": true, "preferred": "fra", "mode": "all", "policy": "shared", "labels": ["7.1", "5.1"]},
-    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["DTS 7.1", "DTS 5.1", "7.1", "5.1", "Mixed"]},
+    {"legacy": true, "preferred": "fra", "mode": "all", "policy": "mixed", "labels": ["DTS 7.1", "7.1", "DTS 5.1", "5.1", "Mixed"]},
     {"legacy": false, "preferred": "none", "mode": "highest", "policy": "best", "labels": ["DTS-HD MA 7.1"]},
     {"legacy": false, "preferred": "none", "mode": "highest", "policy": "latest", "labels": ["DTS-HD MA 7.1"]},
     {"legacy": false, "preferred": "none", "mode": "highest", "policy": "shared", "labels": []},

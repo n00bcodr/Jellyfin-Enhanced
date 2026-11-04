@@ -9590,6 +9590,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     Channels = s.Channels,
                                     ChannelLayout = s.ChannelLayout,
                                     VideoRangeType = s.VideoRangeType,
+                                    VideoRange = s.Type == MediaStreamType.Video ? Services.PosterTags.Resolution.QualityTagRules.CoarseRange(s.VideoRangeType.ToString(), s.VideoRange.ToString()) : null,
                                     // DisplayTitle's GETTER prepends the raw Title field,
                                     // which on user-muxed mkvs (MakeMKV / Plex / Sonarr
                                     // renamers) commonly carries the episode name — under
@@ -9738,6 +9739,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     Channels = s.Channels,
                                     ChannelLayout = s.ChannelLayout,
                                     VideoRangeType = s.VideoRangeType,
+                                    VideoRange = s.Type == MediaStreamType.Video ? Services.PosterTags.Resolution.QualityTagRules.CoarseRange(s.VideoRangeType.ToString(), s.VideoRange.ToString()) : null,
                                     DisplayTitle = default(string?),
                                 };
                             })
@@ -9870,6 +9872,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 Channels = s.Channels,
                                 ChannelLayout = s.ChannelLayout,
                                 VideoRangeType = s.VideoRangeType,
+                                    VideoRange = s.Type == MediaStreamType.Video ? Services.PosterTags.Resolution.QualityTagRules.CoarseRange(s.VideoRangeType.ToString(), s.VideoRange.ToString()) : null,
                                 DisplayTitle = s.DisplayTitle,
                             };
                         })

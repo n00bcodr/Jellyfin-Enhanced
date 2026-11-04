@@ -422,6 +422,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public int? Channels { get; set; }
         public string? ChannelLayout { get; set; }
         public string? VideoRangeType { get; set; }
+
+        /// <summary>Jellyfin's coarse VideoRange (HDR/SDR), stored only for a video stream whose VideoRangeType is unknown.</summary>
+        public string? VideoRange { get; set; }
         public string? DisplayTitle { get; set; }
 
         /// <summary>
@@ -446,6 +449,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             && a.Channels == b.Channels
             && a.ChannelLayout == b.ChannelLayout
             && a.VideoRangeType == b.VideoRangeType
+            && a.VideoRange == b.VideoRange
             && a.DisplayTitle == b.DisplayTitle;
     }
 
