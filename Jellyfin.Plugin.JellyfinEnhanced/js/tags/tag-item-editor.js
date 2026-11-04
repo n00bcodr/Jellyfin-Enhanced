@@ -67,7 +67,12 @@
         .je-tie-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-view { margin-top: 8px; }
         .je-tie-view button { font: inherit; color: inherit; }
-        .je-tie-view [aria-pressed="true"] { border-color: #0077a3; background: #0077a3; color: #fff; }
+        /* Resting / Hover: one joined control, as on the hub's and the admin page's previews. */
+        .je-tie-view.je-tie-pills { display: inline-flex; flex-wrap: nowrap; gap: 0; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; overflow: hidden; }
+        .je-tie-view .je-tie-pill { min-height: 32px; padding: 0 14px; border: 0; border-radius: 0; background: transparent; font-size: 13px; font-weight: 400; }
+        .je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(255,255,255,0.9); color: #111; font-weight: 600; }
+        .je-tie-view .je-tie-pill:disabled { opacity: 0.45; cursor: default; }
+        .je-tie-view .je-tie-pill:focus-visible { outline-offset: -3px; }
         .je-tie-card .cardBox { margin: 0; }
         .je-tie-scalable { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden; contain: paint; background: #2b303a center / cover no-repeat; }
         .je-tie-card[data-je-shape="landscape"] .je-tie-scalable { aspect-ratio: 16 / 9; }
@@ -181,6 +186,7 @@
             .je-tie-gopen { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; }
             .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
             .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
+            .je-tie-foot button, .je-tie-gopen { min-height: 44px; }
         }
     `;
 
@@ -574,7 +580,7 @@
                         ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
                     <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
                         ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
-                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx('tag_item_editor_groups_hint')}</p><ul class="je-tie-groups" data-tie-groups></ul></section>
+                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><ul class="je-tie-groups" data-tie-groups></ul></section>
                     <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
                         <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
@@ -614,6 +620,8 @@
         const drawn = drawTags(target, id, serverEntry);
         noteEl.hidden = drawn;
         noteEl.textContent = drawn ? '' : JE.t('tag_item_editor_no_tags');
+        // Nothing to show at rest or on hover: the switch would only look useful.
+        if (!drawn) dialog.querySelectorAll('.je-tie-view button').forEach((b) => { /** @type {HTMLButtonElement} */ (b).disabled = true; });
 
         /** @type {ReturnType<typeof setTimeout>|null} */
         let presentTimer = null;
@@ -693,8 +701,10 @@
                 const summary = on ? (fixed ? slotLabel(draft.layout, slot)
                     : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where: slotLabel(draft.layout, slot), cap: capText }))
                     : JE.t('panel_settings_ui_tag_slot_off');
+                // The server-wide look's rows describe the draft; the admin's own switches are not the point there.
+                const offNote = groupOn(group) || serverMode ? '' : 'tag_item_editor_group_off_for_you';
                 return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}" data-open="${open ? 1 : 0}">
-                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}${groupOn(group) ? '' : ` aria-describedby="${uid}-${group}-off"`}>${esc(gname)}</label>${groupOn(group) ? '' : `<small id="${uid}-${group}-off">${tx(serverMode ? 'tag_item_editor_group_off_for_you_server' : 'tag_item_editor_group_off_for_you')}</small>`}</div>
+                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}${offNote ? ` aria-describedby="${uid}-${group}-off"` : ''}>${esc(gname)}</label>${offNote ? `<small id="${uid}-${group}-off">${tx(offNote)}</small>` : ''}</div>
                     <span class="je-tie-gsum">${esc(summary)}</span>
                     <button type="button" class="je-tie-gopen" data-tie-open data-tie-key="${group}-open" aria-expanded="${open}" aria-controls="${uid}-${group}-detail" aria-label="${tx('tag_item_editor_group_edit', { group: gname })}" ${on ? '' : 'disabled'}>${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
                     <div class="je-tie-detail" id="${uid}-${group}-detail" ${open && on ? '' : 'hidden'}><div class="je-tie-where">${where}</div>${stepper}</div></li>`;

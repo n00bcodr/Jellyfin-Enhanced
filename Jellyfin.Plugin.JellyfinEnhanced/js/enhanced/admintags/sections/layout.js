@@ -147,11 +147,11 @@
         if (state.layout === 'corners') {
             const anchors = ANCHORS.map((a) => {
                 const label = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`]);
-                return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" aria-label="${ctx.esc(JE.t('admin_tags_position_aria', { group: name, slot: label }))}">${ctx.esc(label)}</button>`;
+                return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" tabindex="${slot === a ? 0 : -1}" aria-label="${ctx.esc(JE.t('admin_tags_position_aria', { group: name, slot: label }))}">${ctx.esc(label)}</button>`;
             }).join('');
             // The nine positions by name, as on the hub and in the item editor; Hidden spans the row under them.
             slots = `<span class="je-ta-anchors" role="group" id="${L().POSITION_SETTINGS[g].userKey}" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${anchors}`
-                + `<button type="button" class="je-ta-pill je-ta-anchor-off" data-slot="off" aria-pressed="${slot === 'off'}">${ctx.tx('panel_settings_ui_tag_slot_off')}</button></span>`;
+                + `<button type="button" class="je-ta-pill je-ta-anchor-off" data-slot="off" aria-pressed="${slot === 'off'}" tabindex="${slot === 'off' ? 0 : -1}">${ctx.tx('panel_settings_ui_tag_slot_off')}</button></span>`;
         } else {
             slots = `<span class="je-ta-pills" role="group" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${L().LAYOUT_SLOTS[state.layout].filter((s) => s !== 'dots' || g === 'quality').map((s) => {
                 const label = JE.t(s === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${s}`]);
@@ -252,6 +252,19 @@
         ],
         render(ctx, body) {
             body.innerHTML = '<p class="je-ta-hint" data-layout-note></p><ol class="je-ta-lrows" id="tagGroupAdminRows"></ol>';
+            // One Tab stop per position picker; arrow keys, Home and End move along it (Enter or Space picks).
+            body.addEventListener('keydown', (e) => {
+                const cell = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.je-ta-anchors [data-slot]'));
+                if (!cell || e.altKey || e.ctrlKey || e.metaKey) return;
+                const cells = Array.from(/** @type {HTMLElement} */ (cell.closest('.je-ta-anchors')).querySelectorAll('[data-slot]'));
+                const at = cells.indexOf(cell);
+                const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 }[e.key];
+                const next = step ? cells[Math.min(cells.length - 1, Math.max(0, at + step))] : e.key === 'Home' ? cells[0] : e.key === 'End' ? cells[cells.length - 1] : null;
+                if (!next) return;
+                e.preventDefault();
+                cells.forEach((c) => { c.tabIndex = c === next ? 0 : -1; });
+                next.focus();
+            });
             body.addEventListener('click', (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('button'));
                 const row = /** @type {HTMLElement|null} */ (button?.closest('.je-ta-lrow') || null);

@@ -376,6 +376,7 @@
         @media (max-width: 480px) {
             .je-pt-backdrop { padding: 8px; }
             .je-pt-foot .je-pt-btn { flex: 1 1 auto; justify-content: center; }
+            .je-pt-btn, .je-pt-file { min-height: 44px; }
         }
     `;
 

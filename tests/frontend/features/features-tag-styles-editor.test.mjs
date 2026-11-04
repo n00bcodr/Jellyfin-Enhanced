@@ -409,3 +409,18 @@ test('each colour property reads as its value, opens its palette on Change (one 
   assert.notEqual(h.$('.je-ts-tab.active').dataset.group, active.dataset.group);
   assert.equal(h.$('#tagStyleGroupPanel').getAttribute('aria-labelledby'), h.$('.je-ts-tab.active').id);
 });
+
+test('the tag list of a group opens on Change target and stays with the colour rows', async t => {
+  const h = await setup(t);
+  const toggle = h.$('#tagStyleTargetToggle');
+  assert.equal(h.$('#tagStyleTargetBox').hidden, true, 'whole group first: the list is closed');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  toggle.click();
+  assert.equal(h.$('#tagStyleTargetBox').hidden, false);
+  assert.equal(h.$('#tagStyleTargetToggle').getAttribute('aria-expanded'), 'true');
+  h.click('.je-ts-target[data-label="HEVC"]');
+  assert.equal(h.$('#tagStyleTargetBox').hidden, false, 'choosing a tag keeps the list open');
+  assert.match(h.$('#tagStyleEditingNow').textContent, /HEVC/);
+  h.$('#tagStyleTargetToggle').click();
+  assert.equal(h.$('#tagStyleTargetBox').hidden, true);
+});

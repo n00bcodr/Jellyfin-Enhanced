@@ -452,6 +452,7 @@
                     <div class="je-mth-top">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.TAG)} ${tx('common_media_tags')}</h3>
                         <div class="je-mth-tabs" role="tablist" aria-label="${tx('common_media_tags')}">${tabButtons}</div>
+                        <span class="je-mth-autosave"><span class="material-icons" aria-hidden="true">cloud_done</span>${tx('panel_media_tags_autosave')}</span>
                     </div>
                     <div class="je-mth-strip" id="jeMthStrip">
                         <button type="button" class="je-mth-strip-toggle" id="jeMthStripToggle" aria-expanded="false" aria-controls="jeMthPreview">${tx('common_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
@@ -482,6 +483,8 @@
         #jellyfin-enhanced-panel .je-mth-tab[aria-selected="true"]::after { content: ''; position: absolute; left: 6px; right: 6px; bottom: -1px; height: 3px; border-radius: 3px; background: var(--je-mth-accent); }
         #jellyfin-enhanced-panel .je-mth-tab:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
         #jellyfin-enhanced-panel .je-mth-tab-short { display: none; }
+        #jellyfin-enhanced-panel .je-mth-autosave { display: inline-flex; align-items: center; gap: 4px; margin: 0 0 12px auto; font-size: 12px; color: rgba(255,255,255,0.62); white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mth-autosave .material-icons { font-size: 16px; }
         #jellyfin-enhanced-panel .je-mth-tab--admin[aria-selected="true"] { color: #ffb74d; }
         #jellyfin-enhanced-panel .je-mth-tab--admin[aria-selected="true"]::after { background: #ffb74d; }
         #jellyfin-enhanced-panel .je-mth-admin-chip { display: inline-block; padding: 1px 5px; border: 1px solid #ffb74d; border-radius: 4px; color: #ffb74d; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
@@ -576,7 +579,7 @@
         #jellyfin-enhanced-panel .je-mth-switch input { width: 18px; height: 18px; margin: 2px 0 0; flex-shrink: 0; accent-color: var(--je-mth-accent); cursor: pointer; }
         #jellyfin-enhanced-panel .je-mth-switch-text, #jellyfin-enhanced-panel .je-mth-badge-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
         #jellyfin-enhanced-panel .je-mth-switch-name, #jellyfin-enhanced-panel .je-mth-badge-name { font-size: 14px; font-weight: 500; }
-        #jellyfin-enhanced-panel .je-mth-switch-desc, #jellyfin-enhanced-panel .je-mth-badge-desc { font-size: 12px; color: rgba(255,255,255,0.6); line-height: 1.35; }
+        #jellyfin-enhanced-panel .je-mth-switch-desc, #jellyfin-enhanced-panel .je-mth-badge-desc { font-size: 13px; color: rgba(255,255,255,0.66); line-height: 1.4; }
         #jellyfin-enhanced-panel .je-mth-switch-desc { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
         #jellyfin-enhanced-panel .je-mth-switch:focus-within .je-mth-switch-desc, #jellyfin-enhanced-panel .je-mth-switch:hover .je-mth-switch-desc { -webkit-line-clamp: unset; }
         #jellyfin-enhanced-panel .je-mth-badges { display: flex; flex-direction: column; gap: 6px; }
@@ -666,6 +669,10 @@
             #jellyfin-enhanced-panel .je-mth-pill, #jellyfin-enhanced-panel .je-mth-button { min-height: 40px; }
             #jellyfin-enhanced-panel .je-mth-density > .je-mth-pills { margin-left: 0; }
             #jellyfin-enhanced-panel .je-mth-pointer { flex-wrap: wrap; }
+            #jellyfin-enhanced-panel .je-mth-badge { position: relative; display: block; }
+            #jellyfin-enhanced-panel .je-mth-badge-sample { position: absolute; top: 10px; right: 12px; max-width: 40%; }
+            #jellyfin-enhanced-panel .je-mth-badge-name { display: block; min-height: 22px; padding-right: 40%; }
+            #jellyfin-enhanced-panel .je-mth-autosave { display: none; }
         }
     `;
 

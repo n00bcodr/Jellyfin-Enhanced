@@ -349,6 +349,9 @@
 .je-tag-admin .je-ts-editing-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .je-tag-admin .je-ts-editing-head .je-ts-section-label { margin-top: 0; }
 .je-tag-admin .je-ts-editing-now { font-size: 15px; font-weight: 600; color: var(--je-ta-text); }
+.je-tag-admin .je-ts-target-toggle { margin-left: auto; min-height: 36px; padding: 0 14px; border: 1px solid var(--je-border-strong); border-radius: 6px; background: var(--je-ta-surface-2); color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.je-tag-admin .je-ts-target-toggle[aria-expanded="true"] { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); }
+.je-tag-admin .je-ts-target-box { display: flex; flex-direction: column; gap: 8px; }
 .je-tag-admin .je-ts-pills, .je-tag-admin .je-ts-opacity { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .je-tag-admin .je-ts-pill { min-height: 32px; padding: 4px 12px; border: 1px solid var(--je-border-strong); border-radius: 16px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
 .je-tag-admin .je-ts-pill.active { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); font-weight: 600; }
@@ -377,10 +380,10 @@
 .je-tag-admin .je-ts-targets-tiles .je-ts-target-all { justify-content: center; }
 .je-tag-admin .je-ts-target-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 @media (max-width: 640px) {
-    .je-tag-admin .je-ts-targets-tiles { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
-    .je-tag-admin .je-ts-targets-tiles .je-ts-target { justify-content: center; }
-    .je-tag-admin .je-ts-targets-tiles .je-ts-target-all { grid-column: 1 / -1; }
-    .je-tag-admin .je-ts-target-name { display: none; }
+    /* Icon tags keep their names on a phone: two named columns. */
+    .je-tag-admin .je-ts-targets-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .je-tag-admin .je-ts-targets-tiles .je-ts-target { justify-content: flex-start; }
+    .je-tag-admin .je-ts-targets-tiles .je-ts-target-all { grid-column: 1 / -1; justify-content: center; }
 }
 .je-tag-admin .je-ts-genre-glyph { font-family: 'JE Material Symbols Outlined'; font-style: normal; font-weight: normal; font-size: 16px; line-height: 1; letter-spacing: normal; text-transform: none; white-space: nowrap; direction: ltr; font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased; color: inherit; }
 .je-tag-admin .je-ts-note { font-size: 12.5px; color: var(--je-ta-muted); }
@@ -474,21 +477,37 @@
 @container je-ta (max-width: 520px) {
     .je-ta-title { font-size: 1.3em; }
     .je-ta-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .je-ta-lrow { grid-template-areas: "move name open" "move sum open" "detail detail detail"; grid-template-columns: auto minmax(0, 1fr) auto; }
-    .je-ta-lrow-move { flex-direction: column; }
-    .je-ta-lrow-open, .je-ta-lrow .je-ta-icon-btn, .je-ta-anchor { min-height: 44px; }
-    .je-ta-lrow .je-ta-icon-btn { width: 44px; height: 44px; }
+    .je-ta-lrow { grid-template-areas: "move name open" "move sum open" "detail detail detail"; grid-template-columns: auto minmax(0, 1fr) auto; gap: 0 8px; padding: 8px 10px; }
+    .je-ta-lrow-sum { padding-top: 2px; }
+    .je-ta-lrow-open, .je-ta-anchor { min-height: 44px; }
+    /* Phone: 44px targets wherever the page offers a small button. */
+    .je-tag-admin .je-ta-icon-btn { width: 44px; height: 44px; }
+    .je-ta-saved button, .je-ta-button, .je-tag-admin .je-pt-btn { min-height: 44px; }
+    /* A badge's sample sits beside its name; its description takes the row's full width. */
+    .je-ta-badge { position: relative; display: block; }
+    .je-ta-badge-sample { position: absolute; top: 10px; right: 12px; max-width: 40%; }
+    .je-ta-badge .je-ta-switch-name { display: block; min-height: 24px; padding-right: 40%; }
     .je-ta-field-control { width: 100%; }
     .je-ta-field-control select { width: 100%; }
     .je-tag-admin .je-ts-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .je-tag-admin .je-ts-row-name { min-width: 0; flex: 1 1 auto; }
-    .je-tag-admin .je-ts-value { order: 5; flex-basis: 100%; }
+    /* Property header: name / current colour / Change, then the value and Reset. */
+    .je-tag-admin .je-ts-field-head { display: grid; grid-template-columns: minmax(0, 1fr) 36px auto; gap: 8px; }
+    .je-tag-admin .je-ts-field-head .je-ts-row-name { grid-column: 1; grid-row: 1; }
+    .je-tag-admin .je-ts-field-head .je-ts-swatch-current { grid-column: 2; grid-row: 1; }
+    .je-tag-admin .je-ts-field-head .je-ts-edit { grid-column: 3; grid-row: 1; min-width: 76px; }
+    .je-tag-admin .je-ts-field-head .je-ts-value { grid-column: 1 / 3; grid-row: 2; align-self: center; }
+    .je-tag-admin .je-ts-field-head .je-ts-reset { grid-column: 3; grid-row: 2; }
+    .je-tag-admin .je-ts-target-toggle { min-height: 44px; }
     .je-tag-admin .je-ts-field-body .je-ts-swatch { width: 40px; height: 40px; }
     .je-tag-admin :is(.je-ts-edit, .je-ts-reset, .je-ts-opacity-pill, .je-ts-tab) { min-height: 44px; }
     .je-tag-admin .je-ts-tab { font-size: 14px; }
     .je-tag-admin .je-ts-target-filter { width: 100%; min-height: 44px; }
     .je-tag-admin .je-ts-targets { gap: 8px; max-height: 280px; }
     .je-tag-admin .je-ts-target { min-height: 44px; min-width: 44px; justify-content: center; }
+}
+@container je-ta (max-width: 360px) {
+    .je-ta-lrow-move { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) {
     .je-tag-admin * { transition: none !important; }
@@ -621,3 +640,6 @@
 .je-tie-light .je-tie-gname small { color: #555; }
 .je-tie-light :is(.je-tie-card, .je-tie-gopen):focus-visible { outline: 2px solid #111; outline-offset: 2px; }
 .je-tie-light .je-tie-cap output, .je-tie-light .je-tie-switch { color: #111; }
+.je-tie-light .je-tie-view.je-tie-pills { border-color: rgba(0, 0, 0, 0.28); }
+.je-tie-light .je-tie-view .je-tie-pill { background: transparent; }
+.je-tie-light .je-tie-view .je-tie-pill[aria-pressed="true"] { background: #111; color: #fff; }

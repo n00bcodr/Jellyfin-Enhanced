@@ -169,9 +169,12 @@
     function pillsHtml(conf, group) {
         const current = conf.profiles[conf.layout][group];
         const name = JE.t(GROUP_META[group].nameKey);
-        return slotsFor(conf.layout, group).map((slot) => {
+        const slots = slotsFor(conf.layout, group);
+        // One Tab stop per picker (the chosen position); arrow keys move between positions.
+        const stop = slots.includes(current) ? current : slots[0];
+        return slots.map((slot) => {
             const label = slotLabel(conf.layout, slot);
-            return `<button type="button" class="je-tge-pill" data-slot="${slot}" aria-pressed="${slot === current}" aria-label="${escapeHtml(`${name}: ${label}`)}">${escapeHtml(label)}</button>`;
+            return `<button type="button" class="je-tge-pill" data-slot="${slot}" aria-pressed="${slot === current}" tabindex="${slot === stop ? 0 : -1}" aria-label="${escapeHtml(`${name}: ${label}`)}">${escapeHtml(label)}</button>`;
         }).join('');
     }
 
@@ -891,6 +894,19 @@
             touch();
         };
 
+        // Arrow keys, Home and End move along a group's position picker (Enter or Space picks).
+        root.addEventListener('keydown', (e) => {
+            const pill = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.je-tge-pills .je-tge-pill'));
+            if (!pill || e.altKey || e.ctrlKey || e.metaKey) return;
+            const pills = Array.from(/** @type {HTMLElement} */ (pill.parentElement).querySelectorAll('.je-tge-pill'));
+            const at = pills.indexOf(pill);
+            const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+            const next = step ? pills[(at + step + pills.length) % pills.length] : e.key === 'Home' ? pills[0] : e.key === 'End' ? pills[pills.length - 1] : null;
+            if (!next) return;
+            e.preventDefault();
+            pills.forEach((p) => { p.tabIndex = p === next ? 0 : -1; });
+            next.focus();
+        });
         root.addEventListener('click', (e) => {
             const target = /** @type {HTMLElement} */ (e.target);
             const sourceMove = target.closest('[data-rating-move]');

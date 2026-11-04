@@ -17,10 +17,13 @@
             <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel"><div class="je-ta-hint"></div></div>
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
-                <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span></div>
+                <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span>
+                    <button type="button" class="je-ts-target-toggle" id="tagStyleTargetToggle" aria-expanded="false" aria-controls="tagStyleTargetBox"></button></div>
+                <div class="je-ts-target-box" id="tagStyleTargetBox" hidden>
                 <p class="je-ts-target-hint" id="tagStyleTargetHint"></p>
                 <input id="tagStyleTargetFilter" class="je-ts-target-filter" type="search" autocomplete="off" hidden>
                 <div id="tagStyleTargets" class="je-ts-targets" role="radiogroup" aria-labelledby="tagStyleTargetsLabel"></div>
+                </div>
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
                 <div id="tagStyleRows" class="je-ts-rows"></div>
                 <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
@@ -79,6 +82,8 @@
         let filter = '';
         /** The colour property whose palette is open (one at a time), or null. */
         let openField = null;
+        /** Whether the tag list (pick one tag of the group) is open. */
+        let targetsOpen = false;
         let canvas = null;
         // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
         let legacy = null;
@@ -554,6 +559,15 @@
             box.onkeydown = onTargetKey;
             const tiles = TILE_GROUPS.includes(current);
             box.classList.toggle('je-ts-targets-tiles', tiles);
+            // The tag list opens on request: the colour rows stay next to what they edit.
+            const toggle = root.querySelector('#tagStyleTargetToggle');
+            if (toggle) {
+                toggle.textContent = targetsOpen ? tr('admin_tags_colours_targets_close') : tr('admin_tags_colours_targets_open');
+                toggle.setAttribute('aria-expanded', String(targetsOpen));
+                toggle.onclick = () => { targetsOpen = !targetsOpen; renderTargets(); if (targetsOpen) root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]')?.focus(); };
+            }
+            const targetBox = root.querySelector('#tagStyleTargetBox');
+            if (targetBox) targetBox.hidden = !targetsOpen;
             const hint = root.querySelector('#tagStyleTargetHint');
             if (hint) hint.textContent = tr('admin_tags_colours_target_hint');
             const search = root.querySelector('#tagStyleTargetFilter');
