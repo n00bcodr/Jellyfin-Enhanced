@@ -1144,7 +1144,7 @@ The retained cache grows with the number of included items. Exclude large librar
 ??? info "Cache lifecycle and excluded libraries"
     When poster review chips are enabled, visible review averages travel with the filtered cache data.
 
-    At startup, JE restores `tag-cache.json` from `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/`. If no usable cache is available, it queues **Refresh Tag Cache** to build one. Library item additions, updates, and removals keep entries current. The scheduled task normally reconciles changes rather than recomputing every item. Its default daily trigger is 03:00.
+    At startup, JE restores `tag-cache.json` from `<PluginsPath>/configurations/Jellyfin.Plugin.JellyfinEnhanced/`. If no usable cache is available, it queues **Refresh Tag Cache** to build one. Library item additions, updates, and removals keep entries current. A series edit that changes its scores or age rating also updates the seasons and episodes that take them from it (re-reading their metadata, not their media), on the same update or reconcile. The scheduled task normally reconciles changes rather than recomputing every item. Its default daily trigger is 03:00.
 
     Excluded libraries do not lose access or forcibly lose their web tags. Cards without a server entry can use per-page batch fallback. Exclusions also bypass the normal cache-update audio-language synchronization path; the standalone language-sync task can still process those items.
 

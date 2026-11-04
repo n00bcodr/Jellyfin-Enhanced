@@ -204,6 +204,43 @@ public class CustomTagRulesTests
         cache.TryGetEntry(item.Id, out var entry) ? entry.CustomTags : throw new InvalidOperationException("no entry for " + item.Name);
 
     [Fact]
+    public void ASeriesOnlyEditReachesTheScoresAndRatingItsChildrenInherit()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Mock.Object;
+        try
+        {
+            var series = new Series { Id = Guid.NewGuid(), Name = "Show", CommunityRating = 8, CriticRating = 90, OfficialRating = "TV-14" };
+            var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+            var episode = new Episode { Id = Guid.NewGuid(), Name = "Pilot", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id, IndexNumber = 1, ParentIndexNumber = 1 };
+            var own = new Episode { Id = Guid.NewGuid(), Name = "Own", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id, IndexNumber = 2, ParentIndexNumber = 1, CriticRating = 40, OfficialRating = "TV-PG" };
+            library.Items.AddRange(new BaseItem[] { series, season, episode, own });
+            using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            cache.BuildFullCache(null, CancellationToken.None);
+            (float?, float?, string?) Facts(BaseItem item) => cache.TryGetEntry(item.Id, out var entry) ? (entry.CommunityRating, entry.CriticRating, entry.OfficialRating) : throw new InvalidOperationException(item.Name);
+            Assert.Equal((8f, 90f, "TV-14"), Facts(episode));
+            Assert.Equal((8f, 90f, "TV-14"), Facts(season));
+
+            // Only the series is saved and queued (as Jellyfin does for a series metadata edit).
+            series.CommunityRating = 5; series.CriticRating = 20; series.OfficialRating = "TV-MA";
+            cache.EnqueueUpdate(series.Id);
+            Flush(cache);
+            Assert.Equal((5f, 20f, "TV-MA"), Facts(series));
+            Assert.Equal((5f, 20f, "TV-MA"), Facts(season));
+            Assert.Equal((5f, 20f, "TV-MA"), Facts(episode));
+            Assert.Equal((null, 40f, "TV-PG"), Facts(own)); // its own scores and rating stay
+            Assert.Equal(Facts(episode), (cache.BuildEntryOnDemand(episode)!.CommunityRating, cache.BuildEntryOnDemand(episode)!.CriticRating, cache.BuildEntryOnDemand(episode)!.OfficialRating));
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+        }
+    }
+
+    [Fact]
     public void TheCacheMatchesTagsInheritedTagsAndCollectionsAndFollowsLibraryChanges()
     {
         using var f = new ApiPluginFixture();
