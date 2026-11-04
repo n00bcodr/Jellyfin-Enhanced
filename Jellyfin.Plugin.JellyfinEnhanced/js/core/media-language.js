@@ -207,6 +207,16 @@
         const name = (typeof lang === 'object' && lang && (lang.name || lang.Name)) || '';
 
         const parsed = parseLanguageTag(code);
+
+        // "Simplify dub language flags": collapse region/script variants onto the
+        // base language's flag so a language Jellyfin treats as one shows one
+        // flag (`pt-BR`, `pt-PT` and `pt` all become `pt`). Languages the map
+        // doesn't know stay on the normal path and remain flagless.
+        if (parsed && JE.currentSettings && JE.currentSettings.simplifyDubLanguageFlags
+            && baseLanguageFlags[parsed.base]) {
+            return baseLanguageFlags[parsed.base];
+        }
+
         if (parsed) {
             const baseFlag = baseLanguageFlags[parsed.base] || null;
             if (JE.pluginConfig?.LanguageTagsMergeRegions && baseFlag) return baseFlag;
