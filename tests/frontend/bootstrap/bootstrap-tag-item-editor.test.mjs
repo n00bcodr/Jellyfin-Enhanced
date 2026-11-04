@@ -782,3 +782,30 @@ test('Show up to: stepping to either end keeps keyboard focus in the editor, on 
   h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(h.editor(), null, 'Escape closes the editor');
 });
+
+test('the editor asks where the look is kept before the edits, and Save says where it goes', async t => {
+  const h = setup(t, { settings: { tagLookRules: [kidsRule] } });
+  assert.equal(await h.open(MOVIE), true);
+  const main = h.$('.je-tie-main');
+  assert.ok(main.firstElementChild.contains(h.$('[data-tie-keep]')), 'Keep comes first in the form');
+  const save = () => h.$('[data-tie-save]').textContent;
+  assert.equal(save(), 'tag_item_editor_done', 'nothing changed: Done');
+
+  h.change(h.$('.je-tie input[value="bands"]'), true);
+  await h.settle();
+  assert.equal(save(), 'tag_item_editor_save_none', 'an edit with nowhere to keep it says so');
+  h.change(h.$('[data-tie-keep]'), true);
+  await h.settle();
+  assert.equal(save(), 'tag_item_editor_save_mine');
+
+  // An off group's position and limit controls are inert for the keyboard too.
+  const row = h.$('.je-tie-group[data-group="quality"]');
+  h.change(row.querySelector('[data-tie-on]'), false);
+  await h.settle();
+  const off = h.$('.je-tie-group[data-group="quality"]');
+  assert.equal(off.dataset.on, '0');
+  assert.ok(Array.from(off.querySelectorAll('.je-tie-where input, [data-tie-step]')).every(el => el.disabled), 'every control of the off group is disabled');
+  h.change(off.querySelector('[data-tie-on]'), true);
+  await h.settle();
+  assert.ok(Array.from(h.$('.je-tie-group[data-group="quality"]').querySelectorAll('.je-tie-where input')).every(el => !el.disabled), 'on again: usable');
+});

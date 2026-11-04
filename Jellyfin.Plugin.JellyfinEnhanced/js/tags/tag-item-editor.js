@@ -67,57 +67,88 @@
         .je-tie-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-view { margin-top: 8px; }
         .je-tie-view button { font: inherit; color: inherit; }
-        .je-tie-view [aria-pressed="true"] { border-color: #00a4dc; background: rgba(0,164,220,0.18); }
+        .je-tie-view [aria-pressed="true"] { border-color: #0077a3; background: #0077a3; color: #fff; }
         .je-tie-card .cardBox { margin: 0; }
         .je-tie-scalable { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden; contain: paint; background: #2b303a center / cover no-repeat; }
         .je-tie-card[data-je-shape="landscape"] .je-tie-scalable { aspect-ratio: 16 / 9; }
         .je-tie-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
         .je-tie-card-title { font-size: 12px; padding: 4px 2px 0; color: rgba(255,255,255,0.9); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .je-tie-source { margin: 8px 0 0; font-size: 12px; line-height: 1.4; color: rgba(255,255,255,0.7); }
+        .je-tie-source { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.7); }
         .je-tie-source strong { color: #7fd3ff; }
-        .je-tie-note { margin: 6px 0 0; font-size: 12px; color: #ffd699; }
+        .je-tie-note { margin: 6px 0 0; font-size: 13px; color: #ffd699; }
         .je-tie-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-        .je-tie-box { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
-        .je-tie-box > legend, .je-tie-h { padding: 0; margin: 0 0 6px; font-size: 13px; font-weight: 600; }
-        .je-tie-hint { margin: 2px 0 0; font-size: 12px; line-height: 1.4; color: rgba(255,255,255,0.65); }
+        .je-tie-box { margin: 0; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
+        .je-tie-box > legend, .je-tie-h { float: left; width: 100%; padding: 0; margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+        .je-tie-box > legend + * { clear: both; }
+        .je-tie-hint { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
         .je-tie input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
         .je-tie-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-        .je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 8px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.2); cursor: pointer; font-size: 13px; font-weight: 600; text-align: center; }
+        .je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); background: transparent; cursor: pointer; font-size: 13px; font-weight: 400; text-align: center; }
+        .je-tie-tile { flex-direction: column; gap: 6px; padding: 10px 4px 8px; border-radius: 8px; border-color: rgba(255,255,255,0.16); background: rgba(0,0,0,0.2); font-weight: 600; }
         .je-tie-tile:hover, .je-tie-pill:hover { background: rgba(255,255,255,0.06); }
-        .je-tie-tile:has(input:checked), .je-tie-pill:has(input:checked) { border-color: #00a4dc; background: rgba(0,164,220,0.18); box-shadow: inset 0 0 0 1px #00a4dc; }
+        .je-tie-pill:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
+        .je-tie-tile:has(input:checked) { border: 2px solid #00a4dc; padding: 9px 3px 7px; background: rgba(0,164,220,0.14); }
+        /* The hub's layout pictures (ui-panel-media-tags.js, admin-tags.css). */
+        .je-tie-art { position: relative; width: 22px; height: 32px; border-radius: 3px; background: #4a5160; }
+        .je-tie-art i { position: absolute; display: none; height: 4px; border-radius: 1px; }
+        .je-tie-art[data-layout="corners"] i { display: block; width: 7px; }
+        .je-tie-art[data-layout="corners"] i:nth-child(1) { left: 2px; top: 2px; background: #42a5f5; }
+        .je-tie-art[data-layout="corners"] i:nth-child(2) { right: 2px; top: 2px; background: #ef5350; }
+        .je-tie-art[data-layout="corners"] i:nth-child(3) { left: 2px; bottom: 2px; background: #ab47bc; }
+        .je-tie-art[data-layout="corners"] i:nth-child(4) { right: 2px; bottom: 2px; background: #ffca28; }
+        .je-tie-art[data-layout="bands"] { width: 26px; height: 26px; margin: 3px 0; }
+        .je-tie-art[data-layout="bands"] i:nth-child(-n+4) { display: block; width: 6px; }
+        .je-tie-art[data-layout="bands"] i:nth-child(1) { left: 2px; top: -6px; background: #ef5350; }
+        .je-tie-art[data-layout="bands"] i:nth-child(2) { left: 9px; top: -6px; background: #42a5f5; }
+        .je-tie-art[data-layout="bands"] i:nth-child(3) { left: 2px; bottom: -6px; background: #ffca28; }
+        .je-tie-art[data-layout="bands"] i:nth-child(4) { left: 9px; bottom: -6px; background: #66bb6a; }
+        .je-tie-art[data-layout="caption"] { height: 26px; margin-bottom: 6px; }
+        .je-tie-art[data-layout="caption"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
+        .je-tie-art[data-layout="caption"] i:nth-child(2) { display: block; left: 0; bottom: -7px; width: 7px; background: #42a5f5; }
+        .je-tie-art[data-layout="caption"] i:nth-child(3) { display: block; left: 8px; bottom: -7px; width: 7px; background: #ffca28; }
+        .je-tie-art[data-layout="caption"] i:nth-child(4) { display: block; left: 16px; bottom: -7px; width: 6px; background: #66bb6a; }
+        .je-tie-art[data-layout="summary"] i:nth-child(1) { display: block; left: 3px; right: 3px; bottom: 3px; height: 5px; border-radius: 3px; background: #111; box-shadow: inset 0 0 0 1px #ffca28; }
+        .je-tie-art[data-layout="minimal"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
+        .je-tie-art[data-layout="minimal"] i:nth-child(2) { display: block; left: 3px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #42a5f5; }
+        .je-tie-art[data-layout="minimal"] i:nth-child(3) { display: block; left: 9px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #66bb6a; }
         .je-tie-tile:has(input:focus-visible), .je-tie-pill:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-pills { display: flex; flex-wrap: wrap; gap: 6px; }
         .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
         .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
         .je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
         .je-tie-group { display: grid; grid-template-columns: 150px minmax(0, 1fr) 176px; align-items: center; gap: 6px 10px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
-        .je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; pointer-events: none; }
-        .je-tie-gname { display: flex; flex-direction: column; min-width: 0; }
-        .je-tie-gname small { font-size: 11px; color: #ffd699; font-weight: 400; }
-        .je-tie-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; min-height: 32px; }
-        .je-tie-switch input { width: 34px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #00a4dc; cursor: pointer; }
+        .je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; }
+        .je-tie-gname { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .je-tie-gname small { padding-left: 26px; font-size: 12px; color: rgba(255,255,255,0.62); font-weight: 400; }
+        .je-tie-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; min-height: 36px; }
+        .je-tie-switch input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #00a4dc; cursor: pointer; }
         .je-tie-where .je-tie-pill { min-height: 30px; padding: 2px 8px; font-size: 12px; }
-        .je-tie-anchors { display: grid; grid-template-columns: repeat(3, 30px); grid-auto-rows: 22px; gap: 3px; }
-        .je-tie-anchor { position: relative; display: block; border-radius: 4px; border: 1px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.25); cursor: pointer; }
-        .je-tie-anchor::after { content: ''; position: absolute; inset: 6px 9px; border-radius: 2px; background: rgba(255,255,255,0.25); }
-        .je-tie-anchor:has(input:checked) { border-color: #00a4dc; background: rgba(0,164,220,0.25); }
-        .je-tie-anchor:has(input:checked)::after { background: #00a4dc; }
+        .je-tie-anchors { display: grid; grid-template-columns: repeat(3, 34px); grid-auto-rows: 26px; gap: 4px; }
+        .je-tie-anchor { position: relative; display: block; border-radius: 4px; border: 1px solid rgba(255,255,255,0.25); background: rgba(0,0,0,0.25); cursor: pointer; }
+        .je-tie-anchor:hover { background: rgba(255,255,255,0.08); }
+        .je-tie-anchor::after { content: ''; position: absolute; inset: 8px 11px; border-radius: 2px; background: rgba(255,255,255,0.25); }
+        .je-tie-anchor:has(input:checked) { border-color: #0077a3; background: #0077a3; }
+        .je-tie-anchor:has(input:checked)::after { background: #fff; }
+        .je-tie-group[data-on="0"] :is(.je-tie-anchor, .je-tie-pill) { cursor: default; }
         .je-tie-anchor:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
-        .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 12px; white-space: nowrap; }
+        .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 13px; white-space: nowrap; }
         .je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
-        .je-tie-cap button { width: 32px; padding: 0; }
+        .je-tie-cap button { width: 36px; min-height: 36px; padding: 0; }
         .je-tie-cap button:disabled { opacity: 0.35; cursor: default; }
         .je-tie-cap output { min-width: 26px; text-align: center; font-weight: 600; }
         .je-tie-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-        .je-tie-row3 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; min-width: 0; }
+        .je-tie-row3 label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; min-width: 0; }
         .je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #5a606b; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
         .je-tie select option { background: #222; color: #fff; }
+        /* Where Save keeps the look: first in the form, so the choice comes before the edits. */
+        .je-tie-keeps { display: flex; flex-direction: column; gap: 8px; }
         .je-tie-keep { border-color: rgba(0,164,220,0.45); }
         .je-tie-keep[data-everyone] { border-color: rgba(255,183,77,0.5); }
+        .je-tie-keep .je-tie-hint { padding-left: 26px; }
         .je-tie-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
-        .je-tie-foot .je-tie-status { flex: 1 1 200px; margin: 0; font-size: 12px; color: #ffd699; }
+        .je-tie-foot .je-tie-status { flex: 1 1 200px; margin: 0; font-size: 13px; color: #ffd699; }
         .je-tie-foot button { padding: 0 16px; min-height: 40px; }
-        .je-tie-foot .je-tie-save { background: #00a4dc; border-color: #00a4dc; }
+        .je-tie-foot .je-tie-save { background: #0077a3; border-color: #0077a3; }
         .je-tie button:focus-visible, .je-tie select:focus-visible, .je-tie-switch input:focus-visible, .je-tie-toast button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-toast { position: fixed; left: 50%; bottom: 24px; z-index: 100001; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 12px 10px 16px; border-radius: 8px; background: #2b2f38; color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.5); font-size: 14px; }
         .je-tie-toast button { padding: 0 12px; color: #7fd3ff; }
@@ -128,6 +159,10 @@
             .je-tie-side { position: static; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; align-items: start; }
             .je-tie-card[data-je-shape="landscape"] { grid-column: 1 / -1; max-width: 260px; }
             .je-tie-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .je-tie-anchors { grid-template-columns: repeat(3, 44px); grid-auto-rows: 32px; }
+            .je-tie-anchor::after { inset: 11px 16px; }
+            .je-tie-cap button, .je-tie-pill { min-height: 40px; }
+            .je-tie-cap button { width: 40px; }
             .je-tie-group { grid-template-columns: minmax(0, 1fr) auto; }
             .je-tie-where { grid-column: 1 / -1; grid-row: 2; }
             .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
@@ -493,6 +528,8 @@
         const uid = `jeTie${++sequence}`;
         const backdrop = document.createElement('div');
         backdrop.className = 'je-tie-backdrop';
+        // Opened from the admin page on a light dashboard: the dialog follows it (admin-tags.css).
+        if (opener?.closest?.('.je-ta-light')) backdrop.classList.add('je-tie-light');
         const typeName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[type.toLowerCase()]);
         const titleKey = serverMode ? 'tag_item_editor_title_server' : 'tag_item_editor_title';
         backdrop.innerHTML = `<div class="je-tie" role="dialog" aria-modal="true" aria-labelledby="${uid}Title" tabindex="-1">
@@ -508,11 +545,17 @@
                         <p class="je-tie-source" data-tie-source></p><p class="je-tie-note" data-tie-note hidden></p></div>
                 </div>
                 <div class="je-tie-main">
+                    ${serverMode ? `<p class="je-tie-box je-tie-keep je-tie-hint" data-everyone>${tx('tag_item_editor_server_hint')}</p>` : `<div class="je-tie-keeps"><div class="je-tie-box je-tie-keep">
+                        <label class="je-tie-switch"><input type="checkbox" data-tie-keep aria-describedby="${uid}KeepHint">${tx('tag_item_editor_keep')}</label>
+                        <p class="je-tie-hint" id="${uid}KeepHint">${tx('tag_item_editor_keep_hint')}</p></div>
+                    ${admin ? `<div class="je-tie-box je-tie-keep" data-everyone>
+                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx('tag_item_editor_everyone')}<span class="je-tie-chip">${tx('common_admin')}</span></label>
+                        <p class="je-tie-hint" id="${uid}EveryoneHint">${tx('tag_item_editor_everyone_hint')}</p></div>` : ''}</div>`}
                     ${hasSeries ? `<fieldset class="je-tie-box"><legend>${tx('tag_item_editor_scope')}</legend><div class="je-tie-scope" role="radiogroup">
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="item">${tx(type === 'Series' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_item', { type: typeName })}</label>
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="series">${tx('tag_item_editor_scope_series')}</label></div></fieldset>` : ''}
                     <fieldset class="je-tie-box"><legend>${tx('common_layout')}</legend><div class="je-tie-tiles">
-                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}">${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
+                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
                     <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
                         ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
                     <section class="je-tie-box" aria-labelledby="${uid}Groups"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><ul class="je-tie-groups" data-tie-groups></ul></section>
@@ -520,12 +563,6 @@
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
                         <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
                         <label>${tx('panel_settings_ui_tag_edge')}<select data-tie-select="edge"></select></label></div></fieldset>
-                    ${serverMode ? `<p class="je-tie-hint">${tx('tag_item_editor_server_hint')}</p>` : `<div class="je-tie-box je-tie-keep">
-                        <label class="je-tie-switch"><input type="checkbox" data-tie-keep aria-describedby="${uid}KeepHint">${tx('tag_item_editor_keep')}</label>
-                        <p class="je-tie-hint" id="${uid}KeepHint">${tx('tag_item_editor_keep_hint')}</p></div>`}
-                    ${!serverMode && admin ? `<div class="je-tie-box je-tie-keep" data-everyone>
-                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx('tag_item_editor_everyone')}<span class="je-tie-chip">${tx('common_admin')}</span></label>
-                        <p class="je-tie-hint" id="${uid}EveryoneHint">${tx('tag_item_editor_everyone_hint')}</p></div>` : ''}
                 </div>
             </div>
             <div class="je-tie-foot"><p class="je-tie-status" data-tie-status role="status" aria-live="polite"></p>
@@ -542,6 +579,7 @@
         const sourceEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-source]'));
         const noteEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-note]'));
         const statusEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-status]'));
+        const saveButton = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-save]'));
         const keepBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-keep]'));
         const everyoneBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-everyone]'));
 
@@ -571,7 +609,8 @@
             const inherited = (before.source === 'lock' && !own) || (before.source === 'override' && !ownOverride);
             // Without the item's data a rule or series look could not be matched: say so rather than guess.
             const unknown = !facts && (read.rules.length > 0 || !!seriesId);
-            sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_now')} `), Object.assign(document.createElement('strong'), { textContent: unknown ? JE.t('tag_item_editor_source_unknown') : sourceText(before, !!inherited) }));
+            if (serverMode) sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_editing')} `), Object.assign(document.createElement('strong'), { textContent: JE.t('tag_item_editor_editing_server') }));
+            else sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_now')} `), Object.assign(document.createElement('strong'), { textContent: unknown ? JE.t('tag_item_editor_source_unknown') : sourceText(before, !!inherited) }));
             if (dirty) sourceEl.append(document.createElement('br'), document.createTextNode(JE.t('tag_item_editor_draft')));
             showStatus();
         };
@@ -580,6 +619,18 @@
         /** The footer line: a failed save, else whether the changes will stick. */
         const showStatus = () => {
             statusEl.textContent = saveError || (!serverMode && !keep && !everyone && dirty ? JE.t('tag_item_editor_not_kept') : '');
+            saveButton.textContent = JE.t(saveLabelKey());
+        };
+        /** @returns {string} Save's label: where the look goes, a removal, or that nothing is kept. */
+        const saveLabelKey = () => {
+            if (serverMode) return 'tag_item_editor_save_server';
+            if (keep && everyone) return 'tag_item_editor_save_both';
+            if (keep) return 'tag_item_editor_save_mine';
+            if (everyone) return 'tag_item_editor_save_everyone';
+            const target = targetOf();
+            const removes = !!keptAt(target) || (target !== id && !!own) || (!!everyoneBox && !!overrideAt(target));
+            if (removes) return 'elsewhere_settings_save';
+            return dirty ? 'tag_item_editor_save_none' : 'tag_item_editor_done';
         };
         /** Coalesce bursts of changes (a stepper held down) into one re-present. */
         const schedule = () => {
@@ -608,19 +659,21 @@
                 const gname = JE.t(meta.nameKey);
                 const positions = positionsFor(draft.layout, group);
                 const current = on ? slot : (lastSlot[`${draft.layout}:${group}`] || positions[0]);
+                // An off group's controls are shown dimmed and are not operable (the keyboard skips them too).
+                const off = on ? '' : 'disabled';
                 const where = draft.layout === 'corners'
-                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor" title="${tx(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`])}"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" aria-label="${esc(slotLabel('corners', a))}" ${a === current ? 'checked' : ''}></label>`).join('')}</div>`
-                    : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
+                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor" title="${tx(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`])}"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" aria-label="${esc(slotLabel('corners', a))}" ${a === current ? 'checked' : ''} ${off}></label>`).join('')}</div>`
+                    : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''} ${off}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
                 const fixed = L.singleChipGroup(group);
                 const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
                 const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
                 const stepper = fixed ? '' : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
                     <span>${tx('panel_settings_ui_tag_editor_show_up_to')}</span>
-                    <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
+                    <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${!on || stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
                     <output aria-live="polite">${esc(capText)}</output>
-                    <button type="button" data-tie-step="1" data-tie-key="${group}-up" aria-label="${tx('tag_item_editor_cap_more', { group: gname })}" ${stepCap(cap, 1, meta) === null ? 'disabled' : ''}>+</button></div>`;
+                    <button type="button" data-tie-step="1" data-tie-key="${group}-up" aria-label="${tx('tag_item_editor_cap_more', { group: gname })}" ${!on || stepCap(cap, 1, meta) === null ? 'disabled' : ''}>+</button></div>`;
                 return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}">
-                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}>${esc(gname)}</label>${groupOn(group) ? '' : `<small>${tx('tag_item_editor_group_off_for_you')}</small>`}</div>
+                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}>${esc(gname)}</label>${groupOn(group) ? '' : `<small>${tx(serverMode ? 'tag_item_editor_group_off_for_you_server' : 'tag_item_editor_group_off_for_you')}</small>`}</div>
                     <div class="je-tie-where">${where}</div>${stepper}</li>`;
             }).join('');
             if (!focusKey) return;
@@ -758,7 +811,6 @@
         document.addEventListener('focusin', onFocusIn, true);
         window.addEventListener('hashchange', onNavigate);
 
-        const saveButton = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-save]'));
         saveButton.addEventListener('click', async () => {
             if (saveButton.disabled || !isCurrent()) return;
             const targetId = targetOf();

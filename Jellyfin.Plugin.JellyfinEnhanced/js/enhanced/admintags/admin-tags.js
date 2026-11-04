@@ -77,11 +77,11 @@
     /** The tabs, in order. */
     const TABS = [
         { id: 'overview', icon: 'dashboard', nameKey: 'admin_tags_tab_overview', descKey: 'admin_tags_tab_overview_desc' },
-        { id: 'layout', icon: 'view_quilt', nameKey: 'admin_tags_tab_layout', descKey: 'admin_tags_tab_layout_desc' },
+        { id: 'layout', icon: 'view_quilt', nameKey: 'admin_tags_tab_layout', shortKey: 'common_layout', descKey: 'admin_tags_tab_layout_desc' },
         { id: 'groups', icon: 'label', nameKey: 'common_groups', descKey: 'admin_tags_tab_groups_desc' },
         { id: 'rules', icon: 'rule', nameKey: 'common_rules', descKey: 'admin_tags_tab_rules_desc' },
         { id: 'colours', icon: 'palette', nameKey: 'common_colours', descKey: 'admin_tags_tab_colours_desc' },
-        { id: 'badges', icon: 'new_releases', nameKey: 'panel_media_tags_tab_badges', descKey: 'admin_tags_tab_badges_desc' },
+        { id: 'badges', icon: 'new_releases', nameKey: 'panel_media_tags_tab_badges', shortKey: 'common_badges', descKey: 'admin_tags_tab_badges_desc' },
         { id: 'server', icon: 'dns', nameKey: 'common_server', descKey: 'admin_tags_tab_server_desc' },
     ];
 
@@ -732,7 +732,8 @@
 
         root.classList.add('je-tag-admin');
         const groupSections = sections.filter((s) => s.tab === 'groups' && s.group);
-        const tabButtons = TABS.map((tab, i) => `<button type="button" role="tab" class="je-ta-tab" id="jeTaTab-${tab.id}" data-tab="${tab.id}" aria-controls="jeTaPanel-${tab.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}"><span class="material-icons" aria-hidden="true">${tab.icon}</span>${tx(tab.nameKey)}</button>`).join('');
+        // A narrow page shows every tab as an icon over a short label (the accessible name stays the full one).
+        const tabButtons = TABS.map((tab, i) => `<button type="button" role="tab" class="je-ta-tab" id="jeTaTab-${tab.id}" data-tab="${tab.id}" aria-controls="jeTaPanel-${tab.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}"${tab.shortKey ? ` aria-label="${tx(tab.nameKey)}"` : ''}><span class="material-icons" aria-hidden="true">${tab.icon}</span><span class="je-ta-tab-long">${tx(tab.nameKey)}</span>${tab.shortKey ? `<span class="je-ta-tab-short" aria-hidden="true">${tx(tab.shortKey)}</span>` : ''}</button>`).join('');
         const panels = TABS.map((tab, i) => {
             const own = sections.filter((s) => s.tab === tab.id && !s.group);
             const rows = tab.id === 'groups' ? `<div class="je-ta-grows">${groupSections.map((s) => groupRowHtml(s)).join('')}</div>` : '';

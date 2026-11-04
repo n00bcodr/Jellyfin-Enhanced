@@ -519,9 +519,11 @@
             box.classList.toggle('je-ts-targets-tiles', tiles);
             const search = root.querySelector('#tagStyleTargetFilter');
             if (search) {
-                search.hidden = !tiles || labelsOf(current).length <= FILTER_MIN;
-                search.placeholder = tr('admin_tags_colours_genre_filter');
-                search.setAttribute('aria-label', tr('admin_tags_colours_genre_filter'));
+                // Any group with more labels than a glance takes gets the filter (genres name the box after themselves).
+                search.hidden = labelsOf(current).length <= FILTER_MIN;
+                const filterKey = current === 'genre' ? 'admin_tags_colours_genre_filter' : 'admin_tags_colours_target_filter';
+                search.placeholder = tr(filterKey);
+                search.setAttribute('aria-label', tr(filterKey));
                 search.value = search.hidden ? '' : filter;
                 search.oninput = () => { filter = search.value; applyFilter(); };
             }
@@ -553,6 +555,11 @@
             selected = selected || box.querySelector('.je-ts-target');
             if (selected) selected.tabIndex = 0;
             if (focused && selected) selected.focus();
+            // A long strip scrolls inside its box: keep the selected label in view there (never the page).
+            if (selected && box.scrollHeight > box.clientHeight) {
+                const top = selected.offsetTop - box.offsetTop;
+                if (top < box.scrollTop || top + selected.offsetHeight > box.scrollTop + box.clientHeight) box.scrollTop = Math.max(0, top - 8);
+            }
         }
 
         /** @returns {void} */

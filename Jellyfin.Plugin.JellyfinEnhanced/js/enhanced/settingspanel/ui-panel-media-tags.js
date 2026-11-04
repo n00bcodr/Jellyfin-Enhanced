@@ -219,11 +219,13 @@
         const name = kind === 'scale' ? 'Scale' : 'Gap';
         const choices = kind === 'scale' ? JE.core.tagLayout.TAG_SCALES : JE.core.tagLayout.TAG_GAPS;
         return `<div class="je-mth-density">
-            <span class="je-mth-label" id="jeMth${name}Label">${tx(`tag_${kind}_label`)}</span>
-            <div class="je-mth-pills" id="jeTag${name}Choice" role="radiogroup" aria-labelledby="jeMth${name}Label">
+            <div class="je-mth-field-text">
+                <span class="je-mth-label" id="jeMth${name}Label">${tx(`tag_${kind}_label`)}</span>
+                <span class="je-mth-hint" id="jeMth${name}Desc">${tx(`tag_${kind}_desc`)}</span>
+            </div>
+            <div class="je-mth-pills" id="jeTag${name}Choice" role="radiogroup" aria-labelledby="jeMth${name}Label" aria-describedby="jeMth${name}Desc">
                 ${Object.keys(choices).map(value => `<label class="je-mth-pill"><input type="radio" name="jeTag${name}" value="${value}" ${conf[`tag${name}`] === value ? 'checked' : ''}><span data-je-label>${escapeHtml(JE.core.tagLayout.sizeLabel(kind, value))}</span></label>`).join('')}
             </div>
-            <span class="je-mth-hint">${tx(`tag_${kind}_desc`)}</span>
         </div>`;
     }
 
@@ -259,16 +261,20 @@
                 <div class="je-mth-tiles" id="jeTagLayoutChoice" role="radiogroup" aria-labelledby="jeMthLayoutTitle" aria-describedby="jeMthLayoutDesc">${tiles}</div>
                 <p class="je-mth-desc" id="jeMthLayoutDesc" aria-live="polite">${tx(`panel_settings_ui_tag_layout_${conf.layout}`)}</p>
                 <div class="je-mth-density">
-                    <span class="je-mth-label" id="jeMthDensityLabel">${tx('panel_settings_ui_tag_density')}</span>
+                    <div class="je-mth-field-text">
+                        <span class="je-mth-label" id="jeMthDensityLabel">${tx('panel_settings_ui_tag_density')}</span>
+                        <span class="je-mth-hint" id="jeMthDensityDesc">${tx('panel_settings_ui_tag_density_desc')}</span>
+                    </div>
                     <div class="je-mth-pills" id="jeTagDensityChoice" role="radiogroup" aria-labelledby="jeMthDensityLabel" aria-describedby="jeMthDensityDesc">${density}</div>
-                    <span class="je-mth-hint" id="jeMthDensityDesc">${tx('panel_settings_ui_tag_density_desc')}</span>
                 </div>
                 ${sizeControlHtml('scale', conf)}
                 ${sizeControlHtml('gap', conf)}
                 <div class="je-mth-density je-mth-edge">
-                    <span class="je-mth-label" id="jeMthEdgeLabel">${tx('panel_settings_ui_tag_edge')}</span>
+                    <div class="je-mth-field-text">
+                        <span class="je-mth-label" id="jeMthEdgeLabel">${tx('panel_settings_ui_tag_edge')}</span>
+                        <span class="je-mth-hint" id="jeMthEdgeDesc">${tx('panel_settings_ui_tag_edge_desc')}</span>
+                    </div>
                     <div class="je-mth-pills" id="jeTagEdgeChoice" role="radiogroup" aria-labelledby="jeMthEdgeLabel" aria-describedby="jeMthEdgeDesc">${edge}</div>
-                    <span class="je-mth-hint" id="jeMthEdgeDesc">${tx('panel_settings_ui_tag_edge_desc')}</span>
                 </div>
             </section>
             <div class="je-mth-shapes">${shapesHtml()}</div>
@@ -456,7 +462,7 @@
 
     /** The hub's stylesheet (panel-scoped). */
     const HUB_CSS = `
-        #jellyfin-enhanced-panel .je-mth { container: je-mth / inline-size; padding-bottom: 8px; }
+        #jellyfin-enhanced-panel .je-mth { container: je-mth / inline-size; padding-bottom: 8px; --je-mth-sel: color-mix(in srgb, var(--je-mth-accent) 72%, #000); }
         #jellyfin-enhanced-panel .je-mth-top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 20px; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom: 12px; }
         #jellyfin-enhanced-panel .je-mth-top .je-pane-title { margin: 14px 0 10px; }
         #jellyfin-enhanced-panel .je-mth-tabs { display: flex; gap: 2px; min-width: 0; }
@@ -477,19 +483,19 @@
         #jellyfin-enhanced-panel .je-mth-panel[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-mth-card { margin: 0 0 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: var(--je-mth-box); }
         #jellyfin-enhanced-panel .je-mth-card .je-tge { margin: 0; padding: 0; background: none; border: 0; }
-        #jellyfin-enhanced-panel .je-mth-card-title { margin: 0 0 2px; font-size: 15px; font-weight: 600; color: #fff; }
+        #jellyfin-enhanced-panel .je-mth-card-title { margin: 0 0 4px; font-size: 16px; font-weight: 600; color: #fff; }
         #jellyfin-enhanced-panel .je-mth-card-title:focus { outline: none; }
         #jellyfin-enhanced-panel .je-mth-card-title:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-        #jellyfin-enhanced-panel .je-mth-hint { margin: 0 0 8px; font-size: 12px; line-height: 1.4; color: rgba(255,255,255,0.65); }
-        #jellyfin-enhanced-panel .je-mth-desc { margin: 6px 0 8px; font-size: 12px; color: rgba(255,255,255,0.85); }
-        #jellyfin-enhanced-panel .je-mth-label { font-size: 13px; font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mth-hint { margin: 0 0 8px; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
+        #jellyfin-enhanced-panel .je-mth-desc { margin: 8px 0 4px; font-size: 13px; color: rgba(255,255,255,0.85); }
+        #jellyfin-enhanced-panel .je-mth-label { font-size: 14px; font-weight: 600; }
         #jellyfin-enhanced-panel .je-mth-off { margin: 4px 0 10px; padding: 8px 10px; border-radius: 6px; background: rgba(255,183,77,0.12); color: #ffd699; font-size: 12px; }
         #jellyfin-enhanced-panel .je-mth-off[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-mth input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
         #jellyfin-enhanced-panel .je-mth-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
         #jellyfin-enhanced-panel .je-mth-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; min-height: 40px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.2); cursor: pointer; text-align: center; }
         #jellyfin-enhanced-panel .je-mth-tile:hover { background: rgba(255,255,255,0.06); }
-        #jellyfin-enhanced-panel .je-mth-tile:has(input:checked) { border: 2px solid var(--je-mth-accent); padding: 9px 3px 7px; background: rgba(0,164,220,0.12); }
+        #jellyfin-enhanced-panel .je-mth-tile:has(input:checked) { border: 2px solid var(--je-mth-accent); padding: 9px 3px 7px; background: color-mix(in srgb, var(--je-mth-accent) 16%, transparent); }
         #jellyfin-enhanced-panel :is(.je-mth-tile, .je-mth-pill, .je-mth-preset):has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mth-tile-name { font-size: 13px; font-weight: 600; line-height: 1.2; }
         #jellyfin-enhanced-panel .je-mth-tile-art { position: relative; width: 26px; height: 38px; border-radius: 3px; background: #4a5160; }
@@ -523,15 +529,21 @@
         #jellyfin-enhanced-panel .je-mth-shape-positions { display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 180px; }
         #jellyfin-enhanced-panel .je-mth-shape :is(button, input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mth-shape-positions button, #jellyfin-enhanced-panel .je-mth-shape-cap button { min-height: 32px; padding: 3px 8px; background: rgba(255,255,255,0.06); color: #fff; border: 1px solid #666; border-radius: 16px; font: inherit; font-size: 12px; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-mth-shape-positions [aria-pressed="true"] { background: var(--je-mth-accent); border-color: var(--je-mth-accent); }
+        #jellyfin-enhanced-panel .je-mth-shape-positions [aria-pressed="true"] { background: var(--je-mth-sel); border-color: var(--je-mth-sel); font-weight: 600; }
         #jellyfin-enhanced-panel .je-mth-shape-cap { display: flex; align-items: center; gap: 6px; font-size: 12px; }
         #jellyfin-enhanced-panel .je-mth-shape-cap output { min-width: 24px; text-align: center; }
         #jellyfin-enhanced-panel .je-mth-shape-cap button:disabled { opacity: 0.35; cursor: default; }
-        #jellyfin-enhanced-panel .je-mth-density { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-        #jellyfin-enhanced-panel .je-mth-density .je-mth-hint { flex: 1 1 200px; margin: 0; }
-        #jellyfin-enhanced-panel .je-mth-pills { display: inline-flex; gap: 6px; }
-        #jellyfin-enhanced-panel .je-mth-pill { position: relative; display: inline-flex; align-items: center; min-height: 34px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); font-size: 13px; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-mth-pill:has(input:checked) { background: var(--je-mth-accent); border-color: var(--je-mth-accent); color: #fff; font-weight: 600; }
+        /* A field row: label and its help on the left, the choice on the right (below on a narrow pane). */
+        #jellyfin-enhanced-panel .je-mth-density { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.08); }
+        #jellyfin-enhanced-panel .je-mth-desc + .je-mth-density { margin-top: 8px; }
+        #jellyfin-enhanced-panel .je-mth-density:last-child { padding-bottom: 2px; }
+        #jellyfin-enhanced-panel .je-mth-field-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 240px; min-width: 0; }
+        #jellyfin-enhanced-panel .je-mth-field-text .je-mth-hint { margin: 0; }
+        #jellyfin-enhanced-panel .je-mth-density > .je-mth-pills { margin-left: auto; }
+        #jellyfin-enhanced-panel .je-mth-pills { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+        #jellyfin-enhanced-panel .je-mth-pill { position: relative; display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.25); font-size: 13px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-mth-pill:hover { background: rgba(255,255,255,0.06); }
+        #jellyfin-enhanced-panel .je-mth-pill:has(input:checked) { background: var(--je-mth-sel); border-color: var(--je-mth-sel); color: #fff; font-weight: 600; }
         #jellyfin-enhanced-panel .je-mth-switches { border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; }
         #jellyfin-enhanced-panel .je-mth-switch { display: flex; align-items: flex-start; gap: 12px; padding: 8px 12px; min-height: 40px; box-sizing: border-box; cursor: pointer; }
         #jellyfin-enhanced-panel .je-mth-switch + .je-mth-switch { border-top: 1px solid rgba(255,255,255,0.08); }
@@ -620,6 +632,7 @@
             #jellyfin-enhanced-panel .je-mth-tile-name { font-size: 12px; }
             #jellyfin-enhanced-panel .je-mth-presets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             #jellyfin-enhanced-panel .je-mth-pill, #jellyfin-enhanced-panel .je-mth-button { min-height: 40px; }
+            #jellyfin-enhanced-panel .je-mth-density > .je-mth-pills { margin-left: 0; }
             #jellyfin-enhanced-panel .je-mth-pointer { flex-wrap: wrap; }
         }
     `;
