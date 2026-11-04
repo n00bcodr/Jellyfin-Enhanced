@@ -387,7 +387,7 @@ test('the preview spotlights the group being edited and the phone strip follows 
   assert.equal(preview.dataset.spot, undefined);
   h.click(h.$('.je-tge-row[data-group="quality"] .je-tge-expand'));
   assert.equal(preview.dataset.spot, 'quality');
-  assert.match(h.$('.je-mth-strip-chips').textContent, /^[^·]+ · 4K · Dolby Vision/, 'the look\'s source, then the edited group\'s chips lead');
+  assert.match(h.$('.je-mth-strip-chips').textContent, /^panel_media_tags_preview_title_movie · 4K · Dolby Vision/, 'the sample, then the edited group\'s chips');
   h.click(h.tab('rules'));
   assert.match(stripText(), /panel_media_tags_preview_title_episode/);
 

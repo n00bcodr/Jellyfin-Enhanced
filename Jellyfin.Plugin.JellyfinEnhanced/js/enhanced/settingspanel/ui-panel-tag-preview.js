@@ -641,13 +641,15 @@
             }
             const sample = SAMPLES.find((s) => s.key === followKey);
             // First line: which sample and its look; second: where the look comes from, then its tags.
+            // First line: the look itself. Second: the sample, then the tags of the group being edited
+            // (spotlighted) or, with none, where the sample's look comes from.
             if (text && sample) text.textContent = JE.t('panel_media_tags_preview_summary', { title: JE.t(sample.titleKey), source: item.source, look: item.look });
-            if (chips) {
-                const all = chipTexts(item.card, root.dataset.spot || null);
+            if (chips && sample) {
+                const spot = root.dataset.spot || null;
+                const all = spot ? chipTexts(item.card, spot) : [];
                 const shown = all.slice(0, 4);
                 const more = all.length - shown.length;
-                const tags = all.length ? shown.join(' · ') + (more > 0 ? ` +${more}` : '') : JE.t('panel_media_tags_preview_none');
-                chips.textContent = `${item.source} · ${tags}`;
+                chips.textContent = `${JE.t(sample.titleKey)} · ${shown.length ? shown.join(' · ') + (more > 0 ? ` +${more}` : '') : item.source}`;
             }
         };
 

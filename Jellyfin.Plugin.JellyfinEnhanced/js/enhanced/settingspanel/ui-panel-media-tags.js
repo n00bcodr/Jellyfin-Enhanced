@@ -660,7 +660,7 @@
             #jellyfin-enhanced-panel .je-mth-strip-thumb { position: relative; flex-shrink: 0; width: 28px; height: 42px; border-radius: 3px; background: #4a5160; }
             #jellyfin-enhanced-panel .je-mth-strip-thumb[data-shape="thumb"] { width: 48px; height: 27px; }
             #jellyfin-enhanced-panel .je-mth-strip-info { min-width: 0; flex: 1; font-size: 12px; line-height: 1.35; }
-            #jellyfin-enhanced-panel .je-mth-strip-text { color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            #jellyfin-enhanced-panel .je-mth-strip-text { color: #fff; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             #jellyfin-enhanced-panel .je-mth-strip-chips { color: rgba(255,255,255,0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
             #jellyfin-enhanced-panel .je-mth-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
             #jellyfin-enhanced-panel .je-mth-tile { padding: 8px 2px 6px; }

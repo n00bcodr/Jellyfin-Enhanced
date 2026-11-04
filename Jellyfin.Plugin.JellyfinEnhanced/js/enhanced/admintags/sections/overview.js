@@ -187,7 +187,7 @@
             };
             const groups = grid.querySelector('[data-ov="groups"]');
             // Redrawn by other views' saves and the library list answer too: keep focus on the same group.
-            if (groups) A.redrawList(groups, GROUPS.map(([id, key, name]) => `<button type="button" class="je-ta-ov-group" data-group="${id}" data-on="${c[key] === true}" aria-label="${ctx.esc(t('admin_tags_overview_group_aria', { name: t(name), state: t(c[key] === true ? 'common_on' : 'track_off') }))}">${ctx.esc(t(name))}</button>`).join(''),
+            if (groups) A.redrawList(groups, GROUPS.map(([id, key, name]) => `<button type="button" class="je-ta-ov-group" data-group="${id}" data-on="${c[key] === true}" aria-label="${ctx.esc(t('admin_tags_overview_group_aria', { name: t(name), state: t(c[key] === true ? 'common_on' : 'track_off') }))}">${ctx.esc(t(name))}<span class="je-ta-ov-state" aria-hidden="true">· ${ctx.esc(t(c[key] === true ? 'common_on' : 'track_off'))}</span><span class="material-icons" aria-hidden="true">chevron_right</span></button>`).join(''),
                 (el) => (el.dataset.group ? `[data-group="${el.dataset.group}"]` : null));
             const L = ctx.layout;
             const conf = L ? L.normalizeSettings(A.seedUser(c), c) : null;

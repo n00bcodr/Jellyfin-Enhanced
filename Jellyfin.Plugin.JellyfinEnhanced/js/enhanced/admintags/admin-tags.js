@@ -287,7 +287,9 @@
     function orderedHtml(fields, config) {
         const ranked = fields.map((f, i) => ({ f, i, n: Number.isFinite(Number(config[f.orderKey])) ? Number(config[f.orderKey]) : f.defaultOrder }))
             .sort((a, b) => (a.n - b.n) || (a.f.defaultOrder - b.f.defaultOrder) || (a.i - b.i));
-        return `<ol class="je-ta-order" data-ordered-list>${ranked.map(({ f }, i) => {
+        // Phone: the order buttons show only in reorder mode (the button above the list).
+        return `<button type="button" class="je-ta-button je-ta-reorder" data-order-reorder aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${tx('panel_settings_ui_tag_editor_reorder_categories')}</span></button>`
+            + `<ol class="je-ta-order" data-ordered-list>${ranked.map(({ f }, i) => {
             const name = JE.t(f.label);
             return `<li data-ordered="${esc(f.id)}"><span class="je-ta-rank" aria-hidden="true">${i + 1}</span>`
                 + `<label><input type="checkbox" id="${esc(f.id)}" data-je-field="${esc(f.key)}" data-je-setting-id="${esc(f.id)}" ${config[f.key] === true ? 'checked' : ''}><span class="je-ta-order-name" data-je-label>${esc(name)}</span></label>`
@@ -995,6 +997,16 @@
                 const row = /** @type {HTMLElement|null} */ (holder.closest('.je-ta-grow'));
                 if (row) row.dataset.enabled = String(value);
             }
+        }, { signal });
+
+        // Ordered lists on a phone: reorder mode shows the ranks and order buttons.
+        root.addEventListener('click', (e) => {
+            const toggle = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-order-reorder]'));
+            if (!toggle) return;
+            const on = toggle.getAttribute('aria-pressed') !== 'true';
+            toggle.setAttribute('aria-pressed', String(on));
+            /** @type {HTMLElement} */ (toggle.lastElementChild).textContent = JE.t(on ? 'panel_settings_ui_tag_editor_reorder_done' : 'panel_settings_ui_tag_editor_reorder_categories');
+            toggle.focus({ preventScroll: true });
         }, { signal });
 
         // Ordered lists: a move swaps two rows and writes every order key by position.

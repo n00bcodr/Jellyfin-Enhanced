@@ -650,6 +650,11 @@
             selected = selected || box.querySelector('.je-ts-target');
             if (selected) selected.tabIndex = 0;
             if (focused && selected) selected.focus();
+            // Say when the list scrolls inside its box.
+            if (hint) {
+                const count = labelsOf(current).length;
+                hint.textContent = tr('admin_tags_colours_target_hint') + (targetsOpen && box.scrollHeight > box.clientHeight + 2 ? ' ' + tr('admin_tags_colours_target_more').replace('{count}', String(count)) : '');
+            }
             // A long strip scrolls inside its box: keep the selected label in view there (never the page).
             if (selected && box.scrollHeight > box.clientHeight) {
                 const top = selected.offsetTop - box.offsetTop;

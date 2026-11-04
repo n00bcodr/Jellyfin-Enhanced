@@ -124,6 +124,7 @@
         .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
         .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
         .je-tie-groups-hint { margin: -2px 0 10px; }
+        .je-tie-under { margin-top: 8px; }
         .je-tie-hidden { margin-top: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
         .je-tie-hidden-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; border-radius: 8px; }
         .je-tie-hidden-toggle::-webkit-details-marker { display: none; }
@@ -600,10 +601,10 @@
                     ${hasSeries ? `<fieldset class="je-tie-box"><legend>${tx('tag_item_editor_scope')}</legend><div class="je-tie-scope" role="radiogroup">
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="item">${tx(type === 'Series' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_item', { type: typeName })}</label>
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="series">${tx('tag_item_editor_scope_series')}</label></div></fieldset>` : ''}
-                    <fieldset class="je-tie-box"><legend>${tx('common_layout')}</legend><div class="je-tie-tiles">
-                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
-                    <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
-                        ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
+                    <fieldset class="je-tie-box" aria-describedby="${uid}LayoutDesc"><legend>${tx('common_layout')}</legend><div class="je-tie-tiles">
+                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div><p class="je-tie-hint je-tie-under" id="${uid}LayoutDesc" aria-live="polite"></p></fieldset>
+                    <fieldset class="je-tie-box" aria-describedby="${uid}DensityDesc"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
+                        ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div><p class="je-tie-hint je-tie-under" id="${uid}DensityDesc">${tx('panel_settings_ui_tag_density_desc')}</p></fieldset>
                     <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('tag_item_editor_groups_title')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><div data-tie-groups></div></section>
                     <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
@@ -763,8 +764,14 @@
             (usable(next) ? next : dialog).focus({ preventScroll: true });
         };
 
+        /** The chosen layout in words, under the layout tiles. */
+        const describeLayout = () => {
+            const desc = dialog.querySelector(`#${uid}LayoutDesc`);
+            if (desc) desc.textContent = JE.t(`panel_settings_ui_tag_layout_${draft.layout}`);
+        };
         /** Put every control in step with the draft. */
         const sync = () => {
+            describeLayout();
             dialog.querySelectorAll(`input[name="${uid}Layout"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === draft.layout; });
             dialog.querySelectorAll(`input[name="${uid}Density"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === draft.density; });
             dialog.querySelectorAll(`input[name="${uid}Scope"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === scope; });
@@ -795,6 +802,7 @@
             const input = /** @type {HTMLInputElement} */ (e.target);
             if (input.name === `${uid}Layout`) {
                 draft.layout = input.value;
+                describeLayout();
                 renderGroups();
             } else if (input.name === `${uid}Density`) {
                 draft.density = input.value;
