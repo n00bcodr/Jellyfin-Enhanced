@@ -21,7 +21,7 @@
     const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HLG', 'HDR', 'SDR'];
     const specialFormatOrder = ['IMAX', '3D'];
     const codecOrder = ['VVC', 'AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'VC-1', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA', 'ProRes'];
-    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'PCM', 'FLAC', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '5.1'];
+    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'PCM', 'FLAC', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '6.1', '5.1'];
 
     // showXxxTag = enable, xxxTagOrder = 1..N stack position.
     const CATEGORIES = [
@@ -71,6 +71,7 @@
         'PCM': { bg: 'rgba(46, 125, 50, 0.9)', text: '#ffffff' },
         'FLAC': { bg: 'rgba(46, 125, 50, 0.9)', text: '#ffffff' },
         '7.1': { bg: 'rgba(156, 39, 176, 0.9)', text: '#ffffff' },
+        '6.1': { bg: 'rgba(126, 87, 194, 0.9)', text: '#ffffff' },
         '5.1': { bg: 'rgba(103, 58, 183, 0.9)', text: '#ffffff' },
         '3D': { bg: 'rgba(0, 150, 255, 0.9)', text: '#ffffff' },
         'VVC': { bg: 'rgba(230, 74, 25, 0.95)', text: '#ffffff' },
@@ -263,7 +264,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 7 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 8 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -551,15 +552,39 @@
         return null;
     }
 
+    // ffmpeg channel layout names → the layout they are (the "(side)"/"(back)"/"(wide)" variants share it).
+    const NAMED_LAYOUTS = { mono: '1.0', stereo: '2.0', quad: '4.0', hexagonal: '6.0', octagonal: '8.0' };
+    // A bare count only says the usual layout for counts with one (Jellyfin's own convention).
+    const COUNT_LAYOUTS = { 1: '1.0', 2: '2.0', 6: '5.1', 7: '6.1', 8: '7.1' };
+
     /**
-     * One track's own sound label: its codec with its own channels, or a bare 7.1/5.1.
+     * One track's actual channel layout: its ChannelLayout, then a layout named in its title, then
+     * the usual layout for its channel count. Unknown stays unknown (QualityTagRules.TrackChannels).
+     * @param {Object} stream Audio track.
+     * @returns {string|null} Layout such as "6.1", "4.0" or "1.0".
+     */
+    function trackChannels(stream) {
+        const layout = String(stream.ChannelLayout || '').toLowerCase().replace(/\(.*\)$/, '').trim();
+        if (Object.hasOwn(NAMED_LAYOUTS, layout)) return NAMED_LAYOUTS[layout];
+        const numeric = /^(\d)\.(\d)$/.exec(layout);
+        if (numeric) return `${numeric[1]}.${numeric[2]}`;
+        const title = String(stream.DisplayTitle || '').toLowerCase();
+        const named = /(?:^|[^a-z0-9_])([5-7])[. ]([01])(?![a-z0-9_])/.exec(title);
+        if (named) return `${named[1]}.${named[2]}`;
+        if (/(?:^|[^a-z0-9_])stereo(?![a-z0-9_])/.test(title)) return '2.0';
+        if (/(?:^|[^a-z0-9_])mono(?![a-z0-9_])/.test(title)) return '1.0';
+        return COUNT_LAYOUTS[stream.Channels] || null;
+    }
+
+    /**
+     * One track's own sound label: its codec with its own channels, or a bare surround layout.
      * @param {Object} stream Audio track.
      * @returns {string|null} Label such as "ATMOS 7.1", or null.
      */
     function trackAudioLabel(stream) {
         const codec = detectCurrentAudioCodec([stream]);
-        const channels = getChannelTag([stream]);
-        if (!codec) return channels === '7.1' || channels === '5.1' ? channels : null;
+        const channels = trackChannels(stream);
+        if (!codec) return ['7.1', '6.1', '5.1'].includes(channels) ? channels : null;
         return channels && !codec.includes(channels) ? `${codec} ${channels}` : codec;
     }
 
@@ -745,7 +770,9 @@
                 ['8k', '4320p'].includes(resolutionMatch[1].toLowerCase()) &&
                 displayTitleHeight > 0 && displayTitleHeight < 2500;
 
-            if (resolutionMatch && !isFalsely4k && !isFalsely8k) {
+            // Current vocabularies trust known dimensions; a title hint only names an unknown size.
+            const knownSize = (primaryVideoStream.Height || 0) > 0 || (primaryVideoStream.Width || 0) > 0;
+            if (resolutionMatch && !isFalsely4k && !isFalsely8k && (legacyVideo || !knownSize)) {
                 const found = resolutionMatch[1].toLowerCase();
                 if (found === '8k' || found === '4320p') {
                     resolutionTag = '8K';
@@ -1018,10 +1045,12 @@
         return values;
     }
 
-    /** @param {string} label Quality label. @param {string} category Web category. @returns {number} Rank with per-track channel ties. */
+    /** @param {string} label Quality label. @param {string} category Web category. @returns {number} Rank; more channels win audio ties. */
     function distinctRank(label, category) {
         const index = CATEGORY_BY_KEY.get(category)?.items.indexOf(normalizeQualityLabel(label)) ?? -1;
-        return (index < 0 ? 999 : index) * 10 + (category === 'audio' ? label.includes('7.1') ? 0 : label.includes('5.1') ? 1 : 2 : 0);
+        const layout = /(\d)\.(\d)$/.exec(label);
+        const channels = layout ? Number(layout[1]) + Number(layout[2]) : 0;
+        return (index < 0 ? 999 : index) * 10 + (category === 'audio' ? 9 - Math.min(channels, 8) : 0);
     }
 
     /** @param {string} label Detected resolution. @returns {boolean} Inclusive threshold, unknown settings mean Off. */
@@ -1346,7 +1375,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 7, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 8, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1382,7 +1411,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 7, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 8, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

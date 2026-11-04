@@ -21,8 +21,10 @@ public class UpstreamQualityTests
         var video = new TagMediaStream { Type = "Video", Width = width, Height = height };
         Assert.Equal(expected, QualityTagRules.DetectResolution(video));
         Assert.Contains(expected, QualityTagRules.Detect(new() { Streams = [video] }, null));
+        // Known dimensions outrank a title hint; settings saved before layouts keep trusting the title.
         video.DisplayTitle = "720p";
-        Assert.Equal("720p", QualityTagRules.DetectResolution(video));
+        Assert.Equal(expected, QualityTagRules.DetectResolution(video));
+        Assert.Equal("720p", QualityTagRules.DetectResolution(video, legacy: true));
     }
 
     private static TagStreamData Merged()

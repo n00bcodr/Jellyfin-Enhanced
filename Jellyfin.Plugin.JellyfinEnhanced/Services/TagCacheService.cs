@@ -329,7 +329,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // FLAC/PCM, and a sound chip that takes codec and channels from one track.
         // v25 leaves commentary/audio-description audio out of AudioLanguages and forced-only languages
         // out of SubtitleLanguages, and reads edition and low-quality source words only after a title.
-        internal const int CurrentCacheSchemaVersion = 25;
+        // v26 records each track's own channel layout (1.0, 4.0, 5.0, 6.1, ...) in the per-track facts.
+        internal const int CurrentCacheSchemaVersion = 26;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call

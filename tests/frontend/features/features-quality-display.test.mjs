@@ -371,16 +371,16 @@ for (const density of [undefined, 'full', 'compact']) test(`version transition i
   assert.deepEqual(h.render(entry), ['5.1']);
 });
 
-for (const namingVersion of [3, 4, 5, 6, 7]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
+for (const namingVersion of [3, 4, 5, 6, 7, 8]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
   const payload = { namingVersion, legacyAudio: false, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['Dolby Digital 5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'full', { old: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
-  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 7);
-  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 7 ? 1 : 0);
+  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 8);
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 8 ? 1 : 0);
 });
 
 test('persisted current naming labels are still invalidated by a legacy-version transition', t => {
-  const payload = { namingVersion: 7, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
+  const payload = { namingVersion: 8, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'compact', { saved: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
   h.JE.currentSettings.tagLayoutSettingsVersion = 0;

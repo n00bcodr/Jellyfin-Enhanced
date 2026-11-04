@@ -80,13 +80,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly Regex Channels51Regex = new(WordStart + "5[. ]?1" + WordEnd, Options);
         private static readonly Regex Channels20Regex = new(WordStart + "stereo" + WordEnd + "|" + WordStart + "2[. ]?0" + WordEnd, Options);
         private static readonly Regex BareChannelRegex = new(@"^[0-9]+\.[0-9]+\z", Options);
+        private static readonly Regex TrailingLayoutRegex = new(@"([0-9])\.([0-9])\z", Options);
 
         private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD" };
         private static readonly string[] SourceOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "Physical", "CAM", "TS", "TC", "SCR" };
         private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HLG", "HDR", "SDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "VVC", "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "VC-1", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA", "ProRes" };
-        private static readonly string[] AudioOrder = { "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "PCM", "FLAC", "DTS-HD HRA", "DTS", "Dolby Digital+", "Dolby Digital", "7.1", "5.1" };
+        private static readonly string[] AudioOrder = { "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "PCM", "FLAC", "DTS-HD HRA", "DTS", "Dolby Digital+", "Dolby Digital", "7.1", "6.1", "5.1" };
         private static readonly string[] AudioBases = { "Dolby Digital+", "Dolby Digital", "ATMOS", "DTS-X", "TRUEHD", "DTS-HD MA", "DTS-HD HRA", "DTS", "PCM", "FLAC" };
 
         // Video codec detection order (first match wins), on the lowercased Codec then DisplayTitle.
@@ -449,14 +450,49 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return BestAudioLabel(streams, legacyAudio);
         }
 
-        /// <summary>One track's own sound label: its codec with its own channels, or a bare 7.1/5.1.</summary>
+        /// <summary>One track's own sound label: its codec with its own channels, or a bare surround layout (version 0: 7.1/5.1 buckets).</summary>
         private static string? TrackAudioLabel(TagMediaStream stream, bool legacyAudio)
         {
             var track = new List<TagMediaStream>(1) { stream };
             var codec = DetectAudioCodec(track, legacyAudio);
-            var channels = DetectChannels(track);
-            return codec == null ? (channels is "7.1" or "5.1" ? channels : null)
+            var channels = legacyAudio ? DetectChannels(track) : TrackChannels(stream);
+            return codec == null ? (channels is "7.1" or "5.1" || (!legacyAudio && channels == "6.1") ? channels : null)
                 : channels != null && !codec.Contains(channels, StringComparison.Ordinal) ? codec + " " + channels : codec;
+        }
+
+        // ffmpeg channel layout names; the "(side)"/"(back)"/"(wide)" variants share their layout.
+        private static readonly Dictionary<string, string> NamedLayouts = new(StringComparer.Ordinal)
+        {
+            ["mono"] = "1.0", ["stereo"] = "2.0", ["quad"] = "4.0", ["hexagonal"] = "6.0", ["octagonal"] = "8.0",
+        };
+
+        // A bare count only says the usual layout for counts with one (Jellyfin's own convention).
+        private static readonly Dictionary<int, string> CountLayouts = new() { [1] = "1.0", [2] = "2.0", [6] = "5.1", [7] = "6.1", [8] = "7.1" };
+
+        private static readonly Regex NumericLayoutRegex = new(@"^([0-9])\.([0-9])\z", Options);
+        private static readonly Regex TitleLayoutRegex = new(@"(?:^|[^a-z0-9_])([5-7])[. ]([01])(?![a-z0-9_])", Options);
+        private static readonly Regex TitleStereoRegex = new(@"(?:^|[^a-z0-9_])stereo(?![a-z0-9_])", Options);
+        private static readonly Regex TitleMonoRegex = new(@"(?:^|[^a-z0-9_])mono(?![a-z0-9_])", Options);
+
+        /// <summary>
+        /// One track's actual channel layout (trackChannels in qualitytags.js): its ChannelLayout, then a
+        /// layout named in its title, then the usual layout for its count. Unknown stays unknown.
+        /// </summary>
+        internal static string? TrackChannels(TagMediaStream stream)
+        {
+            var layout = JsText.ToLower(stream.ChannelLayout ?? string.Empty);
+            var paren = layout.IndexOf('(', StringComparison.Ordinal);
+            if (paren >= 0 && layout.EndsWith(')')) layout = layout[..paren];
+            layout = JsText.Trim(layout);
+            if (NamedLayouts.TryGetValue(layout, out var named)) return named;
+            var numeric = NumericLayoutRegex.Match(layout);
+            if (numeric.Success) return numeric.Groups[1].Value + "." + numeric.Groups[2].Value;
+            var title = JsText.ToLower(stream.DisplayTitle ?? string.Empty);
+            var inTitle = TitleLayoutRegex.Match(title);
+            if (inTitle.Success) return inTitle.Groups[1].Value + "." + inTitle.Groups[2].Value;
+            if (TitleStereoRegex.IsMatch(title)) return "2.0";
+            if (TitleMonoRegex.IsMatch(title)) return "1.0";
+            return stream.Channels is { } count && CountLayouts.TryGetValue(count, out var usual) ? usual : null;
         }
 
         /// <summary>Rank every eligible track by codec tier then channels; the first track wins a tie (bestAudioLabel in qualitytags.js).</summary>
@@ -480,8 +516,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 VideoCodec => CodecOrder, _ => AudioOrder,
             };
             var index = Array.IndexOf(order, NormalizeLabel(label));
-            var channels = label.Contains("7.1", StringComparison.Ordinal) ? 0 : label.Contains("5.1", StringComparison.Ordinal) ? 1 : 2;
-            return (index < 0 ? 999 : index) * 10 + (category == AudioInfo ? channels : 0);
+            // More channels win ties (distinctRank in qualitytags.js).
+            var layout = TrailingLayoutRegex.Match(label);
+            var channels = layout.Success ? (layout.Groups[1].Value[0] - '0') + (layout.Groups[2].Value[0] - '0') : 0;
+            return (index < 0 ? 999 : index) * 10 + (category == AudioInfo ? 9 - Math.Min(channels, 8) : 0);
         }
 
         /// <summary>Composite audio labels ("ATMOS 7.1") normalize to their base ("ATMOS").</summary>
@@ -563,7 +601,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var falsely4K = found is "4k" or "2160p" && height > 0 && height < 1250;
             // Current vocabularies also reject an 8K hint on a known sub-8K picture.
             var falsely8K = !legacy && found is "8k" or "4320p" && height > 0 && height < 2500;
-            if (found is not null && !falsely4K && !falsely8K)
+            // Current vocabularies trust known dimensions; a title hint only names an unknown size.
+            if (found is not null && !falsely4K && !falsely8K && (legacy || (height <= 0 && width <= 0)))
             {
                 return found switch
                 {

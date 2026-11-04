@@ -669,6 +669,176 @@
    "highest": [],
    "all": [],
    "legacy": []
+  },
+  {
+   "name": "A 720p title on a 1080p picture",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "h264",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "720p H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "H264"
+   ],
+   "legacy": [
+    "720p",
+    "H264"
+   ]
+  },
+  {
+   "name": "A resolution title on an unknown size",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "h264",
+     "DisplayTitle": "1080p H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ],
+   "legacy": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Quad PCM is 4.0, not stereo",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 4,
+     "ChannelLayout": "quad",
+     "DisplayTitle": "English - PCM - 4.0"
+    }
+   ],
+   "highest": [
+    "PCM 4.0"
+   ],
+   "all": [
+    "PCM 4.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "DTS-ES 6.1 keeps its back channel",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-ES",
+     "Channels": 7,
+     "ChannelLayout": "6.1",
+     "DisplayTitle": "English - DTS-ES - 6.1"
+    }
+   ],
+   "highest": [
+    "DTS 6.1"
+   ],
+   "all": [
+    "DTS 6.1"
+   ],
+   "legacy": [
+    "DTS 5.1"
+   ]
+  },
+  {
+   "name": "Mono PCM",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s16le",
+     "Channels": 1,
+     "ChannelLayout": "mono",
+     "DisplayTitle": "English - PCM - Mono"
+    }
+   ],
+   "highest": [
+    "PCM 1.0"
+   ],
+   "all": [
+    "PCM 1.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "5.0 surround without LFE",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 5,
+     "ChannelLayout": "5.0(side)",
+     "DisplayTitle": "English - Dolby Digital - 5.0"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.0"
+   ],
+   "all": [
+    "Dolby Digital 5.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "Seven channels without a layout read as 6.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 7
+    }
+   ],
+   "highest": [
+    "6.1"
+   ],
+   "all": [
+    "6.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "An unusual channel count without a layout stays unknown",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 3,
+     "DisplayTitle": "English - Dolby Digital"
+    }
+   ],
+   "highest": [
+    "Dolby Digital"
+   ],
+   "all": [
+    "Dolby Digital"
+   ],
+   "legacy": []
   }
  ]
 }
