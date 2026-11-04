@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
 
 namespace JE.Tests;
 
@@ -40,30 +41,40 @@ public class IntegrationStatusTagsTrendingTests
     }
 
     [Fact]
-    public async Task NativeRanksRefreshDailyAndNeverFallBackToSeerrWithoutAKey()
+    public async Task NativeRanksFollowTheWebPolicyTmdbDailyThenSeerrWeeklyForThirtyMinutes()
     {
         using var env = new IntegrationEnvironment();
         var clock = new NativeClock { Now = DateTimeOffset.Parse("2026-10-30T23:59:00Z") };
-        using var transport = new IntegrationTransport((request, _) =>
-        {
-            Assert.Equal("api.themoviedb.org", request.RequestUri!.Host);
-            return Task.FromResult(IntegrationTransport.Response("{\"results\":[{\"id\":2,\"media_type\":\"movie\"}]}"));
-        });
+        var tmdbDown = false;
+        using var transport = new IntegrationTransport((request, _) => Task.FromResult(request.RequestUri!.Host == "seerr.test"
+            ? IntegrationTransport.Response(SeerrPage)
+            : tmdbDown ? IntegrationTransport.Response("{}", 503) : IntegrationTransport.Response("{\"results\":[{\"id\":2,\"media_type\":\"movie\"}]}")));
         using var cache = new TmdbResponseCache(transport, clock);
         var service = new StatusTagsTrendingService(transport, cache, env.Logger, clock);
         var config = new PluginConfiguration { StatusTagsEnabled = true, TMDB_API_KEY = "key", JellyseerrEnabled = true, JellyseerrUrls = "http://seerr.test", JellyseerrApiKey = "key" };
+
+        // TMDB answers: the same daily ranks the web serves, kept 30 minutes (across UTC midnight too).
         var first = await service.GetNativeAsync(config, default);
-        Assert.Equal(1, first.Movies["2"]);
+        Assert.Equal(("tmdb-day", 1), (first.Source, first.Movies["2"]));
         var calls = transport.Calls;
-        clock.Now = clock.Now.AddSeconds(30);
+        clock.Now = clock.Now.AddMinutes(29);
         Assert.Same(first, await service.GetNativeAsync(config, default));
         Assert.Equal(calls, transport.Calls);
-        clock.Now = clock.Now.AddSeconds(30);
-        Assert.NotSame(first, await service.GetNativeAsync(config, default));
-        Assert.True(transport.Calls > calls);
+
+        // TMDB fails after expiry: the Seerr weekly list, as on the web.
+        tmdbDown = true;
+        clock.Now = clock.Now.AddDays(1);
+        var fallback = await service.GetNativeAsync(config, default);
+        Assert.Equal(("seerr-week", 1), (fallback.Source, fallback.Movies["7"]));
+
+        // Seerr alone is enough, without a TMDB key.
+        var seerrOnly = new PluginConfiguration { StatusTagsEnabled = true, JellyseerrEnabled = true, JellyseerrUrls = "http://seerr.test", JellyseerrApiKey = "key" };
+        Assert.Equal("seerr-week", (await service.GetNativeAsync(seerrOnly, default)).Source);
+        Assert.True(PosterTagSettings.FromUserSettings(new() { StatusTagsEnabled = true }, seerrOnly, null).StatusTrending);
+
+        // Neither source: nothing, and no request.
         calls = transport.Calls;
-        config.TMDB_API_KEY = "";
-        Assert.Empty((await service.GetNativeAsync(config, default)).Movies);
+        Assert.Empty((await service.GetNativeAsync(new PluginConfiguration { StatusTagsEnabled = true }, default)).Movies);
         Assert.Equal(calls, transport.Calls);
     }
 

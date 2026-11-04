@@ -529,7 +529,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 StatusTagsPosition = layout.Corners.GetValueOrDefault(PosterTagGroup.Status) ?? Position(user.StatusTagsPosition, config.StatusTagsPosition, "top-right"),
                 StatusJustAdded = user.StatusTagsJustAdded,
                 StatusNewRelease = user.StatusTagsNewRelease,
-                StatusTrending = user.StatusTagsTrending && config.StatusTagsEnabled && config.StatusTagsTrending && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY),
+                // The web's sources: TMDB daily ranks, else Seerr weekly ranks.
+                StatusTrending = user.StatusTagsTrending && config.StatusTagsEnabled && config.StatusTagsTrending
+                    && (!string.IsNullOrWhiteSpace(config.TMDB_API_KEY) || (config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.JellyseerrApiKey))),
                 StatusSchedule = user.StatusTagsSchedule,
                 StatusMilestones = user.StatusTagsMilestones,
                 StatusSeriesStatus = user.StatusTagsSeriesStatus,

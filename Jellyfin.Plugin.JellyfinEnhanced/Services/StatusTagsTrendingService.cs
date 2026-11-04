@@ -118,13 +118,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return shared.WaitAsync(cancellationToken);
         }
 
-        /// <summary>Native posters use TMDB daily ranks only. The worker lifetime owns pagination;
-        /// a caller's cancellation token only stops its wait, preserving shared HTTP ownership.</summary>
+        /// <summary>
+        /// Native posters use the web's source policy (TMDB daily ranks, else Seerr weekly ranks) and
+        /// lifetimes (30 minutes, 5 after an empty answer), so a browser and a TV see the same badge.
+        /// The worker lifetime owns pagination; a caller's cancellation token only stops its wait,
+        /// preserving shared HTTP ownership.
+        /// </summary>
         public Task<TrendingSnapshot> GetNativeAsync(PluginConfiguration config, CancellationToken cancellationToken, CancellationToken workerLifetime = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             workerLifetime.ThrowIfCancellationRequested();
-            if (!config.StatusTagsEnabled || !config.StatusTagsTrending || string.IsNullOrWhiteSpace(config.TMDB_API_KEY)) return Task.FromResult(Empty);
+            if (!config.StatusTagsEnabled || !config.StatusTagsTrending || (string.IsNullOrWhiteSpace(config.TMDB_API_KEY) && !SeerrConfigured(config))) return Task.FromResult(Empty);
             lock (_nativeLock)
             {
                 if (!ReferenceEquals(config, _nativeConfig))
@@ -154,17 +158,30 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
+        private static bool SeerrConfigured(PluginConfiguration config)
+            => config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.JellyseerrApiKey);
+
         private async Task<TrendingSnapshot> FetchNativeAsync(PluginConfiguration config, bool bypassResponseCache, CancellationToken workerLifetime)
         {
             await Task.Yield();
-            var day = _nativeTime.GetUtcNow().UtcDateTime.Date;
             try
             {
                 TrendingSnapshot answer;
                 try
                 {
-                    answer = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache,
-                        new DateTimeOffset(day, TimeSpan.Zero), workerLifetime).ConfigureAwait(false) ?? Empty;
+                    TrendingSnapshot? found = null;
+                    if (!string.IsNullOrWhiteSpace(config.TMDB_API_KEY))
+                    {
+                        found = await FetchTmdbAsync(config.TMDB_API_KEY, bypassResponseCache, null, workerLifetime).ConfigureAwait(false);
+                    }
+
+                    if (found == null && SeerrConfigured(config))
+                    {
+                        workerLifetime.ThrowIfCancellationRequested();
+                        found = await FetchSeerrAsync(config).ConfigureAwait(false);
+                    }
+
+                    answer = found ?? Empty;
                 }
                 catch (OperationCanceledException) when (workerLifetime.IsCancellationRequested) { throw; }
                 catch (Exception ex) { _logger.Debug($"[StatusTags] Native trending unavailable: {ex.Message}"); answer = Empty; }
@@ -175,7 +192,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         _nativeCached = answer;
                         var now = _nativeTime.GetUtcNow().UtcDateTime;
-                        _nativeUntil = answer.Source == null ? now.AddMinutes(5) : day.AddDays(1);
+                        _nativeUntil = now + (answer.Source == null ? EmptyCacheTtl : CacheTtl);
                     }
                 }
                 return answer;
@@ -226,7 +243,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (fromTmdb != null) return fromTmdb;
             }
 
-            if (config.JellyseerrEnabled && !string.IsNullOrEmpty(config.JellyseerrUrls) && !string.IsNullOrEmpty(config.JellyseerrApiKey))
+            if (SeerrConfigured(config))
             {
                 var fromSeerr = await FetchSeerrAsync(config).ConfigureAwait(false);
                 if (fromSeerr != null) return fromSeerr;
