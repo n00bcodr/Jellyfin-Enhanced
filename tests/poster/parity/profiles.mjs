@@ -269,7 +269,7 @@ for (const [key, entry] of Object.entries(synthetic)) {
 const LOOK = Object.fromEntries(['movieLock', 'movieItemLook', 'movieBoth', 'series', 'seriesEpisode', 'seriesPoster', 'seriesPosterEpisode'].map((key, i) => [key, `00000000000000000000000000000f${(i + 1).toString(16).padStart(2, '0')}`]));
 const lookEntries = {
     [LOOK.movieLock]: movie({ Genres: ['Drama', 'Comedy', 'Family'], AudioLanguages: ['eng', 'fra', 'deu'], StreamData: sd([video(), audio({ Codec: 'ac3', Channels: 6, DisplayTitle: 'AC-3 5.1' })]) }),
-    [LOOK.movieItemLook]: movie({ Genres: ['Drama', 'Comedy'] }),
+    [LOOK.movieItemLook]: movie({ Genres: ['Drama', 'Comedy'], LibraryId: 'a1b2c3d4e5f60718293a4b5c6d7e8f90' }),
     [LOOK.movieBoth]: movie({ Genres: ['Animation'] }),
     [LOOK.series]: { Type: 'Series', TmdbId: '3000', Genres: ['Drama'], CommunityRating: 8.2, OfficialRating: 'TV-14', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]) },
     [LOOK.seriesEpisode]: { Type: 'Episode', SeriesTmdbId: '3000', SeasonNumber: 1, EpisodeNumber: 1, SeriesId: LOOK.series, CommunityRating: 7.5, OfficialRating: 'TV-14', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]) },
@@ -347,6 +347,26 @@ for (const layout of ['caption', 'summary', 'minimal']) {
     synthLooks(`item-look-fallback-${layout}`, { ...allOn, TagLayoutSettingsVersion: 1, TagLayoutLocks: { [LOOK.movieLock]: look } },
         { TagLookItemOverrides: [{ ItemId: LOOK.movieItemLook, ...look }] });
 }
+
+// Tag look rules (core/tag-look.js matches), decided natively from the same entry facts:
+// type, genre, age rating and library conditions, rule order (the first enabled match wins),
+// a disabled rule, a lock and an item look over a rule, Caption/Summary falling back to
+// Corners with the rule's hidden groups, the administrator's rules for a normalized document,
+// none for an explicit empty list or a document saved before layouts.
+const off = (...groups) => groups.map((Group) => ({ Group, Slot: 'off' }));
+const lookRules = [
+    { Id: 'paused', Enabled: false, When: [{ Field: 'type', Value: 'Movie' }], Layout: 'bands', Density: 'full' },
+    { Id: 'library', When: [{ Field: 'library', Value: 'a1b2c3d4e5f60718293a4b5c6d7e8f90' }], Layout: 'caption', Density: 'compact', Slots: off('genre') },
+    { Id: 'tv14', When: [{ Field: 'ageRating', Value: 'tv-14' }, { Field: 'type', Value: 'Episode' }], Layout: 'bands', Density: 'compact' },
+    { Id: 'animation', When: [{ Field: 'genre', Value: 'animation' }], Layout: 'summary', Density: 'compact', Slots: off('rating', 'language') },
+    { Id: 'movies', When: [{ Field: 'type', Value: 'movie' }], Layout: 'bands', Density: 'compact', Slots: off('quality') },
+    { Id: 'series', When: [{ Field: 'type', Value: 'Series' }, { Field: 'genre', Value: 'Comedy' }], Layout: 'corners', Density: 'compact', Slots: [{ Group: 'genre', Slot: 'bc' }] },
+];
+synthLooks('look-rules', { ...allOn, TagLayoutSettingsVersion: 1, TagLookRules: lookRules, TagLayoutLocks: { [LOOK.movieLock]: userLocks[LOOK.movieLock] } }, { TagLookItemOverrides: [itemLooks[1]] });
+synthLooks('look-rules-admin', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' }, { TagLookRules: lookRules });
+synthLooks('look-rules-empty-personal', { ...allOn, TagLayoutSettingsVersion: 1, TagLookRules: [] }, { TagLookRules: lookRules });
+synthLooks('look-rules-legacy-admin', { ...allOn }, { TagLookRules: lookRules });
+synthLooks('look-rules-legacy-own', { ...allOn, TagLookRules: lookRules.slice(3) });
 
 synth('all-on-defaults', { ...allOn });
 for (const TagScale of ['smaller', 'larger', 'largest']) {

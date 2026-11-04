@@ -547,6 +547,10 @@
       "category": "Services"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagLookFacts.cs",
+      "category": "Services"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Services/PosterTags/PosterTagModel.cs",
       "category": "Services"
     },
@@ -9925,7 +9929,7 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 455,
+    "files": 456,
     "routes": 194,
     "configuration_properties": 720,
     "storage_references": 85,

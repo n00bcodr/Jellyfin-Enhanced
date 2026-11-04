@@ -10047,14 +10047,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SupportedOutputFormats = new[] { MediaBrowser.Model.Drawing.ImageFormat.Jpg },
                 }).ConfigureAwait(false);
 
-                // The item's own look (a lock, a server-wide item look), as native clients get it.
+                // The item's own look (a lock, a server-wide item look, a matching rule), as native clients get it.
                 var previewSeriesId = item switch
                 {
                     MediaBrowser.Controller.Entities.TV.Episode episode => episode.SeriesId,
                     MediaBrowser.Controller.Entities.TV.Season season => season.SeriesId,
                     _ => Guid.Empty,
                 };
-                var settings = posterTagSettings.Get(user.Id).ForItem(item.Id, previewSeriesId == Guid.Empty ? null : previewSeriesId.ToString("N"));
+                var previewSeriesIdN = previewSeriesId == Guid.Empty ? null : previewSeriesId.ToString("N");
+                Services.PosterTags.PosterTagLookFacts? LookFacts() => _tagCacheService.TryGetEntry(item.Id, out var lookEntry)
+                    ? Services.PosterTags.PosterTagLookFacts.FromEntry(lookEntry)
+                    : Services.PosterTags.PosterTagLookFacts.FromItem(_libraryManager, item);
+                var userPosterSettings = posterTagSettings.Get(user.Id);
+                var settings = userPosterSettings.ForItem(item.Id, previewSeriesIdN, LookFacts);
+                var lookSource = userPosterSettings.ResolveLook(item.Id.ToString("N"), previewSeriesIdN, LookFacts).Source;
                 // Same rule the stamper applies to the card's own indicator
                 // (NativePosterTagStamper.StampItem): played check or unplayed count.
                 var offset = topRightOffset ?? (_userDataManager.GetUserDataDto(item, user) is { } userData
@@ -10078,6 +10084,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 Response.Headers["X-JE-Poster-Tags-User-Enabled"] = settings.NativeEnabled ? "true" : "false";
                 Response.Headers["X-JE-Poster-Tags-Any-Group"] = settings.AnyGroupEnabled ? "true" : "false";
                 Response.Headers["X-JE-Poster-Tags-Settings-Digest"] = settings.Digest;
+                Response.Headers["X-JE-Poster-Tags-Look"] = lookSource;
                 Response.Headers["X-JE-Poster-Tags-Spoiler-Stripped"] = result.SpoilerStripped ? "true" : "false";
                 return File(result.Bytes ?? original, "image/jpeg");
             }

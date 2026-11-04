@@ -236,14 +236,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (item == null || !TagCacheService.TaggableTypes.Contains(item.GetBaseItemKind())) return null;
 
             // The item's own look (a lock, a server-wide item look; a season or
-            // episode inherits its series'), which the stamper minted the token with.
+            // episode inherits its series'; else a matching rule), which the stamper
+            // minted the token with, from the same rule facts.
             var seriesId = item switch
             {
                 Episode episode => episode.SeriesId,
                 Season season => season.SeriesId,
                 _ => Guid.Empty,
             };
-            var settings = userSettings.ForItem(itemId, seriesId == Guid.Empty ? null : seriesId.ToString("N"));
+            var settings = userSettings.ForItem(itemId, seriesId == Guid.Empty ? null : seriesId.ToString("N"),
+                () => _data.TryGetCachedEntry(itemId, out var entry) ? PosterTagLookFacts.FromEntry(entry) : PosterTagLookFacts.FromItem(_libraryManager, item));
             if (!settings.AnyGroupEnabled) return null;
 
             var instant = _time.GetUtcNow();

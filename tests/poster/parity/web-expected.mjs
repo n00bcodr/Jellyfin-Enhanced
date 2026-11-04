@@ -378,9 +378,11 @@ async function runProfile(profile) {
             if (!['corners', 'bands'].includes(conf.layout)) {
                 // The native fallback policy: the real resolved item's caps/size/
                 // spacing and explicit off-groups over the user's Corners profile.
+                // Corners keeps arrival order unless the user chose an order.
                 const off = Object.fromEntries(Object.entries(conf.slots).filter(([, slot]) => slot === 'off'));
-                const slots = conf.layout === 'corners' ? conf.slots : { ...L.normalizeSettings().profiles.corners, ...off };
-                const fallback = { ...conf, layout: 'corners', density: 'full', slots };
+                const base = L.normalizeSettings();
+                const slots = conf.layout === 'corners' ? conf.slots : { ...base.profiles.corners, ...off };
+                const fallback = { ...conf, layout: 'corners', density: 'full', slots, order: base.orderChosen ? base.order : null };
                 nativeItemConfs.set(id, fallback);
                 L.setPreviewLook(host, fallback);
             }

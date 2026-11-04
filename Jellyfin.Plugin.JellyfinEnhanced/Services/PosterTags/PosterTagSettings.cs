@@ -77,6 +77,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         // item looks, each by item id; and the inputs a look's settings are derived from.
         private IReadOnlyDictionary<string, TagLayoutLock>? _userLocks;
         private IReadOnlyDictionary<string, TagLayoutLock>? _adminLooks;
+        // The tag look rules that apply to the document (its own, else the administrator's unless it
+        // was saved before layouts), in order (core/tag-look.js read).
+        private IReadOnlyList<TagLookRule>? _rules;
         private JellyfinEnhancedUserSettings? _user;
         private PluginConfiguration? _config;
         private string? _audioPreference;
@@ -89,6 +92,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// server-wide item look (<see cref="PluginConfiguration.TagLookItemOverrides"/>).
         /// </summary>
         public bool HasItemLooks => (_userLocks?.Count ?? 0) + (_adminLooks?.Count ?? 0) > 0;
+
+        /// <summary>True when an enabled tag look rule could give some poster a look of its own.</summary>
+        public bool HasLookRules => _rules is { Count: > 0 };
 
         /// <summary>Static-friendly active layout; Caption, Summary and Minimal retain the Corners profile.</summary>
         public bool Bands { get; private init; }
@@ -629,9 +635,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (!itemLooks) return settings;
             var locks = TagLookValidation.NormalizeLocks(user.TagLayoutLocks!);
             var adminLooks = TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides);
-            if ((locks is null || locks.Count == 0) && adminLooks is null) return settings;
+            var rules = (user.TagLookRules is not null ? TagLookValidation.NormalizeRules(user.TagLookRules)
+                : TagLayoutRules.IsLegacy(user) ? null : TagLookValidation.NormalizeRules(config.TagLookRules));
+            // Disabled rules stay in the list: a rule's number is its place among all of them.
+            var anyRule = rules is not null && rules.Exists(r => r.Enabled);
+            if ((locks is null || locks.Count == 0) && adminLooks is null && !anyRule) return settings;
             return settings with
             {
+                _rules = anyRule ? rules : null,
                 _userLocks = locks,
                 _adminLooks = adminLooks?.ToDictionary(o => o.ItemId, o => (TagLayoutLock)o, StringComparer.Ordinal),
                 _user = user,
@@ -646,19 +657,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// these with that look laid over them, the way core/tag-layout.js resolveLayout decides:
         /// the user's lock on the item → the user's lock on its series → the administrator's look
         /// for the item → the administrator's look for its series (a series look marked
-        /// <c>Scope = "item"</c> stays on the series). Rules and shape looks stay web features.
-        /// Memoised per look; the result has its own <see cref="Digest"/>.
+        /// <c>Scope = "item"</c> stays on the series) → the first enabled tag look rule whose
+        /// conditions all hold for the owner's <paramref name="facts"/>. Shape looks stay web
+        /// features (an image request has no card shape). Memoised per look; the result has its
+        /// own <see cref="Digest"/>.
         /// </summary>
         /// <param name="itemId">The image owner.</param>
         /// <param name="seriesIdN">For a season or episode, its series (N format), else null.</param>
+        /// <param name="facts">The owner's rule facts, read only when a rule has to be decided.</param>
         /// <returns>The item's settings.</returns>
-        public PosterTagSettings ForItem(Guid itemId, string? seriesIdN) => ForItem(itemId.ToString("N"), seriesIdN);
+        public PosterTagSettings ForItem(Guid itemId, string? seriesIdN, Func<PosterTagLookFacts?>? facts = null) => ForItem(itemId.ToString("N"), seriesIdN, facts);
 
-        /// <inheritdoc cref="ForItem(Guid, string?)"/>
-        public PosterTagSettings ForItem(string itemIdN, string? seriesIdN)
+        /// <inheritdoc cref="ForItem(Guid, string?, Func{PosterTagLookFacts?}?)"/>
+        public PosterTagSettings ForItem(string itemIdN, string? seriesIdN, Func<PosterTagLookFacts?>? facts = null)
         {
-            if (!HasItemLooks || _user is null || _config is null) return this;
-            var look = ItemLook(itemIdN, seriesIdN);
+            if ((!HasItemLooks && !HasLookRules) || _user is null || _config is null) return this;
+            var look = ResolveLook(itemIdN, seriesIdN, facts).Look;
             if (look is null) return this;
             var key = System.Text.Json.JsonSerializer.Serialize(look);
             var user = _user;
@@ -667,7 +681,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return _itemVariants.GetOrAdd(key, _ => Build(WithLook(user, look), config, audio, itemLooks: false, legacyAudioFacts: LegacyAudioFacts));
         }
 
-        /// <summary>The look an item has of its own (see <see cref="ForItem(string, string?)"/>), or null.</summary>
+        /// <summary>
+        /// Where an owner's look comes from ("lock", "item-look", "rule:N" with the rule's
+        /// position, or "default") and the look itself (null for the default), as
+        /// core/tag-layout.js lookSource decides it.
+        /// </summary>
+        /// <param name="itemIdN">The item id.</param>
+        /// <param name="seriesIdN">Its series, or null.</param>
+        /// <param name="facts">The owner's rule facts, read only when a rule has to be decided.</param>
+        /// <returns>The source and the look.</returns>
+        public (string Source, TagLayoutLock? Look) ResolveLook(string itemIdN, string? seriesIdN, Func<PosterTagLookFacts?>? facts = null)
+        {
+            // Locks and item looks are found by id; rules only read the owner's facts.
+            var id = TagLookValidation.NormalizeItemId(itemIdN);
+            var series = TagLookValidation.NormalizeItemId(seriesIdN);
+            if (id is not null && Find(_userLocks, id, series) is { } own) return ("lock", own);
+            if (id is not null && Find(_adminLooks, id, series) is { } admin) return ("item-look", admin);
+            if (_rules is null || facts?.Invoke() is not { } known || known.FirstMatch(_rules) is not { } match) return ("default", null);
+            // A rule's look is its layout, density and slots; caps, size and gap stay the user's.
+            return ("rule:" + (match.Index + 1).ToString(CultureInfo.InvariantCulture), new TagLayoutLock { Layout = match.Rule.Layout, Density = match.Rule.Density, Slots = match.Rule.Slots });
+        }
+
+        /// <summary>The look an item has of its own (see <see cref="ForItem(string, string?, Func{PosterTagLookFacts?}?)"/>), or null.</summary>
         /// <param name="itemIdN">The item id.</param>
         /// <param name="seriesIdN">Its series, or null.</param>
         /// <returns>The look.</returns>
@@ -676,14 +711,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var id = TagLookValidation.NormalizeItemId(itemIdN);
             if (id is null) return null;
             var series = TagLookValidation.NormalizeItemId(seriesIdN);
-            return Find(_userLocks) ?? Find(_adminLooks);
+            return Find(_userLocks, id, series) ?? Find(_adminLooks, id, series);
+        }
 
-            TagLayoutLock? Find(IReadOnlyDictionary<string, TagLayoutLock>? looks)
-            {
-                if (looks is null || looks.Count == 0) return null;
-                if (looks.TryGetValue(id, out var own)) return own;
-                return series is not null && series != id && looks.TryGetValue(series, out var inherited) && inherited.Scope != "item" ? inherited : null;
-            }
+        private static TagLayoutLock? Find(IReadOnlyDictionary<string, TagLayoutLock>? looks, string id, string? series)
+        {
+            if (looks is null || looks.Count == 0) return null;
+            if (looks.TryGetValue(id, out var own)) return own;
+            return series is not null && series != id && looks.TryGetValue(series, out var inherited) && inherited.Scope != "item" ? inherited : null;
         }
 
         /// <summary>

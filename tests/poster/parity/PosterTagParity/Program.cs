@@ -296,8 +296,8 @@ void ResolveAll()
         var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var layouts = new PosterTagLayout?[contexts.Count];
-        // Each item with its own look (a lock, an administrator item look; PosterTagSettings.ForItem).
-        var itemSettings = contexts.Select(c => settings.ForItem(c.Id, c.Entry.Type is "Season" or "Episode" ? c.Entry.SeriesId : null)).ToArray();
+        // Each item with its own look (a lock, an administrator item look, a matching rule; PosterTagSettings.ForItem).
+        var itemSettings = contexts.Select(c => settings.ForItem(c.Id, c.Entry.Type is "Season" or "Episode" ? c.Entry.SeriesId : null, () => PosterTagLookFacts.FromEntry(c.Entry))).ToArray();
         for (var i = 0; i < contexts.Count; i++) layouts[i] = PosterTagResolver.Resolve(contexts[i].Entry, itemSettings[i], contexts[i].Context, landscape: false);
         watch.Stop();
         var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;

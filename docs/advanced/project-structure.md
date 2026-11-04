@@ -513,6 +513,7 @@ Per-user setting in the Enhanced panel:
 | `NativeClientPolicy.cs` | Excludes known clients running web overlays plus admin-configured client names. |
 | `NativePosterTagStamper.cs` | Metadata-time Primary tag stamping, called by `SpoilerIdentityTagFilter`. |
 | `PosterTagSettings.cs`, `PosterTagSettingsProvider.cs` | Effective personal settings/admin defaults, rendering digest, per-user cache and invalidation on settings/config changes. |
+| `PosterTagLookFacts.cs` | The facts a tag look rule reads about an image owner (type, library, genres, official rating) from its tag cache entry or the library item, and the rule matcher native posters share with `core/tag-look.js`. |
 | `PosterTagUserCache.cs`, `PosterTagReviewRatings.cs` | User lookups and viewer-aware review averages. |
 | `PosterTagDataProvider.cs` | Cache/on-demand tag data, access checks and Spoiler Guard stripping. |
 | `PosterTagModel.cs`, `PosterTagResolver.cs` | Semantic corner/group/tag layout and web-parity resolution rules. |
