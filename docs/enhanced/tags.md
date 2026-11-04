@@ -173,14 +173,14 @@ An enabled shape override has its own **Tag size** and **Gap** selectors. **Same
 
 **Edge spacing** sets how close the Corners layout puts tags to the poster edge, on all nine anchors:
 
-| Edge Spacing | Distance from the edge | Notes |
+| Edge spacing | Distance from the edge | Notes |
 |---|---|---|
 | **Default** | 6px | What Corners always looked like |
 | **Tight** | 3px | |
 | **Flush** | 0px | Tags touch the edge, like a tab hanging off the poster: the chip corners against an edge are square, and a tag in a corner follows the poster's own rounded corner. Nothing is drawn outside the poster |
 
 ![The Layout tab with Label density, Tag size, Gap and Edge spacing, and the live preview](../images/tags/pr-hub-layout.webp)
-*Edge Spacing sits on the Layout tab below Tag size and Gap.*
+*Edge spacing sits on the Layout tab below Tag size and Gap.*
 
 Flush chips have no visible border or shadow on the sides touching an edge; inward borders and shadows remain. Top-centre tabs meet `top: 0` with square top corners, and bottom-centre tabs meet `bottom: 0` with square bottom corners. If a progress bar is present, bottom centre meets its top edge without a gap. Top centre first narrows to the gap between corner indicators and moves below them only when that gap cannot fit its first chip. Tight and Default retain their existing indicator and progress gaps. The other layouts have their own spacing and ignore it. Native Poster Tags use the selected inset in Corners; Bands retains its own 6px inset, including for overflow chips. Edge spacing applies to every Corners card, including shape overrides; size and gap may be overridden independently for each shape.
 
@@ -232,7 +232,7 @@ The limit applies after each group's own filtering (quality categories, language
 | Setting | Default | What it does |
 |---|---|---|
 | Personal: **Tag Layout** / admin: **Default Tag Layout** | **Corners** | Chooses one of the layouts above |
-| Personal: **Label density** / admin: **Default Label Density** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital 5.1` → `DD 5.1`, `Dolby Digital+ 5.1` → `DD+ 5.1`) and hides the critic score when a community score is shown |
+| Personal: **Label density** / admin: **Label density** under **Default look** | **Full** | **Compact** shortens quality labels (`Dolby Vision` → `DV`, `HDR10+` → `HDR+`, `ATMOS 7.1` → `ATMOS`, `Dolby Digital 5.1` → `DD 5.1`, `Dolby Digital+ 5.1` → `DD+ 5.1`) and hides the critic score when a community score is shown |
 | **Tag Groups** order | Status, quality, rating, age rating, language, genre, awards, logos, custom | Priority order of the groups |
 | **Show up to** | Genre 3, language 3, awards 2, custom 3; quality, rating and two-logo groups all | Hidden for single-chip Status and Age rating, and for Logos when **Logos per title** is 1; these groups always cap at 1 |
 | **Position** — Quality / Genre / Language / Rating / Age Rating / Status Tags | Corners: **Top Left** / **Top Right** / **Bottom Left** / **Bottom Right** / **Bottom Right** / **Top Right** | Any of the nine anchors in the Corners layout; the admin **Position** selects set these defaults |
@@ -284,7 +284,7 @@ The **Layout defaults** tab of the Media Tags settings page sets what new users 
     - In **Minimal**'s status and score stacks and **Caption**'s poster stack every chip stays whole and inside the card: one wider than the card keeps its rounded box 6px from the edges and ends its label with an ellipsis. On a card too narrow for the quality dots and the scores side by side, the scores sit just above the dots; on a short image (an episode still) with several rating sources, the scores that do not fit inside the image appear when you hover the card.
     - The **Summary** pill drops its lowest-priority facts when the card is too narrow for all of them; its tooltip keeps every fact. The hover reveal of **Summary** and **Minimal** always uses compact labels and keeps to two rows at the bottom of the poster (then `+N`), clear of the play button; on short cards such as episode thumbnails it shows only the rows that fit in the bottom 40% of the image. Jellyfin's card buttons stay on top and clickable.
     - **Hide tags on hover** hides tags on the poster in Corners, Bands and Caption; the caption strip stays visible. In Summary and Minimal it hides the pill, dots and corner, and the full chips still appear.
-    - Settings saved before layouts keep the **Default** edge spacing whatever the administrator picks; the first layout change pins it, so only a later Edge Spacing change moves the tags.
+    - Settings saved before layouts keep the **Default** edge spacing whatever the administrator picks; the first layout change pins it, so only a later Edge spacing change moves the tags.
     - [Native Poster Tags](#native-poster-tags-experimental) draw Corners or Bands. Caption, Summary and Minimal use the saved Corners profile with Full labels. Bands follows its positions, hidden groups, order and limits with its own padding; Corners follows edge spacing. Both respect the chosen Full or Compact label density, as on the web; settings saved before layouts (version 0) keep their previous labels.
 
 ### Rules and locked items
@@ -306,7 +306,7 @@ Each card gets its look from the first of these that applies:
 2. **The administrator's item look** for it (**For everyone** in the item editor), the same way: the item's own, else its series'.
 3. **The first enabled rule** whose conditions all hold, from the top of the list.
 4. **The shape override**, if enabled for an episode thumbnail or list row.
-5. **Your default** Tag Layout and Label Density (the **Otherwise** row).
+5. **Your default** Tag Layout and Label density (the **Otherwise** row).
 
 | Condition | Matches | Notes |
 |---|---|---|
