@@ -49,7 +49,7 @@ Tables below show factory defaults. Rows marked “Admin / personal” give both
 
 Every personal poster tag setting lives in one section of the panel, **Media Tags**, between **UI Settings** and **Hidden Content**. Its tabs each do one job, and a live preview beside them shows the result as you change things.
 
-![The Media Tags section on its Layout tab: layout tiles, label density and quick switches, with the live preview on the right](../images/tags/media-tags-hub.webp)
+![The Media Tags section on its Layout tab: Browse presets, layout tiles, label density and tag size, with the live preview on the right](../images/tags/media-tags-hub.webp)
 
 | Tab | What you set there |
 |---|---|
@@ -167,7 +167,7 @@ Administrators set the starting choices in **Display** → **Media Tags** → **
 
 An enabled shape override has its own **Tag size** and **Gap** selectors. **Same as default look** inherits that setting independently; choosing **Default** explicitly keeps 100% even if the default look is larger or roomier. Stored rule/lock shape looks accept the same fields. Native posters follow the account's size and gap in Corners and Bands, and ignore shape overrides.
 
-![Tag size and Gap controls with the live preview](../images/tags/tag-size-gap-hub.webp)
+![Tag size at 115% and Gap at Roomy over the movie grid, with the live preview](../images/tags/tag-size-gap-hub.webp)
 
 #### Edge spacing
 
@@ -179,7 +179,7 @@ An enabled shape override has its own **Tag size** and **Gap** selectors. **Same
 | **Tight** | 3px | |
 | **Flush** | 0px | Tags touch the edge, like a tab hanging off the poster: the chip corners against an edge are square, and a tag in a corner follows the poster's own rounded corner. Nothing is drawn outside the poster |
 
-![The Layout tab with Tag size, Gap and Edge Spacing below Label Density, and the live preview](../images/tags/pr-hub-layout.webp)
+![The Layout tab with Label density, Tag size, Gap and Edge spacing, and the live preview](../images/tags/pr-hub-layout.webp)
 *Edge Spacing sits on the Layout tab below Tag size and Gap.*
 
 Flush chips have no visible border or shadow on the sides touching an edge; inward borders and shadows remain. Top-centre tabs meet `top: 0` with square top corners, and bottom-centre tabs meet `bottom: 0` with square bottom corners. If a progress bar is present, bottom centre meets its top edge without a gap. Top centre first narrows to the gap between corner indicators and moves below them only when that gap cannot fit its first chip. Tight and Default retain their existing indicator and progress gaps. The other layouts have their own spacing and ignore it. Native Poster Tags use the selected inset in Corners; Bands retains its own 6px inset, including for overflow chips. Edge spacing applies to every Corners card, including shape overrides; size and gap may be overridden independently for each shape.
@@ -227,7 +227,7 @@ Open a row to change it:
 
 The limit applies after each group's own filtering (quality categories, language grouping and priority, rating scopes). **Reset to defaults** restores the administrator's layout, density, positions, order and limits; your group switches and include choices stay.
 
-![The Groups tab with quality open: nine Position pills in a 3×3 grid, Hidden, the Show up to stepper and a live preview with centre anchors](../images/tags/tag-group-editor.webp)
+![The Groups tab with Quality open: the named 3×3 Position picker, Hidden and the Show up to stepper, with the live preview](../images/tags/tag-group-editor.webp)
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -251,7 +251,7 @@ Compact quality vocabulary is shared by web and native rendering. The canonical 
 
 Other emitted video codec labels (AV1, HEVC, H265, VP9, H264, VP8, XVID, DIVX, WMV, MPEG2, MPEG4, MJPEG, THEORA) are already short and remain unchanged.
 
-![Six movie posters with Compact quality labels: DD+ 5.1, DD 5.1, DTS-HD 5.1, BD, REMUX, IMAX, Ext and DC](../images/tags/pr-compact-labels.webp)
+![Six movie posters with Compact quality labels: BD, REMUX, IMAX, DD+ 5.1, DD 5.1, DD+ 7.1, DTS, ATMOS, Ext and Rem](../images/tags/pr-compact-labels.webp)
 *Compact labels on real library files: `DD+ 5.1`, `DD 5.1`, `DTS-HD 5.1`, `BD`, `REMUX`, `IMAX`, `Ext` and `DC`.*
 
 The four default corners keep their original appearance. Top and bottom centre wrap chips into centred rows (up to two); left and right centre stack chips vertically. Centre rows reserve the width occupied by corner groups, including a tall column from the opposite edge that reaches into the row on a short image, and each keeps to its half of the image; side columns reserve the height of their neighbouring corner stacks. Chips that are too wide or tall are hidden whole and counted in a **+N** chip, which names the hidden tags on hover or focus. Group limits apply before fitting.
@@ -298,7 +298,7 @@ Rules give some cards a different look (a layout and a label density) than your 
 3. Use the arrows to order the rules, **On**/**Off** to pause one, **Edit** to load it into the form (**Save rule** keeps its place and its On/Off state) or **Delete** to remove it.
 4. To give one item its own look, choose **Media Tags** in its ⋮ menu (see [One item's look](#one-items-look)). In **Locked items**, **Edit** opens that editor again and **Unlock** releases the item. **Unlock all** asks for a second click. On a phone, **Show** unfolds the locked items and **Unlock all**.
 
-![Rules & locks: a rule, the Otherwise row and two locked series on the left, the Add a rule form on the right; the preview shows the locked series and the rule's episode](../images/tags/tag-look-rules.webp)
+![Rules & locks: a rule, the Otherwise row and two locked series, then the Add a rule form; the preview shows the locked series and the rule's episode](../images/tags/tag-look-rules.webp)
 
 Each card gets its look from the first of these that applies:
 
@@ -343,7 +343,7 @@ Any movie, series, season, episode, collection or video can have its own look. O
 
 ![The ⋮ menu of a movie with Media Tags under Refresh metadata](../images/tags/item-editor-menu.webp)
 
-![The item editor: the poster with its tags in Bands, the layout tiles, label density and the groups with their positions and Show up to](../images/tags/item-editor.webp)
+![The item editor: Lock this look for me and For everyone first, the poster with its tags in Bands, the layout tiles, label density, Group placement with Quality open, and Size and spacing](../images/tags/item-editor.webp)
 
 **How to use:**
 
@@ -404,7 +404,7 @@ A document carries your layout and its profiles, group order, limits and positio
 
 **Administrators** export and import the server-wide settings on the **Server** tab of the Media Tags settings page: every setting on that page (defaults, groups, Tag Styles, custom rules, award lists, logo choices, status windows, cache options and offered presets), never an API key or the custom rule key. An import shows the changes, asks for a confirmation and saves them like any edit on that page: a setting another administrator changed meanwhile waits for **Keep mine** or **Take theirs**, and the snackbar offers **Undo** for 10 seconds. **Presets for users** lists the presets offered in every user's Presets list: **Offer my settings** uses your own Media Tags settings (saved first: if that save fails it offers nothing and says so, with **Retry**), **Offer from a file** a preset or settings file; each can be shared or removed.
 
-![The Server tab: Import & export, and Presets for users with one offered preset](../images/tags/media-tags-admin-portable.webp)
+![The Server tab: Import & export, and Presets for users with Offer my settings and Offer from a file](../images/tags/media-tags-admin-portable.webp)
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -958,7 +958,7 @@ The bundled simplified source marks and award silhouettes provide the same paths
 
 Logo Tags show where a title streams, or the TV network or studio behind it, as one small logo on the card. Provider logos sit on a dark pill, network and studio logos on a light one so dark logos stay readable over any poster. A title without a logo image shows its name instead, shortened to its initials when it is long (`Home Box Office` → `HBO`).
 
-![Movie posters with Netflix and Disney+ logos on dark pills and studio logos on light pills in the bottom-left corner](../images/tags/logo-tags.webp)
+![Movie posters with streaming provider logos (Disney+, Netflix, Prime Video, HBO Max, fuboTV) in the bottom-left corner](../images/tags/logo-tags.webp)
 
 **How to use:**
 
@@ -987,7 +987,7 @@ Logo Tags show where a title streams, or the TV network or studio behind it, as 
 
 Custom Tags turn your own Jellyfin metadata into poster chips. The administrator writes rules: items that carry a Jellyfin tag (for example `4K Remaster`) or belong to a collection (for example `Criterion`) get a chip with the rule's label and, optionally, an icon. Tags are the ones in each item's metadata (**Edit metadata** → **Tags**, or imported keywords).
 
-![Custom chips under the quality tags: Comic (with an icon) for movies tagged "based on comic", Criterion for a collection, each in its Tag Styles colour](../images/custom-tags-posters.png)
+![Custom chips under the quality tags: Comic (with an icon) for movies tagged "based on comic" and Pixar for movies tagged "pixar"](../images/custom-tags-posters.png)
 
 **How to use — administrators:**
 

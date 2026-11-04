@@ -2,10 +2,10 @@
 
 The Media Tags settings page (`Configuration/mediaTagsPage.html`, `#/configurationpage?name=JellyfinEnhancedMediaTags`) holds every server-wide poster tag setting. It is built from small section modules so that a new setting is a one-line declaration. This page is for contributors; administrators should read [Tags & badges](../enhanced/tags.md).
 
-![The Media Tags settings page on its Overview tab: tag types on by default, default look, tag cache, native posters, tag colours and the live preview](../images/tags/pr-admin-overview.webp)
+![The Media Tags settings page on its Overview tab: tag group defaults, default look, server tag cache, native poster tags, tag colours, quick links and the live preview](../images/tags/pr-admin-overview.webp)
 *The Overview tab, with the live preview of a new user's cards.*
 
-![The Groups tab: one row per group with its switch for new users, sample chips and an Open button](../images/tags/pr-admin-groups.webp)
+![The Groups tab: one row per group with its switch for new users, sample chips and an Edit button](../images/tags/pr-admin-groups.webp)
 *The Groups tab: each row opens that group's server settings.*
 
 ## How it fits together
