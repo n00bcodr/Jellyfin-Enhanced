@@ -21,14 +21,14 @@ test('Bands keeps milestone and age chips inside the card without overlap', asyn
   await page.evaluate(() => {
     const JE = window.JellyfinEnhanced;
     JE.initializeAgeRatingTags(); JE.initializeStatusTags();
-    for (const width of [120, 168, 220]) for (const complete of [false, true]) {
-      const card = document.createElement('div'); card.className = 'card'; card.dataset.id = `card${width}${complete}`;
+    for (const width of [120, 168, 220]) for (const isSeason of [false, true]) {
+      const card = document.createElement('div'); card.className = 'card'; card.dataset.id = `card${width}${isSeason}`;
       card.innerHTML = `<div class="cardBox"><div class="cardScalable" style="width:${width}px"><div class="cardImageContainer"></div><div class="countIndicator">12</div><div class="je-tag-host"></div><div class="cardOverlayContainer"></div></div><div class="cardText">Title</div></div>`;
       document.getElementById('cards').append(card);
       const host = card.querySelector('.je-tag-host');
       const now = Date.now();
-      const entry = { Type: complete ? 'Season' : 'Series', DateCreated: now, OfficialRating: 'TV-MA',
-        SeasonPremiere: { Season: 2, Aired: now - 1000 }, SeasonAddedSpan: complete ? { First: now - 1000, Last: now, Count: 8 } : null };
+      // The longest milestone label a season shows without TMDB facts: Season Premiere.
+      const entry = { Type: isSeason ? 'Season' : 'Series', DateCreated: now, OfficialRating: 'TV-MA', SeasonPremiere: { Season: 2, Aired: now - 1000 } };
       for (const name of ['status', 'agerating']) JE.tagPipeline.renderers[name].renderFromServerCache(host, entry, card.dataset.id);
     }
     JE.core.tagLayout.flushFit();
@@ -41,7 +41,7 @@ test('Bands keeps milestone and age chips inside the card without overlap', asyn
       overlap: Math.max(0, Math.min(s.right, a.right) - Math.max(s.left, a.left)) * Math.max(0, Math.min(s.bottom, a.bottom) - Math.max(s.top, a.top)),
       contained: [s, a].every(r => r.left >= host.left - 0.5 && r.right <= host.right + 0.5) };
   }));
-  expect(geometry.map(g => g.label)).toEqual(['New Season', 'Complete', 'New Season', 'Complete Season', 'New Season', 'Complete Season']);
+  expect(geometry.map(g => g.label)).toEqual(['New Season', 'Premiere', 'New Season', 'Season Premiere', 'New Season', 'Season Premiere']);
   expect(geometry.every(g => g.contained), JSON.stringify(geometry)).toBe(true);
   expect(geometry.every(g => g.overlap <= 0.5), JSON.stringify(geometry)).toBe(true);
 });
