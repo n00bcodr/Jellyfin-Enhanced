@@ -8,6 +8,20 @@ namespace JE.Tests;
 
 public class TagStyleTests
 {
+    private static string ThisFile([System.Runtime.CompilerServices.CallerFilePath] string path = "") => path;
+
+    [Fact]
+    public void EveryRatingTheWebColoursHasANativeColour()
+    {
+        // css/ratings.css is the web's source; age-rating-colours.json is generated from it (scripts/build_poster_assets.py).
+        var css = File.ReadAllText(Path.Combine(Path.GetDirectoryName(ThisFile())!, "..", "..", "..", "css", "ratings.css"));
+        css = System.Text.RegularExpressions.Regex.Replace(css, @"/\*.*?\*/", string.Empty, System.Text.RegularExpressions.RegexOptions.Singleline);
+        var ratings = System.Text.RegularExpressions.Regex.Matches(css, @"\[rating=(['""])(.*?)\1\]").Select(m => m.Groups[2].Value).Distinct(StringComparer.Ordinal).ToArray();
+        Assert.True(ratings.Length > 500, ratings.Length.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        using var assets = PosterTagAssets.Load();
+        Assert.All(ratings, rating => Assert.True(assets.AgeRatingStyles.ContainsKey(rating), rating));
+    }
+
     [Fact]
     public void QualityCatalogMatchesEveryShippedNativeColourWithoutDuplicates()
     {
