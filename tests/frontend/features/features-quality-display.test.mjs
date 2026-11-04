@@ -44,14 +44,15 @@ const streams = () => [
 const movie = () => ({ Type: 'Movie', StreamData: { Streams: streams(), Sources: [] } });
 const all = { qualityAudioDisplayMode: 'all', qualityVideoCodecDisplayMode: 'all', qualityHdrDisplayMode: 'all' };
 
-test('All deduplicates and ranks per-track values; Highest default retains legacy detection', t => {
+test('All deduplicates and ranks per-track values; Highest takes the best single track', t => {
   const h = setup(t);
   const data = movie();
-  assert.deepEqual(h.render(data), ['1080p', 'H264', 'DTS 7.1']);
+  // Codec and channels come from the same (best-ranked) track, never DTS from one and 7.1 from another.
+  assert.deepEqual(h.render(data), ['1080p', 'H264', 'ATMOS 7.1']);
   Object.assign(h.JE.currentSettings, all);
   assert.deepEqual(h.render(data), ['1080p', 'HDR10', 'SDR', 'HEVC', 'H264', 'ATMOS 7.1', 'TRUEHD 5.1', 'DTS 7.1', 'DTS 5.1']);
   h.JE.currentSettings.qualityAudioDisplayMode = 'highest';
-  assert.deepEqual(h.render(data).filter(label => /DTS|ATMOS|TRUEHD/.test(label)), ['DTS 7.1']);
+  assert.deepEqual(h.render(data).filter(label => /DTS|ATMOS|TRUEHD/.test(label)), ['ATMOS 7.1']);
 });
 
 test('All uses cached distinct sets and exact-language tiers rather than recomputing raw tracks', t => {
@@ -144,12 +145,13 @@ test('batch fallback and mode changes cannot reuse a computed Highest-only cache
   const h = setup(t); const renderer = h.renderers.get('quality');
   const item = { Id: 'batch', Type: 'Movie', MediaStreams: streams(), MediaSources: [] };
   renderer.render(h.card, item);
-  assert.ok(!h.document.querySelector('[data-quality="ATMOS"]'));
+  assert.ok(h.document.querySelector('[data-quality="ATMOS"]'));
+  assert.ok(!h.document.querySelector('[data-quality="DTS"]'));
   Object.assign(h.JE.currentSettings, all);
   h.JE.core.tagLayout.clearCard(h.card); delete h.document.querySelector('.card').dataset.jeQualityTagged;
   assert.equal(renderer.renderFromCache(h.card, 'batch'), false);
   renderer.render(h.card, item);
-  assert.ok(h.document.querySelector('[data-quality="ATMOS"]'));
+  assert.ok(h.document.querySelector('[data-quality="DTS"]'));
   assert.equal(h.document.querySelectorAll('[data-quality="HEVC"]').length, 1);
 });
 
@@ -369,16 +371,16 @@ for (const density of [undefined, 'full', 'compact']) test(`version transition i
   assert.deepEqual(h.render(entry), ['5.1']);
 });
 
-for (const namingVersion of [3, 4, 5, 6]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
+for (const namingVersion of [3, 4, 5, 6, 7]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
   const payload = { namingVersion, legacyAudio: false, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['Dolby Digital 5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'full', { old: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
-  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 6);
-  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 6 ? 1 : 0);
+  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 7);
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 7 ? 1 : 0);
 });
 
 test('persisted current naming labels are still invalidated by a legacy-version transition', t => {
-  const payload = { namingVersion: 6, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
+  const payload = { namingVersion: 7, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'compact', { saved: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
   h.JE.currentSettings.tagLayoutSettingsVersion = 0;

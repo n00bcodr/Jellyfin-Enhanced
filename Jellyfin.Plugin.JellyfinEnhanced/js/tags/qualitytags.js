@@ -18,10 +18,10 @@
     const sourceOrder = ['REMUX', 'BluRay', 'WEB', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'Physical', 'CAM', 'TS', 'TC', 'SCR'];
     const EDITION_PREFIX = 'edition:';
     const editionOrder = [];
-    const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HDR', 'SDR'];
+    const dynamicRangeOrder = ['Dolby Vision', 'HDR10+', 'HDR10', 'HLG', 'HDR', 'SDR'];
     const specialFormatOrder = ['IMAX', '3D'];
-    const codecOrder = ['AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA'];
-    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '5.1'];
+    const codecOrder = ['VVC', 'AV1', 'HEVC', 'H265', 'VP9', 'H264', 'VP8', 'XVID', 'DIVX', 'VC-1', 'WMV', 'MPEG2', 'MPEG4', 'MJPEG', 'THEORA', 'ProRes'];
+    const audioOrder = ['ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'PCM', 'FLAC', 'DTS-HD HRA', 'DTS', 'Dolby Digital+', 'Dolby Digital', '7.1', '5.1'];
 
     // showXxxTag = enable, xxxTagOrder = 1..N stack position.
     const CATEGORIES = [
@@ -57,6 +57,7 @@
         'HDR': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
         'HDR10': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
         'HDR10+': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
+        'HLG': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
         'Dolby Vision': { bg: 'rgba(139, 69, 19, 0.95)', text: '#ffffff' },
         'IMAX': { bg: 'rgba(0, 114, 206, 0.9)', text: '#ffffff' },
         'ATMOS': { bg: 'rgba(0, 100, 255, 0.9)', text: '#ffffff' },
@@ -67,9 +68,12 @@
         'DTS': { bg: 'rgba(255, 140, 0, 0.85)', text: '#ffffff' },
         'Dolby Digital+': { bg: 'rgba(0, 150, 136, 0.9)', text: '#ffffff' },
         'TRUEHD': { bg: 'rgba(76, 175, 80, 0.9)', text: '#ffffff' },
+        'PCM': { bg: 'rgba(46, 125, 50, 0.9)', text: '#ffffff' },
+        'FLAC': { bg: 'rgba(46, 125, 50, 0.9)', text: '#ffffff' },
         '7.1': { bg: 'rgba(156, 39, 176, 0.9)', text: '#ffffff' },
         '5.1': { bg: 'rgba(103, 58, 183, 0.9)', text: '#ffffff' },
         '3D': { bg: 'rgba(0, 150, 255, 0.9)', text: '#ffffff' },
+        'VVC': { bg: 'rgba(230, 74, 25, 0.95)', text: '#ffffff' },
         'AV1': { bg: 'rgba(255, 87, 34, 0.95)', text: '#ffffff' },
         'HEVC': { bg: 'rgba(33, 150, 243, 0.9)', text: '#ffffff' },
         'H265': { bg: 'rgba(63, 81, 181, 0.9)', text: '#ffffff' },
@@ -78,11 +82,13 @@
         'VP8': { bg: 'rgba(121, 85, 72, 0.9)', text: '#ffffff' },
         'XVID': { bg: 'rgba(255, 152, 0, 0.9)', text: '#ffffff' },
         'DIVX': { bg: 'rgba(255, 193, 7, 0.9)', text: '#000000' },
+        'VC-1': { bg: 'rgba(0, 188, 212, 0.9)', text: '#ffffff' },
         'WMV': { bg: 'rgba(0, 188, 212, 0.9)', text: '#ffffff' },
         'MPEG2': { bg: 'rgba(96, 125, 139, 0.9)', text: '#ffffff' },
         'MPEG4': { bg: 'rgba(158, 158, 158, 0.9)', text: '#ffffff' },
         'MJPEG': { bg: 'rgba(233, 30, 99, 0.9)', text: '#ffffff' },
         'THEORA': { bg: 'rgba(139, 195, 74, 0.9)', text: '#ffffff' },
+        'ProRes': { bg: 'rgba(96, 125, 139, 0.9)', text: '#ffffff' },
         'REMUX': { bg: 'rgba(13, 71, 161, 0.95)', text: '#ffffff' },
         'WEB': { bg: 'rgba(0, 121, 107, 0.95)', text: '#ffffff' },
         'CAM': { bg: 'rgba(183, 28, 28, 0.95)', text: '#ffffff' },
@@ -257,7 +263,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 6 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 7 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -409,7 +415,7 @@
     function normalizeQualityLabel(label) {
         if (!label || typeof label !== 'string') return label;
 
-        const audioBases = ['Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS'];
+        const audioBases = ['Dolby Digital+', 'Dolby Digital', 'ATMOS', 'DTS-X', 'TRUEHD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS', 'PCM', 'FLAC'];
         for (const base of audioBases) {
             if (label === base || label.startsWith(`${base} `)) {
                 return base;
@@ -500,8 +506,9 @@
     // Reference: Radarr/Sonarr audio custom formats, TRaSH-Guides Audio Formats:
     // https://trash-guides.info/Radarr/Radarr-collection-of-custom-formats/#audio-formats
     // Stream aliases use the established chip vocabulary: both Atmos families → ATMOS,
-    // DTS-ES → DTS; FLAC/PCM/AAC/Opus/MP3 keep the channel-only fallback.
-    // HRA precedes generic DTS-HD; Plus/Atmos precede plain DD. Boundaries reject suffixes.
+    // DTS-ES → DTS; lossless FLAC and (L)PCM have their own chips; AAC/Opus/MP3 keep the
+    // channel-only fallback. HRA precedes generic DTS-HD; Plus/Atmos precede plain DD.
+    // Boundaries reject suffixes.
     const AUDIO_ALIASES = [
         [/(?:^|[^a-z0-9_])(?:atmos|ddpa)(?![a-z_])/, 'ATMOS'],
         [/(?:^|[^a-z0-9_])true[ .-]?hd(?![a-z_])/, 'TRUEHD'],
@@ -512,6 +519,8 @@
         [/(?:^|[^a-z0-9_])dts(?![a-z_])/, 'DTS'],
         [/(?:^|[^a-z0-9_])(?:ddp(?:lus)?|dd\+|e[-_. ]?ac-?3|dolby\s*digital(?:\s*plus|\s*\+))(?![a-z_])/, 'Dolby Digital+'],
         [/(?:^|[^a-z0-9_])(?:dd(?!\s*\+)|dolby\s*digital(?!\s*(?:plus|\+)))(?![a-z_])|(?:^|[^a-z0-9_-])ac-?3(?![a-z_])/, 'Dolby Digital'],
+        [/(?:^|[^a-z0-9_])flac(?![a-z_])/, 'FLAC'],
+        [/(?:^|[^a-z0-9_])l?pcm(?![a-z])/, 'PCM'],
     ];
 
     /**
@@ -540,6 +549,92 @@
             if (label) return label;
         }
         return null;
+    }
+
+    /**
+     * One track's own sound label: its codec with its own channels, or a bare 7.1/5.1.
+     * @param {Object} stream Audio track.
+     * @returns {string|null} Label such as "ATMOS 7.1", or null.
+     */
+    function trackAudioLabel(stream) {
+        const codec = detectCurrentAudioCodec([stream]);
+        const channels = getChannelTag([stream]);
+        if (!codec) return channels === '7.1' || channels === '5.1' ? channels : null;
+        return channels && !codec.includes(channels) ? `${codec} ${channels}` : codec;
+    }
+
+    /**
+     * Highest sound for current vocabularies: rank every eligible track by codec tier, then
+     * channels, and keep the winning track's own label (first track wins a tie).
+     * @param {Object[]} streams Audio tracks after the language tiers.
+     * @returns {string|null} The best single track's label.
+     */
+    function bestAudioLabel(streams) {
+        let best = null;
+        for (const stream of streams) {
+            const label = trackAudioLabel(stream);
+            if (label && (best === null || distinctRank(label, 'audio') < distinctRank(best, 'audio'))) best = label;
+        }
+        return best;
+    }
+
+    // Jellyfin's VideoRangeType values (both supported targets), lowercased. A Dolby Vision
+    // stream keeps its base layer so All mode can show the fallback a non-DV display gets.
+    const RANGE_TYPES = {
+        sdr: { range: null, base: null, sdr: true },
+        hdr10: { range: 'HDR10', base: null, sdr: false },
+        hdr10plus: { range: 'HDR10+', base: null, sdr: false },
+        hlg: { range: 'HLG', base: null, sdr: false },
+        dovi: { range: 'Dolby Vision', base: null, sdr: false },
+        doviwithhdr10: { range: 'Dolby Vision', base: 'HDR10', sdr: false },
+        doviwithhdr10plus: { range: 'Dolby Vision', base: 'HDR10+', sdr: false },
+        doviwithhlg: { range: 'Dolby Vision', base: 'HLG', sdr: false },
+        doviwithsdr: { range: 'Dolby Vision', base: null, sdr: false },
+        doviwithel: { range: 'Dolby Vision', base: 'HDR10', sdr: false },
+        doviwithelhdr10plus: { range: 'Dolby Vision', base: 'HDR10+', sdr: false },
+    };
+
+    /**
+     * Dynamic range of one video stream: Jellyfin's VideoRangeType first; only a missing or
+     * unknown type falls back to word-bounded hints in the display title and the type text
+     * ("DVD" is not Dolby Vision).
+     * @param {Object} video Video stream.
+     * @returns {{range: string|null, base: string|null, sdr: boolean}} Range, DV base layer, known SDR.
+     */
+    function videoRangeFacts(video) {
+        const type = String(video?.VideoRangeType || '').toLowerCase();
+        if (Object.hasOwn(RANGE_TYPES, type)) return RANGE_TYPES[type];
+        // An unrecognised type string still counts as a hint, after the title.
+        const title = `${video?.DisplayTitle || ''} ${type}`.toLowerCase();
+        const word = (pattern) => new RegExp(`(?:^|[^a-z0-9_])(?:${pattern})(?![a-z0-9_])`).test(title);
+        if (word('dolby\\s*vision|dovi|dv')) return { range: 'Dolby Vision', base: null, sdr: false };
+        if (/(?:^|[^a-z0-9_])hdr10(?:\+|plus(?![a-z0-9_]))/.test(title)) return { range: 'HDR10+', base: null, sdr: false };
+        if (word('hdr10')) return { range: 'HDR10', base: null, sdr: false };
+        if (word('hlg')) return { range: 'HLG', base: null, sdr: false };
+        if (word('hdr')) return { range: 'HDR', base: null, sdr: false };
+        return { range: null, base: null, sdr: word('sdr') };
+    }
+
+    /**
+     * Video codec label. Legacy documents keep VC-1 as WMV and know no VVC/ProRes.
+     * @param {Object} video Video stream.
+     * @param {boolean} legacy Version-0 vocabulary.
+     * @returns {string|null} Codec label.
+     */
+    function detectVideoCodec(video, legacy) {
+        const needles = [['hevc', 'HEVC'], ['h265', 'H265'], ['h264', 'H264'], ['avc', 'H264'], ['av1', 'AV1'], ['vp9', 'VP9'],
+            ['vp8', 'VP8'], ['xvid', 'XVID'], ['divx', 'DIVX'], ['wmv', 'WMV'], ['vc1', legacy ? 'WMV' : 'VC-1'], ['mpeg2', 'MPEG2'],
+            ['mpeg4', 'MPEG4'], ['mjpeg', 'MJPEG'], ['theora', 'THEORA']];
+        const current = legacy ? needles : [['vvc', 'VVC'], ['h266', 'VVC'], ...needles, ['prores', 'ProRes']];
+        const codec = String(video.Codec || '').toLowerCase();
+        const codecTag = String(video.CodecTag || '').toLowerCase();
+        for (const [needle, label] of current) {
+            if (codec.includes(needle)) return label;
+            // CodecTag is only consulted for AVC, right after the codec's own h264/avc checks.
+            if (needle === 'avc' && codecTag.includes('avc')) return label;
+        }
+        const displayTitle = String(video.DisplayTitle || '').toLowerCase();
+        return current.find(([needle]) => displayTitle.includes(needle))?.[1] || null;
     }
 
     /**
@@ -593,6 +688,10 @@
 
         // Get primary video stream for analysis
         const primaryVideoStream = videoStreams[0];
+        // Version-0 documents retain the detector they already used; per-track facts
+        // (All mode, series summaries) always use the current one, as the server does.
+        const legacyAudio = legacyFullAudio();
+        const legacyVideo = legacyAudio && !singleTrack;
         for (const label of technicalLabels(itemData?.RunTimeTicks, primaryVideoStream)) qualities.add(label);
 
         // --- IMAX TAG LOGIC ---
@@ -641,8 +740,12 @@
             const isFalsely4k = resolutionMatch &&
                 ['4k', '2160p'].includes(resolutionMatch[1].toLowerCase()) &&
                 displayTitleHeight > 0 && displayTitleHeight < 1250;
+            // Current vocabularies also reject an 8K hint on a known sub-8K picture.
+            const isFalsely8k = !legacyVideo && resolutionMatch &&
+                ['8k', '4320p'].includes(resolutionMatch[1].toLowerCase()) &&
+                displayTitleHeight > 0 && displayTitleHeight < 2500;
 
-            if (resolutionMatch && !isFalsely4k) {
+            if (resolutionMatch && !isFalsely4k && !isFalsely8k) {
                 const found = resolutionMatch[1].toLowerCase();
                 if (found === '8k' || found === '4320p') {
                     resolutionTag = '8K';
@@ -694,129 +797,32 @@
         }
 
         // --- VIDEO CODEC LOGIC ---
-        // Map codec to standard names and add to qualities
         if (primaryVideoStream) {
-            const codec = (primaryVideoStream.Codec || '').toLowerCase();
-            const codecTag = (primaryVideoStream.CodecTag || '').toLowerCase();
-            let detectedCodec = null;
-
-            // Priority 1: Check actual codec field
-            if (codec.includes('hevc')) {
-                detectedCodec = 'HEVC';
-            } else if (codec.includes('h265')) {
-                detectedCodec = 'H265';
-            } else if (codec.includes('h264') || codec.includes('avc') || codecTag.includes('avc')) {
-                detectedCodec = 'H264';
-            } else if (codec.includes('av1')) {
-                detectedCodec = 'AV1';
-            } else if (codec.includes('vp9')) {
-                detectedCodec = 'VP9';
-            } else if (codec.includes('vp8')) {
-                detectedCodec = 'VP8';
-            } else if (codec.includes('xvid')) {
-                detectedCodec = 'XVID';
-            } else if (codec.includes('divx')) {
-                detectedCodec = 'DIVX';
-            } else if (codec.includes('wmv') || codec.includes('vc1')) {
-                detectedCodec = 'WMV';
-            } else if (codec.includes('mpeg2')) {
-                detectedCodec = 'MPEG2';
-            } else if (codec.includes('mpeg4')) {
-                detectedCodec = 'MPEG4';
-            } else if (codec.includes('mjpeg')) {
-                detectedCodec = 'MJPEG';
-            } else if (codec.includes('theora')) {
-                detectedCodec = 'THEORA';
-            }
-
-            // Priority 2: Fallback to display title if codec field didn't match
-            if (!detectedCodec) {
-                const displayTitle = (primaryVideoStream.DisplayTitle || '').toLowerCase();
-                if (displayTitle.includes('hevc')) {
-                    detectedCodec = 'HEVC';
-                } else if (displayTitle.includes('h265')) {
-                    detectedCodec = 'H265';
-                } else if (displayTitle.includes('h264') || displayTitle.includes('avc')) {
-                    detectedCodec = 'H264';
-                } else if (displayTitle.includes('av1')) {
-                    detectedCodec = 'AV1';
-                } else if (displayTitle.includes('vp9')) {
-                    detectedCodec = 'VP9';
-                } else if (displayTitle.includes('vp8')) {
-                    detectedCodec = 'VP8';
-                } else if (displayTitle.includes('xvid')) {
-                    detectedCodec = 'XVID';
-                } else if (displayTitle.includes('divx')) {
-                    detectedCodec = 'DIVX';
-                } else if (displayTitle.includes('wmv') || displayTitle.includes('vc1')) {
-                    detectedCodec = 'WMV';
-                } else if (displayTitle.includes('mpeg2')) {
-                    detectedCodec = 'MPEG2';
-                } else if (displayTitle.includes('mpeg4')) {
-                    detectedCodec = 'MPEG4';
-                } else if (displayTitle.includes('mjpeg')) {
-                    detectedCodec = 'MJPEG';
-                } else if (displayTitle.includes('theora')) {
-                    detectedCodec = 'THEORA';
-                }
-            }
-
-            if (detectedCodec) {
-                qualities.add(detectedCodec);
-            }
+            const detectedCodec = detectVideoCodec(primaryVideoStream, legacyVideo);
+            if (detectedCodec) qualities.add(detectedCodec);
         }
 
         // --- VIDEO DYNAMIC RANGE LOGIC ---
-        let hdrTag = null;
-
-        if (primaryVideoStream) {
-            // Priority 1: Dolby Vision Scan
+        if (primaryVideoStream && !legacyVideo) {
+            const range = videoRangeFacts(primaryVideoStream).range;
+            if (range) qualities.add(range);
+        } else if (primaryVideoStream) {
+            // Version-0 detector: unbounded text matches, as before.
             const displayTitle = primaryVideoStream.DisplayTitle || '';
             const videoRangeType = primaryVideoStream.VideoRangeType || '';
-            const dolbyVisionRegex = /dolby\s*vision|dv/i;
-            const dolbyVisionMatchTitle = displayTitle.match(dolbyVisionRegex);
-            const dolbyVisionMatchRange = videoRangeType.match(dolbyVisionRegex);
-            if (dolbyVisionMatchTitle || dolbyVisionMatchRange) {
-                hdrTag = 'Dolby Vision';
-                qualities.add(hdrTag);
-            } else {
-                // Priority 2: HDR Fallback
-                const hdr10PlusRegex = /hdr10plus/i;
-                const hdr10Regex = /hdr10/i;
-                const hdrRegex = /\bhdr\b/i;
-
-                const hdr10PlusMatchTitle = displayTitle.match(hdr10PlusRegex);
-                const hdr10PlusMatchRange = videoRangeType.match(hdr10PlusRegex);
-
-
-                if (hdr10PlusMatchTitle || hdr10PlusMatchRange) {
-                    hdrTag = 'HDR10+';
-                    qualities.add(hdrTag);
-                } else {
-                    const hdr10MatchTitle = displayTitle.match(hdr10Regex);
-                    const hdr10MatchRange = videoRangeType.match(hdr10Regex);
-
-                    if (hdr10MatchTitle || hdr10MatchRange) {
-                        hdrTag = 'HDR10';
-                        qualities.add(hdrTag);
-                    } else {
-                        const hdrMatchTitle = displayTitle.match(hdrRegex);
-                        const hdrMatchRange = videoRangeType.match(hdrRegex);
-
-                        if (hdrMatchTitle || hdrMatchRange) {
-                            hdrTag = 'HDR';
-                            qualities.add(hdrTag);
-                        }
-                    }
-                }
-            }
+            const test = (regex) => regex.test(displayTitle) || regex.test(videoRangeType);
+            const range = test(/dolby\s*vision|dv/i) ? 'Dolby Vision' : test(/hdr10plus/i) ? 'HDR10+'
+                : test(/hdr10/i) ? 'HDR10' : test(/\bhdr\b/i) ? 'HDR' : null;
+            if (range) qualities.add(range);
         }
 
-        // Version-0 documents retain the detector they already used.
-        const legacyAudio = legacyFullAudio();
         // --- AUDIO LOGIC ---
-        let audioTag = legacyAudio ? null : detectCurrentAudioCodec(audioStreams);
-        if (legacyAudio) {
+        let audioTag = null;
+        if (!legacyAudio) {
+            // One track supplies codec and channels together.
+            audioTag = bestAudioLabel(audioStreams);
+            if (audioTag) qualities.add(audioTag);
+        } else {
             for (let i = 0; i < audioStreams.length; i++) {
                 const stream = audioStreams[i];
 
@@ -881,19 +887,19 @@
                     }
                 }
             }
-        }
 
-        const channelTag = getChannelTag(audioStreams);
+            const channelTag = getChannelTag(audioStreams);
 
-        // Append channel layout to codec tag instead of creating a separate channel tag.
-        if (audioTag) {
-            if (channelTag && !audioTag.includes(channelTag)) {
-                audioTag = `${audioTag} ${channelTag}`;
+            // Append channel layout to codec tag instead of creating a separate channel tag.
+            if (audioTag) {
+                if (channelTag && !audioTag.includes(channelTag)) {
+                    audioTag = `${audioTag} ${channelTag}`;
+                }
+                qualities.add(audioTag);
+            } else if (channelTag === '7.1' || channelTag === '5.1') {
+                // Preserve previous fallback behavior when no codec tag is detected.
+                qualities.add(channelTag);
             }
-            qualities.add(audioTag);
-        } else if (channelTag === '7.1' || channelTag === '5.1') {
-            // Preserve previous fallback behavior when no codec tag is detected.
-            qualities.add(channelTag);
         }
 
         // --- 3D VIDEO LOGIC ---
@@ -1001,8 +1007,13 @@
                 const category = categorize(label);
                 if (categories.includes(category)) values.push({ Category: category === 'audio' ? 'audioInfo' : category, Label: label, Language: stream.Language });
             }
-            if (stream.Type === 'Video' && !labels.some(label => categorize(label) === 'dynamicRange')
-                && (stream.VideoRangeType || stream.Codec || stream.Height > 0)) values.push({ Category: 'dynamicRange', Label: 'SDR' });
+            if (stream.Type === 'Video') {
+                // Unknown stays unknown: only a known SDR stream is SDR; a Dolby Vision
+                // stream also lists the base layer other displays fall back to.
+                const facts = videoRangeFacts(stream);
+                if (facts.base) values.push({ Category: 'dynamicRange', Label: facts.base });
+                else if (!facts.range && facts.sdr) values.push({ Category: 'dynamicRange', Label: 'SDR' });
+            }
         }
         return values;
     }
@@ -1335,7 +1346,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 6, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 7, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1371,7 +1382,7 @@
                 const sd = entry.StreamData;
                 const representative = getEnhancedQuality(sd?.Streams, sd?.Sources, { Name: sd?.ItemName, Path: sd?.ItemPath, RunTimeTicks: sd?.RunTimeTicks, Source: entry.Source, Edition: entry.Edition, DistinctQualities: sd?.DistinctQualities }, false, srcId);
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 6, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 7, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

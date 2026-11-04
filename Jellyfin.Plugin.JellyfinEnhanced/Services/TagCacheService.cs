@@ -324,7 +324,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // v21 adds stream/version identity and version-scoped distinct quality and naming facts;
         // dimension fallback now uses Width for cropped video.
         // v23 retains parallel version-0 audio summaries for every aggregation policy.
-        internal const int CurrentCacheSchemaVersion = 23;
+        // v24 recomputes per-track quality facts with structured detection: dynamic range from
+        // VideoRangeType (HLG, Dolby Vision with its base layer, unknown is not SDR), VC-1/VVC/ProRes,
+        // FLAC/PCM, and a sound chip that takes codec and channels from one track.
+        internal const int CurrentCacheSchemaVersion = 24;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call

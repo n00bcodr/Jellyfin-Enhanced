@@ -790,7 +790,7 @@ The technical aspect-ratio tolerance table in `TechnicalQualityRules.cs` also ge
 
 Compact quality labels use `js/tags/quality-compact.json`, projected into the web layout table and `Services/PosterTags/Resolution/QualityCompactLabels.g.cs` by `scripts/generate_quality_compact.py`. Run its `--check` mode after editing the source.
 
-`tests/fixtures/audio-stream-labels.json` checks real audio stream facts through the web renderer and native resolver in Full and Compact; the parity profiles include the same streams.
+`tests/fixtures/audio-stream-labels.json` checks real audio stream facts through the web renderer and native resolver in Full and Compact; the parity profiles include the same streams. `tests/fixtures/quality-detection-truth.json` is an independent truth table of Jellyfin stream shapes (Dolby Vision range types and base layers, HLG, misleading titles, codec/channel provenance across tracks, lossless audio, VC-1/VVC/ProRes) with the expected Highest, All and version-0 labels; `features-quality-detection-truth.test.mjs` and `QualityDetectionTruthTests.cs` assert it on both sides, so a shared mistake cannot pass as parity.
 
 `tests/fixtures/side-status-fit.json` shares smaller-scale Status side-anchor budgets between the browser and native planner regressions (both sides, with and without an opposite group, across Default/Tight/Flush).
 

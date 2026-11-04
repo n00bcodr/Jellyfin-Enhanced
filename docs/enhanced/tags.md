@@ -431,7 +431,7 @@ Administrators configure the same defaults on the Media Tags settings page under
 | Admin: **Enable Quality Tags** / personal: **Quality** switch | Off | Enables the quality group |
 | Admin: **Show resolution (4K, 1080p, ...)** / personal: **Resolution (4K, 1080p, ...)** | On; first | Shows resolution from the first video stream |
 | **Source (REMUX, BluRay, WEB, HDTV, DVD, …)** | On; second | Shows the source inferred server-side from release naming, or the source of a physical-media stub |
-| Admin: **Show HDR (HDR10+, Dolby Vision)** / personal: **HDR (HDR10+, Dolby Vision)** | On; third | Shows detected dynamic-range labels |
+| Admin: **Show HDR (HDR10+, Dolby Vision)** / personal: **HDR (HDR10+, Dolby Vision)** | On; third | Shows the dynamic range Jellyfin reports for the video (Dolby Vision, HDR10+, HDR10, HLG) |
 | Admin: **Show special format (IMAX, 3D)** / personal: **Special format (IMAX, 3D)** | On; fourth | Shows detected IMAX/3D labels |
 | Admin: **Show video format (HEVC, H264, AV1, ...)** / personal: **Video format (HEVC, H264, AV1, ...)** | On; fifth | Shows video codec labels |
 | Admin: **Show sound (Atmos, DTS, 5.1, 7.1, ...)** / personal: **Sound (Atmos, DTS, 5.1, 7.1, ...)** | On; sixth | Shows recognized audio format/channel information |
@@ -448,11 +448,11 @@ Administrators configure the same defaults on the Media Tags settings page under
     |---|---|
     | Resolution | `8K`, `4K`, `1440p`, `1080p`, `720p`, `576p`, `480p`, `LOW-RES` |
     | Source | `REMUX`, `BluRay`, `WEB`, `HDTV`, `DVD`; physical stubs also support `HD DVD`, `VHS`, `Physical`; optional `CAM`, `TS`, `TC`, `SCR` |
-    | Dynamic range | `Dolby Vision`, `HDR10+`, `HDR10`, `HDR`; All mode also recognizes `SDR` |
+    | Dynamic range | `Dolby Vision`, `HDR10+`, `HDR10`, `HLG`, `HDR`; All mode also shows a Dolby Vision stream's base layer (`HDR10`, `HDR10+` or `HLG`) and `SDR` |
     | Special format | `IMAX`, `3D` |
-    | Video codec | `AV1`, `HEVC`, `H265`, `VP9`, `H264`, `VP8`, `XVID`, `DIVX`, `WMV`, `MPEG2`, `MPEG4`, `MJPEG`, `THEORA` |
+    | Video codec | `VVC`, `AV1`, `HEVC`, `H265`, `VP9`, `H264`, `VP8`, `XVID`, `DIVX`, `VC-1`, `WMV`, `MPEG2`, `MPEG4`, `MJPEG`, `THEORA`, `ProRes` |
     | Edition | `Director's Cut`, `Extended`, `Unrated`, `Theatrical`, `IMAX`, `Remastered`, `Criterion`, `Uncut`, `Final Cut`, `Special Edition`, or a custom `{edition-…}` label |
-    | Sound | `ATMOS`, `DTS-X`, `TRUEHD`, `DTS-HD MA`, `DTS-HD HRA`, `DTS`, `Dolby Digital+`, `Dolby Digital`, `7.1`, `5.1`; codec labels can include channels, such as `Dolby Digital 5.1` |
+    | Sound | `ATMOS`, `DTS-X`, `TRUEHD`, `DTS-HD MA`, `PCM`, `FLAC`, `DTS-HD HRA`, `DTS`, `Dolby Digital+`, `Dolby Digital`, `7.1`, `5.1`; codec labels include the same track's channels, such as `Dolby Digital 5.1` or `FLAC 2.0` |
 
 ![File and folder naming source and edition tags in the jetest movie grid](../images/tags/source-edition-desktop.webp)
 
@@ -466,7 +466,7 @@ Administrators configure the same defaults on the Media Tags settings page under
 
 ![Wish Dragon with Highest only on the left and All distinct values on the right](../images/tags/quality-display-modes.webp)
 
-Under **Groups → Quality**, below the categories, choose a separate **Sound display mode**, **Video codec display mode** and **HDR display mode**. **Highest only** is the default and keeps the existing detector's output. **All distinct values** shows every recognized value from the available streams, deduplicated and ranked within its category. For sound, each codec stays paired with that track's own channels: `ATMOS 7.1`, `DTS 7.1`, `DTS 5.1`. The existing sound-language preference still selects tracks before deduplication; this does not change playback.
+Under **Groups → Quality**, below the categories, choose a separate **Sound display mode**, **Video codec display mode** and **HDR display mode**. **Highest only** is the default and keeps the existing detector's output. **All distinct values** shows every recognized value from the available streams, deduplicated and ranked within its category. For sound, each codec stays paired with that track's own channels: `ATMOS 7.1`, `DTS 7.1`, `DTS 5.1`. For HDR, a Dolby Vision stream also lists its base layer, the format a display without Dolby Vision plays: `Dolby Vision` and `HDR10` for a profile 7 or 8.1 file, `Dolby Vision` and `HLG` for profile 8.4; a profile 5 file (no fallback) shows `Dolby Vision` alone. The existing sound-language preference still selects tracks before deduplication; this does not change playback.
 
 | Setting | Default | Choices |
 |---|---|---|
@@ -559,7 +559,13 @@ The server stores policy-independent summaries with both legacy and current soun
 
     **Special format:** IMAX detection uses title/name/path signals and excludes `NON-IMAX`. 3D requires a path containing `3d` and a recognized format signal such as `hsbs`, `fsbs`, `htab`, `ftab`, or `mvc`.
 
-    **Sound:** JE takes the first recognized candidate display title, then checks technical metadata if no title matched. It detects channels separately. It does not rank every track by richness, despite the **No preference (best track overall)** option wording. Standalone channel fallback produces `5.1` or `7.1`; `2.0` can be appended to a recognized codec.
+    **Dynamic range:** JE reads Jellyfin's own video range type first (`SDR`, `HDR10`, `HDR10Plus`, `HLG` and the `DOVI…` Dolby Vision family with its base layer); the stream title only counts when that type is missing or unknown, and then only as a whole word (`Dolby Vision`, `DoVi`, `DV`, `HDR10+`, `HDR10`, `HLG`, `HDR`, `SDR`), so `DVD` or `Advanced` in a title never reads as Dolby Vision. A video stream with no range information shows no dynamic-range chip, even in All mode, rather than `SDR`.
+
+    **Sound:** Highest only ranks every eligible track (after the language preference below) and shows the best one, with that track's own codec and channels: TrueHD Atmos 7.1 beats AC-3 5.1 whatever their order in the file, and a DTS 5.1 track never borrows another track's 7.1. Codecs rank Atmos, DTS:X, TrueHD, DTS-HD MA, PCM, FLAC, DTS-HD HRA, DTS, Dolby Digital+, Dolby Digital, then channel-only tracks; within a codec, more channels win, and the first track wins a tie. A track's codec comes from its display title, then its codec and profile. Standalone channel fallback (AAC, Opus, MP3) produces `5.1` or `7.1`; `2.0` is appended to a recognized codec.
+
+    **Video codec and resolution:** `VC-1` is its own label (it read `WMV` before), and VVC (H.266) and Apple ProRes are recognised. A `4K`/`2160p` hint in a title is ignored when the known height is below 1250 pixels, and an `8K`/`4320p` hint below 2500 pixels; the dimensions decide instead.
+
+    **Settings saved before layouts (version 0)** keep the earlier detector for the Highest-only chips, so their cards look as they did: dynamic range from title text, `VC-1` as `WMV`, no `FLAC`/`PCM`/`VVC`/`ProRes`, and the sound chip from the first recognised title with the richest channels of any track. All mode and the series policies other than **Representative episode** use the current detector for everyone.
 
     A sound-language preference tries language plus region, then the base language, then all tracks if no match exists. For example, selecting a German AC3 5.1 dub replaces an English Atmos badge with `Dolby Digital 5.1` (`DD 5.1` in Compact); a version-0 account keeps its earlier `5.1` label. The detector does not emit `AC3` as a codec label. These choices change the badge, not the audio selected for playback.
 

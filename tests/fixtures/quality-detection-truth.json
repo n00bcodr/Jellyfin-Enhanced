@@ -1,0 +1,674 @@
+{
+ "description": "Independent expected Full labels for real Jellyfin MediaStream shapes. highest: current vocabulary, Highest only; all: every display mode All distinct values; legacy: version-0 settings (the documented compatibility detector), Highest only. Web and native tests both assert these values.",
+ "cases": [
+  {
+   "name": "HLG range type",
+   "why": "Known HLG is HLG, never generic HDR or SDR",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "HLG",
+     "DisplayTitle": "4K HEVC HDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HLG",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HLG",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HDR",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision without a fallback layer (profile 5)",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVI"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an HDR10 base layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithHDR10"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HDR10",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an HLG base layer (profile 8.4)",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithHLG"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HLG",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an SDR base layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithSDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an HDR10+ base layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithHDR10Plus",
+     "DisplayTitle": "4K HEVC Dolby Vision Profile 8.1 (HDR10)"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10+",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision profile 7 with an enhancement layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithEL",
+     "DisplayTitle": "4K - Dolby Vision Profile 7.6 (HDR10)"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "HDR10+ spelled with a plus in the title only",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "DisplayTitle": "4K HEVC HDR10+"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HDR10",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "HDR10Plus range type",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "HDR10Plus",
+     "DisplayTitle": "4K HEVC HDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "DVD title on an SDR stream is not Dolby Vision",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 480,
+     "Width": 720,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "480p DVD MPEG2 SDR"
+    }
+   ],
+   "highest": [
+    "480p",
+    "MPEG2"
+   ],
+   "all": [
+    "480p",
+    "SDR",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "DVDRip title without a range type stays unknown",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 576,
+     "Width": 720,
+     "Codec": "h264",
+     "DisplayTitle": "DVDRip by Group - 576p - H264"
+    }
+   ],
+   "highest": [
+    "576p",
+    "H264"
+   ],
+   "all": [
+    "576p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Advanced in a title is not Dolby Vision",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "h264",
+     "DisplayTitle": "Advanced encode - 1080p - H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Dolby Vision named only by an abbreviation in the title",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "DisplayTitle": "2160p DV HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Unprobed video stays unknown",
+   "streams": [
+    {
+     "Type": "Video"
+    }
+   ],
+   "highest": [],
+   "all": []
+  },
+  {
+   "name": "Range type wins over a contradicting title",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "4K HEVC HDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "8K hint on a 1080p picture",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "8K HEVC"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "HEVC"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "8K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "VC-1 is not WMV",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "vc1",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "VC-1"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "VC-1"
+   ],
+   "legacy": [
+    "1080p",
+    "WMV"
+   ]
+  },
+  {
+   "name": "WMV",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 480,
+     "Width": 640,
+     "Codec": "wmv3",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "480p",
+    "WMV"
+   ],
+   "all": [
+    "480p",
+    "SDR",
+    "WMV"
+   ]
+  },
+  {
+   "name": "VVC",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "vvc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "VVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "VVC"
+   ],
+   "legacy": [
+    "4K"
+   ]
+  },
+  {
+   "name": "ProRes",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "prores",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "ProRes"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "ProRes"
+   ],
+   "legacy": [
+    "1080p"
+   ]
+  },
+  {
+   "name": "Codec and channels come from one track",
+   "why": "AC-3 5.1 first, TrueHD Atmos 7.1 second",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital - 5.1 - Default"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 7.1"
+    }
+   ],
+   "highest": [
+    "ATMOS 7.1"
+   ],
+   "all": [
+    "ATMOS 7.1",
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "Track order does not change the sound chip",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital - 5.1 - Default"
+    }
+   ],
+   "highest": [
+    "ATMOS 7.1"
+   ],
+   "all": [
+    "ATMOS 7.1",
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "DTS 5.1 and TrueHD 7.1 never make DTS 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "TRUEHD 7.1"
+   ],
+   "all": [
+    "TRUEHD 7.1",
+    "DTS 5.1"
+   ],
+   "legacy": [
+    "DTS 7.1"
+   ]
+  },
+  {
+   "name": "Lossless FLAC stereo",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "flac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - FLAC - Stereo"
+    }
+   ],
+   "highest": [
+    "FLAC 2.0"
+   ],
+   "all": [
+    "FLAC 2.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "Lossless PCM 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - PCM - 7.1"
+    }
+   ],
+   "highest": [
+    "PCM 7.1"
+   ],
+   "all": [
+    "PCM 7.1"
+   ],
+   "legacy": [
+    "7.1"
+   ]
+  },
+  {
+   "name": "AAC keeps the channel-only chip of its richest track",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - AAC - Stereo"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - AAC - 5.1"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "AAC stereo has no sound chip",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - AAC - Stereo"
+    }
+   ],
+   "highest": [],
+   "all": [],
+   "legacy": []
+  }
+ ]
+}
