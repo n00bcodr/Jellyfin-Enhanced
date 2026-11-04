@@ -37,6 +37,15 @@ public class IntegrationStatusTagsSeriesTests
     }
 
     [Fact]
+    public void ParsesTheEpisodeCountOfEachRegularSeason()
+    {
+        var schedule = StatusTagsSeriesService.Parse("{\"status\":\"Ended\",\"last_episode_to_air\":{\"air_date\":\"2026-10-01\",\"season_number\":2,\"episode_number\":8},"
+            + "\"seasons\":[{\"season_number\":0,\"episode_count\":3},{\"season_number\":1,\"episode_count\":10},{\"season_number\":2,\"episode_count\":8},{\"season_number\":3,\"episode_count\":0},{\"season_number\":\"x\"}]}")!;
+        Assert.Equal(new Dictionary<int, int> { [1] = 10, [2] = 8 }, schedule.SeasonEpisodes);
+        Assert.Null(StatusTagsSeriesService.Parse("{\"status\":\"Ended\"}")!.SeasonEpisodes);
+    }
+
+    [Fact]
     public void ParsesStatusLastAndNextAiredWithTheEpisodeType()
     {
         var schedule = StatusTagsSeriesService.Parse(Show);

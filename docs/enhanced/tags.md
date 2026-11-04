@@ -881,8 +881,8 @@ First match wins, with one badge per card. When switched on, **Leaving soon** co
 | **New Season** | Series | The newest regular season's episode 1 aired within the new-release window; season number must exceed 1 |
 | **Season Premiere** | Season, episode | The season's episode 1 aired within the new-release window; an episode card must itself be episode 1 of a regular season and have aired within the just-added window |
 | **Season Finale** | Season, episode | The latest aired TMDB episode matches the library episode and is within the new-release window. TMDB `episode_type=finale` confirms it; if absent, the local episode must be last in its season and TMDB must have no next episode, or one in a later season |
-| **Series Finale** | Series, episode | TMDB status is Ended or Canceled, and the last aired regular episode matches the visible library episode and falls within the new-release window. Both cache and batch paths resolve the same regular episode: caller-filtered library series aggregate, regular TMDB latest episode, TMDB season enrichment, then a fetched local aggregate, each with its own air date; season 0 never supplies a series finale |
-| **Complete Season** | Season | Every non-virtual episode available in the library has an added date within the just-added window. This describes the available episodes; it does not certify acquisition of missing TMDB episodes |
+| **Series Finale** | Series, episode | TMDB status is Ended or Canceled, and the last aired regular episode matches the visible library episode and falls within the new-release window. Both cache and batch paths resolve the same regular episode: TMDB's latest regular episode first (so a library holding only S1E3 of an ended ten-episode season shows no finale), then TMDB season enrichment, then the caller-filtered library series aggregate and a fetched local aggregate, each with its own air date; season 0 never supplies a series finale |
+| **Complete Season** | Season | The whole season is in the library and arrived within the just-added window: TMDB lists the season's episode count, every episode of it has aired (none scheduled in it, and the latest aired episode is its last or a later season's), and the library holds that many episodes up to the last one, all added within the window. Without TMDB facts, with an episode still to air, a missing episode, or fewer files than episodes (multi-episode files), no completion is claimed; the season shows its next badge instead |
 | **Airing Today** | Series | TMDB's next episode air date is today in the user's local calendar |
 | **Airs {date}** | Series | TMDB's next episode airs in the next seven days |
 | **Returns {date}** | Series | TMDB's next episode airs within 30 days, more than 14 days after the last aired episode. Airs takes priority inside seven days |
@@ -905,7 +905,7 @@ TMDB’s exact `aftercreditsstinger` and `duringcreditsstinger` keywords supply 
 
 ### TMDB and trending
 
-A TMDB API key is required for Airing Today, Airs, Returns, Season Finale and Series Finale. Without one, Jellyfin supplies added/release badges, New Season, Season Premiere, Complete Season and Returning/Ended. Cancelled requires TMDB. No Seerr schedule fallback is used.
+A TMDB API key is required for Airing Today, Airs, Returns, Season Finale, Series Finale and Complete Season. Without one, Jellyfin supplies added/release badges, New Season, Season Premiere and Returning/Ended. Cancelled requires TMDB. No Seerr schedule fallback is used.
 
 Trending reads **#N Today** from TMDB's daily list when a key is configured. Without a key, or when TMDB fails or returns no rankable titles, it reads **#N This Week** from Seerr. With neither source, no rank appears. Only movies and series with TMDB IDs receive ranks.
 
@@ -947,7 +947,7 @@ The answer comes from Jellyfin's own negotiation, `POST /Items/{id}/PlaybackInfo
 
     All derived episode facts follow the existing access-filtering and `filterRevision` path. When any contributing episode is inaccessible, related aggregates are omitted conservatively; the shared entry is unchanged. The server-only `StatusEpisodeIds`, `LatestEpisodeId` and `NextEpisodePremiere` never enter client responses. `NextEpisodePremiere` records the next relevant future air date; reconciliation and snapshot load recompute elapsed boundaries without requiring a metadata save. Compatible snapshots without the optional field seed the boundary from their cached episode dates. Episode changes refresh sibling indexes and contributor lists together. With server cache off, `tag-data?latestEpisode=true` computes through the target user's access.
 
-    Spoiler Guard preserves added-date badges and movie/series trending ranks. Guarded season/episode entries omit air dates and milestone indexes, suppressing premiere/finale badges. Complete Season still describes their visible added-date span.
+    Spoiler Guard preserves added-date badges and movie/series trending ranks. Guarded season/episode entries omit air dates and milestone indexes, suppressing premiere/finale badges. Complete Season still needs the whole season among their visible episodes.
 
     Style `.status-tag` or its `--trending`, `--new`, `--added`, `--schedule`, `--milestone`, `--status`, `--leaving`, `--playback` modifiers. Each chip has `data-je-status`: existing styles keep `added`, `newMovie`, `newSeries`, `newEpisode` and `trending`; new badges use keys such as `new_season`, every Leaving soon badge uses `leaving` and both direct-play warnings `direct_play` (which also carries `data-je-dp` and a tooltip); the number inside a trending chip is `.status-tag-rank`.
 

@@ -208,6 +208,7 @@
      * @property {{date: string, season: number|null, episode: number|null, type: string|null}|null} last
      * @property {{date: string, season: number|null, episode: number|null, type: string|null}|null} regular
      * @property {{date: string, season: number|null, episode: number|null}|null} next
+     * @property {Object<string, number>|null} seasonEpisodes - TMDB's episode count per regular season.
      */
 
     /**
@@ -568,6 +569,24 @@
     }
 
     /**
+     * Complete Season needs proof (StatusRules.SeasonComplete): TMDB's episode count for the season, every one of
+     * them aired (no next episode in it), and the library holding as many episodes as that, up to the last one.
+     * @param {StatusData} data
+     * @param {SeriesFacts|null} facts
+     * @param {number} available Episodes in the library.
+     * @returns {boolean}
+     */
+    function seasonComplete(data, facts, available) {
+        const season = data.season ?? data.latestIndex?.s ?? null;
+        const expected = season !== null ? toInt(facts?.seasonEpisodes?.[season]) : null;
+        if (!expected || expected <= 0) return false;
+        if (facts.next && facts.next.season !== null && facts.next.season <= season) return false;
+        const last = facts.last;
+        if (!last || last.season === null || last.season < season || (last.season === season && (last.episode ?? 0) < expected)) return false;
+        return !!data.latestIndex && data.latestIndex.s === season && data.latestIndex.e >= expected && available >= expected;
+    }
+
+    /**
      * Whether TMDB's newest aired episode ended its season: TMDB marks it a
      * finale (episode_type, since 2023), or, without a type, nothing more is
      * scheduled in that season and the local episode is its season’s last.
@@ -650,9 +669,11 @@
             const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
             return { date: day, season: local.latestIndex.s, episode: local.latestIndex.e, type: null };
         };
-        return regular(aggregate)
-            || (facts.last?.season > 0 ? facts.last : null)
+        // TMDB's final regular episode first (StatusRules.FinalRegularEpisode): local S1E3 is not the finale of a
+        // ten-episode season TMDB has ended.
+        return (facts.last?.season > 0 ? facts.last : null)
             || (facts.regular?.season > 0 ? facts.regular : null)
+            || regular(aggregate)
             || regular(readFacts(JE.tagPipeline?.peekSeasonFacts?.(data.seriesId, data.season) || {}))
             || regular(data);
     }
@@ -740,8 +761,9 @@
             }
             case 'Season': {
                 const span = data.addedSpan;
-                // Every available episode arrived within the just-added window.
-                if (showMilestones && span && span.count > 0 && span.first <= span.last && isWithin(span.first, now, justAddedMs) && isWithin(span.last, now, justAddedMs)) {
+                // Every available episode arrived within the just-added window, and they are the whole season.
+                if (showMilestones && span && span.count > 0 && span.first <= span.last && isWithin(span.first, now, justAddedMs) && isWithin(span.last, now, justAddedMs)
+                    && seasonComplete(data, facts, span.count)) {
                     return makeBadge('milestone', 'complete_season');
                 }
                 if (showMilestones && data.seasonPremiere && airedWithin(data.seasonPremiere.aired, newReleaseMs)) {
@@ -1280,6 +1302,7 @@
             last: /** @type {SeriesFacts['last']} */ (episode(raw.lastAired, true)),
             regular: /** @type {SeriesFacts['last']} */ (episode(raw.lastRegularAired, true)),
             next: /** @type {SeriesFacts['next']} */ (episode(raw.nextAired, false)),
+            seasonEpisodes: raw.seasonEpisodes && typeof raw.seasonEpisodes === 'object' ? raw.seasonEpisodes : null,
         };
     }
 

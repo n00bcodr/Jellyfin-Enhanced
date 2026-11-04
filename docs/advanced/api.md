@@ -1138,7 +1138,7 @@ Use these own/admin routes to retrieve data visible to the target account. Missi
 | GET | `tag-cache/summary` | Administrator | No body → `{enabled, entries, lastModified, rebuilding}`: whether the server tag cache is on, how many items it holds, its last change (Unix ms, `0` = never) and whether a full build is running or a manual one is queued. Counts are `0` while the cache is off. Used by the Media Tags settings page's Overview. |
 | GET | `tag-cache/{userId}` | Own/admin | Optional `since` signed 64-bit cursor → cache envelope below; ETag/`304`. |
 | POST | `tag-data/{userId}` | Own/admin | Raw nonempty string array, at most 200 IDs; optional `mediaSourceId`, optional `latestEpisode=true` → `{Items:[<item>],StripRevision}`. |
-| GET | `status-tags/series?ids=…` | Authenticated, user-filtered | Up to 50 series item IDs → `{id:{status,lastAired,nextAired}}`; see below. |
+| GET | `status-tags/series?ids=…` | Authenticated, user-filtered | Up to 50 series item IDs → `{id:{status,lastAired,nextAired,seasonEpisodes}}`; see below. |
 | GET | `status-tags/trending` | Authenticated | `{source,movies,series}` trending ranks for Status Tags; see below. |
 | GET | `item-stats/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size,progress,totalPlaybackTicks,totalRuntimeTicks}`. |
 | GET | `file-size/{userId}/{itemId}` | Own/admin | Optional `mediaSourceId` → `{success,size}`. |
@@ -1280,10 +1280,10 @@ Any signed-in user may call it, non-administrators included. The server shares o
 `GET /JellyfinEnhanced/status-tags/series?ids=<id>,<id>` requires authentication and 1–50 comma-separated Jellyfin item-ID strings. An empty request or more than 50 IDs returns `400`. Malformed/empty GUIDs, inaccessible items, non-series and series without a positive numeric TMDB ID are omitted. Lookup uses the caller's Jellyfin access (including parental limits and blocked tags); no target-user parameter is accepted.
 
 ```json
-{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":{"status":"Returning Series","lastAired":{"date":"2026-10-28","season":2,"episode":10,"type":"finale"},"nextAired":{"date":"2027-03-01","season":3,"episode":1}}}
+{"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa":{"status":"Returning Series","lastAired":{"date":"2026-10-28","season":2,"episode":10,"type":"finale"},"nextAired":{"date":"2027-03-01","season":3,"episode":1},"seasonEpisodes":{"1":8,"2":10,"3":8}}}
 ```
 
-Item-ID keys use lowercase N-format GUIDs. Missing status/episode facts may be null; air dates are `yyyy-MM-dd` calendar dates, interpreted in the user's local calendar by the client. `type` is TMDB's `episode_type`, read from the latest aired season when absent from `tv/{id}`.
+Item-ID keys use lowercase N-format GUIDs. Missing status/episode facts may be null; air dates are `yyyy-MM-dd` calendar dates, interpreted in the user's local calendar by the client. `type` is TMDB's `episode_type`, read from the latest aired season when absent from `tv/{id}`. `seasonEpisodes` is TMDB's episode count per regular season (season number → count; null when TMDB lists none); Complete Season needs it on web and native posters.
 
 The endpoint returns `{}` without upstream calls while admin `StatusTagsEnabled` is off or no TMDB key is configured. Authoritative missing upstream series are omitted. Transient upstream failures (including 429, 5xx and transport exceptions) return `{ "<itemId>": { "retry": true } }` for the affected ID. The client retains its prior facts and retries after five minutes while a current card remains visible. Responses containing retry markers use `Cache-Control: private, no-store`; other responses use `Cache-Control: private, max-age=600`. TMDB responses are shared in `TmdbResponseCache` for six hours; credential changes use a separate cache key. At most four upstream lookups run concurrently, with 35 starts per ten-second window. The web client requests visible series and parent series of visible season/episode cards in batches of 50, caches answers for one hour, retries failures after five minutes, and drops stale card/user answers.
 

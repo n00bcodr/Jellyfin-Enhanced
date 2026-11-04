@@ -235,12 +235,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var last = ReadEpisode(root, "last_episode_to_air", withType: true);
                 var next = ReadEpisode(root, "next_episode_to_air", withType: false);
                 if (status == null && last == null && next == null) return null;
-                return new SeriesSchedule(string.IsNullOrWhiteSpace(status) ? null : status, last, next);
+                return new SeriesSchedule(string.IsNullOrWhiteSpace(status) ? null : status, last, next, SeasonEpisodes: ReadSeasonEpisodes(root));
             }
             catch (JsonException)
             {
                 return null;
             }
+        }
+
+        /// <summary>TMDB's episode count per regular season (season_number > 0, episode_count > 0), or null when it lists none.</summary>
+        private static IReadOnlyDictionary<int, int>? ReadSeasonEpisodes(JsonElement root)
+        {
+            if (!root.TryGetProperty("seasons", out var seasons) || seasons.ValueKind != JsonValueKind.Array) return null;
+            var counts = new SortedDictionary<int, int>();
+            foreach (var season in seasons.EnumerateArray())
+            {
+                if (season.ValueKind == JsonValueKind.Object
+                    && season.TryGetProperty("season_number", out var n) && n.ValueKind == JsonValueKind.Number && n.TryGetInt32(out var number) && number > 0
+                    && season.TryGetProperty("episode_count", out var c) && c.ValueKind == JsonValueKind.Number && c.TryGetInt32(out var count) && count > 0)
+                    counts[number] = count;
+            }
+
+            return counts.Count > 0 ? counts : null;
         }
 
         private static SeriesEpisodeRef? ReadEpisode(JsonElement root, string property, bool withType)
@@ -265,9 +281,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// <summary>
     /// A series' TMDB schedule: <see cref="Status"/> as TMDB names it ("Returning
     /// Series", "Ended", "Canceled", "In Production", "Planned", "Pilot"), its
-    /// newest aired episode and its next scheduled one.
+    /// newest aired episode and its next scheduled one, and how many episodes TMDB lists per regular season.
     /// </summary>
-    public sealed record SeriesSchedule(string? Status, SeriesEpisodeRef? LastAired, SeriesEpisodeRef? NextAired, bool Retry = false, SeriesEpisodeRef? LastRegularAired = null);
+    public sealed record SeriesSchedule(string? Status, SeriesEpisodeRef? LastAired, SeriesEpisodeRef? NextAired, bool Retry = false, SeriesEpisodeRef? LastRegularAired = null,
+        IReadOnlyDictionary<int, int>? SeasonEpisodes = null);
 
     /// <summary>
     /// One TMDB episode reference: air date as TMDB's calendar date

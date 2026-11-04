@@ -114,10 +114,10 @@ for (const parent of [null, { ...aggregate, LatestEpisodeAired: null, LatestEpis
   });
 }
 
-test('library aggregate precedes a different regular TMDB last episode', async t => {
+test('TMDB\'s later final episode is not reached by the library\'s latest episode', async t => {
   const h = await setup(t, { facts: { status: 'Ended', lastAired: { date: '2026-10-29', season: 1, episode: 11 } } });
-  assert.equal(h.key(SERIES), 'series_finale');
-  assert.equal(h.key(EPISODE), 'series_finale');
+  assert.notEqual(h.key(SERIES), 'series_finale');
+  assert.notEqual(h.key(EPISODE), 'series_finale');
 });
 
 test('season enrichment precedes the local season aggregate when the series aggregate is absent', async t => {

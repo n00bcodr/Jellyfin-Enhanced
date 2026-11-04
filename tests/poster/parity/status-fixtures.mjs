@@ -36,7 +36,17 @@ add('status-slot-off', movie({ PremiereDate: ago(2) }), null, null, { settings: 
 add('new-season', show({ SeasonPremiere: { Season: 2, Aired: ago(3) } }), 'new_season', 'New Season');
 add('season-premiere', season({ SeasonPremiere: { Season: 2, Aired: ago(3) } }), 'season_premiere', 'Season Premiere');
 add('episode-premiere', episode({ EpisodeNumber: 1 }), 'season_premiere', 'Season Premiere');
-add('complete-season', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 8 } }), 'complete_season', 'Complete Season');
+// Complete Season needs TMDB's episode count, every episode aired and as many in the library, up to the last.
+const complete = (lastAired, nextAired = null, count = 8) => ({ ...schedule(lastAired, nextAired), seasonEpisodes: { 2: count } });
+add('complete-season', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 8 }, LatestEpisodeIndex: { Season: 2, Episode: 8 } }), 'complete_season', 'Complete Season', { schedule: complete(ep('2026-10-20', 2, 8, null)) });
+add('complete-season-needs-tmdb', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 8 }, LatestEpisodeIndex: { Season: 2, Episode: 8 } }), null, null);
+add('complete-season-one-of-ten', season({ SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 1 }, LatestEpisodeIndex: { Season: 2, Episode: 1 } }), null, null, { schedule: complete(ep('2026-10-20', 2, 10, null), null, 10) });
+add('complete-season-future-episode', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 3 }, LatestEpisodeIndex: { Season: 2, Episode: 3 } }), null, null, { schedule: complete(ep('2026-10-20', 2, 3, null), ep('2026-11-04', 2, 4, null), 4) });
+add('complete-season-missing-middle', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 7 }, LatestEpisodeIndex: { Season: 2, Episode: 8 } }), null, null, { schedule: complete(ep('2026-10-20', 2, 8, null)) });
+add('complete-season-later-season-airing', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 8 }, LatestEpisodeIndex: { Season: 2, Episode: 8 } }), 'complete_season', 'Complete Season', { schedule: { ...complete(ep('2026-10-20', 3, 2, null), ep('2026-11-04', 3, 3, null)), seasonEpisodes: { 2: 8, 3: 8 } } });
+// TMDB's final episode, not the library's latest: local S2E3 of an ended season whose finale is E10 is no finale.
+add('series-finale-tmdb-identity', show({ LatestEpisodeIndex: { Season: 2, Episode: 3 } }), null, null, { schedule: schedule(ep('2026-10-29', 2, 10), null, 'Ended') });
+add('episode-series-finale-tmdb-identity', episode({ EpisodeNumber: 3 }), 'new_episode', 'New Episode', { schedule: schedule(ep('2026-10-29', 2, 10), null, 'Ended'), parent: { LatestEpisodeIndex: { Season: 2, Episode: 3 }, LatestEpisodeAired: ago(2) } });
 add('season-finale', season({ LatestEpisodeIndex: { Season: 2, Episode: 5, IsLast: true } }), 'season_finale', 'Season Finale', { schedule: schedule(ep('2026-10-29')) });
 add('episode-finale', episode(), 'season_finale', 'Season Finale', { schedule: schedule(ep('2026-10-29')) });
 add('series-finale', show({ LatestEpisodeIndex: { Season: 2, Episode: 5 } }), 'series_finale', 'Series Finale', { schedule: schedule(ep('2026-10-29'), null, 'Ended') });

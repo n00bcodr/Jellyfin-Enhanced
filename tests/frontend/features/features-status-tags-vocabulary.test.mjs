@@ -99,7 +99,8 @@ const facts = (fields = {}) => ({ status: 'Returning Series', lastAired: null, n
 
 /**
  * One row per rule: the entry, optional settings and TMDB facts for the
- * series, and the badge expected ([key, text], or null for none).
+ * series, and the badge expected ([key, text], null for none, or
+ * 'NOT_COMPLETE' for any badge but Complete Season).
  */
 const ROWS = [
   // Movie: Trending → Coming Soon → New Movie → Just Added
@@ -137,11 +138,19 @@ const ROWS = [
   ['series: cancelled from TMDB over Jellyfin', show({ Status: 'Ended' }), { statusTagsSeriesStatus: true }, facts({ status: 'Canceled' }), ['cancelled', 'Cancelled']],
   ['series: status is the lowest priority', show({ Status: 'Ended', DateCreated: ago(1) }), { statusTagsSeriesStatus: true }, null, ['added', 'Just Added']],
   // Season: Complete Season → Season Premiere → Season Finale → New Episode → Just Added
-  ['season: complete season', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 8 }, LatestEpisodeAdded: ago(1) }), {}, null, ['complete_season', 'Complete Season']],
-  ['season: every episode added within the window', season({ SeasonAddedSpan: { First: ago(6), Last: ago(1), Count: 2 }, LatestEpisodeAdded: ago(1) }), {}, null, ['complete_season', 'Complete Season']],
-  ['season: a one episode season added within the window', season({ SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 1 }, DateCreated: ago(1) }), {}, null, ['complete_season', 'Complete Season']],
-  ['season: added span describes the available season', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 3 }, LatestEpisodeAdded: ago(1) }), {},
-    facts({ nextAired: { date: '2026-11-05', season: 2, episode: 4 } }), ['complete_season', 'Complete Season']],
+  ['season: complete season (TMDB lists eight, all eight aired and in the library)', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 8 }, LatestEpisodeIndex: { Season: 2, Episode: 8 }, LatestEpisodeAdded: ago(1) }), {},
+    facts({ lastAired: { date: '2026-10-20', season: 2, episode: 8 }, seasonEpisodes: { 2: 8 } }), ['complete_season', 'Complete Season']],
+  ['season: a later season airing also proves completion', season({ SeasonAddedSpan: { First: ago(6), Last: ago(1), Count: 2 }, LatestEpisodeIndex: { Season: 2, Episode: 2 }, LatestEpisodeAdded: ago(1) }), {},
+    facts({ lastAired: { date: '2026-10-20', season: 3, episode: 4 }, nextAired: { date: '2026-11-06', season: 3, episode: 5 }, seasonEpisodes: { 2: 2, 3: 8 } }), ['complete_season', 'Complete Season']],
+  ['season: a verified one episode season', season({ SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 1 }, LatestEpisodeIndex: { Season: 2, Episode: 1 }, DateCreated: ago(1) }), {},
+    facts({ status: 'Ended', lastAired: { date: '2026-10-01', season: 2, episode: 1 }, seasonEpisodes: { 2: 1 } }), ['complete_season', 'Complete Season']],
+  ['season: no completion claim without TMDB facts', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 8 }, LatestEpisodeIndex: { Season: 2, Episode: 8 }, LatestEpisodeAdded: ago(1) }), {}, null, 'NOT_COMPLETE'],
+  ['season: one of ten episodes is not complete', season({ SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 1 }, LatestEpisodeIndex: { Season: 2, Episode: 1 }, DateCreated: ago(1) }), {},
+    facts({ status: 'Ended', lastAired: { date: '2026-10-01', season: 2, episode: 10 }, seasonEpisodes: { 2: 10 } }), 'NOT_COMPLETE'],
+  ['season: a known future episode in the season is not complete', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 3 }, LatestEpisodeIndex: { Season: 2, Episode: 3 }, LatestEpisodeAdded: ago(1) }), {},
+    facts({ lastAired: { date: '2026-10-28', season: 2, episode: 3 }, nextAired: { date: '2026-11-05', season: 2, episode: 4 }, seasonEpisodes: { 2: 3 } }), 'NOT_COMPLETE'],
+  ['season: a missing middle episode is not complete', season({ SeasonAddedSpan: { First: ago(2), Last: ago(1), Count: 7 }, LatestEpisodeIndex: { Season: 2, Episode: 8 }, LatestEpisodeAdded: ago(1) }), {},
+    facts({ lastAired: { date: '2026-10-20', season: 2, episode: 8 }, seasonEpisodes: { 2: 8 } }), 'NOT_COMPLETE'],
   ['season: season premiere', season({ SeasonPremiere: { Season: 2, Aired: ago(10) } }), {}, null, ['season_premiere', 'Season Premiere']],
   ['season: season finale (TMDB episode type)', season({ LatestEpisodeIndex: { Season: 2, Episode: 10 } }), {},
     facts({ lastAired: { date: '2026-10-28', season: 2, episode: 10, type: 'finale' }, nextAired: { date: '2027-03-01', season: 3, episode: 1 } }), ['season_finale', 'Season Finale']],
@@ -191,6 +200,8 @@ for (const [name, entry, settings, seriesFacts, expected] of ROWS) {
     const id = entry.Type === 'Series' ? SERIES : 'item1';
     h.show(entry, h.hosts[0], id);
     await h.flush();
+    // NOT_COMPLETE: whatever badge follows, never a completion claim.
+    if (expected === 'NOT_COMPLETE') return assert.notEqual(h.chip() ? h.key() : null, 'complete_season');
     assert.deepEqual(h.chip() ? [h.key(), h.badge()] : null, expected);
     if (expected) assert.ok(h.chip().classList.contains('status-tag'));
   });
@@ -212,16 +223,18 @@ test('chips carry their kind as a modifier class and their compact label', async
 test('compact density swaps in the short labels; full density keeps the long ones', async t => {
   const expected = [
     [season({ SeasonPremiere: { Season: 2, Aired: ago(3) } }), 'Season Premiere', 'Premiere'],
-    [season({ SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 6 } }), 'Complete Season', 'Complete'],
+    [season({ SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 6 }, LatestEpisodeIndex: { Season: 2, Episode: 6 } }), 'Complete Season', 'Complete'],
     [movie({ PremiereDate: NOW + 3 * DAY }), 'Coming Soon', 'Soon'],
     [movie({ DateCreated: ago(1) }), 'Just Added', 'Added'],
     [season({ LatestEpisodeAdded: ago(1) }), 'New Episode', 'New Ep'],
     [movie({ PremiereDate: ago(2) }), 'New Movie', 'New Movie'],
   ];
   for (const density of ['full', 'compact']) {
-    const h = setup(t, { layout: true, settings: { tagLayoutSettingsVersion: 1, tagLabelDensity: density } });
+    const h = setup(t, { layout: true, settings: { tagLayoutSettingsVersion: 1, tagLabelDensity: density },
+      series: { [SERIES]: facts({ lastAired: { date: '2026-10-20', season: 2, episode: 6 }, seasonEpisodes: { 2: 6 } }) } });
     for (const [entry, full, compact] of expected) {
       h.show(entry);
+      await h.flush(); // the series facts Complete Season needs
       assert.equal(h.badge(), density === 'full' ? full : compact, `${density}: ${full}`);
     }
     h.close();
@@ -338,11 +351,12 @@ test('series lookups key on normalised ids whatever form the card and the server
 });
 
 test('the /tag-data fallback reads the same facts (episode numbers from IndexNumber/ParentIndexNumber)', async t => {
-  const h = setup(t, { series: { [SERIES]: facts({ status: 'Ended', lastAired: { date: '2026-10-28', season: 3, episode: 10 } }) } });
+  const h = setup(t, { series: { [SERIES]: facts({ status: 'Ended', lastAired: { date: '2026-10-28', season: 3, episode: 10 }, seasonEpisodes: { 3: 10 } }) } });
   h.renderer.render(h.hosts[0], { Id: 'e1', Type: 'Episode', SeriesId: SERIES, ParentIndexNumber: 3, IndexNumber: 10, DateCreated: OLD, PremiereDate: new Date(ago(2)).toISOString() });
   await h.flush();
   assert.equal(h.key(), 'series_finale');
-  h.renderer.render(h.hosts[1], { Id: 's9', Type: 'Season', SeriesId: SERIES, DateCreated: OLD, SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 4 } });
+  h.renderer.render(h.hosts[1], { Id: 's9', Type: 'Season', SeriesId: SERIES, IndexNumber: 3, DateCreated: OLD, SeasonAddedSpan: { First: ago(1), Last: ago(1), Count: 10 },
+    LatestEpisodeIndex: { Season: 3, Episode: 10 } });
   assert.equal(h.key(h.hosts[1]), 'complete_season');
   // The fallback cache keeps every fact: a cache hit draws the same badge.
   h.hosts[1].querySelector('.status-overlay-container').remove();

@@ -577,7 +577,8 @@ int CheckStatus()
         SeriesSchedule? schedule = null;
         if (row["schedule"] is JsonObject facts)
             schedule = new(facts["status"]?.GetValue<string>(), facts["lastAired"]?.Deserialize<SeriesEpisodeRef>(options), facts["nextAired"]?.Deserialize<SeriesEpisodeRef>(options),
-                LastRegularAired: facts["lastRegularAired"]?.Deserialize<SeriesEpisodeRef>(options));
+                LastRegularAired: facts["lastRegularAired"]?.Deserialize<SeriesEpisodeRef>(options),
+                SeasonEpisodes: (facts["seasonEpisodes"] as JsonObject)?.ToDictionary(pair => int.Parse(pair.Key, System.Globalization.CultureInfo.InvariantCulture), pair => pair.Value!.GetValue<int>()));
         var context = new PosterStatusContext(DateTimeOffset.FromUnixTimeMilliseconds(row["now"]!.GetValue<long>()), schedule,
             row["rank"]?.GetValue<int>(), row["parent"]?.Deserialize<TagCacheEntry>(options), row["rankSource"]?.GetValue<string>() == "seerr-week");
         var badge = StatusRules.Resolve(entry, settings, context);
