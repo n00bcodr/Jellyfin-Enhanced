@@ -49,6 +49,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         /// MdblistService.RetryTtl vs NegativeTtl.</summary>
         public bool Confirmed { get; set; }
         public long FetchedAtUnixMs { get; set; }
+        /// <summary>When a refresh of a found title failed: the last good ratings are kept (and
+        /// <see cref="FetchedAtUnixMs"/> still says how old they are) and the title is tried again
+        /// from this time on (MdblistService.RetryTtl after the failure). Null otherwise.</summary>
+        public long? RetryAfterUnixMs { get; set; }
         /// <summary>Cross-provider IDs (imdb, tmdb, trakt, mal, anilist, ...)
         /// from the top-level "ids" object, used by the display module to
         /// build direct links to each rating's source site. Populated by both

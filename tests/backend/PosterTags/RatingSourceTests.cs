@@ -167,6 +167,54 @@ public class RatingSourceTests
     }
 
     [Fact]
+    public async Task AFailedRefreshKeepsTheLastGoodScoresAndRetriesAfterTheShortTtl()
+    {
+        using var fixture = new ApiPluginFixture(); fixture.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        var batches = 0;
+        using var transport = new IntegrationTransport((request, _) => {
+            if (request.RequestUri!.AbsolutePath == "/user") return Task.FromResult(IntegrationTransport.Response("{\"rate_limit\":1000,\"rate_limit_remaining\":1000}"));
+            batches++;
+            return Task.FromResult(IntegrationTransport.Response("{}", 503));
+        });
+        using var service = new MdblistService(transport, fixture.Core.Paths.Object, fixture.Core.Logger);
+        var eightDaysAgo = DateTimeOffset.UtcNow.AddDays(-8).ToUnixTimeMilliseconds();
+        service.MergeMediaBatchIntoCache("movie", ["1"], new Dictionary<string, MdblistCacheEntry>
+        {
+            ["1"] = new() { Found = true, Confirmed = true, FetchedAtUnixMs = eightDaysAgo, Ratings = [new() { Source = "imdb", Score = 81 }] },
+        });
+        var seeded = service.GetCachedEntry("movie", "1")!;
+        seeded.FetchedAtUnixMs = eightDaysAgo;
+        Assert.True(service.NeedsFetch("movie", "1"));
+
+        await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default);
+        await service.WarmTagRatingsAsync(new[] { ("movie", "1") }, default);
+
+        Assert.Equal(1, batches);
+        var kept = service.GetCachedEntry("movie", "1")!;
+        Assert.True(kept.Found);
+        Assert.Equal(81, Assert.Single(kept.Ratings).Score);
+        Assert.Equal(eightDaysAgo, kept.FetchedAtUnixMs);
+        Assert.InRange(kept.RetryAfterUnixMs!.Value - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), TimeSpan.FromMinutes(55).TotalMilliseconds, TimeSpan.FromHours(1).TotalMilliseconds);
+        Assert.False(service.NeedsFetch("movie", "1"));
+        Assert.NotNull(TagSourceRatings.FromMdblist(kept));
+
+        kept.RetryAfterUnixMs = DateTimeOffset.UtcNow.AddSeconds(-1).ToUnixTimeMilliseconds();
+        Assert.True(service.NeedsFetch("movie", "1"));
+    }
+
+    [Fact]
+    public void AConfirmedAnswerReplacesKeptScoresAndAFailureWithoutScoresStaysAPlaceholder()
+    {
+        var good = new MdblistCacheEntry { Found = true, Confirmed = true, FetchedAtUnixMs = 1, Ratings = [new() { Source = "imdb", Score = 81 }] };
+        var miss = new MdblistCacheEntry { Found = false, Confirmed = true, FetchedAtUnixMs = 2 };
+        var failure = new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = 3 };
+        Assert.Same(miss, MdblistService.KeepLastGood(good, miss));
+        Assert.Same(failure, MdblistService.KeepLastGood(null, failure));
+        Assert.Same(failure, MdblistService.KeepLastGood(miss, failure));
+        Assert.Equal(1, MdblistService.KeepLastGood(good, failure).FetchedAtUnixMs);
+    }
+
+    [Fact]
     public async Task OverlappingBulkAndIncrementalBatchesNeverCrossTheReserve()
     {
         using var f = new ApiPluginFixture();

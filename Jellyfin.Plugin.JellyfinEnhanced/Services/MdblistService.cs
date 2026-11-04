@@ -118,6 +118,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // A caller that gave up must not publish anything: the cache is
                 // shared with the tag-rating warmers and every other viewer.
                 cancellationToken.ThrowIfCancellationRequested();
+                fetched = KeepLastGood(cached, fetched);
                 _cache[key] = fetched;
                 ScheduleDebouncedSave();
                 return fetched;
@@ -134,9 +135,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static bool IsExpired(MdblistCacheEntry entry)
         {
+            if (entry.RetryAfterUnixMs is { } retryAfter) return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= retryAfter;
             var age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(entry.FetchedAtUnixMs);
             if (entry.Found) return age > PositiveTtl;
             return age > (entry.Confirmed ? NegativeTtl : RetryTtl);
+        }
+
+        /// <summary>
+        /// The entry to store after a lookup: the fresh answer, except that a failed lookup (not a
+        /// confirmed answer) for a title that has ratings keeps those ratings and their age, and
+        /// only schedules the next attempt (RetryTtl), so a provider outage never erases scores.
+        /// </summary>
+        internal static MdblistCacheEntry KeepLastGood(MdblistCacheEntry? previous, MdblistCacheEntry fresh)
+        {
+            if (fresh.Confirmed || previous is not { Found: true }) return fresh;
+            return new MdblistCacheEntry
+            {
+                Found = true,
+                Confirmed = previous.Confirmed,
+                Ratings = previous.Ratings,
+                Ids = previous.Ids,
+                FetchedAtUnixMs = previous.FetchedAtUnixMs,
+                RetryAfterUnixMs = fresh.FetchedAtUnixMs + (long)RetryTtl.TotalMilliseconds,
+            };
         }
 
         /// <summary>Cache-only read, no network call: whatever's currently on disk/in
@@ -553,7 +574,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 foreach (var group in titles.Distinct().Where(t => NeedsFetch(t.MediaType, t.Id)
                     || (maxAge != null && GetCachedEntry(t.MediaType, t.Id) is { Found: true } entry
-                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - entry.FetchedAtUnixMs >= maxAge.Value.TotalMilliseconds)).GroupBy(t => t.MediaType))
+                        && DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - entry.FetchedAtUnixMs >= maxAge.Value.TotalMilliseconds
+                        // Kept ratings after a failed refresh wait for their retry time.
+                        && (entry.RetryAfterUnixMs is not { } retryAfter || DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= retryAfter))).GroupBy(t => t.MediaType))
                 {
                     foreach (var chunk in group.Chunk(150))
                     {
@@ -566,8 +589,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         if (batch.Status == MdblistReservedBatchStatus.Failed)
                         {
                             // Match single-title failures: short retry TTL, never a confirmed negative.
+                            // A title with good ratings keeps them until a refresh succeeds.
                             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                            foreach (var id in ids) _cache[CacheKey(group.Key, id)] = new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now };
+                            foreach (var id in ids)
+                            {
+                                var key = CacheKey(group.Key, id);
+                                _cache[key] = KeepLastGood(GetCachedEntry(group.Key, id), new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now });
+                            }
                             ScheduleDebouncedSave();
                             return;
                         }
