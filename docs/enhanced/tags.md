@@ -254,7 +254,8 @@ Compact quality vocabulary is shared by web and native rendering. The canonical 
 | Dolby Digital / Dolby Digital+ | DD / DD+ (keeps channels, for example DD+ 5.1) |
 | DTS-HD MA / DTS-HD HRA / DTS-HD | DTS-HD (keeps channels) |
 | TRUEHD / ATMOS / TRUEHD ATMOS / DD+ ATMOS / DTS-X / DTS (including DTS-ES) | Keeps the canonical codec name (both Atmos carriers shorten to ATMOS); drops channels |
-| AAC / FLAC / PCM / Opus / MP3 | Channel-only fallback: 5.1 or 7.1; stereo has no sound chip |
+| FLAC / PCM | Keep their name and channels (FLAC 2.0, PCM 7.1) |
+| AAC / Opus / MP3 | Channel-only fallback (for example 5.1 or 7.1); stereo has no sound chip |
 | Dolby Vision / HDR10+ / BluRay | DV / HDR+ / BD |
 
 Other emitted video codec labels (AV1, HEVC, H265, VP9, H264, VP8, XVID, DIVX, WMV, MPEG2, MPEG4, MJPEG, THEORA) are already short and remain unchanged.
@@ -675,7 +676,7 @@ With **Server-Side Tag Cache** enabled, series and season cards show audio langu
 
     Server-list matching uses the flag's language code, its base code, or its displayed language names, and compares codes the way the audio-language filter does across every language the chip represents: `ja` matches `jpn`, `en` matches `en-US`, and `te` finds the India flag Hindi claimed first. Personal ISO priorities match every represented language canonically.
 
-    Cached audio and subtitle languages use the union across episodes. Subtitle tracks use the same access and Spoiler Guard stripping paths as audio. With the server cache off, container cards use their representative episode instead of the full union. Forced and SDH subtitle variants share one language chip; a grouped subtitle chip carries SDH if any represented track is SDH. The tooltip reads, for example, **Subtitles (SDH): English**. Flags, Codes, the Summary pill and native posters preserve the marker. It appears only while Subtitles is enabled.
+    Cached audio and subtitle languages use the union across episodes. Subtitle tracks use the same access and Spoiler Guard stripping paths as audio. With the server cache off, container cards use their representative episode instead of the full union. Forced-only subtitle tracks are left out entirely; an SDH track shares its language's chip with the ordinary track, and a grouped subtitle chip carries SDH if any represented track is SDH. The tooltip reads, for example, **Subtitles (SDH): English**. Flags, Codes, the Summary pill and native posters preserve the marker. It appears only while Subtitles is enabled.
 
     The cached audio flags use the union of audio languages across episodes. Full-coverage flags normally come first, but administrator priorities can put a partial flag ahead of them. A grouped flag is partial only when all its represented languages are partial.
 
@@ -1250,7 +1251,7 @@ Native Poster Tags add your enabled poster groups to images shown in eligible na
 
 Examples of native clients include Jellyfin for Android TV, Tizen, Swiftfin, Findroid, and Streamyfin.
 
-The built-in exclusions are Jellyfin Web, Jellyfin Media Player, Jellium Desktop, Jellyfin Desktop, Jellyfin for WebOS, and Jellyfin for Android (the phone app). These load web overlays and retain original poster images. Jellyfin for Android TV is a different client name and is eligible.
+The built-in exclusions are Jellyfin Web, Jellyfin Media Player, Jellium Desktop, Jellyfin Desktop, Jellyfin for WebOS, Jellyfin for Android (the phone app), Jellyfin iOS and Jellyfin iPadOS. These load web overlays and retain original poster images. Jellyfin for Android TV is a different client name and is eligible.
 
 If a custom web wrapper shows tags twice, add its name as shown under **Dashboard** → **Devices** to **Additional excluded apps**.
 

@@ -518,8 +518,8 @@ The table below gives the `UserSettings` **model defaults** used when properties
 | `TagLayout` | String: `corners`, `bands`, `caption`, `summary` or `minimal` | `"corners"` |
 | `TagLayoutSettingsVersion` | Integer; `0` = saved before layouts (keeps corners, positions, arrival order and the original limits), `1` = layout settings apply | `0` (new users: `1`) |
 | `TagLayouts` | Nullable object `{Corners,Bands,Caption,Summary,Minimal}`, each `{Groups:[{Group,Slot}]}` | `null` |
-| `TagGroupOrder` | Nullable array of group ids (`status`, `quality`, `rating`, `ageRating`, `language`, `genre`) | `null` |
-| `TagGroupCaps` | Nullable object `{Quality,Genre,Language,Rating,AgeRating,Status}` of integers 0–10, `0` = unlimited | `null` |
+| `TagGroupOrder` | Nullable array of group ids (`status`, `quality`, `rating`, `ageRating`, `language`, `genre`, `awards`, `logos`, `custom`) | `null` |
+| `TagGroupCaps` | Nullable object `{Quality,Genre,Language,Rating,AgeRating,Status,Awards,Logos,Custom}` of integers 0–10, `0` = unlimited | `null` |
 | `TagLabelDensity` | String: `full` or `compact` | `"full"` |
 | `TagScale` | Nullable string: `smaller`, `default`, `larger`, `largest` (85%, 100%, 115%, 130%) | `null` (admin: `"default"`) |
 | `TagGap` | Nullable string: `tight`, `default`, `roomy` (75%, 100%, 150% spacing) | `null` (admin: `"default"`) |
