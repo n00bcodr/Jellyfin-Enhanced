@@ -372,7 +372,7 @@ int CheckNames()
 // ── casing ──────────────────────────────────────────────────────────────────
 int CheckCasing()
 {
-    var expected = Read<List<string[]>>("casing-expected.json");
+    var expected = Read<List<string?[]>>("casing-expected.json");
     var jsText = typeof(PosterTagSettings).Assembly
         .GetType("Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.JsText", throwOnError: true)!;
     var lower = jsText.GetMethod("ToLower", BindingFlags.NonPublic | BindingFlags.Static)!;
@@ -380,10 +380,18 @@ int CheckCasing()
     var mismatches = new List<string>();
     foreach (var row in expected)
     {
-        var actualLower = (string)lower.Invoke(null, new object[] { row[0] })!;
-        var actualUpper = (string)upper.Invoke(null, new object[] { row[0] })!;
-        if (actualLower != row[1]) mismatches.Add($"lower {Hex(row[0])}: JS={Hex(row[1])} C#={Hex(actualLower)}");
-        if (actualUpper != row[2]) mismatches.Add($"upper {Hex(row[0])}: JS={Hex(row[2])} C#={Hex(actualUpper)}");
+        var (input, expectedLower, expectedUpper) = (row[0]!, row[1], row[2]);
+        // A null expectation needs newer Unicode data than the runner's ICU (see casing-expected.mjs).
+        if (expectedLower is not null)
+        {
+            var actualLower = (string)lower.Invoke(null, new object[] { input })!;
+            if (actualLower != expectedLower) mismatches.Add($"lower {Hex(input)}: JS={Hex(expectedLower)} C#={Hex(actualLower)}");
+        }
+        if (expectedUpper is not null)
+        {
+            var actualUpper = (string)upper.Invoke(null, new object[] { input })!;
+            if (actualUpper != expectedUpper) mismatches.Add($"upper {Hex(input)}: JS={Hex(expectedUpper)} C#={Hex(actualUpper)}");
+        }
     }
 
     File.WriteAllLines(Path.Combine(dataDir, "out", "casing-diff.txt"), mismatches);

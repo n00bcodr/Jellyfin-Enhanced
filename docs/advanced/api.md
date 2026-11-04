@@ -1149,7 +1149,7 @@ Use these routes to look up language tag names, awards, external ratings, and Do
 | GET | `ddd/{mediaType}/{tmdbId}` | Authenticated | `movie` or `tv` → DoesTheDogDie object. |
 | GET | `ddd/topics` | Authenticated | Topic catalogue for the trigger picker. |
 | GET | `translate/languages` | Authenticated | `{languages:[...]}`, the target languages the configured LibreTranslate offers for English. |
-| POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. |
+| POST | `translate` | Authenticated | Body `{text,target}` (English text of 1 to 20000 characters, language code) → `{text}`, translated live and cached in memory for an hour. A LibreTranslate rate limit returns 429 `{code:"translation_rate_limited"}`, plus `retryAfterSeconds` and a `Retry-After` header when LibreTranslate gave a wait; a LibreTranslate 403 returns 502 `{code:"translation_refused"}`. |
 
 ```bash
 curl -H "Authorization: MediaBrowser Token=\"$TOKEN\"" \
@@ -1272,7 +1272,7 @@ Neither configuration endpoint exposes provider API keys. `TmdbEnabled` and `Mdb
 
 Private configuration is `no-store`. Admin fields are strings `SonarrUrl`, `RadarrUrl`, `BazarrUrl`, `SonarrUrlMappings`, `RadarrUrlMappings`, `BazarrUrlMappings`, `ShokoUrl`, `ShokoUrlMappings`; arrays `SonarrInstances`, `RadarrInstances` of `{Name,Url,UrlMappings,Enabled}`; and booleans `SonarrInstancesCorrupt`, `RadarrInstancesCorrupt`. This is selected link configuration and diagnostics, rather than the complete saved model. The separate admin `jellyseerr/settings/{type}` endpoint can return upstream API keys.
 
-Host compatibility returns `{builtFor,hostTarget,hostVersion,pluginVersion,mismatch,expectedAsset,manifestUrl,message}`. It diagnoses an installed artifact targeting a different Jellyfin version; no feature toggle is required.
+Host compatibility returns `{builtFor,hostTarget,hostVersion,pluginVersion,mismatch,expectedAsset,manifestUrl,message}`. It diagnoses an installed artifact targeting a different Jellyfin version; no feature toggle is required. On Jellyfin 13 and newer, `hostTarget` is `unsupported`, `mismatch` is true and `expectedAsset` is absent, because no build of the release supports that host.
 
 ### Static-resource limits and caching
 

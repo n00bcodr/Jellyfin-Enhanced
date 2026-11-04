@@ -28,7 +28,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
     /// DLL does not load on the .NET 9 runtime of 10.11 at all, and a jf10
     /// (net9) DLL does not load on the .NET 8 runtime of 10.10 and older
     /// (that historical line is frozen at plugin 10.11.1.0 and is not built
-    /// from this source). So the host is classified into just two lines.
+    /// from this source). So the host is classified into just two lines,
+    /// plus "unsupported" for Jellyfin 13 and newer: 13 is expected to be an
+    /// ABI boundary (open v13.0 pull requests would shift BaseItemKind values
+    /// and remove network-configuration APIs this DLL compiles against), and
+    /// Jellyfin loads a plugin built for an older ABI without complaint,
+    /// so neither build may silently pass as a match there.
     ///
     /// Depends only on IServerApplicationHost, which Jellyfin registers before
     /// any plugin service, and uses only members that exist unchanged on both
@@ -50,12 +55,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The one manifest that serves every Jellyfin line; Jellyfin's own ABI filter picks the right build.</summary>
         public const string ManifestUrl = "https://raw.githubusercontent.com/n00bcodr/jellyfin-plugins/main/manifest.json";
 
+        /// <summary>Public releases page, where a release that supports a newer Jellyfin line will be listed.</summary>
+        public const string ReleasesUrl = "https://github.com/n00bcodr/Jellyfin-Enhanced/releases";
+
         private readonly IServerApplicationHost _appHost;
 
         public HostCompatibilityService(IServerApplicationHost appHost)
         {
             _appHost = appHost;
         }
+
+        /// <summary>Host target for a Jellyfin line that no build of this release supports (13 and newer).</summary>
+        public const string UnsupportedTarget = "unsupported";
 
         /// <summary>Assembly version of the running server (12.0.0-rc1 reports 12.0.0.0).</summary>
         public Version HostVersion => _appHost.ApplicationVersion;
@@ -64,11 +75,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public string HostVersionString => _appHost.ApplicationVersionString;
 
         /// <summary>
-        /// "jf12" for 12 and anything newer (deliberately: it is the best build
-        /// we have until a dedicated target exists; revisit when Jellyfin 13
-        /// ships), "jf10" for everything older that can load this DLL at all.
+        /// "jf12" for the 12 line, <see cref="UnsupportedTarget"/> for 13 and
+        /// newer (a line no build of this release targets), and
+        /// "jf10" for everything older that can load this DLL at all (11.x
+        /// never shipped).
         /// </summary>
-        public string HostTarget => HostVersion.Major >= 12 ? "jf12" : "jf10";
+        public string HostTarget => HostVersion.Major switch
+        {
+            >= 13 => UnsupportedTarget,
+            12 => "jf12",
+            _ => "jf10",
+        };
+
+        /// <summary>True when the host is a Jellyfin line no build of this release supports.</summary>
+        public bool IsHostUnsupported => HostTarget == UnsupportedTarget;
 
         /// <summary>True when this DLL was built for a different Jellyfin line than the host.</summary>
         public bool IsMismatch => !string.Equals(BuiltFor, HostTarget, StringComparison.Ordinal);
@@ -114,11 +134,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        /// <summary>Release asset the admin should have installed instead.</summary>
-        public string ExpectedAssetName =>
-            HostTarget == "jf12"
-                ? "Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip"
-                : "Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip";
+        /// <summary>Release asset the admin should have installed instead, or null when no asset of this release fits the host.</summary>
+        public string? ExpectedAssetName => HostTarget switch
+        {
+            "jf12" => "Jellyfin.Plugin.JellyfinEnhanced_12.0.0.zip",
+            "jf10" => "Jellyfin.Plugin.JellyfinEnhanced_10.11.0.zip",
+            _ => null,
+        };
+
+        private static string BuiltForLine => BuiltFor == "jf12" ? "12.x" : "10.11.x";
 
         /// <summary>
         /// One-line diagnosis for the log and administrator diagnostics endpoint, using an
@@ -131,8 +155,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             if (!IsMismatch && !isStale) return null;
 
+            // No build of this release fits the host, so there is nothing to install or swap.
+            if (IsHostUnsupported)
+            {
+                var unsupported = $"This release of Jellyfin Enhanced does not support Jellyfin {HostVersion.Major}.x yet " +
+                    $"(the server is Jellyfin {HostVersionString}; this copy was built for Jellyfin {BuiltForLine}). " +
+                    "Features may fail unpredictably. Stay on Jellyfin 12.x" +
+                    // The config page shows its own releases link under the message.
+                    (includeInstallAdvice
+                        ? $" until a Jellyfin Enhanced release lists Jellyfin {HostVersion.Major} support; see {ReleasesUrl}."
+                        : ".");
+                return isStale
+                    ? unsupported + " The plugin file on disk was also replaced after Jellyfin loaded it; stop and start " +
+                      "the Jellyfin service or container (e.g. systemctl restart jellyfin, docker restart <container>) to load it."
+                    : unsupported;
+            }
+
             var diagnosis = IsMismatch
-                ? $"This copy of Jellyfin Enhanced was built for Jellyfin {(BuiltFor == "jf12" ? "12.x" : "10.11.x")} " +
+                ? $"This copy of Jellyfin Enhanced was built for Jellyfin {BuiltForLine} " +
                   $"but the server is Jellyfin {HostVersionString}. Features may fail unpredictably. "
                 : "";
 

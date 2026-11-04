@@ -572,6 +572,25 @@ ${r.Content}` : r.Content,
         }
 
         /**
+         * The toast for a failed translation. The server answers 429 when
+         * LibreTranslate is rate limiting (with the wait, when it gave one)
+         * and code translation_refused when LibreTranslate refused the request.
+         * @param {*} error - The error thrown by JE.core.api.plugin.
+         * @returns {string}
+         */
+        function translateFailedMessage(error) {
+            const code = error?.responseJSON?.code;
+            if (error?.status === 429 || code === 'translation_rate_limited') {
+                const seconds = error?.responseJSON?.retryAfterSeconds;
+                return Number.isFinite(seconds) && seconds > 0
+                    ? JE.t('reviews_translate_rate_limited_wait', { seconds })
+                    : JE.t('reviews_translate_rate_limited');
+            }
+            if (code === 'translation_refused') return JE.t('reviews_translate_refused');
+            return JE.t('reviews_translate_failed');
+        }
+
+        /**
          * Adds a Translate / Show original toggle under an English review. It
          * translates in the browser when the browser can, and through the
          * admin's LibreTranslate otherwise; it is absent when neither offers
@@ -639,7 +658,7 @@ ${r.Content}` : r.Content,
                             card.dataset.translatedContent = await translate();
                         } catch (e) {
                             setLabel('reviews_translate');
-                            JE.toast(JE.t('reviews_translate_failed'));
+                            JE.toast(translateFailedMessage(e));
                             return;
                         } finally {
                             busy = false;

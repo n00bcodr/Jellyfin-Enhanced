@@ -175,12 +175,16 @@
                 e.stopImmediatePropagation();
                 const popupFocusContainer = document.getElementById('popupFocusContainer');
                 if (popupFocusContainer && popupFocusContainer.classList.contains('opened')) {
-                    // Popup is already open, close it by removing all dialog elements
-                    const dialogBackdropContainer = document.getElementById('dialogBackdropContainer');
-                    const dialogContainer = document.getElementById('dialogContainer');
-
-                    if (dialogBackdropContainer) dialogBackdropContainer.remove();
-                    if (dialogContainer) dialogContainer.remove();
+                    // Popup is already open, close it the way the plugin does: since its
+                    // Nov 2025 refactor everything (backdrop included) sits in #previewPopup.
+                    // Older plugin versions add a separate backdrop and dialog container.
+                    const previewPopup = document.getElementById('previewPopup');
+                    if (previewPopup) {
+                        previewPopup.remove();
+                    } else {
+                        document.getElementById('dialogBackdropContainer')?.remove();
+                        document.getElementById('dialogContainer')?.remove();
+                    }
                 } else {
                     // Popup is not open, try to open it
                     const popupPreviewButton = document.querySelector('button#popupPreviewButton.autoSize.paper-icon-button-light[is="paper-icon-button-light"]');
