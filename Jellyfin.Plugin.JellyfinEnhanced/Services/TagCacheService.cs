@@ -79,7 +79,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             string? SortName,
             DateTime DateCreated,
             DateTime? PremiereDate = null,
-            int? IndexNumber = null)
+            int? IndexNumber = null,
+            int? IndexNumberEnd = null)
         {
             public static EpisodePlacement Of(MediaBrowser.Controller.Entities.TV.Episode episode)
             {
@@ -99,7 +100,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     episode.SortName,
                     episode.DateCreated,
                     episode.PremiereDate,
-                    episode.IndexNumber);
+                    episode.IndexNumber,
+                    episode.IndexNumberEnd);
             }
 
             /// <summary>Whether the scan's ORDER BY ranks the two equal.</summary>
@@ -334,7 +336,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 34;
+        internal const int CurrentCacheSchemaVersion = 35;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -3223,7 +3225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             qualityEpisodes.Add(new(episode.Id.ToString("N"), ToUnixMilliseconds(episode.PremiereDate), episode.StreamData, episode.NamingTags?.Source, episode.NamingTags?.Edition));
                             NoteAdded(episode.Id, episode.DateCreated);
-                            statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber, (episode.Item as MediaBrowser.Controller.Entities.TV.Episode)?.IndexNumberEnd);
+                            statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber, episode.IndexNumberEnd);
                             return Accumulate(episode.ParentIndexNumber, episode.Languages, episode.Subtitles);
                         });
                     firstEp = first == null ? null : new RepresentativeEpisode(first.Genres, first.StreamData, first.Item, first.NamingTags);
@@ -3321,7 +3323,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// What a container's scan callback reads from one of its episodes, in
         /// the full build (see <see cref="ReadIndexedEpisode"/>).
         /// </summary>
-        private sealed record IndexedEpisode(Guid Id, int? ParentIndexNumber, string[]? Languages, string[] Genres, TagStreamData? StreamData, BaseItem? Item, DateTime DateCreated, DateTime? PremiereDate, int? IndexNumber, MediaNamingTags? NamingTags, string[]? Subtitles);
+        private sealed record IndexedEpisode(Guid Id, int? ParentIndexNumber, string[]? Languages, string[] Genres, TagStreamData? StreamData, BaseItem? Item, DateTime DateCreated, DateTime? PremiereDate, int? IndexNumber, MediaNamingTags? NamingTags, string[]? Subtitles, int? IndexNumberEnd = null);
 
         /// <summary>
         /// One indexed episode as the scan callback in
@@ -3337,7 +3339,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             index.Late.TryGetValue(id, out var late);
             if (episodeScans.TryGetValue(id, out var scan) && scan.Placement is { } placement)
             {
-                return new IndexedEpisode(id, placement.ParentIndexNumber, scan.Languages, placement.Genres, scan.StreamData, late, placement.DateCreated, placement.PremiereDate, placement.IndexNumber, scan.NamingTags, scan.Subtitles);
+                return new IndexedEpisode(id, placement.ParentIndexNumber, scan.Languages, placement.Genres, scan.StreamData, late, placement.DateCreated, placement.PremiereDate, placement.IndexNumber, scan.NamingTags, scan.Subtitles, placement.IndexNumberEnd);
             }
 
             // The index only lists episodes that have a placement or a Late item.
@@ -3346,7 +3348,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var languages = streams.Any(s => s.Type is "Video" or "Audio") ? audioLanguages : null;
             var streamData = BuildStreamData(episode, streams, sources);
             episodeScans[id] = new EpisodeScan(languages, streamData, EpisodePlacement.Of(episode), namingTags, subtitles);
-            return new IndexedEpisode(id, episode.ParentIndexNumber, languages, episode.Genres, streamData, episode, episode.DateCreated, episode.PremiereDate, episode.IndexNumber, namingTags, subtitles);
+            return new IndexedEpisode(id, episode.ParentIndexNumber, languages, episode.Genres, streamData, episode, episode.DateCreated, episode.PremiereDate, episode.IndexNumber, namingTags, subtitles, episode.IndexNumberEnd);
         }
 
         /// <summary>

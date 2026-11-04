@@ -184,3 +184,36 @@ public class StatusCompletionProofTests
         Assert.NotEqual("series_finale", Badge(series, new SeriesSchedule("Ended", null, null)));
     }
 }
+
+/// <summary>Combined episode files and library finale dates keep their real episode range and calendar day.</summary>
+[Collection("Plugin singleton")]
+public class StatusEpisodeRangeTests
+{
+    [Fact]
+    public void ACombinedFileEndsOnItsLastEpisode()
+    {
+        var now = DateTime.Parse("2026-11-05T12:00:00Z").ToUniversalTime();
+        var facts = new StatusTagsEpisodeFacts(true, 1, now);
+        for (var start = 1; start <= 9; start += 2) facts.Note(Guid.NewGuid(), now.AddDays(-1), now.AddDays(-20 + start), 1, start, start + 1);
+        var entry = new TagCacheEntry { Type = "Season", SeasonNumber = 1 };
+        facts.ApplyTo(entry);
+        Assert.Equal(10, entry.SeasonAddedSpan!.CoveredThrough);
+        Assert.Equal(new TagEpisodeIndex { Season = 1, Episode = 10, IsLast = true }, entry.LatestEpisodeIndex);
+        Assert.Equal(1, entry.SeasonPremiere?.Season); // the E1–E2 file still opens the season
+    }
+
+    /// <summary>S1E10 dated 29 October is the finale everywhere on 5 November inside a seven-day window, and nowhere after it.</summary>
+    [Theory]
+    [InlineData("UTC", "2026-11-05T17:00:00Z", true)]
+    [InlineData("America/Los_Angeles", "2026-11-05T17:00:00Z", true)]
+    [InlineData("Australia/Perth", "2026-11-05T12:00:00Z", true)]   // 20:00 on 5 November in Perth
+    [InlineData("America/Los_Angeles", "2026-11-06T09:00:00Z", false)] // 6 November local: past the window
+    public void TheLibraryFinaleKeepsItsCalendarDay(string zone, string now, bool finale)
+    {
+        var series = new TagCacheEntry { Type = "Series", DateCreated = DateTimeOffset.Parse("2025-01-01T00:00:00Z").ToUnixTimeMilliseconds(),
+            LatestEpisodeIndex = new() { Season = 1, Episode = 10 }, LatestEpisodeAired = DateTimeOffset.Parse("2026-10-29T00:00:00Z").ToUnixTimeMilliseconds() };
+        var schedule = new SeriesSchedule("Ended", new("2026-10-30", 0, 1, null), null, SeasonEpisodes: new Dictionary<int, int> { [1] = 10 });
+        var settings = PosterTagSettings.FromUserSettings(new() { StatusTagsEnabled = true, NativePosterTimeZone = zone }, new PluginConfiguration { StatusTagsEnabled = true, StatusTagsNewReleaseDays = 7, TMDB_API_KEY = "key" }, null);
+        Assert.Equal(finale, StatusRules.Resolve(series, settings, new(DateTimeOffset.Parse(now), schedule))?.Key == "series_finale");
+    }
+}

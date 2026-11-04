@@ -241,6 +241,35 @@ public class CustomTagRulesTests
     }
 
     [Fact]
+    public void CombinedEpisodeFilesCoverTheirRangeInTheFullBuildAsOnDemand()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.TagCacheServerMode = true;
+        var library = new Library();
+        var previous = BaseItem.LibraryManager;
+        BaseItem.LibraryManager = library.Mock.Object;
+        try
+        {
+            var series = new Series { Id = Guid.NewGuid(), Name = "Show" };
+            var season = new Season { Id = Guid.NewGuid(), Name = "Season 1", ParentId = series.Id, SeriesId = series.Id, IndexNumber = 1 };
+            library.Items.AddRange(new BaseItem[] { series, season });
+            for (var start = 1; start <= 9; start += 2)
+                library.Items.Add(new Episode { Id = Guid.NewGuid(), Name = $"E{start}", ParentId = season.Id, SeasonId = season.Id, SeriesId = series.Id,
+                    ParentIndexNumber = 1, IndexNumber = start, IndexNumberEnd = start + 1, DateCreated = DateTime.UtcNow.AddDays(-1), PremiereDate = DateTime.UtcNow.AddDays(-30 + start) });
+            using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+            cache.BuildFullCache(null, CancellationToken.None);
+            Assert.True(cache.TryGetEntry(season.Id, out var built));
+            Assert.Equal(10, built.SeasonAddedSpan?.CoveredThrough);
+            Assert.Equal(10, built.LatestEpisodeIndex?.Episode);
+            Assert.Equal(built.SeasonAddedSpan, cache.BuildEntryOnDemand(season)!.SeasonAddedSpan);
+        }
+        finally
+        {
+            BaseItem.LibraryManager = previous;
+        }
+    }
+
+    [Fact]
     public async Task ASeriesEditDropsItsChildrenFromTheNativeOnDemandMemo()
     {
         // Cache off: native posters build entries on demand and keep them for a while.

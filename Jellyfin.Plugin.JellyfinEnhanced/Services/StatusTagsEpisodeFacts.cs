@@ -83,11 +83,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var season = seasonNumber ?? _containerSeason;
             if (season is > 0) _newestSeason = Math.Max(_newestSeason ?? 0, season.Value);
-            // A multi-episode file (IndexNumberEnd) covers its whole range; a range over 50 is not believed.
-            if (_isSeason && season == _containerSeason && episodeNumber is > 0 and var start)
+            // A multi-episode file (IndexNumberEnd) covers its whole range, and its last episode is the one it ends
+            // on (a combined E9–E10 file holds the finale E10); a range over 50 is not believed.
+            var first = episodeNumber;
+            if (first is > 0 && episodeEnd is { } rangeEnd && rangeEnd > first && rangeEnd - first <= 50) episodeNumber = rangeEnd;
+            if (_isSeason && season == _containerSeason && first is > 0)
             {
-                var end = episodeEnd is { } last && last >= start && last - start <= 50 ? last : start;
-                for (var number = start; number <= end; number++) _covered.Add(number);
+                for (var number = first.Value; number <= episodeNumber!.Value; number++) _covered.Add(number);
             }
             if (season is { } numberedSeason && episodeNumber is { } numberedEpisode)
             {
@@ -101,7 +103,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var early = aired - EarliestDayLead;
                 var boundary = early > _now ? early : aired;
                 if (_nextPremiere == null || boundary < _nextPremiere) _nextPremiere = boundary;
-                if (aired <= _now + EarliestDayLead) NoteSeasonFirst(season, episodeNumber, aired, id);
+                if (aired <= _now + EarliestDayLead) NoteSeasonFirst(season, first, aired, id);
                 return;
             }
 
@@ -115,7 +117,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _latestEpisode = episodeNumber;
             }
 
-            NoteSeasonFirst(season, episodeNumber, aired, id);
+            NoteSeasonFirst(season, first, aired, id);
         }
 
         private void NoteSeasonFirst(int? season, int? episodeNumber, DateTime aired, Guid id)

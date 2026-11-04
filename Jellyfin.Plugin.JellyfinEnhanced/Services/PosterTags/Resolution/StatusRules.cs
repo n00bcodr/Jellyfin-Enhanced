@@ -77,7 +77,7 @@ public static class StatusRules
         var lastDay = AirDate(facts?.LastAired?.Date);
         var daysToNext = nextDay?.DayNumber - today.DayNumber;
         var lastRecently = RecentDay(lastDay, today, newReleaseMs);
-        var final = FinalRegularEpisode(data, context.Series, facts, settings.StatusTimeZone);
+        var final = FinalRegularEpisode(data, context.Series, facts);
         var finalRecently = RecentDay(AirDate(final?.Date), today, newReleaseMs);
         StatusTag Badge(string key, string? date = null) => Make(key, settings, date);
 
@@ -198,13 +198,14 @@ public static class StatusRules
     /// E3 the finale. The caller's regular aggregate only stands in when TMDB names none and its per-season counts
     /// show that episode is the last of the last season. Never an episode's season-local IsLast.
     /// </summary>
-    private static SeriesEpisodeRef? FinalRegularEpisode(TagCacheEntry data, TagCacheEntry? parent, SeriesSchedule? facts, TimeZoneInfo zone)
+    private static SeriesEpisodeRef? FinalRegularEpisode(TagCacheEntry data, TagCacheEntry? parent, SeriesSchedule? facts)
     {
         if (facts == null) return null;
         bool LastOfShow(TagEpisodeIndex index) => facts.SeasonEpisodes is { Count: > 0 } counts && counts.Keys.Max() == index.Season
             && counts[index.Season] == index.Episode;
+        // The air date is a calendar date (stored at midnight UTC): keep its day, as TMDB's own dates are kept.
         SeriesEpisodeRef? Regular(TagCacheEntry? entry) => entry?.LatestEpisodeIndex is { Season: > 0 } index && entry.LatestEpisodeAired is { } aired && LastOfShow(index)
-            ? new(LocalDate(DateTimeOffset.FromUnixTimeMilliseconds(aired), zone).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), index.Season, index.Episode, null) : null;
+            ? new(PremiereDay(aired)!.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), index.Season, index.Episode, null) : null;
         return (facts.LastAired?.Season > 0 ? facts.LastAired : null)
             ?? (facts.LastRegularAired?.Season > 0 ? facts.LastRegularAired : null)
             ?? Regular(parent ?? (data.Type == "Series" ? data : null))

@@ -671,8 +671,9 @@
         const regular = local => {
             if (!(local.latestIndex?.s > 0) || local.latestAired === null) return null;
             if (local.latestIndex.s !== lastSeason || toInt(counts[lastSeason]) !== local.latestIndex.e) return null;
+            // The air date is a calendar date (stored at midnight UTC): keep its day, as TMDB's own dates are kept.
             const date = new Date(local.latestAired);
-            const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+            const day = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
             return { date: day, season: local.latestIndex.s, episode: local.latestIndex.e, type: null };
         };
         // TMDB's final regular episode first: local S1E3 is not the finale of a ten-episode season TMDB has ended.
