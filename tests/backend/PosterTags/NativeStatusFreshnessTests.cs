@@ -94,4 +94,25 @@ public class NativeStatusFreshnessTests
         Assert.Equal(0, PosterTagImageFilter.StatusMaxAge(bucket, bucket.AddMinutes(5)));
         Assert.Equal(0, PosterTagImageFilter.StatusMaxAge(bucket, bucket.AddMinutes(6)));
     }
+
+    [Fact]
+    public void A_status_URL_minted_just_before_a_bucket_ends_still_verifies_in_the_next_one_but_not_after()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.NativePosterTagsEnabled = f.Plugin.Configuration.StatusTagsEnabled = true;
+        var settings = PosterTagSettings.FromSettingsJson("{statusTagsEnabled:true,nativePosterTimeZone:'UTC'}", f.Plugin.Configuration);
+        var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(f.Core.Root, "native-key"), _ => { });
+        var user = Guid.NewGuid();
+        var item = Guid.NewGuid();
+        var minted = DateTimeOffset.Parse("2026-10-30T12:04:59Z");
+        var token = tokens.Mint(user, item, settings.DigestAt(minted), PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(PosterTagImageFilter.VerifyToken(tokens, token, user, item, settings, minted, out _));
+        Assert.True(PosterTagImageFilter.VerifyToken(tokens, token, user, item, settings, minted.AddSeconds(2), out _), "fetched two seconds later, in the next bucket");
+        Assert.True(PosterTagImageFilter.VerifyToken(tokens, token, user, item, settings, minted.AddSeconds(300), out _));
+        Assert.False(PosterTagImageFilter.VerifyToken(tokens, token, user, item, settings, minted.AddSeconds(302), out _), "two buckets later the URL has retired");
+        // Without Status there is no bucket at all: the URL stays valid.
+        var plain = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true}", f.Plugin.Configuration);
+        var stable = tokens.Mint(user, item, plain.DigestAt(minted), PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(PosterTagImageFilter.VerifyToken(tokens, stable, user, item, plain, minted.AddDays(3), out _));
+    }
 }

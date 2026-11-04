@@ -249,7 +249,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             if (!settings.AnyGroupEnabled) return null;
 
             var instant = _time.GetUtcNow();
-            if (!_tokens.Verify(token, userId, itemId, settings.DigestAt(instant), PosterTagComposer.PixelVersion, out var variant)) return null;
+            if (!VerifyToken(_tokens, token, userId, itemId, settings, instant, out var variant)) return null;
 
             // Taken once: the composite is drawn from this very snapshot, so a
             // tag-cache update between the check and the render can't put new
@@ -395,6 +395,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 http.Request.Headers[HeaderNames.IfNoneMatch] = heldIfNoneMatch;
             }
         }
+
+        /// <summary>
+        /// Checks a poster token against the settings digest now, and, while Status is shown, against the previous
+        /// five-minute bucket too: a URL minted at 12:04:59 and fetched at 12:05:01 still draws its tags (with the
+        /// status as of the request). Older URLs retire as before.
+        /// </summary>
+        internal static bool VerifyToken(PosterTagVariantToken tokens, string token, Guid userId, Guid itemId, PosterTagSettings settings, DateTimeOffset instant, out PosterTagVariant variant)
+            => tokens.Verify(token, userId, itemId, settings.DigestAt(instant), PosterTagComposer.PixelVersion, out variant)
+                || (settings.Shows(PosterTagGroup.Status)
+                    && tokens.Verify(token, userId, itemId, settings.DigestAt(instant.AddSeconds(-300)), PosterTagComposer.PixelVersion, out variant));
 
         /// <summary>Floor to whole seconds; zero is required for sub-second remaining lifetime and expired buckets.</summary>
         internal static int StatusMaxAge(DateTimeOffset instant, DateTimeOffset now)
