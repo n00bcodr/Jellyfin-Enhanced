@@ -772,7 +772,7 @@
     "TagShapeOverrides": "Episode thumbnails",
     "TagStyleTarget": "Apply to",
     "TagStylesAllowUserPreset": "Let users pick their own preset",
-    "TagStylesEnabled": "Use these tag colours",
+    "TagStylesEnabled": "Use tag colours",
     "TagsCacheTtlDays": "Browser tag cache lifetime",
     "TagsHideOnHover": "Hide tags on hover",
     "ThemeSelectorEnabled": "Theme Selector (Jellyfish)",

@@ -619,7 +619,8 @@
             if (now) {
                 const groupTitle = (GROUPS.find((g) => g.key === current) || {}).title || current;
                 const label = target === ALL ? null : labelsOf(current).find((l) => l.key === target);
-                now.textContent = groupTitle + ' · ' + (label ? label.name : 'Whole group');
+                // The group part is dropped on a phone, where the group select above names it.
+                now.replaceChildren(el('span', 'je-ts-now-group', groupTitle + ' · '), document.createTextNode(label ? label.name : 'Whole group'));
             }
             const all = radio('je-ts-target je-ts-target-all' + (state.groups[current] ? ' changed' : ''), target === ALL, () => { target = ALL; renderGroup(); });
             all.textContent = 'Whole group';

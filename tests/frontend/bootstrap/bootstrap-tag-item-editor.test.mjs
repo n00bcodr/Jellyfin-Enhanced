@@ -817,3 +817,17 @@ test('the editor asks where the look is kept before the edits, and Save says whe
   await h.settle();
   assert.ok(Array.from(h.$('.je-tie-group[data-group="quality"]').querySelectorAll('.je-tie-where input')).every(el => !el.disabled), 'on again: usable');
 });
+
+test('Tab order includes the "Hidden by your settings" disclosure and skips what a closed disclosure holds', async t => {
+  const h = setup(t, { settings: { qualityTagsEnabled: false, genreTagsEnabled: true, ratingTagsEnabled: true } });
+  await h.open(MOVIE);
+  const summary = h.$('[data-tie-hidden] summary');
+  summary.focus();
+  summary.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+  const last = Array.from(h.document.querySelectorAll('.je-tie-foot button')).pop();
+  assert.notEqual(h.document.activeElement, last, 'Shift+Tab from the disclosure does not wrap to the footer');
+  // Nothing inside the closed disclosure takes part in the wrap: Tab from the last footer button returns to the start.
+  last.focus();
+  last.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+  assert.ok(!h.document.activeElement.closest('[data-tie-hidden] ul'), 'focus never lands inside the closed list');
+});

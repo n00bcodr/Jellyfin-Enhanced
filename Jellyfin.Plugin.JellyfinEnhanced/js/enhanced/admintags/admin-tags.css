@@ -279,14 +279,18 @@
 .je-ta-grow { border-radius: 10px; border: 1px solid var(--je-ta-border); background: var(--je-ta-surface); }
 .je-ta-grow[data-open="true"] { border-color: var(--je-ta-border-strong); }
 .je-ta-grow-head { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 56px; }
-.je-ta-grow-head > input[type="checkbox"] { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--je-ta-accent); cursor: pointer; }
+.je-ta-grow-check { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; margin: -6px -4px -6px -8px; border-radius: 8px; cursor: pointer; }
+.je-ta-grow-check:hover { background: var(--je-ta-surface-2); }
+.je-ta-grow-check input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--je-ta-accent); cursor: pointer; }
+.je-ta-grow-check:has(input:focus-visible) { outline: 2px solid var(--je-ta-text); outline-offset: -2px; }
+.je-tag-admin .je-ta-grow-check input:focus-visible { outline: none; }
 .je-ta-grow-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .je-ta-grow-name { font-size: 15px; font-weight: 600; }
 .je-ta-grow-sum { font-size: 12.5px; color: var(--je-ta-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .je-ta-grow-sample { flex: 0 1 auto; display: inline-flex; gap: 4px; align-items: center; min-width: 0; overflow: hidden; }
 .je-ta-grow-sample .je-ta-chip { flex: 0 0 auto; }
 .je-ta-grow[data-enabled="false"] .je-ta-grow-sample { opacity: 0.35; filter: grayscale(1); }
-.je-ta-expand { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--je-ta-border-strong); background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.je-ta-expand { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--je-ta-control-border); background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .je-ta-expand[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
 .je-ta-grow-body { padding: 4px 12px 14px; border-top: 1px solid var(--je-ta-border); }
 .je-ta-chip { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; line-height: 1.3; white-space: nowrap; color: #fff; background: rgba(0, 0, 0, 0.6); border: 1px solid transparent; }
@@ -383,7 +387,7 @@
 .je-tag-admin .je-ts-sample-note { font-size: 13px; color: rgba(255, 255, 255, 0.72); }
 /* Reset shows only when the property has a colour of its own to reset. */
 .je-tag-admin .je-ts-reset:disabled { display: none; }
-.je-tag-admin .je-ts-inspect { min-height: 32px; padding: 0 12px; border: 1px solid var(--je-border-strong); border-radius: 6px; background: var(--je-ta-surface-2); color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.je-tag-admin .je-ts-inspect { min-height: 32px; padding: 0 12px; border: 1px solid var(--je-ta-control-border); border-radius: 6px; background: var(--je-ta-surface-2); color: inherit; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
 .je-tag-admin .je-ts-preset-head { margin-top: 4px; }
 .je-tag-admin .je-ts-preview-toggle { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--je-border); border-radius: 8px; background: var(--je-ta-surface); color: inherit; cursor: pointer; font: inherit; text-align: left; }
 .je-tag-admin .je-ts-preview-toggle .je-ts-section-label { margin: 0; }
@@ -416,7 +420,7 @@
 .je-tag-admin .je-ts-target[hidden] { display: none; }
 /* Genre: one icon tile per genre, with its name where there is room; a filter box above. */
 .je-tag-admin .je-ts-target-hint { margin: -4px 0 0; font-size: 13px; color: var(--je-ta-muted); }
-.je-tag-admin .je-ts-target-filter { width: min(100%, 22em); min-height: 40px; margin: 0; padding: 4px 9px; border: 1px solid var(--je-ta-border-strong); border-radius: 6px; background: var(--je-ta-input); color: var(--je-ta-text); font: inherit; font-size: 13px; box-sizing: border-box; }
+.je-tag-admin .je-ts-target-filter { width: min(100%, 22em); min-height: 40px; margin: 0; padding: 4px 9px; border: 1px solid var(--je-ta-control-border); border-radius: 6px; background: var(--je-ta-input); color: var(--je-ta-text); font: inherit; font-size: 13px; box-sizing: border-box; }
 .je-tag-admin .je-ts-targets-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); align-content: start; max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
 .je-tag-admin .je-ts-targets-tiles .je-ts-target { gap: 8px; min-width: 0; }
 .je-tag-admin .je-ts-targets-tiles .je-ts-target-all { justify-content: center; }
@@ -517,7 +521,13 @@
     .je-ta-head-spacer { display: none; }
     /* The quiet saved state sits on the back-link row; a refused save stays a full-width banner. */
     .je-ta-saved:is([data-state="saved"], [data-state="saving"]) { position: absolute; top: 14px; right: 0; min-height: 32px; }
-    .je-ta-saved:is([data-state="error"], [data-state="conflict"]) { flex: 1 1 100%; }
+    /* Dot beside the message, the actions on the row under it. */
+    .je-ta-saved:is([data-state="error"], [data-state="conflict"]) { flex: 1 1 100%; display: grid; grid-template-columns: 8px minmax(0, 1fr) minmax(0, 1fr); gap: 8px 10px; align-items: center; }
+    .je-ta-saved:is([data-state="error"], [data-state="conflict"])::before { grid-column: 1; grid-row: 1; }
+    .je-ta-saved:is([data-state="error"], [data-state="conflict"]) > span { grid-column: 2 / -1; grid-row: 1; }
+    .je-ta-saved:is([data-state="error"], [data-state="conflict"]) > button { grid-row: 2; grid-column: 2; }
+    .je-ta-saved:is([data-state="error"], [data-state="conflict"]) > button + button { grid-column: 3; }
+    .je-ta-expand { min-height: 44px; }
 }
 @container je-ta (max-width: 520px) {
     .je-ta-title { font-size: 1.3em; }
@@ -547,6 +557,7 @@
     .je-tag-admin .je-ts-field-body .je-ts-swatch { width: 40px; height: 40px; }
     .je-tag-admin :is(.je-ts-edit, .je-ts-reset, .je-ts-opacity-pill, .je-ts-tab) { min-height: 44px; }
     .je-tag-admin .je-ts-tabs { display: none; }
+    .je-tag-admin .je-ts-now-group { display: none; }
     /* Colours on a phone: the card title carries the tab's heading; the tab's own stays for screen readers. */
     .je-ta-panel[data-tab="colours"] > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .je-ta-panel[data-tab="colours"] > .je-ta-hint { display: none; }

@@ -803,7 +803,8 @@
             const name = JE.t(s.title);
             return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false">`
                 + '<div class="je-ta-grow-head">'
-                + (enable ? `<input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}">` : '')
+                // The switch gets its own 44px target; it only turns the group on or off.
+                + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}"></label>` : '')
                 + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}</span><span class="je-ta-grow-sum"></span></div>`
                 + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
                 + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('common_open')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`

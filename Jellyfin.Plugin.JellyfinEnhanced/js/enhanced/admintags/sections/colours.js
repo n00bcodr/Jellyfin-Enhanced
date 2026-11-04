@@ -48,12 +48,13 @@
                     const target = /** @type {HTMLInputElement|null} */ (more.querySelector('[name="tagStyleTarget"]:checked'));
                     const allow = /** @type {HTMLInputElement|null} */ (more.querySelector('#tagStylesAllowUserPreset'));
                     const parts = [JE.t('admin_tags_colours_options')];
-                    if (target && !target.closest('[hidden]')) parts.push(target.closest('label')?.textContent?.trim() || '');
+                    // Apply to counts while tag colours are on (its row is shown then).
+                    if (target && ctx.config.TagStylesEnabled === true) parts.push(target.closest('label')?.textContent?.trim() || '');
                     if (allow) parts.push(JE.t(allow.checked ? 'admin_tags_colours_presets_on' : 'admin_tags_colours_presets_off'));
                     /** @type {HTMLElement} */ (more.querySelector('[data-more-text]')).textContent = parts.filter(Boolean).join(' · ');
                 };
                 sum();
-                section.addEventListener('change', sum, { signal: ctx.signal });
+                section.addEventListener('change', () => setTimeout(sum), { signal: ctx.signal });
             }
             editor = A.createTagStylesEditor(ctx.root, () => [...new Set((ctx.config.CustomTagRules || []).map((r) => r.Label || r.label).filter(Boolean))], () => ctx.isCurrent());
             ctx.root.addEventListener('je-custom-labels', () => { if (ctx.isCurrent()) editor.refreshLabels(); }, { signal: ctx.signal });

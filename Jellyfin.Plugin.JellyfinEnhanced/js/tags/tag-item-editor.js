@@ -197,6 +197,8 @@
             .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
             .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
             .je-tie-head { position: sticky; top: 0; z-index: 3; background: #1d2026; }
+            /* Keyboard scrolling keeps focus clear of the sticky title and footer. */
+            .je-tie-backdrop { scroll-padding: 76px 0 84px; }
             .je-tie-jump:not([hidden]) { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 44px; padding: 0 12px 0 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
             .je-tie-jump-thumb { width: 22px; height: 33px; border-radius: 3px; background: #2b303a center / cover no-repeat; }
             .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }
@@ -847,8 +849,9 @@
         });
 
         // ── Closing, focus, saving ──
-        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'))
-            .filter((el) => !el.closest('[hidden]') && !(/** @type {HTMLInputElement} */ (el).type === 'radio' && !/** @type {HTMLInputElement} */ (el).checked && dialog.querySelector(`input[name="${/** @type {HTMLInputElement} */ (el).name}"]:checked`)));
+        // Tab order: disclosure rows included; nothing inside a closed disclosure, hidden, disabled or taken out of it.
+        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex="0"]'))
+            .filter((el) => !el.closest('[hidden]') && !(el.tagName !== 'SUMMARY' && el.closest('details:not([open])')) && /** @type {HTMLElement} */ (el).tabIndex >= 0 && !(/** @type {HTMLInputElement} */ (el).type === 'radio' && !/** @type {HTMLInputElement} */ (el).checked && dialog.querySelector(`input[name="${/** @type {HTMLInputElement} */ (el).name}"]:checked`)));
         const onFocusIn = (e) => {
             // Jellyfin's closing action sheet hands focus back to its button: keep it here.
             if (backdrop.isConnected && !backdrop.contains(/** @type {Node} */ (e.target))) dialog.focus({ preventScroll: true });

@@ -258,8 +258,9 @@
         const dialog = /** @type {HTMLElement} */ (backdrop.firstElementChild);
         const statusEl = /** @type {HTMLElement} */ (dialog.querySelector('.je-pt-status'));
         let isClosed = false;
-        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]'))
-            .filter((el) => !el.closest('[hidden]'));
+        // Tab order: disclosure rows included; nothing inside a closed disclosure, hidden or taken out of it.
+        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], summary'))
+            .filter((el) => !el.closest('[hidden]') && !(el.tagName !== 'SUMMARY' && el.closest('details:not([open])')) && /** @type {HTMLElement} */ (el).tabIndex >= 0);
         const close = () => {
             if (isClosed) return;
             isClosed = true;

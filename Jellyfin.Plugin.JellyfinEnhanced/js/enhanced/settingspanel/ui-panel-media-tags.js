@@ -597,7 +597,7 @@
         #jellyfin-enhanced-panel .je-mth-button .material-icons, #jellyfin-enhanced-panel .je-mth-link .material-icons { font-size: 16px; }
         #jellyfin-enhanced-panel .je-mth-link { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; color: #7fd3ff; font-size: 13px; }
         #jellyfin-enhanced-panel .je-mth-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 6px; }
-        #jellyfin-enhanced-panel .je-mth-preset { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.25); cursor: pointer; }
+        #jellyfin-enhanced-panel .je-mth-preset { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.46); background: rgba(0,0,0,0.25); cursor: pointer; }
         #jellyfin-enhanced-panel .je-mth-preset:has(input:checked) { border: 2px solid var(--je-mth-accent); padding: 9px; }
         #jellyfin-enhanced-panel .je-mth-preset-chips { display: flex; flex-wrap: wrap; gap: 3px; min-height: 22px; padding: 6px 5px; border-radius: 4px; background: linear-gradient(135deg, #39424f, #1b1f26); overflow: hidden; }
         #jellyfin-enhanced-panel .je-mth-chip { display: inline-flex; align-items: center; padding: 2px 4px; border-radius: 4px; border: 1px solid transparent; font-size: 10px; font-weight: 700; line-height: 1.2; white-space: nowrap; }
