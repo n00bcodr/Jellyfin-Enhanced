@@ -355,8 +355,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
             else if (includeAudio)
             {
-                var audio = DetectAudioCodec(audioStreams, legacyAudio);
-                var channels = DetectChannels(audioStreams);
+                // The earlier vocabulary keeps its words, but its codec and channels must come from one real track.
+                var (audio, channels) = TruthfulLegacyAudio(DetectAudioCodec(audioStreams, legacyAudio), DetectChannels(audioStreams), audioStreams);
                 if (audio is not null)
                 {
                     if (channels is not null && !audio.Contains(channels, StringComparison.Ordinal)) audio = audio + " " + channels;
@@ -483,8 +483,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static string? TrackAudioLabel(TagMediaStream stream, bool legacyAudio)
         {
             var track = new List<TagMediaStream>(1) { stream };
-            var codec = DetectAudioCodec(track, legacyAudio);
-            var channels = legacyAudio ? DetectChannels(track) : TrackChannels(stream);
+            var (codec, channels) = legacyAudio ? TruthfulLegacyAudio(DetectAudioCodec(track, true), DetectChannels(track), track) : (DetectAudioCodec(track), TrackChannels(stream));
             var bed = channels is { Length: > 3 } ? channels[..3] : channels;
             return codec == null ? (bed is "7.1" or "5.1" || (!legacyAudio && bed == "6.1") ? bed : null)
                 : channels != null && !codec.Contains(channels, StringComparison.Ordinal) ? codec + " " + channels : codec;
@@ -797,6 +796,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return DolbyDigitalPlusCarrierRegex.IsMatch(text) ? "DD+ ATMOS" : label;
         }
 
+        private static readonly Regex LegacyDtsXRegex = new(@"(?:^|[^a-z0-9_])dts[-_.: ]?x(?![a-z0-9_])", Options);
+
+        // Which current per-track labels each earlier-vocabulary codec may stand for (it may name less, never more).
+        private static readonly Dictionary<string, string[]> LegacyStandsFor = new(StringComparer.Ordinal)
+        {
+            ["ATMOS"] = new[] { "TRUEHD ATMOS", "DD+ ATMOS", "ATMOS" },
+            ["TRUEHD"] = new[] { "TRUEHD", "TRUEHD ATMOS" },
+            ["DTS-X"] = new[] { "DTS-X" },
+            ["DTS"] = new[] { "DTS", "DTS-HD", "DTS-HD MA", "DTS-HD HRA", "DTS-X" },
+            ["Dolby Digital+"] = new[] { "Dolby Digital+", "DD+ ATMOS" },
+        };
+
+        // The earlier-vocabulary name of a current per-track codec; Dolby Digital, PCM and FLAC had none.
+        private static readonly Dictionary<string, string> LegacyName = new(StringComparer.Ordinal)
+        {
+            ["TRUEHD ATMOS"] = "ATMOS", ["DD+ ATMOS"] = "ATMOS", ["ATMOS"] = "ATMOS", ["DTS-X"] = "DTS-X", ["TRUEHD"] = "TRUEHD",
+            ["DTS-HD MA"] = "DTS", ["DTS-HD HRA"] = "DTS", ["DTS-HD"] = "DTS", ["DTS"] = "DTS", ["Dolby Digital+"] = "Dolby Digital+",
+        };
+
+        private static readonly string[] LegacyBuckets = { "2.0", "5.1", "7.1" };
+
+        private static string? LegacyBucket(string? layout)
+        {
+            var total = (layout ?? string.Empty).Split('.').Sum(part => int.TryParse(part, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0);
+            return total >= 8 ? "7.1" : total >= 6 ? "5.1" : total >= 2 ? "2.0" : null;
+        }
+
+        /// <summary>
+        /// Version-0 sound (truthfulLegacyAudio in qualitytags.js): keep its codec and channel bucket when one eligible track holds
+        /// both (the codec naming that track's carrier or less, the track having at least those channels); otherwise describe the
+        /// best single track in the same vocabulary.
+        /// </summary>
+        private static (string? Codec, string? Channels) TruthfulLegacyAudio(string? codec, string? channels, List<TagMediaStream> streams)
+        {
+            var tracks = streams.Select(stream => (Label: DetectCurrentAudioCodec(new List<TagMediaStream>(1) { stream }), Bucket: LegacyBucket(TrackChannels(stream)), Stream: stream)).ToList();
+            bool Holds((string? Label, string? Bucket, TagMediaStream Stream) track)
+                => (codec == null || (LegacyStandsFor.TryGetValue(codec, out var labels) && track.Label != null && Array.IndexOf(labels, track.Label) >= 0))
+                    && (channels == null || Array.IndexOf(LegacyBuckets, track.Bucket) >= Array.IndexOf(LegacyBuckets, channels));
+            if (tracks.Any(Holds)) return (codec, channels);
+            (string Text, (string? Label, string? Bucket, TagMediaStream Stream) Track)? best = null;
+            foreach (var track in tracks)
+            {
+                var label = TrackAudioLabel(track.Stream, legacyAudio: false);
+                if (label != null && (best == null || AggregationRank(label, AudioInfo) < AggregationRank(best.Value.Text, AudioInfo))) best = (label, track);
+            }
+
+            if (best == null) return (null, null);
+            return (best.Value.Track.Label != null && LegacyName.TryGetValue(best.Value.Track.Label, out var name) ? name : null, best.Value.Track.Bucket);
+        }
+
         private static string? DetectAudioCodec(List<TagMediaStream> audioStreams, bool legacyAudio = false)
         {
             if (!legacyAudio) return DetectCurrentAudioCodec(audioStreams);
@@ -825,8 +874,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
                 if (codec.Contains("dts", StringComparison.Ordinal))
                 {
-                    if (codec.Contains('x', StringComparison.Ordinal) || profile.Contains('x', StringComparison.Ordinal)) return "DTS-X";
-                    return "DTS";
+                    // DTS:X by name only: XLL (the DTS-HD MA lossless extension) is not object audio.
+                    return LegacyDtsXRegex.IsMatch(codec + " " + profile) ? "DTS-X" : "DTS";
                 }
 
                 if (codec.Contains("eac3", StringComparison.Ordinal) || codec.Contains("ddp", StringComparison.Ordinal)) return "Dolby Digital+";

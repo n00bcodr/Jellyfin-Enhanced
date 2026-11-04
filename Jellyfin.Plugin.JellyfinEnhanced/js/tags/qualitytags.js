@@ -275,7 +275,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 15 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 16 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -438,6 +438,48 @@
         }
 
         return label;
+    }
+
+    // Which current per-track labels each earlier-vocabulary codec may stand for (it may name less, never more).
+    const LEGACY_STANDS_FOR = {
+        'ATMOS': ['TRUEHD ATMOS', 'DD+ ATMOS', 'ATMOS'],
+        'TRUEHD': ['TRUEHD', 'TRUEHD ATMOS'],
+        'DTS-X': ['DTS-X'],
+        'DTS': ['DTS', 'DTS-HD', 'DTS-HD MA', 'DTS-HD HRA', 'DTS-X'],
+        'Dolby Digital+': ['Dolby Digital+', 'DD+ ATMOS'],
+    };
+    const LEGACY_BUCKETS = ['2.0', '5.1', '7.1'];
+    // The earlier-vocabulary name of a current per-track codec; Dolby Digital, PCM and FLAC had none.
+    const LEGACY_NAME = { 'TRUEHD ATMOS': 'ATMOS', 'DD+ ATMOS': 'ATMOS', 'ATMOS': 'ATMOS', 'DTS-X': 'DTS-X', 'TRUEHD': 'TRUEHD',
+        'DTS-HD MA': 'DTS', 'DTS-HD HRA': 'DTS', 'DTS-HD': 'DTS', 'DTS': 'DTS', 'Dolby Digital+': 'Dolby Digital+' };
+
+    /** @param {string|null} layout A track layout such as "5.1.2". @returns {string|null} Its earlier channel bucket. */
+    function legacyBucket(layout) {
+        const total = String(layout || '').split('.').reduce((sum, part) => sum + (Number(part) || 0), 0);
+        return total >= 8 ? '7.1' : total >= 6 ? '5.1' : total >= 2 ? '2.0' : null;
+    }
+
+    /**
+     * Version-0 sound (QualityTagRules.TruthfulLegacyAudio): keep its codec and channel bucket when one eligible track
+     * holds both (the codec naming that track's carrier or less, the track having at least those channels); otherwise
+     * describe the best single track in the same vocabulary, so a TrueHD 2.0 track beside an AAC 7.1 never reads TRUEHD 7.1.
+     * @param {string|null} codec Earlier-vocabulary codec.
+     * @param {string|null} channels Earlier channel bucket.
+     * @param {Object[]} streams Eligible audio tracks.
+     * @returns {{codec: string|null, channels: string|null}}
+     */
+    function truthfulLegacyAudio(codec, channels, streams) {
+        const tracks = streams.map(stream => ({ label: detectCurrentAudioCodec([stream]), bucket: legacyBucket(trackChannels(stream)), stream }));
+        const holds = track => (codec === null || (LEGACY_STANDS_FOR[codec] || []).includes(track.label))
+            && (channels === null || LEGACY_BUCKETS.indexOf(track.bucket) >= LEGACY_BUCKETS.indexOf(channels));
+        if (tracks.some(holds)) return { codec, channels };
+        let best = null;
+        for (const track of tracks) {
+            const label = trackAudioLabel(track.stream);
+            if (label && (best === null || distinctRank(label, 'audio') < distinctRank(best.text, 'audio'))) best = { text: label, track };
+        }
+        if (!best) return { codec: null, channels: null };
+        return { codec: LEGACY_NAME[best.track.label] ?? null, channels: best.track.bucket };
     }
 
     /**
@@ -987,7 +1029,8 @@
                         }
                         break;
                     } else if (codec.includes('dts')) {
-                        if (codec.includes('x') || profile.includes('x')) {
+                        // DTS:X by name only: XLL (the DTS-HD MA lossless extension) is not object audio.
+                        if (/(?:^|[^a-z0-9_])dts[-_.: ]?x(?![a-z0-9_])/.test(`${codec} ${profile}`)) {
                             audioTag = 'DTS-X';
                         } else {
                             audioTag = 'DTS';
@@ -1000,7 +1043,9 @@
                 }
             }
 
-            const channelTag = getChannelTag(audioStreams);
+            let channelTag = getChannelTag(audioStreams);
+            // The earlier vocabulary keeps its words, but its codec and channels must come from one real track.
+            ({ codec: audioTag, channels: channelTag } = truthfulLegacyAudio(audioTag, channelTag, audioStreams));
 
             // Append channel layout to codec tag instead of creating a separate channel tag.
             if (audioTag) {
@@ -1470,7 +1515,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 15, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 16, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1508,7 +1553,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 15, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 16, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

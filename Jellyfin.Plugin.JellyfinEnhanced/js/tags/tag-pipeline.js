@@ -79,7 +79,7 @@
     // downloaded in full, so new entry fields never wait for a server rebuild
     // that happens to change the cache version. Current schema: Awards, Logos and Custom matches.
     // Use the store identity in the bundle; standalone fallback has the same entry schema.
-    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 36;
+    const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 37;
     const MEMORY_SOFT_CAP = 20000;
     const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled', 'customTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 

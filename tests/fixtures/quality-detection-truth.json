@@ -585,7 +585,7 @@
     "DTS 5.1"
    ],
    "legacy": [
-    "DTS 7.1"
+    "TRUEHD 7.1"
    ]
   },
   {
@@ -1797,6 +1797,62 @@
    ],
    "all": [
     "Dolby Digital 5.1"
+   ]
+  },
+  {
+   "name": "An XLL profile is DTS-HD MA, not DTS:X, for every account",
+   "why": "XLL is the lossless extension; only DTS:X by name is object audio",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA (XLL)",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ],
+   "legacy": [
+    "DTS 7.1"
+   ]
+  },
+  {
+   "name": "A stereo TrueHD track beside an AAC 7.1 track is TrueHD 2.0 for every account",
+   "why": "Codec and channels come from one track; no track is TrueHD 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "TrueHD 2.0"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "AAC 7.1"
+    }
+   ],
+   "highest": [
+    "TRUEHD 2.0"
+   ],
+   "all": [
+    "TRUEHD 2.0",
+    "7.1"
+   ],
+   "legacy": [
+    "TRUEHD 2.0"
    ]
   }
  ]
