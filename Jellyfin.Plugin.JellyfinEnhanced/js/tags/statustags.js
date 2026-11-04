@@ -191,7 +191,8 @@
      * @property {number|null} latestAired - Series/Season: newest episode air date (ms).
      * @property {{s: number, e: number, isLast: boolean}|null} latestIndex - Its season/episode numbers.
      * @property {{s: number, aired: number}|null} seasonPremiere - Series: newest season; Season: itself.
-     * @property {{first: number, last: number, count: number}|null} addedSpan - Season: episode added dates.
+     * @property {{first: number, last: number, count: number, coveredThrough: number|null}|null} addedSpan - Season: episode added dates
+     *   and the highest N with every episode 1..N in the library (null when not read).
      * @property {number|null} season - Season/Episode: season number.
      * @property {number|null} episode - Episode: episode number.
      * @property {boolean|null} isLast - Whether this is the last locally available episode in its season.
@@ -359,7 +360,7 @@
             seasonPremiere: premiere && toInt(premiere.Season) !== null && toMs(premiere.Aired) !== null
                 ? { s: premiere.Season, aired: toMs(premiere.Aired) } : null,
             addedSpan: span && toMs(span.First) !== null && toMs(span.Last) !== null && toInt(span.Count) !== null
-                ? { first: toMs(span.First), last: toMs(span.Last), count: span.Count } : null,
+                ? { first: toMs(span.First), last: toMs(span.Last), count: span.Count, coveredThrough: toInt(span.CoveredThrough) } : null,
         };
     }
 
@@ -570,20 +571,20 @@
 
     /**
      * Complete Season needs proof (StatusRules.SeasonComplete): TMDB's episode count for the season, every one of
-     * them aired (no next episode in it), and the library holding as many episodes as that, up to the last one.
+     * them aired (no next episode in it), and the library covering every episode number 1..N.
      * @param {StatusData} data
      * @param {SeriesFacts|null} facts
-     * @param {number} available Episodes in the library.
      * @returns {boolean}
      */
-    function seasonComplete(data, facts, available) {
+    function seasonComplete(data, facts) {
         const season = data.season ?? data.latestIndex?.s ?? null;
         const expected = season !== null ? toInt(facts?.seasonEpisodes?.[season]) : null;
         if (!expected || expected <= 0) return false;
         if (facts.next && facts.next.season !== null && facts.next.season <= season) return false;
         const last = facts.last;
         if (!last || last.season === null || last.season < season || (last.season === season && (last.episode ?? 0) < expected)) return false;
-        return !!data.latestIndex && data.latestIndex.s === season && data.latestIndex.e >= expected && available >= expected;
+        // Duplicates and extra numbers cannot fill a gap; a multi-episode file covers its range.
+        return (data.addedSpan?.coveredThrough ?? 0) >= expected;
     }
 
     /**
@@ -662,15 +663,19 @@
         const parent = JE.tagPipeline?.peekItemFacts?.(data.seriesId)
             || JE.tagPipeline?.peekServerEntry?.(data.seriesId);
         const aggregate = parent ? readFacts(parent) : data.type === 'Series' ? data : readFacts({});
+        // The library's latest episode only stands in for TMDB's finale when TMDB's per-season counts show it is the
+        // last episode of the last season (StatusRules.FinalRegularEpisode).
+        const counts = facts.seasonEpisodes || {};
+        const lastSeason = Math.max(0, ...Object.keys(counts).map(Number).filter(Number.isFinite));
         /** @param {Object} local @returns {SeriesFacts['last']} */
         const regular = local => {
             if (!(local.latestIndex?.s > 0) || local.latestAired === null) return null;
+            if (local.latestIndex.s !== lastSeason || toInt(counts[lastSeason]) !== local.latestIndex.e) return null;
             const date = new Date(local.latestAired);
             const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
             return { date: day, season: local.latestIndex.s, episode: local.latestIndex.e, type: null };
         };
-        // TMDB's final regular episode first (StatusRules.FinalRegularEpisode): local S1E3 is not the finale of a
-        // ten-episode season TMDB has ended.
+        // TMDB's final regular episode first: local S1E3 is not the finale of a ten-episode season TMDB has ended.
         return (facts.last?.season > 0 ? facts.last : null)
             || (facts.regular?.season > 0 ? facts.regular : null)
             || regular(aggregate)
@@ -763,7 +768,7 @@
                 const span = data.addedSpan;
                 // Every available episode arrived within the just-added window, and they are the whole season.
                 if (showMilestones && span && span.count > 0 && span.first <= span.last && isWithin(span.first, now, justAddedMs) && isWithin(span.last, now, justAddedMs)
-                    && seasonComplete(data, facts, span.count)) {
+                    && seasonComplete(data, facts)) {
                     return makeBadge('milestone', 'complete_season');
                 }
                 if (showMilestones && data.seasonPremiere && airedWithin(data.seasonPremiere.aired, newReleaseMs)) {
@@ -853,7 +858,7 @@
             isLast: entry.il ?? null,
             latestIndex: Array.isArray(entry.li) ? { s: entry.li[0], e: entry.li[1], isLast: entry.li[2] === true } : null,
             seasonPremiere: Array.isArray(entry.sp) ? { s: entry.sp[0], aired: entry.sp[1] } : null,
-            addedSpan: Array.isArray(entry.as) ? { first: entry.as[0], last: entry.as[1], count: entry.as[2] } : null,
+            addedSpan: Array.isArray(entry.as) ? { first: entry.as[0], last: entry.as[1], count: entry.as[2], coveredThrough: entry.as[3] ?? null } : null,
             season: entry.sn ?? null,
             episode: entry.en ?? null,
             seriesId: entry.si ?? null,
@@ -883,7 +888,7 @@
         if (data.isLast !== null) entry.il = data.isLast;
         if (data.latestIndex) entry.li = [data.latestIndex.s, data.latestIndex.e, data.latestIndex.isLast];
         if (data.seasonPremiere) entry.sp = [data.seasonPremiere.s, data.seasonPremiere.aired];
-        if (data.addedSpan) entry.as = [data.addedSpan.first, data.addedSpan.last, data.addedSpan.count];
+        if (data.addedSpan) entry.as = [data.addedSpan.first, data.addedSpan.last, data.addedSpan.count, data.addedSpan.coveredThrough];
         if (data.season !== null) entry.sn = data.season;
         if (data.episode !== null) entry.en = data.episode;
         if (data.seriesId) entry.si = data.seriesId;
@@ -1567,7 +1572,7 @@
                         } : null,
                         SeasonPremiere: cached.seasonPremiere ? { Season: cached.seasonPremiere.s, Aired: cached.seasonPremiere.aired } : null,
                         SeasonAddedSpan: cached.addedSpan ? {
-                            First: cached.addedSpan.first, Last: cached.addedSpan.last, Count: cached.addedSpan.count,
+                            First: cached.addedSpan.first, Last: cached.addedSpan.last, Count: cached.addedSpan.count, CoveredThrough: cached.addedSpan.coveredThrough,
                         } : null,
                     }, itemId, cached.fetchedAt);
                     // Misses join the pipeline's existing batch instead of renewing stale facts.

@@ -124,3 +124,63 @@ public class StatusPremiereDayTests
         Assert.Equal(2, late.SeasonPremiere?.Season);
     }
 }
+
+/// <summary>Complete Season and Series Finale need proof: every episode 1..N present, and a finale identity TMDB confirms.</summary>
+[Collection("Plugin singleton")]
+public class StatusCompletionProofTests
+{
+    private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-11-05T12:00:00Z");
+
+    private static TagCacheEntry Season(params (int Start, int? End)[] episodes)
+    {
+        var facts = new StatusTagsEpisodeFacts(true, 1, Now.UtcDateTime);
+        foreach (var (start, end) in episodes)
+            facts.Note(Guid.NewGuid(), Now.UtcDateTime.AddDays(-1), Now.UtcDateTime.AddDays(-30 + start), 1, start, end);
+        var entry = new TagCacheEntry { Type = "Season", SeasonNumber = 1, DateCreated = Now.AddYears(-1).ToUnixTimeMilliseconds() };
+        facts.ApplyTo(entry);
+        return entry;
+    }
+
+    private static string? Badge(TagCacheEntry entry, SeriesSchedule schedule)
+    {
+        var settings = PosterTagSettings.FromUserSettings(new() { StatusTagsEnabled = true, NativePosterTimeZone = "UTC" }, new PluginConfiguration { StatusTagsEnabled = true, TMDB_API_KEY = "key" }, null);
+        return StatusRules.Resolve(entry, settings, new(Now, schedule))?.Key;
+    }
+
+    private static readonly SeriesSchedule TenEpisodes = new("Ended", new("2026-10-15", 1, 10, null), null, SeasonEpisodes: new Dictionary<int, int> { [1] = 10 });
+
+    [Fact]
+    public void EveryEpisodeOneToTenMakesACompleteSeason()
+        => Assert.Equal("complete_season", Badge(Season(Enumerable.Range(1, 10).Select(n => (n, (int?)null)).ToArray()), TenEpisodes));
+
+    [Theory]
+    [InlineData(new[] { 1, 1, 3, 4, 5, 6, 7, 8, 9, 10 })]   // a duplicate stands where episode 2 should be
+    [InlineData(new[] { 1, 3, 4, 5, 6, 7, 8, 9, 10, 11 })]  // an extra number past the end
+    [InlineData(new[] { 1, 2, 3, 4, 6, 7, 8, 9, 10 })]      // episode 5 missing
+    public void ExtraOrDuplicateRowsNeverFillAGap(int[] numbers)
+    {
+        var entry = Season(numbers.Select(n => (n, (int?)null)).ToArray());
+        Assert.True(entry.SeasonAddedSpan!.CoveredThrough < 10);
+        Assert.NotEqual("complete_season", Badge(entry, TenEpisodes));
+    }
+
+    [Fact]
+    public void MultiEpisodeFilesCoverTheirRange()
+    {
+        var entry = Season((1, 2), (3, 4), (5, 6), (7, 8), (9, 10));
+        Assert.Equal(10, entry.SeasonAddedSpan!.CoveredThrough);
+        Assert.Equal("complete_season", Badge(entry, TenEpisodes));
+    }
+
+    [Theory]
+    [InlineData(3, false)]
+    [InlineData(10, true)]
+    public void WithoutTmdbsFinaleTheLibraryEpisodeMustBeTheLastOfTheLastSeason(int latest, bool finale)
+    {
+        var series = new TagCacheEntry { Type = "Series", DateCreated = Now.AddYears(-1).ToUnixTimeMilliseconds(),
+            LatestEpisodeIndex = new() { Season = 1, Episode = latest }, LatestEpisodeAired = Now.AddDays(-2).ToUnixTimeMilliseconds() };
+        var ended = new SeriesSchedule("Ended", null, null, SeasonEpisodes: new Dictionary<int, int> { [1] = 10 });
+        Assert.Equal(finale, Badge(series, ended) == "series_finale");
+        Assert.NotEqual("series_finale", Badge(series, new SeriesSchedule("Ended", null, null)));
+    }
+}

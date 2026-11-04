@@ -241,7 +241,7 @@ public class StatusTagsCacheFactsTests
         Assert.Null(builtSeason.Status);
         Assert.Equal(new TagEpisodeIndex { Season = 2, Episode = 2, IsLast = true }, builtSeason.LatestEpisodeIndex);
         Assert.Equal(new TagSeasonPremiere { Season = 2, Aired = Ms(new DateTime(2026, 10, 1)) }, builtSeason.SeasonPremiere);
-        Assert.Equal(new TagAddedSpan { First = Ms(new DateTime(2026, 10, 2, 10, 0, 0)), Last = Ms(new DateTime(2026, 10, 2, 11, 0, 0)), Count = 2 }, builtSeason.SeasonAddedSpan);
+        Assert.Equal(new TagAddedSpan { First = Ms(new DateTime(2026, 10, 2, 10, 0, 0)), Last = Ms(new DateTime(2026, 10, 2, 11, 0, 0)), Count = 2, CoveredThrough = 2 }, builtSeason.SeasonAddedSpan);
 
         // A Specials season counts its own episodes.
         Assert.True(cache.TryGetEntry(specials.Id, out var builtSpecials));
@@ -387,9 +387,10 @@ public class StatusTagsCacheFactsTests
         return (TagCacheService.ToUnixMilliseconds(latest), facts);
     }
 
+    // Episode coverage is read only by the full walk; the bounded lookup leaves it unknown (no completion claim).
     private static string Facts((long? LatestAdded, StatusTagsEpisodeFacts Facts) f) => JsonSerializer.Serialize(new
     {
-        f.LatestAdded, f.Facts.LatestAired, f.Facts.LatestIndex, f.Facts.SeasonPremiere, f.Facts.AddedSpan,
+        f.LatestAdded, f.Facts.LatestAired, f.Facts.LatestIndex, f.Facts.SeasonPremiere, AddedSpan = f.Facts.AddedSpan is { } span ? span with { CoveredThrough = null } : null,
     });
 
     private static Func<InternalItemsQuery> EpisodesOf(BaseItem container) => () => new InternalItemsQuery

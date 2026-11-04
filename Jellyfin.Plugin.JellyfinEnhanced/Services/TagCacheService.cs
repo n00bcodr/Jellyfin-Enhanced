@@ -334,7 +334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 31;
+        internal const int CurrentCacheSchemaVersion = 32;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -3223,7 +3223,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         {
                             qualityEpisodes.Add(new(episode.Id.ToString("N"), ToUnixMilliseconds(episode.PremiereDate), episode.StreamData, episode.NamingTags?.Source, episode.NamingTags?.Edition));
                             NoteAdded(episode.Id, episode.DateCreated);
-                            statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber);
+                            statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber, (episode.Item as MediaBrowser.Controller.Entities.TV.Episode)?.IndexNumberEnd);
                             return Accumulate(episode.ParentIndexNumber, episode.Languages, episode.Subtitles);
                         });
                     firstEp = first == null ? null : new RepresentativeEpisode(first.Genres, first.StreamData, first.Item, first.NamingTags);
@@ -3233,7 +3233,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     var first = TagEpisodeSelector.ScanEpisodes(_libraryManager, container, user, episode =>
                     {
                         NoteAdded(episode.Id, episode.DateCreated);
-                        statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber);
+                        statusFacts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber, (episode as MediaBrowser.Controller.Entities.TV.Episode)?.IndexNumberEnd);
                         string[]? languages;
                         string[]? subtitles;
                         TagStreamData? qualityStreams;

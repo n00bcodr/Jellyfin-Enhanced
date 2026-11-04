@@ -51,7 +51,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             Episode? Note(Episode? episode)
             {
                 if (episode != null && noted.Add(episode.Id))
-                    facts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber);
+                    facts.Note(episode.Id, episode.DateCreated, episode.PremiereDate, episode.ParentIndexNumber, episode.IndexNumber, episode.IndexNumberEnd);
                 return episode;
             }
 

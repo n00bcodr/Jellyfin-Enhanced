@@ -344,6 +344,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public long First { get; init; }
         public long Last { get; init; }
         public int Count { get; init; }
+
+        /// <summary>
+        /// The highest N with every episode number 1..N in the library (a multi-episode file covers its range;
+        /// duplicates count once), or null when coverage was not read (very large seasons).
+        /// </summary>
+        public int? CoveredThrough { get; init; }
     }
 
     /// <summary>One distinct per-track quality value; audio retains its language for personal filtering.</summary>

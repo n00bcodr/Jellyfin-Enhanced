@@ -38,6 +38,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly DateTime _now;
         private DateTime? _nextPremiere;
 
+        // Season only: the episode numbers of the season itself the library covers, and whether they were read at all.
+        private readonly HashSet<int> _covered = new();
+        private bool _coverageUnknown;
+
         /// <summary>
         /// How far ahead of UTC the earliest time zone is (UTC+14). A premiere dated up to this far in the
         /// future is already today somewhere, so its season premiere is recorded and each viewer's local day
@@ -59,7 +63,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// only count towards the aired facts of a Specials season, so a special
         /// never makes a series look like it has a new season or episode.
         /// </summary>
-        public void Note(Guid id, DateTime dateCreated, DateTime? premiereDate, int? seasonNumber, int? episodeNumber)
+        public void Note(Guid id, DateTime dateCreated, DateTime? premiereDate, int? seasonNumber, int? episodeNumber, int? episodeEnd = null)
         {
             _count++;
             _allIds.Add(id.ToString("N"));
@@ -79,6 +83,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var season = seasonNumber ?? _containerSeason;
             if (season is > 0) _newestSeason = Math.Max(_newestSeason ?? 0, season.Value);
+            // A multi-episode file (IndexNumberEnd) covers its whole range; a range over 50 is not believed.
+            if (_isSeason && season == _containerSeason && episodeNumber is > 0 and var start)
+            {
+                var end = episodeEnd is { } last && last >= start && last - start <= 50 ? last : start;
+                for (var number = start; number <= end; number++) _covered.Add(number);
+            }
             if (season is { } numberedSeason && episodeNumber is { } numberedEpisode)
             {
                 _lastEpisodeBySeason[numberedSeason] = Math.Max(_lastEpisodeBySeason.GetValueOrDefault(numberedSeason), numberedEpisode);
@@ -130,6 +140,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         internal void UseAddedSpan(int count, DateTime? oldest, DateTime? newest)
         {
             _count = count;
+            _coverageUnknown = true;
             _missingAdded = oldest == default(DateTime);
             _firstAdded = oldest is { } o && o != default ? o : null;
             _lastAdded = newest;
@@ -166,8 +177,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>Season only: first/newest added date and episode count, or null.</summary>
         public TagAddedSpan? AddedSpan =>
             _isSeason && !_missingAdded && TagCacheService.ToUnixMilliseconds(_firstAdded) is { } first && TagCacheService.ToUnixMilliseconds(_lastAdded) is { } last
-                ? new TagAddedSpan { First = first, Last = last, Count = _count }
+                ? new TagAddedSpan { First = first, Last = last, Count = _count, CoveredThrough = _coverageUnknown ? null : CoveredThrough() }
                 : null;
+
+        private int CoveredThrough()
+        {
+            var through = 0;
+            while (_covered.Contains(through + 1)) through++;
+            return through;
+        }
 
         /// <summary>
         /// The episodes the facts came from (N format, sorted, distinct), for the

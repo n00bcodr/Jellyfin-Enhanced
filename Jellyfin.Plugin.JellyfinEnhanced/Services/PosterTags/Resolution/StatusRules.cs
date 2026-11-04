@@ -109,7 +109,7 @@ public static class StatusRules
                 break;
             case "Season":
                 if (showMilestones && data.SeasonAddedSpan is { Count: > 0 } span && span.First <= span.Last
-                    && Within(span.First, now, justAddedMs) && Within(span.Last, now, justAddedMs) && SeasonComplete(data, facts, span.Count)) return Badge("complete_season");
+                    && Within(span.First, now, justAddedMs) && Within(span.Last, now, justAddedMs) && SeasonComplete(data, facts)) return Badge("complete_season");
                 if (showMilestones && data.SeasonPremiere is { } seasonPremiere && AiredWithin(seasonPremiere.Aired, newReleaseMs)) return Badge("season_premiere");
                 var season = data.SeasonNumber ?? data.SeasonPremiere?.Season ?? data.LatestEpisodeIndex?.Season;
                 if (showMilestones && facts?.LastAired is { } last && lastRecently && season != null && last.Season == season
@@ -177,16 +177,17 @@ public static class StatusRules
     private static DateOnly? AirDate(string? value) => DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null;
     /// <summary>
     /// Complete Season needs proof (seasonComplete in statustags.js): TMDB's episode count for the season, every one
-    /// of them aired (no next episode in it), and the library holding as many episodes as that, up to the last one.
-    /// Without TMDB facts, or with fewer files than episodes (multi-episode files included), the season is not called complete.
+    /// of them aired (no next episode in it), and the library covering every episode number 1..N (TagAddedSpan.CoveredThrough).
+    /// Without TMDB facts, or with a gap anywhere in 1..N, the season is not called complete.
     /// </summary>
-    private static bool SeasonComplete(TagCacheEntry data, SeriesSchedule? facts, int available)
+    private static bool SeasonComplete(TagCacheEntry data, SeriesSchedule? facts)
     {
         var season = data.SeasonNumber ?? data.LatestEpisodeIndex?.Season;
         if (facts?.SeasonEpisodes is not { } counts || season is not { } number || !counts.TryGetValue(number, out var expected)) return false;
         if (facts.NextAired is { Season: { } nextSeason } && nextSeason <= number) return false;
         if (facts.LastAired is not { Season: { } lastSeason } last || lastSeason < number || (lastSeason == number && last.Episode < expected)) return false;
-        return data.LatestEpisodeIndex is { } latest && latest.Season == number && latest.Episode >= expected && available >= expected;
+        // Every episode 1..N present (duplicates and extra numbers cannot fill a gap; a multi-episode file covers its range).
+        return data.SeasonAddedSpan?.CoveredThrough >= expected;
     }
 
     private static bool LastEndsSeason(SeriesSchedule facts, bool isLast) => facts.LastAired is { } last && (last.Type != null
@@ -194,12 +195,15 @@ public static class StatusRules
 
     /// <summary>
     /// TMDB's final regular episode first, so a library holding only S1E3 of an ended ten-episode season never calls
-    /// E3 the finale; the caller's regular aggregate only when TMDB names none. Never an episode's season-local IsLast.
+    /// E3 the finale. The caller's regular aggregate only stands in when TMDB names none and its per-season counts
+    /// show that episode is the last of the last season. Never an episode's season-local IsLast.
     /// </summary>
     private static SeriesEpisodeRef? FinalRegularEpisode(TagCacheEntry data, TagCacheEntry? parent, SeriesSchedule? facts, TimeZoneInfo zone)
     {
         if (facts == null) return null;
-        SeriesEpisodeRef? Regular(TagCacheEntry? entry) => entry?.LatestEpisodeIndex is { Season: > 0 } index && entry.LatestEpisodeAired is { } aired
+        bool LastOfShow(TagEpisodeIndex index) => facts.SeasonEpisodes is { Count: > 0 } counts && counts.Keys.Max() == index.Season
+            && counts[index.Season] == index.Episode;
+        SeriesEpisodeRef? Regular(TagCacheEntry? entry) => entry?.LatestEpisodeIndex is { Season: > 0 } index && entry.LatestEpisodeAired is { } aired && LastOfShow(index)
             ? new(LocalDate(DateTimeOffset.FromUnixTimeMilliseconds(aired), zone).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), index.Season, index.Episode, null) : null;
         return (facts.LastAired?.Season > 0 ? facts.LastAired : null)
             ?? (facts.LastRegularAired?.Season > 0 ? facts.LastRegularAired : null)

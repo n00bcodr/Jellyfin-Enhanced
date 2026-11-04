@@ -11,7 +11,8 @@ const aggregate = { Id: SERIES, Type: 'Series', TmdbId: '100', ProviderIds: { Tm
   LatestEpisodeIndex: { Season: 1, Episode: 10 }, LatestEpisodeAired: NOW - 2 * DAY, LatestEpisodeAdded: NOW - DAY };
 const finale = { Id: EPISODE, Type: 'Episode', SeriesId: SERIES, SeriesTmdbId: '100', ParentIndexNumber: 1,
   IndexNumber: 10, SeasonNumber: 1, EpisodeNumber: 10, PremiereDate: NOW - 2 * DAY, DateCreated: NOW - DAY };
-const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, episode: 8 } };
+// TMDB names no regular finale (its last aired is a special), but its counts show S1E10 ends the show.
+const schedule = { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, episode: 8 }, seasonEpisodes: { 1: 10 } };
 const card = (id, type) => `<div class="card" data-id="${id}" data-type="${type}"><div class="cardScalable"><div class="cardImageContainer"></div><div class="cardOverlayContainer"></div></div></div>`;
 
 /** Real pipeline + renderer, with only the HTTP boundaries replaced by caller-filtered fixtures. */
@@ -116,6 +117,18 @@ for (const parent of [null, { ...aggregate, LatestEpisodeAired: null, LatestEpis
 
 test('TMDB\'s later final episode is not reached by the library\'s latest episode', async t => {
   const h = await setup(t, { facts: { status: 'Ended', lastAired: { date: '2026-10-29', season: 1, episode: 11 } } });
+  assert.notEqual(h.key(SERIES), 'series_finale');
+  assert.notEqual(h.key(EPISODE), 'series_finale');
+});
+
+test('without TMDB counts proving it, the library\'s latest episode is no series finale', async t => {
+  const h = await setup(t, { facts: { status: 'Ended', lastAired: { date: '2026-10-29', season: 0, episode: 8 } } });
+  assert.notEqual(h.key(SERIES), 'series_finale');
+  assert.notEqual(h.key(EPISODE), 'series_finale');
+});
+
+test('a library episode short of the last season\'s count is no series finale', async t => {
+  const h = await setup(t, { facts: { ...schedule, seasonEpisodes: { 1: 12 } } });
   assert.notEqual(h.key(SERIES), 'series_finale');
   assert.notEqual(h.key(EPISODE), 'series_finale');
 });
