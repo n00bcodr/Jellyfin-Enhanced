@@ -225,7 +225,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             var userId = identity.Candidates[0];
             var userSettings = _settings.Get(userId);
-            if (!userSettings.NativeEnabled || (!userSettings.AnyGroupEnabled && !userSettings.HasItemLooks)) return null;
+            if (!userSettings.NativeEnabled || !userSettings.MayShowTags) return null;
 
             var user = _users.Get(userId);
             if (user == null) return null;

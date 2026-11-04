@@ -96,6 +96,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>True when an enabled tag look rule could give some poster a look of its own.</summary>
         public bool HasLookRules => _rules is { Count: > 0 };
 
+        /// <summary>
+        /// Whether any poster of this user can show tags: a visible group by default, or an item look or
+        /// a rule that can show a group the default hides ("hidden by default, a rule reveals it"). The
+        /// request gates use this; each poster then decides with <see cref="ForItem(string, string?, Func{PosterTagLookFacts?}?)"/>.
+        /// </summary>
+        public bool MayShowTags => AnyGroupEnabled || HasItemLooks || HasLookRules;
+
         /// <summary>Static-friendly active layout; Caption, Summary and Minimal retain the Corners profile.</summary>
         public bool Bands { get; private init; }
         public bool CompactBands { get; private init; }

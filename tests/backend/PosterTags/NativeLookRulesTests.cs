@@ -1,6 +1,20 @@
+using System.Security.Claims;
+using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
+using Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services;
 using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Dto;
+using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Globalization;
+using Microsoft.AspNetCore.Http;
+using Moq;
 
 namespace JE.Tests;
 
@@ -99,5 +113,61 @@ public class NativeLookRulesTests
         var settings = Settings([Rule("tv14", "bands", ("ageRating", "TV-14"), ("type", "Episode"), ("library", Library))]);
         Assert.Equal("rule:1", settings.ResolveLook(Movie, null, () => facts).Source);
         Assert.Equal("default", settings.ResolveLook(Movie, null, () => null).Source);
+    }
+
+    [Fact]
+    public void HiddenByDefaultARuleRevealsTagsThroughTheStamper()
+    {
+        // Quality is on but hidden in the default Corners profile; a Movie rule shows it top left.
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.NativePosterTagsEnabled = true;
+        f.Plugin.Configuration.NativePosterTagsWebClientNames = "";
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var users = new Mock<IUserManager>();
+        users.Setup(u => u.GetUserById(user.Id)).Returns(user);
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Movie", Genres = ["Drama"] };
+        var series = new Series { Id = Guid.NewGuid(), Name = "Series" };
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemById(movie.Id)).Returns(movie);
+        library.Setup(l => l.GetItemById(series.Id)).Returns(series);
+        var reveal = Rule("movies", "corners", ("type", "Movie"));
+        reveal.Slots = [new() { Group = "quality", Slot = "tl" }];
+        f.Core.Manager.SaveUserConfiguration(user.Id.ToString("N"), "settings.json", new JellyfinEnhancedUserSettings
+        {
+            QualityTagsEnabled = true, TagLayoutSettingsVersion = 1, TagLayout = "corners",
+            TagLayouts = new() { Corners = new() { Groups = [new() { Group = "quality", Slot = "off" }] } },
+            TagLookRules = [reveal],
+        });
+        var userCache = new PosterTagUserCache(users.Object);
+        using var provider = new PosterTagSettingsProvider(f.Core.Manager, userCache);
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        using var data = new PosterTagDataProvider(cache, library.Object, null!, null!, null!, f.Core.Logger);
+        var tokens = PosterTagVariantToken.CreateForPath(Path.Combine(f.Core.Root, "native-key"), _ => { });
+        var stamper = new NativePosterTagStamper(new NativeClientPolicy(), provider, tokens, data, new SpoilerIdentityService(users.Object, f.Core.Logger), null!, null!, userCache, library.Object);
+        var settings = provider.Get(user.Id);
+        Assert.False(settings.AnyGroupEnabled);
+        Assert.True(settings.MayShowTags);
+
+        var http = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-Client", "Jellyfin for Android TV")], "test")) };
+        var session = stamper.Begin(http, user.Id);
+        Assert.NotNull(session);
+        BaseItemDto Dto(BaseItem item, BaseItemKind kind) => new() { Id = item.Id, Type = kind, ImageTags = new() { [ImageType.Primary] = "base" } };
+        var movieDto = Dto(movie, BaseItemKind.Movie);
+        var seriesDto = Dto(series, BaseItemKind.Series);
+        stamper.StampItem(movieDto, session!);
+        stamper.StampItem(seriesDto, session!);
+        // The matching movie gets a personalised poster; the series, which the rule does not reveal anything on, keeps its artwork.
+        Assert.NotEqual("base", movieDto.ImageTags[ImageType.Primary]);
+        Assert.Contains("-jet", movieDto.ImageTags[ImageType.Primary], StringComparison.Ordinal);
+        Assert.Equal("base", seriesDto.ImageTags[ImageType.Primary]);
+
+        // Without the rule nothing is visible, so no response is stamped at all.
+        f.Core.Manager.SaveUserConfiguration(user.Id.ToString("N"), "settings.json", new JellyfinEnhancedUserSettings
+        {
+            QualityTagsEnabled = true, TagLayoutSettingsVersion = 1, TagLayout = "corners",
+            TagLayouts = new() { Corners = new() { Groups = [new() { Group = "quality", Slot = "off" }] } },
+            TagLookRules = [],
+        });
+        Assert.Null(stamper.Begin(http, user.Id));
     }
 }

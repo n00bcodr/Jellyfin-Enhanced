@@ -112,8 +112,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var cfg = JellyfinEnhanced.Instance?.Configuration;
             if (cfg?.NativePosterTagsEnabled != true || !_clientPolicy.IsNativeClient(httpContext.User)) return null;
             var settings = _settings.Get(userId);
-            // An item look of its own can show a group the default hides.
-            if (!settings.NativeEnabled || (!settings.AnyGroupEnabled && !settings.HasItemLooks)) return null;
+            // An item look of its own or a rule can show a group the default hides.
+            if (!settings.NativeEnabled || !settings.MayShowTags) return null;
             var user = _users.Get(userId);
             if (user == null) return null;
             var spoilerState = cfg.SpoilerBlurEnabled ? _spoilerResolver.LoadUserState(httpContext, userId) : null;
