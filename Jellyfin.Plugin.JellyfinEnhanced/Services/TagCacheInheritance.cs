@@ -78,7 +78,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (updated.CommunityRating == entry.CommunityRating && updated.CriticRating == entry.CriticRating
                         && string.Equals(updated.OfficialRating, entry.OfficialRating, StringComparison.Ordinal)
                         && (updated.Genres ?? Array.Empty<string>()).SequenceEqual(entry.Genres ?? Array.Empty<string>(), StringComparer.Ordinal)) continue;
-                    updated.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    updated.LastUpdated = NextStamp();
                     RaiseMaxLastUpdated(updated.LastUpdated);
                     StoreEntry(key, updated);
                     changed = true;

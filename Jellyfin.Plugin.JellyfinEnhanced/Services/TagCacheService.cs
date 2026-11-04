@@ -1503,6 +1503,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return true;
         }
 
+        // The last LastUpdated stamp handed out (see NextStamp).
+        private long _lastStamp;
+
+        /// <summary>
+        /// A LastUpdated stamp later than every stamp already handed out or published: the wall-clock millisecond, or
+        /// one past the newest when that is not later. Delta reads return entries strictly after the client's cursor,
+        /// so two publications in the same millisecond must not share a stamp, or the second would never reach a
+        /// browser that read the first.
+        /// </summary>
+        internal long NextStamp()
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            while (true)
+            {
+                var last = Interlocked.Read(ref _lastStamp);
+                var next = Math.Max(now, Math.Max(last, Interlocked.Read(ref _maxLastUpdated)) + 1);
+                if (Interlocked.CompareExchange(ref _lastStamp, next, last) == last) return next;
+            }
+        }
+
         /// <summary>Lock-free max update of <see cref="_maxLastUpdated"/>.</summary>
         private void RaiseMaxLastUpdated(long lastUpdated)
         {
@@ -2720,7 +2740,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     // New Episode / premiere / finale badges).
                     PremiereDate = kind == BaseItemKind.Movie || kind == BaseItemKind.Series || kind == BaseItemKind.Episode ? ToUnixMilliseconds(item.PremiereDate) : null,
                     Status = item is MediaBrowser.Controller.Entities.TV.Series statusSeries ? statusSeries.Status?.ToString() : null,
-                    LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    LastUpdated = NextStamp(),
                     SeriesId = seriesIdN,
                 };
 
@@ -2931,7 +2951,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var entry = old.Clone();
                 entry.EpisodeIndex = index;
                 entry.StatusEpisodeIds = sources;
-                entry.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                entry.LastUpdated = NextStamp();
                 RaiseMaxLastUpdated(entry.LastUpdated);
                 StoreEntry(key, entry);
                 changed = true;

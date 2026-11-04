@@ -270,6 +270,19 @@ public class CustomTagRulesTests
     }
 
     [Fact]
+    public void PublicationStampsNeverRepeatEvenWithinOneMillisecond()
+    {
+        // A delta returns entries strictly after the client's cursor: a second publication in the same millisecond
+        // must still get a later stamp, or a browser that read the first would never see it.
+        using var f = new ApiPluginFixture();
+        var library = new Library();
+        using var cache = new TagCacheService(library.Mock.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        var stamps = Enumerable.Range(0, 5000).Select(_ => cache.NextStamp()).ToArray();
+        Assert.All(stamps.Zip(stamps.Skip(1)), pair => Assert.True(pair.Second > pair.First));
+        Assert.True(stamps[^1] - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() <= 5000); // never far ahead of the clock
+    }
+
+    [Fact]
     public void ASeriesGenreEditReachesASeasonThatTookItsGenres()
     {
         using var f = new ApiPluginFixture();

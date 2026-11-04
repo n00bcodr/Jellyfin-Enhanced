@@ -395,7 +395,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (TagLogo.SequencesEqual(logos, entry.Logos)) continue;
                 var updated = entry.Clone();
                 updated.Logos = logos;
-                updated.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                updated.LastUpdated = NextStamp();
                 RaiseMaxLastUpdated(updated.LastUpdated);
                 StoreEntry(pair.Key, updated);
                 changed = true;

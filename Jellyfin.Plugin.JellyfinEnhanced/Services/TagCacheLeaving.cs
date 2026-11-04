@@ -145,7 +145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (leaving == entry.Leaving) continue;
                 var copy = entry.Clone();
                 copy.Leaving = leaving;
-                copy.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                copy.LastUpdated = NextStamp();
                 RaiseMaxLastUpdated(copy.LastUpdated);
                 StoreEntry(pair.Key, copy);
                 changed = true;

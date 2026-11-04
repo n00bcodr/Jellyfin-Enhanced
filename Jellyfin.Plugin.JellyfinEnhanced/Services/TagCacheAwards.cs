@@ -66,7 +66,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (facts == entry.Awards) continue;
                 var copy = entry.Clone();
                 copy.Awards = facts;
-                copy.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                copy.LastUpdated = NextStamp();
                 RaiseMaxLastUpdated(copy.LastUpdated);
                 StoreEntry(pair.Key, copy);
                 changed = true;

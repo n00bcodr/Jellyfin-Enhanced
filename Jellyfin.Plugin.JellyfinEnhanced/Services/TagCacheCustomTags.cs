@@ -449,7 +449,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     if (SameIds(tags, entry.CustomTags) && !(touchCollectionMatches && tags != null && Array.Exists(tags, CustomTagRuleSet.IsCollectionId))) continue;
                     var updated = entry.Clone();
                     updated.CustomTags = tags;
-                    updated.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    updated.LastUpdated = NextStamp();
                     RaiseMaxLastUpdated(updated.LastUpdated);
                     StoreEntry(key, updated);
                     changed = true;

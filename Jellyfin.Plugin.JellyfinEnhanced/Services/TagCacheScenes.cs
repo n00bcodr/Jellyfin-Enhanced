@@ -150,7 +150,7 @@ public partial class TagCacheService
             if (scenes == pair.Value.Scenes) continue;
             var updated = pair.Value.Clone();
             updated.Scenes = scenes;
-            updated.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            updated.LastUpdated = NextStamp();
             RaiseMaxLastUpdated(updated.LastUpdated);
             StoreEntry(pair.Key, updated);
             changed = true;

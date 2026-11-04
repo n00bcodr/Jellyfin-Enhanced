@@ -248,7 +248,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 if (ratings == entry.Ratings) continue;
                 var updated = entry.Clone();
                 updated.Ratings = ratings;
-                updated.LastUpdated = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                updated.LastUpdated = NextStamp();
                 RaiseMaxLastUpdated(updated.LastUpdated);
                 StoreEntry(pair.Key, updated);
                 changed = true;
