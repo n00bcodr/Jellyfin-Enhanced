@@ -5655,10 +5655,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             try
             {
                 // Diff against the existing config so the log shows what actually changed
+                // (GetUserConfiguration returns a default document when none is stored, never null).
                 var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
                 var changes = new System.Collections.Generic.List<string>();
                 var isIdentical = false;
-                if (existing != null)
                 {
                     var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
                     var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
@@ -5682,11 +5682,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 {
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
                     // Turning the Logos group on (or the last user off) changes whether cache entries carry logos.
-                    if (existing?.LogoTagsEnabled != userConfiguration.LogoTagsEnabled)
+                    if (existing.LogoTagsEnabled != userConfiguration.LogoTagsEnabled)
                         Services.TagCacheService.Instance?.OnLogoSettingsChanged();
                     // The first user naming an MDBList source starts enrichment at once (and the last stops it).
-                    if (existing?.RatingTagsEnabled != userConfiguration.RatingTagsEnabled
-                        || !(existing?.RatingTagsSources ?? Array.Empty<string>()).SequenceEqual(userConfiguration.RatingTagsSources ?? Array.Empty<string>()))
+                    if (existing.RatingTagsEnabled != userConfiguration.RatingTagsEnabled
+                        || !(existing.RatingTagsSources ?? Array.Empty<string>()).SequenceEqual(userConfiguration.RatingTagsSources ?? Array.Empty<string>()))
                         Services.TagCacheService.Instance?.OnRatingSourceSettingsChanged();
 
                     if (changes.Count > 0)
