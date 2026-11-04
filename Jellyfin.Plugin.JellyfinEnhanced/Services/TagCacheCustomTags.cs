@@ -457,7 +457,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             if (!changed) return false;
-            Interlocked.Increment(ref _version);
+            // Changed entries reach clients as a delta (their LastUpdated); only removals and rebuild swaps change the version.
             Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             ScheduleDebouncedSave();
             return true;

@@ -1042,11 +1042,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // serving first-episode data derived from a deleted item. The swept
             // entry's stored SeriesId lets the sweep queue that repair here.
             var parentSeriesToRebuild = new HashSet<Guid>();
+            var removed = false;
             foreach (var key in keysToSweep)
             {
                 if (TryRemoveEntry(key, out var removedEntry))
                 {
                     changed = true;
+                    removed = true;
                     if (removedEntry?.SeriesId != null && Guid.TryParse(removedEntry.SeriesId, out var seriesId))
                     {
                         parentSeriesToRebuild.Add(seriesId);
@@ -1114,7 +1116,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     lock (_publishLock)
                     {
-                        Interlocked.Increment(ref _version);
+                        // A delta cannot say an entry is gone: only a sweep that removed entries changes the version;
+                        // rebuilt entries reach clients as a delta.
+                        if (removed) Interlocked.Increment(ref _version);
                         Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     }
                 }
@@ -2400,7 +2404,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var changed = false;
             foreach (var id in due) changed |= RebuildEntry(id, memo);
             if (!changed) return;
-            Interlocked.Increment(ref _version);
+            // Changed entries reach clients as a delta (their LastUpdated); only removals and rebuild swaps change the version.
             Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             InvalidateUserAccess();
             ScheduleDebouncedSave();

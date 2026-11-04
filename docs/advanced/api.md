@@ -1179,7 +1179,7 @@ Cache disabled returns `404` for GET and `400` for rebuild. A busy rebuild retur
 {"version":1,"timestamp":1767441600000,"servedAt":1767441601000,"filterRevision":"EXAMPLE","count":0,"items":{},"reviewRatings":{}}
 ```
 
-`items` maps Jellyfin item IDs to `TagCacheEntry` objects. `timestamp`, `servedAt`, and entry `LastUpdated` use Unix **milliseconds**; `version` identifies a cache generation.
+`items` maps Jellyfin item IDs to `TagCacheEntry` objects. `timestamp`, `servedAt`, and entry `LastUpdated` use Unix **milliseconds**; `version` identifies a cache generation. The version changes only when entries can have disappeared: a full rebuild swap, a removed item (including a reconcile sweep) or a server-mode transition. Every other change (library updates, MDBList ratings, logos, scenes, awards, Leaving soon, Custom tag re-matches, series inheritance, air-date boundaries) raises the changed entries' `LastUpdated` and reaches clients through `?since=` as a delta, so a browser downloads only those entries.
 
 Use the returned `timestamp` as the next `since` cursor, rather than an ISO timestamp or `servedAt`. Deltas include changed entries plus guarded entries so watched/protection changes update their metadata. `servedAt` orders stored snapshots across restarts.
 

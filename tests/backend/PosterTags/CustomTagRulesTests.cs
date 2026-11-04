@@ -578,17 +578,20 @@ public class CustomTagRulesTests
             cache.BuildFullCache(null, CancellationToken.None);
             Assert.Null(TagsOf(cache, signed));
             var version = cache.Version;
+            long Stamp() => cache.TryGetEntry(signed.Id, out var entry) ? entry.LastUpdated : 0;
+            var before = Stamp();
 
-            // An added rule re-matches every entry.
+            // An added rule re-matches every entry; the change reaches clients as a delta (the version stays).
             f.Plugin.Configuration.CustomTagRules = CustomTagRuleSet.Normalize(new[] { Rule("tag", "signed", "Signed copy") });
             refreshAll.Invoke(cache, null);
             Assert.Equal(new[] { Id("tag", "signed") }, TagsOf(cache, signed));
-            Assert.True(cache.Version > version);
+            Assert.True(Stamp() > before);
+            Assert.Equal(version, cache.Version);
             // A label or icon edit matches the same items: nothing to re-match.
-            var afterAdd = cache.Version;
+            var afterAdd = Stamp();
             f.Plugin.Configuration.CustomTagRules = CustomTagRuleSet.Normalize(new[] { Rule("tag", "Signed", "Autographed", "star") });
             refreshAll.Invoke(cache, null);
-            Assert.Equal(afterAdd, cache.Version);
+            Assert.Equal(afterAdd, Stamp());
             cache.SaveToDisk();
         }
 
