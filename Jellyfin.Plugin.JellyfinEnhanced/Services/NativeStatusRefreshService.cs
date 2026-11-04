@@ -12,6 +12,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services;
 public sealed class NativeStatusRefreshService : BackgroundService
 {
     private const int MaxSeries = 512;
+    // Schedules refresh in batches: the series service runs a batch under its own in-flight and rate
+    // limits, and each batch publishes before the next starts, so cards fill in as the queue drains.
+    private const int SeriesBatch = 16;
     private readonly StatusTagsTrendingService _trending;
     private readonly StatusTagsSeriesService _series;
     private readonly Logger _logger;
@@ -110,17 +113,23 @@ public sealed class NativeStatusRefreshService : BackgroundService
         {
             await _trending.GetNativeAsync(config, cancellationToken, workerLifetime: cancellationToken).ConfigureAwait(false);
             lock (_lock) _trendingMissLogged = false;
-            foreach (var id in pending)
+            foreach (var batch in pending.Chunk(SeriesBatch))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var result = await _series.GetAsync(config.TMDB_API_KEY, new Dictionary<string, string> { [id] = id }, cancellationToken).ConfigureAwait(false);
+                var result = await _series.GetAsync(config.TMDB_API_KEY, batch.ToDictionary(id => id, id => id, StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
                 cancellationToken.ThrowIfCancellationRequested();
-                result.TryGetValue(id, out var schedule);
                 lock (_lock)
                 {
-                    if (!ReferenceEquals(config, _config) || !_snapshots.ContainsKey(id)) continue;
-                    _snapshots[id] = (schedule?.Retry == true ? null : schedule,
-                        _clock.GetUtcNow().Add(schedule == null || schedule.Retry ? TimeSpan.FromMinutes(5) : TimeSpan.FromHours(6)));
+                    // A newer configuration cleared the queue; its own pass refreshes what it needs.
+                    if (!ReferenceEquals(config, _config)) return;
+                    var now = _clock.GetUtcNow();
+                    foreach (var id in batch)
+                    {
+                        if (!_snapshots.ContainsKey(id)) continue;
+                        result.TryGetValue(id, out var schedule);
+                        _snapshots[id] = (schedule?.Retry == true ? null : schedule,
+                            now.Add(schedule == null || schedule.Retry ? TimeSpan.FromMinutes(5) : TimeSpan.FromHours(6)));
+                    }
                 }
             }
         }

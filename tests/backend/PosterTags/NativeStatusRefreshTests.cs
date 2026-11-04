@@ -171,6 +171,76 @@ public class NativeStatusRefreshTests
     }
 
     [Fact]
+    public async Task Queued_schedules_refresh_in_parallel_batches_under_the_series_limit()
+    {
+        using var env = new IntegrationEnvironment();
+        var clock = new Clock();
+        var active = 0;
+        var peak = 0;
+        var gate = new object();
+        var fourActive = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var transport = new IntegrationTransport(async (_, token) =>
+        {
+            lock (gate)
+            {
+                peak = Math.Max(peak, ++active);
+                if (active == 4) fourActive.TrySetResult();
+            }
+            try { await release.Task.WaitAsync(token); }
+            finally { lock (gate) active--; }
+            return IntegrationTransport.Response("{\"status\":\"Returning Series\",\"next_episode_to_air\":{\"air_date\":\"2026-11-02\",\"season_number\":2,\"episode_number\":1}}");
+        });
+        using var cache = new TmdbResponseCache(transport, clock);
+        var trending = new StatusTagsTrendingService(transport, cache, env.Logger, clock);
+        var series = new StatusTagsSeriesService(cache, env.Logger, clock, 4, 1000, TimeSpan.FromSeconds(10));
+        using var worker = new NativeStatusRefreshService(trending, series, env.Logger, clock);
+        var config = new PluginConfiguration { NativePosterTagsEnabled = true, StatusTagsEnabled = true, StatusTagsTrending = false, TMDB_API_KEY = "fixture" };
+        var ids = Enumerable.Range(100, 50).Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        foreach (var id in ids) Assert.Null(worker.GetSeries(config, id));
+        var refresh = worker.RefreshAsync(config, default);
+        await fourActive.Task.WaitAsync(TimeSpan.FromSeconds(5)); // four lookups at once, not one
+        release.SetResult();
+        await refresh.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(4, peak); // never above the series service's in-flight limit
+        Assert.Equal(50, transport.Calls);
+        Assert.All(ids, id => Assert.NotNull(worker.GetSeries(config, id)));
+    }
+
+    [Fact]
+    public async Task Stopping_mid_batch_leaves_its_series_queued_for_the_next_pass()
+    {
+        using var env = new IntegrationEnvironment();
+        var clock = new Clock();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var transport = new IntegrationTransport(async (_, _) =>
+        {
+            started.TrySetResult();
+            await release.Task;
+            return IntegrationTransport.Response("{\"status\":\"Returning Series\",\"next_episode_to_air\":{\"air_date\":\"2026-11-02\",\"season_number\":2,\"episode_number\":1}}");
+        });
+        using var cache = new TmdbResponseCache(transport, clock);
+        var trending = new StatusTagsTrendingService(transport, cache, env.Logger, clock);
+        var series = new StatusTagsSeriesService(cache, env.Logger, clock, 4, 1000, TimeSpan.FromSeconds(10));
+        using var worker = new NativeStatusRefreshService(trending, series, env.Logger, clock);
+        var config = new PluginConfiguration { NativePosterTagsEnabled = true, StatusTagsEnabled = true, StatusTagsTrending = false, TMDB_API_KEY = "fixture" };
+        var ids = Enumerable.Range(100, 20).Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        foreach (var id in ids) Assert.Null(worker.GetSeries(config, id));
+        using var stop = new CancellationTokenSource();
+        var refresh = worker.RefreshAsync(config, stop.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        stop.Cancel();
+        // Lookups already in flight keep their slots until their shared request returns.
+        release.SetResult();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => refresh.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Null(worker.GetSeries(config, "100")); // the stopped batch published nothing
+        // No five-minute failure stamp: the next pass refreshes every queued series straight away.
+        await worker.RefreshAsync(config, default).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.All(ids, id => Assert.NotNull(worker.GetSeries(config, id)));
+    }
+
+    [Fact]
     public async Task Cold_native_trending_reuses_fresh_web_pages_in_the_shared_cache()
     {
         using var env = new IntegrationEnvironment();

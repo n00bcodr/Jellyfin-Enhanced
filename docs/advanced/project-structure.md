@@ -770,7 +770,7 @@ Native settings and cache digests are resolved in `Services/PosterTags/PosterTag
 - `Assets/PosterTags/award-icons.json`: generated logo paths loaded by `PosterTagAssets`; `scripts/build_poster_assets.py --awards-only` regenerates just those paths and manifest records. Source marks are nominative; project artwork is GPL-3.0 and trademarks remain with their owners.
 
 The layout, settings hub, Tag Styles and native resolver/plan/renderer use the same `awards` group id and five stable label ids. Native pixel/resolver versions retire old variants. Regression coverage is in `tests/backend/PosterTags/AwardTagsTests.cs`, `tests/frontend/features/features-awards-tags.test.mjs` and the Awards offline parity profiles.
-`Services/NativeStatusRefreshService.cs` owns scheduled and stale-read-triggered background refreshes for native status snapshots; image composition reads these snapshots without upstream requests.
+`Services/NativeStatusRefreshService.cs` owns scheduled and stale-read-triggered background refreshes for native status snapshots (series schedules in batches through `StatusTagsSeriesService`'s four-slot, rate-limited lookups); image composition reads these snapshots without upstream requests.
 
 `scripts/generate_status_dates.mjs` generates `js/tags/status-short-dates.json` from browser Intl data for native Status month/day labels, with deduplicated formats and locale-to-format mappings for every shipped language and named territory. It also generates `tests/fixtures/native-status-dates.json` for four-date regional regressions; `generate_status_vocabulary.py --check` checks both tables.
 
