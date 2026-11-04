@@ -9145,7 +9145,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
+            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, out var removed, since, guardedRider);
 
             if (spPolicy != null)
             {
@@ -9154,11 +9154,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // `items` is final (post Spoiler Guard strip above); serialized once.
             var itemsJson = JsonSerializer.SerializeToUtf8Bytes(items, jsonOptions);
-            return Respond(cacheVersion, cacheTimestamp, accessRevision, itemsJson, items.Count);
+            return Respond(cacheVersion, cacheTimestamp, accessRevision, itemsJson, items.Count, removed);
 
             // The rest of the response — review ratings, filterRevision, body,
             // ETag/304 — for either source of `items`.
-            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount)
+            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount, string[]? removedIds = null)
             {
                 // The poster review chips resolve from this map instead of asking
                 // /reviews/ratings for every page of cards: it holds the average for
@@ -9182,7 +9182,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var filterRevision = Convert.ToHexString(
                     SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
 
-                // Body { version, timestamp, servedAt, filterRevision, count, items,
+                // Body { version, timestamp, servedAt, filterRevision, [removed,] count, items,
                 // reviewRatings }, assembled around the serialized items without
                 // another serialization. The ETag is a hash of the FINAL response
                 // body minus servedAt (see TagCacheResponseBody.ETag), not of
@@ -9198,7 +9198,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     filterRevision,
                     itemCount,
                     itemsBytes,
-                    reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions));
+                    reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions),
+                    removedIds);
 
                 // no-cache (not no-store): the client may keep a copy to revalidate against,
                 // but must always revalidate. Freshness is unchanged, this only avoids

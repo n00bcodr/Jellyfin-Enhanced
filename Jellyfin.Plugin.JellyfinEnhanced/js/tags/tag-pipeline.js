@@ -575,14 +575,14 @@
      * @param {number} timestamp - The delta response's timestamp.
      * @param {number} servedAt - When the server captured the delta (ms, server clock).
      */
-    function persistDelta(entries, base, timestamp, servedAt) {
+    function persistDelta(entries, base, timestamp, servedAt, removed = []) {
         const scope = storeScope;
         if (!scope || !JE.tagCacheStore?.available()) return;
         const store = JE.tagCacheStore;
         const generation = persistGeneration;
         queuePersist(async () => {
             if (generation !== persistGeneration) return;
-            await store.applyDelta(scope, base, entries, timestamp, servedAt);
+            await store.applyDelta(scope, base, entries, timestamp, servedAt, removed);
         });
     }
 
@@ -921,8 +921,8 @@
 
             applyReviewRatings(resp, requestedAt);
 
-            // Full rebuild (entries may have been removed, which a delta can't
-            // express), or this user's filter changed since memory was made
+            // Full rebuild (a new generation, or more removals than the server
+            // keeps for deltas), or this user's filter changed since memory was made
             // (library access revoked, Spoiler Guard list or policy changed,
             // possibly on another device): the copy can't be patched — replace it.
             const revision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
@@ -969,22 +969,32 @@
             }
 
             const newEntries = Object.entries(resp.items);
-            if (newEntries.length > 0) {
+            // Items removed after the cursor (the server leaves out any stored again since).
+            const removed = Array.isArray(resp.removed) ? resp.removed.filter(id => typeof id === 'string' && !(id in resp.items)) : [];
+            if (newEntries.length > 0 || removed.length > 0) {
                 for (const [id, entry] of newEntries) {
                     forgetItemFacts(id);
                     serverCache.set(id, entry);
                     storeMisses.delete(id);
                     deltaIds.add(id);
                 }
+                for (const id of removed) {
+                    forgetItemFacts(id);
+                    serverCache.delete(id);
+                    deltaIds.delete(id);
+                    // Never read back from the stored copy, which may not have the removal yet.
+                    storeMisses.add(id);
+                }
                 serverCacheTimestamp = resp.timestamp;
-                persistDelta(newEntries, base, resp.timestamp, typeof resp.servedAt === 'number' ? resp.servedAt : 0);
-                // Notify renderers to invalidate derived caches for updated items
+                persistDelta(newEntries, base, resp.timestamp, typeof resp.servedAt === 'number' ? resp.servedAt : 0, removed);
+                // Notify renderers to invalidate derived caches for updated and removed items
+                const changedIds = newEntries.map(e => e[0]).concat(removed);
                 for (const [, renderer] of renderers) {
                     if (renderer.onServerCacheRefresh) {
-                        try { renderer.onServerCacheRefresh(newEntries.map(e => e[0])); } catch {}
+                        try { renderer.onServerCacheRefresh(changedIds); } catch {}
                     }
                 }
-                console.log(`${logPrefix} Server cache updated: +${newEntries.length} items`);
+                console.log(`${logPrefix} Server cache updated: +${newEntries.length} items, -${removed.length} removed`);
             }
             settled = true;
             if (confirming) console.log(`${logPrefix} Stored copy confirmed current`);
@@ -1065,6 +1075,8 @@
                     found.set(id, current);
                     continue;
                 }
+                // So is a removal that landed while reading.
+                if (storeMisses.has(id)) continue;
                 const entry = stored.get(id);
                 if (entry) {
                     found.set(id, entry);

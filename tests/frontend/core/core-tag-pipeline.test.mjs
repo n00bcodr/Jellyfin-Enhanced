@@ -347,3 +347,58 @@ test('guard invalidation releases a drain waiting for an old first episode and r
  assert.equal(seen.length,3,'obsolete first-episode completion cannot render or stamp anything');
  assert.equal(h.JE.tagPipeline.tagStripRevision(),'g2:guarded');
 });
+
+test('a delta\'s removed ids leave memory and the stored copy without a full download', async t => {
+  const urls = [];
+  const applied = [];
+  let deltas = 0;
+  const h = createHarness({
+    // Idle slices run promptly so the stored copy is written and the delta lands on it.
+    globals: { requestIdleCallback: cb => setTimeout(() => cb({ timeRemaining: () => 50, didTimeout: false }), 0) },
+    apiClient: {
+      getCurrentUserId: () => 'user-a',
+      ajax: async ({ url }) => {
+        urls.push(url);
+        if (!url.includes('since=')) return { items: { gone: { Type: 'Movie' }, kept: { Type: 'Movie' }, back: { Type: 'Movie' } }, count: 3, version: 4, timestamp: 50, filterRevision: 'all', servedAt: 60 };
+        deltas++;
+        // The second delta has nothing new: the first one's cursor moved past its removals.
+        return deltas === 1
+          ? { items: { back: { Type: 'Movie', CommunityRating: 7 } }, removed: ['gone', 'back'], count: 1, version: 4, timestamp: 70, filterRevision: 'all', servedAt: 80 }
+          : { items: {}, count: 0, version: 4, timestamp: 70, filterRevision: 'all', servedAt: 90 };
+      },
+    },
+    JE: {
+      pluginConfig: { TagCacheServerMode: true }, currentSettings: { qualityTagsEnabled: true },
+      helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
+      core: { tagRenderer: { applyCornerStacking() {}, scheduleCornerStacking() {} } },
+      session: { getUserId: () => 'user-a', getServerId: () => 'server-a', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      tagCacheStore: {
+        available: () => true,
+        getMeta: async () => null,
+        getMany: async () => ({ entries: new Map(), meta: null }),
+        clearScope: async () => {}, clearOtherScopes: async () => {},
+        beginFullWrite: async () => true, putManyIfOwner: async () => true, commitFullWrite: async () => true,
+        applyDelta: async (scope, base, entries, timestamp, servedAt, removed) => { applied.push({ ids: entries.map(e => e[0]), removed, timestamp }); return true; },
+      },
+    },
+  });
+  t.after(() => h.close());
+  h.load('tags/tag-pipeline.js');
+  const refreshed = [];
+  h.JE.tagPipeline.registerRenderer('probe', { render() {}, isEnabled: () => false, onServerCacheRefresh: ids => refreshed.push(ids) });
+  h.JE.tagPipeline.initialize();
+  await h.JE.tagPipeline.invalidateServerCache();
+  await settle();
+  urls.length = 0;
+  const pipeline = h.JE.tagPipeline;
+  assert.equal(await pipeline.waitForServerCache(entries => [...entries].length === 2, { delays: [0] }), true);
+  assert.equal(pipeline.peekServerEntry('gone'), null);
+  assert.equal(pipeline.peekServerEntry('kept')?.Type, 'Movie');
+  // An id that came back in the same delta is an update, never a removal.
+  assert.equal(pipeline.peekServerEntry('back')?.CommunityRating, 7);
+  // The delta waits behind the stored copy's write (which starts after a short idle delay).
+  for (let i = 0; i < 60 && applied.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.deepEqual(JSON.parse(JSON.stringify(applied)), [{ ids: ['back'], removed: ['gone'], timestamp: 70 }]);
+  assert.ok(refreshed.some(ids => ids?.includes('gone') && ids.includes('back')), 'renderers hear about removed ids too');
+  assert.ok(urls.length > 0 && urls.every(url => url.includes('since=')), 'deltas only, never a full download');
+});

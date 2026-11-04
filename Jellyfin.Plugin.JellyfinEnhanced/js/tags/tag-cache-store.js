@@ -304,9 +304,10 @@
      * @param {Array<[string, object]>} entries - [itemId, entry] pairs
      * @param {number} timestamp - The delta response's timestamp (the new cursor).
      * @param {number} servedAt - When the server captured the delta (ms, server clock).
+     * @param {string[]} [removed] - Item ids the delta removes.
      * @returns {Promise<boolean>} whether the delta was applied
      */
-    async function applyDelta(scope, base, entries, timestamp, servedAt) {
+    async function applyDelta(scope, base, entries, timestamp, servedAt, removed = []) {
         const db = await openDb();
         const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
         const metaStore = tx.objectStore(META_STORE);
@@ -324,6 +325,7 @@
             const items = tx.objectStore(ITEM_STORE);
             const prefix = scope + KEY_SEP;
             for (const [id, entry] of entries) items.put(entry, prefix + id);
+            for (const id of removed) items.delete(prefix + id);
             metaStore.put({ ...meta, timestamp, servedAt: Math.max(meta.servedAt || 0, servedAt || 0), savedAt: Date.now() });
         };
         await committed(tx);

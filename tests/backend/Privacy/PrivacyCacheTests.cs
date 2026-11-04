@@ -132,15 +132,53 @@ public class PrivacyCacheTests
     }
 
     [Fact]
-    public void RestartPreservesSnapshotAndQueuedRemovalChangesVersionAndSurvivesShutdown()
+    public void RestartPreservesSnapshotAndQueuedRemovalReachesDeltasAcrossShutdown()
     {
         using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
         var first = Guid.NewGuid(); var second = Guid.NewGuid(); var library = new Mock<ILibraryManager>();
+        var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(new[] { first, second });
         Seed(f, new() { [first.ToString("N")] = Entry(100), [second.ToString("N")] = Entry(200) });
         using (var cache = Create(f, library)) { cache.LoadFromDisk(); Assert.Equal(2, cache.Count); cache.EnqueueRemoval(first); }
         using var restarted = Create(f, library); restarted.LoadFromDisk();
-        Assert.Equal(1, restarted.Count); Assert.True(restarted.Version > 7); Assert.False(restarted.TryGetEntry(first, out _)); Assert.True(restarted.TryGetEntry(second, out var entry)); Assert.Equal(200, entry.LastUpdated);
+        // The removal is a delta, not a new generation, and its tombstone survives the restart.
+        Assert.Equal(1, restarted.Count); Assert.Equal(7, restarted.Version); Assert.False(restarted.TryGetEntry(first, out _)); Assert.True(restarted.TryGetEntry(second, out var entry)); Assert.Equal(200, entry.LastUpdated);
+        Assert.Empty(restarted.GetCacheForUser(viewer, out _, out var cursor, out _, out var removed, 200, null));
+        Assert.Equal(new[] { first.ToString("N") }, removed);
+        restarted.GetCacheForUser(viewer, out _, out _, out _, out removed, cursor, null);
+        Assert.Empty(removed);
         Assert.False(File.Exists(SnapshotPath(f) + ".tmp"));
+    }
+
+    [Fact]
+    public void RemovalsReachDeltasWithoutAVersionChangeUntilTheLogOverflows()
+    {
+        using var f = new JE.Tests.ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
+        var ids = Enumerable.Range(0, TagCacheService.MaxTombstones + 2).Select(_ => Guid.NewGuid()).ToArray();
+        var library = new Mock<ILibraryManager>(); library.Setup(x => x.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns(ids);
+        var viewer = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        Seed(f, ids.ToDictionary(id => id.ToString("N"), _ => Entry(100)));
+        using var cache = Create(f, library); cache.LoadFromDisk();
+        Assert.Equal(ids.Length, cache.GetCacheForUser(viewer, out var version, out var cursor, out _, out var removed, null, null).Count);
+        Assert.Empty(removed);
+
+        // As the flush does: apply the batch, then advance the cursor.
+        Assert.True(cache.ApplyBatch([(ids[0], true), (ids[1], true)], _ => false, cache.RemoveEntry));
+        cache.TouchLastModified();
+        var delta = cache.GetCacheForUser(viewer, out var after, out var next, out _, out removed, cursor, null);
+        Assert.Equal(version, after);
+        Assert.Empty(delta);
+        Assert.Equal(new[] { ids[0].ToString("N"), ids[1].ToString("N") }.Order(), removed.Order());
+        Assert.True(next >= cursor);
+        // At the returned cursor the same removals are not sent again; a removal that
+        // never happened (an id not in the cache) is no removal at all.
+        cache.GetCacheForUser(viewer, out _, out _, out _, out removed, next, null);
+        Assert.Empty(removed);
+        Assert.False(cache.RemoveEntry(Guid.NewGuid()));
+
+        // Past the bounded log, one version change makes clients reload instead.
+        foreach (var id in ids.Skip(2)) cache.RemoveEntry(id);
+        Assert.Equal(version + 1, cache.Version);
     }
 
     [Fact]

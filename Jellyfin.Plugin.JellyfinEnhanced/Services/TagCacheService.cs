@@ -226,6 +226,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // too high (removals don't lower it), which merely costs the walk.
         private long _maxLastUpdated;
 
+        // Keys removed in place and the stamp of each removal (see TryRemoveEntry):
+        // a delta names the keys removed after its cursor, so a removal reaches
+        // browsers without a full reload. Persisted with the snapshot, cleared by
+        // every dictionary swap (the version changes then anyway) and bounded by
+        // MaxTombstones, past which one version change makes clients reload.
+        private readonly ConcurrentDictionary<string, long> _tombstones = new(StringComparer.Ordinal);
+        // Newest removal stamp, for the delta short-circuit (see _maxLastUpdated).
+        private long _maxTombstone;
+        internal const int MaxTombstones = 20000;
+
         // Number of passes currently mutating the published dictionary in place
         // (a flush batch, the reconcile's rebuild/sweep). Writers bracket their
         // mutations AND the version/timestamp bump that follows them with an
@@ -831,6 +841,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Interlocked.Increment(ref _version);
                     Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                     Interlocked.Exchange(ref _maxLastUpdated, newMaxLastUpdated);
+                    ClearTombstones();
                     Interlocked.Increment(ref _mutationEpoch);
                     ClearSerializedItems();
                 }
@@ -1042,13 +1053,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // serving first-episode data derived from a deleted item. The swept
             // entry's stored SeriesId lets the sweep queue that repair here.
             var parentSeriesToRebuild = new HashSet<Guid>();
-            var removed = false;
             foreach (var key in keysToSweep)
             {
                 if (TryRemoveEntry(key, out var removedEntry))
                 {
                     changed = true;
-                    removed = true;
                     if (removedEntry?.SeriesId != null && Guid.TryParse(removedEntry.SeriesId, out var seriesId))
                     {
                         parentSeriesToRebuild.Add(seriesId);
@@ -1116,10 +1125,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     lock (_publishLock)
                     {
-                        // A delta cannot say an entry is gone: only a sweep that removed entries changes the version;
-                        // rebuilt entries reach clients as a delta.
-                        if (removed) Interlocked.Increment(ref _version);
-                        Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                        // Swept keys and rebuilt entries both reach clients as a delta (removed ids, LastUpdated).
+                        TouchLastModified();
                     }
                 }
 
@@ -1327,7 +1334,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         InvalidateUserAccess();
                         if (changed)
                         {
-                            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                            TouchLastModified();
                             ScheduleDebouncedSave();
                         }
                     }
@@ -1499,8 +1506,74 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private bool TryRemoveEntry(string key, out TagCacheEntry? removed)
         {
             if (!_cache.TryRemove(key, out removed)) return false;
+            RecordTombstone(key);
             Interlocked.Increment(ref _mutationEpoch);
             return true;
+        }
+
+        /// <summary>
+        /// Stamp the removal of <paramref name="key"/> for deltas (see <see cref="_tombstones"/>). Past
+        /// <see cref="MaxTombstones"/> the log is dropped and the version changes, so every client reloads
+        /// once instead of a delta silently missing a removal.
+        /// </summary>
+        private void RecordTombstone(string key)
+        {
+            var stamp = NextStamp();
+            _tombstones[key] = stamp;
+            RaiseMax(ref _maxTombstone, stamp);
+            if (_tombstones.Count <= MaxTombstones) return;
+            lock (_saveLock)
+            {
+                lock (_publishLock)
+                {
+                    if (_tombstones.Count <= MaxTombstones) return;
+                    _tombstones.Clear();
+                    Interlocked.Increment(ref _version);
+                }
+            }
+        }
+
+        /// <summary>Forget every removal: the version changes with this swap, so clients reload anyway.</summary>
+        private void ClearTombstones()
+        {
+            _tombstones.Clear();
+            Interlocked.Exchange(ref _maxTombstone, 0);
+        }
+
+        /// <summary>
+        /// Advance the delta cursor after a pass that changed or removed entries: the wall clock, or the newest
+        /// removal stamp when that is later, so a client at the returned cursor is not sent the same removals again.
+        /// </summary>
+        internal void TouchLastModified() =>
+            Interlocked.Exchange(ref _lastModified, Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Interlocked.Read(ref _maxTombstone)));
+
+        /// <summary>
+        /// Keys removed after <paramref name="since"/>, except those stored again since their removal
+        /// (an item that left and came back is an update, not a removal).
+        /// </summary>
+        private string[] RemovedSince(long since, ConcurrentDictionary<string, TagCacheEntry> cache)
+        {
+            if (Interlocked.Read(ref _maxTombstone) <= since) return Array.Empty<string>();
+            List<string>? removed = null;
+            foreach (var (key, stamp) in _tombstones)
+            {
+                if (stamp <= since) continue;
+                if (cache.TryGetValue(key, out var current) && current.LastUpdated >= stamp) continue;
+                (removed ??= new List<string>()).Add(key);
+            }
+            return removed?.ToArray() ?? Array.Empty<string>();
+        }
+
+        /// <summary>Lock-free max update.</summary>
+        private static void RaiseMax(ref long field, long value)
+        {
+            var current = Interlocked.Read(ref field);
+            while (value > current)
+            {
+                var seen = Interlocked.CompareExchange(ref field, value, current);
+                if (seen == current) return;
+                current = seen;
+            }
         }
 
         // The last LastUpdated stamp handed out (see NextStamp).
@@ -1621,18 +1694,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
         }
 
-        private bool RemoveEntry(Guid id)
+        internal bool RemoveEntry(Guid id)
         {
             var key = id.ToString("N").ToLowerInvariant();
-            if (!TryRemoveEntry(key, out _)) return false;
-
-            // Removals are the one mutation the ?since delta protocol cannot express
-            // (a deleted key simply stops appearing), so clients only purge a removed
-            // entry when the version changes and they do a full reload. Bump it here:
-            // with the no-op rebuild guard, a quiet night no longer bumps the version
-            // via reconciliation, which used to mask this gap.
-            Interlocked.Increment(ref _version);
-            return true;
+            // The removal reaches clients as a delta (TryRemoveEntry stamps it); the version stays.
+            return TryRemoveEntry(key, out _);
         }
 
         /// <summary>
@@ -1664,7 +1730,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// and not when visible items are added.
         /// </summary>
         public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, out string accessRevision, long? since = null, Func<string, TagCacheEntry, bool>? alsoInclude = null)
-            => GetCacheForUserCore(user, out version, out timestamp, out accessRevision, out _, since, alsoInclude);
+            => GetCacheForUserCore(user, out version, out timestamp, out accessRevision, out _, out _, since, alsoInclude);
+
+        /// <summary>
+        /// As <see cref="GetCacheForUser(JUser, out long, out long, out string, long?, Func{string, TagCacheEntry, bool}?)"/>,
+        /// also returning, for a delta, the keys removed after <paramref name="since"/> (empty for a full load).
+        /// They are ids only, sent to every user whatever their access: a removed item has no facts left to hide.
+        /// </summary>
+        public Dictionary<string, TagCacheEntry> GetCacheForUser(JUser user, out long version, out long timestamp, out string accessRevision, out string[] removed, long? since, Func<string, TagCacheEntry, bool>? alsoInclude)
+            => GetCacheForUserCore(user, out version, out timestamp, out accessRevision, out _, out removed, since, alsoInclude);
 
         /// <summary>
         /// A whole-cache <see cref="GetCacheForUser(JUser, out long, out long, out string, long?, Func{string, TagCacheEntry, bool}?)"/>
@@ -1677,12 +1751,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// so it must not be shared.
         /// </summary>
         public Dictionary<string, TagCacheEntry> GetShareableCacheForUser(JUser user, out long version, out long timestamp, out string accessRevision, out SerializedItemsKey? shareKey)
-            => GetCacheForUserCore(user, out version, out timestamp, out accessRevision, out shareKey, null, null);
+            => GetCacheForUserCore(user, out version, out timestamp, out accessRevision, out shareKey, out _, null, null);
 
-        private Dictionary<string, TagCacheEntry> GetCacheForUserCore(JUser user, out long version, out long timestamp, out string accessRevision, out SerializedItemsKey? shareKey, long? since, Func<string, TagCacheEntry, bool>? alsoInclude)
+        private Dictionary<string, TagCacheEntry> GetCacheForUserCore(JUser user, out long version, out long timestamp, out string accessRevision, out SerializedItemsKey? shareKey, out string[] removed, long? since, Func<string, TagCacheEntry, bool>? alsoInclude)
         {
             accessRevision = "none";
             shareKey = null;
+            removed = Array.Empty<string>();
             var generation = CaptureGeneration(out var live);
             version = generation.Version;
             timestamp = generation.Timestamp;
@@ -1701,6 +1776,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // state (the digest depends only on which keys the set excludes).
             // Every navigation sends such a delta, so this is the common case.
             if (since.HasValue && alsoInclude == null && since.Value >= generation.MaxLastUpdated
+                && since.Value >= Interlocked.Read(ref _maxTombstone)
                 && TryGetAccessDigest(access, generation, out var memoizedRevision))
             {
                 accessRevision = memoizedRevision + CollectionAccessSuffix(accessibleSet) + LeavingAccessSuffix(accessibleSet);
@@ -1730,6 +1806,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(visible, accessibleSet), accessibleSet, generation.Cache));
             }
 
+            if (since.HasValue) removed = RemovedSince(since.Value, generation.Cache);
             var keyRevision = FormatAccessRevision(excludedCount, excludedSum);
             // The collection matches' access is part of the revision (not of the memo,
             // which covers the cache keys only).
@@ -2251,6 +2328,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         _cacheReleased = true;
                         _cache = new ConcurrentDictionary<string, TagCacheEntry>();
                         Interlocked.Exchange(ref _maxLastUpdated, 0);
+                        ClearTombstones();
                         Interlocked.Increment(ref _mutationEpoch);
                         ClearSerializedItems();
                         InvalidateUserAccess();
@@ -2376,6 +2454,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                             Interlocked.Exchange(ref _version, data.Version);
                             Interlocked.Exchange(ref _lastModified, data.LastModified);
                             Interlocked.Exchange(ref _maxLastUpdated, loadedMaxLastUpdated);
+                            ClearTombstones();
+                            foreach (var (key, stamp) in data.Tombstones ?? new Dictionary<string, long>())
+                            {
+                                _tombstones[key] = stamp;
+                                RaiseMax(ref _maxTombstone, stamp);
+                                RaiseMax(ref _lastStamp, stamp);
+                            }
                             Interlocked.Increment(ref _mutationEpoch);
                             ClearSerializedItems();
                         }
@@ -2475,7 +2560,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         LastModified = Interlocked.Read(ref _lastModified),
                         LastReconciledUtcTicks = Interlocked.Read(ref _lastReconciledUtcTicks),
                         CustomTagsFingerprint = _customTagsFingerprint,
-                        Items = new Dictionary<string, TagCacheEntry>(_cache)
+                        Items = new Dictionary<string, TagCacheEntry>(_cache),
+                        Tombstones = new Dictionary<string, long>(_tombstones, StringComparer.Ordinal)
                     };
 
                     // Serialize straight to the temp file: building the whole
@@ -2673,7 +2759,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     {
                         if (ApplyBatch(batch, RebuildWithBatchMemo(batch), RemoveEntry))
                         {
-                            Interlocked.Exchange(ref _lastModified, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                            TouchLastModified();
                             _dirty = true;
                         }
                     }
@@ -3828,6 +3914,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // The Custom tag rules (match fingerprint) the entries' CustomTags follow.
             public string? CustomTagsFingerprint { get; set; }
             public Dictionary<string, TagCacheEntry> Items { get; set; } = new();
+            // Removed keys and their removal stamps (see _tombstones); absent in older snapshots.
+            public Dictionary<string, long>? Tombstones { get; set; }
         }
     }
 }
