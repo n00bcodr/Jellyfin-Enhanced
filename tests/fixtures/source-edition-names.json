@@ -1088,6 +1088,36 @@
     "itemName": "Cam"
   },
   {
+    "path": "Show/Season 01/Show.S01E01.The.Web.720p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "The Web"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.The.Web.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "The Web"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.Web.of.Lies.1080p.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Web of Lies"
+  },
+  {
+    "path": "Show/Season 01/Show.S01E01.The.Web.1080p.BluRay.mkv",
+    "source": "BluRay",
+    "edition": null,
+    "itemName": "The Web"
+  },
+  {
+    "path": "Show/Season 02/Show - S02E03 - Extended Cut - 1080p WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Extended Cut"
+  },
+  {
     "path": "media/Uncut.Gems.1080p.WEB-DL.mkv",
     "source": "WEB",
     "edition": null,

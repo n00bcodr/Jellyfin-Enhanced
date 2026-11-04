@@ -147,8 +147,16 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         if (string.IsNullOrWhiteSpace(itemName) || string.IsNullOrEmpty(name)) return name;
         var words = TitleWord.Matches(itemName).Select(m => Regex.Escape(m.Value)).ToArray();
         if (words.Length == 0) return name;
-        var title = new Regex(@"^[^\p{L}\p{N}]*" + string.Join(@"[^\p{L}\p{N}]+", words) + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name);
-        return title.Success ? " " + name[title.Length..] : name;
+        var joined = string.Join(@"[^\p{L}\p{N}]+", words);
+        var title = new Regex(@"^[^\p{L}\p{N}]*" + joined + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name);
+        if (title.Success) return " " + name[title.Length..];
+        // An episode's own title right after its SxxEyy marker ("Show.S01E01.The.Web.720p.HDTV" for the episode
+        // "The Web") is read past too, so its words never become a source or an edition.
+        var episode = new Regex(@"(?:^|[. _\-\[\](){}])s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*(?=[^\p{L}\p{N}])", Options, Timeout).Match(name);
+        if (!episode.Success) return name;
+        var afterMarker = episode.Index + episode.Length;
+        var episodeTitle = new Regex(@"\G[^\p{L}\p{N}]+" + joined + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name, afterMarker);
+        return episodeTitle.Success ? name[..afterMarker] + " " + name[(episodeTitle.Index + episodeTitle.Length)..] : name;
     }
 
     private static bool IsStub(string? path) => path?.EndsWith(".disc", StringComparison.OrdinalIgnoreCase) == true;
