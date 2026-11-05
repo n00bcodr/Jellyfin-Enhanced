@@ -8,7 +8,7 @@
         order: 80,
         title: 'common_custom', hint: 'admin_tags_custom_desc',
         group: {
-            id: 'custom', summary: () => JE.t('admin_tags_custom_desc'), sample: () => [['status', 'Custom']] },
+            id: 'custom', summary: () => JE.t('admin_tags_custom_desc'), sample: () => [['status', JE.t('common_custom')]] },
         // "Where to show" (drawn for every group row by admin-tags.js).
         writes: ['TagGroupScopes'],
         fields: [

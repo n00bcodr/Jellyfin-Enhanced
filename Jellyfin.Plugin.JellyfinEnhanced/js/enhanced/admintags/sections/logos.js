@@ -8,7 +8,7 @@
         order: 70,
         title: 'common_logos', hint: 'admin_tags_logos_desc',
         group: {
-            id: 'logos', summary: () => JE.t('admin_tags_logos_desc'), sample: () => [['status', 'Logos']] },
+            id: 'logos', summary: () => JE.t('admin_tags_logos_desc'), sample: () => [['status', JE.t('common_logos')]] },
         // "Where to show" (drawn for every group row by admin-tags.js).
         writes: ['TagGroupScopes'],
         fields: [

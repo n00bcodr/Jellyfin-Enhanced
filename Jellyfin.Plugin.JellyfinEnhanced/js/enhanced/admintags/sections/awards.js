@@ -8,7 +8,7 @@
         order: 65,
         title: 'awards_label', hint: 'admin_tags_awards_desc',
         group: {
-            id: 'awards', summary: () => JE.t('admin_tags_awards_desc'), sample: () => [['status', 'Awards']] },
+            id: 'awards', summary: () => JE.t('admin_tags_awards_desc'), sample: () => [['status', JE.t('awards_label')]] },
         // "Where to show" (drawn for every group row by admin-tags.js).
         writes: ['TagGroupScopes'],
         fields: [

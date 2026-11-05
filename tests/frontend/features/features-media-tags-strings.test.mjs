@@ -20,6 +20,8 @@ const SINKS = [
   /\bel\(\s*'[a-z0-9]+'\s*,\s*[^,()]+,\s*(['"`])((?:\\.|(?!\1).)*?)\1/g,
   /createTextNode\(\s*(['"`])((?:\\.|(?!\1).)*?)\1/g,
   /\b(?:title|label|text|hint|note|description|placeholder)\s*:\s*(['"`])([A-Z][a-z]+(?: [^'"`]*)?)\1/g,
+  // A section's sample chip that names its group ([['status', 'Awards']]).
+  /\[\s*'status'\s*,\s*(['"`])([A-Z][a-z][^'"`]*)\1\s*\]/g,
 ];
 // Sample content, not interface text: fictional logo names and the English fallback of a flag's name.
 const SAMPLES = new Set(['Streamflix', 'Northwind Broadcasting', 'Harbor Kids Network', 'NWB']);
