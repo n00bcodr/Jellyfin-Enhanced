@@ -9,6 +9,8 @@
         title: 'common_logos', hint: 'admin_tags_logos_desc',
         group: {
             id: 'logos', summary: () => JE.t('admin_tags_logos_desc'), sample: () => [['status', 'Logos']] },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'logoTagsEnabled', key: 'LogoTagsEnabled', type: 'enable', label: 'admin_tags_logoTagsEnabled' },
             { id: 'logoTagsMovieMode', key: 'LogoTagsMovieMode', type: 'select', label: 'admin_tags_logoTagsMovieMode', options: [['provider', '=Provider'], ['studio', '=Studio'], ['off', 'track_off']] },

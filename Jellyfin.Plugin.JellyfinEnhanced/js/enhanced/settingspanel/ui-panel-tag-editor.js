@@ -289,6 +289,42 @@
      * @param {Object} ctx - Panel context (colours).
      * @returns {string}
      */
+    const SCOPE_LABELS = { movies: 'panel_settings_ui_rating_tags_scope_movies', series: 'panel_settings_ui_rating_tags_scope_series',
+        seasons: 'panel_settings_ui_rating_tags_scope_seasons', episodes: 'panel_settings_ui_rating_tags_scope_episodes',
+        continueWatching: 'panel_settings_ui_rating_tags_scope_continue_watching', nextUp: 'panel_settings_ui_rating_tags_scope_next_up' };
+
+    /**
+     * "Where to show": the same six switches for every group (item types and home rows), each showing
+     * the effective value; a group whose switches all follow the server says so. Rating's switches keep
+     * their ids (ratingTagsOn…Toggle).
+     * @param {string} group
+     * @param {Object} ctx - Panel context (colours).
+     * @returns {string}
+     */
+    function scopeBlockHtml(group, ctx) {
+        const S = JE.core.tagScopes;
+        if (!S) return '';
+        const offered = JE.core.tagSettingsMatrix?.offers('hub', group, 'scopes') ?? true;
+        if (offered !== true) return `<div class="je-tge-extra je-tge-hint" data-je-scope-na="${group}">${escapeHtml(JE.t(offered))}</div>`;
+        const rows = S.SCOPE_IDS.map((scope) => {
+            const id = group === 'rating' ? `ratingTagsOn${scope.charAt(0).toUpperCase()}${scope.slice(1)}Toggle` : `${group}Scope-${scope}`;
+            return `<div class="je-quality-cat-row"><label class="je-quality-cat-label-wrap">
+                    <input type="checkbox" id="${id}" data-je-scope-group="${group}" data-je-scope="${scope}" ${S.allows(group, scope) ? 'checked' : ''} style="accent-color:${ctx.toggleAccentColor};">
+                    <span class="je-quality-cat-label">${escapeHtml(JE.t(SCOPE_LABELS[scope]))}</span>
+                </label></div>`;
+        }).join('');
+        const following = group === 'rating'
+            ? S.SCOPE_IDS.every((scope) => S.scopeOwn(group, scope) === S.scopeDefault(group, scope))
+            : S.SCOPE_IDS.every((scope) => S.scopeOwn(group, scope) === null);
+        return `
+                <div class="je-tge-extra je-tge-scopes" data-je-scope-block="${group}">
+                    <div class="je-tge-label je-tge-section" id="${group}ScopeLabel">${escapeHtml(JE.t('tag_scope_label'))}</div>
+                    <div class="je-quality-cat-list je-tge-list-box" role="group" aria-labelledby="${group}ScopeLabel"${group === 'rating' ? ' id="ratingTagsSubToggles"' : ''}>${rows}</div>
+                    <button type="button" class="je-tge-reset" data-je-scope-follow="${group}" ${following ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">dns</span><span>${escapeHtml(JE.t(following ? 'tag_scope_following' : 'tag_scope_follow_server'))}</span></button>
+                    <div class="je-tge-hint">${escapeHtml(JE.t('tag_scope_hint'))}</div>
+                </div>`;
+    }
+
     function extrasHtml(group, ctx) {
         const { detailsBackground, toggleAccentColor } = ctx;
         /** @param {string} key @param {string} pluginKey @param {string} id @param {string} labelKey */
@@ -347,20 +383,6 @@
                 </div>
                 </div>
                 </details>`;
-        }
-        if (group === 'rating') {
-            return `
-                <div class="je-tge-extra">
-                    <div class="je-tge-label">${escapeHtml(JE.t('panel_settings_ui_rating_tags_scope_label'))}</div>
-                    <div id="ratingTagsSubToggles" class="je-quality-cat-list je-tge-list-box">
-                        ${scopeRow('ratingTagsOnMoviesToggle', 'ratingTagsOnMovies', 'RatingTagsOnMovies', 'panel_settings_ui_rating_tags_scope_movies')}
-                        ${scopeRow('ratingTagsOnSeriesToggle', 'ratingTagsOnSeries', 'RatingTagsOnSeries', 'panel_settings_ui_rating_tags_scope_series')}
-                        ${scopeRow('ratingTagsOnSeasonsToggle', 'ratingTagsOnSeasons', 'RatingTagsOnSeasons', 'panel_settings_ui_rating_tags_scope_seasons')}
-                        ${scopeRow('ratingTagsOnEpisodesToggle', 'ratingTagsOnEpisodes', 'RatingTagsOnEpisodes', 'panel_settings_ui_rating_tags_scope_episodes')}
-                        ${scopeRow('ratingTagsOnContinueWatchingToggle', 'ratingTagsOnContinueWatching', 'RatingTagsOnContinueWatching', 'panel_settings_ui_rating_tags_scope_continue_watching')}
-                        ${scopeRow('ratingTagsOnNextUpToggle', 'ratingTagsOnNextUp', 'RatingTagsOnNextUp', 'panel_settings_ui_rating_tags_scope_next_up')}
-                    </div>
-                </div>`;
         }
         return '';
     }
@@ -431,6 +453,7 @@
                         <div class="je-tge-label je-tge-section">${escapeHtml(JE.t('panel_settings_ui_tag_editor_include'))}</div>
                         ${include}
                     </div>
+                    ${scopeBlockHtml(group, ctx)}
                     ${extrasHtml(group, ctx)}
                 </div>
             </li>`;
@@ -730,6 +753,34 @@
         const list = /** @type {HTMLElement} */ (root.querySelector('.je-tge-rows'));
         const touch = () => ctx.resetAutoCloseTimer?.();
         let disposed = false;
+
+        // "Where to show": write the personal switch (or follow the server again), save, and redraw that group.
+        const redrawScopes = (group) => {
+            const block = root.querySelector(`[data-je-scope-block="${group}"]`);
+            if (block) block.outerHTML = scopeBlockHtml(group, ctx);
+            JE.core.tagRenderer?.reinitialize?.(group === 'ageRating' ? 'agerating' : group);
+            // The live preview redraws with the new switches (je:tag-layout-changed).
+            document.dispatchEvent(new CustomEvent('je:tag-layout-changed'));
+            touch();
+        };
+        root.addEventListener('change', (e) => {
+            const input = /** @type {HTMLElement} */ (e.target);
+            if (!(input instanceof HTMLInputElement) || !input.dataset.jeScopeGroup) return;
+            JE.core.tagScopes.setOwn(input.dataset.jeScopeGroup, input.dataset.jeScope, input.checked);
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            const focusId = input.id;
+            redrawScopes(input.dataset.jeScopeGroup);
+            /** @type {HTMLElement|null} */ (document.getElementById(focusId))?.focus();
+        });
+        root.addEventListener('click', (e) => {
+            const button = /** @type {HTMLElement} */ (e.target).closest?.('[data-je-scope-follow]');
+            if (!button || !root.contains(button)) return;
+            const group = /** @type {HTMLElement} */ (button).dataset.jeScopeFollow;
+            JE.core.tagScopes.follow(group);
+            JE.saveUserSettings('settings.json', JE.currentSettings);
+            redrawScopes(group);
+            /** @type {HTMLElement|null} */ (root.querySelector(`[data-je-scope-block="${group}"] input`))?.focus();
+        });
 
         const priorityEditor = root.querySelector('.je-language-priority');
         // Standalone/partial editor mounts may contain only layout rows.

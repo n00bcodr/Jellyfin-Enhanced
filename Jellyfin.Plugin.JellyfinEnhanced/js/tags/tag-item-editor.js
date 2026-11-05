@@ -762,7 +762,10 @@
             };
             const shown = order.filter((g) => GROUPS[g] && !tucked(g));
             const hidden = order.filter((g) => GROUPS[g] && tucked(g));
+            // "Where to show" is a group-wide choice (item types, home rows): the editor says where it is set.
+            const scopeNote = JE.core.tagSettingsMatrix?.offers('itemEditor', 'quality', 'scopes');
             groupsList.innerHTML = `<ul class="je-tie-groups">${shown.map(rowHtml).join('')}</ul>`
+                + (typeof scopeNote === 'string' ? `<p class="je-tie-hint" data-je-scope-na="itemEditor">${tx(scopeNote)}</p>` : '')
                 + (hidden.length ? `<details class="je-tie-hidden" data-tie-hidden ${hiddenOpen ? 'open' : ''}><summary class="je-tie-hidden-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_item_editor_hidden_groups', { n: hidden.length })}</summary>`
                     + `<p class="je-tie-hint" id="${uid}HiddenHint">${tx('tag_item_editor_hidden_groups_hint')}</p><ul class="je-tie-groups">${hidden.map(rowHtml).join('')}</ul></details>` : '');
             if (!focusKey) return;

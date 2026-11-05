@@ -791,8 +791,8 @@
             <div class="je-ta-unsaved" data-je-unsaved hidden><span class="material-icons" aria-hidden="true">sync_problem</span><span data-je-unsaved-text></span><button type="button" class="je-ta-button" data-je-review>${tx('admin_tags_review')}</button></div>
             <div class="je-ta-body">
                 <aside class="je-ta-preview" id="jeTaPreview" aria-label="${tx('admin_tags_preview')}">
-                    <button type="button" class="je-ta-preview-toggle" aria-expanded="false" aria-controls="jeTaPreviewBody">${tx('admin_tags_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
-                    <div class="je-ta-preview-body" id="jeTaPreviewBody"><div class="je-ta-preview-mount"></div><details class="je-ta-preview-why"><summary>${tx('panel_media_tags_preview_why')}</summary><p class="je-ta-preview-note">${tx('admin_tags_preview_note')}</p></details><p class="je-ta-native" id="jeTaNative"></p></div>
+                    <button type="button" class="je-ta-preview-toggle" aria-expanded="false" aria-controls="jeTaPreviewBody" data-je-info>${tx('admin_tags_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+                    <div class="je-ta-preview-body" id="jeTaPreviewBody"><div class="je-ta-preview-mount"></div><details class="je-ta-preview-why" data-je-info><summary>${tx('panel_media_tags_preview_why')}</summary><p class="je-ta-preview-note">${tx('admin_tags_preview_note')}</p></details><p class="je-ta-native" id="jeTaNative"></p></div>
                 </aside>
                 <div class="je-ta-panels">${panels}</div>
             </div>
@@ -815,6 +815,19 @@
             const enable = (s.fields || []).find((f) => f.type === 'enable');
             const on = enable ? config[enable.key] === true : true;
             const name = JE.t(s.title);
+            // Edit only opens something worth opening: a group with settings of its own. Otherwise the
+            // row's description and its position-and-limit link sit in the row itself.
+            const ownControls = hasOwnControls(s);
+            const placement = JE.core?.tagLayout?.GROUPS?.includes(s.group.id)
+                ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}">${tx('admin_tags_goto_placement', { group: name })}<span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
+            if (!ownControls) {
+                return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false" data-je-static>`
+                    + '<div class="je-ta-grow-head">'
+                    + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}"></label>` : '')
+                    + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` <span class="je-ta-scope" data-scope="new">${tx('admin_tags_scope_new')}</span>` : ''}</span><span class="je-ta-grow-sum"></span>`
+                    + `${scopesHtml(s.group.id)}${placement}</div>`
+                    + '<span class="je-ta-grow-sample" aria-hidden="true"></span></div></div>';
+            }
             return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false">`
                 + '<div class="je-ta-grow-head">'
                 // The switch gets its own 44px target; it only turns the group on or off.
@@ -826,8 +839,41 @@
                 + '</div>'
                 + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
                 // Where it goes and how many show live on Layout defaults: say so, and go there.
-                + (JE.core?.tagLayout?.GROUPS?.includes(s.group.id) ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}">${tx('admin_tags_goto_placement', { group: name })}<span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '')
-                + `${fieldsHtml(s.fields, config)}<div class="je-ta-section-body"></div></div></div>`;
+                + placement
+                + `${fieldsHtml(s.fields, config)}${scopesHtml(s.group.id)}<div class="je-ta-section-body"></div></div></div>`;
+        }
+
+        /**
+         * Whether a group row has settings of its own: a declared control beyond its on/off switch, the
+         * "Where to show" switches, or a body its section draws.
+         * @param {Object} s
+         * @returns {boolean}
+         */
+        function hasOwnControls(s) {
+            const S = JE.core.tagScopes;
+            return (s.fields || []).some((f) => f.type !== 'enable' && f.type !== 'custom')
+                || typeof s.render === 'function'
+                || (!!S && JE.core.tagSettingsMatrix?.offers('admin', s.group.id, 'scopes') === true && (s.group.id === 'rating' || S.SCOPED_GROUPS.includes(s.group.id)));
+        }
+
+        /**
+         * "Where to show" for a group row: the same six switches on every card group (Rating writes its own
+         * RatingTagsOn… fields, the others TagGroupScopes); People Tags say why they have none.
+         * @param {string} group
+         * @returns {string}
+         */
+        function scopesHtml(group) {
+            const S = JE.core.tagScopes;
+            if (!S) return '';
+            const offered = JE.core.tagSettingsMatrix?.offers('admin', group, 'scopes') ?? true;
+            if (offered !== true) return `<p class="je-ta-hint" data-je-scope-na="${esc(group)}">${tx(offered)}</p>`;
+            if (group !== 'rating' && !S.SCOPED_GROUPS.includes(group)) return '';
+            const labels = { movies: 'panel_settings_ui_rating_tags_scope_movies', series: 'panel_settings_ui_rating_tags_scope_series', seasons: 'panel_settings_ui_rating_tags_scope_seasons',
+                episodes: 'panel_settings_ui_rating_tags_scope_episodes', continueWatching: 'panel_settings_ui_rating_tags_scope_continue_watching', nextUp: 'panel_settings_ui_rating_tags_scope_next_up' };
+            return `<fieldset class="je-ta-scopes" data-je-scope-block="${esc(group)}"><legend class="je-ta-sub">${tx('admin_tags_scope_label')}</legend>`
+                + `<p class="je-ta-hint">${tx('admin_tags_scope_hint')}</p>`
+                + S.SCOPE_IDS.map((scope) => `<label class="je-ta-switch"><input type="checkbox" id="${group === 'rating' ? `ratingTagsOn${scope.charAt(0).toUpperCase()}${scope.slice(1)}` : `jeTaScope-${esc(group)}-${scope}`}"${group === 'rating' ? ` data-je-setting-id="ratingTagsOn${scope.charAt(0).toUpperCase()}${scope.slice(1)}" data-je-field="RatingTagsOn${scope.charAt(0).toUpperCase()}${scope.slice(1)}"` : ''} data-je-scope-admin="${esc(group)}" data-je-scope="${scope}" ${S.scopeDefault(group, scope, config) ? 'checked' : ''}><span class="je-ta-switch-text"><span class="je-ta-switch-name">${tx(labels[scope])}</span></span></label>`).join('')
+                + `<p class="je-ta-hint">${tx('tag_scope_hint')}</p></fieldset>`;
         }
 
         const tabs = /** @type {HTMLElement[]} */ (Array.from(root.querySelectorAll('[role="tab"]')));
@@ -990,6 +1036,9 @@
 
         /** Push the configuration into every declared control (fields changed elsewhere). */
         function syncControls() {
+            root.querySelectorAll('[data-je-scope-admin]').forEach((el) => {
+                if (el !== document.activeElement) /** @type {HTMLInputElement} */ (el).checked = JE.core.tagScopes.scopeDefault(/** @type {HTMLElement} */ (el).dataset.jeScopeAdmin || '', /** @type {HTMLElement} */ (el).dataset.jeScope || '', config);
+            });
             for (const { f } of allFields) {
                 if (f.type === 'custom') continue;
                 const el = /** @type {HTMLElement|null} */ (root.querySelector(`[data-je-setting-id="${f.id}"]`));
@@ -1019,6 +1068,22 @@
                 }
             }
         }
+
+        // "Where to show": Rating's switches are fields of their own; the other groups share TagGroupScopes,
+        // which keeps only the switches turned off (on is the default).
+        root.addEventListener('change', (e) => {
+            const input = /** @type {HTMLInputElement} */ (e.target);
+            const group = input?.dataset?.jeScopeAdmin;
+            if (!group) return;
+            const scope = input.dataset.jeScope || '';
+            const pascal = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+            if (group === 'rating') { setMany({ [`RatingTagsOn${pascal(scope)}`]: input.checked }, { redraw: false }); return; }
+            const scopes = copy(config.TagGroupScopes || {}) || {};
+            const set = { ...(scopes[pascal(group)] || {}) };
+            if (input.checked) delete set[pascal(scope)]; else set[pascal(scope)] = false;
+            if (Object.keys(set).length) scopes[pascal(group)] = set; else delete scopes[pascal(group)];
+            setMany({ TagGroupScopes: Object.keys(scopes).length ? scopes : null }, { redraw: false });
+        });
 
         root.addEventListener('change', (e) => {
             const target = /** @type {HTMLElement} */ (e.target);

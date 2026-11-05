@@ -378,6 +378,7 @@ const EXPLICIT = {
   RatingTagsSources: ['community'],
   LanguageTagsPriority: ['ja', 'en'], LanguageTagsPriorityStrict: true,
   TagLayouts: { Summary: { Groups: [{ Group: 'language', Slot: 'pill' }] } }, TagGroupOrder: ['genre', 'quality'], TagGroupCaps: { Genre: 2 },
+  TagGroupScopes: { Genre: { Episodes: false } },
   TagScale: 'larger', TagGap: 'roomy', TagEdgeSpacing: 'tight', TagStylePreset: 'poster',
   TagShapeOverrides: { Landscape: { Layout: 'bands', Density: 'compact' } },
 };

@@ -636,6 +636,11 @@
              */
             commitOverlay(el, overlay) {
                 const layout = layoutFor(name);
+                // "Where to show": a group switched off for this card's type or home row is not drawn.
+                if (name !== 'rating' && JE.core.tagScopes?.excludes(name, el)) {
+                    if (layout) layout.removeGroup(el, name);
+                    return false;
+                }
                 if (layout) {
                     if (!layout.commitGroup(el, name, overlay)) return false;
                     markTagged(el);
@@ -801,6 +806,8 @@
      * @param {TagSpec} spec
      */
     function reinitialize(name, spec) {
+        // Nothing to redraw for a renderer that never registered (its group is off).
+        if (!spec && !tags.has(name)) return;
         getOrCreate(name, spec).reinitialize();
     }
 
@@ -915,6 +922,138 @@
             return `${rule}{${padding};}`;
         }) : css;
     }
+
+    // ── Where to show ───────────────────────────────────────────────────
+    // Every card tag group can be limited to item types (movies, series,
+    // seasons, episodes) and to the Continue Watching and Next Up home rows.
+    // Rating keeps its own six switches (ratingTagsOn…); the other groups keep
+    // theirs in tagGroupScopes ({ group: { scope: bool } }), where a missing
+    // switch follows the administrator's TagGroupScopes, else "on". People Tags
+    // are on cast cards, not media cards: no switch applies to them.
+    // Mirrors TagLayoutRules.ScopeAllows (server) for the item types.
+    const SCOPE_IDS = ['movies', 'series', 'seasons', 'episodes', 'continueWatching', 'nextUp'];
+    const SCOPED_GROUPS = ['quality', 'genre', 'language', 'ageRating', 'status', 'awards', 'logos', 'custom'];
+    const TYPE_SCOPES = { Movie: 'movies', Series: 'series', Season: 'seasons', Episode: 'episodes' };
+    const ROW_SCOPES = { continuewatching: 'continueWatching', nextup: 'nextUp' };
+    // Renderer names that differ from their group id.
+    const SCOPE_GROUP_ALIASES = { agerating: 'ageRating' };
+    const RATING_SCOPE_KEYS = { movies: 'Movies', series: 'Series', seasons: 'Seasons', episodes: 'Episodes', continueWatching: 'ContinueWatching', nextUp: 'NextUp' };
+
+    /**
+     * The administrator's switch for a group's scope (true when unset).
+     * @param {string} group
+     * @param {string} scope
+     * @param {Object} [plugin]
+     * @returns {boolean}
+     */
+    function scopeDefault(group, scope, plugin = JE.pluginConfig) {
+        if (group === 'rating') return plugin?.[`RatingTagsOn${RATING_SCOPE_KEYS[scope]}`] !== false;
+        const raw = plugin?.TagGroupScopes;
+        const set = raw && typeof raw === 'object' ? raw[group] ?? raw[group.charAt(0).toUpperCase() + group.slice(1)] : null;
+        const value = set && typeof set === 'object' ? set[scope] ?? set[scope.charAt(0).toUpperCase() + scope.slice(1)] : null;
+        return value !== false;
+    }
+
+    /**
+     * The personal switch for a group's scope, or null when it follows the administrator.
+     * @param {string} group
+     * @param {string} scope
+     * @param {Object} [settings]
+     * @returns {boolean|null}
+     */
+    function scopeOwn(group, scope, settings = JE.currentSettings) {
+        if (group === 'rating') {
+            const value = settings?.[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`];
+            return typeof value === 'boolean' ? value : null;
+        }
+        const value = settings?.tagGroupScopes?.[group]?.[scope];
+        return typeof value === 'boolean' ? value : null;
+    }
+
+    /** @returns {boolean} Whether the group shows in that scope (personal, else administrator, else on). */
+    function scopeAllows(group, scope, settings = JE.currentSettings, plugin = JE.pluginConfig) {
+        group = SCOPE_GROUP_ALIASES[group] || group;
+        if (group !== 'rating' && !SCOPED_GROUPS.includes(group)) return true;
+        return scopeOwn(group, scope, settings) ?? scopeDefault(group, scope, plugin);
+    }
+
+    /**
+     * True when a group is switched off for this card: by its item type (the card's own
+     * data-type wins over the fetched item's, as for rating) or by the home row it sits in.
+     * @param {string} group
+     * @param {Element} el - The card or anything inside it.
+     * @param {string|null} [type] - Fetched item type, used when the card carries none.
+     * @returns {boolean}
+     */
+    function scopeExcludes(group, el, type) {
+        group = SCOPE_GROUP_ALIASES[group] || group;
+        if (group !== 'rating' && !SCOPED_GROUPS.includes(group)) return false;
+        const itemType = el?.closest?.('[data-type]')?.getAttribute('data-type') || type || null;
+        const typeScope = itemType ? TYPE_SCOPES[itemType] : null;
+        if (typeScope && !scopeAllows(group, typeScope)) return true;
+        // Row detection reads the home section, so it only runs when a row switch is off.
+        if (typeof JE.detectCardRowSurface === 'function' && ['continueWatching', 'nextUp'].some((scope) => !scopeAllows(group, scope))) {
+            const rowScope = ROW_SCOPES[JE.detectCardRowSurface(el)];
+            if (rowScope && !scopeAllows(group, rowScope)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Set (or, with null, clear) a personal switch on a settings document.
+     * Rating's switches are plain booleans: clearing one takes the administrator's value.
+     */
+    function setScopeOwn(group, scope, value, settings = JE.currentSettings, plugin = JE.pluginConfig) {
+        group = SCOPE_GROUP_ALIASES[group] || group;
+        if (group === 'rating') {
+            settings[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`] = value ?? scopeDefault('rating', scope, plugin);
+            return;
+        }
+        const scopes = { ...(settings.tagGroupScopes && typeof settings.tagGroupScopes === 'object' ? settings.tagGroupScopes : {}) };
+        const set = { ...(scopes[group] || {}) };
+        if (value === null) delete set[scope]; else set[scope] = value;
+        if (Object.keys(set).length) scopes[group] = set; else delete scopes[group];
+        settings.tagGroupScopes = Object.keys(scopes).length ? scopes : null;
+    }
+
+    /** Make a group follow the administrator's "Where to show" again. */
+    function followScopeDefaults(group, settings = JE.currentSettings, plugin = JE.pluginConfig) {
+        for (const scope of SCOPE_IDS) setScopeOwn(group, scope, null, settings, plugin);
+    }
+
+    // ── Settings matrix ─────────────────────────────────────────────────
+    // The common controls every tag group offers, per settings surface: the
+    // admin Media Tags page, the personal Media Tags hub and the item editor.
+    // The surfaces render from it, and tests/browser/settings-matrix.spec.cjs
+    // checks each surface against it. A control a group or surface does not
+    // have names the reason it shows instead (an i18n key).
+    const MATRIX_GROUPS = ['quality', 'genre', 'language', 'rating', 'ageRating', 'status', 'awards', 'people', 'logos', 'custom'];
+    const SETTINGS_MATRIX = {
+        groups: MATRIX_GROUPS,
+        controls: ['enable', 'placement', 'scopes'],
+        // Groups without a control, everywhere, and why.
+        except: { people: { placement: 'tag_scope_people_na', scopes: 'tag_scope_people_na' } },
+        // Controls a whole surface does not have, and why.
+        surfaces: {
+            admin: {},
+            hub: {},
+            itemEditor: { scopes: 'tag_item_editor_scope_note' },
+        },
+    };
+    /**
+     * Whether a group offers a common control on a surface: true, or the i18n key of the reason it does not.
+     * @param {string} surface - admin, hub or itemEditor.
+     * @param {string} group
+     * @param {string} control - enable, placement or scopes.
+     * @returns {true|string}
+     */
+    function matrixOffers(surface, group, control) {
+        return SETTINGS_MATRIX.except[group]?.[control] || SETTINGS_MATRIX.surfaces[surface]?.[control] || true;
+    }
+    JE.core.tagSettingsMatrix = { ...SETTINGS_MATRIX, offers: matrixOffers };
+
+    JE.core.tagScopes = { SCOPE_IDS, SCOPED_GROUPS, TYPE_SCOPES, scopeDefault, scopeOwn, allows: scopeAllows, excludes: scopeExcludes,
+        setOwn: setScopeOwn, follow: followScopeDefaults };
 
     JE.core.tagRenderer = {
         chipBaseCss,

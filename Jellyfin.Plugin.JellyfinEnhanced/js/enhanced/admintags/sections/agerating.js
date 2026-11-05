@@ -18,6 +18,8 @@
             summary: () => JE.t('admin_tags_age_rating_summary'),
             sample: () => [['age', 'PG-13']],
         },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'ageRatingTagsEnabled', key: 'AgeRatingTagsEnabled', type: 'enable', label: 'admin_tags_age_rating_enabled' },
         ],

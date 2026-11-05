@@ -351,6 +351,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public bool UsesJellyfinAudioPreference { get; private init; }
 
+        /// <summary>The personal "Where to show" switches (normalized; null when none is set).</summary>
+        public TagGroupScopes? PersonalScopes { get; private init; }
+
+        /// <summary>The administrator's "Where to show" defaults (normalized; null when none is set).</summary>
+        public TagGroupScopes? AdminScopes { get; private init; }
+
+        /// <summary>
+        /// Whether a group shows on a card of this item type (its "Where to show" switch for the type: personal,
+        /// else the administrator's, else on). Rating keeps its own switches (RatingRules.IsExcludedByScope); the
+        /// home-row switches need the row a card sits in, which an image request does not carry.
+        /// </summary>
+        public bool ScopeAllows(PosterTagGroup group, string? itemType)
+            => TagLayoutRules.ScopeAllows(PersonalScopes, AdminScopes, LayoutGroupId(group), TagLayoutRules.ScopeOfType(itemType));
+
         /// <summary>Effective <c>ratingTagsOnMovies</c>.</summary>
         public bool RatingTagsOnMovies { get; private init; } = true;
 
@@ -623,6 +637,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 QualityAudioDisplayMode = QualityDisplayRules.Mode(user.QualityAudioDisplayMode ?? config.QualityAudioDisplayMode),
                 PreferredAudioLanguage = preferred,
                 UsesJellyfinAudioPreference = usesJellyfin,
+                PersonalScopes = TagLayoutRules.NormalizeScopes(user.TagGroupScopes),
+                AdminScopes = TagLayoutRules.NormalizeScopes(config.TagGroupScopes),
                 RatingTagsOnMovies = user.RatingTagsOnMovies,
                 RatingTagsOnSeries = user.RatingTagsOnSeries,
                 RatingTagsOnSeasons = user.RatingTagsOnSeasons,
@@ -1277,6 +1293,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 values["rating.onEpisodes"] = Bool(RatingTagsOnEpisodes);
                 values["rating.userReviewChip"] = Bool(UserReviewChipEnabled);
                 values["rating.userReviewDash"] = Bool(UserReviewChipEnabled && ShowUserRatingDash);
+            }
+
+            // "Where to show": only switches that hide a shown group on some item type, so a document
+            // that never set one keeps its digest (and every poster URL).
+            foreach (var group in TagLayoutRules.ScopedGroups)
+            {
+                var off = new[] { "movies", "series", "seasons", "episodes" }.Where(scope => !TagLayoutRules.ScopeAllows(PersonalScopes, AdminScopes, group, scope)).ToArray();
+                if (off.Length > 0) values["scope." + group] = string.Join(',', off);
             }
 
             if (Shows(PosterTagGroup.AgeRating))

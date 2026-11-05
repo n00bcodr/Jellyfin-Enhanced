@@ -1,5 +1,5 @@
 {
-  "_source": "The PluginConfiguration fields the Media Tags settings page owns: the Tier 2 fields of the old main form at 058f982b's Media Tags controls (tests/frontend/features/features-admin-tags-page.old-form-fields.json), the quality order keys, and the fields the page's own editors write (layout profiles, order and caps; card shapes; rules; rating sources; Tag Styles document and preset; excluded library ids; the clear-cache signal; the presets offered to users). Both the page (JE.adminTags.pageFields) and the server's patch allowlist (Helpers/MediaTagsPageFields.cs) must equal this list; both read it from the section modules' declarations.",
+  "_source": "The PluginConfiguration fields the Media Tags settings page owns: the Tier 2 fields of the old main form at 058f982b's Media Tags controls (tests/frontend/features/features-admin-tags-page.old-form-fields.json), the quality order keys, and the fields the page's own editors write (layout profiles, order and caps; every group's \"Where to show\"; card shapes; rules; rating sources; Tag Styles document and preset; excluded library ids; the clear-cache signal; the presets offered to users). Both the page (JE.adminTags.pageFields) and the server's patch allowlist (Helpers/MediaTagsPageFields.cs) must equal this list; both read it from the section modules' declarations.",
   "fields": [
     "AgeRatingTagsEnabled",
     "AgeRatingTagsPosition",
@@ -106,6 +106,7 @@
     "TagGap",
     "TagGroupCaps",
     "TagGroupOrder",
+    "TagGroupScopes",
     "TagLabelDensity",
     "TagLayout",
     "TagLayouts",

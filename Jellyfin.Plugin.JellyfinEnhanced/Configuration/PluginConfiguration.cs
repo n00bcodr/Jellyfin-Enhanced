@@ -200,6 +200,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagLayouts = null;
             TagGroupOrder = null;
             TagGroupCaps = null;
+            TagGroupScopes = null;
             TagLabelDensity = "full";
             TagScale = "default";
             TagGap = "default";
@@ -949,6 +950,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public List<string>? TagGroupOrder { get; set; }
         /// <summary>Starting per-group chip limits; null uses the built-in limits.</summary>
         public TagGroupCaps? TagGroupCaps { get; set; }
+        /// <summary>Where each tag group shows by default (item types and home rows); null shows every group everywhere.</summary>
+        public TagGroupScopes? TagGroupScopes { get; set; }
         /// <summary>Starting label density (full or compact).</summary>
         [AnalyticsInclude]
         public string TagLabelDensity { get; set; } = "full";

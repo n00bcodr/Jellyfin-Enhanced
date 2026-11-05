@@ -98,7 +98,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
             "StatusTagsMilestones", "StatusTagsSeriesStatus", "StatusTagsScenes", "StatusTagsLeaving", "StatusTagsDirectPlay",
             "QualityTagsPosition", "GenreTagsPosition", "LanguageTagsPosition", "RatingTagsPosition",
             "AgeRatingTagsPosition", "StatusTagsPosition", "AwardsTagsPosition", "LogoTagsPosition", "CustomTagsPosition",
-            "TagLayout", "TagLayoutSettingsVersion", "TagLayouts", "TagGroupOrder", "TagGroupCaps", "TagLabelDensity",
+            "TagLayout", "TagLayoutSettingsVersion", "TagLayouts", "TagGroupOrder", "TagGroupCaps", "TagGroupScopes", "TagLabelDensity",
             "TagScale", "TagGap", "TagEdgeSpacing", "TagShapeOverrides",
             "TagStylePreset",
         };
@@ -641,7 +641,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         private static bool AdminContract(string field, object? value, out string? error)
         {
             error = null;
-            if (value == null || field is "TagStylePreset" or "TagLayouts" or "TagShapeOverrides") return true;
+            if (value == null || field is "TagStylePreset" or "TagLayouts" or "TagShapeOverrides" or "TagGroupScopes") return true;
             var property = AdminProperty(field);
             if (property == null) return true;
             var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;

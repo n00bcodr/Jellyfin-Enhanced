@@ -22,6 +22,8 @@
             summary: (ctx) => JE.t('admin_tags_status_summary', { n: FAMILIES.filter((k) => ctx.config[k] === true).length, total: FAMILIES.length, days: ctx.config.StatusTagsJustAddedDays || 7 }),
             sample: () => [['status', JE.t('status_tag_just_added')]],
         },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'statusTagsEnabled', key: 'StatusTagsEnabled', type: 'enable', label: 'admin_tags_status_enabled' },
         ],

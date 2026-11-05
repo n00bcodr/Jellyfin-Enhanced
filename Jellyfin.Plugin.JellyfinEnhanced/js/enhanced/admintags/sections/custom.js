@@ -9,6 +9,8 @@
         title: 'common_custom', hint: 'admin_tags_custom_desc',
         group: {
             id: 'custom', summary: () => JE.t('admin_tags_custom_desc'), sample: () => [['status', 'Custom']] },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'customTagsEnabled', key: 'CustomTagsEnabled', type: 'enable', label: 'admin_tags_customTagsEnabled' },
             { id: 'customTagRules', key: 'CustomTagRules', type: 'custom', label: 'admin_tags_customTagRules' },

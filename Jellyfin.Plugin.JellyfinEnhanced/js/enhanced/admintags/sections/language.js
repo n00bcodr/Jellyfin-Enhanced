@@ -26,6 +26,8 @@
             },
             sample: () => [['lang', 'EN'], ['lang', 'JA']],
         },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'languageTagsEnabled', key: 'LanguageTagsEnabled', type: 'enable', label: 'admin_tags_language_enabled' },
             { id: 'languageTagsShowAudio', key: 'LanguageTagsShowAudio', type: 'switch', label: 'admin_tags_language_show_audio' },

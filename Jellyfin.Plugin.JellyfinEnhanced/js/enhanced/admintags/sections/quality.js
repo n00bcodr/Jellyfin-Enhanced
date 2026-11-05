@@ -34,6 +34,8 @@
             },
             sample: (ctx) => [['quality', '4K'], ['hdr', 'DV'], ['quality', 'ATMOS']].filter((_, i) => [ctx.config.ShowResolutionTag, ctx.config.ShowDynamicRangeTag, ctx.config.ShowAudioInfoTag][i] === true),
         },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'qualityTagsEnabled', key: 'QualityTagsEnabled', type: 'enable', label: 'admin_tags_quality_enabled' },
             { id: 'showResolutionTag', key: 'ShowResolutionTag', type: 'ordered', orderKey: 'ResolutionTagOrder', defaultOrder: 1, label: 'panel_settings_ui_quality_tags_resolution' },

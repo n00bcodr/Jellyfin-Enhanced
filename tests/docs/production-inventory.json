@@ -5312,6 +5312,14 @@
     },
     {
       "class": "PluginConfiguration",
+      "name": "TagGroupScopes",
+      "type": "TagGroupScopes?",
+      "initializer": null,
+      "constructor_assignment": "null",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/PluginConfiguration.cs"
+    },
+    {
+      "class": "PluginConfiguration",
       "name": "TagLabelDensity",
       "type": "string",
       "initializer": "\"full\"",
@@ -7367,6 +7375,118 @@
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
     },
     {
+      "class": "TagScopeSet",
+      "name": "Movies",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagScopeSet",
+      "name": "Series",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagScopeSet",
+      "name": "Seasons",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagScopeSet",
+      "name": "Episodes",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagScopeSet",
+      "name": "ContinueWatching",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagScopeSet",
+      "name": "NextUp",
+      "type": "bool?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "Quality",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "Genre",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "Language",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "AgeRating",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "Status",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "Awards",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "Logos",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
+      "name": "Custom",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
       "class": "TagLookCondition",
       "name": "Field",
       "type": "string",
@@ -8490,6 +8610,14 @@
       "class": "JellyfinEnhancedUserSettings",
       "name": "TagGroupCaps",
       "type": "TagGroupCaps?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
+    },
+    {
+      "class": "JellyfinEnhancedUserSettings",
+      "name": "TagGroupScopes",
+      "type": "TagGroupScopes?",
       "initializer": null,
       "constructor_assignment": null,
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/UserConfiguration.cs"
@@ -9991,7 +10119,7 @@
     "build_targets": 2,
     "files": 462,
     "routes": 194,
-    "configuration_properties": 724,
+    "configuration_properties": 740,
     "storage_references": 86,
     "scheduled_tasks": 15,
     "locales": 33

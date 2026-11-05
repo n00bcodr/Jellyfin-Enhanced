@@ -155,6 +155,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public TagLayoutProfiles? TagLayouts { get; set; }
         public List<string>? TagGroupOrder { get; set; }
         public TagGroupCaps? TagGroupCaps { get; set; }
+        /// <summary>Personal "Where to show" switches per tag group; a null switch follows the administrator's default.</summary>
+        public TagGroupScopes? TagGroupScopes { get; set; }
         public string TagLabelDensity { get; set; } = "full";
 
         /// <summary>Poster tag size: smaller, default, larger or largest; null inherits the administrator default.</summary>

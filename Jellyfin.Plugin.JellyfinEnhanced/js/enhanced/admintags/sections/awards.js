@@ -9,6 +9,8 @@
         title: 'awards_label', hint: 'admin_tags_awards_desc',
         group: {
             id: 'awards', summary: () => JE.t('admin_tags_awards_desc'), sample: () => [['status', 'Awards']] },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'awardsTagsEnabled', key: 'AwardsTagsEnabled', type: 'enable', label: 'admin_tags_awardsTagsEnabled' },
             { id: 'awardsTagsImdb', key: 'AwardsTagsImdb', type: 'switch', label: 'awards_tags_imdbTop250' },

@@ -276,6 +276,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
                 case "TagLayouts":
                     normalized = TagLayoutRules.NormalizeProfiles((TagLayoutProfiles?)value);
                     return true;
+                case "TagGroupScopes":
+                    normalized = TagLayoutRules.NormalizeScopes((TagGroupScopes?)value);
+                    return true;
                 case "TagShapeOverrides":
                     normalized = TagShapeRules.Normalize((TagShapeOverrides?)value);
                     return true;

@@ -70,11 +70,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // late when it waits for the Jellyfin audio preference.
             var groups = new List<PosterTagGroupLayout>(9);
             PosterTagGroupLayout? reviewOnly = null;
+            // A group shows when it is switched on and its "Where to show" includes this item type.
+            bool On(PosterTagGroup group) => settings.Shows(group) && settings.ScopeAllows(group, context.ItemType);
 
-            PosterTagGroupLayout? quality = settings.Shows(PosterTagGroup.Quality) ? ResolveQuality(entry, settings) : null;
+            PosterTagGroupLayout? quality = On(PosterTagGroup.Quality) ? ResolveQuality(entry, settings) : null;
             if (quality is not null && !settings.UsesJellyfinAudioPreference) groups.Add(quality);
 
-            if (settings.Shows(PosterTagGroup.Genre) && GenreIcons.Resolve(entry.Genres, settings.GenreCap) is { } genres)
+            if (On(PosterTagGroup.Genre) && GenreIcons.Resolve(entry.Genres, settings.GenreCap) is { } genres)
             {
                 groups.Add(Group(PosterTagGroup.Genre, settings, genres));
             }
@@ -102,31 +104,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 }
             }
 
-            if (settings.Shows(PosterTagGroup.AgeRating) && AgeRatingRules.Resolve(entry.OfficialRating) is { } age)
+            if (On(PosterTagGroup.AgeRating) && AgeRatingRules.Resolve(entry.OfficialRating) is { } age)
             {
                 groups.Add(Group(PosterTagGroup.AgeRating, settings, new List<PosterTag>(1) { age }));
             }
 
-            if (settings.Shows(PosterTagGroup.Status) && StatusRules.Resolve(entry, settings, context.Status ?? new PosterStatusContext(DateTimeOffset.UtcNow)) is { } status)
+            if (On(PosterTagGroup.Status) && StatusRules.Resolve(entry, settings, context.Status ?? new PosterStatusContext(DateTimeOffset.UtcNow)) is { } status)
                 groups.Add(Group(PosterTagGroup.Status, settings, new List<PosterTag>(1) { status }));
-            if (settings.Shows(PosterTagGroup.Custom) && ResolveCustom(entry, settings) is { } custom)
+            if (On(PosterTagGroup.Custom) && ResolveCustom(entry, settings) is { } custom)
             {
                 groups.Add(Group(PosterTagGroup.Custom, settings, custom));
             }
 
-            if (settings.Shows(PosterTagGroup.Language) && LanguageFlagRules.ResolveGroup(entry, settings) is { } languages)
+            if (On(PosterTagGroup.Language) && LanguageFlagRules.ResolveGroup(entry, settings) is { } languages)
             {
                 groups.Add(Group(PosterTagGroup.Language, settings, languages));
             }
 
-            if (settings.Shows(PosterTagGroup.Logos) && LogoRules.Resolve(entry.Logos) is { } logos)
+            if (On(PosterTagGroup.Logos) && LogoRules.Resolve(entry.Logos) is { } logos)
             {
                 groups.Add(Group(PosterTagGroup.Logos, settings, logos));
             }
 
             if (quality is not null && settings.UsesJellyfinAudioPreference) groups.Add(quality);
             if (reviewOnly is not null) groups.Add(reviewOnly);
-            if (settings.Shows(PosterTagGroup.Awards) && entry.Awards is { } awards)
+            if (On(PosterTagGroup.Awards) && entry.Awards is { } awards)
             {
                 var tags = new List<PosterTag>();
                 // Captions come from the vocabulary the web translates (awardstags.js CAPTION_KEYS).

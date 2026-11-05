@@ -3983,6 +3983,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 TagLayouts = TagLayoutRules.NormalizeProfiles(config.TagLayouts),
                 TagGroupOrder = TagLayoutRules.NormalizeOrder(config.TagGroupOrder),
                 TagGroupCaps = TagLayoutRules.NormalizeCaps(config.TagGroupCaps),
+                TagGroupScopes = TagLayoutRules.NormalizeScopes(config.TagGroupScopes),
                 TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
                 TagScale = TagLayoutRules.NormalizeScale(config.TagScale),
                 TagGap = TagLayoutRules.NormalizeGap(config.TagGap),

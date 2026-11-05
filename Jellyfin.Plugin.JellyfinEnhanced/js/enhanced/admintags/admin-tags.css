@@ -760,3 +760,10 @@
 .je-tie-light .je-tie-view.je-tie-pills { border-color: rgba(0, 0, 0, 0.28); }
 .je-tie-light .je-tie-view .je-tie-pill { background: transparent; }
 .je-tie-light .je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(0, 0, 0, 0.1); color: #111; }
+
+/* A group row without settings of its own: its note and links sit in the row (no Edit). */
+.je-ta-grow-note { display: block; margin-top: 2px; font-size: 13px; color: var(--je-ta-muted); }
+.je-ta-grow[data-je-static] .je-ta-crosslink { margin-top: 4px; }
+/* "Where to show": the same switches on every group. */
+.je-ta-scopes { margin: 12px 0 0; padding: 0; border: 0; min-width: 0; }
+.je-ta-scopes > legend { padding: 0; }

@@ -354,7 +354,7 @@
         // (user → admin default → built-in) without writing the derived
         // value back, so a legacy document stays legacy until the user saves
         // a layout setting.
-        for (const key of ['tagLayouts', 'tagGroupCaps']) {
+        for (const key of ['tagLayouts', 'tagGroupCaps', 'tagGroupScopes']) {
             const value = userSettings[key];
             mergedSettings[key] = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
         }

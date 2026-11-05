@@ -14,13 +14,13 @@
     const EDITOR_HTML = `
         <div id="tagStyleEditor" class="je-ts-editor">
             <div class="je-ts-editing-head je-ts-preset-head"><div class="je-ts-section-label" id="tagStylePresetLabel"></div><span class="je-ts-editing-now" id="tagStylePresetNow"></span>
-                <button type="button" class="je-ts-target-toggle" id="tagStylePresetToggle" aria-expanded="false" aria-controls="tagStylePresets"></button></div>
+                <button type="button" class="je-ts-target-toggle" id="tagStylePresetToggle" aria-expanded="false" aria-controls="tagStylePresets" hidden></button></div>
             <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel" hidden><div class="je-ta-hint"></div></div>
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
             <label class="je-ts-group-select"><span class="je-ts-section-label" id="tagStyleGroupSelectLabel"></span><select id="tagStyleGroupSelect"></select></label>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
                 <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span>
-                    <button type="button" class="je-ts-target-toggle" id="tagStyleTargetToggle" aria-expanded="false" aria-controls="tagStyleTargetBox"></button></div>
+                    <button type="button" class="je-ts-target-toggle" id="tagStyleTargetToggle" aria-expanded="false" aria-controls="tagStyleTargetBox" hidden></button></div>
                 <div class="je-ts-sample" id="tagStyleSample" aria-hidden="true"></div>
                 <div id="tagStyleContrast" class="je-ts-contrast" role="status" aria-live="polite"></div>
                 <div class="je-ts-target-box" id="tagStyleTargetBox" hidden>
@@ -31,7 +31,7 @@
                 <div id="tagStyleGroupNote" class="je-ts-note"></div>
                 <div id="tagStyleRows" class="je-ts-rows"></div>
             </div>
-            <button type="button" class="je-ts-preview-toggle" id="tagStylePreviewToggle" aria-expanded="false" aria-controls="tagStylePreview"><span class="je-ts-section-label" id="tagStylePreviewLabel"></span><span class="je-ts-preview-toggle-name"></span><span class="material-icons" aria-hidden="true">expand_more</span></button>
+            <button type="button" class="je-ts-preview-toggle" id="tagStylePreviewToggle" aria-expanded="false" aria-controls="tagStylePreview" data-je-info><span class="je-ts-section-label" id="tagStylePreviewLabel"></span><span class="je-ts-preview-toggle-name"></span><span class="material-icons" aria-hidden="true">expand_more</span></button>
             <div id="tagStylePreview" class="je-ts-preview" aria-hidden="true" hidden></div>
         </div>`;
 
@@ -454,6 +454,8 @@
             if (now) now.textContent = PRESET_TITLES[state.preset] || state.preset || '';
             const toggle = root.querySelector('#tagStylePresetToggle');
             if (toggle) {
+                // Hidden until the presets are drawn: a toggle with nothing behind it yet is not offered.
+                toggle.hidden = false;
                 toggle.textContent = presetsOpen ? tr('admin_tags_colours_presets_close') : tr('admin_tags_colours_presets_open');
                 toggle.setAttribute('aria-expanded', String(presetsOpen));
                 toggle.onclick = () => { presetsOpen = !presetsOpen; renderPresets(); if (presetsOpen) bar.querySelector('.je-ts-preset[tabindex="0"]')?.focus(); };
@@ -596,6 +598,7 @@
             // The tag list opens on request: the colour rows stay next to what they edit.
             const toggle = root.querySelector('#tagStyleTargetToggle');
             if (toggle) {
+                toggle.hidden = false;
                 toggle.textContent = targetsOpen ? tr('admin_tags_colours_targets_close') : tr('admin_tags_colours_targets_open');
                 toggle.setAttribute('aria-expanded', String(targetsOpen));
                 toggle.onclick = () => { targetsOpen = !targetsOpen; renderTargets(); if (targetsOpen) root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]')?.focus(); };

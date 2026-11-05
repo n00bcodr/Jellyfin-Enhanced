@@ -578,7 +578,8 @@
                 const host = L.ensureHost(target);
                 L.setCardContext(target, entry, id);
                 for (const group of GROUP_IDS) {
-                    const wrap = JE.currentSettings?.[ENABLED[group]] ? sampleGroup(sample, group) : null;
+                    // The sample's own type decides "Where to show", as it does on a real card.
+                    const wrap = JE.currentSettings?.[ENABLED[group]] && !JE.core.tagScopes?.excludes(group, card) ? sampleGroup(sample, group) : null;
                     if (wrap) L.commitGroup(target, group, wrap);
                     else L.removeGroup(target, group);
                 }
@@ -618,6 +619,8 @@
                 // How a card's look is chosen: on request, so the preview stays short.
                 const why = document.createElement('details');
                 why.className = 'je-mtp-why';
+                // Help text, not settings: an informational disclosure (the settings guards allow it).
+                why.dataset.jeInfo = '';
                 why.open = foot.querySelector('.je-mtp-why')?.hasAttribute('open') || false;
                 const summary = document.createElement('summary');
                 summary.textContent = JE.t('panel_media_tags_preview_why');

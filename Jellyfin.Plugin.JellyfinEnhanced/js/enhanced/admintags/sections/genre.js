@@ -18,6 +18,8 @@
             summary: () => JE.t('admin_tags_genre_summary'),
             sample: () => [['genre', 'Drama']],
         },
+        // "Where to show" (drawn for every group row by admin-tags.js).
+        writes: ['TagGroupScopes'],
         fields: [
             { id: 'genreTagsEnabled', key: 'GenreTagsEnabled', type: 'enable', label: 'admin_tags_genre_enabled' },
         ],

@@ -57,6 +57,37 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     }
 
     /// <summary>
+    /// Where one tag group shows: on each item type, and in the Continue Watching and Next Up home rows.
+    /// A null switch follows the administrator's default (personal document) or means "on" (administrator
+    /// defaults), so a document that never touched these shows every group everywhere, as before.
+    /// </summary>
+    public class TagScopeSet
+    {
+        public bool? Movies { get; set; }
+        public bool? Series { get; set; }
+        public bool? Seasons { get; set; }
+        public bool? Episodes { get; set; }
+        public bool? ContinueWatching { get; set; }
+        public bool? NextUp { get; set; }
+    }
+
+    /// <summary>
+    /// "Where to show" for every card tag group except Rating, whose six switches keep their own settings
+    /// (RatingTagsOnMovies …). People Tags are on cast cards, not media cards, so they have none.
+    /// </summary>
+    public class TagGroupScopes
+    {
+        public TagScopeSet? Quality { get; set; }
+        public TagScopeSet? Genre { get; set; }
+        public TagScopeSet? Language { get; set; }
+        public TagScopeSet? AgeRating { get; set; }
+        public TagScopeSet? Status { get; set; }
+        public TagScopeSet? Awards { get; set; }
+        public TagScopeSet? Logos { get; set; }
+        public TagScopeSet? Custom { get; set; }
+    }
+
+    /// <summary>
     /// Validation and normalization of the poster tag layout settings shared by
     /// the per-user document and the administrator defaults. Unknown layouts,
     /// densities, groups and slots are normalized away rather than rejected so a
@@ -240,6 +271,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
                 : result;
         }
 
+        /// <summary>Scope ids in display order (also the web tag-scopes keys).</summary>
+        public static readonly IReadOnlyList<string> ScopeIds = new[] { "movies", "series", "seasons", "episodes", "continueWatching", "nextUp" };
+
+        /// <summary>Groups that take a "Where to show" set in <see cref="TagGroupScopes"/>.</summary>
+        public static readonly IReadOnlyList<string> ScopedGroups = new[] { "quality", "genre", "language", "ageRating", "status", "awards", "logos", "custom" };
+
+        /// <summary>A group's set in <paramref name="scopes"/> (null for Rating, People or an unknown group).</summary>
+        public static TagScopeSet? ScopeSet(TagGroupScopes? scopes, string group) => scopes == null ? null : group switch
+        {
+            "quality" => scopes.Quality, "genre" => scopes.Genre, "language" => scopes.Language, "ageRating" => scopes.AgeRating,
+            "status" => scopes.Status, "awards" => scopes.Awards, "logos" => scopes.Logos, "custom" => scopes.Custom, _ => null,
+        };
+
+        /// <summary>One switch of a set (null when unset).</summary>
+        public static bool? ScopeValue(TagScopeSet? set, string scope) => set == null ? null : scope switch
+        {
+            "movies" => set.Movies, "series" => set.Series, "seasons" => set.Seasons, "episodes" => set.Episodes,
+            "continueWatching" => set.ContinueWatching, "nextUp" => set.NextUp, _ => null,
+        };
+
+        /// <summary>The scope an item type belongs to (null for types no switch governs, e.g. BoxSet or Video).</summary>
+        public static string? ScopeOfType(string? itemType) => itemType switch
+        {
+            "Movie" => "movies", "Series" => "series", "Season" => "seasons", "Episode" => "episodes", _ => null,
+        };
+
+        /// <summary>A set with only its explicit switches, or null when it has none.</summary>
+        public static TagScopeSet? NormalizeScopeSet(TagScopeSet? set)
+        {
+            if (set == null) return null;
+            var result = new TagScopeSet { Movies = set.Movies, Series = set.Series, Seasons = set.Seasons, Episodes = set.Episodes, ContinueWatching = set.ContinueWatching, NextUp = set.NextUp };
+            return ScopeIds.All(id => ScopeValue(result, id) == null) ? null : result;
+        }
+
+        /// <summary>Scopes with empty sets removed, or null when no group has a switch set.</summary>
+        public static TagGroupScopes? NormalizeScopes(TagGroupScopes? scopes)
+        {
+            if (scopes == null) return null;
+            var result = new TagGroupScopes
+            {
+                Quality = NormalizeScopeSet(scopes.Quality), Genre = NormalizeScopeSet(scopes.Genre), Language = NormalizeScopeSet(scopes.Language),
+                AgeRating = NormalizeScopeSet(scopes.AgeRating), Status = NormalizeScopeSet(scopes.Status), Awards = NormalizeScopeSet(scopes.Awards),
+                Logos = NormalizeScopeSet(scopes.Logos), Custom = NormalizeScopeSet(scopes.Custom),
+            };
+            return ScopedGroups.All(g => ScopeSet(result, g) == null) ? null : result;
+        }
+
+        /// <summary>
+        /// Whether a scoped group shows in a scope: the personal switch, else the administrator's, else on.
+        /// Rating and People are not governed here (true).
+        /// </summary>
+        public static bool ScopeAllows(TagGroupScopes? personal, TagGroupScopes? admin, string group, string? scope)
+            => scope == null || (ScopeValue(ScopeSet(personal, group), scope) ?? ScopeValue(ScopeSet(admin, group), scope) ?? true);
+
         /// <summary>The document version alone decides whether legacy presentation and facts apply.</summary>
         public static bool IsLegacy(JellyfinEnhancedUserSettings settings) => settings.TagLayoutSettingsVersion < 1;
 
@@ -255,6 +340,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             settings.TagLayouts = NormalizeProfiles(settings.TagLayouts);
             settings.TagGroupOrder = NormalizeOrder(settings.TagGroupOrder);
             settings.TagGroupCaps = NormalizeCaps(settings.TagGroupCaps);
+            settings.TagGroupScopes = NormalizeScopes(settings.TagGroupScopes);
             settings.TagEdgeSpacing = NormalizeEdgeSpacing(settings.TagEdgeSpacing);
         }
 
