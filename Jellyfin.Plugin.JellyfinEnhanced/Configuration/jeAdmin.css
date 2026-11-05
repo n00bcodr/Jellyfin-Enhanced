@@ -1468,7 +1468,7 @@
     opacity: 0;
     cursor: pointer;
 }
-.je-branding-preview { max-height: 100px; border-radius: 4px; margin-bottom: 10px; }
+.je-branding-preview { max-height: 100px; max-width: 100%; object-fit: contain; border-radius: 4px; margin-bottom: 10px; }
 .je-branding-placeholder { color: var(--je-text-dim); font-size: 2em; }
 .je-branding-placeholder-icon { font-size: 2.5em; }
 .je-branding-status { font-size: 0.85em; margin-top: 5px; min-height: 1em; }
