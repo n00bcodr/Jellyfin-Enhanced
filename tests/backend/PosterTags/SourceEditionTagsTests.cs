@@ -347,5 +347,69 @@ public class StructuredSourceFactsTests
             v => v.BitRate = 100_000_000, v => v.BitDepth = 10, v => v.Level = 51, v => v.Profile = "High 10",
         })
             Assert.NotEqual(baseline, TagCacheService.MediaRevision(Version(change)));
+        Assert.Equal(baseline, TagCacheService.MediaRevision(Version(v => v.Title = "Main video")));
+    }
+
+    // Every input Jellyfin's ConditionProcessor can test against a device profile, mapped to the change of
+    // one media fact it reads. A new ProfileConditionValue in a Jellyfin update fails the inventory check until
+    // it is mapped here (and hashed by MediaRevision if it reads a new fact).
+    private static readonly Dictionary<string, Action<MediaSourceInfo, MediaBrowser.Model.Entities.MediaStream, MediaBrowser.Model.Entities.MediaStream>> ConditionInputs = new()
+    {
+        ["AudioChannels"] = (_, _, a) => a.Channels = 8,
+        ["AudioBitrate"] = (_, _, a) => a.BitRate = 3_000_000,
+        ["AudioProfile"] = (_, _, a) => a.Profile = "LC",
+        ["Width"] = (_, v, _) => v.Width = 1440,
+        ["Height"] = (_, v, _) => v.Height = 816,
+        ["Has64BitOffsets"] = (s, _, _) => s.Container = "mp4",
+        ["PacketLength"] = (_, v, _) => v.PacketLength = 192,
+        ["VideoBitDepth"] = (_, v, _) => v.BitDepth = 10,
+        ["VideoBitrate"] = (_, v, _) => v.BitRate = 40_000_000,
+        ["VideoFramerate"] = (_, v, _) => v.AverageFrameRate = 23.976f,
+        ["VideoLevel"] = (_, v, _) => v.Level = 52,
+        ["VideoProfile"] = (_, v, _) => v.Profile = "Main 10",
+        ["VideoTimestamp"] = (s, _, _) => s.Timestamp = MediaBrowser.Model.MediaInfo.TransportStreamTimestamp.Valid,
+        ["IsAnamorphic"] = (_, v, _) => v.IsAnamorphic = true,
+        ["RefFrames"] = (_, v, _) => v.RefFrames = 16,
+        ["NumAudioStreams"] = (s, _, _) => s.MediaStreams = [.. s.MediaStreams, new MediaBrowser.Model.Entities.MediaStream { Index = 2, Type = MediaBrowser.Model.Entities.MediaStreamType.Audio, Codec = "aac", Channels = 2 }],
+        ["NumVideoStreams"] = (s, _, _) => s.MediaStreams = [.. s.MediaStreams, new MediaBrowser.Model.Entities.MediaStream { Index = 2, Type = MediaBrowser.Model.Entities.MediaStreamType.Video, Codec = "mjpeg" }],
+        ["IsSecondaryAudio"] = (s, _, _) => s.DefaultAudioStreamIndex = 1,
+        ["VideoCodecTag"] = (_, v, _) => v.CodecTag = "hvc1",
+        ["IsAvc"] = (_, v, _) => v.IsAVC = true,
+        ["IsInterlaced"] = (_, v, _) => v.IsInterlaced = true,
+        ["AudioSampleRate"] = (_, _, a) => a.SampleRate = 96_000,
+        ["AudioBitDepth"] = (_, _, a) => a.BitDepth = 24,
+        ["VideoRangeType"] = (_, v, _) => { v.ColorTransfer = "smpte2084"; v.ColorPrimaries = "bt2020"; },
+        ["NumStreams"] = (s, _, _) => s.MediaStreams = [.. s.MediaStreams, new MediaBrowser.Model.Entities.MediaStream { Index = 2, Type = MediaBrowser.Model.Entities.MediaStreamType.Subtitle, Codec = "srt" }],
+        ["VideoRotation"] = (_, v, _) => v.Rotation = 90,
+    };
+
+    [Fact]
+    public void EveryDeviceProfileConditionInputIsMapped()
+    {
+        Assert.Equal(
+            Enum.GetNames<MediaBrowser.Model.Dlna.ProfileConditionValue>().OrderBy(n => n, StringComparer.Ordinal),
+            ConditionInputs.Keys.OrderBy(n => n, StringComparer.Ordinal));
+    }
+
+    public static TheoryData<string> ConditionInputNames()
+    {
+        var data = new TheoryData<string>();
+        foreach (var name in ConditionInputs.Keys) data.Add(name);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(ConditionInputNames))]
+    public void AVersionRevisionChangesWithEachDeviceProfileConditionInput(string input)
+    {
+        MediaSourceInfo Version(bool change)
+        {
+            var video = new MediaBrowser.Model.Entities.MediaStream { Index = 0, Type = MediaBrowser.Model.Entities.MediaStreamType.Video, Codec = "h264", CodecTag = "avc1", Width = 1920, Height = 1080, BitDepth = 8, BitRate = 8_000_000, Level = 41, Profile = "High", RealFrameRate = 24, AverageFrameRate = 24, IsAnamorphic = false, RefFrames = 4 };
+            var audio = new MediaBrowser.Model.Entities.MediaStream { Index = 1, Type = MediaBrowser.Model.Entities.MediaStreamType.Audio, Codec = "ac3", Channels = 6, BitRate = 640_000, SampleRate = 48_000 };
+            var source = new MediaSourceInfo { Id = "s1", Path = "/movies/Film.mkv", Container = "mkv", Size = 1000, DefaultAudioStreamIndex = 0, MediaStreams = [video, audio] };
+            if (change) ConditionInputs[input](source, video, audio);
+            return source;
+        }
+        Assert.NotEqual(TagCacheService.MediaRevision(Version(false)), TagCacheService.MediaRevision(Version(true)));
     }
 }

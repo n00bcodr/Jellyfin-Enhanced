@@ -346,7 +346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 49;
+        internal const int CurrentCacheSchemaVersion = 50;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -3086,20 +3086,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
-        /// <see cref="TagMediaSource.Revision"/>: 12 hex characters of a SHA-256 over every fact Jellyfin has for the
-        /// version and its streams, so a replaced or re-encoded file changes it even with the same id, path, codec and size.
+        /// <see cref="TagMediaSource.Revision"/>: 12 hex characters of a SHA-256 over the version's identity and every
+        /// stream fact a device profile condition (<c>ProfileConditionValue</c>), codec or container check, or the
+        /// Dolby Vision range decision can read, so a replaced or re-encoded file changes it even with the same id,
+        /// path, codec and size. It is a hash of Jellyfin's metadata, not of the file's bytes; stream titles and
+        /// other display-only fields are left out.
         /// </summary>
         internal static string MediaRevision(MediaBrowser.Model.Dto.MediaSourceInfo source)
         {
             var text = new System.Text.StringBuilder();
             static string N(object? value) => value is IFormattable formattable ? formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture) : value?.ToString() ?? string.Empty;
             text.Append(source.Id).Append('|').Append(source.Path).Append('|').Append(source.Container).Append('|').Append(N(source.Size))
-                .Append('|').Append(N(source.Bitrate)).Append('|').Append(N(source.RunTimeTicks)).Append('|').Append(N(source.Video3DFormat));
+                .Append('|').Append(N(source.Bitrate)).Append('|').Append(N(source.RunTimeTicks)).Append('|').Append(N(source.Video3DFormat))
+                .Append('|').Append(N(source.Protocol)).Append('|').Append(N(source.Timestamp)).Append('|').Append(N(source.DefaultAudioStreamIndex));
             foreach (var s in source.MediaStreams ?? new List<MediaStream>())
             {
                 text.Append('\n').AppendJoin('|', N(s.Index), N(s.Type), s.Codec, s.CodecTag, s.Profile, N(s.Level), N(s.BitDepth), N(s.BitRate),
                     N(s.Width), N(s.Height), N(s.IsInterlaced), N(s.RealFrameRate), N(s.AverageFrameRate), N(s.Channels), s.ChannelLayout,
-                    N(s.SampleRate), N(s.VideoRangeType), s.ColorTransfer, s.PixelFormat, s.Language, N(s.IsDefault), N(s.IsForced), N(s.IsExternal));
+                    N(s.SampleRate), N(s.VideoRangeType), s.ColorTransfer, s.PixelFormat, s.Language, N(s.IsDefault), N(s.IsForced), N(s.IsExternal),
+                    N(s.IsAnamorphic), N(s.RefFrames), N(s.PacketLength), N(s.IsAVC), N(s.Rotation), N(s.NalLengthSize),
+                    N(s.DvProfile), N(s.DvLevel), N(s.DvBlSignalCompatibilityId), N(s.BlPresentFlag), N(s.ElPresentFlag), N(s.RpuPresentFlag),
+                    N(s.Hdr10PlusPresentFlag), s.ColorPrimaries, s.ColorSpace, s.ColorRange, N(s.IsHearingImpaired), s.Path);
             }
             return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..12];
         }

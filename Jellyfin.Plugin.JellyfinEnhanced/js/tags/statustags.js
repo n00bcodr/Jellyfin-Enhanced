@@ -447,8 +447,9 @@
 
     /**
      * A short fingerprint of what a direct-play verdict depends on. The server gives each version a
-     * Revision over every fact Jellyfin has for it (bitrates, bit depth, level, scan type, frame rate,
-     * codec tag…); without one, the version ids and paths and the video/audio stream facts at hand.
+     * Revision over every stream fact a device profile condition can read (bitrates, bit depth, level,
+     * scan type, frame rate, codec tag, anamorphic, reference frames, rotation, Dolby Vision facts…);
+     * without one, the version ids and paths and the same facts of the streams at hand.
      * A replaced or re-encoded file changes it, so an old verdict is never shown for new media; score
      * or review changes do not.
      * @param {*} streams
@@ -463,7 +464,9 @@
         for (const stream of !revised && Array.isArray(streams) ? streams : []) {
             if (stream?.Type !== 'Video' && stream?.Type !== 'Audio') continue;
             parts.push([stream.SourceId, stream.Type, stream.Codec, stream.CodecTag, stream.Profile, stream.Level, stream.BitDepth, stream.BitRate,
-                stream.Width, stream.Height, stream.IsInterlaced, stream.RealFrameRate, stream.AverageFrameRate, stream.Channels, stream.VideoRangeType]
+                stream.Width, stream.Height, stream.IsInterlaced, stream.RealFrameRate, stream.AverageFrameRate, stream.Channels, stream.VideoRangeType,
+                stream.IsAnamorphic, stream.RefFrames, stream.PacketLength, stream.IsAVC, stream.Rotation, stream.SampleRate, stream.PixelFormat,
+                stream.ColorTransfer, stream.DvProfile, stream.DvLevel, stream.DvBlSignalCompatibilityId, stream.IsDefault, stream.Index]
                 .map(v => v ?? '').join(','));
         }
         let hash = 0x811c9dc5;

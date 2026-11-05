@@ -950,7 +950,7 @@ test('direct play: a replaced file is asked about again, and an answer for the o
   assert.equal(h.requests.length, 2);
 });
 
-for (const [field, before, after] of [['IsInterlaced', false, true], ['RealFrameRate', 24, 60], ['CodecTag', 'avc1', 'avc3'], ['BitRate', 8e6, 1e8], ['BitDepth', 8, 10]]) {
+for (const [field, before, after] of [['IsInterlaced', false, true], ['RealFrameRate', 24, 60], ['CodecTag', 'avc1', 'avc3'], ['BitRate', 8e6, 1e8], ['BitDepth', 8, 10], ['IsAnamorphic', false, true], ['RefFrames', 4, 16], ['Rotation', 0, 90], ['DvProfile', 7, 8]]) {
   test(`direct play: a change in ${field} alone asks again (batch streams, no server revision)`, async t => {
     let verdict = 'transcode';
     const h = setup(t, { settings: { statusTagsDirectPlay: true }, answer: () => verdict });

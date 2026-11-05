@@ -483,9 +483,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public bool? Is3D { get; set; }
 
         /// <summary>
-        /// A short hash of every fact Jellyfin has for this version and its streams (container, size, bitrates,
-        /// codecs and tags, profiles and levels, bit depths, sizes, scan type, frame rates, channels, sample rates,
-        /// ranges, languages, default/forced/external flags): it changes whenever the file does. Clients key
+        /// A short hash of Jellyfin's metadata for this version and its streams: every input a device profile
+        /// condition, codec or container check can read (container, protocol, timestamp type, size, bitrates,
+        /// codecs and tags, profiles and levels, bit depths, sizes, anamorphic, reference frames, packet length,
+        /// AVC, rotation, scan type, frame rates, channels, sample rates, ranges and Dolby Vision facts, colour
+        /// facts, languages, default/forced/external/hearing-impaired flags, default audio track). Re-probing a
+        /// replaced or re-encoded file changes it; display-only fields (titles) do not. Clients key
         /// device-specific answers (direct play) by it.
         /// </summary>
         public string? Revision { get; set; }
