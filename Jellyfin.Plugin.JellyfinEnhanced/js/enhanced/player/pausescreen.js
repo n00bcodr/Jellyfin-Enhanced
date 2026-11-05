@@ -525,6 +525,7 @@
                 .pause-screen-layout {
                   grid-template-columns: auto minmax(0, 1fr);
                   grid-template-areas: "logo logo" "title title" "sub sub" "art facts" "art genres" "plot plot";
+                  grid-template-rows: auto auto auto max-content auto auto;
                   align-content: start; align-items: start; row-gap: 0; column-gap: 16px;
                 }
                 .pause-screen-main { display: contents; }
@@ -539,7 +540,7 @@
                 #pause-screen-poster { width: 96px; border-radius: 4px; }
                 #pause-screen-disc { width: 112px; animation: none; }
                 /* an episode still goes under the episode line, full width */
-                #pause-screen-overlay.has-still .pause-screen-layout { grid-template-areas: "logo logo" "title title" "sub sub" "art art" "facts facts" "genres genres" "plot plot"; }
+                #pause-screen-overlay.has-still .pause-screen-layout { grid-template-areas: "logo logo" "title title" "sub sub" "art art" "facts facts" "genres genres" "plot plot"; grid-template-rows: auto; }
                 #pause-screen-overlay.has-still .pause-screen-art { align-self: start; }
                 #pause-screen-poster.is-still { width: 100%; max-width: 420px; }
               }
