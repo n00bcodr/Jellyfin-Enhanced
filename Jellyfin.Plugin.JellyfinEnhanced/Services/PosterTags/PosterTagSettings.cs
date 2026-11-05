@@ -69,6 +69,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// </summary>
         public string Digest => DigestAt(DateTimeOffset.UtcNow);
 
+        /// <summary>
+        /// <see cref="Digest"/> without the five-minute Status bucket: what the pixels depend on once the resolved
+        /// status itself is part of the composite key (PosterTagComposer), so an unchanged poster is drawn once
+        /// however many URL buckets ask for it.
+        /// </summary>
+        internal string RenderDigest => _digest;
+
         /// <summary>Status changes with time: retire URLs every five minutes, including cache-off tokens.</summary>
         public string DigestAt(DateTimeOffset now) => !Shows(PosterTagGroup.Status) ? _digest
             : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(_digest + "|status:" + (now.ToUnixTimeSeconds() / 300).ToString(CultureInfo.InvariantCulture))))[..16];

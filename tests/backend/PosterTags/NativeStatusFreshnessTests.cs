@@ -86,6 +86,62 @@ public class NativeStatusFreshnessTests
         Assert.Same(original, expired.Result);
     }
 
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 2)]
+    public async Task A_poster_renders_once_across_URL_buckets_unless_its_status_changed(bool statusEnds, int renders)
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.NativePosterTagsEnabled = config.StatusTagsEnabled = config.GenreTagsEnabled = true;
+        config.StatusTagsJustAddedDays = 1;
+        config.StatusTagsTrending = false;
+        var first = DateTimeOffset.Parse("2026-10-30T12:01:00Z");
+        var second = DateTimeOffset.Parse("2026-10-30T12:06:00Z");
+        var clock = new Clock { Now = first };
+        var settings = PosterTagSettings.FromSettingsJson("{statusTagsEnabled:true,genreTagsEnabled:true,nativePosterTimeZone:'UTC'}", config);
+        var user = new User("fixture", "default", "default") { Id = Guid.NewGuid() };
+        var item = new Movie { Id = Guid.NewGuid() };
+        // Just added until 12:03 (inside the first bucket only), or added long ago (no status in either).
+        var entry = new TagCacheEntry
+        {
+            Type = "Movie", Genres = ["Drama"],
+            DateCreated = (statusEnds ? first.AddDays(-1).AddMinutes(2) : first.AddDays(-30)).ToUnixTimeMilliseconds(),
+        };
+        Assert.Equal(statusEnds, StatusRules.Resolve(entry, settings, new(first)) != null);
+        Assert.Null(StatusRules.Resolve(entry, settings, new(second)));
+        var library = new Mock<ILibraryManager>();
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        using var data = new PosterTagDataProvider(cache, library.Object, null!, null!, null!, f.Core.Logger);
+        var composites = CompositeImageCache.Create(null, 1024 * 1024 * 16, 0, 1, TimeSpan.FromSeconds(1), _ => { });
+        using var renderer = new PosterTagRenderer();
+        using var services = new ServiceCollection().AddSingleton(renderer).AddSingleton(new PosterTagStatusProvider(null!, data, library.Object)).BuildServiceProvider();
+        var composer = new PosterTagComposer(data, composites, services);
+        var filter = new PosterTagImageFilter(null!, null!, null!, data, composer, null!, null!, library.Object, null!, f.Core.Logger, clock);
+        var snapshot = new PosterTagDataSnapshot(entry, PosterTagReviewSummary.None, "abcdef");
+        var tokenService = PosterTagVariantToken.CreateForPath(Path.Combine(f.Core.Root, "native-key"), _ => { });
+        using var bitmap = new SKBitmap(360, 540);
+        bitmap.Erase(SKColors.DarkSlateBlue);
+        using var encoded = bitmap.Encode(SKEncodedImageFormat.Jpeg, 100);
+        foreach (var instant in new[] { first, second })
+        {
+            clock.Now = instant;
+            var token = tokenService.Mint(user.Id, item.Id, settings.DigestAt(instant), PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+            Assert.True(tokenService.Verify(token, user.Id, item.Id, settings.DigestAt(instant), PosterTagComposer.PixelVersion, out var variant));
+            var plan = new PosterTagImageFilter.Plan(item, user, settings, variant, "base-jet" + token, snapshot, true, false, instant);
+            var http = new DefaultHttpContext();
+            http.Request.Method = "GET";
+            http.Response.StatusCode = 200;
+            var original = new FileContentResult(encoded.ToArray(), "image/jpeg");
+            var response = new ActionExecutedContext(new ActionContext(http, new RouteData(), new ActionDescriptor()), [], new object()) { Result = original };
+            await filter.PostProcessAsync(response, plan, default);
+            Assert.NotSame(original, response.Result);
+        }
+
+        // The URL still moves with the bucket (clients ask again); the pixels are drawn again only when they differ.
+        Assert.Equal(renders, composites.MemoryCount);
+    }
+
     [Fact]
     public void Subsecond_and_crossed_bucket_responses_have_no_freshness()
     {

@@ -111,9 +111,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var instant = statusInstant ?? DateTimeOffset.UtcNow;
             var status = settings.Shows(PosterTagGroup.Status)
                 ? await _status.Value.GetAsync(httpContext, item, user, data.Entry, settings, cancellationToken, instant).ConfigureAwait(false) : null;
-            // Include remote facts and the filtered parent as well as the five-minute URL bucket.
-            var dataKey = status == null ? data.DataKey : data.DataKey + "|status:" + System.Text.Json.JsonSerializer.Serialize(status);
-            var key = CompositeKey(image, settings.DigestAt(instant), topRightOffset, dataKey, quality);
+            // Include remote facts, the filtered parent and the badge the status resolves to (what the pixels show),
+            // not the status inputs or the five-minute URL bucket: the URL still retires every bucket, but a poster
+            // whose badge did not change is drawn once.
+            var badge = status == null ? null : Resolution.StatusRules.Resolve(data.Entry, settings, status);
+            var dataKey = status == null ? data.DataKey
+                : data.DataKey + "|status:" + (badge == null ? "-" : badge.Key + "\u001f" + badge.Text + "\u001f" + badge.StyleKey);
+            var key = CompositeKey(image, settings.RenderDigest, topRightOffset, dataKey, quality);
             var itemType = data.Entry.Type ?? item.GetBaseItemKind().ToString();
             Task<byte[]> Render() => RenderAsync(image, data, settings, itemType, topRightOffset, quality, status);
 
