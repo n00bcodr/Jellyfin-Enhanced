@@ -633,7 +633,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     }
                     catch (Exception ex)
                     {
-                        _logger.Debug($"[Auto-Movie-Request] Error reading Radarr server list from Seerr URL #{i + 1}: {ex.GetType().Name}: {Helpers.Jellyseerr.SeerrError.SanitizeMessage(ex.Message)}");
+                        // Exception messages can name the Seerr host and port without a scheme
+                        // ("Connection refused (host:5055)"), so log the exception type and HTTP error only.
+                        var detail = ex is HttpRequestException httpEx
+                            ? $" error={httpEx.HttpRequestError}{(httpEx.StatusCode is { } status ? $" status={(int)status}" : string.Empty)}"
+                            : string.Empty;
+                        _logger.Debug($"[Auto-Movie-Request] Error reading Radarr server list from Seerr URL #{i + 1}: {ex.GetType().Name}{detail}");
                     }
                 }
             }

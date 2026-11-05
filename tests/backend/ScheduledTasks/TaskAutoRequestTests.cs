@@ -259,22 +259,29 @@ public class TaskAutoRequestTests
         }
     }
 
+    private const string Custom4kBody = "{\"mediaType\":\"movie\",\"mediaId\":124,\"serverId\":1,\"profileId\":7,\"rootFolder\":\"/movies\",\"is4k\":true}";
+    private const string Original4kBody = "{\"mediaType\":\"movie\",\"mediaId\":124,\"serverId\":1,\"profileId\":9,\"rootFolder\":\"/uhd\",\"is4k\":true}";
+    private const string DefaultBody = "{\"mediaType\":\"movie\",\"mediaId\":124}";
+
     [Theory]
-    // A 4K request is blocked by a pending, processing or available 4K copy (status4k), like status blocks today.
-    [InlineData("custom", 1, 2, 0)]
-    [InlineData("custom", 1, 3, 0)]
-    [InlineData("custom", 1, 5, 0)]
-    [InlineData("original", -1, 2, 0)]
-    [InlineData("original", -1, 5, 0)]
+    // A 4K request is blocked by a pending, processing or available 4K copy (status4k), like status blocks
+    // today; once the 4K copy is gone the next play sends the expected body.
+    [InlineData("custom", 1, 2, false, true, Custom4kBody)]
+    [InlineData("custom", 1, 3, false, true, Custom4kBody)]
+    [InlineData("custom", 1, 5, false, true, Custom4kBody)]
+    [InlineData("original", -1, 2, false, true, Original4kBody)]
+    [InlineData("original", -1, 5, false, true, Original4kBody)]
     // Other 4K states still request.
-    [InlineData("custom", 1, 1, 1)]
-    [InlineData("custom", 1, 4, 1)]
+    [InlineData("custom", 1, 1, false, false, Custom4kBody)]
+    [InlineData("custom", 1, 4, false, false, Custom4kBody)]
     // A non-4K request ignores status4k.
-    [InlineData("custom", 0, 2, 1)]
-    [InlineData("custom", 0, 5, 1)]
-    [InlineData("default", -1, 2, 1)]
-    [InlineData("default", -1, 5, 1)]
-    public async Task FourKRequestHonoursCollectionStatus4k(string mode, int serverId, int status4k, int expectedPosts)
+    [InlineData("custom", 0, 2, false, false, "{\"mediaType\":\"movie\",\"mediaId\":124,\"serverId\":0,\"profileId\":7,\"rootFolder\":\"/movies\"}")]
+    [InlineData("custom", 0, 5, false, false, "{\"mediaType\":\"movie\",\"mediaId\":124,\"serverId\":0,\"profileId\":7,\"rootFolder\":\"/movies\"}")]
+    [InlineData("default", -1, 2, false, false, DefaultBody)]
+    [InlineData("default", -1, 5, false, false, DefaultBody)]
+    // The 4K fallback turns an original 4K request into a default one, so status4k doesn't block it.
+    [InlineData("original", -1, 2, true, false, DefaultBody)]
+    public async Task FourKRequestHonoursCollectionStatus4k(string mode, int serverId, int status4k, bool fallback, bool blocked, string expectedBody)
     {
         using var f = new ApiPluginFixture();
         var config = f.Plugin.Configuration;
@@ -285,41 +292,43 @@ public class TaskAutoRequestTests
         config.JellyseerrApiKey = "test-seerr";
         config.AutoMovieRequestCheckReleaseDate = false;
         config.AutoMovieRequestQualityMode = mode;
-        config.AutoMovieRequestFallbackOn4k = false;
+        config.AutoMovieRequestFallbackOn4k = fallback;
         config.AutoMovieRequestCustomServerId = serverId;
+        config.AutoMovieRequestCustomProfileId = 7;
+        config.AutoMovieRequestCustomRootFolder = "/movies";
         var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
         var users = new Mock<IUserManager>();
         users.Setup(u => u.GetUserById(user.Id)).Returns(user);
         var movie = new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "123" } };
         int? nextStatus4k = status4k;
-        var posts = 0;
-        using var transport = new IntegrationTransport((request, ct) =>
+        var bodies = new List<string>();
+        using var transport = new IntegrationTransport(async (request, ct) =>
         {
             switch (request.RequestUri!.AbsolutePath)
             {
-                case "/3/movie/123": return Task.FromResult(IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}"));
-                case "/api/v1/collection/9": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01", mediaInfo = new { status = 5 } }, new { id = 124, title = "Second", releaseDate = "2001-01-01", mediaInfo = new { status = 1, status4k = nextStatus4k } } } })));
+                case "/3/movie/123": return IntegrationTransport.Response("{\"belongs_to_collection\":{\"id\":9,\"name\":\"Saga\"}}");
+                case "/api/v1/collection/9": return IntegrationTransport.Response(JsonSerializer.Serialize(new { parts = new object[] { new { id = 123, title = "First", releaseDate = "2000-01-01", mediaInfo = new { status = 5 } }, new { id = 124, title = "Second", releaseDate = "2001-01-01", mediaInfo = new { status = 1, status4k = nextStatus4k } } } }));
                 // The watched movie's own 4K request, read by "original" mode.
-                case "/api/v1/movie/123": return Task.FromResult(IntegrationTransport.Response("{\"mediaInfo\":{\"requests\":[{\"serverId\":1,\"profileId\":9,\"rootFolder\":\"/uhd\",\"is4k\":true}]}}"));
-                case "/api/v1/service/radarr": return Task.FromResult(IntegrationTransport.Response(RadarrServers));
-                case "/api/v1/user": return Task.FromResult(IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } })));
+                case "/api/v1/movie/123": return IntegrationTransport.Response("{\"mediaInfo\":{\"requests\":[{\"serverId\":1,\"profileId\":9,\"rootFolder\":\"/uhd\",\"is4k\":true}]}}");
+                case "/api/v1/service/radarr": return IntegrationTransport.Response(RadarrServers);
+                case "/api/v1/user": return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } }));
                 case "/api/v1/request":
-                    posts++;
-                    return Task.FromResult(IntegrationTransport.Response("{}", 201));
+                    bodies.Add(await request.Content!.ReadAsStringAsync(ct));
+                    return IntegrationTransport.Response("{}", 201);
                 default: throw new InvalidOperationException("Unexpected URL " + request.RequestUri);
             }
         });
         var service = new AutoMovieRequestService(transport, f.Core.Logger, users.Object, null!);
         await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
-        Assert.Equal(expectedPosts, posts);
-        if (expectedPosts == 0)
+        if (blocked)
         {
+            Assert.Empty(bodies);
             // A blocked 4K request leaves no per-user cache entry, so once the 4K request is gone the
             // next play requests again within the hour.
             nextStatus4k = null;
             await service.CheckMovieForCollectionRequestAsync(movie, user.Id);
-            Assert.Equal(1, posts);
         }
+        Assert.Equal(new[] { expectedBody }, bodies);
     }
 
     [Fact]
@@ -354,7 +363,8 @@ public class TaskAutoRequestTests
                     {
                         "ok" => IntegrationTransport.Response(RadarrServers),
                         "unexpected" => IntegrationTransport.Response("{}"),
-                        _ => throw new HttpRequestException("connection refused for " + request.RequestUri!.OriginalString + " "),
+                        // The real .NET form: the host and port without a scheme.
+                        _ => throw new HttpRequestException(HttpRequestError.ConnectionError, "Connection refused (seerr.test:80)"),
                     };
                 case "/api/v1/user": return IntegrationTransport.Response(JsonSerializer.Serialize(new { results = new[] { new { id = 22, jellyfinUserId = user.Id.ToString("N") } } }));
                 case "/api/v1/request":
@@ -386,7 +396,8 @@ public class TaskAutoRequestTests
         Assert.Equal(new[] { "seerr-key-one", "seerr-key-two", "seerr-key-three", "seerr-key-three" }, listKeys);
         Assert.Equal(5, bodies.Count);
         var log = string.Concat(Directory.GetFiles(f.Core.Root, "JellyfinEnhanced_*.log").Select(File.ReadAllText));
-        Assert.Contains("Error reading Radarr server list from Seerr URL #1: HttpRequestException", log, StringComparison.Ordinal);
+        Assert.Contains("Error reading Radarr server list from Seerr URL #1: HttpRequestException error=ConnectionError", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("Connection refused", log, StringComparison.Ordinal);
         Assert.Contains("Unexpected Radarr server list from Seerr URL #1", log, StringComparison.Ordinal);
         Assert.DoesNotContain("seerr.test", log, StringComparison.Ordinal);
         Assert.DoesNotContain("url-secret", log, StringComparison.Ordinal);
