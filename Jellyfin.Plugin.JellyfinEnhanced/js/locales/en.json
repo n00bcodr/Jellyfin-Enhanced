@@ -167,7 +167,7 @@
     "tag_item_editor_scope_note": "Where each group shows (movies, series, seasons, episodes and the home rows) is chosen for all titles in Media Tags settings.",
     "tag_limit_single": "Always one tag: this group shows a single badge.",
     "tag_scope_people_na": "Not used: People Tags appear on cast cards on detail pages, not on media cards.",
-    "people_tags_age_short": "{age}y",
+    "tag_people_age_short": "{age}y",
     "admin_tags_page_loading": "Loading Media Tags settings…",
     "admin_tags_page_not_ready": "Jellyfin Enhanced has not finished loading in this browser, so the Media Tags settings cannot be shown. Reload the page; if this stays, check the plugin is active and see the browser console.",
     "admin_tags_page_back": "Back to Jellyfin Enhanced",

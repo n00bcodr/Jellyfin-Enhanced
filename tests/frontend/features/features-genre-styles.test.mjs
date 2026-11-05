@@ -164,7 +164,7 @@ const catalog = {
 async function editor(t, json = '', preset = 'default') {
   const h = createHarness({
     html: '<div id="jeTaRoot"><input id="tagStylesEnabled" type="checkbox" checked><div id="tagStylesBody"></div></div>',
-    JE: { t: key => `«${key}»` },
+    JE: { t: (key, params) => `«${key}${params ? ` ${Object.values(params).join(" ")}` : ""}»` },
     apiClient: { ajax: async () => catalog }, globals: { jeCdnUrl: path => path }
   });
   t.after(() => h.close());
@@ -297,12 +297,12 @@ test('one genre takes its own colours, its own contrast badge and its preview ch
 
   // Comedy's badge is its own: the built-in light grey icon on yellow reads poorly.
   assert.equal(h.$('.je-ts-contrast-badge').dataset.level, 'low');
-  assert.equal(h.$('.je-ts-contrast-hint').textContent, 'Text over background, on a dark poster');
+  assert.equal(h.$('.je-ts-contrast-hint').textContent, '«tag_styles_contrast_text»');
   h.$('.je-ts-target[data-label="drama"]').click();
   assert.equal(h.$('.je-ts-contrast-badge').dataset.level, 'aa');
   // Whole group: the worst genre, named.
   h.$('.je-ts-target[data-label="*"]').click();
-  assert.match(h.$('.je-ts-contrast-hint').textContent, /\(Comedy\)/);
+  assert.match(h.$('.je-ts-contrast-hint').textContent, /^«tag_styles_contrast_lowest Comedy»$/);
 
   // The preview shows a few genres, each through the generated stylesheet.
   const horror = h.$('#tagStylePreview .genre-overlay-container .genre-tag[data-je-genre="horror"]');
