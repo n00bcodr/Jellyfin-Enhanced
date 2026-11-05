@@ -396,11 +396,11 @@
             @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } .pause-screen-actions { column-gap: 24px; } }
             /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
             .layout-tv .pause-screen-resume:focus { outline: 3px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
-            .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -3px; background: #fff; border-color: transparent; color: #111; opacity: 1; }
+            .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -3px; background-color: #fff; background-clip: padding-box; border-color: transparent; color: #111; opacity: 1; }
             /* while the × has focus, the resume button steps back so the remote's selection is unambiguous */
             .layout-tv .pause-screen-resume:not(:focus),
             #pause-screen-content:has(#pause-screen-close-btn:focus-visible) .pause-screen-resume { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.35); color: #fff; }
-            #pause-screen-content:has(#pause-screen-close-btn:focus-visible) #pause-screen-close-btn { background: #fff; border-color: transparent; color: #111; opacity: 1; }
+            #pause-screen-content:has(#pause-screen-close-btn:focus-visible) #pause-screen-close-btn { background-color: #fff; background-clip: padding-box; border-color: transparent; color: #111; opacity: 1; }
             .pause-screen-hint {
               font-size: var(--pause-screen-hint-size);
               line-height: 1.4;
@@ -448,7 +448,8 @@
             @media (min-width: 1600px) { #pause-screen-close-btn { font-size: 24px; height: 56px; border-radius: 28px; padding: 0 12px; } #pause-screen-close-btn .material-icons { font-size: 30px; } }
             #pause-screen-close-btn:hover,
             #pause-screen-close-btn:focus-visible {
-              background: rgba(20,20,24,.6);
+              background-color: rgba(20,20,24,.6);
+              background-clip: padding-box;
               border-color: transparent;
               opacity: 1;
             }
@@ -541,7 +542,9 @@
                 #pause-screen-overlay.has-still .pause-screen-layout { grid-template-areas: "logo logo" "title title" "sub sub" "art art" "facts facts" "plot plot"; }
                 #pause-screen-overlay.has-still .pause-screen-facts { margin-top: 0; }
                 #pause-screen-overlay.has-still .pause-screen-art { align-self: start; }
-                #pause-screen-poster.is-still { width: 100%; max-width: 420px; }
+                /* a definite width: the grid sized the row from a 4:3 still's natural size and let it overflow the facts */
+                #pause-screen-poster.is-still { width: min(calc(100vw - 2 * var(--pause-screen-gutter-x)), 320px); height: auto; }
+                #pause-screen-overlay.has-still #pause-screen-logo { max-height: min(16vh, 120px); }
               }
               #pause-screen-title { font-size: clamp(28px, 8vw, 40px); }
               #pause-screen-subtitle { font-size: 18px; }
@@ -1321,7 +1324,16 @@
             el.textContent = cut;
             if (!overflows()) return;
           }
-          el.textContent = full;
+          // No sentence boundary fits: cut on a word boundary and end with an ellipsis.
+          const words = full.split(/\s+/);
+          let lo = 1, hi = words.length;
+          while (lo < hi) {
+            const mid = Math.ceil((lo + hi) / 2);
+            el.textContent = words.slice(0, mid).join(' ').replace(/[,;:]$/, '') + '…';
+            if (overflows()) hi = mid - 1; else lo = mid;
+          }
+          el.textContent = words.slice(0, lo).join(' ').replace(/[,;:]$/, '') + '…';
+          if (overflows()) el.textContent = full;
         }
 
         /**
