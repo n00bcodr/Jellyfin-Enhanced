@@ -952,8 +952,13 @@
 
         /** Puts the × on the same line as Jellyfin's back arrow, wherever the player's header lays it out. */
         alignCloseButton() {
-          const back = document.querySelector('.skinHeader.osdHeader .headerBackButton, .skinHeader.osdHeader .videoOsd-appBar > button:first-child');
-          const rect = back?.getBoundingClientRect?.();
+          // Jellyfin 12 can keep a stale, zero-size OSD header around; use the one that is actually laid out.
+          const candidates = document.querySelectorAll('.skinHeader.osdHeader .videoOsd-appBar > button:first-child, .skinHeader.osdHeader .headerBackButton');
+          let rect = null;
+          for (const el of candidates) {
+            const r = el.getBoundingClientRect();
+            if (r.height > 0 && r.width > 0) { rect = r; break; }
+          }
           if (rect && rect.height > 0) {
             this.closeButton.style.top = `${Math.max(0, Math.round(rect.top + rect.height / 2 - 22))}px`;
           } else {
