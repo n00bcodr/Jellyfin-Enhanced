@@ -1031,9 +1031,11 @@
      * A commentary or audio-description audio track is not a dub or the main soundtrack
      * (Helpers/TrackRoles.cs on the server).
      * @param {Object} stream Audio stream.
-     * @returns {boolean} True when the track's title names that role.
+     * @returns {boolean} True when the track's title names that role, or, once Spoiler Guard has
+     *   stripped the titles, when the server derived that role from them (`Role: 'secondary'`).
      */
     function isSecondaryAudio(stream) {
+        if (stream?.Role === 'secondary') return true;
         const text = `${stream?.Title || ''} | ${stream?.DisplayTitle || ''}`;
         // Word stems in English, French, Italian, Dutch, German, Nordic, Spanish, Portuguese, Polish,
         // Czech, Hungarian, Estonian, Finnish, Russian, Ukrainian, Greek, Turkish, Arabic, Hebrew,

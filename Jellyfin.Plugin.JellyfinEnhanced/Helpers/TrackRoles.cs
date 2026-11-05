@@ -24,6 +24,16 @@ internal static class TrackRoles
     // "AD" only as an upper-case word, so "Ad" or "ad-free" never match.
     private static readonly Regex AudioDescriptionAbbreviation = new(@"(?<![A-Za-z0-9])AD(?![A-Za-z0-9])", RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    /// <summary>The <see cref="Model.TagMediaStream.Role"/> of a commentary or audio-description audio track.</summary>
+    internal const string SecondaryRole = "secondary";
+
+    /// <summary>
+    /// True for a commentary or audio-description audio track: from its role when Spoiler Guard has
+    /// stripped its titles, else from its titles.
+    /// </summary>
+    internal static bool IsSecondaryAudio(Model.TagMediaStream stream)
+        => stream.Role == SecondaryRole || IsSecondaryAudio(stream.Title, stream.DisplayTitle);
+
     /// <summary>True for a commentary or audio-description audio track, from its title.</summary>
     internal static bool IsSecondaryAudio(string? title, string? displayTitle)
     {

@@ -546,6 +546,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         VideoRangeType = st.VideoRangeType,
                         VideoRange = st.VideoRange,
                         DisplayTitle = null,
+                        // The role the titles named (commentary, description) is no spoiler and decides
+                        // the main audio, so it outlives them.
+                        Role = st.Role ?? (st.Type == "Audio" && Helpers.TrackRoles.IsSecondaryAudio(st.Title, st.DisplayTitle) ? Helpers.TrackRoles.SecondaryRole : null),
                     }).ToList(),
                     Sources = sd.Sources?.Select(source => new TagMediaSource
                     {
@@ -554,6 +557,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Path = null,
                         Name = null,
                         Is3D = source.Is3D,
+                        // Opaque, title-free: keyed direct-play answers stay valid across the strip.
+                        Revision = source.Revision,
                     }).ToList(),
                 };
                 stripped.StreamData = clonedSd;

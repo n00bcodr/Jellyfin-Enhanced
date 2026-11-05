@@ -39,3 +39,9 @@ test('commentary and audio-description titles are secondary audio in every liste
  const m = setup(t);
  for (const row of roles.cases) assert.equal(m.isSecondaryAudio({ Title: row.title, DisplayTitle: row.displayTitle }), row.secondary, JSON.stringify(row));
 });
+test('a track whose titles Spoiler Guard stripped keeps the role the server read from them', t => {
+ const m = setup(t);
+ assert.equal(m.isSecondaryAudio({ Role: 'secondary' }), true);
+ assert.equal(m.isSecondaryAudio({ Role: null, Title: null, DisplayTitle: null }), false);
+ assert.equal(m.isSecondaryAudio({ Title: 'Main', DisplayTitle: 'Japanese - TrueHD 7.1' }), false);
+});

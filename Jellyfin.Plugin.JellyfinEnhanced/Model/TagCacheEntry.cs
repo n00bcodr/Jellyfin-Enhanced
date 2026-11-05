@@ -442,6 +442,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public string? DisplayTitle { get; set; }
 
         /// <summary>
+        /// The track's role, derived from its titles before Spoiler Guard strips them ("secondary": a
+        /// commentary or audio-description audio track), so main-audio selection is the same with and
+        /// without the titles. Null in the cache, which keeps the titles it is read from
+        /// (Helpers/TrackRoles.cs, js/core/media-language.js isSecondaryAudio).
+        /// </summary>
+        public string? Role { get; set; }
+
+        /// <summary>
         /// Value-compare for the no-op-rebuild check (see TagCacheEntry.ContentEquals).
         /// Compares EVERY property — an omitted field hides real changes from clients.
         /// </summary>
@@ -464,7 +472,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
             && a.ChannelLayout == b.ChannelLayout
             && a.VideoRangeType == b.VideoRangeType
             && a.VideoRange == b.VideoRange
-            && a.DisplayTitle == b.DisplayTitle;
+            && a.DisplayTitle == b.DisplayTitle
+            && a.Role == b.Role;
     }
 
     /// <summary>Immutable public movie keyword facts, refreshed daily.</summary>

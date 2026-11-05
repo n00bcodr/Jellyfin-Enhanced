@@ -210,11 +210,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var values = new List<TagStreamQuality>();
             var all = (streams ?? Array.Empty<TagMediaStream>()).ToList();
             // Versions with an ordinary audio track list no commentary or audio-description facts.
-            var ordinary = all.Where(s => s?.Type == "Audio" && !Helpers.TrackRoles.IsSecondaryAudio(s.Title, s.DisplayTitle)).Select(s => s.SourceId).ToHashSet();
+            var ordinary = all.Where(s => s?.Type == "Audio" && !Helpers.TrackRoles.IsSecondaryAudio(s)).Select(s => s.SourceId).ToHashSet();
             foreach (var stream in all)
             {
                 if (stream == null) continue;
-                if (stream.Type == "Audio" && ordinary.Contains(stream.SourceId) && Helpers.TrackRoles.IsSecondaryAudio(stream.Title, stream.DisplayTitle)) continue;
+                if (stream.Type == "Audio" && ordinary.Contains(stream.SourceId) && Helpers.TrackRoles.IsSecondaryAudio(stream)) continue;
                 if (stream.Type == "Video")
                 {
                     var codec = DetectCodec(stream);
@@ -625,8 +625,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static List<TagMediaStream> SelectAudioStreamsForLanguage(List<TagMediaStream> audioStreams, string? preferred)
         {
             // Commentary and audio description never stand for the soundtrack while an ordinary track exists.
-            if (audioStreams.Exists(s => !Helpers.TrackRoles.IsSecondaryAudio(s.Title, s.DisplayTitle)))
-                audioStreams = audioStreams.FindAll(s => !Helpers.TrackRoles.IsSecondaryAudio(s.Title, s.DisplayTitle));
+            if (audioStreams.Exists(s => !Helpers.TrackRoles.IsSecondaryAudio(s)))
+                audioStreams = audioStreams.FindAll(s => !Helpers.TrackRoles.IsSecondaryAudio(s));
             if (string.IsNullOrEmpty(preferred) || audioStreams.Count == 0) return audioStreams;
             var exact = audioStreams.FindAll(s => LanguageFlagRules.MatchesLanguage(s.Language, preferred, requireRegion: true));
             if (exact.Count > 0) return exact;

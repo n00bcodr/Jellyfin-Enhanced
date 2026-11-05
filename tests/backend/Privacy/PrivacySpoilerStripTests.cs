@@ -2,6 +2,7 @@ using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
 using Jellyfin.Plugin.JellyfinEnhanced.Services;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -92,6 +93,42 @@ public class PrivacySpoilerStripTests
             ["source"] = new() { Best = "REMUX", Latest = "WEB", Values = ["WEB", "REMUX"] } } };
         var withSource = stripper.StripEntry(policy, user, series, source, out _);
         Assert.Equal(["resolution"], withSource.QualitySummary!.Categories.Keys);
+    }
+
+    [Fact]
+    public void TitleOnlyStripKeepsTheTrackRolesAndTheVersionRevisionSoTheMainAudioIsUnchanged()
+    {
+        // Two versions: the first lists an English commentary before the Japanese 5.1 main track. The titles
+        // that say "commentary" are stripped, yet the main audio (and so the chips) must stay the same.
+        var user = new User("test", "default", "default") { Id = Guid.NewGuid() };
+        var series = new Series { Id = Guid.NewGuid() };
+        var state = new UserSpoilerBlur(); state.Series[series.Id.ToString("N")] = new();
+        var policy = SpoilerTagDataStripper.CreatePolicy(new PluginConfiguration { SpoilerBlurEnabled = true, SpoilerStripTags = false,
+            SpoilerStripRatings = false, SpoilerReplaceTitle = true, SpoilerStripOverview = false }, state)!;
+        var stripper = new SpoilerTagDataStripper(Mock.Of<ILibraryManager>(), Mock.Of<IUserDataManager>(), null!);
+        var source = Entry(series.Id); source.Type = "Series";
+        source.StreamData = new TagStreamData
+        {
+            Streams =
+            [
+                new() { Type = "Video", SourceId = "a", Codec = "hevc", Height = 2160, Width = 3840, VideoRangeType = "SDR" },
+                new() { Type = "Audio", SourceId = "a", Codec = "ac3", Channels = 2, Language = "eng", Title = "Director's commentary on the finale", DisplayTitle = "Commentary - English - Dolby Digital - Stereo" },
+                new() { Type = "Audio", SourceId = "a", Codec = "truehd", Channels = 8, ChannelLayout = "7.1", Language = "jpn", Title = "Main", DisplayTitle = "Japanese - TrueHD 7.1" },
+                new() { Type = "Audio", SourceId = "a", Codec = "aac", Channels = 2, Language = "eng", Title = "AD", DisplayTitle = "AD - English - AAC - Stereo" },
+            ],
+            Sources = [new() { Id = "a", Path = "finale.mkv", Name = "Finale reveal", Revision = "0123456789ab" }],
+        };
+        var result = stripper.StripEntry(policy, user, series, source, out var stripped);
+        Assert.True(stripped);
+        Assert.All(result.StreamData!.Streams!, stream => { Assert.Null(stream.Title); Assert.Null(stream.DisplayTitle); });
+        Assert.Equal(new string?[] { null, "secondary", null, "secondary" }, result.StreamData.Streams!.Select(stream => stream.Role));
+        Assert.Equal("0123456789ab", Assert.Single(result.StreamData.Sources!).Revision);
+        Assert.Null(source.StreamData.Streams![1].Role); // the shared entry is untouched
+        foreach (var preferred in new string?[] { null, "en", "ja" })
+        {
+            Assert.Equal(QualityTagRules.Detect(source.StreamData, preferred), QualityTagRules.Detect(result.StreamData, preferred));
+        }
+        Assert.Contains("TRUEHD 7.1", QualityTagRules.Detect(result.StreamData, "en"), StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
