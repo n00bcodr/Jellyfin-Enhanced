@@ -252,7 +252,7 @@ See who is watching, what they are playing or have paused, and how Jellyfin is d
 
 **How to use:**
 
-1. Enable **Active Streams Header Widget** under admin **Extras** → **UI Tweaks**, click **Save Settings**, and reload.
+1. Enable **Active Streams Header Widget** under admin **Extras** → **Active Streams**, click **Save Settings**, and reload.
 2. Click the stream icon in the Jellyfin header to open the panel. Its title shows the active-stream count, or **No Active Streams** when none are playing.
 3. Click the **Refresh sessions** icon with the tooltip **Refresh** for current data. The footer shows the last update time.
 

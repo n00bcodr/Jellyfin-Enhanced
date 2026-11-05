@@ -1186,7 +1186,8 @@ The injected web client uses these endpoints to load resources and its initial s
 |---|---|---|---|
 | GET | `script` | Anonymous | Initial loader `js/plugin.js`, JavaScript. |
 | GET | `js/{**path}` | Anonymous | Embedded JS tree resource; MIME follows JS/CSS/JSON/HTML extension. |
-| GET | `Configuration/configPage.css` | Anonymous | Admin stylesheet, `text/css`. |
+| GET | `Configuration/jeAdmin.css` | Anonymous | Admin stylesheet (page styles plus every `Configuration/admin/*.css`), `text/css`. |
+| GET | `Configuration/jeAdmin.js` | Anonymous | Settings engine followed by every `Configuration/admin/*.js` section file, JavaScript. |
 | GET | `version` | Anonymous | Unquoted version text. |
 | GET | `public-config` | Anonymous | Curated public configuration; anonymous Seerr URLs redacted. |
 | GET | `private-config` | Authenticated | Selected private configuration for admins; `{}` for other users. |

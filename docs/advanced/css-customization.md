@@ -450,7 +450,7 @@ They require a resolvable TMDB item key, personal **Show Rating Tags**, and the 
 | --- | --- | --- |
 | **Enable User Written Reviews** | Off | `ShowUserReviews`: enables user reviews. |
 | **Show average user rating on poster cards** | Off | `ShowUserRatingOnPosters`: adds the review-average chip. |
-| **Show "—" on posters for unrated items** | On | `ShowUserRatingDash`: a null average shows a dash; off removes the chip when no average is available. |
+| **Show a dash on posters for unrated items** | On | `ShowUserRatingDash`: a null average shows a dash; off removes the chip when no average is available. |
 
 The chip has `.rating-tag.rating-tag-critic.je-userreview-tag`, with `.je-userreview-icon` and `.rating-text` children. The associated container carries `data-je-review-key` for updates.
 

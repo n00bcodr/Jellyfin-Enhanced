@@ -18,7 +18,7 @@ Use Jellyfin Enhanced's shortcuts, browsing tools, and player controls to make J
 
     Where an admin setting supplies a personal default, existing users keep their saved choices. Personal settings and shortcut overrides save automatically on the server for each account. Reload another open client to load changes.
 
-    See [Enhanced Settings](enhanced-settings.md) and [Settings Overview](../getting-started/settings-overview.md) for the default/override workflow, including **Overview → Quick Actions → Overwrite everyone's personal settings**.
+    See [Enhanced Settings](enhanced-settings.md) and [Settings Overview](../getting-started/settings-overview.md) for the default/override workflow, including **Overview → Quick Actions → Apply all plugin settings to every user**.
 
 ??? note "Choose where JE pages appear"
 
@@ -323,7 +323,7 @@ Navigate Jellyfin and control local video playback without opening menus. Admin 
 
     Modifier-only presses are ignored. Conflicts and reserved native player bindings are rejected with a red shake; a dot marks personal overrides. Changes save in your server-side `shortcuts.json`.
 
-    Administrators can set server bindings in **Keyboard → Keyboard Config** using its recorder, then **Save Settings**. While recording there, ++delete++ disables an action and ++backspace++ restores its stock binding. Existing personal overrides still take precedence.
+    Administrators can set server bindings in **Keyboard → Keyboard Shortcuts** using its recorder, then **Save Settings**. While recording there, ++delete++ disables an action and ++backspace++ restores its stock binding. Existing personal overrides still take precedence.
 
     Held ++c++ or ++v++ does not repeatedly cycle tracks. Frame stepping uses media frame-rate metadata. When it is missing, JE falls back to 24 fps and shows a notice.
 
@@ -410,7 +410,7 @@ After you pause and stop interacting, JE can display artwork and media informati
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Enable Custom Pause Screen** — admin **Playback → Playback & Tab Switch** | On | Supplies the initial personal default. |
+| **Enable Custom Pause Screen** — admin **Playback → Player Behaviour** | On | Supplies the initial personal default. |
 | **Custom Pause Screen** — personal **Playback Settings** | On | Enables the overlay; reload after changing enablement. |
 | **Delay before showing (seconds):** — personal **Playback Settings** | 5 | Idle delay while paused; accepts integers from 1–60 and updates the running delay. |
 
@@ -429,7 +429,7 @@ Manage tab-switch playback, temporary speed boosts, and automatic intro/outro sk
 ![Playing movie with Enhanced player controls](../images/enhanced/player-osd.webp)
 *The player also shows rating chips, a bookmark button, and the optional Playback Info overlay.*
 
-**How to use:** Open **Playback Settings** for tab-switch and hold controls, or **Auto-Skip Settings** for intros/outros. Admin defaults are under **Playback → Playback & Tab Switch** and **Playback → Auto-Skip**.
+**How to use:** Open **Playback Settings** for tab-switch and hold controls, or **Auto-Skip Settings** for intros/outros. Admin defaults are under **Playback → Player Behaviour** and **Playback → Auto-Skip**.
 
 - For continuous Picture-in-Picture playback, turn off **Auto-pause**.
 - For temporary 2× speed, hold the video background with the left mouse button or touch for 500 ms. Release or cancel to restore the previous speed. Hold only on the video background.
@@ -506,7 +506,7 @@ For white text on a semi-transparent black box like the example below, set **Tex
 
 ![Custom-styled subtitle on a semi-transparent box during playback](../images/enhanced/subtitle-live.webp)
 
-To stop styling, turn on personal **Disable Custom Styles** and reload. To change the starting preference for everyone, save admin **Disable Custom Subtitle Styles by default**. Use **Overwrite everyone's personal settings** only if you intend to replace existing personal preferences.
+To stop styling, turn on personal **Disable Custom Styles** and reload. To change the starting preference for everyone, save admin **Disable Custom Subtitle Styles by default**. Use **Apply all plugin settings to every user** only if you intend to replace existing personal preferences.
 
 !!! note "Choose a supported text track"
 
@@ -531,7 +531,7 @@ See Jellyfin's community/critic scores in the player or briefly show age-rating 
 
 **How to use:** Start playback to see the optional startup badge; reveal the player controls to see score chips beside the time information.
 
-Admin **Display → Media Tags** and **Playback → Playback & Tab Switch**, respectively:
+Admin **Display → Media Tags** and **Playback → Player Behaviour**, respectively:
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -631,7 +631,7 @@ Admin **Pages → Activity Feed**:
 | **Use Custom Tabs** | Off | Uses Custom Tabs instead of a native tab. |
 | **Add the Custom Tabs entry for me** | Off | Manages the entry on save. |
 
-The live section also requires admin **Extras → UI Tweaks → Active Streams Header Widget**. Non-admins need **Show widget to non-admins**.
+The live section also requires admin **Extras → Active Streams → Active Streams Header Widget**. Non-admins need **Show widget to non-admins**.
 
 ??? info "Activity collection, access, and refresh"
 

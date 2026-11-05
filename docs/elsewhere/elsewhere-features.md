@@ -113,7 +113,7 @@ Admin settings in **Elsewhere & Reviews**:
 | **Hide reviews from disabled users** | On | Hides these authors' reviews from other non-admin viewers. |
 | **Also save review star ratings as the user's Jellyfin rating** | Off | Copies movie/series review stars to the author's Jellyfin rating at twice the star value. |
 | **Show average user rating on poster cards** | Off | Adds visible local-review averages to eligible posters when rating tags are enabled. |
-| **Show "—" on posters for unrated items** | On | Shows a dash when no visible rated-review average exists, if poster averages are enabled. |
+| **Show a dash on posters for unrated items** | On | Shows a dash when no visible rated-review average exists, if poster averages are enabled. |
 
 Your server's review cards appear before TMDB cards. They have green borders, author names and avatars, update dates, and star ratings when supplied. Use **Read More** and **Read Less** for long text.
 

@@ -47,11 +47,27 @@
       "category": "Configuration"
     },
     {
-      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.css",
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/per-user.js",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.css",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/admin/sections.js",
       "category": "Configuration"
     },
     {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/configPage.html",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.css",
+      "category": "Configuration"
+    },
+    {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/jeAdmin.js",
       "category": "Configuration"
     },
     {
@@ -2058,8 +2074,15 @@
     },
     {
       "verb": "GET",
-      "path": "/JellyfinEnhanced/Configuration/configPage.css",
-      "method": "GetConfigPageStylesheet",
+      "path": "/JellyfinEnhanced/Configuration/jeAdmin.css",
+      "method": "GetAdminStylesheet",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": []
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/Configuration/jeAdmin.js",
+      "method": "GetAdminScript",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": []
     },
@@ -2205,6 +2228,15 @@
       "verb": "GET",
       "path": "/JellyfinEnhanced/ddd/{mediaType}/{tmdbId}",
       "method": "GetDoesTheDogDie",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "GET",
+      "path": "/JellyfinEnhanced/ddd/usage",
+      "method": "GetDoesTheDogDieUsage",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -2744,6 +2776,15 @@
       "verb": "POST",
       "path": "/JellyfinEnhanced/reset-all-users-settings",
       "method": "ResetAllUsersSettings",
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
+      "following_attributes": [
+        "Authorize"
+      ]
+    },
+    {
+      "verb": "POST",
+      "path": "/JellyfinEnhanced/apply-user-settings",
+      "method": "ApplyUserSettings",
       "file": "Jellyfin.Plugin.JellyfinEnhanced/Controllers/JellyfinEnhancedController.cs",
       "following_attributes": [
         "Authorize"
@@ -7833,8 +7874,8 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 360,
-    "routes": 180,
+    "files": 364,
+    "routes": 183,
     "configuration_properties": 533,
     "storage_references": 70,
     "scheduled_tasks": 13,

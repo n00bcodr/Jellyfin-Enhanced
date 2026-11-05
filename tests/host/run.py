@@ -228,7 +228,7 @@ def run(target, artifacts, browser=False):
             def asset(path):
                 value = host.request(prefix + path)
                 assert value, "Embedded resource is empty: " + path
-            for path in ("/script", "/js/component-scripts.json", "/locales/en.json", "/Configuration/configPage.css"):
+            for path in ("/script", "/js/component-scripts.json", "/locales/en.json", "/Configuration/jeAdmin.css", "/Configuration/jeAdmin.js"):
                 host.check("embedded asset " + path, lambda path=path: asset(path))
             host.check("anonymous bootstrap denied", lambda: host.request(prefix + "/bootstrap", expected=401))
             for user in users:

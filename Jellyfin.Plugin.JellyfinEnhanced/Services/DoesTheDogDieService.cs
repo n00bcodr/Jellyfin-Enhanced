@@ -46,6 +46,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         // Kept up to date from the response headers.
         private int _remainingMonth = int.MaxValue;
+        private int? _limitMonth;
         private DateTimeOffset _pausedUntil = DateTimeOffset.MinValue;
 
         public DoesTheDogDieService(IHttpClientFactory httpClientFactory, IApplicationPaths applicationPaths, Logger logger)
@@ -132,6 +133,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return true;
         }
 
+        /// <summary>The monthly request budget as last reported by the API; null until a request has been made since startup.</summary>
+        public DddUsage GetUsage() => new DddUsage
+        {
+            RemainingMonth = _remainingMonth == int.MaxValue ? null : _remainingMonth,
+            LimitMonth = _limitMonth,
+            PausedUntilUnixMs = DateTimeOffset.UtcNow < _pausedUntil ? _pausedUntil.ToUnixTimeMilliseconds() : null,
+        };
+
+        /// <summary>Makes one small lookup (costs one request) so the response headers refresh the usage numbers.</summary>
+        public async Task<DddUsage> RefreshUsageAsync(CancellationToken ct)
+        {
+            await GetAsync("/items?tmdb=603", ct).ConfigureAwait(false);
+            return GetUsage();
+        }
+
         private async Task<(HttpStatusCode Status, string Body)?> GetAsync(string path, CancellationToken ct)
         {
             var apiKey = JellyfinEnhanced.Instance?.Configuration?.DoesTheDogDieApiKey;
@@ -146,6 +162,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             if (response.Headers.TryGetValues("x-ratelimit-remaining-month", out var month) && int.TryParse(month.FirstOrDefault(), out var m))
             {
                 _remainingMonth = m;
+            }
+            if (response.Headers.TryGetValues("x-ratelimit-limit-month", out var limitMonth) && int.TryParse(limitMonth.FirstOrDefault(), out var l))
+            {
+                _limitMonth = l;
             }
             if (response.Headers.TryGetValues("x-ratelimit-remaining-minute", out var minute) && int.TryParse(minute.FirstOrDefault(), out var n) && n <= 1)
             {
@@ -341,5 +361,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             SaveToDisk();
             _catalogGate.Dispose();
         }
+    }
+
+    /// <summary>Request budget reported by DoesTheDogDie's rate-limit headers.</summary>
+    public class DddUsage
+    {
+        public int? RemainingMonth { get; set; }
+        public int? LimitMonth { get; set; }
+        public long? PausedUntilUnixMs { get; set; }
     }
 }

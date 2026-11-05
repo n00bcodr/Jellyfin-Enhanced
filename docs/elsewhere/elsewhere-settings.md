@@ -1,6 +1,6 @@
 # Elsewhere & Reviews Settings
 
-Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere & Reviews**. Settings on this page are admin settings for the server unless marked per user. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
+Configure providers, TMDB reviews, release dates, and local reviews in **Dashboard** → **Plugins** → **Jellyfin Enhanced** → **Elsewhere & Reviews**. Settings on this page are admin settings for the server unless marked per user. The **TMDB** and **AniList** cards also appear on the **Services** tab as linked copies, so changing one changes the other. For viewer workflows, see [Elsewhere Integration](elsewhere-features.md).
 
 ## Prerequisites
 
@@ -322,7 +322,7 @@ See [User Reviews](elsewhere-features.md#user-reviews) for writing, editing, del
 | **Hide reviews from disabled users** | On | Hides reviews by disabled Jellyfin authors from other non-admin viewers. |
 | **Also save review star ratings as the user's Jellyfin rating** | Off | Copies movie/series review stars to the author's Jellyfin rating at twice the star value. |
 | **Show average user rating on poster cards** | Off | Adds visible local-review averages to eligible posters when rating tags are enabled. |
-| **Show "—" on posters for unrated items** | On | Uses a dash when no visible rated-review average exists and poster averages are enabled. |
+| **Show a dash on posters for unrated items** | On | Uses a dash when no visible rated-review average exists and poster averages are enabled. |
 
 !!! note "Item requirements"
 
@@ -353,7 +353,7 @@ Detail pages show the average of visible rated local reviews out of ten. For exa
 
 1. Keep **Enable User Written Reviews** on and turn on **Show average user rating on poster cards**.
 2. Enable rating tags: use the admin **Enable Rating Tags** in **Display**, or your personal **Show Rating Tags** preference.
-3. Choose whether **Show "—" on posters for unrated items** should show a dash when no visible rated-review average exists.
+3. Choose whether **Show a dash on posters for unrated items** should show a dash when no visible rated-review average exists.
 
 See [Tags](../enhanced/tags.md) for rating-tag placement and supported card contexts.
 

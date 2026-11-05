@@ -56,7 +56,7 @@ ROOT = Path(__file__).resolve().parents[2]
 JS = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced' / 'js'
 FONTS = JS / 'fonts'
 CONFIG_PAGE = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced' / 'Configuration' / 'configPage.html'
-CONFIG_CSS = CONFIG_PAGE.with_name('configPage.css')
+CONFIG_DIR = CONFIG_PAGE.parent
 UI_STYLES = JS / 'enhanced' / 'ui-styles.js'
 
 # Icon names per face. Keep the comments: they say which module needs a name.
@@ -132,7 +132,8 @@ def ligature_map(font):
 
 def sources():
     """The client sources and the config page."""
-    return sorted(JS.rglob('*.js')) + [CONFIG_PAGE, CONFIG_CSS]
+    # The config page is the HTML shell plus the settings engine, the section files and the one stylesheet.
+    return sorted(JS.rglob('*.js')) + [CONFIG_PAGE, CONFIG_DIR / 'jeAdmin.js', CONFIG_DIR / 'jeAdmin.css'] + sorted((CONFIG_DIR / 'admin').glob('*.js')) + sorted((CONFIG_DIR / 'admin').glob('*.css'))
 
 
 def blank(match):

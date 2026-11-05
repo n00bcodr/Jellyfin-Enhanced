@@ -43,7 +43,7 @@ Main media-tag preferences start off, including quality, genre, language, rating
 
 ??? note "Existing personal preferences"
 
-    JE saves starting preferences when an account first loads JE. Saving admin defaults doesn't replace those saved preferences, even for users who never customized them. To replace them for everyone, save the defaults first, then use **Overview → Quick Actions → Overwrite everyone's personal settings**. See [settings overview](settings-overview.md) for its scope, storage, and backups.
+    JE saves starting preferences when an account first loads JE. Saving admin defaults doesn't replace those saved preferences, even for users who never customized them. To replace them for everyone, save the defaults first, then use **Overview → Quick Actions → Apply all plugin settings to every user**. See [settings overview](settings-overview.md) for its scope, storage, and backups.
 
 ??? note "Connect optional services"
 

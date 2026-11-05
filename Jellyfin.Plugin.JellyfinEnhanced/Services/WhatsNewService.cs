@@ -44,6 +44,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             "<(?:input|select|textarea|button)\\b[^>]*\\bid=\"([^\"]+)\"",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        // Fields rendered from jeAdmin.js's schema (id: '...') instead of configPage.html markup.
+        private const string EmbeddedAdminSectionPrefix = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.admin.";
+        private static readonly Regex SchemaIdRegex = new Regex(
+            @"\bid:\s*'([^']+)'(?=[^{}]*\btype:\s*'(?:toggle|text|password|number|textarea|select|position|button)')"
+            + @"|\btype:\s*'(?:toggle|text|password|number|textarea|select|position|button)'[^{}]*?\bid:\s*'([^']+)'"
+            + @"|\b(?:tog|sel|pos|T)\('([^']+)'",
+            RegexOptions.Compiled);
+
         private readonly Logger _logger;
         private readonly string _configBaseDir;
 
@@ -194,8 +202,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Distinct + ordered: the same id should never repeat within one
             // page, but dedupe defensively rather than let a duplicate skew
             // the diff.
+            var schemaIds = new List<string>();
+            foreach (var name in assembly.GetManifestResourceNames()
+                .Where(n => n.StartsWith(EmbeddedAdminSectionPrefix, StringComparison.Ordinal) && n.EndsWith(".js", StringComparison.Ordinal)))
+            {
+                using var schema = assembly.GetManifestResourceStream(name);
+                if (schema == null) continue;
+                using var schemaReader = new StreamReader(schema);
+                schemaIds.AddRange(SchemaIdRegex.Matches(schemaReader.ReadToEnd())
+                    .Select(m => m.Groups[1].Success ? m.Groups[1].Value : (m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value)));
+            }
+
             return SettingIdRegex.Matches(html)
                 .Select(m => m.Groups[1].Value)
+                .Concat(schemaIds)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
         }

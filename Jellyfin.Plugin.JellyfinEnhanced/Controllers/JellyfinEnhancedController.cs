@@ -3483,9 +3483,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public ActionResult GetMainScript() => GetScriptResource("js/plugin.js");
         [HttpGet("js/{**path}")]
         public ActionResult GetScript(string path) => GetScriptResource($"js/{path}");
-        // Config-page stylesheet lives in Configuration/ next to configPage.html.
-        [HttpGet("Configuration/configPage.css")]
-        public ActionResult GetConfigPageStylesheet() => GetScriptResource("Configuration/configPage.css");
+        [HttpGet("Configuration/jeAdmin.css")]
+        public ActionResult GetAdminStylesheet() => ServeConcatenated("jeAdmin.css", ".css", "text/css");
+
+        [HttpGet("Configuration/jeAdmin.js")]
+        public ActionResult GetAdminScript() => ServeConcatenated("jeAdmin.js", ".js", "application/javascript");
+
+        // Engine file first, then every embedded Configuration/admin/*<ext> file (sorted), so adding a tab's sections or
+        // styles never needs a route or csproj change.
+        private ActionResult ServeConcatenated(string engineFile, string ext, string contentType)
+        {
+            const string prefix = "Jellyfin.Plugin.JellyfinEnhanced.Configuration.";
+            var asm = Assembly.GetExecutingAssembly();
+            var names = new[] { prefix + engineFile }
+                .Concat(asm.GetManifestResourceNames()
+                    .Where(n => n.StartsWith(prefix + "admin.", StringComparison.Ordinal) && n.EndsWith(ext, StringComparison.Ordinal))
+                    .OrderBy(n => n, StringComparer.Ordinal));
+            var sb = new System.Text.StringBuilder();
+            foreach (var name in names)
+            {
+                using var stream = asm.GetManifestResourceStream(name);
+                if (stream == null) continue;
+                using var reader = new StreamReader(stream);
+                sb.Append(reader.ReadToEnd()).Append('\n');
+            }
+
+            var devMode = JellyfinEnhanced.Instance?.Configuration?.DevMode == true;
+            Response.Headers["Cache-Control"] = devMode ? "no-store" : "public, max-age=31536000, immutable";
+            return Content(sb.ToString(), contentType);
+        }
 
         // [AllowAnonymous]: version is loaded by translations.js cache-buster pre-login.
         // Information disclosure of the plugin version is acceptable — Jellyfin core
@@ -4733,6 +4759,35 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 _logger.Error($"Failed to fetch DoesTheDogDie data for {mediaType}:{tmdbId}. Error: {ex.Message}");
                 return StatusCode(500, "Failed to fetch DoesTheDogDie data.");
+            }
+        }
+
+        /// <summary>Monthly request budget for the config page's Service Status card. refresh=true spends one request to measure it.</summary>
+        [HttpGet("ddd/usage")]
+        [Authorize]
+        public async Task<IActionResult> GetDoesTheDogDieUsage([FromQuery] bool refresh, CancellationToken cancellationToken)
+        {
+            if (!IsAdminUser()) return Forbid();
+            if (string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration?.DoesTheDogDieApiKey))
+            {
+                return StatusCode(503, "DoesTheDogDie API key is not configured.");
+            }
+
+            try
+            {
+                var usage = refresh
+                    ? await _doesTheDogDieService.RefreshUsageAsync(cancellationToken).ConfigureAwait(false)
+                    : _doesTheDogDieService.GetUsage();
+                return Ok(usage);
+            }
+            catch (OperationCanceledException)
+            {
+                return StatusCode(499);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to read DoesTheDogDie usage. Error: {ex.Message}");
+                return StatusCode(502, "Could not reach DoesTheDogDie.");
             }
         }
 
@@ -8281,6 +8336,147 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 totalUsers = userIds.Count(),
                 skippedSettingsUserIds = skippedSettings,
                 skippedHcUserIds = skippedHc,
+            });
+        }
+
+        /// <summary>Body of <see cref="ApplyUserSettings"/>: plugin configuration property names to push to every user.</summary>
+        public class ApplyUserSettingsRequest
+        {
+            public List<string> Properties { get; set; } = new();
+        }
+
+        // Plugin setting name -> the differently named property on the user's settings, where the two are not identical.
+        private static readonly Dictionary<string, string> UserSettingAliases = new(StringComparer.Ordinal)
+        {
+            ["DefaultSubtitleStyle"] = "SelectedStylePresetIndex",
+            ["DefaultSubtitleSize"] = "SelectedFontSizePresetIndex",
+            ["DefaultSubtitleFont"] = "SelectedFontFamilyPresetIndex",
+            ["DefaultSubtitleTextEffect"] = "SelectedTextEffectPresetIndex",
+            ["DefaultLanguage"] = "DisplayLanguage",
+        };
+
+        /// <summary>
+        /// Copies only the named plugin settings into each user's existing personal settings, leaving every other personal
+        /// preference alone (unlike reset-all-users-settings, which replaces the whole file). Users with no saved settings are
+        /// skipped: they already follow the plugin defaults. Names that have no per-user counterpart are returned as unsupported.
+        /// </summary>
+        [HttpPost("apply-user-settings")]
+        [Authorize]
+        public IActionResult ApplyUserSettings([FromBody] ApplyUserSettingsRequest request)
+        {
+            if (!IsAdminUser())
+            {
+                return Forbid();
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(500, new { success = false, message = "Plugin configuration not found." });
+            }
+
+            var requested = (request?.Properties ?? new List<string>()).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.Ordinal).ToList();
+            if (requested.Count == 0)
+            {
+                return BadRequest(new { success = false, message = "No settings given." });
+            }
+
+            const string hcPrefix = "HiddenContentDefault";
+            var cfgProps = typeof(PluginConfiguration).GetProperties().ToDictionary(p => p.Name, StringComparer.Ordinal);
+            var userProps = typeof(JellyfinEnhancedUserSettings).GetProperties().Where(p => p.CanWrite).ToDictionary(p => p.Name, StringComparer.Ordinal);
+            var hcProps = typeof(HiddenContentSettings).GetProperties().Where(p => p.CanWrite).ToDictionary(p => p.Name, StringComparer.Ordinal);
+
+            static bool SameType(PropertyInfo a, PropertyInfo b) =>
+                (Nullable.GetUnderlyingType(a.PropertyType) ?? a.PropertyType) == (Nullable.GetUnderlyingType(b.PropertyType) ?? b.PropertyType);
+
+            var settingsMap = new List<(PropertyInfo From, PropertyInfo To)>();
+            var hcMap = new List<(PropertyInfo From, PropertyInfo To)>();
+            var unsupported = new List<string>();
+            foreach (var name in requested)
+            {
+                if (!cfgProps.TryGetValue(name, out var from))
+                {
+                    unsupported.Add(name);
+                    continue;
+                }
+
+                if (name.StartsWith(hcPrefix, StringComparison.Ordinal) && hcProps.TryGetValue(name.Substring(hcPrefix.Length), out var hcTo) && SameType(from, hcTo))
+                {
+                    hcMap.Add((from, hcTo));
+                    continue;
+                }
+
+                var userName = UserSettingAliases.TryGetValue(name, out var alias) ? alias : name;
+                if (userProps.TryGetValue(userName, out var to) && SameType(from, to))
+                {
+                    settingsMap.Add((from, to));
+                }
+                else
+                {
+                    unsupported.Add(name);
+                }
+            }
+
+            var updated = 0;
+            var skipped = new List<string>();
+            foreach (var userId in _userConfigurationManager.GetAllUserIds())
+            {
+                try
+                {
+                    var touched = false;
+                    if (settingsMap.Count > 0 && _userConfigurationManager.UserConfigurationExists(userId, "settings.json"))
+                    {
+                        _userConfigurationManager.RmwUserConfiguration<JellyfinEnhancedUserSettings>(userId, "settings.json", s =>
+                        {
+                            foreach (var (from, to) in settingsMap)
+                            {
+                                to.SetValue(s, from.GetValue(config));
+                            }
+
+                            return 1;
+                        });
+                        touched = true;
+                    }
+
+                    if (hcMap.Count > 0 && _userConfigurationManager.UserConfigurationExists(userId, "hidden-content.json"))
+                    {
+                        _userConfigurationManager.RmwUserConfiguration<UserHiddenContent>(userId, "hidden-content.json", hc =>
+                        {
+                            hc.Settings ??= new HiddenContentSettings();
+                            foreach (var (from, to) in hcMap)
+                            {
+                                to.SetValue(hc.Settings, from.GetValue(config));
+                            }
+
+                            return 1;
+                        });
+                        Services.HiddenContentResponseFilter.InvalidateUser(userId);
+                        touched = true;
+                    }
+
+                    if (touched)
+                    {
+                        updated++;
+                    }
+                }
+                catch (Exception ex) when (ex is InvalidDataException
+                                        || ex is Newtonsoft.Json.JsonException
+                                        || ex is IOException
+                                        || ex is UnauthorizedAccessException)
+                {
+                    _logger.Warning($"Skipping selected settings apply for {ResolveUserDisplay(userId)}: {ex.Message}");
+                    skipped.Add(userId);
+                }
+            }
+
+            _logger.Info($"Applied {settingsMap.Count + hcMap.Count} setting(s) to {updated} user(s). Unsupported: {unsupported.Count}, skipped users: {skipped.Count}");
+            return Ok(new
+            {
+                success = true,
+                userCount = updated,
+                applied = settingsMap.Count + hcMap.Count,
+                unsupported,
+                skippedUserIds = skipped,
             });
         }
 

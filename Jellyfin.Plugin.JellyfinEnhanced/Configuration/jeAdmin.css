@@ -1,3 +1,5 @@
+/* Jellyfin Enhanced admin page styles. Part 1: page shell and widgets (formerly configPage.css). Part 2: the redesign (cards, rows, sidebar, dialogs). */
+
 /* =============================================================================
    Jellyfin Enhanced — Config Page Stylesheet (Modernized)
    ============================================================================= */
@@ -854,14 +856,7 @@
 }
 
 /* Ensure inputs span fully where intended */
-#JellyfinEnhancedPage .configSection > .inputContainer .emby-input,
-#JellyfinEnhancedPage .configSection > .inputContainer .emby-select,
-#JellyfinEnhancedPage .configSection > .inputContainer .emby-textarea,
-#JellyfinEnhancedPage .configSection > .selectContainer .emby-select {
-    width: 100%;
-    margin: 0;
-    box-sizing: border-box;
-}
+
 
 /* Consistent dropdown chevron across every <select> inside this config page.
    Jellyfin admin's native emby-select styling sometimes shows no arrow
@@ -869,23 +864,10 @@
    zero the native appearance and paint our own chevron SVG to guarantee a
    visible "this is a dropdown" affordance that matches the accent color on
    focus. */
-#JellyfinEnhancedPage select.emby-select {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%23e0e0e0' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M1.5 1.5 L6 6 L10.5 1.5'/></svg>");
-    background-repeat: no-repeat;
-    background-position: right 14px center;
-    background-size: 12px 8px;
-    padding-right: 36px !important;
-    cursor: pointer;
-}
-#JellyfinEnhancedPage select.emby-select:focus,
-#JellyfinEnhancedPage select.emby-select:focus-visible {
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='none' stroke='%2300a4dc' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M1.5 1.5 L6 6 L10.5 1.5'/></svg>");
-}
+
+
 /* IE/Edge legacy — hide the built-in dropdown arrow to avoid double chevrons */
-#JellyfinEnhancedPage select.emby-select::-ms-expand { display: none; }
+
 
 #JellyfinEnhancedPage .checkboxContainer {
     display: flex;
@@ -1287,12 +1269,10 @@
 .je-danger-banner {
     background-color: rgba(220,53,69,0.15); border-left-color: #ff6b6b;
 }
-.je-purple-banner {
-    background-color: rgba(155,89,182,0.15); border-left-color: #9b59b6;
-}
+
 /* Longer banners stack the icon above the text on phones so the text can use the full width. */
 @media (max-width: 540px) {
-    .je-banner-stack-mobile { flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px 14px; }
+
 }
 
 .je-info-icon, .je-bottom-info-icon, .je-info-icon-sm { color: var(--primary-accent-color, #00a4dc); font-size: 24px; flex-shrink: 0; margin-top: 2px; }
@@ -1374,15 +1354,8 @@
 }
 /* Checkbox labels are a fixed-height single row, so a badge squeezes long label text into a
    narrow column. Let the badge wrap under the text instead when the row runs out of room. */
-.emby-checkbox-label:has(> .je-new-badge) {
-    flex-wrap: wrap;
-    column-gap: 8px;
-    row-gap: 4px;
-    height: auto;
-}
-.emby-checkbox-label > .je-new-badge {
-    margin-left: 0;
-}
+
+
 /* Expander summaries spread their items apart; keep the badge beside the title. */
 .je-details-section > summary > .je-new-badge {
     margin-left: 0;
@@ -1397,7 +1370,7 @@
 }
 .je-note-icon, .je-mobile-icon, .je-dep-banner-icon { color: #ffc107; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
 .je-danger-icon { color: #ff6b6b; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
-.je-purple-icon { color: #9b59b6; font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+
 .je-hidden { display: none !important; }
 
 /* ---------------------------------------------------------------------------
@@ -1495,7 +1468,7 @@
     opacity: 0;
     cursor: pointer;
 }
-.je-branding-preview { max-height: 100px; border-radius: 4px; margin-bottom: 10px; }
+.je-branding-preview { max-height: 100px; max-width: 100%; object-fit: contain; border-radius: 4px; margin-bottom: 10px; }
 .je-branding-placeholder { color: var(--je-text-dim); font-size: 2em; }
 .je-branding-placeholder-icon { font-size: 2.5em; }
 .je-branding-status { font-size: 0.85em; margin-top: 5px; min-height: 1em; }
@@ -1524,9 +1497,9 @@
 /* Mask API keys without type="password" (which makes browsers offer to save them); click into the field to reveal. */
 .je-api-input, .arr-instance-apikey { -webkit-text-security: disc; text-security: disc; }
 .je-api-input:focus, .arr-instance-apikey:focus { -webkit-text-security: none; text-security: none; }
-.je-textarea-tall { height: 120px !important; }
-.je-textarea-medium { height: 90px !important; }
-.je-textarea-large { height: 160px !important; }
+
+
+
 .je-bold-link { font-weight: bold; color: #fff; text-decoration: underline; }
 .je-kbd { background: var(--je-surface-3); padding: 3px 6px; border-radius: 4px; font-family: monospace; }
 .je-screenshot-img { max-width: 100%; border-radius: 8px; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
@@ -1826,36 +1799,13 @@ body.je-has-introskipper .je-needs-introskipper { display: none !important; }
    one row so the relationship is obvious without an "Advanced" accordion.
    Falls to a stacked layout on narrow viewports so the dropdown doesn't
    shrink unreadably. */
-.je-tag-row {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    flex-wrap: wrap;
-}
-.je-tag-row > .checkboxContainer {
-    flex: 1 1 200px;
-    margin: 0;
-    min-width: 0;
-}
-.je-tag-row > .je-tag-position {
-    flex: 0 0 auto;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.je-tag-row > .je-tag-position .inputLabel {
-    font-size: 0.85em;
-    margin: 0;
-    white-space: nowrap;
-}
-.je-tag-row > .je-tag-position .emby-select {
-    min-width: 140px;
-}
+
+
+
+
+
 @media (max-width: 600px) {
-    .je-tag-row > .je-tag-position {
-        flex: 1 1 100%;
-    }
+
 }
 
 /* Quality-tag category rows inside the admin <details>. Visual treatment
@@ -2380,3 +2330,623 @@ div#bazarrMappingsValidationResult {
 .je-ts-pick-controls { display: flex; align-items: center; gap: 8px; }
 .je-ts-pick-controls input:disabled { opacity: 0.4; }
 #tagStylePresets .je-ts-presets-row:last-child { align-items: stretch; }
+
+/* ===================== Part 2 ===================== */
+
+/* Native controls for schema-rendered sections (jeAdmin.js). No emby-* elements, so no overrides needed. */
+.jea-section .jea-toggle { display: flex; align-items: center; gap: .75em; cursor: pointer; }
+.jea-section .jea-switch {
+    appearance: none; -webkit-appearance: none; flex: none; position: relative;
+    width: 2.5em; height: 1.4em; margin: 0; border-radius: 1em; cursor: pointer;
+    background: var(--jea-track); transition: background .15s;
+}
+.jea-section .jea-switch::after {
+    content: ""; position: absolute; top: .2em; left: .2em; width: 1em; height: 1em;
+    border-radius: 50%; background: var(--jea-knob); box-shadow: 0 1px 2px rgba(0, 0, 0, .35); transition: transform .15s;
+}
+.jea-section .jea-switch:checked { background: var(--theme-primary-color, #00a4dc); }
+.jea-section .jea-switch:checked::after { transform: translateX(1.1em); }
+.jea-section .jea-switch:focus-visible, .jea-section .jea-input:focus-visible { outline: 2px solid var(--theme-primary-color, #00a4dc); outline-offset: 2px; }
+.jea-section .jea-input {
+    width: 100%; box-sizing: border-box; padding: .6em .8em; color: inherit; font: inherit;
+    background: var(--je-surface-2); border: 1px solid var(--je-border-strong); border-radius: .4em;
+}
+
+.jea-section .jea-badge {
+    margin-left: .6em; padding: .1em .6em; font-size: .75em; border-radius: .8em; white-space: nowrap;
+    background: color-mix(in srgb, currentColor 12%, transparent); opacity: .85;
+}
+.jea-section .jea-apply {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .75em; margin-top: 1em; padding: .75em 1em;
+    border-radius: .5em; border: 1px solid rgba(255, 193, 7, .5); background: rgba(255, 193, 7, .1);
+}
+.jea-section .jea-apply[hidden] { display: none; }
+.jea-section .jea-apply-text { flex: 1 1 14em; }
+.jea-section .jea-apply-btn { padding: .5em 1em; cursor: pointer; border-radius: .4em; border: 0; color: #000; background: #ffc107; font: inherit; }
+
+/* Collapse sub-settings when the section's main toggle is off; search mode shows everything. */
+.jea-section.jea-off .jea-sub { display: none; }
+#JellyfinEnhancedForm.je-search-mode .jea-section.jea-off .jea-sub { display: block; }
+.jea-sub { display: flex; flex-direction: column; gap: 14px; }
+
+/* Sidebar shell */
+.jea-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; align-items: start; }
+.jea-main { min-width: 0; }
+.jea-nav { position: sticky; top: 130px; max-height: calc(100vh - 150px); overflow-y: auto; scrollbar-width: thin; }
+.jea-nav-toggle { display: none; }
+#JellyfinEnhancedPage .jea-nav .je-tab-bar {
+    flex-direction: column; gap: 2px; padding: 0; border-bottom: 0; overflow: visible; cursor: default;
+    -webkit-mask-image: none; mask-image: none;
+}
+.jea-nav-group { padding: 14px 12px 4px; font-size: .72em; letter-spacing: .06em; text-transform: uppercase; opacity: .55; }
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button {
+    background: transparent; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 500; width: 100%;
+    box-shadow: none; justify-content: flex-start;
+}
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button:hover { background: var(--je-surface-3); }
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button.active {
+    background: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 22%, transparent); color: inherit !important; box-shadow: none;
+}
+/* The sidebar leaves less width than the old full-width grid assumed. */
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+
+@media (max-width: 900px) {
+    .jea-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .jea-nav { position: sticky; top: 56px; z-index: 1005; max-height: none; overflow: visible; background: var(--je-overlay-hard, rgba(20, 20, 20, .95)); border-radius: 10px; }
+    .jea-nav-toggle {
+        display: flex; align-items: center; gap: .6em; width: 100%; padding: 10px 12px; font: inherit; font-weight: 500;
+        color: inherit; background: transparent; border: 1px solid var(--je-border); border-radius: 10px; cursor: pointer;
+    }
+    #JellyfinEnhancedPage .jea-nav .je-tab-bar { display: none; padding: 6px 0; }
+    #JellyfinEnhancedPage .jea-nav.jea-open .je-tab-bar { display: flex; }
+    #JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active { grid-template-columns: minmax(0, 1fr); }
+    #JellyfinEnhancedPage .jea-nav .jellyfin-tab-button { padding: 12px; }
+}
+
+/* Compact rows: label and switch on one line, description tucked directly under it, hairline between rows. */
+#JellyfinEnhancedForm .jea-section .configSection,
+#JellyfinEnhancedForm .jea-section .jea-sub { gap: 0; }
+#JellyfinEnhancedForm .jea-section .jea-row { margin: 0; padding: 12px 0 0; border-top: 1px solid var(--je-border); }
+#JellyfinEnhancedForm .jea-section .configSection > .jea-row:first-child { border-top: 0; padding-top: 0; }
+#JellyfinEnhancedForm .jea-section .je-setting-description { margin: 2px 0 12px; padding: 0; border: 0; }
+#JellyfinEnhancedForm .jea-section .fieldDescription { font-size: .82em; opacity: .75; }
+#JellyfinEnhancedForm .jea-section .jea-toggle { width: 100%; }
+#JellyfinEnhancedForm .jea-section .jea-toggle > span:first-of-type { order: 1; flex: 1; }
+#JellyfinEnhancedForm .jea-section .jea-toggle .jea-badge { order: 2; }
+#JellyfinEnhancedForm .jea-section .jea-toggle .jea-switch { order: 3; }
+#JellyfinEnhancedForm .jea-section .je-main-feature { background: none; border: 0; box-shadow: none; padding-left: 0; padding-right: 0; }
+
+/* Dependent settings disappear while their parent toggle is off (all tabs, via PARENT_DEPS). Search mode reveals them. */
+#JellyfinEnhancedForm .jea-dep-hidden { display: none !important; }
+#JellyfinEnhancedForm.je-search-mode .jea-dep-hidden { display: revert !important; }
+
+/* Tighter descriptions for every section, not just schema-rendered ones: tucked under their label, no side bar. */
+#JellyfinEnhancedForm .configSection > .je-setting-description { margin: -8px 0 4px; padding: 0; border: 0; }
+#JellyfinEnhancedForm .configSection > .je-setting-description .fieldDescription { font-size: .82em; opacity: .75; }
+
+/* ===== Header: title left, search centre, Docs and Descriptions right ===== */
+#JellyfinEnhancedPage .sectionTitleContainer { flex-wrap: nowrap; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--je-border); }
+#JellyfinEnhancedPage .sectionTitleContainer .je-header-title-row { display: contents; }
+#JellyfinEnhancedPage .sectionTitleContainer h2 { order: 1; font-size: 1.35em; font-weight: 600; letter-spacing: .2px; white-space: nowrap; margin: 0; }
+#JellyfinEnhancedPage #settingsSearchContainer { order: 2; flex: 1 1 auto; max-width: 520px; min-width: 0; margin: 0 auto 0 12px; }
+#JellyfinEnhancedPage #settingsSearchInput { border-radius: 10px; background: var(--je-surface-2); }
+#JellyfinEnhancedPage .je-help-link,
+#JellyfinEnhancedPage .je-desc-toggle {
+    order: 3; background: transparent !important; box-shadow: none !important; border: 0 !important; border-radius: 8px;
+    padding: 6px 10px !important; margin: 0 !important; min-height: 0 !important; font: inherit; font-size: .9em; font-weight: 500;
+    color: inherit; opacity: .8; text-transform: none; cursor: pointer;
+}
+#JellyfinEnhancedPage .je-help-link:hover,
+#JellyfinEnhancedPage .je-desc-toggle:hover { opacity: 1; background: var(--je-surface-3) !important; }
+/* Descriptions: label plus a real switch (state comes from aria-pressed), the On/Off text is dropped. */
+#JellyfinEnhancedPage .je-desc-toggle { display: inline-flex; align-items: center; gap: 8px; }
+#JellyfinEnhancedPage .je-desc-toggle-state { font-size: 0; padding: 0; min-width: 0; width: 32px; height: 18px; border-radius: 9px; position: relative;
+    background: var(--je-border); color: transparent; transition: background .15s; }
+#JellyfinEnhancedPage .je-desc-toggle-state::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--jea-knob); box-shadow: 0 1px 2px rgba(0, 0, 0, .35); transition: transform .15s; }
+#JellyfinEnhancedPage .je-desc-toggle[aria-pressed="true"] .je-desc-toggle-state { background: var(--primary-accent-color, #00a4dc); }
+#JellyfinEnhancedPage .je-desc-toggle[aria-pressed="true"] .je-desc-toggle-state::after { transform: translateX(14px); }
+@media (max-width: 900px) {
+    #JellyfinEnhancedPage .sectionTitleContainer { flex-wrap: wrap; }
+    #JellyfinEnhancedPage #settingsSearchContainer { order: 4; flex: 1 1 100%; max-width: none; margin: 0; }
+    #JellyfinEnhancedPage .sectionTitleContainer h2 { flex: 1 1 auto; }
+}
+
+/* ===== Cards: every fieldset (migrated or legacy) gets the same flat, quiet card ===== */
+#JellyfinEnhancedForm fieldset { background: var(--je-surface-2); border: 1px solid var(--je-border); border-radius: 14px; box-shadow: none; }
+#JellyfinEnhancedForm legend.sectionTitle { background: transparent; border-bottom: 1px solid var(--je-border); padding: 14px 20px; font-size: 1em; font-weight: 600; letter-spacing: .2px; }
+#JellyfinEnhancedPage .configSection { padding: 16px 20px; gap: 12px; }
+
+/* ===== Schema-only pieces: notes and collapsible groups ===== */
+.jea-note { padding: .75em 1em; border-radius: 10px; font-size: .88em; line-height: 1.45; background: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 12%, transparent); border: 1px solid color-mix(in srgb, var(--primary-accent-color, #00a4dc) 30%, transparent); }
+.jea-note-warn { background: rgba(255, 193, 7, .1); border-color: rgba(255, 193, 7, .45); }
+.jea-group { border: 1px solid var(--je-border); border-radius: 10px; margin-top: 12px; }
+.jea-group > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+.jea-group > summary::after { content: "expand_more"; font-family: "Material Icons", "Material Symbols Rounded"; font-size: 20px; opacity: .6; transition: transform .15s; }
+.jea-group[open] > summary::after { transform: rotate(180deg); }
+.jea-group-body { padding: 0 14px 12px; }
+
+/* ===== Our own buttons (replaces Jellyfin's raised emby-button) ===== */
+#JellyfinEnhancedPage .jea-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .5em; padding: .5em 1em; font: inherit; font-weight: 500;
+    color: inherit; background: var(--je-surface-3, rgba(255, 255, 255, .1)); border: 1px solid var(--je-border); border-radius: 8px; cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+#JellyfinEnhancedPage .jea-btn:hover { background: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 22%, transparent); border-color: color-mix(in srgb, var(--primary-accent-color, #00a4dc) 55%, transparent); }
+#JellyfinEnhancedPage .jea-btn:focus-visible { outline: 2px solid var(--primary-accent-color, #00a4dc); outline-offset: 2px; }
+#JellyfinEnhancedPage .jea-btn:disabled { opacity: .5; cursor: not-allowed; }
+#JellyfinEnhancedPage .jea-btn-primary { background: var(--primary-accent-color, #00a4dc); border-color: transparent; color: var(--jea-on-accent); }
+#JellyfinEnhancedPage .jea-btn-danger { background: rgba(244, 67, 54, .18); border-color: rgba(244, 67, 54, .55); }
+.jea-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75em; }
+.jea-hint { font-size: .82em; opacity: .75; }
+/* Save dock button: accent pill, no longer relying on Jellyfin's button-submit */
+#JellyfinEnhancedPage .je-save-dock .je-save-dock-btn {
+    display: inline-flex; align-items: center; gap: 8px; border: 0; cursor: pointer; color: var(--jea-on-accent); font: inherit; font-weight: 600;
+    background: var(--primary-accent-color, #00a4dc);
+}
+#JellyfinEnhancedPage .je-save-dock .je-save-dock-btn:hover { filter: brightness(1.1); }
+/* Checkbox rows created by script (library and user pickers): same switch as schema rows */
+#JellyfinEnhancedForm .checkboxContainer > label.jea-toggle { display: flex; align-items: center; gap: .75em; cursor: pointer; }
+
+/* =====================================================================
+   Design pass 2: fluid columns, headings, inputs, buttons, position picker
+   ===================================================================== */
+:root, #JellyfinEnhancedPage { --jea-accent: var(--primary-accent-color, #00a4dc); --jea-radius: 12px; }
+
+/* ---- Fluid layout: cards flow in equal-width columns, no gaps from uneven heights ---- */
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active {
+    display: block; column-width: 440px; column-gap: 20px; column-fill: balance;
+}
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > fieldset {
+    break-inside: avoid; margin: 0 0 20px; display: block; width: 100%; box-sizing: border-box; grid-column: auto;
+}
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > fieldset.je-fieldset-wide,
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > fieldset.je-overview-section,
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > .je-info-banner,
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > .je-dep-banner,
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > .je-note-banner,
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > .je-section-nav { column-span: all; margin-bottom: 20px; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > * { break-inside: avoid; }
+@media (max-width: 900px) { #JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active { column-width: auto; column-count: 1; } }
+
+/* ---- Section headings ---- */
+#JellyfinEnhancedForm legend.sectionTitle {
+    display: flex; align-items: center; gap: 10px; padding: 14px 20px 14px 22px; position: relative;
+    font-size: 1.02em; font-weight: 650; letter-spacing: .2px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--jea-accent) 14%, transparent), transparent 70%);
+}
+#JellyfinEnhancedForm legend.sectionTitle::before {
+    content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 4px 4px 0; background: var(--jea-accent);
+}
+#JellyfinEnhancedForm legend.sectionTitle .je-legend-icon { color: var(--jea-accent); font-size: 22px; margin: 0; vertical-align: 0; }
+#JellyfinEnhancedForm legend.sectionTitle .je-legend-icon-img { width: 22px; height: 22px; margin: 0; vertical-align: 0; }
+
+/* ---- Rows, labels, inputs ---- */
+#JellyfinEnhancedForm .inputContainer .inputLabel, #JellyfinEnhancedForm .jea-row > .inputLabel {
+    display: flex; align-items: center; gap: .6em; margin: 0 0 6px; font-size: .86em; font-weight: 600; opacity: .85; letter-spacing: .1px;
+}
+#JellyfinEnhancedPage .jea-input, #JellyfinEnhancedPage .jea-section input[type="text"], #JellyfinEnhancedPage .jea-section input[type="password"],
+#JellyfinEnhancedPage .jea-section input[type="number"], #JellyfinEnhancedPage .jea-section input[type="time"], #JellyfinEnhancedPage .jea-section input[type="url"],
+#JellyfinEnhancedPage .jea-section select, #JellyfinEnhancedPage .jea-section textarea {
+    width: 100%; max-width: 100%; box-sizing: border-box; min-height: 40px; padding: 9px 12px; font: inherit; color: inherit;
+    background: var(--je-surface-2); border: 1px solid var(--je-border); border-radius: 10px; outline: none;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+}
+#JellyfinEnhancedPage .jea-section textarea { min-height: 84px; resize: vertical; line-height: 1.45; }
+#JellyfinEnhancedPage .jea-section input::placeholder, #JellyfinEnhancedPage .jea-section textarea::placeholder { opacity: .4; }
+#JellyfinEnhancedPage .jea-input:hover, #JellyfinEnhancedPage .jea-section select:hover, #JellyfinEnhancedPage .jea-section input:not([type="checkbox"]):hover,
+#JellyfinEnhancedPage .jea-section textarea:hover { border-color: color-mix(in srgb, var(--jea-accent) 45%, var(--je-border)); }
+#JellyfinEnhancedPage .jea-section input:not([type="checkbox"]):focus, #JellyfinEnhancedPage .jea-section select:focus, #JellyfinEnhancedPage .jea-section textarea:focus {
+    border-color: var(--jea-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--jea-accent) 25%, transparent); background: var(--je-surface-3);
+}
+/* Selects: our own chevron, short ones do not stretch */
+#JellyfinEnhancedPage .jea-section select {
+    appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 34px; width: auto; min-width: 220px; max-width: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23999' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+}
+#JellyfinEnhancedPage .jea-section select option { background: #1b1b1b; color: #eee; }
+#JellyfinEnhancedPage .jea-section input[type="number"] { width: 140px; }
+#JellyfinEnhancedPage .jea-section input[type="time"] { width: 140px; }
+#JellyfinEnhancedPage .jea-section input:disabled, #JellyfinEnhancedPage .jea-section select:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---- Switch: slightly larger, accent when on ---- */
+#JellyfinEnhancedPage .jea-section .jea-switch { width: 2.7em; height: 1.5em; background: color-mix(in srgb, currentColor 22%, transparent); }
+#JellyfinEnhancedPage .jea-section .jea-switch::after { top: .2em; left: .2em; width: 1.1em; height: 1.1em; }
+#JellyfinEnhancedPage .jea-section .jea-switch:checked { background: var(--jea-accent); }
+#JellyfinEnhancedPage .jea-section .jea-switch:checked::after { transform: translateX(1.2em); }
+#JellyfinEnhancedForm .jea-section .je-main-feature { border-radius: 10px; background: color-mix(in srgb, var(--jea-accent) 9%, transparent); padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--jea-accent) 22%, transparent); }
+#JellyfinEnhancedForm .jea-section .je-main-feature + .je-setting-description { margin-top: 2px; }
+
+/* ---- Buttons ---- */
+#JellyfinEnhancedPage .jea-btn {
+    min-height: 36px; padding: 7px 16px; border-radius: 10px; font-size: .92em; font-weight: 600;
+    background: color-mix(in srgb, currentColor 9%, transparent); border: 1px solid var(--je-border);
+}
+#JellyfinEnhancedPage .jea-btn:hover { background: color-mix(in srgb, var(--jea-accent) 20%, transparent); border-color: color-mix(in srgb, var(--jea-accent) 60%, transparent); transform: translateY(-1px); }
+#JellyfinEnhancedPage .jea-btn:active { transform: none; }
+#JellyfinEnhancedPage .jea-btn-primary { background: var(--jea-accent); color: var(--jea-on-accent); border-color: transparent; }
+#JellyfinEnhancedPage .jea-btn-primary:hover { background: var(--jea-accent); filter: brightness(1.12); }
+#JellyfinEnhancedPage .jea-btn.je-cat-up, #JellyfinEnhancedPage .jea-btn.je-cat-down { min-height: 28px; padding: 2px 8px; }
+
+/* ---- Position picker (same 2x2 corner control as the Enhanced panel) ---- */
+#JellyfinEnhancedForm .jea-pos-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.jea-pos-label { font-size: .9em; font-weight: 500; opacity: .85; }
+.jea-pos { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 3px; width: 46px; height: 34px; padding: 3px;
+    border: 1px solid var(--je-border); border-radius: 8px; background: var(--je-surface-2); flex: none; }
+.jea-pos-cell { border: 0; padding: 0; border-radius: 3px; cursor: pointer; background: color-mix(in srgb, currentColor 14%, transparent); transition: background .12s; }
+.jea-pos-cell:hover { background: color-mix(in srgb, var(--jea-accent) 50%, transparent); }
+.jea-pos-cell.on { background: var(--jea-accent); }
+.jea-pos-cell:focus-visible { outline: 2px solid var(--jea-accent); outline-offset: 1px; }
+
+/* ---- Overview ---- */
+#overview .je-overview-section > .configSection { padding: 14px 18px 18px; }
+#overview .je-service-dashboard, #overview .je-optional-plugins-dashboard, #overview .je-features-dashboard { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+#overview .je-checklist-row, #overview .je-optional-plugin-card, #overview .je-feature-row {
+    background: var(--je-surface-2); border: 1px solid var(--je-border); border-radius: 12px; padding: 12px 14px; transition: border-color .15s, transform .15s, background .15s;
+}
+#overview .je-optional-plugin-card:hover, #overview .je-feature-row:hover, #overview .je-checklist-row:hover { border-color: color-mix(in srgb, var(--jea-accent) 55%, var(--je-border)); transform: translateY(-1px); background: var(--je-surface-3); }
+#overview .je-quick-actions-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+#overview .je-quick-action {
+    display: flex; align-items: flex-start; gap: 12px; text-align: left; padding: 14px 16px; border-radius: 12px; cursor: pointer; color: inherit; font: inherit;
+    background: var(--je-surface-2); border: 1px solid var(--je-border); transition: border-color .15s, background .15s, transform .15s;
+}
+#overview .je-quick-action:hover { border-color: var(--jea-accent); background: color-mix(in srgb, var(--jea-accent) 12%, transparent); transform: translateY(-1px); }
+#overview .je-quick-action-icon { color: var(--jea-accent); font-size: 24px; }
+#overview .je-quick-action-title { font-weight: 600; display: block; }
+#overview .je-quick-action-detail { font-size: .82em; opacity: .7; display: block; margin-top: 2px; }
+
+/* ---- Polish: search mode hides the nav, so the content takes the full width ---- */
+.jea-layout:has(#JellyfinEnhancedForm.je-search-mode) { grid-template-columns: minmax(0, 1fr); }
+.jea-layout:has(#JellyfinEnhancedForm.je-search-mode) .jea-nav { display: none; }
+
+/* ---- Polish: compact, non-sticky header on phones so content gets the space ---- */
+@media (max-width: 900px) {
+    #JellyfinEnhancedPage .je-sticky-header { position: static; margin-bottom: 12px; }
+    #JellyfinEnhancedPage .sectionTitleContainer { gap: 6px 8px; padding: 8px 0; }
+    #JellyfinEnhancedPage .sectionTitleContainer h2 { font-size: 1.15em; flex: 1 1 auto; }
+    #JellyfinEnhancedPage .je-help-link, #JellyfinEnhancedPage .je-desc-toggle { padding: 4px 8px !important; font-size: .85em; }
+    #JellyfinEnhancedPage .jea-nav { top: 56px; }
+}
+
+/* ---- Fix: fieldsets default to min-width: min-content, which let wide content spill across columns ---- */
+#JellyfinEnhancedForm fieldset { min-width: 0; max-width: 100%; }
+#JellyfinEnhancedForm .configSection, #JellyfinEnhancedForm .jea-group-body, #JellyfinEnhancedForm .jea-sub { min-width: 0; }
+#JellyfinEnhancedForm .configSection * { overflow-wrap: anywhere; }
+#JellyfinEnhancedForm .configSection input, #JellyfinEnhancedForm .configSection select, #JellyfinEnhancedForm .configSection textarea { overflow-wrap: normal; }
+/* Three columns at most: wider columns read better than four cramped ones */
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active { column-width: 500px; }
+
+
+/* ===== Polish 3: inline compact controls, consistent row padding, quiet per-user marker ===== */
+#JellyfinEnhancedForm .jea-section .jea-badge { margin-left: .5em; font-size: 16px !important; opacity: .45; vertical-align: -3px; background: none; padding: 0; border-radius: 0; cursor: help; }
+#JellyfinEnhancedForm .jea-section .jea-badge:hover { opacity: .9; }
+/* Numbers and selects: label left, control right on one line (the description stays underneath) */
+#JellyfinEnhancedForm .jea-row.jea-inline { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+#JellyfinEnhancedForm .jea-row.jea-inline > .inputLabel { margin: 0; flex: 1 1 auto; }
+#JellyfinEnhancedForm .jea-row.jea-inline > select, #JellyfinEnhancedForm .jea-row.jea-inline > input { flex: 0 0 auto; width: auto; }
+#JellyfinEnhancedPage .jea-row.jea-inline > input[type="number"] { width: 110px; text-align: right; }
+/* Rows: even vertical rhythm whether or not a description follows */
+#JellyfinEnhancedForm .jea-section .jea-row { padding: 11px 0; }
+#JellyfinEnhancedForm .jea-section .configSection > .jea-row:first-child, #JellyfinEnhancedForm .jea-section .jea-sub > .jea-row:first-child { padding-top: 11px; }
+#JellyfinEnhancedForm .jea-section .jea-row + .je-setting-description { margin: -7px 0 4px; }
+/* Master toggle box and its description share one left edge */
+#JellyfinEnhancedForm .jea-section .je-main-feature { margin: 0; padding: 11px 14px; }
+#JellyfinEnhancedForm .jea-section .je-main-feature + .je-setting-description { padding: 0 14px; margin: 4px 0 6px; }
+#JellyfinEnhancedForm .jea-section .je-main-feature + .je-setting-description + .jea-row, #JellyfinEnhancedForm .jea-section .je-main-feature + .je-setting-description + .jea-sub { border-top: 0; }
+/* Raw widgets inside cards get the same breathing room */
+#JellyfinEnhancedForm .jea-section .configSection > .jea-sub, #JellyfinEnhancedForm .jea-section .jea-group-body { padding-bottom: 4px; }
+#JellyfinEnhancedForm .jea-group-body > .jea-row:first-child { border-top: 0; }
+
+/* ===== Expanded groups: tinted body, accent edge and a stronger header so the open section is obvious ===== */
+#JellyfinEnhancedForm .jea-group, #JellyfinEnhancedForm details.je-details-section { overflow: hidden; transition: background .15s, border-color .15s; }
+#JellyfinEnhancedForm .jea-group > summary, #JellyfinEnhancedForm details.je-details-section > summary { opacity: .8; padding: 12px 16px; }
+#JellyfinEnhancedForm .jea-group > summary:hover, #JellyfinEnhancedForm details.je-details-section > summary:hover { opacity: 1; background: var(--je-surface-3); }
+#JellyfinEnhancedForm .jea-group[open], #JellyfinEnhancedForm details.je-details-section[open] {
+    background: color-mix(in srgb, var(--jea-accent) 6%, transparent);
+    border-color: color-mix(in srgb, var(--jea-accent) 40%, var(--je-border));
+    box-shadow: inset 3px 0 0 var(--jea-accent);
+}
+#JellyfinEnhancedForm .jea-group[open] > summary, #JellyfinEnhancedForm details.je-details-section[open] > summary {
+    opacity: 1; font-weight: 650; background: color-mix(in srgb, var(--jea-accent) 16%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--jea-accent) 28%, transparent);
+}
+#JellyfinEnhancedForm .jea-group[open] > .jea-group-body, #JellyfinEnhancedForm details.je-details-section[open] > .je-details-body { padding: 8px 16px 14px 18px; }
+/* A group nested in an open group steps back to a neutral tint so levels stay readable */
+#JellyfinEnhancedForm .jea-group[open] .jea-group[open], #JellyfinEnhancedForm details.je-details-section[open] details.je-details-section[open] {
+    background: color-mix(in srgb, currentColor 5%, transparent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--jea-accent) 55%, transparent);
+}
+
+/* ===== Polish 4: roomier descriptions, flat nested groups ===== */
+#JellyfinEnhancedForm .jea-section .jea-row { padding: 14px 0 6px; }
+#JellyfinEnhancedForm .jea-section .jea-row + .je-setting-description { margin: 0 0 10px; padding: 0; }
+#JellyfinEnhancedForm .jea-section .je-setting-description .fieldDescription,
+#JellyfinEnhancedForm .configSection > .je-setting-description .fieldDescription { line-height: 1.6; font-size: .84em; opacity: .68; padding-top: 2px; }
+#JellyfinEnhancedForm .jea-section .je-setting-description { margin-top: 0; }
+#JellyfinEnhancedForm .jea-section .je-main-feature + .je-setting-description { margin: 6px 0 10px; padding: 0 14px; }
+#JellyfinEnhancedForm .jea-section .jea-group-body > .jea-row:first-child { padding-top: 10px; }
+#JellyfinEnhancedForm .jea-section .jea-sub { gap: 0; }
+
+/* Nested groups: no second tint, just a quiet outline, so only the outer group carries the background */
+#JellyfinEnhancedForm .jea-group[open] .jea-group[open], #JellyfinEnhancedForm details.je-details-section[open] details.je-details-section[open],
+#JellyfinEnhancedForm .jea-group[open] details.je-details-section[open], #JellyfinEnhancedForm details.je-details-section[open] .jea-group[open] {
+    background: transparent; box-shadow: none; border-color: color-mix(in srgb, var(--jea-accent) 30%, var(--je-border));
+}
+#JellyfinEnhancedForm .jea-group[open] .jea-group[open] > summary, #JellyfinEnhancedForm details.je-details-section[open] details.je-details-section[open] > summary,
+#JellyfinEnhancedForm .jea-group[open] details.je-details-section[open] > summary, #JellyfinEnhancedForm details.je-details-section[open] .jea-group[open] > summary {
+    background: transparent; border-bottom: 1px solid var(--je-border);
+}
+#JellyfinEnhancedForm .jea-group .jea-group > summary, #JellyfinEnhancedForm details.je-details-section details.je-details-section > summary,
+#JellyfinEnhancedForm .jea-group details.je-details-section > summary { font-size: .95em; }
+
+/* Plain checkboxes inside script-built widgets: accent colour and a comfortable size */
+#JellyfinEnhancedForm input[type="checkbox"]:not(.jea-switch) { accent-color: var(--jea-accent); width: 18px; height: 18px; cursor: pointer; }
+
+/* Legacy details blocks carry their own dark fill; inside our groups they stay transparent so only one background shows */
+#JellyfinEnhancedForm .jea-group details.je-details-section, #JellyfinEnhancedForm .jea-group-body details.je-details-section { background: transparent !important; }
+#JellyfinEnhancedForm details.je-details-section[open] > summary { background: transparent; }
+
+
+/* ===== Polish 5: inline rows keep a readable label, buttons never wrap, notes get breathing room ===== */
+#JellyfinEnhancedForm .jea-row.jea-inline > .inputLabel { flex: 1 1 45%; min-width: 0; }
+#JellyfinEnhancedForm .jea-row.jea-inline > select { flex: 0 1 52%; width: auto; min-width: 200px; max-width: 52%; }
+#JellyfinEnhancedForm .jea-row.jea-inline > input[type="number"] { flex: 0 0 110px; }
+#JellyfinEnhancedPage .jea-btn { white-space: nowrap; flex: none; }
+#JellyfinEnhancedForm .jea-note { margin: 4px 0 12px; }
+#JellyfinEnhancedForm .jea-note + .je-main-feature, #JellyfinEnhancedForm .jea-note + .jea-row { margin-top: 4px; }
+#JellyfinEnhancedForm .je-api-row { display: flex; align-items: center; gap: 10px; }
+#JellyfinEnhancedForm .je-api-row > .jea-input { flex: 1 1 auto; min-width: 0; }
+
+/* ===== Tag styles editor: room to breathe ===== */
+#JellyfinEnhancedForm .je-ts-editor { margin: 14px 0 6px; padding: 20px; background: transparent; border: 1px solid var(--je-border); border-radius: 14px; }
+#JellyfinEnhancedForm #tagStylePresets, #JellyfinEnhancedForm .je-ts-presets { display: flex; flex-direction: column; align-items: stretch; gap: 18px; margin-bottom: 20px; }
+#JellyfinEnhancedForm .je-ts-presets-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; }
+#JellyfinEnhancedForm .je-ts-presets-row .je-ts-presets-label, #JellyfinEnhancedForm .je-ts-presets-label { flex: 0 0 96px; min-width: 0; font-weight: 600; font-size: .9em; opacity: .85; }
+#JellyfinEnhancedForm .je-ts-presets-row:last-child { align-items: center; padding-top: 6px; border-top: 1px solid var(--je-border); }
+#JellyfinEnhancedForm .je-ts-select { min-width: 220px; }
+#JellyfinEnhancedForm .je-ts-pick { display: flex; flex-direction: column; gap: 12px; flex: 0 1 200px; min-width: 180px; padding: 14px 16px; background: var(--je-surface-2); border: 1px solid var(--je-border); border-radius: 12px; }
+#JellyfinEnhancedForm .je-ts-pick-head { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+#JellyfinEnhancedForm .je-ts-pick-controls { display: flex; align-items: center; gap: 12px; }
+#JellyfinEnhancedForm .je-ts-pick input[type="range"] { flex: 1 1 auto; width: auto; min-width: 70px; }
+#JellyfinEnhancedForm .je-ts-pick input[type="color"], #JellyfinEnhancedForm .je-ts-field input[type="color"] { width: 38px; height: 30px; border-radius: 6px; flex: none; }
+#JellyfinEnhancedForm .je-ts-presets-row .jea-btn { align-self: center; }
+#JellyfinEnhancedForm .je-ts-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px; }
+#JellyfinEnhancedForm .je-ts-tab { padding: 7px 18px; border-radius: 999px; font: inherit; font-size: .9em; }
+#JellyfinEnhancedForm .je-ts-tab.active { background: color-mix(in srgb, var(--jea-accent) 24%, transparent); border-color: var(--jea-accent); }
+#JellyfinEnhancedForm .je-ts-grid { gap: 16px 14px; padding: 18px; border-radius: 12px; }
+#JellyfinEnhancedForm .je-ts-cell { padding: 8px; }
+#JellyfinEnhancedForm .je-ts-panel { margin-top: 18px; padding: 18px; border-radius: 12px; background: var(--je-surface-2); }
+#JellyfinEnhancedForm .je-ts-panel-title { margin-bottom: 14px; font-size: 1.02em; }
+#JellyfinEnhancedForm .je-ts-field { gap: 14px; margin-bottom: 14px; }
+#JellyfinEnhancedForm .je-ts-field label { min-width: 110px; font-weight: 500; }
+
+
+/* ===== Polish 6: schema rows own their look. The legacy .configSection > .checkboxContainer card styling (padding, fill,
+   hover and focus rings) is switched off here, so hovering never strips a background and padding is predictable. ===== */
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row {
+    background: none; border: 0; border-top: 1px solid var(--je-border); border-radius: 0; box-shadow: none; margin: 0 !important; padding: 14px 0 6px;
+}
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row:hover, #JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row:focus-within {
+    background: none; box-shadow: none; border-color: var(--je-border); border-top-color: var(--je-border);
+}
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section :is(.configSection, .jea-sub, .jea-group-body) > .jea-row:first-child { border-top: 0; }
+/* Master toggle: a tinted box with its text inset from the edge; hover deepens the tint instead of removing it */
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row.je-main-feature {
+    background: color-mix(in srgb, var(--jea-accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--jea-accent) 24%, transparent);
+    border-radius: 10px; padding: 12px 16px; margin: 0 0 2px !important; border-left: 3px solid var(--jea-accent);
+}
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row.je-main-feature:hover { background: color-mix(in srgb, var(--jea-accent) 15%, transparent); border-color: color-mix(in srgb, var(--jea-accent) 40%, transparent); border-left-color: var(--jea-accent); }
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row.je-main-feature:focus-within { background: color-mix(in srgb, var(--jea-accent) 12%, transparent); border-color: var(--jea-accent); box-shadow: none; }
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row.je-main-feature + .je-setting-description { padding: 0 16px; margin: 8px 0 12px; }
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row.je-main-feature + .je-setting-description + .jea-row, #JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section .jea-row.je-main-feature + .je-setting-description + .jea-sub { border-top: 0; }
+
+
+/* ===== Polish 7: overview cards fill the row; sidebar tree ===== */
+#overview .je-service-dashboard, #overview .je-optional-plugins-dashboard, #overview .je-features-dashboard { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+#overview .je-quick-actions-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+@media (min-width: 901px) { #JellyfinEnhancedForm .je-section-nav { display: none; } }
+#JellyfinEnhancedForm fieldset { scroll-margin-top: 96px; }
+
+.jea-nav-tree { display: none; margin: 2px 0 6px 18px; padding-left: 10px; border-left: 1px solid var(--je-border); flex-direction: column; gap: 1px; }
+.jellyfin-tab-button.active + .jea-nav-tree { display: flex; }
+.jea-nav-leaf { display: block; padding: 5px 10px; border-radius: 6px; font-size: .84em; line-height: 1.35; color: inherit; opacity: .65; text-decoration: none; position: relative; }
+.jea-nav-leaf:hover { opacity: 1; background: var(--je-surface-3); }
+.jea-nav-leaf.on { opacity: 1; font-weight: 600; background: color-mix(in srgb, var(--jea-accent) 14%, transparent); }
+.jea-nav-leaf.on::before { content: ""; position: absolute; left: -11px; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: var(--jea-accent); }
+@media (max-width: 900px) { .jea-nav-leaf { padding: 9px 10px; } }
+
+
+/* ===== Polish 8: focus mode, sub-tree, wide-card gaps, credits ===== */
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > :is(fieldset.je-fieldset-wide, fieldset.je-overview-section, .je-info-banner, .je-note-banner, .je-dep-banner) { margin-top: 20px; margin-bottom: 20px; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > :first-child { margin-top: 0; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.jea-focused { column-count: 1; column-width: auto; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.jea-focused > :not(.jea-focus) { display: none !important; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.jea-focused > .jea-focus { max-width: 960px; margin-top: 0; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.jea-focused > .jea-focus.je-fieldset-wide { max-width: none; }
+.jea-nav-subtree { display: none; flex-direction: column; gap: 1px; margin: 1px 0 4px 10px; padding-left: 8px; border-left: 1px solid var(--je-border); }
+.jea-nav-leaf.on + .jea-nav-subtree { display: flex; }
+.jea-nav-sub { font-size: .8em; padding: 4px 8px; }
+.jea-credits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.jea-credits li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--je-border); }
+.jea-credits li:first-child { border-top: 0; }
+.jea-credits strong { font-weight: 600; }
+.jea-credits span { opacity: .75; }
+.jea-credits a { color: var(--jea-accent); }
+
+
+/* ===== Polish 9: apply banner inside the card, full-width focus, dialogs ===== */
+#JellyfinEnhancedForm .jea-section .jea-apply { margin: 8px 16px 16px; border-radius: 10px; }
+.jea-apply-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.jea-apply .jea-btn { color: inherit; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.jea-focused > .jea-focus { max-width: none; }
+
+.jea-dialog-backdrop { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(3px); }
+.jea-dialog { width: min(520px, 100%); max-height: 85vh; overflow: auto; padding: 22px 24px 18px; background: var(--jea-panel); color: var(--jea-panel-text); border: 1px solid var(--je-border, rgba(255, 255, 255, .12)); border-radius: 16px; box-shadow: 0 24px 60px rgba(0, 0, 0, .6); }
+.jea-dialog-title { margin: 0 0 12px; font-size: 1.15em; font-weight: 650; }
+.jea-dialog-body { line-height: 1.55; opacity: .9; }
+.jea-dialog-body ul { margin: 8px 0 0; padding-left: 1.2em; }
+.jea-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.jea-dialog .jea-btn { min-height: 38px; padding: 8px 18px; border-radius: 10px; border: 1px solid var(--je-border, rgba(255, 255, 255, .15)); background: color-mix(in srgb, currentColor 9%, transparent); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.jea-dialog .jea-btn:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
+.jea-dialog .jea-btn-primary { background: var(--primary-accent-color, #00a4dc); border-color: transparent; color: var(--jea-on-accent); }
+.jea-dialog .jea-btn-danger { background: #c62828; border-color: transparent; color: #fff; }
+
+
+/* ===== Design pass 10: calmer surfaces, clearer hierarchy ===== */
+#JellyfinEnhancedPage { font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+#JellyfinEnhancedPage ::selection { background: color-mix(in srgb, var(--jea-accent) 45%, transparent); }
+#JellyfinEnhancedForm fieldset { background: color-mix(in srgb, var(--je-surface-2) 70%, transparent); border-radius: 16px; box-shadow: 0 1px 0 color-mix(in srgb, var(--je-text-strong) 4%, transparent) inset, 0 10px 28px rgba(0, 0, 0, .16); transition: border-color .2s, box-shadow .2s; }
+#JellyfinEnhancedForm fieldset:hover { border-color: color-mix(in srgb, var(--jea-accent) 22%, var(--je-border)); }
+#JellyfinEnhancedForm legend.sectionTitle { gap: 12px; padding: 16px 22px 16px 24px; font-size: 1.05em; background: linear-gradient(90deg, color-mix(in srgb, var(--jea-accent) 10%, transparent), transparent 65%); }
+#JellyfinEnhancedForm legend.sectionTitle .je-legend-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 9px; font-size: 19px;
+    background: color-mix(in srgb, var(--jea-accent) 16%, transparent); }
+#JellyfinEnhancedForm legend.sectionTitle .je-legend-icon-img { width: 32px; height: 32px; padding: 5px; box-sizing: border-box; border-radius: 9px; background: color-mix(in srgb, currentColor 8%, transparent); object-fit: contain; }
+#JellyfinEnhancedPage .configSection { padding: 18px 24px 20px; }
+
+/* Sidebar: quiet idle state, clear active state */
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button { position: relative; border-radius: 10px; opacity: .82; transition: background .15s, opacity .15s; }
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button:hover { opacity: 1; }
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button.active { opacity: 1; }
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button.active::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--jea-accent); }
+#JellyfinEnhancedPage .jea-nav .jellyfin-tab-button.active .je-tab-icon { color: var(--jea-accent); }
+.jea-nav-group { padding-top: 18px; letter-spacing: .09em; }
+.jea-nav { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, currentColor 25%, transparent) transparent; }
+
+/* Header: version chip next to the title */
+.jea-ver { margin-left: 10px; padding: 2px 9px; font-size: .62em; font-weight: 600; letter-spacing: .02em; border-radius: 999px; vertical-align: middle; white-space: nowrap;
+    background: color-mix(in srgb, var(--jea-accent) 18%, transparent); color: var(--jea-accent); }
+
+/* Switch: springier knob */
+#JellyfinEnhancedPage .jea-section .jea-switch, #JellyfinEnhancedPage .jea-section .jea-switch::after { transition: background .18s ease, transform .22s cubic-bezier(.3, 1.4, .5, 1); }
+
+/* Overview cards by state */
+#overview .je-service-card, #overview .je-feature-row, #overview .je-optional-plugin-card { border-radius: 14px; }
+#overview .je-service-card.je-state-ok { border-left: 3px solid #4caf50; }
+#overview .je-service-card.je-state-warn { border-left: 3px solid #ffb300; }
+#overview .je-service-card.je-state-error { border-left: 3px solid #f44336; }
+
+
+/* Usage bar on service cards */
+#overview .je-service-bar { height: 4px; margin-top: 8px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, currentColor 14%, transparent); }
+#overview .je-service-bar span { display: block; height: 100%; border-radius: 2px; background: #4caf50; }
+#overview .je-service-card.je-state-warn .je-service-bar span { background: #ffb300; }
+#overview .je-service-card.je-state-off .je-service-bar span { background: color-mix(in srgb, currentColor 40%, transparent); }
+
+/* Sonarr/Radarr instance on/off switch: the generic checkbox rule above squashed it into a circle. Same switch size as the rest. */
+#JellyfinEnhancedForm input[type="checkbox"].arr-instance-enabled:not(.jea-switch) { width: 38px; height: 22px; accent-color: initial; border-radius: 999px; }
+#JellyfinEnhancedForm .arr-instance-enabled::before { width: 16px; height: 16px; left: 3px; }
+#JellyfinEnhancedForm .arr-instance-enabled:checked::before { left: 19px; }
+
+
+/* ===== Polish 11: readable links, footer-style action rows ===== */
+#JellyfinEnhancedForm a:not(.jea-btn):not(.jea-nav-leaf), .jea-dialog a { color: color-mix(in srgb, var(--jea-accent) 80%, #fff); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+#JellyfinEnhancedForm a:not(.jea-btn):not(.jea-nav-leaf):hover, .jea-dialog a:hover { color: var(--je-text-strong, #fff); }
+#JellyfinEnhancedForm a:not(.jea-btn):visited { color: color-mix(in srgb, var(--jea-accent) 60%, #d6a8ff); }
+#JellyfinEnhancedForm .jea-section :is(.configSection, .jea-sub, .jea-group-body) > .jea-actions { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--je-border); justify-content: flex-end; }
+#JellyfinEnhancedForm .jea-actions .jea-hint { order: -1; margin-right: auto; }
+
+
+/* Apply banner: heading, one changed setting per line, then the hint */
+.jea-apply { flex-direction: column; align-items: stretch; gap: 12px; }
+.jea-apply-text strong { display: block; margin-bottom: 4px; }
+.jea-apply-text ul { margin: 0 0 6px; padding-left: 1.2em; }
+.jea-apply-text li { margin: 2px 0; }
+.jea-apply-hint { font-size: .86em; opacity: .75; }
+#JellyfinEnhancedForm .jea-apply .jea-apply-text { flex: 0 0 auto; }
+#JellyfinEnhancedForm .jea-apply .jea-apply-actions { justify-content: flex-start; }
+
+/* Apply banner content is left-aligned and stacked (an earlier wrap rule centred it) */
+#JellyfinEnhancedForm .jea-section .jea-apply { display: flex; flex-direction: column; flex-wrap: nowrap; align-items: flex-start; justify-content: flex-start; text-align: left; }
+
+
+/* ===== Mobile navigation: slide-over drawer ===== */
+.jea-drawer-head, .jea-nav-backdrop { display: none; }
+@keyframes jea-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
+@keyframes jea-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 900px) {
+    /* The bar that opens the drawer */
+    .jea-nav .jea-nav-toggle { padding: 12px 14px; border-radius: 12px; background: var(--je-surface-2); font-size: 1em; }
+    .jea-nav .jea-nav-toggle .jea-nav-current { flex: 1; text-align: left; font-weight: 600; }
+    .jea-nav .jea-nav-chev { opacity: .55; font-size: 20px; }
+    /* The drawer itself: full height, own scroll, never scrolls the page behind */
+    .jea-nav.jea-open { z-index: 100000; }
+    #JellyfinEnhancedPage .jea-nav.jea-open .je-tab-bar {
+        display: flex; position: fixed; top: 0; left: 0; bottom: 0; width: min(86vw, 340px); z-index: 2; margin: 0; padding: 0 10px 28px;
+        overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+        background: var(--jea-panel); color: var(--jea-panel-text); border-radius: 0 18px 18px 0; box-shadow: 0 0 48px rgba(0, 0, 0, .65); animation: jea-drawer-in .22s ease-out;
+    }
+    .jea-nav.jea-open .jea-nav-backdrop { display: block; position: fixed; inset: 0; z-index: 1; background: rgba(0, 0, 0, .55); animation: jea-fade-in .2s ease-out; }
+    .jea-nav.jea-open .jea-drawer-head { display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 3; padding: 18px 6px 10px; background: var(--jea-panel); font-size: 1.1em; font-weight: 650; }
+    .jea-drawer-close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; border-radius: 12px; background: var(--je-surface-2); color: inherit; cursor: pointer; }
+    #JellyfinEnhancedPage .jea-nav.jea-open .jellyfin-tab-button { padding: 13px 14px; font-size: 1em; }
+    .jea-nav.jea-open .jea-nav-leaf { padding: 11px 12px; font-size: .92em; }
+    .jea-nav.jea-open .jea-nav-group { padding-top: 20px; }
+}
+
+
+/* ===== Theme tokens: dialogs, drawer, switches and primary buttons follow the active Jellyfin theme (see JEAdmin.applyTheme) ===== */
+#JellyfinEnhancedPage {
+    --jea-panel: #1c1c1f;
+    --jea-panel-text: #ececec;
+    --jea-track: color-mix(in srgb, currentColor 24%, transparent);
+    --jea-knob: #fff;
+    --jea-on-accent: #fff;
+}
+#JellyfinEnhancedPage.je-light-theme { --jea-panel: #ffffff; --jea-panel-text: #1b1b1d; --jea-track: color-mix(in srgb, currentColor 28%, transparent); }
+.jea-drawer-close, .jea-nav .jea-nav-toggle { color: inherit; }
+
+/* Position picker row: label left, picker right (a <label> inside a checkbox row otherwise wraps onto its own line) */
+#JellyfinEnhancedForm .jea-section .jea-row.jea-pos-row { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 12px; }
+#JellyfinEnhancedForm .jea-pos-row > label.jea-pos-label { flex: 1 1 auto; width: auto; margin: 0; display: block; }
+#JellyfinEnhancedForm .jea-pos-row > .jea-pos { flex: none; }
+
+/* The apply banner stays hidden until a per-user setting changes (an ID-level display rule above would otherwise win over [hidden]); buttons sit on the right */
+#JellyfinEnhancedForm .jea-section .jea-apply[hidden] { display: none; }
+#JellyfinEnhancedForm .jea-apply .jea-apply-actions { justify-content: flex-end; align-self: stretch; }
+
+
+/* ===== Cards that need an integration collapse to their title (one banner per tab) ===== */
+#JellyfinEnhancedForm fieldset.jea-locked > :is(.configSection, .jea-apply) { display: none; }
+#JellyfinEnhancedForm fieldset.jea-locked > legend.sectionTitle { border-bottom: 0; opacity: .8; }
+#JellyfinEnhancedForm fieldset.jea-locked > legend.sectionTitle::after {
+    content: attr(data-lock); margin-left: auto; padding: 2px 10px; font-size: .78em; font-weight: 500; border-radius: 999px;
+    background: color-mix(in srgb, currentColor 10%, transparent); opacity: .85;
+}
+#JellyfinEnhancedForm.je-search-mode fieldset.jea-locked > .configSection { display: block; }
+
+/* Collapsible group headers: some themes give every <summary> a pill radius; keep ours square inside the rounded group */
+#JellyfinEnhancedForm .jea-group > summary, #JellyfinEnhancedForm details.je-details-section > summary { border-radius: 0 !important; }
+
+/* API keys: masked while idle, shown on hover or while editing (plain text fields, so browsers do not offer to save them as passwords) */
+#JellyfinEnhancedForm input[id$="ApiKey"], #JellyfinEnhancedForm input[id$="API_KEY"],
+#JellyfinEnhancedForm input[id$="ApiKey--mirror"], #JellyfinEnhancedForm input[id$="API_KEY--mirror"],
+.je-api-input, .arr-instance-apikey { -webkit-text-security: disc; text-security: disc; }
+#JellyfinEnhancedForm input[id$="ApiKey"]:is(:hover, :focus), #JellyfinEnhancedForm input[id$="API_KEY"]:is(:hover, :focus),
+#JellyfinEnhancedForm input[id$="ApiKey--mirror"]:is(:hover, :focus), #JellyfinEnhancedForm input[id$="API_KEY--mirror"]:is(:hover, :focus),
+.je-api-input:is(:hover, :focus), .arr-instance-apikey:is(:hover, :focus) { -webkit-text-security: none; text-security: none; }
+
+/* ===== Stable layout: cards sit in a grid, so toggling a feature only grows that card (balanced columns reshuffled every card) ===== */
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active {
+    display: grid; column-count: auto; column-width: auto; gap: 20px; align-items: start;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 500px), 1fr));
+}
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > * { margin: 0 !important; min-width: 0; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active > :is(fieldset.je-fieldset-wide, fieldset.je-overview-section, .je-info-banner, .je-note-banner, .je-dep-banner, .je-section-nav) { grid-column: 1 / -1; }
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.jea-focused { grid-template-columns: minmax(0, 1fr); }
+
+/* Documentation: the page fills the whole content area */
+#JellyfinEnhancedPage .jea-main #docs.jellyfin-tab-content.active { display: flex; flex-direction: column; gap: 12px; grid-template-columns: none; }
+#docs .je-docs-header { flex: none; width: 100%; box-sizing: border-box; }
+#docs .je-docs-iframe { flex: 1 1 auto; width: 100%; max-width: none; height: calc(100vh - 190px); min-height: 560px; border: 0; border-radius: 12px; background: #fff; }
+
+/* A master toggle that is the first row in its card kept losing its top border to the "first row has no divider" rule */
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section :is(.configSection, .jea-sub, .jea-group-body) > .jea-row.je-main-feature:first-child {
+    border-top: 1px solid color-mix(in srgb, var(--jea-accent) 24%, transparent);
+}
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section :is(.configSection, .jea-sub, .jea-group-body) > .jea-row.je-main-feature:first-child:hover { border-top-color: color-mix(in srgb, var(--jea-accent) 40%, transparent); }
+#JellyfinEnhancedPage #JellyfinEnhancedForm .jea-section :is(.configSection, .jea-sub, .jea-group-body) > .jea-row.je-main-feature:first-child:focus-within { border-top-color: var(--jea-accent); }
+
+
+/* Packed columns: rows are 1px tracks and each card spans its own height (see layoutTab in jeAdmin.js) */
+#JellyfinEnhancedPage .jea-main .jellyfin-tab-content.active.jea-masonry {
+    display: grid; grid-template-columns: repeat(var(--jea-cols, 1), minmax(0, 1fr)); grid-auto-rows: 1px; column-gap: 20px; row-gap: 0; align-items: start;
+}

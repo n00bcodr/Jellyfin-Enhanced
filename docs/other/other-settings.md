@@ -12,7 +12,7 @@ Use these controls to personalize Jellyfin and manage your server. Unless marked
     |---|---|
     | **Display** | **Icons & Theme**, **Default Language**, **MDBList Ratings**, **Content Warnings**, client tag-cache clearing |
     | **Playback** | **Shortcuts Panel & Toast Timing** |
-    | **Extras** | **UI Tweaks**, **External Links**, **Custom Image Assets** |
+    | **Extras** | **UI Tweaks**, **Active Streams**, **External Links**, **Metadata Icons & Sidebar Links**, **Splash Screen Override**, **Custom Image Assets** |
     | **Pages** | Hidden Content and Activity Feed — links to their canonical guides below |
     | **Admin** | **Usage Statistics**, **Maintenance Mode**, **Tag Cache**, **Developer Settings** |
 
@@ -123,7 +123,7 @@ Use the user Activity Feed to see activity separately from dashboard icon colori
 
 See who is watching and open their current session details from Jellyfin's header.
 
-**How to use:** Open admin **Extras** → **UI Tweaks** and turn on **Active Streams Header Widget**. Click **Save Settings**, reload, and open the widget; use **Refresh** for current data.
+**How to use:** Open admin **Extras** → **Active Streams** and turn on **Active Streams Header Widget**. Click **Save Settings**, reload, and open the widget; use **Refresh** for current data.
 
 | Setting | Default | What it does |
 |---|---|---|

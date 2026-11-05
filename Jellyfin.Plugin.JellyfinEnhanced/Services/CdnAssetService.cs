@@ -151,6 +151,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             ("selfhst", "svg/letterboxd.svg"),
             ("selfhst", "png/youtube.png"),
             ("selfhst", "svg/shoko-server.svg"),
+            ("selfhst", "svg/tmdb.svg"),
             ("jellyfish", "logos/favicon.ico"),
             ("jellyfish", "colors/aurora.css"),
             ("jellyfish", "colors/banana.css"),
@@ -187,7 +188,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private const string BundledPrefix = "Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.";
         private static readonly HashSet<string> BundledSources = new(StringComparer.Ordinal)
         {
-            "award-logos", "ibb", "moonbase", "mdblist-logos", "mdblist-static", "ddd-static"
+            "award-logos", "ibb", "moonbase", "mdblist-logos", "mdblist-static", "ddd-static", "anilist-static"
         };
 
         private static readonly IReadOnlyDictionary<string, (string Resource, string ContentType)> BundledFixed =
@@ -208,6 +209,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 ["moonbase/moonfin-client"] = ("misc.moonfin-client.png", "image/png"),
                 ["mdblist-static/favicon.ico"] = ("misc.mdblist-favicon.ico", "image/x-icon"),
                 ["ddd-static/favicon.ico"] = ("misc.ddd-favicon.ico", "image/x-icon"),
+                ["anilist-static/icon.svg"] = ("misc.anilist-icon.svg", "image/svg+xml"),
             };
 
         private static readonly ConcurrentDictionary<string, CdnAsset?> _bundledCache = new();
