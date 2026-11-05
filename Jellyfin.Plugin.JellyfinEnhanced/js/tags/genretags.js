@@ -308,8 +308,8 @@
 
                 var genres = null;
 
-                // For Season, prefer genres from the parent Series
-                if (item.Type === 'Season' && extras.parentSeries && extras.parentSeries.Genres && extras.parentSeries.Genres.length > 0) {
+                // A Season shows its own genres, else its parent Series' (as the server cache does)
+                if (item.Type === 'Season' && (!item.Genres || item.Genres.length === 0) && extras.parentSeries && extras.parentSeries.Genres && extras.parentSeries.Genres.length > 0) {
                     genres = extras.parentSeries.Genres;
                 }
                 // For Series without genres, fall back to first episode

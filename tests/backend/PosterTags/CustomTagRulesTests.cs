@@ -325,6 +325,14 @@ public class CustomTagRulesTests
             Assert.Equal(["Drama"], Genres(season));
             Assert.Equal(Genres(season), cache.BuildEntryOnDemand(season)!.Genres);
             Assert.Equal(["Documentary"], Genres(own));
+
+            // A season with a score of its own still shows its series' genres when it has none.
+            season.CommunityRating = 8;
+            Assert.Equal(["Drama"], cache.BuildEntryOnDemand(season)!.Genres);
+            series.Genres = ["Thriller"];
+            cache.EnqueueUpdate(series.Id);
+            Flush(cache);
+            Assert.Equal(["Thriller"], Genres(season));
         }
         finally
         {

@@ -351,3 +351,25 @@ test('the editor saves the document exactly as the server stores it, and a reloa
   assert.equal(h.$('.je-ts-tab.active').dataset.group, 'quality');
   assert.equal(h.$('.je-ts-target.active').dataset.label, '4K');
 });
+
+test('a season card shows its own genres, else its series\', from the cache and from the batch lookup alike', t => {
+  const h = client(t);
+  const host = () => {
+    h.document.body.insertAdjacentHTML('beforeend', `<div class="card"><div class="cardScalable"><div class="je-tag-host"></div></div></div>`);
+    return h.document.querySelectorAll('.je-tag-host')[h.document.querySelectorAll('.je-tag-host').length - 1];
+  };
+  const names = el => [...el.querySelectorAll('.genre-tag')].map(chip => chip.dataset.jeGenre || chip.textContent.trim());
+  const series = { Type: 'Series', Genres: ['Drama'] };
+  const own = host();
+  h.JE.tagPipeline.genre.render(own, { Type: 'Season', Id: 's1', Genres: ['Comedy'] }, { parentSeries: series });
+  const cached = host();
+  h.JE.tagPipeline.genre.renderFromServerCache(cached, { Type: 'Season', Genres: ['Comedy'] });
+  assert.deepEqual(names(own), names(cached), 'batch and cache agree');
+  assert.equal(names(own).length, 1);
+  const inherited = host();
+  h.JE.tagPipeline.genre.render(inherited, { Type: 'Season', Id: 's2', Genres: [] }, { parentSeries: series });
+  const cachedInherited = host();
+  h.JE.tagPipeline.genre.renderFromServerCache(cachedInherited, { Type: 'Season', Genres: ['Drama'] });
+  assert.deepEqual(names(inherited), names(cachedInherited), 'a genre-less season shows its series\' genres');
+  assert.notDeepEqual(names(own), names(inherited));
+});
