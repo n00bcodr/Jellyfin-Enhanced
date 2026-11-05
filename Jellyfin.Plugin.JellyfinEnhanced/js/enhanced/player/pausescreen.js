@@ -564,7 +564,7 @@
                 --pause-screen-hint-size: 14px;
                 --pause-screen-plot-font: 14px;
               }
-              .pause-screen-layout { padding-top: calc(56px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 84px) + 24px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); }
+              .pause-screen-layout { padding-top: calc(56px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 84px) + 32px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); }
               .pause-screen-main { gap: 8px; }
               #pause-screen-subtitle { font-size: 16px; }
               #pause-screen-details .pause-screen-date-long { display: none; }
