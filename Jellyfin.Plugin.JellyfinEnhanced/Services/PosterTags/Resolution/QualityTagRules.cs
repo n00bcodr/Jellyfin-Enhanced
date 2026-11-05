@@ -70,7 +70,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private const RegexOptions Options = RegexOptions.CultureInvariant | RegexOptions.Compiled;
 
         /// <summary>Lowercase resolution tokens recognised in stream display titles (also the bare-WEB filename vocabulary).</summary>
-        internal static readonly string[] ResolutionTokens = { "8k", "4320p", "4k", "2160p", "1440p", "1080p", "720p", "576p", "480p", "360p", "404p", "384p", "520p" };
+        internal static readonly string[] ResolutionTokens = { "8k", "4320p", "4k", "2160p", "1440p", "1080p", "1080i", "720p", "576p", "576i", "480p", "480i", "360p", "404p", "384p", "520p" };
 
         private static readonly Regex ResolutionRegex = new(WordStart + "(" + string.Join("|", ResolutionTokens) + ")" + WordEnd, Options);
         private static readonly Regex ImaxRegex = new(WordStart + "imax(?:[ ._-]?enhanced)?" + WordEnd, Options);
@@ -83,7 +83,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly Regex BareChannelRegex = new(@"^[0-9]+\.[0-9]+\z", Options);
         private static readonly Regex TrailingLayoutRegex = new(@"([0-9])\.([0-9])(?:\.([0-9]))?\z", Options);
 
-        private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "1080i", "720p", "576p", "480p", "LOW-RES", "SD" };
+        private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "1080i", "720p", "576p", "576i", "480p", "480i", "LOW-RES", "SD" };
         private static readonly string[] SourceOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "SDTV", "Physical", "CAM", "TS", "TC", "SCR" };
 
         /// <summary>
@@ -655,11 +655,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
         }
 
-        /// <summary>The resolution bucket; a known interlaced 1080 frame is 1080i, never claimed progressive.</summary>
+        /// <summary>The resolution bucket; a known interlaced 1080, 576 or 480 frame is 1080i, 576i or 480i, never claimed progressive.</summary>
         internal static string? DetectResolution(TagMediaStream video)
         {
             var bucket = DetectResolutionBucket(video);
-            return bucket == "1080p" && video.IsInterlaced == true ? "1080i" : bucket;
+            return bucket is "1080p" or "576p" or "480p" && video.IsInterlaced == true ? bucket[..^1] + "i" : bucket;
         }
 
         private static string? DetectResolutionBucket(TagMediaStream video)
@@ -678,9 +678,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                     "4k" or "2160p" => "4K",
                     "1440p" => "1440p",
                     "1080p" => "1080p",
+                    "1080i" => "1080i",
                     "720p" => "720p",
                     "576p" => "576p",
+                    "576i" => "576i",
                     "480p" => "480p",
+                    "480i" => "480i",
                     _ => "LOW-RES", // 360p, 404p, 384p, 520p
                 };
             }

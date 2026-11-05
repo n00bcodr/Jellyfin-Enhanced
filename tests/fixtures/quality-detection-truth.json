@@ -2229,6 +2229,82 @@
     "Dolby Vision",
     "HEVC"
    ]
+  },
+  {
+   "name": "A known interlaced PAL frame is 576i",
+   "why": "Resolution never claims progressive scan for an interlaced stream",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 720,
+     "Height": 576,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "IsInterlaced": true
+    }
+   ],
+   "highest": [
+    "576i",
+    "MPEG2"
+   ],
+   "all": [
+    "576i",
+    "SDR",
+    "MPEG2"
+   ],
+   "legacy": [
+    "576i",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "A known interlaced NTSC frame is 480i",
+   "why": "Resolution never claims progressive scan for an interlaced stream",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 720,
+     "Height": 480,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "IsInterlaced": true
+    }
+   ],
+   "highest": [
+    "480i",
+    "MPEG2"
+   ],
+   "all": [
+    "480i",
+    "SDR",
+    "MPEG2"
+   ],
+   "legacy": [
+    "480i",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "A title naming 1080i names the resolution when the dimensions are unknown",
+   "why": "The title is the only evidence and names interlaced scan",
+   "streams": [
+    {
+     "Type": "Video",
+     "DisplayTitle": "1080i H264"
+    }
+   ],
+   "highest": [
+    "1080i",
+    "H264"
+   ],
+   "all": [
+    "1080i",
+    "H264"
+   ],
+   "legacy": [
+    "1080i",
+    "H264"
+   ]
   }
  ]
 }

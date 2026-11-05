@@ -91,7 +91,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static readonly Regex TrailingGroup = new(@"(?<=(?:^|[. _\-\[\](){}])(?:[xh]\.?26[45]|hevc|avc|av1|vp9|xvid|divx|mpeg2|aac|ac3|e?ac3|dts|ma|ddp?|flac|opus|atmos|truehd|\d\.\d|\d{3,4}p|web|webrip|web" + OptionalSeparator + @"dl|bluray|remux|hdtv|dvdrip|10bit|hdr|hdr10|dv|sdr))-[A-Za-z0-9]{2,}$", Options, Timeout);
     private static readonly Regex ReleaseBoundary = new(@"\[|" + Token(string.Join("|", QualityTagRules.ResolutionTokens.Concat(QualityTagRules.CodecTokens).Select(Regex.Escape)
         .Append(@"remux|bdremux|blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)|web" + OptionalSeparator + @"(?:dl|rip)|web|hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + @"hd|sdtv|(?:tv|sat|dvb)" + OptionalSeparator + @"rip|vhs(?:" + OptionalSeparator + @"rip)?|dvd[59]|hd" + OptionalSeparator + @"dvd|dvd(?:" + OptionalSeparator + @"rip)?|[hx]" + OptionalSeparator + "26[45]|1080i"))), Options, Timeout);
-    private static readonly string[] ResolutionOrder = ["8K", "4K", "1440p", "1080p", "1080i", "720p", "576p", "480p", "LOW-RES", "SD"];
+    private static readonly string[] ResolutionOrder = ["8K", "4K", "1440p", "1080p", "1080i", "720p", "576p", "576i", "480p", "480i", "LOW-RES", "SD"];
     private static readonly string[] SourceOrder = QualityTagRules.SourceQualityOrder;
 
     /// <summary>Same resolution buckets as the quality renderer; source quality breaks equal-resolution ties.</summary>

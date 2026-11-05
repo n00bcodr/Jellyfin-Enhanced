@@ -14,7 +14,7 @@
     const containerClass = 'quality-overlay-container';
 
     // Within-category sort orders (more important = lower index inside each category).
-    const resolutionOrder = ['8K', '4K', '1440p', '1080p', '1080i', '720p', '576p', '480p', 'LOW-RES', 'SD'];
+    const resolutionOrder = ['8K', '4K', '1440p', '1080p', '1080i', '720p', '576p', '576i', '480p', '480i', 'LOW-RES', 'SD'];
     const sourceOrder = ['REMUX', 'BluRay', 'WEB', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'SDTV', 'Physical', 'CAM', 'TS', 'TC', 'SCR'];
     const EDITION_PREFIX = 'edition:';
     const editionOrder = [];
@@ -54,7 +54,9 @@
         '1080i': { bg: 'rgba(0, 191, 255, 0.9)', text: '#ffffff' },
         '720p': { bg: 'rgba(255, 165, 0, 0.9)', text: '#000000' },
         '576p': { bg: 'rgba(255, 179, 0, 0.85)', text: '#000000' },
+        '576i': { bg: 'rgba(255, 179, 0, 0.85)', text: '#000000' },
         '480p': { bg: 'rgba(255, 193, 7, 0.85)', text: '#000000' },
+        '480i': { bg: 'rgba(255, 193, 7, 0.85)', text: '#000000' },
         'SD': { bg: 'rgba(108, 117, 125, 0.85)', text: '#ffffff' },
         'SDR': { bg: 'rgba(84, 110, 122, 0.9)', text: '#ffffff' },
         'HDR': { bg: 'rgba(255, 215, 0, 0.95)', text: '#000000' },
@@ -286,7 +288,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 24 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 25 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -862,9 +864,9 @@
         return bare.slice(0, slash + 1) + stem.replace(RELEASE_GROUP, '') + extension;
     }
 
-    /** A known interlaced 1080 frame is 1080i, never claimed progressive (QualityTagRules.DetectResolution). */
+    /** A known interlaced 1080, 576 or 480 frame is 1080i, 576i or 480i, never claimed progressive (QualityTagRules.DetectResolution). */
     function interlacedLabel(tag, video) {
-        return tag === '1080p' && video?.IsInterlaced === true ? '1080i' : tag;
+        return ['1080p', '576p', '480p'].includes(tag) && video?.IsInterlaced === true ? tag.slice(0, -1) + 'i' : tag;
     }
 
     /**
@@ -969,7 +971,7 @@
         if (primaryVideoStream) {
             // Priority 1: DisplayTitle Scan for resolution keywords
             const displayTitle = primaryVideoStream.DisplayTitle || '';
-            const resolutionRegex = /\b(8k|4320p|4k|2160p|1440p|1080p|720p|576p|480p|360p|404p|384p|520p)\b/i;
+            const resolutionRegex = /\b(8k|4320p|4k|2160p|1440p|1080p|1080i|720p|576p|576i|480p|480i|360p|404p|384p|520p)\b/i;
             const resolutionMatch = displayTitle.match(resolutionRegex);
 
             const displayTitleHeight = primaryVideoStream.Height || 0;
@@ -991,6 +993,9 @@
                     resolutionTag = '576p';
                 } else if (found === '480p') {
                     resolutionTag = '480p';
+                } else if (['1080i', '576i', '480i'].includes(found)) {
+                    // A title naming interlaced scan keeps it.
+                    resolutionTag = found;
                 } else if (['360p', '404p', '384p', '520p'].includes(found)) {
                     // Generic low-res tag for anything below 480p
                     resolutionTag = 'LOW-RES';
@@ -1583,7 +1588,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 24, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 25, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1621,7 +1626,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 24, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 25, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {
