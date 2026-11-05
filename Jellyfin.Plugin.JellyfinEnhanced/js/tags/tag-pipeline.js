@@ -51,6 +51,7 @@
     let serverCacheVersion = 0;
     let serverCacheTimestamp = 0;
     let serverFilterRevision = null; // filter revision memory was made under (access + Spoiler Guard, from the server)
+    let serverFilterBase = '';       // the same without access: equal across an access-only change, which a delta can reconcile
     let cacheGeneration = 0;         // bumped whenever memory is replaced or dropped
     let storeGate = null;            // Promise while a restored copy awaits confirmation; lookups wait on it
     let openStoreGate = null;        // resolves storeGate
@@ -535,6 +536,7 @@
             version: resp.version,
             timestamp: resp.timestamp,
             filterRevision: typeof resp.filterRevision === 'string' ? resp.filterRevision : '',
+            filterBase: typeof resp.filterBase === 'string' ? resp.filterBase : '',
             count: entries.length,
             clearStamp: JE.pluginConfig?.ClearLocalStorageTimestamp || 0,
             servedAt,
@@ -633,6 +635,7 @@
             serverCacheTimestamp = meta.timestamp;
             storeBaseServedAt = meta.servedAt || 0;
             serverFilterRevision = meta.filterRevision;
+            serverFilterBase = typeof meta.filterBase === 'string' ? meta.filterBase : '';
             cacheGeneration++;
             storeScope = scope;
             storeMisses.clear();
@@ -696,6 +699,7 @@
         serverCacheVersion = resp.version;
         serverCacheTimestamp = resp.timestamp;
         serverFilterRevision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
+        serverFilterBase = typeof resp.filterBase === 'string' ? resp.filterBase : '';
         cacheGeneration++;
         storeMisses.clear();
         deltaIds.clear();
@@ -891,6 +895,84 @@
         return entry.promise;
     }
 
+    /**
+     * Apply a delta whose only filter change is access, when it can correct the copy: the response
+     * carries the same filter base and every id the user can see (`visible`), and the copy already
+     * holds each of them (a newly visible item needs a full download). Entries the user can no
+     * longer see are dropped from memory and the stored copy; the cursor and filter move on.
+     * @param {object} resp - The delta response.
+     * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
+     * @param {number} generation - cacheGeneration when the delta was requested.
+     * @returns {Promise<boolean>} whether the copy was reconciled (false: the caller replaces it)
+     */
+    async function reconcileAccess(resp, base, generation) {
+        const revision = typeof resp.filterRevision === 'string' ? resp.filterRevision : '';
+        if (!Array.isArray(resp.visible) || !serverFilterBase || resp.filterBase !== serverFilterBase || !revision) return false;
+        const visible = new Set(resp.visible.filter(id => typeof id === 'string'));
+        const newEntries = Object.entries(resp.items);
+        const removed = Array.isArray(resp.removed) ? resp.removed.filter(id => typeof id === 'string' && !(id in resp.items)) : [];
+        const next = { timestamp: resp.timestamp, servedAt: typeof resp.servedAt === 'number' ? resp.servedAt : 0, filterRevision: revision, filterBase: resp.filterBase };
+        let dropped;
+        if (serverCacheComplete) {
+            const held = new Set(serverCache.keys());
+            for (const [id] of newEntries) held.add(id);
+            for (const id of visible) if (!held.has(id)) return false;
+            dropped = [...serverCache.keys()].filter(id => !visible.has(id));
+            const scope = storeScope;
+            if (scope && JE.tagCacheStore?.available()) {
+                const store = JE.tagCacheStore;
+                const persistAt = persistGeneration;
+                queuePersist(async () => {
+                    if (persistAt !== persistGeneration) return;
+                    await store.reconcileAccess(scope, base, next, newEntries, removed, visible);
+                });
+            }
+        } else {
+            // A restored copy lives in the store: it decides, in one transaction, after any write still queued.
+            const scope = storeScope;
+            if (!scope || !JE.tagCacheStore?.available()) return false;
+            const store = JE.tagCacheStore;
+            const outcome = await new Promise((resolve) => {
+                queuePersist(async () => {
+                    try { resolve(await store.reconcileAccess(scope, base, next, newEntries, removed, visible)); }
+                    catch (err) { resolve({ applied: false, dropped: [] }); throw err; }
+                });
+            });
+            if (!outcome.applied || generation !== cacheGeneration || !serverCache) return false;
+            dropped = [...new Set([...outcome.dropped, ...[...serverCache.keys()].filter(id => !visible.has(id))])];
+        }
+        for (const id of dropped) {
+            forgetItemFacts(id);
+            serverCache.delete(id);
+            deltaIds.delete(id);
+            storeMisses.add(id);
+        }
+        for (const [id, entry] of newEntries) {
+            forgetItemFacts(id);
+            serverCache.set(id, entry);
+            storeMisses.delete(id);
+            deltaIds.add(id);
+        }
+        for (const id of removed) {
+            forgetItemFacts(id);
+            serverCache.delete(id);
+            deltaIds.delete(id);
+            storeMisses.add(id);
+        }
+        serverCacheTimestamp = resp.timestamp;
+        serverFilterRevision = revision;
+        const changedIds = newEntries.map(e => e[0]).concat(removed, dropped);
+        if (changedIds.length > 0) {
+            for (const [, renderer] of renderers) {
+                if (renderer.onServerCacheRefresh) {
+                    try { renderer.onServerCacheRefresh(changedIds); } catch {}
+                }
+            }
+        }
+        console.log(`${logPrefix} Access changed: +${newEntries.length} items, -${removed.length + dropped.length} no longer visible`);
+        return true;
+    }
+
     async function fetchDeltaCore() {
         const gate = storeGate;
         const confirming = !!gate;
@@ -911,7 +993,7 @@
             const requestedAt = performance.now();
             const resp = await ApiClient.ajax({
                 type: 'GET',
-                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${base.timestamp}`),
+                url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}?since=${base.timestamp}&known=${encodeURIComponent(base.filterRevision || '')}`),
                 dataType: 'json'
             });
             if (JE.session && !JE.session.isCurrent(requestEpoch)) return;
@@ -930,6 +1012,14 @@
             // went back (restored from an older save or backup): entries this
             // copy got since may disagree with it, and a delta can't say which.
             const rolledBack = typeof resp.timestamp === 'number' && resp.timestamp < base.timestamp;
+            // Only access changed (an item this user cannot see was added, or one they could see was
+            // hidden): drop what they can no longer see instead of downloading everything again.
+            if (resp.version === serverCacheVersion && !rolledBack && revision !== serverFilterRevision
+                && await reconcileAccess(resp, base, generation)) {
+                settled = true;
+                if (confirming) console.log(`${logPrefix} Stored copy confirmed current after an access change`);
+                return;
+            }
             if (resp.version !== serverCacheVersion || revision !== serverFilterRevision || rolledBack) {
                 const why = resp.version !== serverCacheVersion ? 'Cache version changed'
                     : rolledBack ? 'Server cache went back in time' : 'Access or Spoiler Guard filter changed';

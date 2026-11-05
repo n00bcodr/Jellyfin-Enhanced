@@ -402,3 +402,85 @@ test('a delta\'s removed ids leave memory and the stored copy without a full dow
   assert.ok(refreshed.some(ids => ids?.includes('gone') && ids.includes('back')), 'renderers hear about removed ids too');
   assert.ok(urls.length > 0 && urls.every(url => url.includes('since=')), 'deltas only, never a full download');
 });
+
+/**
+ * A full load of three movies under filter `r1`/`b1`, then deltas from `answers` (one per delta request); the stub
+ * store keeps the full write and records reconciles.
+ */
+async function accessHarness(t, answers) {
+  const urls = [];
+  const reconciled = [];
+  let deltas = 0;
+  const h = createHarness({
+    globals: { requestIdleCallback: cb => setTimeout(() => cb({ timeRemaining: () => 50, didTimeout: false }), 0) },
+    apiClient: {
+      getCurrentUserId: () => 'user-a',
+      ajax: async ({ url }) => {
+        urls.push(url);
+        if (!url.includes('since=')) return { items: { a: { Type: 'Movie' }, b: { Type: 'Movie' }, c: { Type: 'Movie' } }, count: 3, version: 4, timestamp: 50, filterRevision: deltas > 0 ? 'r2' : 'r1', filterBase: 'b1', servedAt: 60 };
+        return answers[Math.min(deltas++, answers.length - 1)];
+      },
+    },
+    JE: {
+      pluginConfig: { TagCacheServerMode: true }, currentSettings: { qualityTagsEnabled: true },
+      helpers: { onBodyMutation() {}, onNavigate() {}, addCSS() {} },
+      core: { tagRenderer: { applyCornerStacking() {}, scheduleCornerStacking() {} } },
+      session: { getUserId: () => 'user-a', getServerId: () => 'server-a', getEpoch: () => 0, isCurrent: () => true, onUserChange() {} },
+      tagCacheStore: {
+        available: () => true,
+        getMeta: async () => null,
+        getMany: async () => ({ entries: new Map(), meta: null }),
+        clearScope: async () => {}, clearOtherScopes: async () => {},
+        beginFullWrite: async () => true, putManyIfOwner: async () => true, commitFullWrite: async () => true,
+        applyDelta: async () => true,
+        reconcileAccess: async (scope, base, next, entries, removed, visible) => { reconciled.push({ base, next, visible: [...visible] }); return { applied: true, dropped: [] }; },
+      },
+    },
+  });
+  t.after(() => h.close());
+  h.load('tags/tag-pipeline.js');
+  const refreshed = [];
+  h.JE.tagPipeline.registerRenderer('probe', { render() {}, isEnabled: () => false, onServerCacheRefresh: (ids, info) => refreshed.push({ ids, info }) });
+  h.JE.tagPipeline.initialize();
+  await h.JE.tagPipeline.invalidateServerCache();
+  await settle();
+  urls.length = 0;
+  return { h, urls, reconciled, refreshed, pipeline: h.JE.tagPipeline };
+}
+
+test('an access-only change drops what the user can no longer see without a full download', async t => {
+  const { urls, reconciled, refreshed, pipeline } = await accessHarness(t, [
+    { items: {}, count: 0, version: 4, timestamp: 70, filterRevision: 'r2', filterBase: 'b1', visible: ['a', 'b'], servedAt: 80 },
+    { items: {}, count: 0, version: 4, timestamp: 70, filterRevision: 'r2', filterBase: 'b1', servedAt: 90 },
+  ]);
+  assert.equal(await pipeline.waitForServerCache(entries => [...entries].length === 2, { delays: [0] }), true);
+  assert.equal(pipeline.peekServerEntry('c'), null);
+  assert.equal(pipeline.peekServerEntry('a')?.Type, 'Movie');
+  assert.ok(urls[0].includes('known=r1'), 'the delta names the filter its copy was made under');
+  assert.ok(refreshed.some(({ ids, info }) => ids?.includes('c') && !info?.replaced), 'renderers hear about the dropped id; nothing is replaced');
+  for (let i = 0; i < 60 && reconciled.length === 0; i++) await new Promise(resolve => setTimeout(resolve, 50));
+  assert.deepEqual(JSON.parse(JSON.stringify(reconciled)), [{ base: { timestamp: 50, version: 4, filterRevision: 'r1' }, next: { timestamp: 70, servedAt: 80, filterRevision: 'r2', filterBase: 'b1' }, visible: ['a', 'b'] }]);
+  await pipeline.waitForServerCache(() => false, { delays: [0] });
+  assert.ok(urls.length > 1 && urls.every(url => url.includes('since=')), 'deltas only, never a full download');
+  assert.ok(urls.at(-1).includes('known=r2'), 'later deltas are asked under the new filter');
+});
+
+test('an access change that makes an item the copy lacks visible downloads in full', async t => {
+  const { urls, reconciled, pipeline } = await accessHarness(t, [
+    { items: {}, count: 0, version: 4, timestamp: 70, filterRevision: 'r2', filterBase: 'b1', visible: ['a', 'b', 'c', 'new'], servedAt: 80 },
+  ]);
+  await pipeline.waitForServerCache(() => false, { delays: [0] });
+  for (let i = 0; i < 40 && !urls.some(url => !url.includes('since=')); i++) await new Promise(resolve => setTimeout(resolve, 25));
+  assert.ok(urls.some(url => !url.includes('since=')), 'a full download brings the newly visible item');
+  assert.deepEqual(reconciled, []);
+});
+
+test('a Spoiler Guard or ratings filter change still replaces the copy, whatever is visible', async t => {
+  const { urls, reconciled, pipeline } = await accessHarness(t, [
+    { items: {}, count: 0, version: 4, timestamp: 70, filterRevision: 'r2', filterBase: 'b2', visible: ['a', 'b'], servedAt: 80 },
+  ]);
+  await pipeline.waitForServerCache(() => false, { delays: [0] });
+  for (let i = 0; i < 40 && !urls.some(url => !url.includes('since=')); i++) await new Promise(resolve => setTimeout(resolve, 25));
+  assert.ok(urls.some(url => !url.includes('since=')), 'a full download replaces the copy');
+  assert.deepEqual(reconciled, []);
+});

@@ -95,7 +95,7 @@ public class PerfRound2TagCacheResponseTests
             HttpContext = new DefaultHttpContext { RequestServices = _provider, User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(caller.Id, admin) }
         };
 
-        public async Task<(int Status, string ETag, string Body)> Read(User caller, Guid? route = null, long? since = null, string? validator = null, bool admin = false)
+        public async Task<(int Status, string ETag, string Body)> Read(User caller, Guid? route = null, long? since = null, string? validator = null, bool admin = false, string? known = null)
         {
             SignIn(caller, admin);
             var http = Controller.HttpContext;
@@ -104,7 +104,7 @@ public class PerfRound2TagCacheResponseTests
             if (validator != null) http.Request.Headers.IfNoneMatch = validator;
             using var stream = new MemoryStream();
             http.Response.Body = stream;
-            var result = Controller.GetTagCache(route ?? caller.Id, since);
+            var result = Controller.GetTagCache(route ?? caller.Id, since, known);
             await result.ExecuteResultAsync(new ActionContext(http, new RouteData(), new ActionDescriptor()));
             return (http.Response.StatusCode, http.Response.Headers.ETag.ToString(), System.Text.Encoding.UTF8.GetString(stream.ToArray()));
         }
@@ -210,6 +210,52 @@ public class PerfRound2TagCacheResponseTests
         Assert.NotEqual(delta.ETag, revoked.ETag);
         Assert.NotEqual(FilterRevision(delta.Body), FilterRevision(revoked.Body));
         AssertEmptyDelta(revoked.Body);
+    }
+
+    private static string[]? Visible(string body)
+    {
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.TryGetProperty("visible", out var visible) ? visible.EnumerateArray().Select(v => v.GetString()!).ToArray() : null;
+    }
+
+    private static string FilterBase(string body)
+    {
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("filterBase").GetString()!;
+    }
+
+    [Fact]
+    public async Task AnAccessOnlyChangeSendsTheIdsTheUserCanStillSeeAndKeepsTheFilterBase()
+    {
+        // A delta can correct a copy whose only change is access: it lists every id the user can see (never
+        // one they cannot), and the filter without access stays the same, so the client drops the rest
+        // instead of downloading everything again.
+        using var endpoint = new Endpoint();
+        endpoint.AliceAccess = [endpoint.First, endpoint.Second];
+        var full = await endpoint.Read(endpoint.Alice);
+        Assert.Null(Visible(full.Body));
+        var current = await endpoint.Read(endpoint.Alice, since: 200, known: FilterRevision(full.Body));
+        Assert.Null(Visible(current.Body));
+        endpoint.AliceAccess = [endpoint.First];
+        endpoint.Cache.InvalidateUserAccess();
+        var revoked = await endpoint.Read(endpoint.Alice, since: 200, known: FilterRevision(full.Body));
+        Assert.NotEqual(FilterRevision(full.Body), FilterRevision(revoked.Body));
+        Assert.Equal(FilterBase(full.Body), FilterBase(revoked.Body));
+        Assert.Equal([endpoint.First.ToString("N")], Visible(revoked.Body)!);
+        AssertEmptyDelta(revoked.Body);
+        // Asked again under the new filter: nothing more to reconcile.
+        Assert.Null(Visible((await endpoint.Read(endpoint.Alice, since: 200, known: FilterRevision(revoked.Body))).Body));
+    }
+
+    [Fact]
+    public async Task TheVisibleIdsNeverNameAnItemTheUserCannotSee()
+    {
+        var hidden = Guid.NewGuid();
+        using var endpoint = new Endpoint(_ => new() { [hidden.ToString("N")] = new() { Type = "Movie", Genres = ["Hidden secret"], LastUpdated = 300 } });
+        var delta = await endpoint.Read(endpoint.Alice, since: 100, known: "stale");
+        Assert.Equal([endpoint.First.ToString("N")], Visible(delta.Body)!);
+        Assert.DoesNotContain(hidden.ToString("N"), delta.Body);
+        Assert.DoesNotContain(endpoint.Second.ToString("N"), delta.Body);
     }
 
     [Theory]

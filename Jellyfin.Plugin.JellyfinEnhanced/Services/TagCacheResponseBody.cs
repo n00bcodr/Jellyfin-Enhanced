@@ -71,7 +71,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             int count,
             byte[] itemsJson,
             byte[]? reviewRatingsJson,
-            IReadOnlyList<string>? removed = null)
+            IReadOnlyList<string>? removed = null,
+            string? filterBase = null,
+            IReadOnlyList<string>? visible = null)
         {
             var prefix = new ArrayBufferWriter<byte>(256);
             int servedAtStart;
@@ -92,10 +94,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 writer.Flush();
                 servedAtEnd = prefix.WrittenCount;
                 writer.WriteString("filterRevision", filterRevision);
+                if (filterBase != null) writer.WriteString("filterBase", filterBase);
                 if (removed is { Count: > 0 })
                 {
                     writer.WriteStartArray("removed");
                     foreach (var id in removed) writer.WriteStringValue(id);
+                    writer.WriteEndArray();
+                }
+                if (visible != null)
+                {
+                    writer.WriteStartArray("visible");
+                    foreach (var id in visible) writer.WriteStringValue(id);
                     writer.WriteEndArray();
                 }
                 writer.WriteNumber("count", count);

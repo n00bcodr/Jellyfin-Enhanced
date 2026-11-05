@@ -31,7 +31,7 @@
 // profile, in the same scopes, capped, and cleared with the other scopes' data.
 //
 // Public surface: JE.tagCacheStore { ENTRY_SCHEMA, available, getMeta, getMany,
-// beginFullWrite, putManyIfOwner, commitFullWrite, applyDelta, clearScope,
+// beginFullWrite, putManyIfOwner, commitFullWrite, applyDelta, reconcileAccess, clearScope,
 // clearOtherScopes, getPosterColours, putPosterColours, getDirectPlay,
 // putDirectPlay }.
 (function(JE) {
@@ -333,6 +333,52 @@
     }
 
     /**
+     * Apply a delta whose only filter change is access (see tag-pipeline.js
+     * reconcileAccess), in one transaction and only on exactly the copy it was
+     * fetched against: drop every stored entry the user can no longer see,
+     * apply the delta, and record the new filter revision. Nothing is written
+     * when the copy moved on, or when the user can now see an item the copy
+     * lacks (only a full download brings that).
+     * @param {string} scope
+     * @param {{timestamp: number, version: number, filterRevision: string}} base - What the delta was requested against.
+     * @param {{timestamp: number, servedAt: number, filterRevision: string, filterBase: string}} next - The delta response's cursor and filter.
+     * @param {Array<[string, object]>} entries - [itemId, entry] pairs
+     * @param {string[]} removed - Item ids the delta removes.
+     * @param {Set<string>} visible - Every item id the user can see now.
+     * @returns {Promise<{applied: boolean, dropped: string[]}>}
+     */
+    async function reconcileAccess(scope, base, next, entries, removed, visible) {
+        const db = await openDb();
+        const tx = db.transaction([META_STORE, ITEM_STORE], 'readwrite');
+        const metaStore = tx.objectStore(META_STORE);
+        const items = tx.objectStore(ITEM_STORE);
+        const prefix = scope + KEY_SEP;
+        const meta = await settle(metaStore.get(scope));
+        const result = { applied: false, dropped: [] };
+        if (meta && !meta.pending && meta.timestamp === base.timestamp && meta.version === base.version
+            && meta.filterRevision === base.filterRevision) {
+            const held = new Set((await settle(items.getAllKeys(scopeRange(scope)))).map(key => String(key).slice(prefix.length)));
+            for (const [id] of entries) held.add(id);
+            let complete = true;
+            for (const id of visible) {
+                if (!held.has(id)) { complete = false; break; }
+            }
+            if (complete) {
+                result.applied = true;
+                for (const id of held) {
+                    if (!visible.has(id)) { items.delete(prefix + id); result.dropped.push(id); }
+                }
+                for (const [id, entry] of entries) items.put(entry, prefix + id);
+                for (const id of removed) items.delete(prefix + id);
+                metaStore.put({ ...meta, timestamp: next.timestamp, servedAt: Math.max(meta.servedAt || 0, next.servedAt || 0),
+                    filterRevision: next.filterRevision, filterBase: next.filterBase, count: held.size - result.dropped.length, savedAt: Date.now() });
+            }
+        }
+        await committed(tx);
+        return result;
+    }
+
+    /**
      * Delete a scope's entries and meta record.
      * @param {string} scope
      * @returns {Promise<void>}
@@ -478,6 +524,7 @@
         putManyIfOwner,
         commitFullWrite,
         applyDelta,
+        reconcileAccess,
         clearScope,
         clearOtherScopes,
         getPosterColours,

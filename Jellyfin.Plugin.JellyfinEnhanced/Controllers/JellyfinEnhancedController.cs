@@ -9034,7 +9034,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null)
+        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null, [FromQuery] string? known = null)
         {
             if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
             {
@@ -9181,6 +9181,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
                 var filterRevision = Convert.ToHexString(
                     SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
+                // The same fingerprint without the access part: when only access changed (an item the user cannot
+                // see was added, or one they could see was hidden), a delta can still correct a stored copy by
+                // dropping what is no longer `visible`; any other change still needs a full download.
+                var filterBase = Convert.ToHexString(
+                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
+                var visible = since.HasValue && known != null && !string.Equals(known, filterRevision, StringComparison.Ordinal)
+                    ? _tagCacheService.VisibleKeys(user, version)
+                    : null;
 
                 // Body { version, timestamp, servedAt, filterRevision, [removed,] count, items,
                 // reviewRatings }, assembled around the serialized items without
@@ -9199,7 +9207,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     itemCount,
                     itemsBytes,
                     reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions),
-                    removedIds);
+                    removedIds,
+                    filterBase,
+                    visible);
 
                 // no-cache (not no-store): the client may keep a copy to revalidate against,
                 // but must always revalidate. Freshness is unchanged, this only avoids

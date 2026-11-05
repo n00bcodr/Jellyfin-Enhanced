@@ -1823,6 +1823,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// Every cache key <paramref name="user"/> may see in the current generation, ordinally sorted, or null
+        /// when the cache is not live or no longer at <paramref name="version"/> (the client replaces its copy
+        /// then anyway). Sent with a delta whose access revision differs from the client's, so a copy whose only
+        /// change is access can drop what the user can no longer see instead of downloading everything; the
+        /// list names only items the user can see.
+        /// </summary>
+        public string[]? VisibleKeys(JUser user, long version)
+        {
+            var generation = CaptureGeneration(out var live);
+            if (!live || generation.Version != version) return null;
+            var accessible = ResolveUserAccess(user).Ids;
+            var keys = new List<string>(Math.Min(accessible.Count, generation.Cache.Count));
+            foreach (var key in generation.Cache.Keys)
+            {
+                if (accessible.Contains(key)) keys.Add(key);
+            }
+
+            keys.Sort(StringComparer.Ordinal);
+            return keys.ToArray();
+        }
+
+        /// <summary>
         /// A Series/Season entry as one user may see it: its LatestEpisodeAdded
         /// is built over every episode, so when the episode it came from is not
         /// in the user's access set the date is dropped (a clone, the shared
