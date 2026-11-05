@@ -2172,6 +2172,63 @@
     "4K",
     "AV1"
    ]
+  },
+  {
+   "name": "A known interlaced 1080 frame is 1080i",
+   "why": "Resolution never claims progressive scan for an interlaced stream",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1920,
+     "Height": 1080,
+     "Codec": "h264",
+     "VideoRangeType": "SDR",
+     "IsInterlaced": true
+    }
+   ],
+   "highest": [
+    "1080i",
+    "H264"
+   ],
+   "all": [
+    "1080i",
+    "SDR",
+    "H264"
+   ],
+   "legacy": [
+    "1080i",
+    "H264"
+   ]
+  },
+  {
+   "name": "A title naming Dolby Vision and SDR keeps the SDR base when the range type is unknown",
+   "why": "As the structured DOVIWithSDR type would",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "Unknown",
+     "DisplayTitle": "4K Dolby Vision SDR HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
   }
  ]
 }

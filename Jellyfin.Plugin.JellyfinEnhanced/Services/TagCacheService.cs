@@ -346,7 +346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 45;
+        internal const int CurrentCacheSchemaVersion = 46;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -1891,8 +1891,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             else
             {
                 filtered.QualitySummary = SeriesQualityAggregation.Build(visible.Select(episode => new SeriesQualityAggregation.Episode("", episode.PremiereDate, episode.StreamData, episode.Source, episode.Edition)).ToList());
-                var representative = visible.FirstOrDefault(episode => episode.StreamData?.Streams?.Count > 0 && (entry.Type == "Season" || episode.SeasonNumber != 0))
-                    ?? visible.FirstOrDefault(episode => episode.StreamData?.Streams?.Count > 0);
+                // Usable streams, as the full scan judges them: audio or video (an external subtitle alone describes nothing).
+                static bool Usable(TagCacheEntry episode) => episode.StreamData?.Streams?.Any(stream => stream?.Type is "Video" or "Audio") == true;
+                var representative = visible.FirstOrDefault(episode => Usable(episode) && (entry.Type == "Season" || episode.SeasonNumber != 0))
+                    ?? visible.FirstOrDefault(Usable);
                 filtered.StreamData = representative?.StreamData;
                 filtered.SdhSubtitleLanguages = visible.SelectMany(e => e.SdhSubtitleLanguages ?? Array.Empty<string>()).Distinct(StringComparer.Ordinal).ToArray();
                 // Languages from the visible episodes only, by the same union and partial rule as the full scan.

@@ -33,7 +33,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token(@"vhs(?:" + OptionalSeparator + "rip)?"), "VHS"),
         (Token(@"(?:hd" + OptionalSeparator + @")?cam(?:rip)?"), "CAM"),
         (Token(@"(?:hd" + OptionalSeparator + @")?ts|telesync"), "TS"),
-        (Token(@"tc|telecine"), "TC"),
+        (Token(@"(?:hd" + OptionalSeparator + @")?tc|telecine"), "TC"),
         (Token(@"scr|screener|dvd" + OptionalSeparator + @"scr|r5|workprint"), "SCR"),
     ];
     // A bare WEB counts anywhere after the title boundary (TRaSH's \bWEB\b): 1080p.WEB.DDP5.1 is a web release.
@@ -91,8 +91,8 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static readonly Regex TrailingGroup = new(@"(?<=(?:^|[. _\-\[\](){}])(?:[xh]\.?26[45]|hevc|avc|av1|vp9|xvid|divx|mpeg2|aac|ac3|e?ac3|dts|ma|ddp?|flac|opus|atmos|truehd|\d\.\d|\d{3,4}p|web|webrip|web" + OptionalSeparator + @"dl|bluray|remux|hdtv|dvdrip|10bit|hdr|hdr10|dv|sdr))-[A-Za-z0-9]{2,}$", Options, Timeout);
     private static readonly Regex ReleaseBoundary = new(@"\[|" + Token(string.Join("|", QualityTagRules.ResolutionTokens.Concat(QualityTagRules.CodecTokens).Select(Regex.Escape)
         .Append(@"remux|bdremux|blu" + OptionalSeparator + @"ray|b[dr]" + OptionalSeparator + @"rip|br" + OptionalSeparator + @"disk|bd(?:25|50|66|100)|web" + OptionalSeparator + @"(?:dl|rip)|web|hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + @"hd|sdtv|(?:tv|sat|dvb)" + OptionalSeparator + @"rip|vhs(?:" + OptionalSeparator + @"rip)?|dvd[59]|hd" + OptionalSeparator + @"dvd|dvd(?:" + OptionalSeparator + @"rip)?|[hx]" + OptionalSeparator + "26[45]|1080i"))), Options, Timeout);
-    private static readonly string[] ResolutionOrder = ["8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD"];
-    private static readonly string[] SourceOrder = ["REMUX", "BluRay", "WEB", "HDTV", "DVD", "SDTV", "VHS", "SCR", "TC", "TS", "CAM"];
+    private static readonly string[] ResolutionOrder = ["8K", "4K", "1440p", "1080p", "1080i", "720p", "576p", "480p", "LOW-RES", "SD"];
+    private static readonly string[] SourceOrder = QualityTagRules.SourceQualityOrder;
 
     /// <summary>Same resolution buckets as the quality renderer; source quality breaks equal-resolution ties.</summary>
     internal static MediaNamingTags Detect(string? itemPath, IReadOnlyList<MediaSourceInfo> sources, string? itemName = null, string? originalTitle = null)
@@ -287,7 +287,11 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         // Explicit custom labels are bounded, plain text and never accept path separators or controls.
         var nonImax = NonImax.IsMatch(value);
         string? Known(string text) => Editions.FirstOrDefault(rule => (rule.Label != "IMAX" || !nonImax) && rule.Pattern.IsMatch(text)).Label;
-        var known = Known(explicitTag.Success ? value : TrailingGroup.Replace(value, string.Empty));
+        // An explicit label is the user's own words: it maps to a known edition only when it is exactly that edition
+        // ("{edition-Directors Cut}" is Director's Cut, "{edition-Extended Director's Cut}" stays as written).
+        string? Whole(string text) => Editions.FirstOrDefault(rule => rule.Pattern.Match(text) is { Success: true } m
+            && m.Value.Trim('.', ' ', '_', '-', '[', ']', '(', ')', '{', '}').Length == text.Trim().Length).Label;
+        var known = explicitTag.Success ? Whole(value) : Known(TrailingGroup.Replace(value, string.Empty));
         if (known != null) return known;
         return explicitTag.Success && value.Length > 0 && !value.Any(char.IsControl) ? value : null;
     }

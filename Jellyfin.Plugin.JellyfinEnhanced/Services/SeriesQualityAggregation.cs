@@ -76,10 +76,18 @@ internal static class SeriesQualityAggregation
         }
         if (latestProbed >= 0) latest = latestProbed;
         var labels = episodes.Select(e => Labels(e.Streams)).ToArray();
-        // An episode's source: its version's naming fact, else the item-level one.
-        var sources = episodes.Select((e, i) => labels[i].FirstOrDefault(label => QualityTagRules.CategoryOf(label) == QualityTagRules.Source) ?? e.Source).ToArray();
+        // An episode's sources: every version's naming fact (its best copy is its value), else the detected or
+        // item-level one.
+        var sourceSets = episodes.Select((e, i) =>
+        {
+            var versions = e.Streams?.Sources?.Select(source => source?.Source).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+            if (versions is not { Count: > 0 } && (labels[i].FirstOrDefault(label => QualityTagRules.CategoryOf(label) == QualityTagRules.Source) ?? e.Source) is { } single)
+                versions = new List<string> { single };
+            return (versions ?? new List<string>()).OrderBy(source => QualityTagRules.AggregationRank(source, QualityTagRules.Source)).ThenBy(source => source, StringComparer.Ordinal).ToList();
+        }).ToArray();
+        var sources = sourceSets.Select(set => set.FirstOrDefault()).ToArray();
         var categories = Categories.ToDictionary(key => key, key => key == QualityTagRules.Source
-            ? Summarize(sources, key, latest, sources.Select(source => source == null ? new List<string>() : new List<string> { source }).ToArray())
+            ? Summarize(sources, key, latest, sourceSets)
             : Summarize(key == QualityTagRules.AudioInfo ? episodes.Select(e => Audio(e.Streams, null)).ToArray()
                 : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, key, null, allSources: true)).ToArray()));
         var languages = new HashSet<string>(StringComparer.Ordinal);

@@ -83,8 +83,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         private static readonly Regex BareChannelRegex = new(@"^[0-9]+\.[0-9]+\z", Options);
         private static readonly Regex TrailingLayoutRegex = new(@"([0-9])\.([0-9])(?:\.([0-9]))?\z", Options);
 
-        private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "720p", "576p", "480p", "LOW-RES", "SD" };
+        private static readonly string[] ResolutionOrder = { "8K", "4K", "1440p", "1080p", "1080i", "720p", "576p", "480p", "LOW-RES", "SD" };
         private static readonly string[] SourceOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "DVD", "VHS", "HDTV", "SDTV", "Physical", "CAM", "TS", "TC", "SCR" };
+
+        /// <summary>
+        /// Which source is the better copy, best first: the one ranking for summaries (Best of a season) and for
+        /// choosing among an item's versions, apart from <see cref="SourceOrder"/>'s presentation order. Broadcast
+        /// captures beat tape; among pre-release copies a screener beats a telecine, a telecine a telesync, and a
+        /// telesync a camera recording.
+        /// </summary>
+        internal static readonly string[] SourceQualityOrder = { "REMUX", "BluRay", "WEB", "HD DVD", "HDTV", "DVD", "SDTV", "VHS", "Physical", "SCR", "TC", "TS", "CAM" };
         private static readonly string[] DynamicRangeOrder = { "Dolby Vision", "HDR10+", "HDR10", "HLG", "HDR", "SDR" };
         private static readonly string[] SpecialFormatOrder = { "IMAX", "3D" };
         private static readonly string[] CodecOrder = { "VVC", "AV1", "HEVC", "H265", "VP9", "H264", "VP8", "XVID", "DIVX", "VC-1", "WMV", "MPEG2", "MPEG4", "MJPEG", "THEORA", "ProRes" };
@@ -156,7 +164,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             // Jellyfin's DOVIInvalid says the Dolby Vision metadata is unusable: a DV word in the title cannot claim it.
             // A title naming a base layer too ("Dolby Vision HDR10") keeps it, as the structured DOVIWith… types do.
             if (type != "doviinvalid" && TitleDolbyVisionRegex.IsMatch(title))
-                return new("Dolby Vision", TitleHdr10PlusRegex.IsMatch(title) ? "HDR10+" : TitleHdr10Regex.IsMatch(title) ? "HDR10" : TitleHlgRegex.IsMatch(title) ? "HLG" : null, false);
+                return new("Dolby Vision", TitleHdr10PlusRegex.IsMatch(title) ? "HDR10+" : TitleHdr10Regex.IsMatch(title) ? "HDR10" : TitleHlgRegex.IsMatch(title) ? "HLG" : TitleSdrRegex.IsMatch(title) ? "SDR" : null, false);
             if (TitleHdr10PlusRegex.IsMatch(title)) return new("HDR10+", null, false);
             if (TitleHdr10Regex.IsMatch(title)) return new("HDR10", null, false);
             if (TitleHlgRegex.IsMatch(title)) return new("HLG", null, false);
@@ -379,9 +387,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 {
                     // source.Path on null throws, which drops every quality tag of the card.
                     if (source is null) return new List<string>(0);
-                    // Jellyfin's own 3D format first, else 3D release words in the file name.
-                    var path = JsText.ToLower(source.Path ?? string.Empty);
-                    if (source.Is3D == true || (path.Contains("3d", StringComparison.Ordinal) && ContainsAny(path, "hsbs", "fsbs", "htab", "ftab", "mvc")))
+                    // Jellyfin's own 3D format first, else 3D release words in the file name as whole words, outside a
+                    // closing release group ("3Days.To.Kill.2014.1080p.H264-MVC" is no 3D).
+                    var path = JsText.ToLower(MediaNamingTags.WithoutReleaseGroup(source.Path) ?? string.Empty);
+                    if (source.Is3D == true || (ContainsWord(path, "3d") && new[] { "hsbs", "fsbs", "htab", "ftab", "mvc" }.Any(word => ContainsWord(path, word))))
                     {
                         Add(qualities, "3D");
                         break;
@@ -560,7 +569,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var order = category switch
             {
                 Resolution => ResolutionOrder, DynamicRange => DynamicRangeOrder,
-                VideoCodec => CodecOrder, Source => SourceOrder, _ => AudioOrder,
+                VideoCodec => CodecOrder, Source => SourceQualityOrder, _ => AudioOrder,
             };
             var index = Array.IndexOf(order, NormalizeLabel(label));
             // More channels win ties, heights too ("7.1.4" beats "7.1"; distinctRank in qualitytags.js).
@@ -646,7 +655,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
         }
 
+        /// <summary>The resolution bucket; a known interlaced 1080 frame is 1080i, never claimed progressive.</summary>
         internal static string? DetectResolution(TagMediaStream video)
+        {
+            var bucket = DetectResolutionBucket(video);
+            return bucket == "1080p" && video.IsInterlaced == true ? "1080i" : bucket;
+        }
+
+        private static string? DetectResolutionBucket(TagMediaStream video)
         {
             var displayTitle = JsText.AsciiLower(video.DisplayTitle);
             var height = video.Height ?? 0;

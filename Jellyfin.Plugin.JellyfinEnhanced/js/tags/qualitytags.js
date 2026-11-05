@@ -14,7 +14,7 @@
     const containerClass = 'quality-overlay-container';
 
     // Within-category sort orders (more important = lower index inside each category).
-    const resolutionOrder = ['8K', '4K', '1440p', '1080p', '720p', '576p', '480p', 'LOW-RES', 'SD'];
+    const resolutionOrder = ['8K', '4K', '1440p', '1080p', '1080i', '720p', '576p', '480p', 'LOW-RES', 'SD'];
     const sourceOrder = ['REMUX', 'BluRay', 'WEB', 'HD DVD', 'DVD', 'VHS', 'HDTV', 'SDTV', 'Physical', 'CAM', 'TS', 'TC', 'SCR'];
     const EDITION_PREFIX = 'edition:';
     const editionOrder = [];
@@ -51,6 +51,7 @@
         '4K': { bg: 'rgba(189, 5, 232, 0.95)', text: '#ffffff' },
         '1440p': { bg: 'rgba(255, 20, 147, 0.9)', text: '#ffffff' },
         '1080p': { bg: 'rgba(0, 191, 255, 0.9)', text: '#ffffff' },
+        '1080i': { bg: 'rgba(0, 191, 255, 0.9)', text: '#ffffff' },
         '720p': { bg: 'rgba(255, 165, 0, 0.9)', text: '#000000' },
         '576p': { bg: 'rgba(255, 179, 0, 0.85)', text: '#000000' },
         '480p': { bg: 'rgba(255, 193, 7, 0.85)', text: '#000000' },
@@ -285,7 +286,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 23 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 24 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -809,7 +810,7 @@
         const hdr10Plus = /(?:^|[^a-z0-9_])hdr10(?:\+|plus(?![a-z0-9_]))/.test(title);
         // A title naming a base layer too ("Dolby Vision HDR10") keeps it, as the structured DOVIWith… types do.
         if (type !== 'doviinvalid' && word('dolby\\s*vision|dovi|dv')) {
-            return { range: 'Dolby Vision', base: hdr10Plus ? 'HDR10+' : word('hdr10') ? 'HDR10' : word('hlg') ? 'HLG' : null, sdr: false };
+            return { range: 'Dolby Vision', base: hdr10Plus ? 'HDR10+' : word('hdr10') ? 'HDR10' : word('hlg') ? 'HLG' : word('sdr') ? 'SDR' : null, sdr: false };
         }
         if (hdr10Plus) return { range: 'HDR10+', base: null, sdr: false };
         if (word('hdr10')) return { range: 'HDR10', base: null, sdr: false };
@@ -859,6 +860,11 @@
         const extension = dot > 0 && file.length - dot >= 2 && file.length - dot <= 5 ? file.slice(dot) : '';
         const stem = extension ? file.slice(0, -extension.length) : file;
         return bare.slice(0, slash + 1) + stem.replace(RELEASE_GROUP, '') + extension;
+    }
+
+    /** A known interlaced 1080 frame is 1080i, never claimed progressive (QualityTagRules.DetectResolution). */
+    function interlacedLabel(tag, video) {
+        return tag === '1080p' && video?.IsInterlaced === true ? '1080i' : tag;
     }
 
     /**
@@ -989,7 +995,7 @@
                     // Generic low-res tag for anything below 480p
                     resolutionTag = 'LOW-RES';
                 }
-                qualities.add(resolutionTag);
+                qualities.add(interlacedLabel(resolutionTag, primaryVideoStream));
             } else {
                 // Priority 2: Dimension Fallback
                 // A portrait frame (a phone video, 1080x1920) is measured by its short and long sides.
@@ -1021,7 +1027,7 @@
                 }
 
                 if (resolutionTag) {
-                    qualities.add(resolutionTag);
+                    qualities.add(interlacedLabel(resolutionTag, primaryVideoStream));
                 }
             }
         }
@@ -1121,10 +1127,11 @@
         // --- 3D VIDEO LOGIC ---
         if (mediaSources) {
             for (const source of mediaSources) {
-                // Jellyfin's own 3D format first (Is3D in cached facts, Video3DFormat on items), else 3D release words.
-                const path = String(source.Path || '').toLowerCase();
-                const has3D = path.includes('3d');
-                const has3DFormat = /hsbs|fsbs|htab|ftab|mvc/.test(path);
+                // Jellyfin's own 3D format first (Is3D in cached facts, Video3DFormat on items), else 3D release
+                // words as whole words, outside a closing release group ("3Days…H264-MVC" is no 3D).
+                const path = String(withoutReleaseGroup(source.Path || '') || '').toLowerCase();
+                const has3D = /(?:^|[^a-z0-9])3d(?![a-z0-9])/.test(path);
+                const has3DFormat = /(?:^|[^a-z0-9])(?:hsbs|fsbs|htab|ftab|mvc)(?![a-z0-9])/.test(path);
                 if (source.Is3D === true || source.Video3DFormat || (has3D && has3DFormat)) {
                     qualities.add('3D');
                     break; // Found 3D, no need to check other sources
@@ -1575,7 +1582,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 23, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 24, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1613,7 +1620,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 23, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 24, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

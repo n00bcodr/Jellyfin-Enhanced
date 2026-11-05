@@ -242,11 +242,14 @@ public class SeriesQualityAggregationTests
     private sealed class Episode : MediaBrowser.Controller.Entities.TV.Episode
     {
         public int StreamHeight { get; set; }
+        public bool SubtitleOnly { get; set; }
         public int Reads { get; private set; }
         public override List<MediaSourceInfo> GetMediaSources(bool enablePathSubstitution)
         {
             Reads++;
-            return [new() { MediaStreams = [new() { Type = MediaStreamType.Video, Height = StreamHeight, Codec = "h264" }] }];
+            return SubtitleOnly
+                ? [new() { MediaStreams = [new() { Type = MediaStreamType.Subtitle, Language = "eng", Codec = "srt" }] }]
+                : [new() { MediaStreams = [new() { Type = MediaStreamType.Video, Height = StreamHeight, Codec = "h264" }] }];
         }
     }
 
@@ -377,5 +380,76 @@ public class SeriesQualityAggregationTests
             QualitySummary = SeriesQualityAggregation.Build([new("e1", 1, web), new("e2", 2, Episode("c", "WEB"))], 100) };
         Assert.Contains("WEB", SeriesQualityAggregation.Resolve(uniform, policy, null));
         Assert.DoesNotContain("Mixed", SeriesQualityAggregation.Resolve(uniform, policy, null));
+    }
+
+    [Theory]
+    [InlineData("VHS", "HDTV", "HDTV")]
+    [InlineData("CAM", "TS", "TS")]
+    [InlineData("CAM", "TC", "TC")]
+    [InlineData("CAM", "SCR", "SCR")]
+    [InlineData("WEB", "BluRay", "BluRay")]
+    [InlineData("DVD", "HDTV", "HDTV")]
+    [InlineData("SDTV", "DVD", "DVD")]
+    public void TheBetterCopyIsTheBestSourceWhicheverEpisodeHasIt(string a, string b, string best)
+    {
+        TagStreamData Episode(string id, string label) => new()
+        {
+            Sources = [new() { Id = id, Source = label }],
+            Streams = [new() { Type = "Video", SourceId = id, Width = 1920, Height = 1080, Codec = "h264", VideoRangeType = "SDR" }],
+        };
+        foreach (var (first, second) in new[] { (a, b), (b, a) })
+        {
+            var summary = SeriesQualityAggregation.Build([new("e1", 1, Episode("x", first)), new("e2", 2, Episode("y", second))], 100);
+            Assert.Equal(best, summary.Categories["source"].Best);
+        }
+    }
+
+    [Fact]
+    public void EveryVersionOfAnEpisodeCountsForTheSourceSummary()
+    {
+        // One episode, a WEB 1080p version listed first and a REMUX 4K version.
+        var streams = new TagStreamData
+        {
+            Sources = [new() { Id = "a", Source = "WEB" }, new() { Id = "b", Source = "REMUX" }],
+            Streams = [new() { Type = "Video", SourceId = "a", Width = 1920, Height = 1080, Codec = "h264", VideoRangeType = "SDR" },
+                new() { Type = "Video", SourceId = "b", Width = 3840, Height = 2160, Codec = "hevc", VideoRangeType = "HDR10" }],
+        };
+        var summary = SeriesQualityAggregation.Build([new("e1", 1, streams)], 100);
+        Assert.Equal("4K", summary.Categories["resolution"].Best);
+        Assert.Equal("REMUX", summary.Categories["source"].Best);
+        Assert.Equal(["REMUX", "WEB"], summary.Categories["source"].All);
+    }
+
+    [Fact]
+    public void ARestrictedUsersRepresentativeIsAnEpisodeWithAudioOrVideo()
+    {
+        using var f = new ApiPluginFixture(); f.Plugin.Configuration.TagCacheServerMode = true;
+        var series = new Series { Id = Guid.NewGuid() };
+        var season = new Season { Id = Guid.NewGuid(), SeriesId = series.Id, ParentId = series.Id, IndexNumber = 1 };
+        Episode Make(int n, int height, bool subtitleOnly = false) => new() { Id = Guid.NewGuid(), SeriesId = series.Id, SeasonId = season.Id, ParentId = season.Id,
+            ParentIndexNumber = 1, IndexNumber = n, PremiereDate = DateTime.UtcNow.AddDays(n - 10), StreamHeight = height, SubtitleOnly = subtitleOnly };
+        var hiddenEpisode = Make(1, 2160); var sparse = Make(2, 0, subtitleOnly: true); var playable = Make(3, 1080);
+        BaseItem[] all = [series, season, hiddenEpisode, sparse, playable];
+        var user = new User("viewer", "default", "default") { Id = Guid.NewGuid() };
+        var hidden = new HashSet<Guid> { hiddenEpisode.Id };
+        IEnumerable<BaseItem> Select(InternalItemsQuery q)
+        {
+            IEnumerable<BaseItem> selected = all.Where(item => q.User == null || !hidden.Contains(item.Id));
+            if (q.ItemIds?.Length > 0) selected = selected.Where(item => q.ItemIds.Contains(item.Id));
+            else if (q.IncludeItemTypes?.Length > 0) selected = selected.Where(item => q.IncludeItemTypes.Contains(item.GetBaseItemKind()));
+            if (q.ParentId != Guid.Empty) selected = selected.OfType<Episode>().Where(ep => q.ParentId == series.Id || ep.SeasonId == q.ParentId);
+            return selected.Skip(q.StartIndex ?? 0).Take(q.Limit ?? int.MaxValue);
+        }
+        var library = new Mock<ILibraryManager>();
+        library.Setup(l => l.GetItemIds(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).Select(item => item.Id).ToArray());
+        library.Setup(l => l.GetItemList(It.IsAny<InternalItemsQuery>())).Returns((InternalItemsQuery q) => Select(q).ToArray());
+        library.Setup(l => l.GetItemById<BaseItem>(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(item => item.Id == id));
+        library.Setup(l => l.GetItemById(It.IsAny<Guid>())).Returns((Guid id) => all.SingleOrDefault(item => item.Id == id));
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger));
+        cache.BuildFullCache(null, CancellationToken.None);
+        var restricted = cache.GetCacheForUser(user, out _, out _, out _)[series.Id.ToString("N")];
+        // The subtitle-only episode stays an unknown contributor; the playable one represents the series.
+        Assert.Equal("1080p", restricted.QualitySummary!.Categories["resolution"].Best);
+        Assert.Contains("1080p", SeriesQualityAggregation.Resolve(restricted, "representative", null));
     }
 }

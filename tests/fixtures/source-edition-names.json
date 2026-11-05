@@ -1379,6 +1379,24 @@
     "itemName": "Event"
   },
   {
+    "path": "Movies/Film (2020)/Film (2020) {edition-Extended Director's Cut}.mkv",
+    "source": null,
+    "edition": "Extended Director's Cut",
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film (2020) {edition-Directors Cut} Bluray-1080p.mkv",
+    "source": "BluRay",
+    "edition": "Director's Cut",
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.HDTC.x264.mkv",
+    "source": "TC",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
     "path": "Show/Season 01/Show.S01E01.The.Web.mkv",
     "source": null,
     "edition": null,

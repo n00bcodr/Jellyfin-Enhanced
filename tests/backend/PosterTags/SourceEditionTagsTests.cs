@@ -313,4 +313,19 @@ public class StructuredSourceFactsTests
         };
         Assert.Equal(expected.Contains("IMAX", StringComparison.Ordinal), QualityTagRules.Detect(data, null).Contains("IMAX"));
     }
+
+    [Theory]
+    [InlineData("/Movies/3 Days to Kill (2014)/3Days.To.Kill.2014.1080p.H264-MVC.mkv", false)]
+    [InlineData("/Movies/Film (2014)/Film.2014.1080p.3D.HSBS.x264.mkv", true)]
+    [InlineData("/Movies/Film (2014)/Film.2014.3D.1080p.BluRay.MVC-GRP.mkv", true)]
+    [InlineData("/Movies/Film (2014)/Film.2014.3Dimension.HSBS.mkv", false)]
+    public void ThreeDNeedsWholeReleaseWordsOutsideTheReleaseGroup(string path, bool threeD)
+    {
+        var data = new TagStreamData
+        {
+            Sources = [new() { Id = "a", Path = path }],
+            Streams = [new() { Type = "Video", SourceId = "a", Width = 1920, Height = 1080, Codec = "h264", VideoRangeType = "SDR" }],
+        };
+        Assert.Equal(threeD, QualityTagRules.Detect(data, null).Contains("3D"));
+    }
 }
