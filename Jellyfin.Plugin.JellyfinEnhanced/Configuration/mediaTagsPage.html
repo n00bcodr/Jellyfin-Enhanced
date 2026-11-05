@@ -36,13 +36,25 @@
             };
             var root = page.querySelector('.je-tag-admin');
             var started = Date.now();
+            // The page's own words come from the locale files once JE.t exists; until then the English source.
+            function say(key, english) {
+                var JE = window.JellyfinEnhanced;
+                var text = JE && typeof JE.t === 'function' ? JE.t(key) : key;
+                return text && text !== key ? text : english;
+            }
+            function esc(text) {
+                return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+            var wait = root.querySelector('.je-ta-wait');
+            if (wait) wait.textContent = say('admin_tags_page_loading', wait.textContent);
             function ready() {
                 var JE = window.JellyfinEnhanced;
                 return JE && typeof JE.t === 'function' && JE.core && JE.core.tagLayout && JE.internals && JE.internals.enhancedUi;
             }
             function notReady() {
                 var main = ApiClient.getUrl('/web/index.html').replace(/\/web\/index\.html.*$/, '/web/index.html');
-                root.innerHTML = '<div class="je-ta-wait" role="alert">Jellyfin Enhanced has not finished loading in this browser, so the Media Tags settings cannot be shown. Reload the page; if this stays, check the plugin is active and see the browser console. <a class="je-ta-link" href="' + main + '#/configurationpage?name=Jellyfin%20Enhanced">Back to Jellyfin Enhanced</a></div>';
+                root.innerHTML = '<div class="je-ta-wait" role="alert">' + esc(say('admin_tags_page_not_ready', 'Jellyfin Enhanced has not finished loading in this browser, so the Media Tags settings cannot be shown. Reload the page; if this stays, check the plugin is active and see the browser console.'))
+                    + ' <a class="je-ta-link" href="' + main + '#/configurationpage?name=Jellyfin%20Enhanced">' + esc(say('admin_tags_page_back', 'Back to Jellyfin Enhanced')) + '</a></div>';
             }
             function load() {
                 if (!ready()) {

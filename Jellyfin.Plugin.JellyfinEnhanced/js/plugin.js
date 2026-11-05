@@ -99,7 +99,7 @@
         t: (key, params = {}) => { // Actual implementation defined later
             const translations = window.JellyfinEnhanced?.translations || {};
             let text = translations[key] || key;
-            // Plural forms: `${key}_one`, `_few`… by the CLDR category (Intl.PluralRules) of the count
+            // Plural forms: `${key}_one`, `_few`… by the CLDR category (Intl.PluralRules, English rules for a language it does not know) of the count
             // (`count`, else `days`, else the other counted params) in the language the string is written in,
             // falling back to `${key}_other`, then the key. A form English filled in for a locale is used only
             // where the key itself is English (or the locale is a kind of English), so a translated sentence
@@ -113,7 +113,7 @@
                 const sameSource = (variant) => variant in translations
                     && (!english || keyIsEnglish === english.has(variant) || /^en\b/i.test(ownLang));
                 let category = 'other';
-                try { category = new Intl.PluralRules(lang).select(params[counted]); } catch { /* unknown language: other */ }
+                try { category = new Intl.PluralRules([lang, 'en']).select(params[counted]); } catch { /* malformed tag: other */ }
                 const variant = [`${key}_${category}`, `${key}_other`].find(sameSource);
                 if (variant) text = translations[variant];
             }

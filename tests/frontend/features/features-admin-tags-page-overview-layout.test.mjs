@@ -194,7 +194,10 @@ test('a new user\'s preview document carries every tag setting the server seeds 
     const seeded = h.JE.adminTags.SEEDED_KEYS;
     for (const key of copied) if (!['ShowAudioLanguages', 'DefaultLanguage'].includes(key)) assert.ok(seeded.includes(key), `${key} is seeded`);
     const user = h.JE.adminTags.seedUser({ QualityTagsEnabled: true, TagLayout: 'bands', TagGroupCaps: { Genre: 2 } });
-    assert.deepEqual(plain(user), { qualityTagsEnabled: true, tagLayout: 'bands', tagGroupCaps: { Genre: 2 }, tagLayoutSettingsVersion: 1, tagStylePreset: null, useNativePosterTags: null });
+    assert.deepEqual(plain(user), { qualityTagsEnabled: true, tagLayout: 'bands', tagGroupCaps: { Genre: 2 }, ratingTagsSources: ['community', 'critic'], tagLayoutSettingsVersion: 1, tagStylePreset: null, useNativePosterTags: null });
+    // As RatingSourceSettings.Defaults seeds a new user: the administrator's list, else Community then Critic as switched on.
+    assert.deepEqual(plain(h.JE.adminTags.seedUser({ RatingTagsSources: null, RatingTagsShowCritic: false }).ratingTagsSources), ['community']);
+    assert.deepEqual(plain(h.JE.adminTags.seedUser({ RatingTagsSources: ['imdb', 'critic'] }).ratingTagsSources), ['imdb', 'critic']);
   } finally { h.close(); }
 });
 

@@ -7,13 +7,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers;
 /// The CLDR plural category ("zero", "one", "two", "few", "many", "other") of a whole number in a language,
 /// as the browser's Intl.PluralRules gives it to JE.t (js/plugin.js): native poster text picks the same
 /// `key_one` / `key_few` … forms. tests/fixtures/plural-categories.json, generated from Intl.PluralRules,
-/// holds every listed language to it. A language not listed has no forms (always "other"), as in Intl.
+/// holds every shipped locale to it. A language Intl does not know takes English rules, as JE.t asks Intl
+/// with English as the fallback.
 /// </summary>
 internal static class PluralRules
 {
     private static readonly HashSet<string> OneIfOne = new(StringComparer.OrdinalIgnoreCase)
     {
-        "en", "de", "nl", "sv", "da", "nb", "nn", "no", "it", "es", "el", "hu", "tr", "fi", "et", "ca", "bg", "pt-PT", "af", "eu", "gl", "sq", "ur", "az", "ka", "kk", "ky", "mn", "uz", "ta", "te", "ml", "mr", "ne",
+        "en", "de", "gsw", "nl", "sv", "da", "nb", "nn", "no", "it", "es", "el", "hu", "tr", "fi", "et", "ca", "bg", "pt-PT", "af", "eu", "gl", "sq", "ur", "az", "ka", "kk", "ky", "mn", "uz", "ta", "te", "ml", "mr", "ne",
     };
 
     private static readonly HashSet<string> NoForms = new(StringComparer.OrdinalIgnoreCase)
@@ -79,7 +80,7 @@ internal static class PluralRules
             case "ga":
                 return n switch { 1 => "one", 2 => "two", >= 3 and <= 6 => "few", >= 7 and <= 10 => "many", _ => "other" };
             default:
-                return "other";
+                return n == 1 ? "one" : "other";
         }
     }
 }

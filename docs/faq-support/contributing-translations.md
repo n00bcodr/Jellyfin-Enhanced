@@ -38,6 +38,8 @@ A string that holds a count (`{count}`, `{days}`, `{n}`, `{items}`, `{hours}`, `
 
 The browser and the server-drawn posters both choose the form by your language's rules (Russian 21 is `_one`, 3 is `_few`, 5 is `_many`). A category your file has no form for uses `_other`, then the plain key, so the plain key should read correctly for the most common count. Forms keep the same variables as the plain key. English forms are never used for a sentence your file translates.
 
+Weblate lists the keys the English file has, so it offers the `_one` forms. A category English does not need (`_few`, `_many`, `_two`, `_zero`) can be added to your language's file through the manual JSON route below; until then the plain key covers it.
+
 ## Maintainer Fallback: Manual JSON Changes
 
 When Weblate is unavailable, maintainers can update locale JSON in the repository. Prefer the Weblate workflow for normal contributions so edits stay coordinated.

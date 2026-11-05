@@ -405,6 +405,7 @@
         else if (group === 'language') include = languageIncludeHtml();
         else if (group === 'status') include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_media_tags_badges_include'))}</div>`;
         else if (group === 'logos') include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_logo_tags_include'))}</div>`;
+        else if (group === 'awards') include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_awards_tags_include'))}</div>`;
         else if (group === 'custom') {
             // The administrator's rules decide the chips (Configuration > Tags > Custom tags).
             const hasRules = Array.isArray(JE.pluginConfig?.CustomTagRules) && JE.pluginConfig.CustomTagRules.length > 0;

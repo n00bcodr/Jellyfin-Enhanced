@@ -50,7 +50,7 @@
     function createTagStylesEditor(root, customLabels = () => [], isCurrent = () => true) {
 
         const GROUPS = [
-            { key: 'quality', title: T('panel_settings_ui_tag_group_quality') }, { key: 'ageRating', title: T('tag_styles_group_age') }, { key: 'rating', title: T('panel_settings_ui_tag_group_rating') },
+            { key: 'quality', title: T('panel_settings_ui_tag_group_quality') }, { key: 'ageRating', title: T('panel_settings_ui_tag_group_age_rating') }, { key: 'rating', title: T('panel_settings_ui_tag_group_rating') },
             { key: 'genre', title: T('common_genre') }, { key: 'status', title: T('panel_settings_ui_tag_group_status') }, { key: 'language', title: T('panel_settings_ui_tag_group_language') }, { key: 'awards', title: T('awards_label') },
             { key: 'logos', title: T('common_logos') },
             { key: 'custom', title: T('common_custom') }

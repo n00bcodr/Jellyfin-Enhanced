@@ -168,6 +168,11 @@
         for (const key of SEEDED_KEYS) {
             if (config[key] !== undefined) out[key.charAt(0).toLowerCase() + key.slice(1)] = config[key];
         }
+        // The server seeds a new user's sources with RatingSourceSettings.Defaults: the administrator's list,
+        // else Community then Critic as switched on (never the web's legacy Critic-first order).
+        if (!Array.isArray(out.ratingTagsSources)) {
+            out.ratingTagsSources = ['community', 'critic'].filter((id) => (id === 'community' ? config.RatingTagsShowCommunity : config.RatingTagsShowCritic) !== false);
+        }
         out.tagLayoutSettingsVersion = 1;
         out.tagStylePreset = null;
         out.useNativePosterTags = null;

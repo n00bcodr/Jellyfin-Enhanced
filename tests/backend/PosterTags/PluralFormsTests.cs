@@ -27,7 +27,7 @@ public class PluralFormsTests
         }
 
         Assert.True(mismatches.Count == 0, string.Join("; ", mismatches.Take(40)));
-        Assert.Equal("other", PluralRules.Category("xx", 1)); // a language with no rules has no forms, as in Intl
+        Assert.Equal("one", PluralRules.Category("xx", 1)); // a language Intl does not know takes English rules (JE.t asks [lang, "en"])
     }
 
     [Fact]

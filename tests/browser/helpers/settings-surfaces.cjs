@@ -76,7 +76,9 @@ async function load(page, files) {
 }
 
 const CORE = ['core/ui-kit.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
-  'tags/rating-sources.js', 'tags/status-vocabulary.js'];
+  'tags/rating-sources.js', 'tags/status-vocabulary.js',
+  // The group modules carry the chip styles the live previews draw with (as on a real dashboard and hub).
+  'tags/statustags.js', 'tags/qualitytags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/languagetags.js', 'tags/genretags.js', 'tags/logotags.js', 'tags/awardstags.js'];
 
 /** The admin Media Tags page, mounted the way Jellyfin's plugin page does. */
 async function adminPage(page, options = {}) {
