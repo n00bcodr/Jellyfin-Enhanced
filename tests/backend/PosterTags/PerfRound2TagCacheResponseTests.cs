@@ -95,7 +95,7 @@ public class PerfRound2TagCacheResponseTests
             HttpContext = new DefaultHttpContext { RequestServices = _provider, User = global::JellyfinEnhanced.Tests.PrivacyPolicyTests.Principal(caller.Id, admin) }
         };
 
-        public async Task<(int Status, string ETag, string Body)> Read(User caller, Guid? route = null, long? since = null, string? validator = null, bool admin = false, string? known = null)
+        public async Task<(int Status, string ETag, string Body)> Read(User caller, Guid? route = null, long? since = null, string? validator = null, bool admin = false, string? known = null, string? after = null, int? limit = null)
         {
             SignIn(caller, admin);
             var http = Controller.HttpContext;
@@ -104,7 +104,7 @@ public class PerfRound2TagCacheResponseTests
             if (validator != null) http.Request.Headers.IfNoneMatch = validator;
             using var stream = new MemoryStream();
             http.Response.Body = stream;
-            var result = Controller.GetTagCache(route ?? caller.Id, since, known);
+            var result = Controller.GetTagCache(route ?? caller.Id, since, known, after, limit);
             await result.ExecuteResultAsync(new ActionContext(http, new RouteData(), new ActionDescriptor()));
             return (http.Response.StatusCode, http.Response.Headers.ETag.ToString(), System.Text.Encoding.UTF8.GetString(stream.ToArray()));
         }
@@ -308,6 +308,51 @@ public class PerfRound2TagCacheResponseTests
         Assert.False(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", Leaving = new TagLeaving { DeleteAt = 1 } }));
         Assert.True(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", CustomTags = [CustomTagRuleSet.MatchCollection + ":Favourites"] }));
         Assert.False(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", CustomTags = ["tag:Favourites"] }));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task APagedFullLoadHoldsEveryEntryOnceInBoundedPagesUnderOneFilter(bool guard)
+    {
+        // 250 more movies (Alice sees all but every fifth): pages of at most 100, sorted, every visible entry
+        // exactly once, each page with the full load's version and filter revision (Spoiler Guard included).
+        var movies = Enumerable.Range(0, 250).Select(_ => Guid.NewGuid()).ToArray();
+        using var endpoint = new Endpoint(e => movies.ToDictionary(id => id.ToString("N"), id => new TagCacheEntry { Type = "Movie", Genres = ["Drama"], LastUpdated = 120 }));
+        endpoint.AliceAccess = [endpoint.First, endpoint.Episode, .. movies.Where((_, i) => i % 5 != 0)];
+        if (guard) endpoint.GuardSeries();
+        var full = await endpoint.Read(endpoint.Alice);
+        using var fullJson = JsonDocument.Parse(full.Body);
+        var expected = fullJson.RootElement.GetProperty("items").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetRawText());
+        var seen = new List<string>();
+        string? after = null;
+        var pages = 0;
+        do
+        {
+            var page = await endpoint.Read(endpoint.Alice, after: after, limit: 100);
+            Assert.Equal(200, page.Status);
+            using var json = JsonDocument.Parse(page.Body);
+            var root = json.RootElement;
+            Assert.Equal(fullJson.RootElement.GetProperty("version").GetInt64(), root.GetProperty("version").GetInt64());
+            Assert.Equal(FilterRevision(full.Body), root.GetProperty("filterRevision").GetString());
+            var items = root.GetProperty("items").EnumerateObject().ToList();
+            Assert.InRange(items.Count, 1, 100);
+            foreach (var item in items)
+            {
+                Assert.Equal(expected[item.Name], item.Value.GetRawText());
+                seen.Add(item.Name);
+            }
+            after = root.TryGetProperty("next", out var next) ? next.GetString() : null;
+            if (after != null) Assert.Equal(items[^1].Name, after);
+            pages++;
+        }
+        while (after != null && pages < 10);
+        Assert.Equal(3, pages);
+        Assert.Equal(expected.Keys.Order(StringComparer.Ordinal), seen);
+        Assert.Equal(seen.Order(StringComparer.Ordinal), seen);
+        Assert.DoesNotContain(movies[0].ToString("N"), seen);
+        // The guarded, unwatched episode is stripped on every page exactly as in the full load.
+        Assert.Equal(!guard, expected[endpoint.Episode.ToString("N")].Contains("Episode secret", StringComparison.Ordinal));
     }
 
     [Fact]

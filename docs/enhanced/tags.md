@@ -1149,7 +1149,16 @@ The server cache prepares tags for supported items in included libraries, so eac
 
 The retained cache grows with the number of included items. Exclude large libraries or disable server mode if its memory cost is unsuitable.
 
-Jellyfin compresses the cache response with Brotli or gzip, so a browser downloads about a tenth of its JSON size. On a 3,882-entry test library a full download was 14.7 MB of JSON and 1.39 MB on the wire, about 3.8 KB and 360 bytes per entry. At that rate 50,000 entries are roughly 18 MB to download and 190 MB of JSON for the browser to read once; after that the browser fetches only changed entries, and removed items arrive as a list of ids. Each browser profile downloads in full once, then again only after a full rebuild, more than 20,000 removals between rebuilds, a Spoiler Guard change, or an access change that makes an item visible the browser has not stored (a library or parental limit opened up). When the user can only see less (an item added where they cannot see it, library access removed, an item re-rated above their limit), the next update carries the list of ids they can still see, the browser drops the rest, and the tags on screen stay. If you put Jellyfin behind a reverse proxy, let it pass `Accept-Encoding` through so compression stays on.
+Jellyfin compresses the cache response with Brotli or gzip, so a browser downloads about a tenth of its JSON size. On a 3,882-entry test library a full download was 14.7 MB of JSON and 1.39 MB on the wire, about 3.8 KB and 360 bytes per entry. At that rate 50,000 entries are roughly 18 MB to download and 190 MB of JSON. The browser reads a full download in pages of 2,000 entries, so no response or parse holds the whole library, and once its stored copy is written it keeps at most 20,000 entries in memory and reads the rest from the stored copy as cards need them. After that it fetches only changed entries, and removed items arrive as a list of ids.
+
+`scripts/bench-tag-cache.mjs` measures this on a synthetic library (entries about half the size of real ones, so real figures are roughly double). On a desktop with Node 26:
+
+| Synthetic library | One response | Pages of 2,000 | Memory kept |
+|---|---|---|---|
+| 50,000 entries, 89.5 MB of JSON | one 89.5 MB body, one 0.8 s parse | largest body 3.6 MB, longest parse 41 ms | 117.5 MB while loading, 48.5 MB once stored |
+| 100,000 entries, 179.2 MB of JSON | one 179.2 MB body, one 1.8 s parse | largest body 3.6 MB, longest parse 108 ms | 235.2 MB while loading, 48.9 MB once stored |
+
+Without a stored copy (private browsing, storage blocked) every entry stays in memory, and the next page load downloads again. Each browser profile downloads in full once, then again only after a full rebuild, more than 20,000 removals between rebuilds, a Spoiler Guard change, or an access change that makes an item visible the browser has not stored (a library or parental limit opened up). When the user can only see less (an item added where they cannot see it, library access removed, an item re-rated above their limit), the next update carries the list of ids they can still see, the browser drops the rest, and the tags on screen stay. If you put Jellyfin behind a reverse proxy, let it pass `Accept-Encoding` through so compression stays on.
 
 ??? info "Cache lifecycle and excluded libraries"
     When poster review chips are enabled, visible review averages travel with the filtered cache data.

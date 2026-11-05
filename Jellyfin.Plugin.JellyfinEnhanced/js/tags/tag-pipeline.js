@@ -82,6 +82,12 @@
     // Use the store identity in the bundle; standalone fallback has the same entry schema.
     const STORED_ENTRY_SCHEMA = JE.tagCacheStore?.ENTRY_SCHEMA ?? 51;
     const MEMORY_SOFT_CAP = 20000;
+    // A full load comes in pages of this many entries (GET tag-cache?limit=&after=): no response, parse or
+    // string holds the whole library. A server without paging answers the first request in full.
+    const FULL_LOAD_PAGE = 2000;
+    // Every page must come from one cache generation and filter; a load that saw them change starts over at
+    // most this many times before taking the whole cache in one response.
+    const FULL_LOAD_RESTARTS = 2;
     const TAG_SETTING_KEYS = ['qualityTagsEnabled', 'genreTagsEnabled', 'ratingTagsEnabled', 'ageRatingTagsEnabled', 'statusTagsEnabled', 'languageTagsEnabled', 'awardsTagsEnabled', 'logoTagsEnabled', 'customTagsEnabled'];   // entries kept in memory on the stored-copy path before it is reset
 
     // ── State ──────────────────────────────────────────────────────────
@@ -526,11 +532,11 @@
      * @param {string} scope
      * @param {object} resp - Full tag-cache response body.
      */
-    function persistFullCache(scope, resp) {
+    function persistFullCache(scope, resp, entries = Object.entries(resp.items)) {
         const servedAt = typeof resp.servedAt === 'number' ? resp.servedAt : 0;
         if (!JE.tagCacheStore?.available()) return;
         const store = JE.tagCacheStore;
-        const entries = Object.entries(resp.items);
+        const memoryGeneration = cacheGeneration;
         const meta = {
             schema: STORED_ENTRY_SCHEMA,
             version: resp.version,
@@ -562,8 +568,30 @@
             if (generation !== persistGeneration) return;
             if (await store.commitFullWrite(scope, token, meta)) {
                 console.log(`${logPrefix} Server cache persisted: ${entries.length} items`);
+                if (generation === persistGeneration && memoryGeneration === cacheGeneration) releaseCompleteMemory(scope, servedAt);
             }
         });
+    }
+
+    /**
+     * Once the stored copy holds everything memory holds, a large library need not stay in memory: keep at
+     * most MEMORY_SOFT_CAP entries (those deltas installed, then the most recently read) and read the rest
+     * from the stored copy on demand, exactly as after a restore. Small libraries stay whole in memory.
+     * @param {string} scope - The stored copy's scope, just committed.
+     * @param {number} servedAt - Its capture time.
+     */
+    function releaseCompleteMemory(scope, servedAt) {
+        if (!serverCacheComplete || !serverCache || serverCache.size <= MEMORY_SOFT_CAP || storeScope !== scope) return;
+        const keep = new Map();
+        for (const id of deltaIds) {
+            const entry = serverCache.get(id);
+            if (entry) keep.set(id, entry);
+        }
+        serverCache = keep;
+        serverCacheComplete = false;
+        storeBaseServedAt = servedAt;
+        storeMisses.clear();
+        console.log(`${logPrefix} Server cache kept in the stored copy; memory holds ${keep.size} entries`);
     }
 
     /**
@@ -675,16 +703,13 @@
         // it on every reload. With IndexedDB, full downloads are rare (first
         // load, replacements), so they always bypass revalidation; without it
         // the cache downloads on every page load and revalidation still pays.
-        const fresh = (options?.fresh || JE.tagCacheStore?.available()) ? `?fresh=${Date.now()}` : '';
-        const resp = await ApiClient.ajax({
-            type: 'GET',
-            url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}${fresh}`),
-            dataType: 'json'
-        });
-        if (JE.session && !JE.session.isCurrent(requestEpoch)) return false;
+        const fresh = (options?.fresh || JE.tagCacheStore?.available()) ? Date.now() : 0;
+        const loaded = await fetchFullPages(userId, fresh, requestEpoch);
+        if (!loaded) return false;
+        const { resp, entries, pages } = loaded;
 
         applyReviewRatings(resp, requestedAt);
-        if (!(resp && resp.items && resp.count > 0)) {
+        if (!(resp && entries.length > 0)) {
             console.log(`${logPrefix} Server cache empty, using batch fallback`);
             dropServerCache();
             skipStoreThisSession = true;
@@ -694,7 +719,7 @@
         persistGeneration++;
         itemFacts.clear();
         seasonFactIds.clear();
-        serverCache = new Map(Object.entries(resp.items));
+        serverCache = new Map(entries);
         serverCacheComplete = true;
         serverCacheVersion = resp.version;
         serverCacheTimestamp = resp.timestamp;
@@ -706,9 +731,55 @@
         skipStoreThisSession = false;
         // Memory is complete and current: nothing needs the stored copy now.
         releaseStoreGate();
-        console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion})`);
-        if (scope) persistFullCache(scope, resp);
+        console.log(`${logPrefix} Server cache loaded: ${serverCache.size} items (v${serverCacheVersion}${pages > 1 ? `, ${pages} pages` : ''})`);
+        if (scope) persistFullCache(scope, resp, entries);
+        // Entries changed or removed while later pages were read come with a delta since the first page.
+        if (pages > 1) fetchDelta().catch(() => {});
         return true;
+    }
+
+    /**
+     * Read the whole cache in pages of FULL_LOAD_PAGE (one response when the server does not page).
+     * Every page must carry the first page's version and filter revision; otherwise the generation or
+     * the user's filter changed underneath and the load starts over (at most FULL_LOAD_RESTARTS times,
+     * then in one response). The result carries the first page's cursor (timestamp, capture time), so the
+     * caller's delta since then picks up whatever changed during the load.
+     * @param {string} userId
+     * @param {number} fresh - Cache-busting stamp (0: allow HTTP revalidation).
+     * @param {number} requestEpoch - Session epoch the load belongs to.
+     * @returns {Promise<{resp: object, entries: Array<[string, object]>, pages: number}|null>} null when the user changed.
+     */
+    async function fetchFullPages(userId, fresh, requestEpoch) {
+        const get = async (params) => {
+            const resp = await ApiClient.ajax({ type: 'GET', url: ApiClient.getUrl(`/JellyfinEnhanced/tag-cache/${userId}`, params), dataType: 'json' });
+            return JE.session && !JE.session.isCurrent(requestEpoch) ? null : resp;
+        };
+        const base = fresh ? { fresh } : {};
+        for (let attempt = 0; attempt <= FULL_LOAD_RESTARTS; attempt++) {
+            const paged = attempt < FULL_LOAD_RESTARTS;
+            const entries = [];
+            let first = null;
+            let last = null;
+            let pages = 0;
+            let after = '';
+            let consistent = true;
+            for (;;) {
+                const resp = await get(paged ? { ...base, limit: FULL_LOAD_PAGE, ...(after ? { after } : {}) } : base);
+                if (resp === null) return null;
+                pages++;
+                if (!first) first = resp;
+                else if (resp?.version !== first.version || resp?.filterRevision !== first.filterRevision) { consistent = false; break; }
+                last = resp;
+                if (resp?.items) for (const pair of Object.entries(resp.items)) entries.push(pair);
+                if (!paged || typeof resp?.next !== 'string' || !resp.next) break;
+                after = resp.next;
+            }
+            if (!consistent) continue;
+            // The first page's cursor; the review averages of the last page read.
+            const resp = { ...first, items: null, count: entries.length, reviewRatings: last?.reviewRatings ?? first?.reviewRatings };
+            return { resp, entries, pages };
+        }
+        return null;
     }
 
     /**

@@ -9035,7 +9035,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null, [FromQuery] string? known = null)
+        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null, [FromQuery] string? known = null, [FromQuery] string? after = null, [FromQuery] int? limit = null)
         {
             if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
             {
@@ -9114,6 +9114,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // mutated nothing is shared (TryGetSerializedItems reports it not
             // shareable) and the request is serialized on its own below, like
             // the delta and strip paths.
+            // A paged full load (`limit`, then `after` = the previous page's `next`): one bounded page of the
+            // same generation. Its strip fingerprint covers every guarded entry, as a delta's does, so every
+            // page and the catch-up delta carry the same filterRevision.
+            if (!since.HasValue && limit is > 0)
+            {
+                var pageItems = _tagCacheService.GetCachePageForUser(user, string.IsNullOrEmpty(after) ? null : after, Math.Clamp(limit.Value, 100, 5000), out var pageVersion, out var pageTimestamp, out var pageAccess, out var next);
+                if (spPolicy != null)
+                {
+                    var guarded = _tagCacheService.GetCacheForUser(user, out _, out _, out _, long.MaxValue, guardedRider ?? ((key, e) => _spoilerTagDataStripper.GetGuardedKind(spPolicy.State, key, e) != null));
+                    stripFingerprint = _spoilerTagDataStripper.StripTagCache(spPolicy, user, guarded);
+                    _spoilerTagDataStripper.StripTagCache(spPolicy, user, pageItems);
+                }
+
+                return Respond(pageVersion, pageTimestamp, pageAccess, JsonSerializer.SerializeToUtf8Bytes(pageItems, jsonOptions), pageItems.Count, null, next);
+            }
+
             if (!since.HasValue && spPolicy == null)
             {
                 if (_tagCacheService.TryGetSerializedItems(user, out var sharedVersion, out var sharedTimestamp, out var sharedAccessRevision, out var sharedItemsJson, out var sharedCount, out var shareable))
@@ -9178,7 +9194,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
 
             // The rest of the response — review ratings, filterRevision, body,
             // ETag/304 — for either source of `items`.
-            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount, string[]? removedIds = null)
+            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount, string[]? removedIds = null, string? next = null)
             {
                 // The poster review chips resolve from this map instead of asking
                 // /reviews/ratings for every page of cards: it holds the average for
@@ -9228,7 +9244,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions),
                     removedIds,
                     filterBase,
-                    visible);
+                    visible,
+                    next);
 
                 // no-cache (not no-store): the client may keep a copy to revalidate against,
                 // but must always revalidate. Freshness is unchanged, this only avoids

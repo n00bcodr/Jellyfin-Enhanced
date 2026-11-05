@@ -1802,8 +1802,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     continue;
                 }
 
-                var visible = WithVisibleLeaving(WithVisibleCustomTags(kvp.Value, Guid.TryParse(kvp.Key, out var itemId) ? itemId : Guid.Empty, accessibleSet), accessibleSet);
-                result[kvp.Key] = ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(visible, accessibleSet), accessibleSet, generation.Cache));
+                result[kvp.Key] = ProjectForUser(kvp.Key, kvp.Value, accessibleSet, generation.Cache);
             }
 
             if (since.HasValue) removed = RemovedSince(since.Value, generation.Cache);
@@ -1835,6 +1834,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 || entry.StatusEpisodeIds != null
                 || entry.Leaving?.Collections != null
                 || (entry.CustomTags is { } tags && Array.Exists(tags, Configuration.CustomTagRuleSet.IsCollectionId));
+
+        /// <summary>One entry as a user with <paramref name="accessibleSet"/> may see it (every per-user projection, in order).</summary>
+        private TagCacheEntry ProjectForUser(string key, TagCacheEntry entry, HashSet<string> accessibleSet, IReadOnlyDictionary<string, TagCacheEntry> cache)
+        {
+            var visible = WithVisibleLeaving(WithVisibleCustomTags(entry, Guid.TryParse(key, out var itemId) ? itemId : Guid.Empty, accessibleSet), accessibleSet);
+            return ApplySourceRatingAvailability(FilterQuality(WithoutHiddenLatestEpisode(visible, accessibleSet), accessibleSet, cache));
+        }
+
+        /// <summary>
+        /// One page of a full load: the entries <paramref name="user"/> may see whose keys sort (ordinally) after
+        /// <paramref name="after"/>, at most <paramref name="limit"/> of them, projected as in
+        /// <see cref="GetCacheForUser(JUser, out long, out long, out string, long?, Func{string, TagCacheEntry, bool}?)"/>,
+        /// with the version, timestamp and access revision of the same generation. <paramref name="next"/> is the
+        /// last key of the page while more follow, else null. A client pages through one generation (same version
+        /// and filter on every page) and then asks for a delta since the first page's timestamp, which carries any
+        /// entry changed or removed while it paged; no single response holds the whole library.
+        /// </summary>
+        public Dictionary<string, TagCacheEntry> GetCachePageForUser(JUser user, string? after, int limit, out long version, out long timestamp, out string accessRevision, out string? next)
+        {
+            accessRevision = "none";
+            next = null;
+            var generation = CaptureGeneration(out var live);
+            version = generation.Version;
+            timestamp = generation.Timestamp;
+            var result = new Dictionary<string, TagCacheEntry>();
+            if (!live) return result;
+            var access = ResolveUserAccess(user);
+            var accessibleSet = access.Ids;
+            ulong excludedSum = 0;
+            var excludedCount = 0;
+            var candidates = new List<string>();
+            foreach (var key in generation.Cache.Keys)
+            {
+                if (!accessibleSet.Contains(key))
+                {
+                    excludedSum = unchecked(excludedSum + StableKeyHash(key));
+                    excludedCount++;
+                    continue;
+                }
+
+                if (after == null || string.CompareOrdinal(key, after) > 0) candidates.Add(key);
+            }
+
+            candidates.Sort(StringComparer.Ordinal);
+            var take = Math.Min(Math.Max(limit, 1), candidates.Count);
+            for (var i = 0; i < take; i++)
+            {
+                var key = candidates[i];
+                if (generation.Cache.TryGetValue(key, out var entry)) result[key] = ProjectForUser(key, entry, accessibleSet, generation.Cache);
+            }
+
+            if (candidates.Count > take) next = candidates[take - 1];
+            accessRevision = FormatAccessRevision(excludedCount, excludedSum) + CollectionAccessSuffix(accessibleSet) + LeavingAccessSuffix(accessibleSet);
+            return result;
+        }
 
         /// <summary>
         /// Every cache key <paramref name="user"/> may see in the current generation, ordinally sorted, or null

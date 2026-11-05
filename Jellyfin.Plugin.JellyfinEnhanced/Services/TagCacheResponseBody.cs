@@ -73,7 +73,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             byte[]? reviewRatingsJson,
             IReadOnlyList<string>? removed = null,
             string? filterBase = null,
-            IReadOnlyList<string>? visible = null)
+            IReadOnlyList<string>? visible = null,
+            string? next = null)
         {
             var prefix = new ArrayBufferWriter<byte>(256);
             int servedAtStart;
@@ -107,6 +108,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     foreach (var id in visible) writer.WriteStringValue(id);
                     writer.WriteEndArray();
                 }
+                // A page of a paged full load: the cursor of the following page (absent on the last one).
+                if (next != null) writer.WriteString("next", next);
                 writer.WriteNumber("count", count);
                 writer.WritePropertyName("items");
                 writer.Flush();
