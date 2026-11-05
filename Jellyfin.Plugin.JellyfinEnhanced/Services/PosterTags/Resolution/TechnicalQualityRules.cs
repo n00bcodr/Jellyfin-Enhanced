@@ -7,11 +7,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 /// <summary>Technical labels shared by cache aggregation, batch and native posters; the web aspect table is generated from this table.</summary>
 internal static class TechnicalQualityRules
 {
-    // Absolute display-aspect tolerances; nearest candidate wins. Only 1.43 is IMAX by itself: 1.90 is
-    // also DCI 2K/4K full container (2048×1080), so it stays a plain ratio, and 2.35 keeps its own value.
+    // Absolute display-aspect tolerances; nearest candidate wins. A ratio names no format: 1.43 is IMAX's
+    // film ratio but an aspect alone proves no IMAX release, and 1.90 is also the DCI full container
+    // (2048×1080). The IMAX chip comes from the special-format detection. 2.35 keeps its own value.
     private static readonly (double Ratio, double Tolerance, string Label)[] Ratios =
     {
-        (4d / 3, .025, "4:3"), (1.43, .015, "IMAX 1.43"), (1.66, .02, "1.66:1"),
+        (4d / 3, .025, "4:3"), (1.43, .015, "1.43:1"), (1.66, .02, "1.66:1"),
         (16d / 9, .025, "16:9"), (1.85, .025, "1.85:1"), (1.90, .02, "1.90:1"),
         (2, .025, "2:1"), (2.20, .025, "2.20:1"), (2.35, .019, "2.35:1"),
         (2.39, .025, "2.39:1"), (2.76, .025, "2.76:1"),
