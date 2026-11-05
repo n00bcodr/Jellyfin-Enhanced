@@ -266,4 +266,33 @@ public class StructuredSourceFactsTests
         Assert.Contains("3D", QualityTagRules.Detect(new TagStreamData { Streams = streams, Sources = [new() { Id = "a", Path = "Movie.mkv", Is3D = true }] }, null));
         Assert.DoesNotContain("3D", QualityTagRules.Detect(new TagStreamData { Streams = streams, Sources = [new() { Id = "a", Path = "Movie.mkv" }] }, null));
     }
+
+    [Fact]
+    public void ARemoteVersionWhoseAddressNamesNothingKeepsTheWrapperName()
+    {
+        var remote = new MediaBrowser.Model.Dto.MediaSourceInfo { Id = "remote", Path = "https://cdn.example.invalid/stream/123?sig=example", MediaStreams = [] };
+        var tags = MediaNamingTags.Detect("/Movies/Film.2020.WEB.{edition-Extended}.strm", [remote], "Film");
+        Assert.Equal("WEB", tags.Source);
+        Assert.Equal("Extended", tags.Edition);
+        // A remote address that names its own release still speaks for itself.
+        var named = new MediaBrowser.Model.Dto.MediaSourceInfo { Id = "named", Path = "https://cdn.example.invalid/Film.2020.1080p.BluRay.x264-CAM.mkv?sig=example", MediaStreams = [] };
+        Assert.Equal("BluRay", MediaNamingTags.Detect("/Movies/Film.2020.WEB.strm", [named], "Film").Source);
+    }
+
+    [Theory]
+    [InlineData("/Movies/Film/Film.2020.1080p.H264-IMAX.mkv", "/Movies/Film/Film.2020.1080p.H264.mkv")]
+    [InlineData("/Movies/Film/Film.2020.IMAX.1080p.H264-GRP.mkv", "/Movies/Film/Film.2020.IMAX.1080p.H264.mkv")]
+    [InlineData("/Movies/Film/Film.2007.HD-DVD.mkv", "/Movies/Film/Film.2007.HD-DVD.mkv")]
+    [InlineData("https://cdn.example.invalid/Film.2020.WEB.H264-IMAX.mkv?sig=1", "https://cdn.example.invalid/Film.2020.WEB.H264.mkv")]
+    public void AReleaseGroupIsNoIMAXClaim(string path, string expected)
+    {
+        Assert.Equal(expected, MediaNamingTags.WithoutReleaseGroup(path));
+        var data = new TagStreamData
+        {
+            Sources = [new() { Id = "a", Path = path }],
+            Streams = [new() { Type = "Video", SourceId = "a", Width = 1920, Height = 1080, Codec = "h264", VideoRangeType = "SDR" }],
+            ItemName = "Film",
+        };
+        Assert.Equal(expected.Contains("IMAX", StringComparison.Ordinal), QualityTagRules.Detect(data, null).Contains("IMAX"));
+    }
 }

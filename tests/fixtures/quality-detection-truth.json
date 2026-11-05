@@ -2085,6 +2085,93 @@
     "1440p",
     "HEVC"
    ]
+  },
+  {
+   "name": "A 4:3 4096x3072 frame is 4K-class, not 8K",
+   "why": "An 8K-class height needs an 8K-class width",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 4096,
+     "Height": 3072,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A square 3200x3200 frame is 4K-class, not 8K",
+   "why": "An 8K-class height needs an 8K-class width",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 3200,
+     "Height": 3200,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A codec name inside a title word is no codec",
+   "why": "NAV1GATOR is not AV1; an unprobed stream with that title names no codec",
+   "streams": [
+    {
+     "Type": "Video",
+     "DisplayTitle": "NAV1GATOR"
+    }
+   ],
+   "highest": [],
+   "all": [],
+   "legacy": []
+  },
+  {
+   "name": "A codec named as a word in an unprobed stream title still counts",
+   "why": "The title is the only evidence and names it as a word",
+   "streams": [
+    {
+     "Type": "Video",
+     "DisplayTitle": "4K AV1"
+    }
+   ],
+   "highest": [
+    "4K",
+    "AV1"
+   ],
+   "all": [
+    "4K",
+    "AV1"
+   ],
+   "legacy": [
+    "4K",
+    "AV1"
+   ]
   }
  ]
 }

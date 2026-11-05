@@ -249,7 +249,8 @@ public class QualityDisplayTests
         Assert.Equal(policy == "mixed", labels.Contains("Mixed"));
         var unknown = SeriesQualityAggregation.Build([new("known", 1, first), new("unknown", 2, null)], 100);
         Assert.Empty(unknown.Categories["videoCodec"].Shared);
-        Assert.Empty(unknown.Categories["videoCodec"].LatestAll);
+        // The newest episode was never probed: Latest describes the newest one that was.
+        Assert.Equal(QualityTagRules.DistinctValues(first, "videoCodec", null, allSources: true), unknown.Categories["videoCodec"].LatestAll);
         Assert.False(unknown.Categories["videoCodec"].AllSetsAgree);
     }
 
@@ -291,7 +292,7 @@ public class QualityDisplayTests
     [InlineData("qualityHideSdr", true)]
     public void AdditiveQualitySettingsChangeTheirDigestWithIntegratedResolverIdentity(string key, object value)
     {
-        Assert.Equal("33", PosterTagSettings.ResolverVersion);
+        Assert.Equal("34", PosterTagSettings.ResolverVersion);
         var config = new PluginConfiguration();
         var baseline = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true}", config);
         var explicitDefaults = PosterTagSettings.FromSettingsJson("{qualityTagsEnabled:true,qualityAudioDisplayMode:'highest',qualityVideoCodecDisplayMode:'highest',qualityHdrDisplayMode:'highest',qualityMinimumResolution:'off',qualityHideSdr:false}", config);

@@ -61,13 +61,18 @@ internal static class SeriesQualityAggregation
     public static TagQualitySummary Build(IReadOnlyList<Episode> episodes, long? now = null)
     {
         var boundary = now ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        // Stable ties use scan order; a future premiere or missing air date is never "latest".
+        // Stable ties use scan order; a future premiere or missing air date is never "latest". An episode that has
+        // not been probed describes nothing, so the newest probed aired episode is latest when there is one.
         var latest = -1;
+        var latestProbed = -1;
         for (var i = 0; i < episodes.Count; i++)
         {
-            if (episodes[i].Aired is { } aired && aired <= boundary
-                && (latest < 0 || aired > episodes[latest].Aired)) latest = i;
+            if (episodes[i].Aired is not { } aired || aired > boundary) continue;
+            if (latest < 0 || aired > episodes[latest].Aired) latest = i;
+            if (episodes[i].Streams?.Streams?.Any(s => s?.Type is "Video" or "Audio") == true
+                && (latestProbed < 0 || aired > episodes[latestProbed].Aired)) latestProbed = i;
         }
+        if (latestProbed >= 0) latest = latestProbed;
         var labels = episodes.Select(e => Labels(e.Streams)).ToArray();
         var categories = Categories.ToDictionary(key => key, key => Summarize(key == QualityTagRules.AudioInfo ? episodes.Select(e => Audio(e.Streams, null)).ToArray()
             : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, key, null, allSources: true)).ToArray()));

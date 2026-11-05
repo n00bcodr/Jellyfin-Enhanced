@@ -1319,6 +1319,66 @@
     "edition": "Final Cut"
   },
   {
+    "path": "TV/Show/Season 01/Show.S01E01.Pilot.Extended.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Extended",
+    "itemName": "Pilot"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.1x01.Pilot.Extended.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Extended",
+    "itemName": "Pilot"
+  },
+  {
+    "path": "TV/Show/Season 2024/Show.2024-03-15.Pilot.Extended.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Extended",
+    "itemName": "Pilot"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.S01E01.Pilot.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Pilot"
+  },
+  {
+    "path": "https://cdn.example.invalid/Film.2020.WEB.H264-CAM.mkv?sig=example",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "https://cdn.example.invalid/stream/123?sig=example",
+    "source": null,
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.HDRip.x264.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.R5.LiNE.XviD.mkv",
+    "source": "SCR",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2020)/Film.2020.WORKPRINT.XviD.mkv",
+    "source": "SCR",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Sports/Event (2024)/Event.2024.PPV.720p.x264.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Event"
+  },
+  {
     "path": "Show/Season 01/Show.S01E01.The.Web.mkv",
     "source": null,
     "edition": null,

@@ -76,7 +76,9 @@ public class SeriesQualityAggregationTests
         var unknown = SeriesQualityAggregation.Build([Fact(1080, 1), new("unprobed", 2, null)], 100);
         Assert.Contains((string?)null, unknown.Categories["resolution"].Values);
         Assert.False(unknown.Categories["resolution"].AllAgree);
-        Assert.Null(unknown.Categories["resolution"].Latest);
+        // The newest episode was never probed: Latest describes the newest one that was.
+        Assert.Equal("1080p", unknown.Categories["resolution"].Latest);
+        Assert.Null(SeriesQualityAggregation.Build([new("unprobed", 2, null)], 100).Categories["resolution"].Latest);
         Assert.Null(SeriesQualityAggregation.Build([Fact(2160, 101)], 100).Categories["resolution"].Latest);
     }
 
@@ -340,7 +342,10 @@ public class SeriesQualityAggregationTests
             // Both probed: the best of them, as before.
             Assert.Contains("4K", Resolved(Data(true, true), type));
         }
-        // A movie card still describes its first version only.
-        Assert.DoesNotContain("4K", QualityTagRules.Detect(Data(false, true), null));
+        // A movie card describes the first version that was probed, never a mix of versions.
+        Assert.Contains("4K", QualityTagRules.Detect(Data(false, true), null));
+        Assert.DoesNotContain("1080p", QualityTagRules.Detect(Data(false, true), null));
+        Assert.Contains("1080p", QualityTagRules.Detect(Data(true, true), null));
+        Assert.DoesNotContain("4K", QualityTagRules.Detect(Data(true, true), null));
     }
 }

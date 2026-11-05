@@ -231,10 +231,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         internal static TagStreamData? SelectSource(TagStreamData? data, string? sourceId = null)
         {
             if (data?.Streams == null) return data;
-            // The requested version, else the first one Jellyfin lists (an unprobed first version
-            // then has no stream facts: it never borrows another version's).
+            // The requested version, else the first one Jellyfin lists that has stream facts (an unprobed
+            // version describes nothing), else the first listed. Facts never mix versions.
+            bool Probed(string? id) => id != null && data.Streams.Any(s => s?.SourceId == id && s.Type is "Video" or "Audio");
             var id = !string.IsNullOrEmpty(sourceId) && data.Streams.Any(s => s?.SourceId == sourceId)
-                ? sourceId : data.Sources?.FirstOrDefault(s => !string.IsNullOrEmpty(s?.Id))?.Id ?? data.Streams.FirstOrDefault(s => !string.IsNullOrEmpty(s?.SourceId))?.SourceId;
+                ? sourceId : data.Sources?.FirstOrDefault(s => Probed(s?.Id))?.Id ?? data.Sources?.FirstOrDefault(s => !string.IsNullOrEmpty(s?.Id))?.Id
+                    ?? data.Streams.FirstOrDefault(s => !string.IsNullOrEmpty(s?.SourceId))?.SourceId;
             if (id == null) return data;
             var source = data.Sources?.FirstOrDefault(s => s?.Id == id);
             return new TagStreamData
@@ -631,7 +633,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             {
                 foreach (var source in sources)
                 {
-                    yield return source?.Path;
+                    // A release group closing the file name ("…H264-IMAX") is a name, not an IMAX claim.
+                    yield return MediaNamingTags.WithoutReleaseGroup(source?.Path);
                     yield return source?.Name;
                 }
             }
@@ -670,7 +673,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (height > width && width > 0) (height, width) = (width, height);
             // Width covers cropped scope encodes (1920x800 is 1080p, a cropped DVD 720x304 is 480p).
             // 1440p needs a 1440-class height: a 2560-wide frame is usually ultrawide 1080p (2560x1080).
-            if (height >= 3000 || width >= 7000) return "8K";
+            // An 8K-class height needs a matching width: a 4:3 4096x3072 frame is 4K-class.
+            if ((height >= 3000 && (width >= 5000 || width <= 0)) || width >= 7000) return "8K";
             // A 4K-class height needs a matching width: 2560x1600 (16:10) is a 1440p-class frame.
             if ((height >= 1550 && (width >= 2700 || width <= 0)) || width >= 3500) return "4K";
             if (height >= 1250) return "1440p";
@@ -688,6 +692,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
 
         private static readonly Regex DivxTagRegex = new("divx|dx50|div[3-6]", Options);
 
+        private static bool ContainsWord(string text, string word)
+        {
+            for (var at = text.IndexOf(word, StringComparison.Ordinal); at >= 0; at = text.IndexOf(word, at + 1, StringComparison.Ordinal))
+            {
+                var end = at + word.Length;
+                if ((at == 0 || !char.IsAsciiLetterOrDigit(text[at - 1])) && (end == text.Length || !char.IsAsciiLetterOrDigit(text[end]))) return true;
+            }
+            return false;
+        }
+
         private static string? DetectCodec(TagMediaStream video)
         {
             var needles = CurrentCodecNeedles;
@@ -703,10 +717,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 if (needle == "divx" && DivxTagRegex.IsMatch(codecTag)) return label;
             }
 
+            // A title only names a codec as a whole word ("NAV1GATOR" is no AV1).
             var displayTitle = JsText.ToLower(video.DisplayTitle ?? string.Empty);
             foreach (var (needle, label) in needles)
             {
-                if (displayTitle.Contains(needle, StringComparison.Ordinal)) return label;
+                if (ContainsWord(displayTitle, needle)) return label;
             }
 
             return null;

@@ -285,7 +285,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 21 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 22 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -840,8 +840,25 @@
             if (needle === 'xvid' && codecTag.includes('xvid')) return label;
             if (needle === 'divx' && /divx|dx50|div[3-6]/.test(codecTag)) return label;
         }
+        // A title only names a codec as a whole word ("NAV1GATOR" is no AV1).
         const displayTitle = String(video.DisplayTitle || '').toLowerCase();
-        return current.find(([needle]) => displayTitle.includes(needle))?.[1] || null;
+        return current.find(([needle]) => new RegExp(`(?:^|[^a-z0-9])${needle}(?![a-z0-9])`).test(displayTitle))?.[1] || null;
+    }
+
+    // A scene release group closing a file name after its codec, audio, resolution or source token
+    // (Services/MediaNamingTags.cs TrailingGroup): its letters are a name, not a release word.
+    const RELEASE_GROUP = /(?<=(?:^|[. _\-[\](){}])(?:[xh]\.?26[45]|hevc|avc|av1|vp9|xvid|divx|mpeg2|aac|ac3|e?ac3|dts|ma|ddp?|flac|opus|atmos|truehd|\d\.\d|\d{3,4}p|web|webrip|web[. _\-[\]()]*dl|bluray|remux|hdtv|dvdrip|10bit|hdr|hdr10|dv|sdr))-[A-Za-z0-9]{2,}$/i;
+
+    /** @returns {string} A path without the release group closing its file name (MediaNamingTags.WithoutReleaseGroup). */
+    function withoutReleaseGroup(path) {
+        if (!path) return path;
+        const bare = path.includes('://') ? path.split(/[?#]/)[0] : path;
+        const slash = bare.replace(/\\/g, '/').lastIndexOf('/');
+        const file = bare.slice(slash + 1);
+        const dot = file.lastIndexOf('.');
+        const extension = dot > 0 && file.length - dot >= 2 && file.length - dot <= 5 ? file.slice(dot) : '';
+        const stem = extension ? file.slice(0, -extension.length) : file;
+        return bare.slice(0, slash + 1) + stem.replace(RELEASE_GROUP, '') + extension;
     }
 
     /**
@@ -858,10 +875,12 @@
 
         const versions = versionCount(mediaStreams, mediaSources);
         // Narrow raw streams, cached per-track sets and filename/technical facts together.
-        // The browser's pick, else the first version Jellyfin lists (an unprobed first version
-        // then has no stream facts: it never borrows another version's).
+        // The browser's pick, else the first version Jellyfin lists that has stream facts (an unprobed
+        // version describes nothing), else the first listed. Facts never mix versions.
+        const probed = id => !!id && (mediaStreams?.some(s => s?.SourceId === id && (s.Type === 'Video' || s.Type === 'Audio'))
+            || mediaSources?.find(s => s?.Id === id)?.MediaStreams?.some(s => s?.Type === 'Video' || s?.Type === 'Audio'));
         const versionId = sourceId && (mediaStreams?.some(s => s?.SourceId === sourceId) || mediaSources?.some(s => s?.Id === sourceId))
-            ? sourceId : mediaSources?.find(s => s?.Id)?.Id || mediaStreams?.find(s => s?.SourceId)?.SourceId;
+            ? sourceId : mediaSources?.find(s => probed(s?.Id))?.Id || mediaSources?.find(s => s?.Id)?.Id || mediaStreams?.find(s => s?.SourceId)?.SourceId;
         if (versionId) {
             const version = mediaSources?.find(s => s?.Id === versionId);
             const tagged = mediaStreams?.some(s => s?.SourceId);
@@ -920,7 +939,8 @@
         }
         if (Array.isArray(mediaSources)) {
             mediaSources.forEach((source) => {
-                imaxSignals.push(source?.Path || '', source?.Name || '');
+                // A release group closing the file name ("…H264-IMAX") is a name, not an IMAX claim.
+                imaxSignals.push(withoutReleaseGroup(source?.Path || ''), source?.Name || '');
             });
         }
         // Only video tracks speak for the picture: an audio track titled "Commentary about IMAX cameras" is not IMAX.
@@ -976,7 +996,8 @@
                 const portrait = (primaryVideoStream.Height || 0) > (primaryVideoStream.Width || 0) && (primaryVideoStream.Width || 0) > 0;
                 const height = portrait ? primaryVideoStream.Width : primaryVideoStream.Height || 0;
                 const width = portrait ? primaryVideoStream.Height : primaryVideoStream.Width || 0;
-                if (height >= 3000 || width >= 7000) {
+                if ((height >= 3000 && (width >= 5000 || width <= 0)) || width >= 7000) {
+                    // An 8K-class height needs a matching width: a 4:3 4096x3072 frame is 4K-class.
                     resolutionTag = '8K';
                 } else if ((height >= 1550 && (width >= 2700 || width <= 0)) || width >= 3500) {
                     // A 4K-class height needs a matching width: 2560x1600 (16:10) is a 1440p-class frame.
@@ -1553,7 +1574,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 21, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 22, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1591,7 +1612,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 21, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 22, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

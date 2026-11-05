@@ -23,7 +23,9 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token(@"hd" + OptionalSeparator + "dvd(?:" + OptionalSeparator + "rip)?"), "HD DVD"),
         (Token(@"web" + OptionalSeparator + @"(?:dl|rip)"), "WEB"),
         // Broadcast captures: HDTV, its rips, PDTV and Sonarr's Raw-HD.
-        (Token(@"hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + "hd"), "HDTV"),
+        (Token(@"hdtv(?:" + OptionalSeparator + @"rip)?|pdtv|raw" + OptionalSeparator + "hd|ppv(?:" + OptionalSeparator + "rip)?"), "HDTV"),
+        // Radarr reads HDRip as a web release.
+        (Token(@"hd" + OptionalSeparator + "rip"), "WEB"),
         // Standard-definition captures: Sonarr's SDTV, TV/satellite/DVB rips.
         (Token(@"sdtv|(?:tv|sat|dvb)" + OptionalSeparator + "rip"), "SDTV"),
         (Token(@"dvd" + OptionalSeparator + "scr"), "SCR"),
@@ -32,7 +34,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token(@"(?:hd" + OptionalSeparator + @")?cam(?:rip)?"), "CAM"),
         (Token(@"(?:hd" + OptionalSeparator + @")?ts|telesync"), "TS"),
         (Token(@"tc|telecine"), "TC"),
-        (Token(@"scr|screener|dvd" + OptionalSeparator + @"scr"), "SCR"),
+        (Token(@"scr|screener|dvd" + OptionalSeparator + @"scr|r5|workprint"), "SCR"),
     ];
     // A bare WEB counts anywhere after the title boundary (TRaSH's \bWEB\b): 1080p.WEB.DDP5.1 is a web release.
     // It is also an ordinary word, so any other source word in the name wins over it
@@ -97,7 +99,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     {
         var selected = sources.Select((source, index) => new
         {
-            Tags = FromPath(string.IsNullOrWhiteSpace(source.Path) ? itemPath : source.Path, itemName, originalTitle),
+            Tags = VersionNames(source.Path, itemPath, itemName, originalTitle),
             Resolution = source.MediaStreams?.Where(s => s.Type == MediaStreamType.Video)
                 .Select(s => QualityTagRules.DetectResolution(new TagMediaStream { Height = s.Height, Width = s.Width, DisplayTitle = s.DisplayTitle }))
                 .Select(label => Rank(ResolutionOrder, label)).DefaultIfEmpty(int.MaxValue).Min() ?? int.MaxValue,
@@ -114,6 +116,17 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
             Source = StubSource(string.Join(" | ", new[] { itemName, LocalNames(stub) }
                 .Concat(sources.Where(s => string.Equals(s.Path, stub, StringComparison.OrdinalIgnoreCase)).Select(s => s.Name)))),
         };
+    }
+
+    /// <summary>
+    /// A version's naming facts: its own path, else the item's. A remote version (a URL, as a .strm points to) whose
+    /// address names nothing takes the item's file name, so "Film.2020.WEB.strm" keeps WEB.
+    /// </summary>
+    private static MediaNamingTags VersionNames(string? sourcePath, string? itemPath, string? itemName, string? originalTitle)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath)) return FromPath(itemPath, itemName, originalTitle);
+        var own = FromPath(sourcePath, itemName, originalTitle);
+        return IsUrl(sourcePath) && own.Source == null && own.Edition == null ? FromPath(itemPath, itemName, originalTitle) : own;
     }
 
     private static string? DiscSource(MediaSourceInfo source)
@@ -138,6 +151,8 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     internal static MediaNamingTags FromPath(string? path, string? itemName = null, string? originalTitle = null)
     {
         if (string.IsNullOrWhiteSpace(path)) return new();
+        // A remote version's URL: its query or fragment is no part of the name.
+        if (IsUrl(path)) path = path.Split('?', '#')[0];
         var parts = path.Replace('\\', '/').TrimEnd('/').Split('/');
         var file = parts[^1];
         var extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
@@ -179,7 +194,26 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         if (!episode.Success) return name;
         var afterMarker = episode.Index + episode.Length;
         var episodeTitle = new Regex(@"\G[^\p{L}\p{N}]+" + joined + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name, afterMarker);
-        return episodeTitle.Success ? name[..afterMarker] + " " + name[(episodeTitle.Index + episodeTitle.Length)..] : name;
+        // Marked, so release parsing starts right after the removed title ("S01E01.Pilot.Extended.1080p" for
+        // "Pilot" keeps Extended) instead of skipping ahead to the first quality word.
+        return episodeTitle.Success ? EpisodeTitleRemoved + name[..afterMarker] + " " + name[(episodeTitle.Index + episodeTitle.Length)..] : name;
+    }
+
+    private static bool IsUrl(string? path) => path?.Contains("://", StringComparison.Ordinal) == true;
+
+    /// <summary>
+    /// <paramref name="path"/> without a scene release group closing its file name (see <see cref="TrailingGroup"/>),
+    /// for readers of the raw name such as the IMAX signal: "Film.2020.1080p.H264-IMAX.mkv" names a group, not IMAX.
+    /// </summary>
+    internal static string? WithoutReleaseGroup(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return path;
+        if (IsUrl(path)) path = path.Split('?', '#')[0];
+        var slash = path.Replace('\\', '/').LastIndexOf('/');
+        var file = path[(slash + 1)..];
+        var extension = System.IO.Path.GetExtension(file);
+        var stem = extension.Length is > 1 and <= 5 ? file[..^extension.Length] : file;
+        return path[..(slash + 1)] + TrailingGroup.Replace(stem, string.Empty) + (ReferenceEquals(stem, file) ? string.Empty : extension);
     }
 
     private static bool IsStub(string? path) => path?.EndsWith(".disc", StringComparison.OrdinalIgnoreCase) == true;
@@ -209,11 +243,14 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     /// <summary>The part of a file or folder name after its title (see <see cref="YearToken"/>); the whole name when no boundary is known.</summary>
     // Marks a name whose leading title WithoutTitle removed: everything after it is release text, with or without a year.
     private const string TitleRemoved = "\u0001";
+    // Marks a name whose known episode title WithoutTitle removed after its episode marker.
+    private const string EpisodeTitleRemoved = "\u0002";
 
     internal static string ReleasePart(string name)
     {
         var stripped = name.StartsWith(TitleRemoved, StringComparison.Ordinal);
-        var part = stripped ? " " + name[TitleRemoved.Length..] : name;
+        var episodeTitleRemoved = name.StartsWith(EpisodeTitleRemoved, StringComparison.Ordinal);
+        var part = stripped ? " " + name[TitleRemoved.Length..] : episodeTitleRemoved ? name[EpisodeTitleRemoved.Length..] : name;
         // An episode marker ends the series title first: a daily air date would otherwise read as a year.
         var episode = EpisodeToken.Match(part);
         var bracketYear = BracketYearToken.Match(part);
@@ -225,6 +262,8 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         if (episode.Success)
         {
             var rest = part[(episode.Index + episode.Length)..];
+            // The known episode title is already gone: everything after it is release text.
+            if (episodeTitleRemoved) return rest;
             var boundary = ReleaseBoundary.Match(rest);
             part = boundary.Success ? rest[boundary.Index..] : string.Empty;
         }

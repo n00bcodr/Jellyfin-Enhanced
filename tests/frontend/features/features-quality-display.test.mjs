@@ -252,6 +252,21 @@ test('version picker changes are normalized, remembered, and idempotently watche
   assert.ok(h.render(mergedMovie(), movieId).includes('H264'));
 });
 
+test('an unprobed first version gives way to the first probed one, and a release group never claims IMAX', t => {
+  const h = setup(t); Object.assign(h.JE.currentSettings, all, { showSourceTag: true });
+  const entry = { Type: 'Movie', StreamData: {
+    Streams: [{ Type: 'Video', SourceId: 'second', Width: 3840, Height: 2160, Codec: 'hevc', VideoRangeType: 'HDR10' }],
+    Sources: [{ Id: 'first', Source: 'WEB', Path: 'Film.2020.WEB.H264-IMAX.mkv' }, { Id: 'second', Source: 'REMUX', Path: 'Film.2020.2160p.Remux.HEVC-IMAX.mkv' }],
+  } };
+  const labels = h.render(entry, movieId);
+  assert.ok(labels.includes('4K') && labels.includes('HEVC') && labels.includes('REMUX'), 'the probed version describes the card');
+  assert.ok(!labels.includes('WEB'), 'never a mix of versions');
+  assert.ok(!labels.includes('IMAX'), 'a group called IMAX is a name');
+  // A remembered pick still wins, even an unprobed one (then only its naming facts show).
+  h.window.localStorage.setItem(SRC_KEY, JSON.stringify({ [movieId]: 'first' }));
+  assert.deepEqual(h.render(entry, movieId), ['WEB']);
+});
+
 test('a remembered version belongs to its server and user and never reaches another account', t => {
   const h = setup(t); Object.assign(h.JE.currentSettings, all);
   // A pick stored under the earlier browser-wide key belongs to no one: it is retired, not inherited.
@@ -397,16 +412,16 @@ for (const density of [undefined, 'full', 'compact']) test(`version transition i
   assert.deepEqual(h.render(entry), ['5.1']);
 });
 
-for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
+for (const namingVersion of [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]) test(`persisted naming-version ${namingVersion} matches only the current identity`, t => {
   const payload = { namingVersion, legacyAudio: false, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['Dolby Digital 5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'full', { old: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
-  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 21);
-  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 21 ? 1 : 0);
+  assert.equal(h.renderers.get('quality').renderFromCache(h.card, 'old'), namingVersion === 22);
+  assert.equal(h.document.querySelectorAll('.quality-overlay-label').length, namingVersion === 22 ? 1 : 0);
 });
 
 test('persisted current naming labels are still invalidated by a legacy-version transition', t => {
-  const payload = { namingVersion: 21, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
+  const payload = { namingVersion: 22, legacyAudio: true, displayModeKey: '000', audioLang: '', srcId: '',
     qualities: ['5.1'], type: 'Movie', aggregationPolicy: 'representative', timestamp: Date.now() };
   const h = setup(t, 'representative', 'compact', { saved: { v: 1, stripRevision: 'none', payload, timestamp: Date.now() } });
   h.JE.currentSettings.tagLayoutSettingsVersion = 0;
