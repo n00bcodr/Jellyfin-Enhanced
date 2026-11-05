@@ -343,8 +343,10 @@
 .je-ta-ov-dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 4px 0 0; font-size: 13px; }
 .je-ta-ov-dl dt { color: var(--je-ta-muted); }
 .je-ta-ov-dl dd { margin: 0; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
-.je-ta-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
-.je-ta-quick .je-ta-button { justify-content: flex-start; min-height: 44px; }
+.je-ta-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px; }
+/* A long label wraps inside its button instead of running past it. */
+.je-ta-quick .je-ta-button { justify-content: flex-start; min-height: 44px; min-width: 0; padding-block: 6px; white-space: normal; text-align: start; line-height: 1.25; overflow-wrap: anywhere; }
+.je-ta-quick .je-ta-button .material-icons { flex-shrink: 0; }
 
 /* Rules. */
 .je-ta-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
