@@ -10,6 +10,10 @@ const ITEM = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 // Jellyfin web's UI font family (the repo ships its bold cut for native posters): text is measured as wide
 // as on a real dashboard, not in the fixture's narrower default face.
+// JE.t exactly as plugin.js defines it (plural forms included), not a stand-in.
+const pluginSource = require('node:fs').readFileSync(path.join(root, 'plugin.js'), 'utf8');
+const translate = pluginSource.slice(pluginSource.indexOf('        t: (key, params = {}) => {'), pluginSource.indexOf('        loadSettings: () =>'));
+
 const noto = require('node:zlib').brotliDecompressSync(require('node:fs').readFileSync(path.join(root, '../Assets/PosterTags/fonts/NotoSans-Bold.ttf.br'))).toString('base64');
 
 /** Shared JE globals and an ApiClient whose answers come from small fixtures. */
@@ -17,7 +21,7 @@ async function base(page, { plugin = {}, settings = {}, admin = true, theme = 'd
   await page.goto('/');
   await page.addStyleTag({ content: `@font-face { font-family: 'JE Fixture Noto'; src: url(data:font/ttf;base64,${noto}); } html, body, button, input, select, textarea { font-family: 'JE Fixture Noto', sans-serif; }` });
   await page.evaluate(() => document.fonts.ready);
-  await page.evaluate(({ english, plugin, settings, admin, theme, LIBRARY, ITEM }) => {
+  await page.evaluate(({ english, plugin, settings, admin, theme, LIBRARY, ITEM, translate }) => {
     document.documentElement.dataset.jeFixtureTheme = theme;
     document.documentElement.style.colorScheme = theme;
     // The host page's own colours, which the surfaces detect their theme from.
@@ -29,11 +33,12 @@ async function base(page, { plugin = {}, settings = {}, admin = true, theme = 'd
     const icons = document.createElement('style');
     icons.textContent = '.material-icons, .material-icons-outlined, .material-symbols-outlined, .je-msym, .je-msym-outlined { display: inline-block; width: 1em; height: 1em; overflow: hidden; line-height: 1; white-space: nowrap; color: transparent; vertical-align: middle; flex-shrink: 0; }';
     document.head.append(icons);
-    const t = (key, params = {}) => Object.entries(params || {}).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, v), english[key] ?? key);
+    // eslint-disable-next-line no-eval
+    const { t } = (0, eval)(`({${translate}})`);
     window.JellyfinEnhanced = { core: {}, helpers: {}, internals: {}, pluginConfig: { TagCacheServerMode: true, ...plugin },
       userConfig: { settings: { tagLayoutSettingsVersion: 1, qualityTagsEnabled: true, ratingTagsEnabled: true, statusTagsEnabled: true, genreTagsEnabled: true,
         languageTagsEnabled: true, ageRatingTagsEnabled: true, ...settings, isAdmin: admin }, shortcuts: { Shortcuts: [] } },
-      currentSettings: {}, t, toast() {}, keyListener() {}, initializeShortcuts() {}, state: { activeShortcuts: { x: 1 } }, pauseScreenInstance: {},
+      currentSettings: {}, t, translations: english, translationsLang: 'en', IconName: {}, toast() {}, keyListener() {}, initializeShortcuts() {}, state: { activeShortcuts: { x: 1 } }, pauseScreenInstance: {},
       themer: { getThemeVariables: () => (theme === 'light'
         ? { panelBg: '#fff', secondaryBg: '#f2f2f2', primaryAccent: '#0077aa', altAccent: '#ddd', blur: '0px', textColor: '#111', logo: '' }
         : { panelBg: '#101010', secondaryBg: '#1c1c1c', primaryAccent: '#00a4dc', altAccent: '#222', blur: '0px', textColor: '#fff', logo: '' }) },
@@ -62,7 +67,7 @@ async function base(page, { plugin = {}, settings = {}, admin = true, theme = 'd
         return null;
       },
     };
-  }, { english, plugin, settings, admin, theme, LIBRARY, ITEM });
+  }, { english, plugin, settings, admin, theme, LIBRARY, ITEM, translate });
 }
 
 /** Load plugin scripts in order (paths relative to js/). */
