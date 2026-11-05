@@ -105,7 +105,7 @@ You'll see poster badges in library grids, home rows, Jellyfin search results, a
 
 ### Layouts
 
-A layout decides where the poster groups appear and how much of each you see. Pick one for your account; each layout keeps its own arrangement, so you can switch back and forth without losing it.
+A layout decides where the poster groups appear and how much of each you see. Pick one for your account; each layout keeps its own arrangement, so you can switch back and forth without losing it. Positions are physical: **Top left** is the top-left corner of the poster in every interface language, right-to-left ones included, just as native posters draw it; the text inside each chip still reads in its own direction.
 
 **How to use — personal preferences:**
 

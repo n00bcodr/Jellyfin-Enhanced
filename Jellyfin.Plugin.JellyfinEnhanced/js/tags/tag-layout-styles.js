@@ -101,6 +101,10 @@
      */
     function buildStyles() {
         const css = `
+            /* Positions are physical, as on native posters: "Top left" is top left on a right-to-left page too.
+               The host lays out left to right; each chip's text keeps its own direction (first strong letter). */
+            .je-tag-host { direction: ltr; }
+            ${SLOT} [data-je-group] > * { unicode-bidi: plaintext; }
             ${SLOT} {
                 position: absolute;
                 display: flex;

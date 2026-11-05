@@ -45,3 +45,40 @@ test('Bands keeps milestone and age chips inside the card without overlap', asyn
   expect(geometry.every(g => g.contained), JSON.stringify(geometry)).toBe(true);
   expect(geometry.every(g => g.overlap <= 0.5), JSON.stringify(geometry)).toBe(true);
 });
+
+// Positions are physical, as on native posters: a right-to-left page does not mirror the corners.
+test('Corners keep their physical side on a right-to-left page', async ({ page }) => {
+  test.setTimeout(45000);
+  await page.setContent('<html dir="rtl" lang="ar"><body><style>.cardScalable { position: relative; height: 260px; } .je-tag-host { position: absolute; inset: 0; }</style><div id="cards"></div></body></html>');
+  await page.evaluate(en => {
+    window.JellyfinEnhanced = {
+      currentSettings: { tagLayoutSettingsVersion: 1, tagLayout: 'corners', tagLabelDensity: 'full', statusTagsEnabled: true, statusTagsTrending: false, ageRatingTagsEnabled: true },
+      pluginConfig: {}, t: key => en[key] || key, helpers: {},
+      tagPipeline: { renderers: {}, registerRenderer(name, renderer) { this.renderers[name] = renderer; }, clearProcessed() {}, scheduleScan() {} },
+    };
+  }, english);
+  for (const file of ['core/ui-kit.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'tags/tag-layout-styles.js', 'tags/ageratingtags.js', 'tags/status-vocabulary.js', 'tags/statustags.js']) {
+    await page.addScriptTag({ path: path.join(root, 'js', file) });
+  }
+  await page.evaluate(() => {
+    const JE = window.JellyfinEnhanced;
+    JE.initializeAgeRatingTags(); JE.initializeStatusTags();
+    const card = document.createElement('div'); card.className = 'card'; card.dataset.id = 'rtl1';
+    card.innerHTML = '<div class="cardBox"><div class="cardScalable" style="width:200px"><div class="cardImageContainer"></div><div class="je-tag-host"></div></div></div>';
+    document.getElementById('cards').append(card);
+    const host = card.querySelector('.je-tag-host');
+    const entry = { Type: 'Movie', DateCreated: Date.now(), OfficialRating: 'PG-13' };
+    for (const name of ['status', 'agerating']) JE.tagPipeline.renderers[name].renderFromServerCache(host, entry, 'rtl1');
+    JE.core.tagLayout.flushFit();
+  });
+  const sides = await page.evaluate(() => {
+    const host = document.querySelector('.je-tag-host').getBoundingClientRect();
+    const side = el => { const r = el.getBoundingClientRect(); return { slot: el.closest('[data-je-slot]').dataset.jeSlot, nearLeft: r.left - host.left, nearRight: host.right - r.right }; };
+    return [...document.querySelectorAll('.status-tag, .age-rating-tag')].map(side);
+  });
+  expect(sides.length).toBe(2);
+  for (const s of sides) {
+    if (s.slot.endsWith('r')) expect(s.nearRight, JSON.stringify(s)).toBeLessThan(s.nearLeft);
+    if (s.slot.endsWith('l')) expect(s.nearLeft, JSON.stringify(s)).toBeLessThan(s.nearRight);
+  }
+});
