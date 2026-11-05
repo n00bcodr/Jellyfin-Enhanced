@@ -1458,5 +1458,26 @@
     "source": null,
     "edition": null,
     "itemName": "Remux"
+  },
+  {
+    "path": "Movies/Movie (1968)/Movie.1968.Roadshow.Edition.1080p.BluRay.x264-GRP.mkv",
+    "source": "BluRay",
+    "edition": "Roadshow"
+  },
+  {
+    "path": "Movies/Movie (1977)/Movie (1977) Despecialized Edition v2.7 720p.mkv",
+    "source": null,
+    "edition": "Despecialized"
+  },
+  {
+    "path": "Movies/Movie (1999)/Movie.1999.Fan.Edit.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": "Fan Edit"
+  },
+  {
+    "path": "Movies/Roadshow (2019)/Roadshow.2019.1080p.WEB-DL.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Roadshow"
   }
 ]

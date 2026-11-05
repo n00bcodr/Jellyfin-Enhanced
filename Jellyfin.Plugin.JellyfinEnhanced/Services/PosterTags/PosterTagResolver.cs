@@ -252,6 +252,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 "Ultimate" => "Ult", "Collector's Edition" => "CE", "Anniversary" => "Anniv", "Uncensored" => "Unc", "Open Matte" => "OM",
                 "Rogue Cut" => "Rogue", "Black and Chrome" => "B&C", "Masters of Cinema" => "MoC", "Producer's Cut" => "PC", "Alternate Cut" => "Alt",
                 "Assembly Cut" => "Asm", "International Cut" => "Intl", "Restored" => "Rest", "Hybrid" => "Hyb",
+                "Roadshow" => "Road", "Despecialized" => "Despec", "Fan Edit" => "Fan",
                 "Special Edition" => StatusRules.Text("quality_edition_special_compact", settings.StatusCulture), "Mixed" => "±", _ => null };
             return exact ?? QualityTagRules.CompactLabel(label);
         }
@@ -265,6 +266,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             ["Collector's Edition"] = "quality_edition_collectors", ["Anniversary"] = "quality_edition_anniversary", ["Uncensored"] = "quality_edition_uncensored",
             ["Producer's Cut"] = "quality_edition_producers_cut", ["Alternate Cut"] = "quality_edition_alternate_cut", ["Assembly Cut"] = "quality_edition_assembly_cut",
             ["International Cut"] = "quality_edition_international_cut", ["Restored"] = "quality_edition_restored", ["Hybrid"] = "quality_edition_hybrid",
+            ["Roadshow"] = "quality_edition_roadshow", ["Fan Edit"] = "quality_edition_fan_edit",
             ["Mixed"] = "series_quality_mixed",
         };
 

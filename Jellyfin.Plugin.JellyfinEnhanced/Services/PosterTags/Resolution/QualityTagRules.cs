@@ -721,6 +721,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             return false;
         }
 
+        private static readonly Regex CodecSpellingRegex = new(@"(?<![a-z0-9])(h)[. ](26[456])(?![0-9])|(?<![a-z0-9])(vc|mpeg|vp)[-. ]([1-9])(?![a-z0-9])", Options);
+
+        /// <summary>A lowercased title with "h.264"/"vc-1"/"mpeg-2" spellings joined (codecTitle in qualitytags.js).</summary>
+        private static string CodecTitle(string? title) =>
+            CodecSpellingRegex.Replace(JsText.ToLower(title ?? string.Empty), m => m.Groups[1].Success ? m.Groups[1].Value + m.Groups[2].Value : m.Groups[3].Value + m.Groups[4].Value);
+
         private static string? DetectCodec(TagMediaStream video)
         {
             var needles = CurrentCodecNeedles;
@@ -736,8 +742,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 if (needle == "divx" && DivxTagRegex.IsMatch(codecTag)) return label;
             }
 
-            // A title only names a codec as a whole word ("NAV1GATOR" is no AV1).
-            var displayTitle = JsText.ToLower(video.DisplayTitle ?? string.Empty);
+            // A title only names a codec as a whole word ("NAV1GATOR" is no AV1), written with or without
+            // its dot or hyphen ("H.264", "VC-1", "MPEG-2").
+            var displayTitle = CodecTitle(video.DisplayTitle);
             foreach (var (needle, label) in needles)
             {
                 if (ContainsWord(displayTitle, needle)) return label;
@@ -781,8 +788,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             {
                 var title = AudioCodecFromText(stream.DisplayTitle);
                 if (title == null) continue;
+                // A DTS-HD profile the stream reports (MA or HRA) outranks a title's other DTS claim; DTS:X still refines it.
+                var profile = AudioCodecFromText(stream.Codec + " " + stream.Profile);
+                var refined = profile != null && Array.IndexOf(DtsProfiles, profile) >= 0 && Array.IndexOf(DtsTitles, title) >= 0
+                    ? profile
+                    : AudioCodecFromText(stream.DisplayTitle + " " + stream.Codec + " " + stream.Profile) ?? title;
                 // The title refined by the same track's codec and profile, else the title alone, if the codec can carry it.
-                foreach (var candidate in new[] { AudioCodecFromText(stream.DisplayTitle + " " + stream.Codec + " " + stream.Profile) ?? title, title })
+                foreach (var candidate in new[] { refined, title })
                 {
                     var label = AtmosCarrier(candidate, stream);
                     if (CarrierAllows(label, stream.Codec)) return label;
@@ -799,6 +811,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             }
             return null;
         }
+
+        private static readonly string[] DtsProfiles = { "DTS-HD MA", "DTS-HD HRA" };
+        private static readonly string[] DtsTitles = { "DTS", "DTS-HD", "DTS-HD MA", "DTS-HD HRA" };
 
         // What each known stream codec can be (CARRIERS in qualitytags.js): a title may refine its carrier but never
         // contradict it. An unknown codec lets the title decide.

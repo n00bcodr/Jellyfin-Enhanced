@@ -58,6 +58,8 @@
         Brazilian: 'br', bra: 'br',
         Catalan: 'es-ct', cat: 'es-ct', ca: 'es-ct', Galician: 'es-ga', glg: 'es-ga', gl: 'es-ga',
         Basque: 'es-pv', eus: 'es-pv', baq: 'es-pv', eu: 'es-pv',
+        Cantonese: 'hk', yue: 'hk', Maori: 'nz', 'Māori': 'nz', mao: 'nz', mri: 'nz', mi: 'nz',
+        'Egyptian Arabic': 'eg', arz: 'eg', 'Central Kurdish': 'iq', ckb: 'iq',
         // ISO 639-2 `zxx` = "no linguistic content": silent films, and films
         // with a score/sound design but no dialogue. Not a country, so it
         // resolves to a synthetic token rendered from `specialFlags` below
@@ -215,7 +217,10 @@
         if (parsed) {
             // The code itself, else its canonical language (ISO 639-2/B "gre" is "el"): the flag never depends
             // on a display name, which follows the viewer's language.
-            const baseFlag = baseLanguageFlags[parsed.base] || baseLanguageFlags[canonicalBase(parsed.base)] || null;
+            // A BCP 47 extended language subtag names the language itself (zh-yue is Cantonese).
+            const extlang = /^[a-z]{2,3}[-_]([a-z]{3})(?![a-z])/i.exec(code.trim())?.[1].toLowerCase();
+            const baseFlag = (extlang && Object.hasOwn(baseLanguageFlags, extlang) ? baseLanguageFlags[extlang] : null)
+                || baseLanguageFlags[parsed.base] || baseLanguageFlags[canonicalBase(parsed.base)] || null;
             if (JE.pluginConfig?.LanguageTagsMergeRegions && baseFlag) return baseFlag;
             // A synthetic token is not a country and cannot be refined by a
             // region or script: `zxx-US` still means "no dialogue", not US.
@@ -245,7 +250,7 @@
                     return region;
                 }
             }
-            const scripts = scriptFlagsByBase[parsed.base];
+            const scripts = scriptFlagsByBase[parsed.base] || scriptFlagsByBase[canonicalBase(parsed.base)];
             if (parsed.script && scripts && scripts[parsed.script]) return scripts[parsed.script];
             if (baseFlag) return baseFlag;
         }

@@ -58,6 +58,15 @@ public class LanguageTagDisplayTests
     }
 
     [Theory]
+    [InlineData("cmn-Hant", "tw")]
+    [InlineData("cmn-Hans", "cn")]
+    [InlineData("zh-yue", "hk")]
+    [InlineData("yue", "hk")]
+    [InlineData("mao", "nz")]
+    [InlineData("mi", "nz")]
+    [InlineData("arz", "eg")]
+    [InlineData("ckb", "iq")]
+    [InlineData("zh-Hant", "tw")]
     [InlineData("gre", "gr")]
     [InlineData("cze", "cz")]
     [InlineData("slo", "sk")]

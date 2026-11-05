@@ -2305,6 +2305,114 @@
     "1080i",
     "H264"
    ]
+  },
+  {
+   "name": "A DTS-HD MA profile outranks a title's HRA claim",
+   "why": "The profile Jellyfin reads from the stream is structured; a title may refine its carrier, not contradict it",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "DTS-HD HRA 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 5.1"
+   ],
+   "all": [
+    "DTS-HD MA 5.1"
+   ]
+  },
+  {
+   "name": "A DTS-HD HRA profile outranks a title's MA claim",
+   "why": "A lossy High Resolution track is never shown as lossless because of its title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Codec": "dts",
+     "Profile": "DTS-HD HRA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "DTS-HD MA 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD HRA 7.1"
+   ],
+   "all": [
+    "DTS-HD HRA 7.1"
+   ]
+  },
+  {
+   "name": "A DTS:X title still refines a DTS-HD MA profile",
+   "why": "ffmpeg reports DTS:X tracks under the MA profile; the title names the object layer",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "DTS:X 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-X 7.1"
+   ],
+   "all": [
+    "DTS-X 7.1"
+   ]
+  },
+  {
+   "name": "A title naming H.264 with its dot names the codec",
+   "why": "The usual written spelling of the codec is a whole codec word",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1920,
+     "Height": 1080,
+     "DisplayTitle": "1080p H.264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ],
+   "legacy": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "A title naming VC-1 with its hyphen names the codec",
+   "why": "VC-1 is the codec's written name",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1920,
+     "Height": 1080,
+     "DisplayTitle": "1080p VC-1"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "VC-1"
+   ],
+   "all": [
+    "1080p",
+    "VC-1"
+   ],
+   "legacy": [
+    "1080p",
+    "VC-1"
+   ]
   }
  ]
 }

@@ -59,6 +59,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             ["Brazilian"] = "br", ["bra"] = "br",
             ["Catalan"] = "es-ct", ["cat"] = "es-ct", ["ca"] = "es-ct", ["Galician"] = "es-ga", ["glg"] = "es-ga", ["gl"] = "es-ga",
             ["Basque"] = "es-pv", ["eus"] = "es-pv", ["baq"] = "es-pv", ["eu"] = "es-pv",
+            ["Cantonese"] = "hk", ["yue"] = "hk", ["Maori"] = "nz", ["Māori"] = "nz", ["mao"] = "nz", ["mri"] = "nz", ["mi"] = "nz",
+            ["Egyptian Arabic"] = "eg", ["arz"] = "eg", ["Central Kurdish"] = "iq", ["ckb"] = "iq",
             ["zxx"] = NoDialogueToken, ["No linguistic content"] = NoDialogueToken, ["Not applicable"] = NoDialogueToken,
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
@@ -196,6 +198,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         /// media-language.js resolveFlag({ name, code }). Returns null when the web returns null; a
         /// broken token (leading NUL) for the Object.prototype quirk.
         /// </summary>
+        private static readonly System.Text.RegularExpressions.Regex ExtlangRegex = new("^[a-z]{2,3}[-_]([a-z]{3})(?![a-z])", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
         internal static string? ResolveFlag(string code, string name, bool mergeRegions = false)
         {
             if (Parse(code, out var parsed))
@@ -203,7 +207,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                 string? baseFlag = null;
                 // The code itself, else its canonical language (ISO 639-2/B "gre" is "el"): the flag never depends on a
                 // display name, which follows the viewer's language.
-                if (parsed.Base is not null && !BaseLanguageFlags.TryGetValue(parsed.Base, out baseFlag)
+                // A BCP 47 extended language subtag names the language itself (zh-yue is Cantonese).
+                var extlang = ExtlangRegex.Match(JsText.Trim(code));
+                if (extlang.Success) BaseLanguageFlags.TryGetValue(JsText.ToLower(extlang.Groups[1].Value), out baseFlag);
+                if (baseFlag is null && parsed.Base is not null && !BaseLanguageFlags.TryGetValue(parsed.Base, out baseFlag)
                     && CanonicalBase(parsed.Base) is { } canonical) BaseLanguageFlags.TryGetValue(canonical, out baseFlag);
                 if (mergeRegions && baseFlag is not null) return baseFlag;
                 if (baseFlag == NoDialogueToken) return baseFlag;
@@ -230,7 +237,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
                     }
                 }
 
-                if (parsed.Script is not null && parsed.Base is "zh" or "zho" or "chi")
+                if (parsed.Script is not null && (parsed.Base is "zh" or "zho" or "chi" || CanonicalBase(parsed.Base) == "zh"))
                 {
                     if (parsed.Script == "hant") return "tw";
                     if (parsed.Script == "hans") return "cn";

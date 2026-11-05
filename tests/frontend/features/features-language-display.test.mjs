@@ -50,6 +50,14 @@ test('languageless codes match the server: und, root, mul, mis and qaa–qtz nev
   for (const code of ['eng', 'pt-BR', 'zxx', 'qu', 'que', 'qub']) assert.equal(of(code), false, code);
 });
 
+for (const [code, flag] of [['cmn-Hant', 'tw'], ['cmn-Hans', 'cn'], ['zh-yue', 'hk'], ['yue', 'hk'], ['mao', 'nz'], ['mi', 'nz'], ['arz', 'eg'], ['ckb', 'iq'], ['zh-Hant', 'tw']]) {
+  test(`the language tag ${code} shows the ${flag} flag, as natively`, t => {
+    const h = setup(t);
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: [code] });
+    assert.deepEqual(h.chips().map(el => el.dataset.lang), [flag]);
+  });
+}
+
 for (const [code, flag] of [['gre', 'gr'], ['cze', 'cz'], ['slo', 'sk'], ['alb', 'al'], ['mac', 'mk'], ['ice', 'is'], ['arm', 'am'], ['geo', 'ge'], ['ger', 'de'], ['chi', 'cn']]) {
   test(`the bibliographic code ${code} shows its language's flag, as natively`, t => {
     const h = setup(t);

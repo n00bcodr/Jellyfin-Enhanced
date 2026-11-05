@@ -72,6 +72,10 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         (Token("restored"), "Restored"),
         // TRaSH's Hybrid: a release merged from several sources.
         (Token("hybrid"), "Hybrid"),
+        // Kometa's edition overlays: a 70 mm roadshow release, the fan-restored original Star Wars, a fan edit.
+        (Token(@"roadshow(?:" + Separator + @"(?:cut|edition|version))?"), "Roadshow"),
+        (Token(@"despeciali[sz]ed(?:" + Separator + @"edition)?"), "Despecialized"),
+        (Token(@"fan" + Separator + @"edit(?:ion)?"), "Fan Edit"),
     ];
     // Where the title ends: after the year in brackets ("(2019)"), else after the first year that
     // does not open the name ("2001 A Space Odyssey 1968"), and for an episode after its SxxEyy

@@ -126,6 +126,9 @@
         'International Cut': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Restored': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Hybrid': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Roadshow': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Despecialized': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
+        'Fan Edit': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Black and Chrome': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'Masters of Cinema': { bg: 'rgba(106, 27, 154, 0.95)', text: '#ffffff' },
         'BluRay': { bg: 'rgba(0, 102, 204, 0.95)', text: '#ffffff' },
@@ -288,7 +291,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 25 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 26 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -441,7 +444,7 @@
     }
 
     // Full words are translatable; compact edition codes and proper nouns are literals.
-    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"], "Rogue Cut": [null, "Rogue"], "Producer's Cut": ["quality_edition_producers_cut", "PC"], "Alternate Cut": ["quality_edition_alternate_cut", "Alt"], "Assembly Cut": ["quality_edition_assembly_cut", "Asm"], "International Cut": ["quality_edition_international_cut", "Intl"], "Restored": ["quality_edition_restored", "Rest"], "Hybrid": ["quality_edition_hybrid", "Hyb"], "Black and Chrome": [null, "B&C"], "Masters of Cinema": [null, "MoC"]};
+    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"], "Rogue Cut": [null, "Rogue"], "Producer's Cut": ["quality_edition_producers_cut", "PC"], "Alternate Cut": ["quality_edition_alternate_cut", "Alt"], "Assembly Cut": ["quality_edition_assembly_cut", "Asm"], "International Cut": ["quality_edition_international_cut", "Intl"], "Restored": ["quality_edition_restored", "Rest"], "Hybrid": ["quality_edition_hybrid", "Hyb"], "Black and Chrome": [null, "B&C"], "Masters of Cinema": [null, "MoC"], "Roadshow": ["quality_edition_roadshow", "Road"], "Despecialized": [null, "Despec"], "Fan Edit": ["quality_edition_fan_edit", "Fan"]};
     /** @param {string} label Canonical edition. @returns {string} Its full display name. */
     function editionLabel(label) {
         const row = Object.hasOwn(EDITIONS, label) && EDITIONS[label];
@@ -659,8 +662,13 @@
         for (const stream of streams) {
             const title = audioCodecFromText(stream.DisplayTitle);
             if (!title) continue;
+            // A DTS-HD profile the stream reports (MA or HRA) outranks a title's other DTS claim; DTS:X still refines it.
+            const profile = audioCodecFromText([stream.Codec, stream.Profile].filter(Boolean).join(' '));
+            const refined = DTS_PROFILES.includes(profile) && DTS_TITLES.includes(title)
+                ? profile
+                : audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title;
             // The title refined by the same track's codec and profile, else the title alone, if the codec can carry it.
-            const label = [audioCodecFromText([stream.DisplayTitle, stream.Codec, stream.Profile].filter(Boolean).join(' ')) || title, title]
+            const label = [refined, title]
                 .map(candidate => atmosCarrier(candidate, stream)).find(candidate => carrierAllows(candidate, stream.Codec));
             if (label) return label;
         }
@@ -671,6 +679,9 @@
         }
         return null;
     }
+
+    const DTS_PROFILES = ['DTS-HD MA', 'DTS-HD HRA'];
+    const DTS_TITLES = ['DTS', 'DTS-HD', 'DTS-HD MA', 'DTS-HD HRA'];
 
     // What each known stream codec can be (QualityTagRules.CarrierAllows): a title may refine its carrier
     // (DTS → DTS-HD MA, E-AC-3 → DD+ ATMOS) but never contradict it, so an AC-3 track titled "Atmos" stays
@@ -824,6 +835,12 @@
         return { range: null, base: null, sdr: word('sdr') || coarse === 'sdr' };
     }
 
+    /** @returns {string} A lowercased title with "h.264"/"vc-1"/"mpeg-2" spellings joined (QualityTagRules.CodecTitle). */
+    function codecTitle(title) {
+        return String(title || '').toLowerCase().replace(/(?<![a-z0-9])(h)[. ](26[456])(?![0-9])|(?<![a-z0-9])(vc|mpeg|vp)[-. ]([1-9])(?![a-z0-9])/g,
+            (_, h, hn, w, wn) => h ? h + hn : w + wn);
+    }
+
     /**
      * Video codec label (first match on the codec, then on the display title).
      * @param {Object} video Video stream.
@@ -843,8 +860,9 @@
             if (needle === 'xvid' && codecTag.includes('xvid')) return label;
             if (needle === 'divx' && /divx|dx50|div[3-6]/.test(codecTag)) return label;
         }
-        // A title only names a codec as a whole word ("NAV1GATOR" is no AV1).
-        const displayTitle = String(video.DisplayTitle || '').toLowerCase();
+        // A title only names a codec as a whole word ("NAV1GATOR" is no AV1), written with or without
+        // its dot or hyphen ("H.264", "VC-1", "MPEG-2").
+        const displayTitle = codecTitle(video.DisplayTitle);
         return current.find(([needle]) => new RegExp(`(?:^|[^a-z0-9])${needle}(?![a-z0-9])`).test(displayTitle))?.[1] || null;
     }
 
@@ -1588,7 +1606,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 25, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 26, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1626,7 +1644,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 25, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 26, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {
