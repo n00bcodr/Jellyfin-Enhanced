@@ -361,8 +361,6 @@
     "pausescreen_resume_hint_tv": "Press OK to resume",
     "pausescreen_dismiss": "Hide details; keep playback paused",
     "pausescreen_hide": "Hide details",
-    "pausescreen_hide_caption": "Space or Enter: hide details",
-    "pausescreen_hide_caption_tv": "Press OK to hide details",
     "pausescreen_hide_caption_stays": "Playback stays paused.",
     "pausescreen_hide_selected": "Hide details selected",
     "pausescreen_hide_way_back": "Tab returns to Resume playback",

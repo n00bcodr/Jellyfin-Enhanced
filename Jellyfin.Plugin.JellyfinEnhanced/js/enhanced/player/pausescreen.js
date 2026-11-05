@@ -34,6 +34,7 @@
           this.itemCache = new Map();
           this.seriesGenreCache = new Map();
           this.trimCache = new Map();
+          this.logoInk = new Map();
           this.fetchAbort = null;
           this.observer = null;
           this.prevFocused = null;
@@ -92,6 +93,7 @@
             for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);
             for (const [src, url] of this.trimCache) if (url !== src) URL.revokeObjectURL(url);
             this.trimCache.clear();
+            this.logoInk.clear();
             this.imgBlobCache.clear();
             this.imgProbeCache.clear();
             this.itemCache.clear();
@@ -253,8 +255,8 @@
             }
             #pause-screen-logo {
               display: block;
-              max-width: var(--pause-screen-logo-max-w);
-              max-height: var(--pause-screen-logo-max-h);
+              max-width: calc(var(--pause-screen-logo-max-w) * var(--pause-screen-logo-scale, 1));
+              max-height: calc(var(--pause-screen-logo-max-h) * var(--pause-screen-logo-scale, 1));
               width: auto; height: auto;
               object-fit: contain; object-position: left center;
               margin-bottom: clamp(2px, .8vh, 10px);
@@ -570,8 +572,7 @@
               .pause-screen-layout { padding-top: calc(56px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 84px) + 32px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); }
               .pause-screen-main { gap: 8px; }
               #pause-screen-subtitle { font-size: 16px; }
-              #pause-screen-details .pause-screen-date-long { display: none; }
-              #pause-screen-details .pause-screen-date-short { display: inline; }
+              #pause-screen-overlay.has-still #pause-screen-logo { max-height: clamp(44px, 16vh, 60px); }
               #pause-screen-progress-meta { margin-top: .2em; }
               .pause-screen-actions { margin-top: calc(var(--pause-screen-meta-size) * .7); }
             }
@@ -644,6 +645,8 @@
           this.overlayLogo = document.createElement("img");
           this.overlayLogo.id = "pause-screen-logo";
           this.overlayLogo.alt = "";
+          // the trimmed logo lands after the overlay is laid out: measure the footer gap and the overview again once it has a size
+          this.overlayLogo.addEventListener('load', () => { if (this.overlay?.getAttribute('aria-hidden') === 'false') { this.reserveFooter(); this.fitOverview(); } });
 
           // Text title, shown only when no logo image is available
           this.overlayTitle = document.createElement("div");
@@ -726,8 +729,8 @@
           const closeButton = document.createElement("button");
           closeButton.id = "pause-screen-close-btn";
           closeButton.type = "button";
-          closeButton.setAttribute("aria-label", JE.t('pausescreen_dismiss'));
-          closeButton.title = JE.t('pausescreen_dismiss');
+          closeButton.setAttribute("aria-label", JE.t('pausescreen_hide'));
+          closeButton.title = JE.t('pausescreen_hide');
           closeButton.innerHTML = `<span class="material-icons" aria-hidden="true">close</span><span class="pause-screen-close-label" aria-hidden="true">${JE.core.ui.escapeHtml(JE.t('pausescreen_hide'))}</span>`;
           closeButton.onclick = () => {
               this.hideOverlay(true);
@@ -1097,13 +1100,9 @@
           if (!this.progressHint) return;
           const tv = !!JE.core?.ui?.isTvLayout?.();
           const closeFocused = document.activeElement === this.closeButton;
-          // the caption under the × always carries its explanation (and names the button for assistive tech)
-          this.closeCaption.replaceChildren();
-          for (const line of [tv ? JE.t('pausescreen_hide_caption_tv') : JE.t('pausescreen_hide_caption'), JE.t('pausescreen_hide_caption_stays')]) {
-            const row = document.createElement('span');
-            row.textContent = line;
-            this.closeCaption.appendChild(row);
-          }
+          // the caption under the × says only what the button does not: playback stays paused
+          // (the button's own name is "Hide details"; the footer names the selection once)
+          this.closeCaption.textContent = JE.t('pausescreen_hide_caption_stays');
           this.overlay.classList.toggle('close-focused', closeFocused);
           this.progressHint.replaceChildren();
           if (closeFocused) {
@@ -1193,6 +1192,7 @@
           this.overlaySubtitle.textContent = "";
           this.overlayGenres.textContent = "";
           this.overlayMain.classList.remove('has-logo');
+          this.overlayMain.style.removeProperty('--pause-screen-logo-scale');
           this.overlayLogo.removeAttribute('src');
           this.overlayDisc.removeAttribute('src');
           this.overlayPoster.removeAttribute('src');
@@ -1284,6 +1284,7 @@
           if (trimmedLogoURL) {
             this.overlayLogo.src = trimmedLogoURL;
             this.overlayMain.classList.add('has-logo');
+            this.overlayMain.style.setProperty('--pause-screen-logo-scale', this.logoScale(this.logoInk.get(logoURL)));
           }
           if (discURL) this.overlayDisc.src = discURL;
           this.overlayPoster.classList.toggle('is-still', !!stillURL);
@@ -1310,7 +1311,43 @@
         fitOverview() {
           const full = this.overviewText || '';
           const el = this.overlayPlot;
-          if (!full || !el || el.clientHeight === 0) return;
+          if (!full || !el) return;
+          el.style.removeProperty('-webkit-line-clamp');
+          if (el.clientHeight === 0) return;
+          this.fitOverviewText(full);
+          // Short viewports: when the text block spills past the layout's top edge or into the footer's
+          // reserve, give up overview lines (down to one) before letting anything hide.
+          const layout = el.closest('.pause-screen-layout');
+          const footerTop = this.progressWrap?.getBoundingClientRect?.().top;
+          if (!layout || !footerTop) return;
+          const fits = () => {
+            const lr = layout.getBoundingClientRect();
+            const topEdge = lr.top + (parseFloat(getComputedStyle(layout).paddingTop) || 0);
+            // the block rises 10 px while it fades in: measure where it will settle, not where it is
+            const m = /matrix\((?:[^,]+,){5}\s*([-\d.]+)\)/.exec(getComputedStyle(this.overlayMain).transform);
+            const shift = m ? parseFloat(m[1]) || 0 : 0;
+            let top = Infinity, bottom = -Infinity;
+            for (const child of this.overlayMain.querySelectorAll(':scope > *')) {
+              const r = child.getBoundingClientRect();
+              if (!r.height || getComputedStyle(child).display === 'none') continue;
+              top = Math.min(top, r.top - shift); bottom = Math.max(bottom, r.bottom - shift);
+            }
+            return top >= topEdge - 1 && bottom <= footerTop - 30;
+          };
+          let lines = parseInt(getComputedStyle(el).getPropertyValue('-webkit-line-clamp'), 10) || 0;
+          while (lines > 1 && !fits()) {
+            lines -= 1;
+            el.style.setProperty('-webkit-line-clamp', String(lines));
+            this.fitOverviewText(full);
+          }
+        }
+
+        /**
+         * Fits the overview text into the current clamp box (see `fitOverview`).
+         * @param {string} full - The complete overview.
+         */
+        fitOverviewText(full) {
+          const el = this.overlayPlot;
           el.textContent = full;
           const overflows = () => el.scrollHeight > el.clientHeight + 2;
           if (!overflows()) return;
@@ -1473,6 +1510,18 @@
          * @param {string} blobURL - Object URL of the logo image.
          * @returns {Promise<string>} An object URL of the cropped image, or the input when nothing can be cropped.
          */
+        /**
+         * Scale factor for a logo from its ink coverage, so a boxed logo and an airy wordmark carry a
+         * similar visual mass at the same cap: coverage .35 and below keep the full size, a solid box
+         * (coverage near 1) drops to .75.
+         * @param {number|undefined} coverage - Painted share of the trimmed logo box, 0–1.
+         * @returns {string} A unitless CSS number.
+         */
+        logoScale(coverage) {
+          if (!Number.isFinite(coverage) || coverage <= 0) return '1';
+          return Math.min(1, Math.max(0.75, Math.sqrt(0.35 / coverage))).toFixed(3);
+        }
+
         async trimTransparentEdges(blobURL) {
           if (this.trimCache.has(blobURL)) return this.trimCache.get(blobURL);
           const keep = () => { this.trimCache.set(blobURL, blobURL); return blobURL; };
@@ -1480,17 +1529,22 @@
             if (typeof HTMLCanvasElement === 'undefined') return keep();
             const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = blobURL; });
             const w = img.naturalWidth, h = img.naturalHeight;
-            if (!w || !h || w * h > 4_000_000) return keep();
+            if (!w || !h) return keep();
+            // analyse a copy of at most one megapixel: studio logos run to 4–6 MP
+            const k = Math.min(1, Math.sqrt(1_000_000 / (w * h)));
+            const aw = Math.max(1, Math.round(w * k)), ah = Math.max(1, Math.round(h * k));
             const canvas = document.createElement('canvas');
-            canvas.width = w; canvas.height = h;
+            canvas.width = aw; canvas.height = ah;
             const ctx = canvas.getContext('2d', { willReadFrequently: true });
             if (!ctx) return keep();
-            ctx.drawImage(img, 0, 0);
-            const data = ctx.getImageData(0, 0, w, h).data;
-            let top = h, left = w, right = -1, bottom = -1;
-            for (let y = 0; y < h; y++) {
-              for (let x = 0; x < w; x++) {
-                if (data[(y * w + x) * 4 + 3] > 8) {
+            ctx.drawImage(img, 0, 0, aw, ah);
+            const data = ctx.getImageData(0, 0, aw, ah).data;
+            let top = ah, left = aw, right = -1, bottom = -1, ink = 0;
+            for (let y = 0; y < ah; y++) {
+              for (let x = 0; x < aw; x++) {
+                const a = data[(y * aw + x) * 4 + 3];
+                if (a > 8) {
+                  if (a > 128) ink++;
                   if (y < top) top = y;
                   if (y > bottom) bottom = y;
                   if (x < left) left = x;
@@ -1499,14 +1553,18 @@
               }
             }
             if (right < 0) return keep();
-            const pad = 2;
-            left = Math.max(0, left - pad); top = Math.max(0, top - pad);
-            right = Math.min(w - 1, right + pad); bottom = Math.min(h - 1, bottom + pad);
-            const cw = right - left + 1, ch = bottom - top + 1;
+            // share of the trimmed box that is painted: a boxed logo is near 1, an airy wordmark nearer .3
+            this.logoInk.set(blobURL, ink / ((right - left + 1) * (bottom - top + 1)));
+            // back to source pixels, with a 2 px margin
+            const sl = Math.max(0, Math.floor(left / k) - 2), st = Math.max(0, Math.floor(top / k) - 2);
+            const sr = Math.min(w - 1, Math.ceil((right + 1) / k) + 1), sb = Math.min(h - 1, Math.ceil((bottom + 1) / k) + 1);
+            const cw = sr - sl + 1, ch = sb - st + 1;
             if (cw >= w - 4 && ch >= h - 4) return keep();
+            // the crop never needs more than ~2 MP: it is shown at 640 px wide at most
+            const ok = Math.min(1, Math.sqrt(2_000_000 / (cw * ch)));
             const out = document.createElement('canvas');
-            out.width = cw; out.height = ch;
-            out.getContext('2d').drawImage(canvas, left, top, cw, ch, 0, 0, cw, ch);
+            out.width = Math.max(1, Math.round(cw * ok)); out.height = Math.max(1, Math.round(ch * ok));
+            out.getContext('2d').drawImage(img, sl, st, cw, ch, 0, 0, out.width, out.height);
             const blob = await new Promise(resolve => out.toBlob(resolve, 'image/png'));
             if (!blob) return keep();
             const url = URL.createObjectURL(blob);
@@ -1615,7 +1673,7 @@
           const parts = [];
           if (h > 0) parts.push(JE.t('pausescreen_unit_hours', { n: h }));
           if (m > 0 || h > 0) parts.push(JE.t('pausescreen_unit_minutes', { n: m }));
-          parts.push(JE.t('pausescreen_unit_seconds', { n: sc }));
+          if (sc > 0 || parts.length === 0) parts.push(JE.t('pausescreen_unit_seconds', { n: sc }));
           return parts.join(' ');
         }
 

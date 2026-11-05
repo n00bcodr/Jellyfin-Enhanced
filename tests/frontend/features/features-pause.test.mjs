@@ -69,7 +69,7 @@ test('the hint describes the focused control',t=>{
  const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;p.showOverlay();
  assert.equal(h.document.activeElement,p.resumeButton);assert.equal(p.progressHint.textContent,'pausescreen_resume_hint');
  p.closeButton.focus();assert.match(p.progressHint.textContent,/^pausescreen_hide_selected/);assert.equal(p.overlay.classList.contains('close-focused'),true);
- h.document.documentElement.classList.add('layout-tv');p.refreshHint();assert.match(p.progressHint.textContent,/pausescreen_hide_way_back_tv/);assert.match(p.closeCaption.textContent,/pausescreen_hide_caption_tv/);
+ h.document.documentElement.classList.add('layout-tv');p.refreshHint();assert.match(p.progressHint.textContent,/pausescreen_hide_way_back_tv/);assert.equal(p.closeCaption.textContent,'pausescreen_hide_caption_stays');assert.equal(p.closeButton.getAttribute('aria-label'),'pausescreen_hide');
  p.resumeButton.focus();assert.equal(p.progressHint.textContent,'pausescreen_resume_hint_tv');
 });
 test('pause overlay leaves arrow keys alone outside the TV layout',t=>{
@@ -122,4 +122,11 @@ test('a late response for the previous item cannot fill the overlay after a sour
  x.setSource(src(B));x.video.dispatchEvent(new x.h.window.Event('loadstart'));await x.pause();
  gate.resolve();await flush();
  assert.equal(x.p.currentItemId,B);assert.equal(x.plot(),'overview B');
+});
+test('the spoken clock drops a zero seconds part and logos scale by ink coverage',t=>{
+ const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;
+ assert.equal(p.spokenClock(4620),'pausescreen_unit_hours pausescreen_unit_minutes');
+ assert.equal(p.spokenClock(65),'pausescreen_unit_minutes pausescreen_unit_seconds');
+ assert.equal(p.spokenClock(0),'pausescreen_unit_seconds');
+ assert.equal(p.logoScale(undefined),'1');assert.equal(p.logoScale(0.3),'1.000');assert.equal(p.logoScale(1),'0.750');assert.equal(p.logoScale(0.56),'0.791');
 });
