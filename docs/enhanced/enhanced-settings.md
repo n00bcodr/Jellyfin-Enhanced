@@ -132,7 +132,7 @@ Open **Playback Settings** and turn on the behavior you want.
 | **Custom Pause Screen** | On | Shows artwork and playback information after idle time while paused. Refresh after changing the toggle. |
 | **Delay before showing (seconds):** | 5 | Sets the pause-screen idle delay, from 1–60 whole seconds. Updates the running pause screen immediately. |
 
-On the pause screen, press ++space++/++enter++ or tap the background to resume. × dismisses the overlay for the rest of that pause without resuming. See [Enhanced features](enhanced-features.md) for the pause screen and playback controls.
+On the pause screen, press ++space++/++enter++, press **Resume playback**, or tap anywhere to resume. **Hide details** (×) dismisses the overlay for the rest of that pause without resuming. See [Enhanced features](enhanced-features.md) for the pause screen and playback controls.
 
 !!! tip "Keep playing in Picture-in-Picture"
 

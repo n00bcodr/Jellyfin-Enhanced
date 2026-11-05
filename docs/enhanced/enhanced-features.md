@@ -399,7 +399,7 @@ After you pause and stop interacting, JE can display artwork and media informati
 
 1. Enable **Custom Pause Screen** in **Playback Settings**.
 2. Pause and wait for the idle delay. Interaction postpones its appearance; moving the pointer after it appears leaves the overlay visible.
-3. Press ++space++ / ++enter++ or click/tap the background to resume. × dismisses without resuming and prevents another overlay during that pause.
+3. Press ++space++ / ++enter++, press **Resume playback**, or click/tap anywhere on the overlay to resume. **Hide details** (×) dismisses without resuming and prevents another overlay during that pause. On a TV layout, OK resumes and Back hides the details.
 
 <figure class="je-video">
   <video autoplay loop muted playsinline controls preload="metadata" aria-label="Pause screen appears after a delay and disappears on resume">
@@ -414,13 +414,13 @@ After you pause and stop interacting, JE can display artwork and media informati
 | **Custom Pause Screen** — personal **Playback Settings** | On | Enables the overlay; reload after changing enablement. |
 | **Delay before showing (seconds):** — personal **Playback Settings** | 5 | Idle delay while paused; accepts integers from 1–60 and updates the running delay. |
 
-The overlay shows the year, official age rating, runtime, description, elapsed/total time, watched percentage, and estimated **Ends at** time. See [CSS Customization](../advanced/css-customization.md) for styling.
+The overlay shows the logo (or the title as text when there is no logo), the season, episode number and episode name for episodes, the year (or air date), official age rating, runtime and community score, the genres, the synopsis cut to whole sentences, and a progress bar with the elapsed and total time, the time left and the estimated **Ends at** time. Times follow Jellyfin's date and time locale. See [CSS Customization](../advanced/css-customization.md) for styling.
 
 ![Custom pause screen in a phone viewport](../images/enhanced/phone-pause.webp)
 
 ??? note "Pause-screen artwork and layout"
 
-    Logo, disc, and blurred backdrop depend on available item/parent/series artwork. A missing logo does not guarantee a text-title fallback. Disc art hides on narrow layouts, can return in short landscape layouts, and stops rotating with reduced-motion preferences.
+    The backdrop is the item's (or series') backdrop, blurred; an episode uses its own still instead, so no series title shows through. The art column shows disc art when the library has it, otherwise the episode still (16:9) or the poster. Logos are cropped of their transparent padding so the gap under them is the same for every title. On phones the artwork sits beside the facts under the title; in short landscape layouts the overview shortens to three lines. The disc stops rotating, and the overlay stops fading, with a reduced-motion preference. Light rating badges get dark lettering.
 
 ### Smart Playback
 

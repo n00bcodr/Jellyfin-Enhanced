@@ -22,6 +22,15 @@ test('pause metadata renders untrusted rating and overview as text',async t=>{
  const malicious='<img src=x onerror="alert(1)">';await p.displayItemInfo({OfficialRating:malicious,Overview:malicious,RunTimeTicks:54000000000},'http://local','item');
  assert.equal(p.overlayPlot.textContent,malicious);assert.equal(p.overlayDetails.querySelector('img'),null);assert.match(p.overlayDetails.textContent,/1h 30m/);assert.ok(p.overlayDetails.textContent.includes(malicious));
 });
+test('an episode names the dialog with the series, spoken episode code and episode name',async t=>{
+ const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;p.firstAvailableBlobURL=async()=>null;
+ await p.displayItemInfo({Type:'Episode',Name:'Chelsea',SeriesName:'Ted Lasso',ParentIndexNumber:3,IndexNumber:2,Genres:['Comedy'],RunTimeTicks:30000000000},'http://local','ep');
+ assert.equal(p.overlayTitle.textContent,'Ted Lasso');
+ assert.equal(p.overlaySubtitle.querySelector('.pause-screen-episode-code').textContent,'pausescreen_episode_code');
+ assert.equal(p.overlaySubtitle.querySelector('.pause-screen-episode-name').textContent,'Chelsea');
+ assert.equal(p.overlay.getAttribute('aria-label'),'pausescreen_paused: Ted Lasso, pausescreen_episode_spoken Chelsea');
+ assert.equal(p.overlayGenres.textContent,'Comedy');
+});
 test('pause metadata failure shows translated fallback and clears previous text',async t=>{
  const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;p.overlayPlot.textContent='old';p.fetchWithRetry=async()=>{throw new Error('offline');};h.expectConsoleError(/Error fetching item info/);await p.fetchItemInfo('item');assert.equal(p.overlayPlot.textContent,'pausescreen_fetch_error');
 });

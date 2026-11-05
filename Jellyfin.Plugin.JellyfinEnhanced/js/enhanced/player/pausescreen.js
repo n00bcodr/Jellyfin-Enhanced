@@ -300,7 +300,7 @@
               overflow: hidden;
               text-align: left;
               text-wrap: pretty;
-              text-shadow: 0 1px 12px rgba(0,0,0,.35);
+              text-shadow: 0 1px 2px rgba(0,0,0,.45);
             }
 
             .pause-screen-art { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
@@ -384,7 +384,11 @@
             .pause-screen-resume .material-icons { font-size: 1.4em; }
             .pause-screen-resume:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.45); }
             .pause-screen-resume:focus-visible { outline: 2px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
-            @media (min-width: 1600px) { .pause-screen-resume { min-height: 52px; padding: 0 20px 0 10px; gap: 10px; } }
+            @media (min-width: 1200px) {
+              .pause-screen-resume { min-height: 48px; font-size: 18px; background: #ededed; border-color: #ededed; color: #111; }
+              .pause-screen-resume:hover { background: #fff; border-color: #fff; }
+            }
+            @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } }
             /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
             .layout-tv .pause-screen-resume:focus { outline: 3px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
             .layout-tv #pause-screen-close-btn:focus { outline: 2px solid #fff; outline-offset: 2px; background: rgba(20,20,24,.6); border-color: rgba(255,255,255,.35); }
@@ -416,7 +420,7 @@
             }
             #pause-screen-close-btn .material-icons { font-size: 24px; }
             #pause-screen-close-btn .pause-screen-close-label { display: inline; padding-right: 4px; }
-            @media (min-width: 1600px) { #pause-screen-close-btn { font-size: 18px; } }
+            @media (min-width: 1600px) { #pause-screen-close-btn { font-size: 20px; } }
             #pause-screen-close-btn:hover,
             #pause-screen-close-btn:focus-visible {
               background: rgba(20,20,24,.6);
@@ -427,6 +431,7 @@
               outline: 2px solid #fff;
               outline-offset: 2px;
             }
+            @media (min-width: 1600px) { #pause-screen-close-btn:focus-visible { outline-width: 3px; } }
             /* Accessibility helpers */
             #pause-screen-focus-start, #pause-screen-focus-end {
               position: fixed; width:1px; height:1px; overflow:hidden; clip: rect(0 0 0 0);
@@ -442,7 +447,8 @@
 
             /* Large screens: thicker track and bigger playback facts for distance viewing */
             @media (min-width: 1200px) {
-              :root { --pause-screen-progress-height: 6px; --pause-screen-meta-size: clamp(20px, 1.5vw, 28px); }
+              :root { --pause-screen-progress-height: 6px; --pause-screen-meta-size: max(var(--pause-screen-text-size), min(28px, calc(1.89vw - 8.3px))); }
+              .pause-screen-main:not(.has-logo) #pause-screen-title { font-size: clamp(56px, 4.4vw, 88px); line-height: 1.08; max-width: 18ch; }
             }
             @media (min-width: 1600px) {
               :root { --pause-screen-progress-height: 8px; }
@@ -474,8 +480,9 @@
               }
               #pause-screen-close-btn { opacity: .85; }
               .pause-screen-layout { padding-top: 76px; padding-bottom: 176px; align-items: end; }
-              @media (min-height: 800px) and (orientation: portrait) { :root { --pause-screen-plot-lines: 6; } }
-              @media (min-height: 900px) and (orientation: portrait) { :root { --pause-screen-plot-lines: 7; } }
+              @media (min-height: 800px) and (orientation: portrait) {
+                :root { --pause-screen-plot-lines: 7; --pause-screen-plot-font: clamp(16px, 2.2vw, 20px); --pause-screen-meta-size: clamp(16px, 2vw, 18px); --pause-screen-hint-size: clamp(15px, 2vw, 18px); }
+              }
               @media (min-height: 740px) and (orientation: portrait) {
                 .pause-screen-layout {
                   grid-template-columns: auto minmax(0, 1fr);
@@ -484,8 +491,8 @@
                 }
                 .pause-screen-main { display: contents; }
                 .pause-screen-main > * { margin-bottom: 12px; }
-                #pause-screen-logo { grid-area: logo; }
-                #pause-screen-title { grid-area: title; }
+                #pause-screen-logo { grid-area: logo; margin-bottom: 16px; }
+                #pause-screen-title { grid-area: title; margin: 0 0 16px; }
                 #pause-screen-subtitle { grid-area: sub; }
                 .pause-screen-art { display: flex; grid-area: art; align-self: start; justify-content: flex-start; min-height: 0; margin-bottom: 12px; }
                 #pause-screen-details { grid-area: facts; align-self: end; }
@@ -514,7 +521,7 @@
                 --pause-screen-logo-max-h: clamp(56px, 20vh, 80px);
                 --pause-screen-plot-lines: 3;
                 --pause-screen-plot-max-w: min(100%, 68ch);
-                --pause-screen-text-size: 13px;
+                --pause-screen-text-size: 14px;
                 --pause-screen-meta-size: 14px;
                 --pause-screen-hint-size: 14px;
                 --pause-screen-plot-font: 14px;
@@ -1144,7 +1151,8 @@
           const titleText = (isEpisode ? (item.SeriesName || item.Name) : item.Name) || '';
           this.overlayTitle.textContent = titleText;
           this.renderSubtitle(item);
-          const nameParts = [titleText, this.overlaySubtitle.textContent.trim()].filter(Boolean);
+          const spokenLine = [...this.overlaySubtitle.querySelectorAll('.pause-screen-sr, .pause-screen-episode-name')].map(n => n.textContent.trim()).filter(Boolean).join(' ');
+          const nameParts = [titleText, spokenLine].filter(Boolean);
           this.overlay.setAttribute('aria-label', nameParts.length ? `${JE.t('pausescreen_paused')}: ${nameParts.join(', ')}` : JE.t('pausescreen_paused'));
           this.renderDetails(item);
           this.overlayGenres.textContent = (Array.isArray(item.Genres) ? item.Genres : []).slice(0, 3).join(' · ');
@@ -1231,7 +1239,12 @@
             code.className = 'pause-screen-episode-code';
             const episodeText = Number.isFinite(item.IndexNumberEnd) && item.IndexNumberEnd > episode ? `${episode}–${item.IndexNumberEnd}` : String(episode);
             code.textContent = JE.t('pausescreen_episode_code', { season, episode: episodeText });
+            code.setAttribute('aria-hidden', 'true');
+            const spoken = document.createElement('span');
+            spoken.className = 'pause-screen-sr';
+            spoken.textContent = JE.t('pausescreen_episode_spoken', { season, episode: episodeText });
             this.overlaySubtitle.appendChild(code);
+            this.overlaySubtitle.appendChild(spoken);
             this.overlaySubtitle.appendChild(document.createTextNode(' '));
           }
           if (item.Name) {
