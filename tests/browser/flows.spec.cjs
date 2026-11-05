@@ -223,14 +223,14 @@ test.describe('TV layout remote navigation', () => {
       JellyfinEnhanced.initializePauseScreen();
       JellyfinEnhanced.pauseScreenInstance.showOverlay();
     });
-    const content = page.locator('#pause-screen-content');
+    const resume = page.locator('#pause-screen-hint');
     const close = page.locator('#pause-screen-close-btn');
-    await expect(content).toBeFocused();
+    await expect(resume).toBeFocused();
 
     await page.keyboard.press('ArrowRight');
     await expect(close).toBeFocused();
     await page.keyboard.press('ArrowDown');
-    await expect(content).toBeFocused();
+    await expect(resume).toBeFocused();
     await page.keyboard.press('ArrowUp');
     await expect(close).toBeFocused();
     expect(await page.evaluate(() => window.reachedPlayer)).toBe(0);

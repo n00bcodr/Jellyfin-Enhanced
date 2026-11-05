@@ -59,6 +59,7 @@
           this.overlaySubtitle = null;
           this.overlayGenres = null;
           this.progressHint = null;
+          this.resumeButton = null;
           this.overlayBackdrop = null;
           this.progressWrap = null;
           this.progressBar = null;
@@ -155,7 +156,7 @@
               --pause-screen-progress-radius: 999px;
               --pause-screen-disc-w: clamp(220px, 24vw, 460px);
               --pause-screen-disc-rot-sec: 90s;
-              --pause-screen-poster-w: clamp(170px, 20vw, 400px);
+              --pause-screen-poster-w: clamp(170px, 18vw, 360px);
               --pause-screen-still-w: clamp(240px, 26vw, 500px);
             }
 
@@ -167,7 +168,8 @@
               font-family: inherit;
               background: var(--pause-screen-overlay-bg);
             }
-            #pause-screen-overlay[aria-hidden="false"] { display: block; animation: pause-screen-fade .28s ease-out; }
+            #pause-screen-overlay[aria-hidden="false"] { display: block; animation: pause-screen-fade .28s ease-out; transition: opacity .25s ease-out; }
+            #pause-screen-overlay.is-resuming { opacity: 0; }
             @keyframes pause-screen-fade { from { opacity: 0; } to { opacity: 1; } }
             @keyframes pause-screen-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
@@ -254,7 +256,8 @@
               text-shadow: 0 2px 18px rgba(0,0,0,.5);
               text-wrap: balance;
             }
-            .pause-screen-main.has-logo #pause-screen-title { display: none; }
+            .pause-screen-main.has-logo #pause-screen-title,
+            .pause-screen-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
             #pause-screen-subtitle {
               font-size: clamp(18px, 1.75vw, 34px);
               font-weight: 600; line-height: 1.25;
@@ -268,7 +271,9 @@
               color: rgba(255,255,255,.92);
             }
             #pause-screen-details .mediaInfoOfficialRating { font-size: .85em; margin: 0; }
-            #pause-screen-details .pause-screen-score { display: inline-flex; align-items: center; gap: .2em; }
+            #pause-screen-details .mediaInfoOfficialRating.is-light { color: #111 !important; text-shadow: none !important; }
+            #pause-screen-details .pause-screen-score,
+            #pause-screen-details .pause-screen-score > span[aria-hidden] { display: inline-flex; align-items: center; gap: .2em; }
             #pause-screen-details .pause-screen-score .material-icons { font-size: 1.15em; color: #f2b01e; }
             #pause-screen-details .pause-screen-date-short { display: none; }
             #pause-screen-genres {
@@ -345,17 +350,28 @@
             #pause-screen-progress-meta .progress-percentage:not(:empty)::before,
             #pause-screen-progress-meta .progress-ends-at:not(:empty)::before { content: '·'; opacity: .5; margin-right: .6em; }
             .pause-screen-hint {
-              margin-top: .5em;
+              display: block;
+              margin: .25em 0 0 -4px;
               width: fit-content;
+              min-height: 44px;
+              padding: 0 4px;
+              background: none;
+              border: 0;
+              font: inherit;
               font-size: var(--pause-screen-hint-size);
               line-height: 1.4;
               color: rgba(255,255,255,.85);
+              text-align: left;
+              cursor: pointer;
               border-radius: 4px;
             }
-            #pause-screen-content:focus-visible .pause-screen-hint {
+            .pause-screen-hint:hover { color: #fff; }
+            .pause-screen-hint:focus-visible {
               outline: 2px solid #fff;
-              outline-offset: 6px;
+              outline-offset: 4px;
+              color: #fff;
             }
+            @media (min-width: 1600px) { .pause-screen-hint:focus-visible { outline-width: 3px; } }
             #pause-screen-close-btn {
               position: absolute;
               top: 2px;
@@ -385,6 +401,8 @@
             }
             #pause-screen-close-btn:hover .pause-screen-close-label,
             #pause-screen-close-btn:focus-visible .pause-screen-close-label { display: inline; }
+            @media (hover: none) and (pointer: coarse) { #pause-screen-close-btn .pause-screen-close-label { display: inline; } }
+            .layout-tv #pause-screen-close-btn .pause-screen-close-label { display: inline; }
             #pause-screen-close-btn:focus-visible {
               outline: 2px solid #fff;
               outline-offset: 2px;
@@ -418,8 +436,8 @@
               }
             }
 
-            /* Portrait phone: one column, left-aligned, footer pinned */
-            @media (max-width: 768px) {
+            /* Portrait phone and tablet: one column, left-aligned, footer pinned */
+            @media (max-width: 768px), (max-width: 1000px) and (orientation: portrait) {
               :root {
                 --pause-screen-gutter-x: 20px;
                 --pause-screen-gutter-y: 22px;
@@ -432,6 +450,13 @@
                 --pause-screen-plot-lines: 4;
               }
               .pause-screen-layout { padding-top: 76px; padding-bottom: 176px; align-items: end; }
+              @media (min-height: 740px) and (orientation: portrait) {
+                .pause-screen-layout { grid-template-rows: minmax(0, 1fr) auto; row-gap: 24px; }
+                .pause-screen-art { display: flex; order: -1; align-self: end; justify-content: flex-start; min-height: 0; }
+                #pause-screen-poster { width: 140px; }
+                #pause-screen-poster.is-still { width: 300px; max-width: 100%; }
+                #pause-screen-disc { width: 170px; animation: none; }
+              }
               #pause-screen-title { font-size: clamp(28px, 8vw, 40px); }
               #pause-screen-subtitle { font-size: 18px; }
               #pause-screen-details .pause-screen-date-long { display: none; }
@@ -444,8 +469,10 @@
             @media (max-height: 500px) and (orientation: landscape) {
               :root {
                 --pause-screen-gutter-y: 14px;
-                --pause-screen-logo-max-h: 15vh;
-                --pause-screen-plot-lines: 2;
+                --pause-screen-logo-max-w: min(38vw, 320px);
+                --pause-screen-logo-max-h: clamp(56px, 20vh, 80px);
+                --pause-screen-plot-lines: 3;
+                --pause-screen-plot-max-w: min(100%, 68ch);
                 --pause-screen-text-size: 13px;
                 --pause-screen-meta-size: 14px;
                 --pause-screen-hint-size: 14px;
@@ -457,8 +484,18 @@
               #pause-screen-details .pause-screen-date-long { display: none; }
               #pause-screen-details .pause-screen-date-short { display: inline; }
               #pause-screen-progress-meta { margin-top: .4em; }
-              #pause-screen-progress-meta .progress-ends-at { display: none; }
-              .pause-screen-hint { margin-top: .3em; }
+              .pause-screen-hint { margin-top: 0; min-height: 36px; }
+            }
+            @media (max-height: 500px) and (orientation: landscape) and (min-width: 700px) {
+              .pause-screen-layout { grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; }
+              .pause-screen-art { display: flex; }
+              #pause-screen-poster { width: 135px; }
+              #pause-screen-poster.is-still { width: 240px; }
+              #pause-screen-disc { width: 150px; }
+            }
+
+            @media (forced-colors: active) {
+              #pause-screen-progress-bar > span { background: Highlight; forced-color-adjust: none; }
             }
 
             /* Reduced motion: no spin, no fade */
@@ -570,10 +607,13 @@
                 <span class="progress-ends-at"></span>
               </span>
           `;
-          this.progressHint = document.createElement("div");
+          this.progressHint = document.createElement("button");
+          this.progressHint.type = "button";
           this.progressHint.className = "pause-screen-hint";
           this.progressHint.id = "pause-screen-hint";
-          this.overlay.setAttribute("aria-describedby", "pause-screen-hint");
+          this.progressHint.setAttribute("aria-label", JE.t('pausescreen_resume_label'));
+          this.progressHint.addEventListener('click', (e) => { e.stopPropagation(); this.resume(); });
+          this.resumeButton = this.progressHint;
           this.progressWrap.appendChild(this.progressBar);
           this.progressWrap.appendChild(this.progressMeta);
           this.progressWrap.appendChild(this.progressHint);
@@ -616,12 +656,10 @@
 
           // Pointer/touch anywhere but the close button resumes
           const tryResume = (event) => {
-            if (event.target?.closest?.('#pause-screen-close-btn')) return;
-            // Introduce a delay to allow for long-press detection
-            JE.state.pauseScreenClickTimer = setTimeout(() => {
-                this.hideOverlay();
-                if (this.currentVideo?.paused) this.currentVideo.play();
-            }, 500);
+            if (event.target?.closest?.('#pause-screen-close-btn, #pause-screen-hint')) return;
+            // Introduce a delay to allow for long-press detection; fade right away so the tap reads as taken
+            this.overlay.classList.add('is-resuming');
+            JE.state.pauseScreenClickTimer = setTimeout(() => this.resume(), 500);
           };
           this.overlay.addEventListener('click', tryResume);
           this.overlay.addEventListener('touchstart', tryResume, { passive: true });
@@ -629,12 +667,21 @@
           // Focus trap behavior
           const trap = (e) => {
             if (this.overlay.getAttribute('aria-hidden') === 'false') {
-              if (e.target === this.focusStart) this.overlayContent.focus();
-              if (e.target === this.focusEnd) this.overlayContent.focus();
+              if (e.target === this.focusStart) this.resumeButton.focus();
+              if (e.target === this.focusEnd) this.resumeButton.focus();
             }
           };
           this.focusStart.addEventListener('focus', trap);
           this.focusEnd.addEventListener('focus', trap);
+        }
+
+        /** Hides the overlay and resumes playback (the overlay's primary action). */
+        resume() {
+          this.hideOverlay();
+          if (this.currentVideo?.paused) {
+            const r = this.currentVideo.play();
+            if (r && typeof r.catch === 'function') r.catch(err => console.warn("🪼 Jellyfin Enhanced: Play() blocked:", err));
+          }
         }
 
         /**
@@ -656,7 +703,7 @@
           }
           if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
             swallow();
-            this.overlayContent.focus();
+            this.resumeButton.focus();
             return true;
           }
           if (e.key === 'Escape' || e.key === 'BrowserBack' || e.keyCode === 10009 || e.keyCode === 461) {
@@ -685,18 +732,13 @@
                   this.hideOverlay(true);
                   return;
                 }
-                this.hideOverlay();
-                if (this.currentVideo && this.currentVideo.paused) {
-                    this.currentVideo.play().catch(err => console.warn("🪼 Jellyfin Enhanced: Play() blocked:", err));
-                }
+                this.resume();
               }
-              // Keep Tab inside
+              // Tab moves between the two controls: resume and hide
               if (e.code === 'Tab') {
-                // force focus to content if outside
-                if (!this.overlay.contains(document.activeElement)) {
-                  this.overlayContent.focus();
-                  e.preventDefault();
-                }
+                e.preventDefault();
+                e.stopPropagation();
+                (document.activeElement === this.resumeButton ? this.closeButton : this.resumeButton).focus();
               }
             }
           };
@@ -947,7 +989,8 @@
             document.documentElement.classList.add('pause-screen-active');
             this.overlay.setAttribute('aria-hidden', 'false');
             this.alignCloseButton();
-            this.overlayContent.focus();
+            this.resumeButton.focus();
+            this.fitOverview();
             }
 
         /** Puts the × on the same line as Jellyfin's back arrow, wherever the player's header lays it out. */
@@ -968,6 +1011,7 @@
 
         hideOverlay(dismissed = false) {
             if (this.endsAtTimer) { clearInterval(this.endsAtTimer); this.endsAtTimer = null; }
+            this.overlay.classList.remove('is-resuming');
             document.documentElement.classList.remove('pause-screen-active');
             this.overlay.setAttribute('aria-hidden', 'true');
             if (dismissed) {
@@ -978,6 +1022,7 @@
             }
         }
         clearDisplayData() {
+          this.overviewText = '';
           this.overlayPlot.textContent = "";
           this.overlayDetails.innerHTML = "";
           this.overlayTitle.textContent = "";
@@ -1045,7 +1090,9 @@
           this.renderSubtitle(item);
           this.renderDetails(item);
           this.overlayGenres.textContent = (Array.isArray(item.Genres) ? item.Genres : []).slice(0, 3).join(' · ');
-          this.overlayPlot.textContent = item.Overview || JE.t('pausescreen_no_description');
+          this.overviewText = item.Overview || JE.t('pausescreen_no_description');
+          this.overlayPlot.textContent = this.overviewText;
+          if (this.overlay.getAttribute('aria-hidden') === 'false') this.fitOverview();
 
           // Images: preload to blob URLs (cached)
           const logoUrls = this.getLogoUrls(item, domain, itemId);
@@ -1073,7 +1120,8 @@
           if (discURL) this.overlayDisc.src = discURL;
           this.overlayPoster.classList.toggle('is-still', !!stillURL);
           if (stillURL || posterURL) this.overlayPoster.src = stillURL || posterURL;
-          if (backdropURL) this.overlayBackdrop.style.backgroundImage = `url("${backdropURL}")`;
+          const backdropChoice = stillURL || backdropURL;
+          if (backdropChoice) this.overlayBackdrop.style.backgroundImage = `url("${backdropChoice}")`;
 
           // Episodes rarely carry genres of their own; borrow the series' list.
           if (isEpisode && !this.overlayGenres.textContent && item.SeriesId) {
@@ -1082,6 +1130,31 @@
 
           // Set static progress snapshot if paused
           this.updateProgressStatic();
+        }
+
+        /**
+         * Trims the overview to whole sentences that fit the clamped box, so a glance reads an
+         * edited synopsis rather than a cut-off fragment. Falls back to the plain clamp when even
+         * the first sentence overflows. Runs when the overlay is visible (layout is needed).
+         */
+        fitOverview() {
+          const full = this.overviewText || '';
+          const el = this.overlayPlot;
+          if (!full || !el || el.clientHeight === 0) return;
+          el.textContent = full;
+          const overflows = () => el.scrollHeight > el.clientHeight + 2;
+          if (!overflows()) return;
+          const ends = [];
+          const re = /[.!?…]["'”’)\]]*\s+/g;
+          let m;
+          while ((m = re.exec(full)) !== null) ends.push(m.index + m[0].length);
+          for (let i = ends.length - 1; i >= 0; i--) {
+            const cut = full.slice(0, ends[i]).trim();
+            if (cut.length < full.length * 0.35 && i > 0) continue;
+            el.textContent = cut;
+            if (!overflows()) return;
+          }
+          el.textContent = full;
         }
 
         /**
@@ -1123,7 +1196,21 @@
           for (const [value, kind] of [[when, 'text'], [rating, 'rating'], [runtime, 'text'], [score, 'score']]) {
             if (!value) continue;
             const span = document.createElement('span');
-            if (kind === 'text' && value === when && whenShort && whenShort !== when) {
+            if (kind === 'score') {
+              span.className = 'pause-screen-score';
+              const visible = document.createElement('span');
+              visible.setAttribute('aria-hidden', 'true');
+              const star = document.createElement('span');
+              star.className = 'material-icons';
+              star.textContent = 'star';
+              visible.appendChild(star);
+              visible.appendChild(document.createTextNode(String(value)));
+              const sr = document.createElement('span');
+              sr.className = 'pause-screen-sr';
+              sr.textContent = JE.t('pausescreen_community_rating', { score: String(value) });
+              span.appendChild(visible);
+              span.appendChild(sr);
+            } else if (kind === 'text' && value === when && whenShort && whenShort !== when) {
               // Phones get the year only; the full date is more than they can spend on it.
               const long = document.createElement('span'); long.className = 'pause-screen-date-long'; long.textContent = String(value);
               const short = document.createElement('span'); short.className = 'pause-screen-date-short'; short.textContent = whenShort;
@@ -1133,19 +1220,30 @@
               span.className = 'mediaInfoOfficialRating';
               span.setAttribute('rating', String(value));
               span.textContent = String(value);
-            } else if (kind === 'score') {
-              span.className = 'pause-screen-score';
-              span.setAttribute('aria-label', JE.t('pausescreen_community_rating', { score: String(value) }));
-              const star = document.createElement('span');
-              star.className = 'material-icons';
-              star.setAttribute('aria-hidden', 'true');
-              star.textContent = 'star';
-              span.appendChild(star);
-              span.appendChild(document.createTextNode(String(value)));
             } else {
               span.textContent = String(value);
             }
             this.overlayDetails.appendChild(span);
+          }
+          this.markLightBadges();
+        }
+
+        /**
+         * Rating badges inherit Jellyfin's fills (yellow PG, orange PG-13, ...). White lettering
+         * on the light ones is under 4.5:1, so those get dark lettering instead.
+         */
+        markLightBadges() {
+          for (const badge of this.overlayDetails.querySelectorAll('.mediaInfoOfficialRating')) {
+            let light = false;
+            try {
+              const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(badge).backgroundColor || '');
+              if (m) {
+                const [r, g, b] = [m[1], m[2], m[3]].map(v => { const c = Number(v) / 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+                const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                light = (luminance + 0.05) / 0.05 < 4.5 ? false : (1.05 / (luminance + 0.05)) < 4.5;
+              }
+            } catch { light = false; }
+            badge.classList.toggle('is-light', light);
           }
         }
 
@@ -1222,6 +1320,16 @@
         }
 
         /**
+         * The locale Jellyfin formats its own clock with (its date/time setting lands on <html lang>),
+         * so "Ends at" reads like the player's.
+         * @returns {string|undefined}
+         */
+        locale() {
+          const lang = document.documentElement.lang;
+          return lang && /^[a-z]{2,3}(-[A-Za-z0-9]+)*$/.test(lang) ? lang : undefined;
+        }
+
+        /**
          * Short localized date, e.g. "22 Mar 2023".
          * @param {string} iso - ISO date string.
          * @returns {string}
@@ -1230,7 +1338,7 @@
           const d = new Date(iso);
           if (!Number.isFinite(d.getTime())) return '';
           try {
-            return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+            return d.toLocaleDateString(this.locale(), { year: 'numeric', month: 'short', day: 'numeric' });
           } catch {
             return String(d.getFullYear());
           }
@@ -1267,7 +1375,7 @@
           this.progressBar.setAttribute('aria-valuenow', String(Math.round(pct)));
           const remainingSeconds = duration > 0 && current < duration ? duration - current : 0;
           const leftText = remainingSeconds > 0 ? JE.t('pausescreen_time_left', { time: this.formatDuration(Math.max(1, Math.round(remainingSeconds / 60))) }) : '';
-          const valueText = duration > 0 ? [`${this.formatClock(current)} / ${this.formatClock(duration)}`, leftText].filter(Boolean).join(', ') : '';
+          const valueText = duration > 0 ? [JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }), `${this.formatClock(current)} / ${this.formatClock(duration)}`, leftText].filter(Boolean).join(', ') : '';
           if (valueText) this.progressBar.setAttribute('aria-valuetext', valueText); else this.progressBar.removeAttribute('aria-valuetext');
 
           const timeEl = this.progressMeta.querySelector('.progress-time');
@@ -1288,7 +1396,7 @@
           if (endsAtEl) {
             if (remainingSeconds > 0) {
               const endTime = new Date(Date.now() + remainingSeconds * 1000);
-              const formattedEndTime = endTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+              const formattedEndTime = endTime.toLocaleTimeString(this.locale(), { hour: 'numeric', minute: '2-digit' });
               endsAtEl.textContent = JE.t('pausescreen_ends_at', { time: formattedEndTime });
             } else {
               endsAtEl.textContent = ''; // Clear it if video is over
