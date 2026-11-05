@@ -71,9 +71,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     updated.CriticRating = item.CriticRating;
                     updated.OfficialRating = string.IsNullOrWhiteSpace(item.OfficialRating) ? null : item.OfficialRating;
                     InheritFromSeries(updated, item.GetBaseItemKind(), series);
-                    // A season without genres of its own (or a first episode's) shows its series' genres.
+                    // A season without genres of its own (or a first episode's) shows its series' genres, including
+                    // the first time the series gets any (it showed the series' empty list until then).
                     if (item.GetBaseItemKind() == BaseItemKind.Season && (item.Genres == null || item.Genres.Length == 0) && item.CommunityRating == null
-                        && previousGenres is { Length: > 0 } && (entry.Genres ?? Array.Empty<string>()).SequenceEqual(previousGenres, StringComparer.Ordinal))
+                        && (entry.Genres ?? Array.Empty<string>()).SequenceEqual(previousGenres ?? Array.Empty<string>(), StringComparer.Ordinal))
                         updated.Genres = series.Genres;
                     if (updated.CommunityRating == entry.CommunityRating && updated.CriticRating == entry.CriticRating
                         && string.Equals(updated.OfficialRating, entry.OfficialRating, StringComparison.Ordinal)

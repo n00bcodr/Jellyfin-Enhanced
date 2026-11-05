@@ -313,6 +313,18 @@ public class CustomTagRulesTests
             Flush(cache);
             Assert.Equal(["Comedy"], Genres(season));
             Assert.Equal(["Documentary"], Genres(own)); // its own genres stay
+
+            // A series that had no genres gets its first: the season that showed the empty list takes them too.
+            series.Genres = [];
+            cache.EnqueueUpdate(series.Id);
+            Flush(cache);
+            Assert.Empty(Genres(season) ?? []);
+            series.Genres = ["Drama"];
+            cache.EnqueueUpdate(series.Id);
+            Flush(cache);
+            Assert.Equal(["Drama"], Genres(season));
+            Assert.Equal(Genres(season), cache.BuildEntryOnDemand(season)!.Genres);
+            Assert.Equal(["Documentary"], Genres(own));
         }
         finally
         {
