@@ -1823,6 +1823,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         /// <summary>
+        /// Whether what one user receives for <paramref name="entry"/> depends on their access set beyond the
+        /// entry's own visibility: Series/Season facts drawn from episodes (quality and languages, the latest
+        /// episode, the Status facts) and matches made by a collection (Custom Tags, Leaving). Such an entry's
+        /// projection changes with access while its LastUpdated stays, so a delta answering a caller whose
+        /// access revision differs re-sends every one of them (see the controller's tag-data route).
+        /// </summary>
+        public static bool ProjectsAccess(TagCacheEntry entry)
+            => entry.QualityEpisodeIds != null
+                || entry.LatestEpisodeId != null
+                || entry.StatusEpisodeIds != null
+                || entry.Leaving?.Collections != null
+                || (entry.CustomTags is { } tags && Array.Exists(tags, Configuration.CustomTagRuleSet.IsCollectionId));
+
+        /// <summary>
         /// Every cache key <paramref name="user"/> may see in the current generation, ordinally sorted, or null
         /// when the cache is not live or no longer at <paramref name="version"/> (the client replaces its copy
         /// then anyway). Sent with a delta whose access revision differs from the client's, so a copy whose only

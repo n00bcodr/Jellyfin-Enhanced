@@ -247,6 +247,69 @@ public class PerfRound2TagCacheResponseTests
         Assert.Null(Visible((await endpoint.Read(endpoint.Alice, since: 200, known: FilterRevision(revoked.Body))).Body));
     }
 
+    private static JsonElement? Item(string body, Guid id)
+    {
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.GetProperty("items").TryGetProperty(id.ToString("N"), out var item) ? item.Clone() : null;
+    }
+
+    [Fact]
+    public async Task AnAccessOnlyDeltaResendsTheVisibleEntriesWhoseFactsDependOnAccess()
+    {
+        // The series' latest-episode date and the season's quality summary come from an episode Alice can
+        // lose while still seeing the series and the season. Their LastUpdated never moves, so a reconciling
+        // delta must carry them freshly projected; an unrelated entry does not ride along. (Collection-made
+        // facts follow the same rule: OnlyEntriesProjectedThroughAccessRideAlongAReconcile.)
+        var seriesKey = Guid.NewGuid();
+        var seasonKey = Guid.NewGuid();
+        using var endpoint = new Endpoint(e => new()
+        {
+            [seriesKey.ToString("N")] = new() { Type = "Series", DateCreated = 100, LatestEpisodeAdded = 5000, LatestEpisodeId = e.Episode.ToString("N"), LastUpdated = 120 },
+            [seasonKey.ToString("N")] = new() { Type = "Season", SeriesId = e.SeriesId.ToString("N"), AudioLanguages = ["ja"], QualityEpisodeIds = [e.Episode.ToString("N")], LastUpdated = 130 }
+        });
+        endpoint.AliceAccess = [endpoint.First, seriesKey, endpoint.Episode, seasonKey];
+        var full = await endpoint.Read(endpoint.Alice);
+        Assert.Equal(5000, Item(full.Body, seriesKey)!.Value.GetProperty("LatestEpisodeAdded").GetInt64());
+        Assert.Equal("ja", Item(full.Body, seasonKey)!.Value.GetProperty("AudioLanguages")[0].GetString());
+
+        // Alice loses the episode; the series and the season stay visible.
+        endpoint.AliceAccess = [endpoint.First, seriesKey, seasonKey];
+        endpoint.Cache.InvalidateUserAccess();
+        var revoked = await endpoint.Read(endpoint.Alice, since: 200, known: FilterRevision(full.Body));
+        Assert.Equal(FilterBase(full.Body), FilterBase(revoked.Body));
+        Assert.Equal(new[] { endpoint.First, seriesKey, seasonKey }.Select(id => id.ToString("N")).Order(StringComparer.Ordinal), Visible(revoked.Body)!);
+        var series = Item(revoked.Body, seriesKey);
+        Assert.NotNull(series);
+        Assert.False(series!.Value.TryGetProperty("LatestEpisodeAdded", out _));
+        var season = Item(revoked.Body, seasonKey);
+        Assert.NotNull(season);
+        Assert.False(season!.Value.TryGetProperty("AudioLanguages", out var languages) && languages.GetArrayLength() > 0);
+        Assert.Null(Item(revoked.Body, endpoint.First));
+        Assert.DoesNotContain(endpoint.Episode.ToString("N"), revoked.Body);
+
+        // Under the new filter nothing rides along; granting them back re-sends both with their facts.
+        AssertEmptyDelta((await endpoint.Read(endpoint.Alice, since: 200, known: FilterRevision(revoked.Body))).Body);
+        endpoint.AliceAccess = [endpoint.First, seriesKey, endpoint.Episode, seasonKey];
+        endpoint.Cache.InvalidateUserAccess();
+        var granted = await endpoint.Read(endpoint.Alice, since: 200, known: FilterRevision(revoked.Body));
+        Assert.Equal(5000, Item(granted.Body, seriesKey)!.Value.GetProperty("LatestEpisodeAdded").GetInt64());
+        Assert.Equal("ja", Item(granted.Body, seasonKey)!.Value.GetProperty("AudioLanguages")[0].GetString());
+        Assert.Equal(FilterRevision(full.Body), FilterRevision(granted.Body));
+    }
+
+    [Fact]
+    public void OnlyEntriesProjectedThroughAccessRideAlongAReconcile()
+    {
+        Assert.False(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", Genres = ["Drama"] }));
+        Assert.True(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Season", QualityEpisodeIds = ["e"] }));
+        Assert.True(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Series", StatusEpisodeIds = ["e"] }));
+        Assert.True(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Series", LatestEpisodeId = "e" }));
+        Assert.True(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", Leaving = new TagLeaving { Collections = "c" } }));
+        Assert.False(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", Leaving = new TagLeaving { DeleteAt = 1 } }));
+        Assert.True(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", CustomTags = [CustomTagRuleSet.MatchCollection + ":Favourites"] }));
+        Assert.False(TagCacheService.ProjectsAccess(new TagCacheEntry { Type = "Movie", CustomTags = ["tag:Favourites"] }));
+    }
+
     [Fact]
     public async Task TheVisibleIdsNeverNameAnItemTheUserCannotSee()
     {

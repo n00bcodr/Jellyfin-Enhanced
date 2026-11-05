@@ -9153,9 +9153,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 stripFingerprint = _spoilerTagDataStripper.StripTagCache(spPolicy, user, items);
             }
 
+            // A caller whose filter differs only in access reconciles its copy from this delta (`visible` drops
+            // what it can no longer see). The entries it still sees whose projection depends on access (a
+            // series' facts from an episode it lost, a collection's Custom Tag or Leaving fact) kept their
+            // LastUpdated, so they ride along freshly projected; the walk runs again only on that mismatch.
+            if (since.HasValue && known != null && !string.Equals(known, FilterRevisionOf(accessRevision), StringComparison.Ordinal))
+            {
+                Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool> reconcileRider = guardedRider == null
+                    ? (_, e) => Services.TagCacheService.ProjectsAccess(e)
+                    : (key, e) => Services.TagCacheService.ProjectsAccess(e) || guardedRider(key, e);
+                items = _tagCacheService.GetCacheForUser(user, out cacheVersion, out cacheTimestamp, out accessRevision, out removed, since, reconcileRider);
+                if (spPolicy != null)
+                {
+                    stripFingerprint = _spoilerTagDataStripper.StripTagCache(spPolicy, user, items);
+                }
+            }
+
             // `items` is final (post Spoiler Guard strip above); serialized once.
             var itemsJson = JsonSerializer.SerializeToUtf8Bytes(items, jsonOptions);
             return Respond(cacheVersion, cacheTimestamp, accessRevision, itemsJson, items.Count, removed);
+
+            string FilterRevisionOf(string access) => Convert.ToHexString(
+                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
 
             // The rest of the response — review ratings, filterRevision, body,
             // ETag/304 — for either source of `items`.
@@ -9180,8 +9199,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                 }
 
-                var filterRevision = Convert.ToHexString(
-                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
+                var filterRevision = FilterRevisionOf(access);
                 // The same fingerprint without the access part: when only access changed (an item the user cannot
                 // see was added, or one they could see was hidden), a delta can still correct a stored copy by
                 // dropping what is no longer `visible`; any other change still needs a full download.
