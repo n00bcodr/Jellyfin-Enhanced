@@ -288,10 +288,10 @@
             #pause-screen-details .pause-screen-score .material-icons { font-size: 1.15em; color: #f2b01e; }
             #pause-screen-details .pause-screen-date-short { display: none; }
             #pause-screen-overlay.has-duration #pause-screen-details .pause-screen-runtime { display: none; }
+            .pause-screen-facts { display: flex; flex-direction: column; gap: clamp(6px, .8vh, 10px); min-width: 0; }
             #pause-screen-genres {
               font-size: var(--pause-screen-text-size);
               color: #d0d0d0;
-              margin-top: calc(-1 * clamp(4px, .8vh, 10px));
             }
             #pause-screen-plot {
               font-size: var(--pause-screen-plot-font);
@@ -524,8 +524,7 @@
               @media (min-height: 740px) and (orientation: portrait) {
                 .pause-screen-layout {
                   grid-template-columns: auto minmax(0, 1fr);
-                  grid-template-areas: "logo logo" "title title" "sub sub" "art facts" "art genres" "plot plot";
-                  grid-template-rows: auto auto auto max-content auto auto;
+                  grid-template-areas: "logo logo" "title title" "sub sub" "art facts" "plot plot";
                   align-content: start; align-items: start; row-gap: 0; column-gap: 16px;
                 }
                 .pause-screen-main { display: contents; }
@@ -534,13 +533,13 @@
                 #pause-screen-title { grid-area: title; margin: 0 0 16px; }
                 #pause-screen-subtitle { grid-area: sub; }
                 .pause-screen-art { display: flex; grid-area: art; align-self: start; justify-content: flex-start; min-height: 0; margin-bottom: 12px; }
-                #pause-screen-details { grid-area: facts; align-self: start; margin-top: 6px; margin-bottom: 8px; }
-                #pause-screen-genres { grid-area: genres; align-self: start; margin-top: 0; }
+                .pause-screen-facts { grid-area: facts; align-self: start; margin-top: 6px; gap: 8px; }
                 #pause-screen-plot { grid-area: plot; margin-top: 4px; }
                 #pause-screen-poster { width: 96px; border-radius: 4px; }
                 #pause-screen-disc { width: 112px; animation: none; }
                 /* an episode still goes under the episode line, full width */
-                #pause-screen-overlay.has-still .pause-screen-layout { grid-template-areas: "logo logo" "title title" "sub sub" "art art" "facts facts" "genres genres" "plot plot"; grid-template-rows: auto; }
+                #pause-screen-overlay.has-still .pause-screen-layout { grid-template-areas: "logo logo" "title title" "sub sub" "art art" "facts facts" "plot plot"; }
+                #pause-screen-overlay.has-still .pause-screen-facts { margin-top: 0; }
                 #pause-screen-overlay.has-still .pause-screen-art { align-self: start; }
                 #pause-screen-poster.is-still { width: 100%; max-width: 420px; }
               }
@@ -565,7 +564,7 @@
                 --pause-screen-hint-size: 14px;
                 --pause-screen-plot-font: 14px;
               }
-              .pause-screen-layout { padding-top: calc(56px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 84px) + 16px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); }
+              .pause-screen-layout { padding-top: calc(56px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 84px) + 24px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); }
               .pause-screen-main { gap: 8px; }
               #pause-screen-subtitle { font-size: 16px; }
               #pause-screen-details .pause-screen-date-long { display: none; }
@@ -744,8 +743,11 @@
           this.overlayMain.appendChild(this.overlayLogo);
           this.overlayMain.appendChild(this.overlayTitle);
           this.overlayMain.appendChild(this.overlaySubtitle);
-          this.overlayMain.appendChild(this.overlayDetails);
-          this.overlayMain.appendChild(this.overlayGenres);
+          const facts = document.createElement("div");
+          facts.className = "pause-screen-facts";
+          facts.appendChild(this.overlayDetails);
+          facts.appendChild(this.overlayGenres);
+          this.overlayMain.appendChild(facts);
           this.overlayMain.appendChild(this.overlayPlot);
           art.appendChild(this.overlayDisc);
           art.appendChild(this.overlayPoster);
