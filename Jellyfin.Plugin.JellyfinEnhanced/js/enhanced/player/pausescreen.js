@@ -32,6 +32,7 @@
           this.imgBlobCache = new Map();
           this.imgProbeCache = new Map();
           this.itemCache = new Map();
+          this.seriesGenreCache = new Map();
           this.fetchAbort = null;
           this.observer = null;
           this.prevFocused = null;
@@ -50,6 +51,13 @@
           this.overlayPlot = null;
           this.overlayDetails = null;
           this.overlayDisc = null;
+          this.overlayPoster = null;
+          this.overlayMain = null;
+          this.overlayKicker = null;
+          this.overlayTitle = null;
+          this.overlaySubtitle = null;
+          this.overlayGenres = null;
+          this.progressHint = null;
           this.overlayBackdrop = null;
           this.progressWrap = null;
           this.progressBar = null;
@@ -81,6 +89,7 @@
             this.imgBlobCache.clear();
             this.imgProbeCache.clear();
             this.itemCache.clear();
+            this.seriesGenreCache.clear();
             this.userId = null;
             this.token = null;
             setTimeout(() => {
@@ -126,31 +135,22 @@
           style.id = "pause-screen-style";
           style.textContent = `
             :root {
-              --pause-screen-overlay-bg: rgba(0,0,0,.78);
-              --pause-screen-blur: 50px;
-              --pause-screen-logo-max-w: 45vw;
-              --pause-screen-logo-max-h: 20vh;
-              --pause-screen-logo-top: 20vh;
-              --pause-screen-logo-left: 8vw;
-
-              --pause-screen-details-top: 45vh;
-              --pause-screen-details-left: 8vw;
-              --pause-screen-details-gap: 2rem;
-              --pause-screen-text-size: 1.2rem;
-
-              --pause-screen-plot-top: 55vh;
-              --pause-screen-plot-left: 8vw;
-              --pause-screen-plot-max-w: 50vw;
-              --pause-screen-plot-font: 1.25rem;
-
-              --pause-screen-progress-top: 85vh;
-              --pause-screen-progress-width: 48vw;
-              --pause-screen-progress-height: 6px;
+              --pause-screen-overlay-bg: rgba(10, 10, 14, .6);
+              --pause-screen-blur: 10px;
+              --pause-screen-accent: var(--theme-primary-color, var(--primary-accent-color, #00a4dc));
+              --pause-screen-gutter-x: clamp(24px, 6vw, 110px);
+              --pause-screen-gutter-y: clamp(20px, 5vh, 64px);
+              --pause-screen-logo-max-w: min(46vw, 640px);
+              --pause-screen-logo-max-h: 22vh;
+              --pause-screen-text-size: clamp(14px, 1.05vw, 19px);
+              --pause-screen-plot-font: clamp(15px, 1.15vw, 20px);
+              --pause-screen-plot-lines: 4;
+              --pause-screen-plot-max-w: 62ch;
+              --pause-screen-progress-height: 4px;
               --pause-screen-progress-radius: 999px;
-
-              --pause-screen-disc-w: 26vw;
-              --pause-screen-disc-right: 5vw;
-              --pause-screen-disc-rot-sec: 60s;
+              --pause-screen-disc-w: clamp(220px, 22vw, 420px);
+              --pause-screen-disc-rot-sec: 90s;
+              --pause-screen-poster-w: clamp(170px, 17vw, 320px);
             }
 
             #pause-screen-overlay {
@@ -161,9 +161,12 @@
               font-family: inherit;
               background: var(--pause-screen-overlay-bg);
             }
-            #pause-screen-overlay[aria-hidden="false"] { display: flex; }
+            #pause-screen-overlay[aria-hidden="false"] { display: block; animation: pause-screen-fade .28s ease-out; }
+            @keyframes pause-screen-fade { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes pause-screen-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
             .pause-screen-active .videoOsdBottom { opacity: 0 !important; pointer-events: none !important; }
+            .pause-screen-active #je-playback-rating-badge { display: none !important; }
 
             /* To show back button when paused */
             .pause-screen-active .skinHeader.osdHeader {
@@ -190,78 +193,128 @@
             #pause-screen-content {
               position: relative;
               width: 100%; height: 100%;
-              backdrop-filter: blur(var(--pause-screen-blur)) brightness(0.5);
+              overflow: hidden;
+              backdrop-filter: blur(28px) brightness(0.6);
               outline: none;
             }
 
-            /* Backdrop image (under everything) */
+            /* Backdrop image (under everything), softened so the text stays readable */
             #pause-screen-backdrop {
-              position: absolute; inset: 0;
+              position: absolute; inset: -4%;
               background-position: center;
               background-size: cover;
-              opacity: .28;
+              filter: blur(var(--pause-screen-blur)) saturate(1.2);
+              opacity: .78;
               pointer-events: none;
             }
+            .pause-screen-scrim {
+              position: absolute; inset: 0;
+              pointer-events: none;
+              background:
+                linear-gradient(90deg, rgba(8,9,13,.88) 0%, rgba(8,9,13,.66) 36%, rgba(8,9,13,.28) 64%, rgba(8,9,13,.18) 100%),
+                linear-gradient(180deg, rgba(8,9,13,.42) 0%, rgba(8,9,13,0) 26%, rgba(8,9,13,0) 60%, rgba(8,9,13,.84) 100%);
+            }
 
+            .pause-screen-layout {
+              position: absolute; inset: 0;
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) auto;
+              align-items: center;
+              column-gap: clamp(24px, 4vw, 80px);
+              padding: var(--pause-screen-gutter-y) var(--pause-screen-gutter-x) calc(var(--pause-screen-gutter-y) + 110px);
+              box-sizing: border-box;
+            }
+            .pause-screen-main {
+              display: flex; flex-direction: column; align-items: flex-start;
+              gap: clamp(10px, 1.6vh, 20px);
+              min-width: 0;
+              max-width: min(100%, 60vw);
+              animation: pause-screen-rise .4s ease-out;
+            }
+            #pause-screen-kicker {
+              font-size: calc(var(--pause-screen-text-size) * .85);
+              letter-spacing: .12em; text-transform: uppercase;
+              font-weight: 600; opacity: .72;
+            }
             #pause-screen-logo {
-              position: absolute;
+              display: block;
               max-width: var(--pause-screen-logo-max-w);
               max-height: var(--pause-screen-logo-max-h);
               width: auto; height: auto;
-              top: var(--pause-screen-logo-top);
-              left: var(--pause-screen-logo-left);
-              display: block;
-              object-fit: contain;
+              object-fit: contain; object-position: left center;
+              margin-bottom: clamp(2px, .8vh, 10px);
+              filter: drop-shadow(0 6px 24px rgba(0,0,0,.45));
             }
-
+            #pause-screen-title {
+              margin: 0;
+              font-size: clamp(30px, 4.4vw, 68px);
+              line-height: 1.04; font-weight: 700; letter-spacing: -.012em;
+              text-shadow: 0 2px 18px rgba(0,0,0,.5);
+              text-wrap: balance;
+            }
+            .pause-screen-main.has-logo #pause-screen-title { display: none; }
+            #pause-screen-subtitle {
+              font-size: clamp(17px, 1.5vw, 28px);
+              font-weight: 600; line-height: 1.25;
+              text-shadow: 0 1px 12px rgba(0,0,0,.4);
+            }
+            #pause-screen-subtitle .pause-screen-episode-code { opacity: .75; font-weight: 500; margin-right: .55em; }
             #pause-screen-details {
-              position: absolute;
-              top: var(--pause-screen-details-top);
-              left: var(--pause-screen-details-left);
-              display: flex; gap: var(--pause-screen-details-gap); align-items: center;
+              display: flex; flex-wrap: wrap; align-items: center;
+              gap: .35em 1em;
               font-size: var(--pause-screen-text-size);
+              color: rgba(255,255,255,.92);
             }
-
+            #pause-screen-details .mediaInfoOfficialRating { font-size: .85em; margin: 0; }
+            #pause-screen-details .pause-screen-score { display: inline-flex; align-items: center; gap: .2em; }
+            #pause-screen-details .pause-screen-score .material-icons { font-size: 1.15em; color: #f2b01e; }
+            #pause-screen-genres {
+              font-size: var(--pause-screen-text-size);
+              color: rgba(255,255,255,.62);
+              margin-top: calc(-1 * clamp(4px, .8vh, 10px));
+            }
             #pause-screen-plot {
-              position: absolute;
-              top: var(--pause-screen-plot-top);
-              left: var(--pause-screen-plot-left);
-              max-width: var(--pause-screen-plot-max-w);
-              height: 25vh; /* Adjusted height */
-              display: block;
               font-size: var(--pause-screen-plot-font);
-              line-height: 1.6;
-              overflow-y: auto;
+              line-height: 1.55;
+              color: rgba(255,255,255,.86);
+              max-width: var(--pause-screen-plot-max-w);
+              display: -webkit-box; -webkit-box-orient: vertical;
+              -webkit-line-clamp: var(--pause-screen-plot-lines);
+              overflow: hidden;
               text-align: left;
+              text-shadow: 0 1px 12px rgba(0,0,0,.35);
             }
 
+            .pause-screen-art { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
             #pause-screen-disc {
-              position: absolute;
-              top: calc(50vh - (var(--pause-screen-disc-w) / 2));
-              right: var(--pause-screen-disc-right);
               width: var(--pause-screen-disc-w);
-              height: auto;
-              display: block;
+              height: auto; display: block;
+              border-radius: 50%;
               animation: pause-screen-spin var(--pause-screen-disc-rot-sec) linear infinite;
-              z-index: 1;
-              filter: brightness(80%);
+              filter: drop-shadow(0 18px 40px rgba(0,0,0,.55));
+            }
+            #pause-screen-poster {
+              width: var(--pause-screen-poster-w);
+              aspect-ratio: 2 / 3;
+              object-fit: cover; display: block;
+              border-radius: 12px;
+              box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08);
             }
 
             @keyframes pause-screen-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
             /* Progress UI */
-            #pause-screen-progress-wrap {
+            .pause-screen-footer {
               position: absolute;
-              top: var(--pause-screen-progress-top);
-              left: var(--pause-screen-details-left);
-              width: var(--pause-screen-progress-width);
-              user-select: none;
+              left: var(--pause-screen-gutter-x); right: var(--pause-screen-gutter-x);
+              bottom: var(--pause-screen-gutter-y);
             }
+            #pause-screen-progress-wrap { user-select: none; }
             #pause-screen-progress-bar {
               width: 100%;
               height: var(--pause-screen-progress-height);
               border-radius: var(--pause-screen-progress-radius);
-              background: rgba(255,255,255,.18);
+              background: rgba(255,255,255,.22);
               overflow: hidden;
               position: relative;
             }
@@ -269,43 +322,51 @@
               display: block;
               height: 100%;
               width: 0%;
-              background: rgba(255,255,255,.9);
+              background: var(--pause-screen-accent);
+              border-radius: inherit;
             }
             #pause-screen-progress-meta {
-              margin-top: .5rem;
-              font-size: 0.9rem;
-              opacity: .9;
-              display: flex;
+              margin-top: .75em;
+              display: flex; justify-content: space-between; align-items: baseline;
+              gap: .5em 2em; flex-wrap: wrap;
+              font-size: calc(var(--pause-screen-text-size) * .92);
+              color: rgba(255,255,255,.82);
+              font-variant-numeric: tabular-nums;
             }
-            #pause-screen-progress-meta span::before {
-              content: '•';
-              margin: 1em;
-            }
-            #pause-screen-progress-meta .progress-ends-at::after {
-              content: '•';
-              margin: 1em;
+            #pause-screen-progress-meta .pause-screen-meta-group { display: inline-flex; align-items: center; gap: .6em; flex-wrap: wrap; }
+            .pause-screen-status { display: inline-flex; align-items: center; gap: .25em; font-weight: 600; color: #fff; }
+            .pause-screen-status .material-icons { font-size: 1.3em; }
+            #pause-screen-progress-meta .progress-time:not(:empty)::before,
+            #pause-screen-progress-meta .progress-percentage:not(:empty)::before,
+            #pause-screen-progress-meta .progress-ends-at:not(:empty)::before { content: '·'; opacity: .5; margin-right: .6em; }
+            .pause-screen-hint {
+              margin-top: .45em;
+              font-size: calc(var(--pause-screen-text-size) * .85);
+              color: rgba(255,255,255,.55);
+              text-align: right;
             }
             #pause-screen-close-btn {
               position: absolute;
               top: 20px;
-              right: 20px;
-              background: rgba(0,0,0,0.1);
-              border: 1px solid rgba(255,255,255,0.2);
-              color: white;
-              width: 1.5em;
-              height: 1.5em;
+              right: 24px;
+              width: 44px; height: 44px;
+              padding: 0;
+              background: rgba(20,20,24,.55);
+              border: 1px solid rgba(255,255,255,.22);
+              color: #fff;
               border-radius: 50%;
-              font-size: 1.5em;
               display: flex;
               align-items: center;
               justify-content: center;
               cursor: pointer;
               z-index: 2;
-              transition: background 0.2s;
+              transition: background 0.2s, border-color .2s;
             }
+            #pause-screen-close-btn .material-icons { font-size: 24px; }
             #pause-screen-close-btn:hover,
             #pause-screen-close-btn:focus-visible {
-              background: rgba(0,0,0,0.8);
+              background: rgba(255,255,255,.18);
+              border-color: rgba(255,255,255,.5);
             }
             #pause-screen-close-btn:focus-visible {
               outline: 2px solid #fff;
@@ -324,69 +385,58 @@
                 text-align: left !important;
             }
 
-            /* Tablet */
-            @media (max-width: 1400px) {
-              :root {
-                --pause-screen-logo-max-w: 40vw;
-                --pause-screen-logo-top: 18vh;
-                --pause-screen-logo-left: 6vw;
-                --pause-screen-details-top: 42vh;
-                --pause-screen-details-left: 6vw;
-                --pause-screen-plot-top: 50vh;
-                --pause-screen-plot-left: 6vw;
-                --pause-screen-plot-max-w: 48vw;
-                --pause-screen-disc-w: 24vw;
-                --pause-screen-disc-right: 4vw;
-                --pause-screen-progress-width: 44vw;
-              }
+            /* Narrow landscape (tablets, phones on their side): no room for the art column */
+            @media (max-width: 1000px) {
+              .pause-screen-layout { grid-template-columns: minmax(0, 1fr); }
+              .pause-screen-art { display: none; }
+              .pause-screen-main { max-width: 100%; }
+              :root { --pause-screen-logo-max-w: min(60vw, 520px); }
             }
 
-            /* Narrow / Portrait Mobile - Hides Disc */
+            /* Portrait phone: one column, left-aligned, footer pinned */
             @media (max-width: 768px) {
               :root {
-                --pause-screen-logo-max-w: 70vw;
-                --pause-screen-logo-top: 12vh;
-                --pause-screen-logo-left: 50%;
-                --pause-screen-progress-width: 80vw;
-                --pause-screen-progress-top: 88vh;
+                --pause-screen-gutter-x: 20px;
+                --pause-screen-gutter-y: 22px;
+                --pause-screen-logo-max-w: 78vw;
+                --pause-screen-logo-max-h: 18vh;
+                --pause-screen-text-size: 14px;
+                --pause-screen-plot-font: 15px;
+                --pause-screen-plot-lines: 6;
               }
-              #pause-screen-logo { transform: translateX(-50%); }
-              #pause-screen-details {
-                left: 50%; transform: translateX(-50%);
-                top: 32vh; font-size: 14px; justify-content: center;
-              }
-              #pause-screen-plot {
-                top: 40vh; left: 50%; transform: translateX(-50%);
-                max-width: 85vw; text-align: center; font-size: 15px; height: 45vh;
-              }
-              #pause-screen-disc {
-                display: none; /* Hide disc on mobile layouts */
-              }
+              .pause-screen-layout { padding-top: 76px; padding-bottom: 150px; align-items: center; }
+              #pause-screen-title { font-size: clamp(28px, 8vw, 40px); }
+              #pause-screen-subtitle { font-size: 18px; }
+              #pause-screen-progress-meta { flex-direction: column; align-items: flex-start; gap: .35em; }
+              .pause-screen-hint { text-align: left; }
+              #pause-screen-close-btn { top: 16px; right: 16px; }
             }
 
-            /* Mobile Landscape */
+            /* Phone landscape: short viewport */
             @media (max-height: 500px) and (orientation: landscape) {
               :root {
-                --pause-screen-logo-max-h: 18vh;
-                --pause-screen-logo-top: 8vh;
-                --pause-screen-details-top: 30vh;
-                --pause-screen-plot-top: 40vh;
-                --pause-screen-plot-max-w: 45vw;
+                --pause-screen-gutter-y: 14px;
+                --pause-screen-logo-max-h: 15vh;
+                --pause-screen-plot-lines: 2;
+                --pause-screen-text-size: 13px;
                 --pause-screen-plot-font: 14px;
-                --pause-screen-progress-top: 78vh;
-                --pause-screen-disc-w: 22vw;
               }
-              #pause-screen-plot { height: 35vh; }
-              #pause-screen-disc { display: block; } /* Show disc again in landscape */
+              .pause-screen-layout { padding-top: 56px; padding-bottom: 92px; }
+              .pause-screen-main { gap: 8px; }
+              #pause-screen-subtitle { font-size: 16px; }
+              #pause-screen-progress-meta { margin-top: .4em; }
+              .pause-screen-hint { display: none; }
             }
 
-            /* Reduced motion: stop spin */
+            /* Reduced motion: no spin, no fade */
             @media (prefers-reduced-motion: reduce) {
               #pause-screen-disc { animation: none !important; }
+              #pause-screen-overlay[aria-hidden="false"], .pause-screen-main { animation: none !important; }
             }
 
-            /* Hide absent images */
-            #pause-screen-logo:not([src]), #pause-screen-disc:not([src]) { display: none; }
+            /* Hide absent images and empty text slots */
+            #pause-screen-logo:not([src]), #pause-screen-disc:not([src]), #pause-screen-poster:not([src]) { display: none; }
+            #pause-screen-kicker:empty, #pause-screen-title:empty, #pause-screen-subtitle:empty, #pause-screen-genres:empty, .pause-screen-hint:empty { display: none; }
 
           `;
           document.head.appendChild(style);
@@ -399,6 +449,7 @@
           this.overlay.setAttribute("role", "dialog");
           this.overlay.setAttribute("aria-hidden", "true");
           this.overlay.setAttribute("aria-modal", "true");
+          this.overlay.setAttribute("aria-label", JE.t('pausescreen_paused'));
 
           this.focusStart = document.createElement('div');
           this.focusStart.id = 'pause-screen-focus-start';
@@ -413,71 +464,132 @@
           this.overlayContent.id = "pause-screen-content";
           this.overlayContent.tabIndex = -1;
 
-          // Backdrop layer
+          // Backdrop layer and the gradient scrim that keeps the text readable over it
           this.overlayBackdrop = document.createElement("div");
           this.overlayBackdrop.id = "pause-screen-backdrop";
+          const scrim = document.createElement("div");
+          scrim.className = "pause-screen-scrim";
+
+          // Two-column layout: text on the left, art on the right
+          const layout = document.createElement("div");
+          layout.className = "pause-screen-layout";
+          this.overlayMain = document.createElement("div");
+          this.overlayMain.className = "pause-screen-main";
+          const art = document.createElement("div");
+          art.className = "pause-screen-art";
 
           // UI nodes
+          this.overlayKicker = document.createElement("div");
+          this.overlayKicker.id = "pause-screen-kicker";
+
           this.overlayLogo = document.createElement("img");
           this.overlayLogo.id = "pause-screen-logo";
+          this.overlayLogo.alt = "";
+
+          // Text title, shown only when no logo image is available
+          this.overlayTitle = document.createElement("div");
+          this.overlayTitle.id = "pause-screen-title";
+          this.overlayTitle.setAttribute("role", "heading");
+          this.overlayTitle.setAttribute("aria-level", "1");
+
+          // Episode line (season/episode code and episode name)
+          this.overlaySubtitle = document.createElement("div");
+          this.overlaySubtitle.id = "pause-screen-subtitle";
 
           this.overlayDetails = document.createElement("div");
           this.overlayDetails.id = "pause-screen-details";
 
+          this.overlayGenres = document.createElement("div");
+          this.overlayGenres.id = "pause-screen-genres";
+
           this.overlayPlot = document.createElement("div");
           this.overlayPlot.id = "pause-screen-plot";
 
+          this.overlayDisc = document.createElement("img");
+          this.overlayDisc.id = "pause-screen-disc";
+          this.overlayDisc.alt = "";
+
+          this.overlayPoster = document.createElement("img");
+          this.overlayPoster.id = "pause-screen-poster";
+          this.overlayPoster.alt = "";
+
+          // Footer: progress bar, playback facts and the resume hint
+          const footer = document.createElement("div");
+          footer.className = "pause-screen-footer";
           this.progressWrap = document.createElement("div");
           this.progressWrap.id = "pause-screen-progress-wrap";
           this.progressBar = document.createElement("div");
           this.progressBar.id = "pause-screen-progress-bar";
+          this.progressBar.setAttribute("role", "progressbar");
+          this.progressBar.setAttribute("aria-valuemin", "0");
+          this.progressBar.setAttribute("aria-valuemax", "100");
           const fill = document.createElement("span");
           this.progressBar.appendChild(fill);
           this.progressMeta = document.createElement("div");
           this.progressMeta.id = "pause-screen-progress-meta";
+          const statusLabel = JE.core.ui.escapeHtml(JE.t('pausescreen_paused'));
           this.progressMeta.innerHTML = `
-              <span class="progress-time"></span>
-              <span class="progress-percentage"></span>
-              <span class="progress-ends-at"></span>
+              <span class="pause-screen-meta-group">
+                <span class="pause-screen-status"><span class="material-icons" aria-hidden="true">pause</span>${statusLabel}</span>
+                <span class="progress-time"></span>
+                <span class="progress-percentage"></span>
+              </span>
+              <span class="pause-screen-meta-group">
+                <span class="progress-left"></span>
+                <span class="progress-ends-at"></span>
+              </span>
           `;
+          this.progressHint = document.createElement("div");
+          this.progressHint.className = "pause-screen-hint";
           this.progressWrap.appendChild(this.progressBar);
           this.progressWrap.appendChild(this.progressMeta);
-
-          this.overlayDisc = document.createElement("img");
-          this.overlayDisc.id = "pause-screen-disc";
+          this.progressWrap.appendChild(this.progressHint);
+          footer.appendChild(this.progressWrap);
 
           const closeButton = document.createElement("button");
           closeButton.id = "pause-screen-close-btn";
-          closeButton.innerHTML = "&times;";
+          closeButton.type = "button";
+          closeButton.setAttribute("aria-label", JE.t('pausescreen_dismiss'));
+          closeButton.title = JE.t('pausescreen_dismiss');
+          closeButton.innerHTML = '<span class="material-icons" aria-hidden="true">close</span>';
           closeButton.onclick = () => {
               this.hideOverlay(true);
           };
           this.closeButton = closeButton;
 
           // Assemble
+          this.overlayMain.appendChild(this.overlayKicker);
+          this.overlayMain.appendChild(this.overlayLogo);
+          this.overlayMain.appendChild(this.overlayTitle);
+          this.overlayMain.appendChild(this.overlaySubtitle);
+          this.overlayMain.appendChild(this.overlayDetails);
+          this.overlayMain.appendChild(this.overlayGenres);
+          this.overlayMain.appendChild(this.overlayPlot);
+          art.appendChild(this.overlayDisc);
+          art.appendChild(this.overlayPoster);
+          layout.appendChild(this.overlayMain);
+          layout.appendChild(art);
+
           this.overlayContent.appendChild(this.overlayBackdrop);
-          this.overlayContent.appendChild(this.overlayLogo);
-          this.overlayContent.appendChild(this.overlayDetails);
-          this.overlayContent.appendChild(this.overlayPlot);
-          this.overlayContent.appendChild(this.progressWrap);
+          this.overlayContent.appendChild(scrim);
+          this.overlayContent.appendChild(layout);
+          this.overlayContent.appendChild(footer);
           this.overlayContent.appendChild(closeButton);
 
           this.overlay.appendChild(this.focusStart);
           this.overlay.appendChild(this.overlayContent);
-          this.overlay.appendChild(this.overlayDisc);
           this.overlay.appendChild(this.focusEnd);
 
           document.body.appendChild(this.overlay);
 
-          // Pointer/touch to resume
+          // Pointer/touch anywhere but the close button resumes
           const tryResume = (event) => {
-            if (event.target === this.overlay || event.target === this.overlayContent) {
-                // Introduce a delay to allow for long-press detection
-                JE.state.pauseScreenClickTimer = setTimeout(() => {
-                    this.hideOverlay();
-                    if (this.currentVideo?.paused) this.currentVideo.play();
-                }, 500);
-            }
+            if (event.target?.closest?.('#pause-screen-close-btn')) return;
+            // Introduce a delay to allow for long-press detection
+            JE.state.pauseScreenClickTimer = setTimeout(() => {
+                this.hideOverlay();
+                if (this.currentVideo?.paused) this.currentVideo.play();
+            }, 500);
           };
           this.overlay.addEventListener('click', tryResume);
           this.overlay.addEventListener('touchstart', tryResume, { passive: true });
@@ -773,12 +885,23 @@
           };
         }
 
+        /**
+         * The resume hint for the way this device is driven: remote, touch or keyboard/mouse.
+         * @returns {string}
+         */
+        resumeHint() {
+          if (JE.core?.ui?.isTvLayout?.()) return JE.t('pausescreen_resume_hint_tv');
+          if (window.matchMedia && window.matchMedia('(hover: none) and (pointer: coarse)').matches) return JE.t('pausescreen_resume_hint_touch');
+          return JE.t('pausescreen_resume_hint');
+        }
+
         showOverlay() {
             if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
                 this.overlayDisc.style.animation = 'none';
             } else {
                 this.overlayDisc.style.animation = '';
             }
+            this.progressHint.textContent = this.resumeHint();
             this.prevFocused = document.activeElement;
             document.documentElement.classList.add('pause-screen-active');
             this.overlay.setAttribute('aria-hidden', 'false');
@@ -798,9 +921,16 @@
         clearDisplayData() {
           this.overlayPlot.textContent = "";
           this.overlayDetails.innerHTML = "";
+          this.overlayKicker.textContent = "";
+          this.overlayTitle.textContent = "";
+          this.overlaySubtitle.textContent = "";
+          this.overlayGenres.textContent = "";
+          this.overlayMain.classList.remove('has-logo');
           this.overlayLogo.removeAttribute('src');
           this.overlayDisc.removeAttribute('src');
+          this.overlayPoster.removeAttribute('src');
           this.overlayBackdrop.style.backgroundImage = '';
+          this.overlay.setAttribute('aria-label', JE.t('pausescreen_paused'));
           // reset progress
           this.setProgress(0, 0);
         }
@@ -848,22 +978,15 @@
 
         async displayItemInfo(item, domain, itemId) {
           const generation = this.generation;
-          // Details
-          const year = item.ProductionYear || "";
-          const rating = item.OfficialRating || "";
-          const runtime = this.formatRuntime(item.RunTimeTicks);
-          this.overlayDetails.replaceChildren();
-          for (const [value, isRating] of [[year, false], [rating, true], [runtime, false]]) {
-            if (!value) continue;
-            const span = document.createElement('span');
-            span.textContent = String(value);
-            if (isRating) {
-              span.className = 'mediaInfoOfficialRating';
-              span.setAttribute('rating', String(value));
-            }
-            this.overlayDetails.appendChild(span);
-          }
+          const isEpisode = item.Type === 'Episode';
 
+          // Title text is the fallback for a missing logo; episodes show the series name there.
+          const titleText = (isEpisode ? (item.SeriesName || item.Name) : item.Name) || '';
+          this.overlayTitle.textContent = titleText;
+          this.overlay.setAttribute('aria-label', titleText ? `${JE.t('pausescreen_paused')}: ${titleText}` : JE.t('pausescreen_paused'));
+          this.renderSubtitle(item);
+          this.renderDetails(item);
+          this.overlayGenres.textContent = (Array.isArray(item.Genres) ? item.Genres : []).slice(0, 3).join(' · ');
           this.overlayPlot.textContent = item.Overview || JE.t('pausescreen_no_description');
 
           // Images: preload to blob URLs (cached)
@@ -876,19 +999,133 @@
             this.firstAvailableBlobURL(discUrls),
             this.firstAvailableBlobURL(backdropUrls)
           ]);
+          // The poster stands in for the disc, so only look for it when there is no disc art.
+          const posterURL = discURL ? null : await this.firstAvailableBlobURL(this.getPosterUrls(item, domain, itemId));
 
           if (this.destroyed || generation !== this.generation) return;
-          if (logoURL) this.overlayLogo.src = logoURL;
+          if (logoURL) {
+            this.overlayLogo.src = logoURL;
+            this.overlayMain.classList.add('has-logo');
+          }
           if (discURL) this.overlayDisc.src = discURL;
+          if (posterURL) this.overlayPoster.src = posterURL;
           if (backdropURL) this.overlayBackdrop.style.backgroundImage = `url("${backdropURL}")`;
+
+          // Episodes rarely carry genres of their own; borrow the series' list.
+          if (isEpisode && !this.overlayGenres.textContent && item.SeriesId) {
+            this.fillSeriesGenres(item.SeriesId, generation);
+          }
 
           // Set static progress snapshot if paused
           this.updateProgressStatic();
         }
 
+        /**
+         * Episode line: "S3 · E2" plus the episode name. Empty for anything but an episode.
+         * @param {object} item - The Jellyfin item DTO.
+         */
+        renderSubtitle(item) {
+          this.overlaySubtitle.replaceChildren();
+          if (item.Type !== 'Episode') return;
+          const season = item.ParentIndexNumber;
+          const episode = item.IndexNumber;
+          if (Number.isFinite(season) && Number.isFinite(episode)) {
+            const code = document.createElement('span');
+            code.className = 'pause-screen-episode-code';
+            const episodeText = Number.isFinite(item.IndexNumberEnd) && item.IndexNumberEnd > episode ? `${episode}–${item.IndexNumberEnd}` : String(episode);
+            code.textContent = JE.t('pausescreen_episode_code', { season, episode: episodeText });
+            this.overlaySubtitle.appendChild(code);
+          }
+          if (item.Name) {
+            const name = document.createElement('span');
+            name.className = 'pause-screen-episode-name';
+            name.textContent = item.Name;
+            this.overlaySubtitle.appendChild(name);
+          }
+        }
+
+        /**
+         * Facts row: date, official rating, runtime and community score.
+         * @param {object} item - The Jellyfin item DTO.
+         */
+        renderDetails(item) {
+          const when = item.Type === 'Episode' && item.PremiereDate ? this.formatDate(item.PremiereDate) : (item.ProductionYear || '');
+          const rating = item.OfficialRating || '';
+          const runtime = this.formatRuntime(item.RunTimeTicks);
+          const score = Number.isFinite(item.CommunityRating) && item.CommunityRating > 0 ? item.CommunityRating.toFixed(1) : '';
+          this.overlayDetails.replaceChildren();
+          for (const [value, kind] of [[when, 'text'], [rating, 'rating'], [runtime, 'text'], [score, 'score']]) {
+            if (!value) continue;
+            const span = document.createElement('span');
+            if (kind === 'rating') {
+              span.className = 'mediaInfoOfficialRating';
+              span.setAttribute('rating', String(value));
+              span.textContent = String(value);
+            } else if (kind === 'score') {
+              span.className = 'pause-screen-score';
+              const star = document.createElement('span');
+              star.className = 'material-icons';
+              star.setAttribute('aria-hidden', 'true');
+              star.textContent = 'star';
+              span.appendChild(star);
+              span.appendChild(document.createTextNode(String(value)));
+            } else {
+              span.textContent = String(value);
+            }
+            this.overlayDetails.appendChild(span);
+          }
+        }
+
+        /**
+         * Fills the genre line from the series when the episode has none.
+         * @param {string} seriesId - The parent series id.
+         * @param {number} generation - The display generation this belongs to.
+         */
+        async fillSeriesGenres(seriesId, generation) {
+          try {
+            let genres = this.seriesGenreCache.get(seriesId);
+            if (!genres) {
+              const series = await this.fetchWithRetry(ApiClient.getUrl(`/Items/${seriesId}`), {
+                headers: { "Authorization": 'MediaBrowser Token="' + this.token + '"', "X-Emby-Token": this.token, "Accept": "application/json" },
+                signal: this.fetchAbort?.signal
+              }, 0);
+              genres = Array.isArray(series?.Genres) ? series.Genres : [];
+              this.seriesGenreCache.set(seriesId, genres);
+            }
+            if (this.destroyed || generation !== this.generation) return;
+            this.overlayGenres.textContent = genres.slice(0, 3).join(' · ');
+          } catch {
+            // Genres are decoration; a failed lookup just leaves the line empty.
+          }
+        }
+
+        /**
+         * Short localized date, e.g. "22 Mar 2023".
+         * @param {string} iso - ISO date string.
+         * @returns {string}
+         */
+        formatDate(iso) {
+          const d = new Date(iso);
+          if (!Number.isFinite(d.getTime())) return '';
+          try {
+            return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+          } catch {
+            return String(d.getFullYear());
+          }
+        }
+
         formatRuntime(runTimeTicks) {
           if (!runTimeTicks) return "";
-          const totalMinutes = Math.floor(runTimeTicks / 600000000);
+          return this.formatDuration(Math.floor(runTimeTicks / 600000000));
+        }
+
+        /**
+         * "1h 48m" / "48m" from a whole number of minutes.
+         * @param {number} totalMinutes
+         * @returns {string}
+         */
+        formatDuration(totalMinutes) {
+          if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return "";
           const hours = Math.floor(totalMinutes / 60);
           const minutes = totalMinutes % 60;
           return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
@@ -905,22 +1142,28 @@
           const fill = this.progressBar.firstElementChild;
           const pct = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
           fill.style.width = `${pct}%`;
+          this.progressBar.setAttribute('aria-valuenow', String(Math.round(pct)));
 
           const timeEl = this.progressMeta.querySelector('.progress-time');
           const endsAtEl = this.progressMeta.querySelector('.progress-ends-at');
+          const leftEl = this.progressMeta.querySelector('.progress-left');
           const percentageEl = this.progressMeta.querySelector('.progress-percentage');
 
           if (timeEl) {
-            timeEl.textContent = `${this.formatClock(current)} / ${this.formatClock(duration)}`;
+            timeEl.textContent = duration > 0 ? `${this.formatClock(current)} / ${this.formatClock(duration)}` : '';
           }
 
           if (percentageEl) {
-            percentageEl.textContent = JE.t('pausescreen_watched_percent', { percent: Math.round(pct) });
+            percentageEl.textContent = duration > 0 ? JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }) : '';
+          }
+
+          const remainingSeconds = duration > 0 && current < duration ? duration - current : 0;
+          if (leftEl) {
+            leftEl.textContent = remainingSeconds > 0 ? JE.t('pausescreen_time_left', { time: this.formatDuration(Math.max(1, Math.round(remainingSeconds / 60))) }) : '';
           }
 
           if (endsAtEl) {
-            if (duration > 0 && current < duration) {
-              const remainingSeconds = duration - current;
+            if (remainingSeconds > 0) {
               const endTime = new Date(Date.now() + remainingSeconds * 1000);
               const formattedEndTime = endTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
               endsAtEl.textContent = JE.t('pausescreen_ends_at', { time: formattedEndTime });
@@ -1008,6 +1251,21 @@
           const urls = [`${domain}/Items/${itemId}/Images/Disc`];
           if (item.ParentId) urls.push(`${domain}/Items/${item.ParentId}/Images/Disc`);
           if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Disc`);
+          return urls;
+        }
+
+        /**
+         * Poster candidates, series poster first for episodes (their own primary image is a 16:9 still).
+         * @param {object} item
+         * @param {string} domain
+         * @param {string} itemId
+         * @returns {string[]}
+         */
+        getPosterUrls(item, domain, itemId) {
+          const urls = [];
+          if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Primary?maxHeight=900`);
+          if (item.Type !== 'Episode' && item.ImageTags?.Primary) urls.push(`${domain}/Items/${itemId}/Images/Primary?maxHeight=900&tag=${item.ImageTags.Primary}`);
+          if (!item.SeriesId && item.ParentId && item.Type !== 'Movie') urls.push(`${domain}/Items/${item.ParentId}/Images/Primary?maxHeight=900`);
           return urls;
         }
 
