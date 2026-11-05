@@ -115,12 +115,14 @@ public class SeriesQualityAggregationTests
             new("latest", 2, Streams(2160), "REMUX", "Extended")], 100);
         var entry = new TagCacheEntry { Type = "Series", StreamData = Streams(1080),
             Source = "WEB", Edition = "Criterion", QualitySummary = summary };
+        // Editions stay with the representative episode; the source is summarised across episodes.
         foreach (var policy in new[] { "representative", "best", "shared", "mixed" })
-        {
-            var labels = SeriesQualityAggregation.Resolve(entry, policy, null);
-            Assert.Contains("WEB", labels);
-            Assert.Contains("edition:Criterion", labels);
-        }
+            Assert.Contains("edition:Criterion", SeriesQualityAggregation.Resolve(entry, policy, null));
+        Assert.Contains("WEB", SeriesQualityAggregation.Resolve(entry, "representative", null));
+        Assert.Contains("REMUX", SeriesQualityAggregation.Resolve(entry, "best", null));
+        Assert.DoesNotContain(SeriesQualityAggregation.Resolve(entry, "shared", null), label => label is "WEB" or "REMUX");
+        Assert.Contains("REMUX", SeriesQualityAggregation.Resolve(entry, "mixed", null));
+        Assert.Contains("Mixed", SeriesQualityAggregation.Resolve(entry, "mixed", null));
         var latest = SeriesQualityAggregation.Resolve(entry, "latest", null);
         Assert.Contains("REMUX", latest);
         Assert.Contains("edition:Extended", latest);
@@ -282,7 +284,7 @@ public class SeriesQualityAggregationTests
         Assert.Equal("4K", original.QualitySummary!.Categories["resolution"].Best);
         Assert.Equal("WEB", original.Source);
         Assert.Equal("Criterion", original.Edition);
-        Assert.Contains("REMUX", original.QualitySummary.LatestExtras);
+        Assert.Equal("REMUX", original.QualitySummary.Categories["source"].Latest);
         hidden.Add(low.Id); cache.InvalidateUserAccess();
         var highOnly = cache.GetCacheForUser(user, out _, out _, out _)[series.Id.ToString("N")];
         Assert.Equal("REMUX", highOnly.Source);
@@ -347,5 +349,33 @@ public class SeriesQualityAggregationTests
         Assert.DoesNotContain("1080p", QualityTagRules.Detect(Data(false, true), null));
         Assert.Contains("1080p", QualityTagRules.Detect(Data(true, true), null));
         Assert.DoesNotContain("4K", QualityTagRules.Detect(Data(true, true), null));
+    }
+
+    [Theory]
+    [InlineData("best", "BluRay", false)]
+    [InlineData("shared", null, false)]
+    [InlineData("mixed", "BluRay", true)]
+    [InlineData("latest", "BluRay", false)]
+    [InlineData("representative", "WEB", false)]
+    public void ASeasonUpgradedPiecemealSummarisesItsSource(string policy, string? source, bool mixedChip)
+    {
+        TagStreamData Episode(string id, string label) => new()
+        {
+            Sources = [new() { Id = id, Source = label }],
+            Streams = [new() { Type = "Video", SourceId = id, Width = 1920, Height = 1080, Codec = "h264", VideoRangeType = "SDR" }],
+        };
+        var web = Episode("a", "WEB");
+        var bluray = Episode("b", "BluRay");
+        var entry = new TagCacheEntry { Type = "Season", StreamData = web,
+            QualitySummary = SeriesQualityAggregation.Build([new("e1", 1, web), new("e2", 2, bluray)], 100) };
+        var labels = SeriesQualityAggregation.Resolve(entry, policy, null);
+        var sources = labels.Where(label => QualityTagRules.CategoryOf(label) == QualityTagRules.Source).ToArray();
+        Assert.Equal(source == null ? [] : [source], sources);
+        Assert.Equal(mixedChip, labels.Contains("Mixed"));
+        // The same source on every episode: Shared shows it and Mixed has nothing to mark.
+        var uniform = new TagCacheEntry { Type = "Season", StreamData = web,
+            QualitySummary = SeriesQualityAggregation.Build([new("e1", 1, web), new("e2", 2, Episode("c", "WEB"))], 100) };
+        Assert.Contains("WEB", SeriesQualityAggregation.Resolve(uniform, policy, null));
+        Assert.DoesNotContain("Mixed", SeriesQualityAggregation.Resolve(uniform, policy, null));
     }
 }

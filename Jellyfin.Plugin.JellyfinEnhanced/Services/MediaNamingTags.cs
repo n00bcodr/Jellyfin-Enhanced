@@ -133,8 +133,16 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         => source.VideoType == VideoType.BluRay || source.IsoType == IsoType.BluRay ? "BluRay"
             : source.VideoType == VideoType.Dvd || source.IsoType == IsoType.Dvd ? "DVD" : null;
 
-    /// <summary>Portable basename for the legacy filename signals sent to the client.</summary>
-    internal static string? FileName(string? path) => string.IsNullOrEmpty(path) ? null : path.Replace('\\', '/').Split('/')[^1];
+    /// <summary>
+    /// Portable basename for the legacy filename signals sent to the client; a remote address loses its query and
+    /// fragment first, so "…mkv?label=IMAX" never reaches a reader of the name as an IMAX or 3D signal.
+    /// </summary>
+    internal static string? FileName(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        if (IsUrl(path)) path = path.Split('?', '#')[0];
+        return path.Replace('\\', '/').Split('/')[^1];
+    }
 
     private static int Rank(string[] order, string? label)
     {

@@ -95,6 +95,24 @@ public class SourceEditionTagsTests
     }
 
     [Theory]
+    [InlineData("https://cdn.example.invalid/Film.2020.WEB.H264.mkv?label=IMAX")]
+    [InlineData("https://cdn.example.invalid/Film.2020.WEB.H264.mkv?mode=3d.hsbs#IMAX")]
+    public void ARemoteAddressQueryNeverReachesTheCachedNameAsAFormatSignal(string url)
+    {
+        using var fixture = new ApiPluginFixture();
+        var movie = new Movie { Id = Guid.NewGuid(), Name = "Film", Path = "/movies/Film.2020.WEB.strm" };
+        movie.Sources = [Version(url, 1080)];
+        using var cache = new TagCacheService(Mock.Of<ILibraryManager>(), fixture.Core.Paths.Object, Mock.Of<ILocalizationManager>(), fixture.Core.Logger,
+            new Jellyfin.Plugin.JellyfinEnhanced.Helpers.MatroskaLanguageCache(fixture.Core.Paths.Object, fixture.Core.Logger));
+        var entry = Assert.IsType<TagCacheEntry>(cache.BuildEntryOnDemand(movie));
+        Assert.Equal("Film.2020.WEB.H264.mkv", entry.StreamData!.Sources![0].Path);
+        var labels = QualityTagRules.Detect(entry.StreamData, null);
+        Assert.DoesNotContain("IMAX", labels);
+        Assert.DoesNotContain("3D", labels);
+        Assert.Equal("WEB", entry.Source);
+    }
+
+    [Theory]
     [InlineData("/private/Film.{edition-Criterion}/Film.1080p.WEB-DL.mkv")]
     [InlineData(@"C:\private\Film.{edition-Criterion}\Film.1080p.WEB-DL.mkv")]
     public void CacheBuildsNamingFactsBeforeTrimmingPathsAndIncludesThemInChangeDetection(string path)

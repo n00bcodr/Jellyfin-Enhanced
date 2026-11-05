@@ -52,7 +52,9 @@ internal static class SeriesQualityAggregation
     }
 
     internal sealed record Episode(string Id, long? Aired, TagStreamData? Streams, string? Source = null, string? Edition = null);
-    private static readonly string[] Categories = { QualityTagRules.Resolution, QualityTagRules.DynamicRange, QualityTagRules.VideoCodec, QualityTagRules.AudioInfo };
+    // Source is summarised across episodes too: Sonarr upgrades a season piecemeal (WEB, then BluRay, then REMUX).
+    // Edition and special formats stay with the representative (or latest) episode.
+    private static readonly string[] Categories = { QualityTagRules.Resolution, QualityTagRules.Source, QualityTagRules.DynamicRange, QualityTagRules.VideoCodec, QualityTagRules.AudioInfo };
 
     /// <summary>Normalize fixed policy values at settings and rendering boundaries.</summary>
     public static string Normalize(string? policy) => policy is "latest" or "best" or "shared" or "mixed" ? policy : "representative";
@@ -74,8 +76,12 @@ internal static class SeriesQualityAggregation
         }
         if (latestProbed >= 0) latest = latestProbed;
         var labels = episodes.Select(e => Labels(e.Streams)).ToArray();
-        var categories = Categories.ToDictionary(key => key, key => Summarize(key == QualityTagRules.AudioInfo ? episodes.Select(e => Audio(e.Streams, null)).ToArray()
-            : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, key, null, allSources: true)).ToArray()));
+        // An episode's source: its version's naming fact, else the item-level one.
+        var sources = episodes.Select((e, i) => labels[i].FirstOrDefault(label => QualityTagRules.CategoryOf(label) == QualityTagRules.Source) ?? e.Source).ToArray();
+        var categories = Categories.ToDictionary(key => key, key => key == QualityTagRules.Source
+            ? Summarize(sources, key, latest, sources.Select(source => source == null ? new List<string>() : new List<string> { source }).ToArray())
+            : Summarize(key == QualityTagRules.AudioInfo ? episodes.Select(e => Audio(e.Streams, null)).ToArray()
+                : labels.Select(list => list.FirstOrDefault(label => QualityTagRules.CategoryOf(label) == key)).ToArray(), key, latest, episodes.Select(e => QualityTagRules.DistinctValues(e.Streams, key, null, allSources: true)).ToArray()));
         var languages = new HashSet<string>(StringComparer.Ordinal);
         foreach (var episode in episodes)
         {

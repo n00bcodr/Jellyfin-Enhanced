@@ -479,7 +479,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 {
                     NextPremiere = summary.NextPremiere,
                     EpisodeCount = summary.EpisodeCount,
-                    Categories = summary.Categories,
+                    // Naming facts (the summarised source) go with the titles; technical categories stay.
+                    Categories = summary.Categories.ContainsKey(QualityTagRules.Source)
+                        ? summary.Categories.Where(pair => pair.Key != QualityTagRules.Source).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+                        : summary.Categories,
                     AudioByLanguage = summary.AudioByLanguage,
                     AudioRegionFallback = summary.AudioRegionFallback,
                     // Settings saved before layouts read their sound from these: they are no title facts.

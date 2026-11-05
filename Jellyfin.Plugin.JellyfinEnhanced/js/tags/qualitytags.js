@@ -285,7 +285,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 22 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 23 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -1265,8 +1265,9 @@
     }
 
     /**
-     * Resolve compact server facts without fetching episodes. Source and special-format
-     * labels keep their representative semantics, except latest uses its own labels.
+     * Resolve compact server facts without fetching episodes. Resolution, source, dynamic range,
+     * codec and sound follow the policy across episodes; edition and special-format labels keep
+     * their representative semantics, except latest uses its own labels.
      * @param {Object} entry - A server-cache entry, or batch item carrying QualitySummary.
      * @param {string[]} representative - Legacy stream-derived labels.
      * @returns {string[]} Labels before category toggles, ordering, density and caps.
@@ -1275,11 +1276,11 @@
         const policy = aggregationPolicy();
         const summary = entry.QualitySummary;
         if (!['Series', 'Season'].includes(entry.Type) || !summary || policy === 'representative') return representative;
-        const categoryKeys = { resolution: 'resolution', dynamicRange: 'dynamicRange', videoCodec: 'videoCodec', audioInfo: 'audio' };
+        const categoryKeys = { resolution: 'resolution', source: 'source', dynamicRange: 'dynamicRange', videoCodec: 'videoCodec', audioInfo: 'audio' };
         // A version count describes one episode, never the series or season (QualitySummary.LatestExtras
         // stored before schema 31 may still carry one).
         const qualities = (policy === 'latest' ? [...(summary.LatestExtras || [])]
-            : representative.filter(label => !['resolution', 'dynamicRange', 'videoCodec', 'audio'].includes(categorize(label))))
+            : representative.filter(label => !Object.values(categoryKeys).includes(categorize(label))))
             .filter(label => !label.startsWith('versions:'));
         const preferred = resolvePreferredAudioLanguage();
         const match = JE.core.mediaLanguage?.matchesLanguage;
@@ -1574,7 +1575,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 22, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 23, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1612,7 +1613,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 22, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 23, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

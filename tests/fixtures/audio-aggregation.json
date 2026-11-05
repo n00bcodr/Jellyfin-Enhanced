@@ -127,6 +127,18 @@
           "LatestAll": [],
           "AllSetsAgree": true
         },
+        "source": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        },
         "dynamicRange": {
           "Best": null,
           "Latest": null,
@@ -554,6 +566,18 @@
           "AllSetsAgree": false
         },
         "resolution": {
+          "Best": null,
+          "Latest": null,
+          "Values": [
+            null
+          ],
+          "AllAgree": true,
+          "All": [],
+          "Shared": [],
+          "LatestAll": [],
+          "AllSetsAgree": true
+        },
+        "source": {
           "Best": null,
           "Latest": null,
           "Values": [

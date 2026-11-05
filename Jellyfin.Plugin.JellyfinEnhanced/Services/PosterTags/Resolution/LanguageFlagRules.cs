@@ -43,7 +43,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             ["Malay"] = "my", ["msa"] = "my", ["may"] = "my", ["ms"] = "my", ["Swahili"] = "ke", ["swa"] = "ke", ["sw"] = "ke",
             ["Bosnian"] = "ba", ["bos"] = "ba", ["bs"] = "ba", ["Khmer"] = "kh", ["khm"] = "kh", ["km"] = "kh", ["Lao"] = "la", ["lao"] = "la", ["lo"] = "la",
             ["Burmese"] = "mm", ["mya"] = "mm", ["bur"] = "mm", ["my"] = "mm", ["Luxembourgish"] = "lu", ["ltz"] = "lu", ["lb"] = "lu",
-            ["Tagalog"] = "ph", ["tgl"] = "ph", ["tl"] = "ph", ["Filipino"] = "ph", ["Tamil"] = "in", ["tam"] = "in", ["ta"] = "in",
+            ["Tagalog"] = "ph", ["tgl"] = "ph", ["tl"] = "ph", ["Filipino"] = "ph", ["fil"] = "ph", ["Tamil"] = "in", ["tam"] = "in", ["ta"] = "in",
             ["Telugu"] = "in", ["tel"] = "in", ["te"] = "in", ["Marathi"] = "in", ["mar"] = "in", ["mr"] = "in", ["Punjabi"] = "in", ["pan"] = "in", ["pa"] = "in",
             ["Urdu"] = "pk", ["urd"] = "pk", ["ur"] = "pk", ["Gujarati"] = "in", ["guj"] = "in", ["gu"] = "in", ["Kannada"] = "in", ["kan"] = "in", ["kn"] = "in",
             ["Malayalam"] = "in", ["mal"] = "in", ["ml"] = "in", ["Sinhala"] = "lk", ["sin"] = "lk", ["si"] = "lk", ["Nepali"] = "np", ["nep"] = "np", ["ne"] = "np",

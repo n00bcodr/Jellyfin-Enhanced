@@ -64,7 +64,7 @@ public class PrivacySpoilerStripTests
         Assert.NotSame(source.QualitySummary, result.QualitySummary);
         Assert.Equal(new[] { "IMAX", "3D" }, result.QualitySummary!.LatestExtras);
         Assert.Equal(new[] { "WEB", "edition:Custom episode reveal", "IMAX", "3D" }, source.QualitySummary.LatestExtras);
-        Assert.Same(source.QualitySummary.Categories, result.QualitySummary.Categories);
+        Assert.Same(source.QualitySummary.Categories, result.QualitySummary.Categories); // no source category to remove
         // Settings saved before layouts read their sound from the version-0 facts: no title facts, kept.
         Assert.Same(source.QualitySummary.LegacyAudio, result.QualitySummary.LegacyAudio);
         Assert.Same(source.QualitySummary.LegacyAudioByLanguage, result.QualitySummary.LegacyAudioByLanguage);
@@ -86,6 +86,12 @@ public class PrivacySpoilerStripTests
         Assert.Equal("secret.mkv", source.StreamData.Sources![0].Path);
         Assert.Equal(source.Genres, result.Genres); Assert.Equal(source.CommunityRating, result.CommunityRating);
         Assert.Same(source.Logos, result.Logos);
+        // A summarised source is a naming fact: it goes with the titles, the technical categories stay.
+        source.QualitySummary = new TagQualitySummary { EpisodeCount = 2, Categories = new() {
+            ["resolution"] = new() { Best = "4K", Latest = "4K", Values = ["4K"], AllAgree = true },
+            ["source"] = new() { Best = "REMUX", Latest = "WEB", Values = ["WEB", "REMUX"] } } };
+        var withSource = stripper.StripEntry(policy, user, series, source, out _);
+        Assert.Equal(["resolution"], withSource.QualitySummary!.Categories.Keys);
     }
 
     [Fact]

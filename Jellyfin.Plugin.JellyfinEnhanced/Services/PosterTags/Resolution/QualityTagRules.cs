@@ -560,7 +560,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var order = category switch
             {
                 Resolution => ResolutionOrder, DynamicRange => DynamicRangeOrder,
-                VideoCodec => CodecOrder, _ => AudioOrder,
+                VideoCodec => CodecOrder, Source => SourceOrder, _ => AudioOrder,
             };
             var index = Array.IndexOf(order, NormalizeLabel(label));
             // More channels win ties, heights too ("7.1.4" beats "7.1"; distinctRank in qualitytags.js).

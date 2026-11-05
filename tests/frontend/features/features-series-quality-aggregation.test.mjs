@@ -49,14 +49,21 @@ test('policy changes invalidate the computed server cache without refetching; le
   assert.deepEqual(h.render({ ...entry(), Type: 'BoxSet' }), ['1080p', 'H264']);
 });
 
-test('aggregation keeps representative naming chips and switches them together for latest', t => {
+test('the source follows the policy across episodes while the edition stays representative, and latest switches both', t => {
   const h = setup(t, 'mixed');
   const data = { ...entry(), Source: 'WEB', Edition: 'Criterion' };
-  data.QualitySummary.LatestExtras = ['REMUX', 'edition:Extended'];
+  // A season upgraded piecemeal: WEB first, REMUX latest.
+  data.QualitySummary.Categories.source = { Best: 'REMUX', Latest: 'REMUX', Values: ['WEB', 'REMUX'], AllAgree: false, All: ['REMUX', 'WEB'], Shared: [], LatestAll: ['REMUX'], AllSetsAgree: false };
+  data.QualitySummary.LatestExtras = ['edition:Extended'];
   h.render(data);
   const labels = () => [...h.document.querySelectorAll('.quality-overlay-label')].map(el => el.dataset.quality);
-  assert.ok(labels().includes('WEB'));
-  assert.ok(labels().includes('Criterion'));
+  assert.ok(labels().includes('REMUX'), 'best source across episodes');
+  assert.ok(!labels().includes('WEB'));
+  assert.ok(labels().includes('Criterion'), 'the edition stays with the representative episode');
+  assert.ok(labels().includes('Mixed'));
+  h.JE.currentSettings.seriesQualityAggregation = 'shared';
+  h.render(data);
+  assert.ok(!labels().includes('REMUX') && !labels().includes('WEB'), 'no source every episode shares');
   h.JE.currentSettings.seriesQualityAggregation = 'latest';
   h.render(data);
   assert.ok(labels().includes('REMUX'));
