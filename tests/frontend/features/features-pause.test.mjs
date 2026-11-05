@@ -68,8 +68,8 @@ test('Space or Enter on the focused close button hides the overlay without resum
 test('the hint describes the focused control',t=>{
  const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;p.showOverlay();
  assert.equal(h.document.activeElement,p.resumeButton);assert.equal(p.progressHint.textContent,'pausescreen_resume_hint');
- p.closeButton.focus();assert.equal(p.progressHint.textContent,'pausescreen_hide_hint');
- h.document.documentElement.classList.add('layout-tv');p.refreshHint();assert.equal(p.progressHint.textContent,'pausescreen_hide_hint_tv');
+ p.closeButton.focus();assert.match(p.progressHint.textContent,/^pausescreen_hide_selected/);assert.equal(p.overlay.classList.contains('close-focused'),true);
+ h.document.documentElement.classList.add('layout-tv');p.refreshHint();assert.match(p.progressHint.textContent,/pausescreen_hide_way_back_tv/);assert.match(p.closeCaption.textContent,/pausescreen_hide_caption_tv/);
  p.resumeButton.focus();assert.equal(p.progressHint.textContent,'pausescreen_resume_hint_tv');
 });
 test('pause overlay leaves arrow keys alone outside the TV layout',t=>{

@@ -239,9 +239,9 @@
               position: absolute; inset: 0;
               display: grid;
               grid-template-columns: minmax(0, 1fr) auto;
-              align-items: center;
+              align-items: end;
               column-gap: clamp(24px, 4vw, 80px);
-              padding: calc(var(--pause-screen-gutter-y) + env(safe-area-inset-top, 0px)) var(--pause-screen-gutter-x) calc(var(--pause-screen-gutter-y) + var(--pause-screen-footer-h, 110px) + 24px + env(safe-area-inset-bottom, 0px)) var(--pause-screen-gutter-x);
+              padding: calc(var(--pause-screen-gutter-y) + env(safe-area-inset-top, 0px)) var(--pause-screen-gutter-x) calc(var(--pause-screen-gutter-y) + var(--pause-screen-footer-h, 110px) + clamp(40px, 6vh, 72px) + env(safe-area-inset-bottom, 0px)) var(--pause-screen-gutter-x);
               box-sizing: border-box;
             }
             .pause-screen-main {
@@ -306,7 +306,7 @@
               text-shadow: 0 1px 2px rgba(0,0,0,.45);
             }
 
-            .pause-screen-art { display: flex; align-items: center; justify-content: flex-end; min-width: 0; }
+            .pause-screen-art { display: flex; align-items: flex-end; justify-content: flex-end; min-width: 0; }
             #pause-screen-disc {
               width: var(--pause-screen-disc-w);
               height: auto; display: block;
@@ -323,6 +323,8 @@
               box-shadow: 0 12px 32px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.08);
             }
             #pause-screen-poster:not(.is-still) { filter: brightness(.9); }
+            @media (min-width: 1001px) { #pause-screen-poster:not(.is-still) { filter: brightness(.84); } }
+            @media (min-width: 1001px) and (max-width: 1599px) { #pause-screen-poster { border-radius: 9px; } }
 
             @keyframes pause-screen-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
@@ -394,16 +396,31 @@
             @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } .pause-screen-actions { column-gap: 24px; } }
             /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
             .layout-tv .pause-screen-resume:focus { outline: 3px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
-            .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -4px; background: #fff; border-color: #fff; color: #111; }
+            .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -3px; background: #fff; border-color: transparent; color: #111; opacity: 1; }
             /* while the × has focus, the resume button steps back so the remote's selection is unambiguous */
             .layout-tv .pause-screen-resume:not(:focus),
             #pause-screen-content:has(#pause-screen-close-btn:focus-visible) .pause-screen-resume { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.35); color: #fff; }
-            #pause-screen-content:has(#pause-screen-close-btn:focus-visible) #pause-screen-close-btn { background: #fff; border-color: #fff; color: #111; }
+            #pause-screen-content:has(#pause-screen-close-btn:focus-visible) #pause-screen-close-btn { background: #fff; border-color: transparent; color: #111; opacity: 1; }
             .pause-screen-hint {
               font-size: var(--pause-screen-hint-size);
               line-height: 1.4;
               color: rgba(255,255,255,.85);
             }
+            .pause-screen-hint strong { font-weight: 600; color: #fff; }
+            .pause-screen-close-caption {
+              position: absolute;
+              right: calc(16px + env(safe-area-inset-right, 0px));
+              top: calc(var(--pause-screen-close-bottom, 46px) + 8px);
+              max-width: 28ch;
+              text-align: right;
+              font-size: var(--pause-screen-hint-size);
+              line-height: 1.35;
+              color: rgba(255,255,255,.85);
+              display: none;
+              z-index: 2;
+            }
+            .pause-screen-close-caption > span { display: block; }
+            #pause-screen-overlay.close-focused .pause-screen-close-caption { display: block; }
             @media (min-width: 1600px) { .pause-screen-resume:focus-visible { outline-width: 3px; } }
             #pause-screen-close-btn {
               position: absolute;
@@ -432,15 +449,21 @@
             #pause-screen-close-btn:hover,
             #pause-screen-close-btn:focus-visible {
               background: rgba(20,20,24,.6);
-              border-color: rgba(255,255,255,.35);
+              border-color: transparent;
+              opacity: 1;
             }
+            #pause-screen-close-btn { opacity: .85; }
 
             /* the ring sits inside the button: it touches the top edge of the screen */
             #pause-screen-close-btn:focus-visible {
               outline: 2px solid #fff;
-              outline-offset: -3px;
+              outline-offset: -2px;
             }
-            @media (min-width: 1600px) { #pause-screen-close-btn:focus-visible { outline-width: 3px; outline-offset: -4px; } }
+            @media (min-width: 1600px) {
+              #pause-screen-close-btn { border-width: 6px; }
+              #pause-screen-close-btn:focus-visible { outline-width: 3px; outline-offset: -3px; }
+              .pause-screen-active .skinHeader.osdHeader { top: 12px !important; }
+            }
             /* Accessibility helpers */
             #pause-screen-focus-start, #pause-screen-focus-end {
               position: fixed; width:1px; height:1px; overflow:hidden; clip: rect(0 0 0 0);
@@ -464,8 +487,10 @@
               .pause-screen-main:not(.has-logo) #pause-screen-title { font-size: clamp(56px, 4.4vw, 88px); line-height: 1.08; max-width: 18ch; }
             }
             @media (min-width: 1600px) {
-              :root { --pause-screen-progress-height: 8px; --pause-screen-text-size: 24px; --pause-screen-hint-size: 24px; }
+              :root { --pause-screen-progress-height: 8px; --pause-screen-text-size: 24px; --pause-screen-hint-size: 24px; --pause-screen-plot-font: 28px; }
               #pause-screen-details .mediaInfoOfficialRating { font-size: .92em; }
+              #pause-screen-plot { line-height: 1.45; }
+              #pause-screen-genres { font-size: 22px; }
             }
 
             /* Narrow landscape (tablets, phones on their side): no room for the art column, text spans the width */
@@ -492,7 +517,6 @@
                 --pause-screen-plot-font: clamp(15px, 2.2vw, 20px);
                 --pause-screen-plot-lines: 4;
               }
-              #pause-screen-close-btn { opacity: .85; }
               .pause-screen-layout { padding-top: calc(76px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 152px) + 24px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); align-items: end; }
               @media (min-height: 800px) and (orientation: portrait) {
                 :root { --pause-screen-plot-lines: 7; --pause-screen-plot-font: clamp(16px, 2.2vw, 20px); --pause-screen-meta-size: clamp(16px, 2vw, 18px); --pause-screen-hint-size: clamp(15px, 2vw, 18px); }
@@ -509,10 +533,10 @@
                 #pause-screen-title { grid-area: title; margin: 0 0 16px; }
                 #pause-screen-subtitle { grid-area: sub; }
                 .pause-screen-art { display: flex; grid-area: art; align-self: start; justify-content: flex-start; min-height: 0; margin-bottom: 12px; }
-                #pause-screen-details { grid-area: facts; align-self: end; }
+                #pause-screen-details { grid-area: facts; align-self: start; margin-top: 6px; margin-bottom: 8px; }
                 #pause-screen-genres { grid-area: genres; align-self: start; margin-top: 0; }
                 #pause-screen-plot { grid-area: plot; margin-top: 4px; }
-                #pause-screen-poster { width: 96px; }
+                #pause-screen-poster { width: 96px; border-radius: 4px; }
                 #pause-screen-disc { width: 112px; animation: none; }
                 /* an episode still goes under the episode line, full width */
                 #pause-screen-overlay.has-still .pause-screen-layout { grid-template-areas: "logo logo" "title title" "sub sub" "art art" "facts facts" "genres genres" "plot plot"; }
@@ -551,7 +575,7 @@
             @media (max-height: 500px) and (orientation: landscape) and (min-width: 700px) {
               .pause-screen-layout { grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; }
               .pause-screen-art { display: flex; }
-              #pause-screen-poster { width: 112px; }
+              #pause-screen-poster { width: 112px; border-radius: 5px; }
               #pause-screen-poster.is-still { width: 240px; }
               #pause-screen-disc { width: 150px; }
             }
@@ -706,6 +730,10 @@
               this.hideOverlay(true);
           };
           this.closeButton = closeButton;
+          this.closeCaption = document.createElement("div");
+          this.closeCaption.id = "pause-screen-close-caption";
+          this.closeCaption.className = "pause-screen-close-caption";
+          closeButton.setAttribute("aria-describedby", "pause-screen-close-caption");
           for (const el of [closeButton, this.resumeButton]) {
             el.addEventListener('focus', () => this.refreshHint());
             el.addEventListener('blur', () => setTimeout(() => this.refreshHint(), 0));
@@ -728,6 +756,7 @@
           this.overlayContent.appendChild(layout);
           this.overlayContent.appendChild(footer);
           this.overlayContent.appendChild(closeButton);
+          this.overlayContent.appendChild(this.closeCaption);
 
           this.overlay.appendChild(this.focusStart);
           this.overlay.appendChild(this.overlayContent);
@@ -1060,12 +1089,26 @@
          */
         refreshHint() {
           if (!this.progressHint) return;
+          const tv = !!JE.core?.ui?.isTvLayout?.();
           const closeFocused = document.activeElement === this.closeButton;
+          // the caption under the × always carries its explanation (and names the button for assistive tech)
+          this.closeCaption.replaceChildren();
+          for (const line of [tv ? JE.t('pausescreen_hide_caption_tv') : JE.t('pausescreen_hide_caption'), JE.t('pausescreen_hide_caption_stays')]) {
+            const row = document.createElement('span');
+            row.textContent = line;
+            this.closeCaption.appendChild(row);
+          }
+          this.overlay.classList.toggle('close-focused', closeFocused);
+          this.progressHint.replaceChildren();
           if (closeFocused) {
-            this.progressHint.textContent = JE.core?.ui?.isTvLayout?.() ? JE.t('pausescreen_hide_hint_tv') : JE.t('pausescreen_hide_hint');
+            const name = document.createElement('strong');
+            name.textContent = JE.t('pausescreen_hide_selected');
+            this.progressHint.appendChild(name);
+            this.progressHint.appendChild(document.createTextNode(' · ' + (tv ? JE.t('pausescreen_hide_way_back_tv') : JE.t('pausescreen_hide_way_back'))));
           } else {
             this.progressHint.textContent = this.resumeHint();
           }
+          this.reserveFooter();
         }
 
         showOverlay() {
@@ -1107,7 +1150,9 @@
             const half = this.closeButton.offsetHeight / 2 || 22;
             this.closeButton.style.top = `max(${Math.max(0, Math.round(rect.top + rect.height / 2 - half))}px, env(safe-area-inset-top, 0px))`;
             this.closeButton.style.right = `calc(${Math.max(8, Math.round(rect.left))}px + env(safe-area-inset-right, 0px))`;
+            this.closeCaption.style.right = this.closeButton.style.right;
           } else {
+            this.closeCaption.style.right = '';
             this.closeButton.style.top = 'max(2px, env(safe-area-inset-top, 0px))';
             this.closeButton.style.right = '';
           }
@@ -1118,6 +1163,8 @@
         reserveFooter() {
           const h = this.progressWrap?.offsetHeight;
           if (h) this.overlay.style.setProperty('--pause-screen-footer-h', `${Math.round(h)}px`);
+          const cb = this.closeButton?.getBoundingClientRect?.();
+          if (cb && cb.height) this.overlay.style.setProperty('--pause-screen-close-bottom', `${Math.round(cb.bottom)}px`);
         }
 
         hideOverlay(dismissed = false) {
@@ -1325,7 +1372,7 @@
               span.className = `pause-screen-critic mediaInfoCriticRating ${Number(value) < 60 ? 'mediaInfoCriticRatingRotten' : 'mediaInfoCriticRatingFresh'}`;
               const visible = document.createElement('span');
               visible.setAttribute('aria-hidden', 'true');
-              visible.textContent = String(value);
+              visible.textContent = `${value}%`;
               const sr = document.createElement('span');
               sr.className = 'pause-screen-sr';
               sr.textContent = JE.t('pausescreen_critic_rating', { score: String(value) });
@@ -1512,7 +1559,9 @@
           this.overlay.classList.toggle('has-duration', duration > 0);
           const remainingSeconds = duration > 0 && current < duration ? duration - current : 0;
           const leftText = remainingSeconds > 0 ? JE.t('pausescreen_time_left', { time: this.formatDuration(Math.max(1, Math.round(remainingSeconds / 60))) }) : '';
-          const valueText = duration > 0 ? [JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }), JE.t('pausescreen_spoken_position', { position: this.spokenClock(current), total: this.spokenClock(duration) }), leftText].filter(Boolean).join('; ') : '';
+          const spokenLeft = remainingSeconds > 0 ? JE.t('pausescreen_spoken_left', { time: this.spokenClock(Math.max(60, Math.round(remainingSeconds / 60) * 60)) }) : '';
+          const endsAtText = remainingSeconds > 0 ? new Date(Date.now() + remainingSeconds * 1000).toLocaleTimeString(this.locale(), { hour: 'numeric', minute: '2-digit' }) : '';
+          const valueText = duration > 0 ? [JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }), JE.t('pausescreen_spoken_position', { position: this.spokenClock(current), total: this.spokenClock(duration) }), spokenLeft, endsAtText ? JE.t('pausescreen_spoken_ends_at', { time: endsAtText }) : ''].filter(Boolean).join('; ') : '';
           if (valueText) this.progressBar.setAttribute('aria-valuetext', valueText); else this.progressBar.removeAttribute('aria-valuetext');
           if (this.progressSpoken) this.progressSpoken.textContent = valueText;
 
@@ -1533,9 +1582,7 @@
 
           if (endsAtEl) {
             if (remainingSeconds > 0) {
-              const endTime = new Date(Date.now() + remainingSeconds * 1000);
-              const formattedEndTime = endTime.toLocaleTimeString(this.locale(), { hour: 'numeric', minute: '2-digit' });
-              endsAtEl.textContent = JE.t('pausescreen_ends_at', { time: formattedEndTime });
+              endsAtEl.textContent = JE.t('pausescreen_ends_at', { time: endsAtText });
             } else {
               endsAtEl.textContent = ''; // Clear it if video is over
             }
