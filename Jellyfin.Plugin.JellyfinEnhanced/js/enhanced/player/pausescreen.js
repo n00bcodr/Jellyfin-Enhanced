@@ -239,7 +239,7 @@
               grid-template-columns: minmax(0, 1fr) auto;
               align-items: center;
               column-gap: clamp(24px, 4vw, 80px);
-              padding: var(--pause-screen-gutter-y) var(--pause-screen-gutter-x) calc(var(--pause-screen-gutter-y) + 110px);
+              padding: calc(var(--pause-screen-gutter-y) + env(safe-area-inset-top, 0px)) calc(var(--pause-screen-gutter-x) + env(safe-area-inset-right, 0px)) calc(var(--pause-screen-gutter-y) + 110px + env(safe-area-inset-bottom, 0px)) calc(var(--pause-screen-gutter-x) + env(safe-area-inset-left, 0px));
               box-sizing: border-box;
             }
             .pause-screen-main {
@@ -326,8 +326,9 @@
             /* Progress UI */
             .pause-screen-footer {
               position: absolute;
-              left: var(--pause-screen-gutter-x); right: var(--pause-screen-gutter-x);
-              bottom: var(--pause-screen-gutter-y);
+              left: calc(var(--pause-screen-gutter-x) + env(safe-area-inset-left, 0px));
+              right: calc(var(--pause-screen-gutter-x) + env(safe-area-inset-right, 0px));
+              bottom: calc(var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px));
             }
             #pause-screen-progress-wrap { user-select: none; }
             #pause-screen-progress-bar {
@@ -347,7 +348,7 @@
               border-radius: inherit;
             }
             #pause-screen-progress-meta {
-              margin-top: .75em;
+              margin-top: .3em;
               display: flex; justify-content: space-between; align-items: center;
               gap: .5em 2em; flex-wrap: wrap;
               font-size: var(--pause-screen-meta-size);
@@ -364,7 +365,7 @@
             .pause-screen-actions {
               display: flex; flex-wrap: wrap; align-items: center;
               gap: .4em 1em;
-              margin-top: .6em;
+              margin-top: calc(var(--pause-screen-meta-size) * .8);
             }
             .pause-screen-resume {
               display: inline-flex; align-items: center; gap: 8px;
@@ -390,7 +391,11 @@
             @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } }
             /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
             .layout-tv .pause-screen-resume:focus { outline: 3px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
-            .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -4px; background: rgba(20,20,24,.6); border-color: rgba(255,255,255,.35); }
+            .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -4px; background: #fff; border-color: #fff; color: #111; }
+            /* while the × has focus, the resume button steps back so the remote's selection is unambiguous */
+            .layout-tv .pause-screen-resume:not(:focus),
+            #pause-screen-content:has(#pause-screen-close-btn:focus-visible) .pause-screen-resume { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.35); color: #fff; }
+            #pause-screen-content:has(#pause-screen-close-btn:focus-visible) #pause-screen-close-btn { background: #fff; border-color: #fff; color: #111; }
             .pause-screen-hint {
               font-size: var(--pause-screen-hint-size);
               line-height: 1.4;
@@ -479,7 +484,7 @@
                 --pause-screen-plot-lines: 4;
               }
               #pause-screen-close-btn { opacity: .85; }
-              .pause-screen-layout { padding-top: 76px; padding-bottom: 176px; align-items: end; }
+              .pause-screen-layout { padding-top: calc(76px + env(safe-area-inset-top, 0px)); padding-bottom: calc(176px + env(safe-area-inset-bottom, 0px)); align-items: end; }
               @media (min-height: 800px) and (orientation: portrait) {
                 :root { --pause-screen-plot-lines: 7; --pause-screen-plot-font: clamp(16px, 2.2vw, 20px); --pause-screen-meta-size: clamp(16px, 2vw, 18px); --pause-screen-hint-size: clamp(15px, 2vw, 18px); }
               }
@@ -531,8 +536,8 @@
               #pause-screen-subtitle { font-size: 16px; }
               #pause-screen-details .pause-screen-date-long { display: none; }
               #pause-screen-details .pause-screen-date-short { display: inline; }
-              #pause-screen-progress-meta { margin-top: .4em; }
-              .pause-screen-actions { margin-top: .3em; }
+              #pause-screen-progress-meta { margin-top: .2em; }
+              .pause-screen-actions { margin-top: calc(var(--pause-screen-meta-size) * .7); }
             }
             @media (max-height: 500px) and (orientation: landscape) and (min-width: 700px) {
               .pause-screen-layout { grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; }
