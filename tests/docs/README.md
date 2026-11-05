@@ -71,7 +71,7 @@ Run visual tests in the pinned Playwright Linux environment. Review the failed s
 
 ## CI and troubleshooting
 
-`regression.yml` runs backend checks for both targets, JavaScript coverage, and browser checks on pull requests. Scheduled/manual runs additionally execute real-host compatibility and the broader checks. Existing security, translation, and static-analysis workflows remain in place. Failed test commands fail their jobs; artifacts are uploaded even on failure.
+`regression.yml` runs backend checks for both targets, JavaScript coverage, and browser checks on pull requests, plus the offline poster parity harness when a pull request touches tag code. Scheduled/manual runs additionally execute real-host compatibility and the broader checks. Existing security, translation, and static-analysis workflows remain in place. Failed test commands fail their jobs; artifacts are uploaded even on failure.
 
 Missing runtimes, dependencies, browser executables, or Docker access are failures, not skips. Check `dotnet --list-runtimes`, run `npm ci`, install the pinned Playwright browsers, or check `docker info` as appropriate. A host-startup failure should be investigated using the saved build/server logs. The host runner removes resources it created; it must never prune unrelated containers or networks.
 
