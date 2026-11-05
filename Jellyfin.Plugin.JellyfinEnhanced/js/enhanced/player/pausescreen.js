@@ -143,7 +143,7 @@
               --pause-screen-overlay-bg: rgba(10, 10, 14, .6);
               --pause-screen-blur: 8px;
               --pause-screen-accent: var(--theme-primary-color, var(--primary-accent-color, #00a4dc));
-              --pause-screen-gutter-x: clamp(24px, 6vw, 110px);
+              --pause-screen-gutter-x: max(clamp(24px, 6vw, 110px), calc(env(safe-area-inset-left, 0px) + 16px), calc(env(safe-area-inset-right, 0px) + 16px));
               --pause-screen-gutter-y: clamp(20px, 5vh, 64px);
               --pause-screen-logo-max-w: min(46vw, 640px);
               --pause-screen-logo-max-h: 22vh;
@@ -285,6 +285,7 @@
             #pause-screen-details .pause-screen-score > span[aria-hidden] { display: inline-flex; align-items: center; gap: .2em; }
             #pause-screen-details .pause-screen-score .material-icons { font-size: 1.15em; color: #f2b01e; }
             #pause-screen-details .pause-screen-date-short { display: none; }
+            #pause-screen-overlay.has-duration #pause-screen-details .pause-screen-runtime { display: none; }
             #pause-screen-genres {
               font-size: var(--pause-screen-text-size);
               color: #d0d0d0;
@@ -405,7 +406,7 @@
             #pause-screen-close-btn {
               position: absolute;
               top: 2px;
-              right: 16px;
+              right: calc(16px + env(safe-area-inset-right, 0px));
               min-width: 44px; height: 44px;
               padding: 0 10px;
               background: transparent;
@@ -484,6 +485,7 @@
                 --pause-screen-plot-lines: 4;
               }
               #pause-screen-close-btn { opacity: .85; }
+              #pause-screen-progress-bar { box-shadow: 0 0 0 1px rgba(156,163,175,.6); }
               .pause-screen-layout { padding-top: calc(76px + env(safe-area-inset-top, 0px)); padding-bottom: calc(176px + env(safe-area-inset-bottom, 0px)); align-items: end; }
               @media (min-height: 800px) and (orientation: portrait) {
                 :root { --pause-screen-plot-lines: 7; --pause-screen-plot-font: clamp(16px, 2.2vw, 20px); --pause-screen-meta-size: clamp(16px, 2vw, 18px); --pause-screen-hint-size: clamp(15px, 2vw, 18px); }
@@ -1301,6 +1303,7 @@
               span.textContent = String(value);
             } else {
               span.textContent = String(value);
+              if (value === runtime) span.className = 'pause-screen-runtime';
             }
             this.overlayDetails.appendChild(span);
           }
@@ -1452,9 +1455,10 @@
           const pct = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
           fill.style.width = `${pct}%`;
           this.progressBar.setAttribute('aria-valuenow', String(Math.round(pct)));
+          this.overlay.classList.toggle('has-duration', duration > 0);
           const remainingSeconds = duration > 0 && current < duration ? duration - current : 0;
           const leftText = remainingSeconds > 0 ? JE.t('pausescreen_time_left', { time: this.formatDuration(Math.max(1, Math.round(remainingSeconds / 60))) }) : '';
-          const valueText = duration > 0 ? [JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }), `${this.formatClock(current)} / ${this.formatClock(duration)}`, leftText].filter(Boolean).join(', ') : '';
+          const valueText = duration > 0 ? [JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }), JE.t('pausescreen_spoken_position', { position: this.spokenClock(current), total: this.spokenClock(duration) }), leftText].filter(Boolean).join('; ') : '';
           if (valueText) this.progressBar.setAttribute('aria-valuetext', valueText); else this.progressBar.removeAttribute('aria-valuetext');
 
           const timeEl = this.progressMeta.querySelector('.progress-time');
@@ -1482,6 +1486,22 @@
             }
           }
         }
+        /**
+         * A clock value as words for assistive technology ("1 hr 56 min 50 sec"), so a
+         * screen reader does not read "1:56:50" as a time of day.
+         * @param {number} sec
+         * @returns {string}
+         */
+        spokenClock(sec) {
+          if (!isFinite(sec) || sec < 0) sec = 0;
+          const h = Math.floor(sec / 3600), m = Math.floor((sec / 60) % 60), sc = Math.floor(sec % 60);
+          const parts = [];
+          if (h > 0) parts.push(JE.t('pausescreen_unit_hours', { n: h }));
+          if (m > 0 || h > 0) parts.push(JE.t('pausescreen_unit_minutes', { n: m }));
+          parts.push(JE.t('pausescreen_unit_seconds', { n: sc }));
+          return parts.join(' ');
+        }
+
         formatClock(sec) {
           if (!isFinite(sec) || sec <= 0) return "0:00";
           const s = Math.floor(sec % 60).toString().padStart(2, '0');
