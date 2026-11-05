@@ -832,7 +832,7 @@ Admin trigger settings ([complete trigger and destination reference](seerr-setti
 | **After X minutes watched** | On | Checks when playback position reaches the threshold. Seeking or resuming can satisfy it. |
 | **Minutes Watched Threshold:** | 20 | Position threshold in minutes; input range 1–180. |
 | **Only request if released** | On | A valid future release date prevents submission; missing/unparseable dates do not. |
-| **Quality Profile Mode:** | **Default** | Uses Seerr defaults, copies the first existing request with **Original**, or sends configured choices with **Custom**. |
+| **Quality Profile Mode:** | **Default** | Uses Seerr defaults, copies the first existing request with **Original**, or sends configured choices with **Custom** (a 4K Radarr server is requested as a 4K request). |
 
 ??? info "How it works"
 
