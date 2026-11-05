@@ -18,8 +18,8 @@ public static class QualityDisplayRules
     public static bool MeetsMinimum(string label, string? minimum) => Minimum(minimum) switch
     {
         "4k" => label is "8K" or "4K",
-        "1080p" => label is "8K" or "4K" or "1440p" or "1080p",
-        "720p" => label is "8K" or "4K" or "1440p" or "1080p" or "720p",
+        "1080p" => label is "8K" or "4K" or "1440p" or "1080p" or "1080i",
+        "720p" => label is "8K" or "4K" or "1440p" or "1080p" or "1080i" or "720p",
         _ => true,
     };
 }

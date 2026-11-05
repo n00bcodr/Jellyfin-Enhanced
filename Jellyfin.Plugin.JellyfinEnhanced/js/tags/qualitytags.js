@@ -1257,9 +1257,10 @@
     /** @param {string} label Detected resolution. @returns {boolean} Inclusive threshold, unknown settings mean Off. */
     function meetsMinimum(label) {
         const threshold = JE.currentSettings?.qualityMinimumResolution ?? JE.pluginConfig?.QualityMinimumResolution;
-        const last = { '4k': 1, '1080p': 3, '720p': 4 }[threshold];
+        // The last label each threshold accepts (1080i counts as 1080).
+        const last = resolutionOrder.indexOf({ '4k': '4K', '1080p': '1080i', '720p': '720p' }[threshold]);
         const index = resolutionOrder.indexOf(label);
-        return last === undefined || (index >= 0 && index <= last);
+        return last < 0 || (index >= 0 && index <= last);
     }
 
     /**

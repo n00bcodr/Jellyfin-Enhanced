@@ -263,6 +263,9 @@ public class QualityDisplayTests
     [InlineData("4k", "1080p", false)]
     [InlineData("4k", "4K", true)]
     [InlineData("4k", "8K", true)]
+    [InlineData("1080p", "1080i", true)]
+    [InlineData("720p", "1080i", true)]
+    [InlineData("4k", "1080i", false)]
     public void ThresholdsAreInclusive(string minimum, string label, bool shown) => Assert.Equal(shown, QualityDisplayRules.MeetsMinimum(label, minimum));
 
     [Theory]
