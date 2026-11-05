@@ -49,6 +49,10 @@
      * @returns {boolean}
      */
     function isScopeEnabled(scope) {
+        // The shared "Where to show" rule (core/tag-renderer-base.js tagScopes): personal, then the administrator.
+        const id = { ratingTagsOnMovies: 'movies', ratingTagsOnSeries: 'series', ratingTagsOnSeasons: 'seasons', ratingTagsOnEpisodes: 'episodes',
+            ratingTagsOnContinueWatching: 'continueWatching', ratingTagsOnNextUp: 'nextUp' }[scope.userKey];
+        if (id && JE.core?.tagScopes) return JE.core.tagScopes.allows('rating', id);
         const u = JE.currentSettings?.[scope.userKey];
         if (typeof u === 'boolean') return u;
         const a = JE.pluginConfig?.[scope.pluginKey];

@@ -78,7 +78,10 @@ test('admin page: every group offers the matrix controls, Edit only with setting
   for (const r of rows) {
     const offer = (control) => M.offers[`admin/${r.group}/${control}`];
     if (offer('enable') === true && !r.enable) failures.push(`${r.group}: no on/off switch`);
-    if (offer('placement') === true ? !r.placement : !r.text.includes(offer('placement'))) failures.push(`${r.group}: placement ${offer('placement') === true ? 'link missing' : 'reason missing'}`);
+    // The admin page sets position and limit on Layout defaults: a group row links there.
+    for (const control of ['position', 'limit']) {
+      if (offer(control) === true ? !r.placement : !(r.text.includes(offer(control)) || r.placement)) failures.push(`${r.group}: ${control} ${offer(control) === true ? 'link missing' : 'reason missing'}`);
+    }
     if (offer('scopes') === true ? r.scopes !== 6 : !r.text.includes(offer('scopes'))) failures.push(`${r.group}: Where to show ${offer('scopes') === true ? `has ${r.scopes} switches` : 'reason missing'}`);
     if (r.edit !== (r.inside > 0)) failures.push(`${r.group}: Edit ${r.edit ? 'opens no setting' : 'missing although it has settings'}`);
   }
@@ -95,7 +98,9 @@ test('personal hub: every group offers the matrix controls, no dead links or emp
   const rows = await page.$$eval('.je-tge-row[data-group]', (rows) => rows.map((r) => ({
     group: r.dataset.group,
     enable: !!r.querySelector('input[type="checkbox"][id$="TagsToggle"]'),
-    placement: !!r.querySelector('select, [role="radiogroup"], .je-tge-step'),
+    position: !!r.querySelector('.je-tge-pills input, .je-tge-pills button, .je-tge-pills select'),
+    limit: !!r.querySelector('[data-je-cap-control]:not([hidden]) .je-tge-step'),
+    limitNote: (r.querySelector('[data-je-cap-note]:not([hidden]) [data-je-limit-na]')?.textContent || ''),
     scopes: r.querySelectorAll(`[data-je-scope-block="${r.dataset.group}"] input[type="checkbox"]`).length,
     text: r.textContent,
   })));
@@ -105,13 +110,45 @@ test('personal hub: every group offers the matrix controls, no dead links or emp
     if (!r) {
       // A group without a row in the group editor (People Tags) has its switch on the hub and states the rest.
       if (offer('enable') === true && !(await page.locator(`#${group}TagsToggle`).count())) failures.push(`${group}: no on/off switch on the hub`);
-      for (const control of ['placement', 'scopes']) if (offer(control) === true) failures.push(`${group}: ${control} offered but the group has no row`);
+      for (const control of ['position', 'limit', 'scopes']) {
+        if (offer(control) === true) failures.push(`${group}: ${control} offered but the group has no row`);
+        else if (!(await page.locator(`[data-je-scope-na="${group}"]`).textContent().catch(() => '')).includes(offer(control))) failures.push(`${group}: ${control} reason not shown`);
+      }
       continue;
     }
     if (offer('enable') === true && !r.enable) failures.push(`${group}: no on/off switch`);
-    if (offer('placement') === true && !r.placement) failures.push(`${group}: no position or limit`);
+    if (offer('position') === true && !r.position) failures.push(`${group}: no position`);
+    if (offer('limit') === true ? !r.limit : !r.limitNote.includes(offer('limit'))) failures.push(`${group}: limit ${offer('limit') === true ? 'missing' : 'reason missing'}`);
     if (offer('scopes') === true ? r.scopes !== 6 : !r.text.includes(offer('scopes'))) failures.push(`${group}: Where to show has ${r.scopes} switches`);
   }
+  // Follow server means the same for every group: a personal switch, then Follow server, leaves the
+  // group following (no personal switch left) and says so; a later administrator change reaches it.
+  const follow = await page.evaluate(async () => {
+    const JE = window.JellyfinEnhanced;
+    const S = JE.core.tagScopes;
+    const wrong = [];
+    for (const block of document.querySelectorAll('[data-je-scope-block]')) {
+      const group = block.dataset.jeScopeBlock;
+      const input = block.querySelector('input[data-je-scope="episodes"]');
+      input.checked = !input.checked;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      if (S.scopeOwn(group, 'episodes') === null) wrong.push(`${group}: a switch did not become personal`);
+      document.querySelector(`[data-je-scope-follow="${group}"]`).click();
+      if (S.SCOPE_IDS.some((scope) => S.scopeOwn(group, scope) !== null)) wrong.push(`${group}: Follow server left a personal switch`);
+      const button = document.querySelector(`[data-je-scope-follow="${group}"]`);
+      if (!button.disabled) wrong.push(`${group}: Follow server not shown as following`);
+      const key = group === 'rating' ? 'RatingTagsOnEpisodes' : null;
+      if (key) { JE.pluginConfig[key] = false; if (S.allows('rating', 'episodes')) wrong.push('rating: a later administrator change did not reach a following user'); JE.pluginConfig[key] = true; }
+      else {
+        const pascal = group.charAt(0).toUpperCase() + group.slice(1);
+        JE.pluginConfig.TagGroupScopes = { [pascal]: { Episodes: false } };
+        if (S.allows(group, 'episodes')) wrong.push(`${group}: a later administrator change did not reach a following user`);
+        JE.pluginConfig.TagGroupScopes = null;
+      }
+    }
+    return wrong;
+  });
+  failures.push(...follow);
   expect(failures).toEqual([]);
 });
 
@@ -121,13 +158,15 @@ test('item editor: every group row offers the matrix controls and states where t
   const failures = [];
   failures.push(...await emptyDisclosures(page));
   const rows = await page.$$eval('.je-tie-groups [data-group]', (rows) => rows.map((r) => ({
-    group: r.dataset.group, enable: !!r.querySelector('input[data-tie-on]'), placement: !!r.querySelector('.je-tie-where input[type="radio"]'),
+    group: r.dataset.group, enable: !!r.querySelector('input[data-tie-on]'), position: !!r.querySelector('.je-tie-where input[type="radio"]'),
+    limit: !!r.querySelector('.je-tie-cap button'), limitNote: r.querySelector('[data-je-limit-na]')?.textContent || '',
   })));
   const note = await page.locator('[data-je-scope-na="itemEditor"]').textContent().catch(() => '');
   for (const r of rows) {
     const offer = (control) => M.offers[`itemEditor/${r.group}/${control}`];
     if (offer('enable') === true && !r.enable) failures.push(`${r.group}: no include switch`);
-    if (offer('placement') === true && !r.placement) failures.push(`${r.group}: no position`);
+    if (offer('position') === true && !r.position) failures.push(`${r.group}: no position`);
+    if (offer('limit') === true ? !r.limit : !r.limitNote.includes(offer('limit'))) failures.push(`${r.group}: limit ${offer('limit') === true ? 'missing' : 'reason missing'}`);
     if (offer('scopes') !== true && !note.includes(offer('scopes'))) failures.push(`${r.group}: Where to show reason missing`);
   }
   expect(rows.length).toBeGreaterThan(0);

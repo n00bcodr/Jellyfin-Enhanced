@@ -36,6 +36,8 @@ function snapshot(page, settings, view) {
     Object.assign(JE.currentSettings, settings);
     window.preview.refresh();
     if (view) document.querySelector(`.je-mtp-view [data-view="${view}"]`)?.click();
+    // Flags and icons are images: measure once they are decoded, as the fitting pass does after they load.
+    await Promise.all(Array.from(document.querySelectorAll('#preview img')).map((img) => (img.complete ? null : img.decode().catch(() => null))));
     for (let i = 0; i < 3; i++) {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       JE.core.tagLayout.flushFit();
@@ -95,4 +97,23 @@ for (const [layout, view] of LAYOUTS) test(`removing a group or a chip never hid
     }
   }
   expect(failures).toEqual([]);
+});
+
+test('a card whose caption groups are all switched off for its type keeps no empty caption strip', async ({ page }) => {
+  await setup(page);
+  const off = { episodes: false };
+  const scopes = Object.fromEntries(['quality', 'language', 'rating', 'ageRating', 'awards', 'logos', 'custom'].map((g) => [g, off]));
+  const strips = async (extra) => {
+    await snapshot(page, { ...BASE, tagLayout: 'caption', ...extra });
+    return page.evaluate(() => Object.fromEntries(['movie', 'series', 'episode'].map((sample) => {
+      const strip = document.querySelector(`[data-sample="${sample}"] .je-tag-caption`);
+      return [sample, strip ? Math.round(strip.getBoundingClientRect().height) : 0];
+    })));
+  };
+  const before = await strips({});
+  expect(before.episode).toBeGreaterThan(0);
+  // Rating's own switches and everyone else's, all off for episodes.
+  const after = await strips({ tagGroupScopes: scopes });
+  expect(after).toEqual({ movie: before.movie, series: before.series, episode: 0 });
+  expect(await strips({ tagGroupScopes: null })).toEqual(before);
 });

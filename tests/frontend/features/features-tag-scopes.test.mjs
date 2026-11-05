@@ -43,9 +43,14 @@ test('setOwn and follow write only the personal document, and following clears t
   assert.equal(h.JE.currentSettings.tagGroupScopes, null);
   assert.equal(S.allows('logos', 'nextUp'), false, 'back to the administrator');
   S.setOwn('rating', 'episodes', true);
-  assert.equal(h.JE.currentSettings.ratingTagsOnEpisodes, true);
+  assert.equal(h.JE.currentSettings.tagGroupScopes.rating.episodes, true, 'Rating switches live with the others');
+  assert.equal(S.allows('rating', 'episodes'), true);
   S.follow('rating');
-  assert.equal(h.JE.currentSettings.ratingTagsOnEpisodes, false, 'Rating follows by taking the administrator values');
+  assert.equal(h.JE.currentSettings.tagGroupScopes, null);
+  assert.equal(h.JE.currentSettings.ratingTagsOnEpisodes, true, 'an older document key no longer pins a choice');
+  assert.equal(S.allows('rating', 'episodes'), false, 'following: the administrator off');
+  h.JE.pluginConfig.RatingTagsOnEpisodes = true;
+  assert.equal(S.allows('rating', 'episodes'), true, 'a later administrator change reaches a following user');
 });
 
 test('a group switched off for a card type is not drawn on that card, through the shared renderer commit', t => {
@@ -79,4 +84,26 @@ test('the settings matrix offers the common controls on every surface, with a re
   assert.equal(M.offers('admin', 'genre', 'scopes'), true);
   assert.equal(M.offers('admin', 'people', 'scopes'), 'tag_scope_people_na');
   assert.equal(M.offers('itemEditor', 'genre', 'scopes'), 'tag_item_editor_scope_note');
+});
+
+test('Rating follows the administrator like every group; an older document\'s "off" stays the user\'s choice', t => {
+  const { h, S } = setup(t, { settings: { ratingTagsOnSeries: false, ratingTagsOnMovies: true }, plugin: { RatingTagsOnMovies: true, RatingTagsOnSeries: true } });
+  assert.equal(S.scopeOwn('rating', 'series'), false, 'an older "off" is kept');
+  assert.equal(S.scopeOwn('rating', 'movies'), null, 'an older "on" (the default) follows');
+  h.JE.pluginConfig.RatingTagsOnMovies = false;
+  assert.equal(S.allows('rating', 'movies'), false, 'the administrator turns movies off: a following user follows');
+  assert.equal(S.allows('rating', 'series'), false);
+  S.follow('rating');
+  h.JE.pluginConfig.RatingTagsOnSeries = true;
+  assert.equal(S.allows('rating', 'series'), true, 'after Follow server the older "off" is gone');
+});
+
+test('a document stored with the server\'s PascalCase keys reads and writes the same', t => {
+  const { h, S } = setup(t, { settings: { tagGroupScopes: { Genre: { Episodes: false }, Rating: { NextUp: false } } } });
+  assert.equal(S.allows('genre', 'episodes'), false);
+  assert.equal(S.allows('rating', 'nextUp'), false);
+  S.setOwn('genre', 'series', false);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.JE.currentSettings.tagGroupScopes)), { genre: { episodes: false, series: false }, rating: { nextUp: false } });
+  S.follow('genre');
+  assert.deepEqual(JSON.parse(JSON.stringify(h.JE.currentSettings.tagGroupScopes)), { rating: { nextUp: false } });
 });

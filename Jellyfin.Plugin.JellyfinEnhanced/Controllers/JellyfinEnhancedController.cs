@@ -5544,12 +5544,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         GenreTagsPosition = defaultConfig.GenreTagsPosition,
                         LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                         RatingTagsPosition = defaultConfig.RatingTagsPosition,
-                        RatingTagsOnMovies = defaultConfig.RatingTagsOnMovies,
-                        RatingTagsOnSeries = defaultConfig.RatingTagsOnSeries,
-                        RatingTagsOnSeasons = defaultConfig.RatingTagsOnSeasons,
-                        RatingTagsOnEpisodes = defaultConfig.RatingTagsOnEpisodes,
-                        RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
-                        RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
+                        RatingTagsOnMovies = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnSeries = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnSeasons = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnEpisodes = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnContinueWatching = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnNextUp = true, // follows the administrator (TagLayoutRules.RatingScope)
                         RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
                         RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
                         // Multi-source rating defaults (copy the ordered array).
@@ -8755,12 +8755,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 GenreTagsPosition = defaultConfig.GenreTagsPosition,
                 LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                 RatingTagsPosition = defaultConfig.RatingTagsPosition,
-                RatingTagsOnMovies = defaultConfig.RatingTagsOnMovies,
-                RatingTagsOnSeries = defaultConfig.RatingTagsOnSeries,
-                RatingTagsOnSeasons = defaultConfig.RatingTagsOnSeasons,
-                RatingTagsOnEpisodes = defaultConfig.RatingTagsOnEpisodes,
-                RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
-                RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
+                RatingTagsOnMovies = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnSeries = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnSeasons = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnEpisodes = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnContinueWatching = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnNextUp = true, // follows the administrator (TagLayoutRules.RatingScope)
                 RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
                 RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
                 // Multi-source rating defaults (copy the ordered array).

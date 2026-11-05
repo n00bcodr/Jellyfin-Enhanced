@@ -313,9 +313,7 @@
                     <span class="je-quality-cat-label">${escapeHtml(JE.t(SCOPE_LABELS[scope]))}</span>
                 </label></div>`;
         }).join('');
-        const following = group === 'rating'
-            ? S.SCOPE_IDS.every((scope) => S.scopeOwn(group, scope) === S.scopeDefault(group, scope))
-            : S.SCOPE_IDS.every((scope) => S.scopeOwn(group, scope) === null);
+        const following = S.SCOPE_IDS.every((scope) => S.scopeOwn(group, scope) === null);
         return `
                 <div class="je-tge-extra je-tge-scopes" data-je-scope-block="${group}">
                     <div class="je-tge-label je-tge-section" id="${group}ScopeLabel">${escapeHtml(JE.t('tag_scope_label'))}</div>
@@ -440,6 +438,10 @@
                     <div class="je-tge-field" role="group" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position'))}">
                         <div class="je-tge-label je-tge-section" aria-hidden="true">${escapeHtml(JE.t('panel_settings_subtitles_position'))}</div>
                         <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
+                    </div>
+                    <div class="je-tge-field" data-je-cap-note ${layoutApi().singleChipGroup(group) ? '' : 'hidden'}>
+                        <div class="je-tge-label je-tge-section">${escapeHtml(JE.t('panel_settings_ui_tag_editor_show_up_to'))}</div>
+                        <div class="je-tge-hint" data-je-limit-na="${group}">${escapeHtml(JE.t('tag_limit_single'))}</div>
                     </div>
                     <div class="je-tge-field" data-je-cap-control ${layoutApi().singleChipGroup(group) ? 'hidden' : ''}>
                         <div class="je-tge-label je-tge-section" id="jeTgeCapLabel-${group}">${escapeHtml(JE.t('panel_settings_ui_tag_editor_show_up_to'))}</div>
@@ -711,7 +713,7 @@
         #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill:has(input:not(:checked)) > span { color: rgba(255,255,255,0.68); }
         #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill:has(input:focus-visible) { outline: none; }
         #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-        #jellyfin-enhanced-panel [data-je-cap-control][hidden] { display: none !important; }
+        #jellyfin-enhanced-panel [data-je-cap-control][hidden], #jellyfin-enhanced-panel [data-je-cap-note][hidden] { display: none !important; }
         #jellyfin-enhanced-panel .je-tge-stepper { display: inline-flex; align-items: center; gap: 8px; }
         #jellyfin-enhanced-panel .je-tge-cap { min-width: 32px; text-align: center; font-weight: 600; }
         #jellyfin-enhanced-panel .je-tge-list-box { margin: 0; }
@@ -944,6 +946,8 @@
                 pills.innerHTML = pillsHtml(conf, group);
                 if (pillFocus) /** @type {HTMLElement|null} */ (pills.querySelector(`[data-slot="${pillFocus}"]`))?.focus();
                 row.querySelector('[data-je-cap-control]').hidden = layoutApi().singleChipGroup(group);
+                const capNote = row.querySelector('[data-je-cap-note]');
+                if (capNote) capNote.hidden = !layoutApi().singleChipGroup(group);
                 const step = stepperState(conf, group);
                 /** @type {HTMLElement} */ (row.querySelector('.je-tge-cap')).textContent = step.text;
                 /** @type {HTMLButtonElement} */ (row.querySelector('.je-tge-step[data-step="-1"]')).disabled = !step.canDown;

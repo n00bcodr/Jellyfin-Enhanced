@@ -1477,6 +1477,21 @@
     }
 
     /**
+     * Whether a card keeps a caption strip: its look reserves one (a switched-on group goes in
+     * the strip) and at least one such group shows on this card's type and home row
+     * ("Where to show"), so a card whose caption groups are all switched off for it has none.
+     * @param {TagLayoutSettings} conf
+     * @param {Element} el - The card's host or render target.
+     * @returns {boolean}
+     */
+    function reservesCaption(conf, el) {
+        if (!conf.reserveCaption) return false;
+        const scopes = JE.core.tagScopes;
+        if (!scopes) return true;
+        return DEFAULT_ORDER.some((g) => conf.slots[g] === 'caption' && !!JE.currentSettings?.[ENABLED_SETTING[g]] && !scopes.excludes(g, el));
+    }
+
+    /**
      * Insert a representation into a slot at its priority position.
      * @param {CardController} ctrl
      * @param {TagLayoutSettings} conf
@@ -1700,7 +1715,7 @@
         // Settings saved before layouts keep the original web geometry
         // (tags/tag-layout-styles.js keys its legacy rules off this).
         if (conf.legacy) ctrl.host.dataset.jeLegacy = '1';
-        if (conf.reserveCaption && !isIgnoredContext(ctrl.host)) {
+        if (reservesCaption(conf, ctrl.host) && !isIgnoredContext(ctrl.host)) {
             const outlet = ensureOutlet(ctrl);
             if (outlet) applySize(outlet, conf);
         }
@@ -3010,7 +3025,7 @@
      */
     function removeGroupEverywhere(groupId) {
         for (const host of document.querySelectorAll('.je-tag-host')) {
-            const reserve = resolveLayout(controllers.get(host) || host).reserveCaption;
+            const reserve = reservesCaption(resolveLayout(controllers.get(host) || host), host);
             removeGroup(/** @type {HTMLElement} */ (host), groupId);
             // The group was the last one switched on that could fill the
             // caption strip: give the reserved space back.
@@ -3039,7 +3054,7 @@
      * @param {HTMLElement} target - Render target.
      */
     function prepareCard(target) {
-        if (!target || !resolveLayout(findHost(target) || target).reserveCaption) return;
+        if (!target || !reservesCaption(resolveLayout(findHost(target) || target), target)) return;
         const host = ensureHost(target);
         if (!host || isIgnoredContext(host)) return;
         const ctrl = controllerFor(host, true);
@@ -3074,7 +3089,7 @@
             const owned = new Set();
             for (const host of document.querySelectorAll('.je-tag-host')) {
                 const el = /** @type {HTMLElement} */ (host);
-                const reserve = resolveLayout(controllers.get(el) || el).reserveCaption;
+                const reserve = reservesCaption(resolveLayout(controllers.get(el) || el), el);
                 const ctrl = controllerFor(el, reserve && !isIgnoredContext(el));
                 if (!ctrl) continue;
                 presentAll(ctrl);

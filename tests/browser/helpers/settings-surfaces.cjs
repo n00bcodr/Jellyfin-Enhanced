@@ -53,6 +53,7 @@ async function base(page, { plugin = {}, settings = {}, admin = true, theme = 'd
       getScaledImageUrl: () => 'data:image/gif;base64,R0lGODlhAQABAAAAACw=',
       ajax: async (request) => {
         const url = new URL(request.url, location.origin);
+        if (url.pathname.includes('/JellyfinEnhanced/tag-data/')) return { Items: [{ Id: ITEM, Type: 'Movie', Genres: ['Drama'], OfficialRating: 'PG-13', CommunityRating: 7.5 }] };
         if (request.type && request.type !== 'GET') return { values: {}, Values: {} };
         if (url.pathname.endsWith('/UserViews') || url.pathname.endsWith('/MediaFolders')) return { Items: [{ Id: LIBRARY, Name: 'Movies', CollectionType: 'movies' }] };
         if (url.pathname.endsWith('/Genres')) return { Items: [{ Name: 'Drama' }] };
@@ -100,24 +101,38 @@ async function hub(page, options = {}) {
     JE.currentSettings = JE.loadSettings();
     JE.escapeHtml = JE.core.ui.escapeHtml;
   });
+  // The production panel template, for its stylesheet (the panel shell's grid, scroll areas and phone layout).
+  await page.evaluate(() => Object.assign(window.JellyfinEnhanced, { fontSizePresets: [{ size: 1 }, { size: 1 }, { size: 1 }], fontFamilyPresets: [{ family: 'sans-serif' }],
+    subtitlePresets: [], subtitleTextEffectPresets: [], decodeSubtitleColor: () => ({ swatch: '#fff', alphaValue: 255 }), getSubtitleTextShadow: () => 'none' }));
   await load(page, ['enhanced/settingspanel/ui-panel-settings.js', 'enhanced/settingspanel/ui-panel-tag-editor.js', 'enhanced/settingspanel/ui-panel-tag-looks.js',
-    'enhanced/settingspanel/ui-panel-tag-preview.js', 'enhanced/settingspanel/ui-panel-tag-portable.js', 'enhanced/settingspanel/ui-panel-media-tags.js']);
+    'enhanced/settingspanel/ui-panel-tag-preview.js', 'enhanced/settingspanel/ui-panel-tag-portable.js', 'enhanced/settingspanel/ui-panel-media-tags.js',
+    'enhanced/settingspanel/ui-panel-template.js']);
   await page.evaluate(() => {
     const ui = window.JellyfinEnhanced.internals.enhancedUi;
-    ui.buildPanelHtml = (ctx) => '<div class="panel-header"><div id="jePanelTitle">Jellyfin Enhanced</div><button id="closeSettingsPanel">Close</button></div>'
+    const production = ui.buildPanelHtml;
+    const shellStyle = (ctx) => { try { return (production(ctx).match(/<style>[\s\S]*?<\/style>/) || [''])[0]; } catch (e) { return ''; } };
+    ui.buildPanelHtml = (ctx) => shellStyle(ctx) + '<div class="panel-header"><div id="jePanelTitle">Jellyfin Enhanced</div><button id="closeSettingsPanel">Close</button></div>'
       + '<div class="je-panel-dock"><select id="jePanelSection"></select></div><div class="je-panel-body"><nav class="je-panel-nav"><input id="jePanelSearch" type="search"><ul id="jePanelSearchResults" hidden></ul><div class="je-panel-nav-items"></div></nav>'
       + `<div class="je-panel-main"><button id="jePanelBack">Back</button>${ui.buildMediaTagsHubHtml(ctx)}</div></div>`;
     for (const name of ['wireShortcutEditor', 'wireHiddenContentListeners', 'wireLanguageControls', 'wireMiscSettingsControls']) ui[name] = ui[name] || (() => {});
   });
   await load(page, ['enhanced/settingspanel/ui-panel.js']);
   await page.evaluate(async () => { await window.JellyfinEnhanced.showEnhancedPanel(); });
+  // On a phone the panel opens on its section list: choose Media Tags, as a user does.
+  await page.waitForSelector('#jeMediaTagsHub [role="tab"]', { state: 'attached' });
+  await page.evaluate(() => {
+    const select = document.querySelector('#jePanelSection');
+    if (select && select.value !== 'media-tags') { select.value = 'media-tags'; select.dispatchEvent(new Event('change', { bubbles: true })); }
+    document.querySelector('.je-panel-nav-items [data-tab="media-tags"]')?.click();
+  });
   await page.waitForSelector('#jeMediaTagsHub [role="tab"]');
   await page.waitForTimeout(300);
 }
 
 /** The item Media Tags editor (the card menu's "Media Tags…"), open on a movie. */
 async function itemEditor(page, options = {}) {
-  await base(page, options);
+  // Without the server cache the editor reads the item's tag data the way the batch path does.
+  await base(page, { ...options, plugin: { TagCacheServerMode: false, ...(options.plugin || {}) } });
   await page.evaluate(() => {
     const JE = window.JellyfinEnhanced;
     JE.currentSettings = { ...JE.userConfig.settings };
@@ -127,7 +142,15 @@ async function itemEditor(page, options = {}) {
     document.body.innerHTML = '<div id="sheets"></div>';
   });
   await load(page, ['core/ui-kit.js', 'core/dom-observer.js', 'core/media-language.js', 'core/tag-renderer-base.js', 'core/tag-layout.js', 'core/tag-look.js', 'tags/tag-layout-styles.js',
-    'tags/tag-pipeline.js', 'enhanced/settingspanel/ui-panel-tag-preview.js', 'tags/tag-item-editor.js']);
+    'tags/rating-sources.js', 'tags/status-vocabulary.js', 'tags/statustags.js', 'tags/qualitytags.js', 'tags/ratingtags.js', 'tags/ageratingtags.js', 'tags/languagetags.js',
+    'tags/genretags.js', 'tags/tag-pipeline.js', 'enhanced/settingspanel/ui-panel-tag-preview.js', 'tags/tag-item-editor.js']);
+  // The group renderers, registered with the real pipeline, so the editor's sample draws real tags.
+  await page.evaluate(() => {
+    const JE = window.JellyfinEnhanced;
+    for (const init of ['initializeGenreTags', 'initializeQualityTags', 'initializeRatingTags', 'initializeAgeRatingTags', 'initializeLanguageTags', 'initializeStatusTags']) {
+      try { JE[init]?.(); } catch (e) { console.warn(init, e); }
+    }
+  });
   await page.evaluate(async (id) => { await window.JellyfinEnhanced.tagItemEditor.open(id); }, ITEM);
   await page.waitForSelector('.je-tie-groups [data-group]');
   await page.waitForTimeout(300);

@@ -72,11 +72,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
     }
 
     /// <summary>
-    /// "Where to show" for every card tag group except Rating, whose six switches keep their own settings
-    /// (RatingTagsOnMovies …). People Tags are on cast cards, not media cards, so they have none.
+    /// "Where to show" for every card tag group. The administrator's Rating switches keep their own settings
+    /// (RatingTagsOnMovies …); a user's Rating switches live here like every other group's.
+    /// People Tags are on cast cards, not media cards, so they have none.
     /// </summary>
     public class TagGroupScopes
     {
+        /// <summary>Personal Rating switches (the administrator's stay in RatingTagsOn…).</summary>
+        public TagScopeSet? Rating { get; set; }
         public TagScopeSet? Quality { get; set; }
         public TagScopeSet? Genre { get; set; }
         public TagScopeSet? Language { get; set; }
@@ -281,7 +284,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public static TagScopeSet? ScopeSet(TagGroupScopes? scopes, string group) => scopes == null ? null : group switch
         {
             "quality" => scopes.Quality, "genre" => scopes.Genre, "language" => scopes.Language, "ageRating" => scopes.AgeRating,
-            "status" => scopes.Status, "awards" => scopes.Awards, "logos" => scopes.Logos, "custom" => scopes.Custom, _ => null,
+            "status" => scopes.Status, "awards" => scopes.Awards, "logos" => scopes.Logos, "custom" => scopes.Custom, "rating" => scopes.Rating, _ => null,
         };
 
         /// <summary>One switch of a set (null when unset).</summary>
@@ -313,9 +316,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             {
                 Quality = NormalizeScopeSet(scopes.Quality), Genre = NormalizeScopeSet(scopes.Genre), Language = NormalizeScopeSet(scopes.Language),
                 AgeRating = NormalizeScopeSet(scopes.AgeRating), Status = NormalizeScopeSet(scopes.Status), Awards = NormalizeScopeSet(scopes.Awards),
-                Logos = NormalizeScopeSet(scopes.Logos), Custom = NormalizeScopeSet(scopes.Custom),
+                Logos = NormalizeScopeSet(scopes.Logos), Custom = NormalizeScopeSet(scopes.Custom), Rating = NormalizeScopeSet(scopes.Rating),
             };
-            return ScopedGroups.All(g => ScopeSet(result, g) == null) ? null : result;
+            return ScopedGroups.All(g => ScopeSet(result, g) == null) && result.Rating == null ? null : result;
         }
 
         /// <summary>
@@ -324,6 +327,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         /// </summary>
         public static bool ScopeAllows(TagGroupScopes? personal, TagGroupScopes? admin, string group, string? scope)
             => scope == null || (ScopeValue(ScopeSet(personal, group), scope) ?? ScopeValue(ScopeSet(admin, group), scope) ?? true);
+
+        /// <summary>
+        /// A user's effective Rating switch: their own (TagGroupScopes.Rating), else an older document's
+        /// RatingTagsOn… turned off (kept as their choice), else the administrator's RatingTagsOn…. An older
+        /// document's "on" is the default everyone had and now follows the administrator, so nothing changes
+        /// until the administrator turns a switch off.
+        /// </summary>
+        public static bool RatingScope(JellyfinEnhancedUserSettings user, PluginConfiguration config, string scope)
+        {
+            var own = ScopeValue(user.TagGroupScopes?.Rating, scope);
+            if (own.HasValue) return own.Value;
+            var (legacy, admin) = scope switch
+            {
+                "movies" => (user.RatingTagsOnMovies, config.RatingTagsOnMovies),
+                "series" => (user.RatingTagsOnSeries, config.RatingTagsOnSeries),
+                "seasons" => (user.RatingTagsOnSeasons, config.RatingTagsOnSeasons),
+                "episodes" => (user.RatingTagsOnEpisodes, config.RatingTagsOnEpisodes),
+                "continueWatching" => (user.RatingTagsOnContinueWatching, config.RatingTagsOnContinueWatching),
+                "nextUp" => (user.RatingTagsOnNextUp, config.RatingTagsOnNextUp),
+                _ => (true, true),
+            };
+            return legacy && admin;
+        }
 
         /// <summary>The document version alone decides whether legacy presentation and facts apply.</summary>
         public static bool IsLegacy(JellyfinEnhancedUserSettings settings) => settings.TagLayoutSettingsVersion < 1;

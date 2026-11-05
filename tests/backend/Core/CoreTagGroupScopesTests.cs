@@ -104,4 +104,21 @@ public class CoreTagGroupScopesTests
         Assert.True(MediaTagsPageFields.TryNormalize("TagGroupScopes", new TagGroupScopes { Genre = new TagScopeSet() }, out var normalized, out _));
         Assert.Null(normalized);
     }
+
+    [Fact]
+    public void RatingFollowsTheAdministratorWhileAnOlderOffStaysTheUsers()
+    {
+        var config = new PluginConfiguration();
+        var user = User();
+        user.RatingTagsOnSeries = false;
+        Assert.True(TagLayoutRules.RatingScope(user, config, "movies"));
+        Assert.False(TagLayoutRules.RatingScope(user, config, "series"));
+        config.RatingTagsOnMovies = false;
+        Assert.False(TagLayoutRules.RatingScope(user, config, "movies"), "an older on follows a later administrator off");
+        Assert.False(PosterTagSettings.FromUserSettings(user, config).RatingTagsOnMovies);
+        user.TagGroupScopes = new TagGroupScopes { Rating = new TagScopeSet { Movies = true, Series = true } };
+        Assert.True(TagLayoutRules.RatingScope(user, config, "movies"), "the user's own switch wins");
+        Assert.True(TagLayoutRules.RatingScope(user, config, "series"));
+        Assert.NotNull(TagLayoutRules.NormalizeScopes(new TagGroupScopes { Rating = new TagScopeSet { NextUp = false } })?.Rating);
+    }
 }

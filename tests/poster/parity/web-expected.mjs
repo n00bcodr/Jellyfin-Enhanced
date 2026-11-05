@@ -147,7 +147,12 @@ class Element {
         return selector.trim().startsWith('.') && parts.every((p) => this.classList.contains(p));
     }
     matches() { return false; }
-    closest() { return null; }
+    // Only the card-type lookup the "Where to show" switches read (a card carries data-type).
+    closest(selector) {
+        if (selector !== '[data-type]') return null;
+        for (let el = this; el; el = el.parentElement) if (el.getAttribute('data-type')) return el;
+        return null;
+    }
     querySelector(selector) {
         for (const sel of selector.split(',')) {
             const found = this._find(sel.trim());
@@ -388,6 +393,8 @@ async function runProfile(profile) {
     for (const [id, entry] of Object.entries(entries)) {
         const host = new Element('div');
         host.className = 'je-tag-host';
+        // The card's type, as a library card carries it (data-type), for the "Where to show" switches.
+        if (entry.Type) host.setAttribute('data-type', entry.Type);
         // Per-item looks: the item data a lock or item look is found with (its id, its series).
         if (profile.itemLooks) {
             const L = JE.core.tagLayout;
@@ -458,7 +465,10 @@ async function runProfile(profile) {
     const pos = (u, p, f) => ownCorner(u) || JE.core.tagRenderer.resolvePosition(u, p, f).pos;
     const offGroups = ['quality', 'genre', 'rating', 'ageRating', 'language', 'awards', 'status', 'logos', 'custom'].filter((g) => layoutConf.slots[g] === 'off');
     const readInt = (k, d) => (Number.isFinite(s[k]) ? s[k] : d);
-    const scope = (u, p) => (typeof s[u] === 'boolean' ? s[u] : (typeof pluginConfig[p] === 'boolean' ? pluginConfig[p] : true));
+    // Rating's effective switches, through the shared "Where to show" rule (personal, then the administrator).
+    const scopeIds = { ratingTagsOnMovies: 'movies', ratingTagsOnSeries: 'series', ratingTagsOnSeasons: 'seasons', ratingTagsOnEpisodes: 'episodes', ratingTagsOnContinueWatching: 'continueWatching', ratingTagsOnNextUp: 'nextUp' };
+    const scope = (u, p) => (scopeIds[u] ? JE.core.tagScopes.allows('rating', scopeIds[u])
+        : (typeof s[u] === 'boolean' ? s[u] : (typeof pluginConfig[p] === 'boolean' ? pluginConfig[p] : true)));
     const settings = {
         tagScale: layoutConf.tagScale, tagGap: layoutConf.tagGap,
         qualityTagsEnabled: !!s.qualityTagsEnabled, genreTagsEnabled: !!s.genreTagsEnabled, languageTagsEnabled: !!s.languageTagsEnabled,

@@ -30,13 +30,20 @@ function sweep(page, surface) {
         const outer = box.getBoundingClientRect();
         const left = outer.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
         const right = outer.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+        // Word by word: the space a line breaks at hangs past the box in some engines (Firefox counts it in a
+        // range's rectangles), but no word may run past it.
         const range = document.createRange();
-        range.selectNodeContents(node);
-        const lines = Array.from(range.getClientRects()).filter((r) => r.width > 0);
+        const lines = [];
+        for (const word of node.textContent.matchAll(/\S+/g)) {
+          range.setStart(node, word.index);
+          range.setEnd(node, word.index + word[0].length);
+          for (const r of range.getClientRects()) if (r.width > 0) { r.word = word[0]; lines.push(r); }
+        }
         const past = Math.max(0, ...lines.map((r) => Math.max(left - r.left, r.right - right)));
+        const worst = lines.find((r) => Math.max(left - r.left, r.right - right) === past);
         if (past > 1) {
           const text = (box.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50);
-          overflows.add(`${where}: <${box.tagName.toLowerCase()}${box.className ? ` class="${String(box.className).slice(0, 40)}"` : ''}> "${text}" runs ${Math.round(past)}px past its box`);
+          overflows.add(`${where}: <${box.tagName.toLowerCase()}${box.className ? ` class="${String(box.className).slice(0, 40)}"` : ''}> "${text}" runs ${Math.round(past)}px past its box at "${worst && worst.word}"`);
         }
       }
     };

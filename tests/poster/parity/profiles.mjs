@@ -407,6 +407,12 @@ for (const TagScale of ['smaller', 'larger', 'largest']) {
 for (const TagGap of ['tight', 'roomy']) {
     synth(`tag-gap-${TagGap}`, { ...allOn, TagLayoutSettingsVersion: 1, TagGap });
 }
+// "Where to show": personal switches over the administrator's, Rating's own switches, item types only
+// (an image request has no home row).
+synth('where-to-show', { ...allOn, TagLayoutSettingsVersion: 1, TagGroupScopes: { Genre: { Episodes: false, Series: false }, Quality: { Seasons: false }, Rating: { Movies: false }, Custom: { Movies: false } } });
+synth('where-to-show-admin', { ...allOn, TagLayoutSettingsVersion: 1, TagGroupScopes: { Language: { Movies: true } } },
+    { TagGroupScopes: { Language: { Movies: false, Series: false }, AgeRating: { Episodes: false }, Awards: { Movies: false } }, RatingTagsOnSeries: false });
+synth('where-to-show-rating-legacy-off', { ...allOn, TagLayoutSettingsVersion: 1, RatingTagsOnEpisodes: false }, { RatingTagsOnMovies: false });
 synth('tag-size-invalid-personal', { ...allOn, TagLayoutSettingsVersion: 1, TagScale: 'huge', TagGap: 'wide' }, { TagScale: 'larger', TagGap: 'roomy' });
 synth('tag-size-admin-inherit', { ...allOn, TagLayoutSettingsVersion: 1 }, { TagScale: 'larger', TagGap: 'roomy' });
 synth('tag-size-legacy', { ...allOn, TagScale: 'largest', TagGap: 'roomy' }, { TagScale: 'larger', TagGap: 'tight' });

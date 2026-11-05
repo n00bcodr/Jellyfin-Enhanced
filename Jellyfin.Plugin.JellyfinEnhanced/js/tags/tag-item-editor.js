@@ -742,7 +742,7 @@
                 const fixed = L.singleChipGroup(group);
                 const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
                 const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
-                const stepper = fixed ? '' : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
+                const stepper = fixed ? `<p class="je-tie-hint" data-je-limit-na="${group}">${tx('tag_limit_single')}</p>` : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
                     <span>${tx('panel_settings_ui_tag_editor_show_up_to')}</span>
                     <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${!on || stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
                     <output aria-live="polite">${esc(capText)}</output>

@@ -301,6 +301,7 @@
                     ${switchRow('tagsHideOnHoverToggle', !!JE.currentSettings.tagsHideOnHover, 'panel_settings_ui_hide_tags_on_hover', 'panel_settings_ui_hide_tags_on_hover_desc')}
                     ${native}
                     ${switchRow('peopleTagsToggle', !!JE.currentSettings.peopleTagsEnabled, 'panel_settings_ui_people_tags', 'panel_settings_ui_people_tags_desc')}
+                    <p class="je-mth-hint" data-je-scope-na="people">${tx('tag_scope_people_na')}</p>
                 </div>
             </section>
             ${internal.buildTagPortableHtml?.() || ''}`;
@@ -326,7 +327,7 @@
         const rows = BADGE_FAMILIES.map((f) => {
             const days = Number(JE.pluginConfig?.[f.windowSetting]) || f.windowFallback;
             const window = f.windowKey ? `<span class="je-mth-badge-window">${tx(f.windowKey, { days })}</span>`
-                : f.requires && JE.pluginConfig?.[f.requires] !== true ? `<span class="je-mth-badge-window">${tx(f.requiresKey)}</span>` : '';
+                : f.requires && JE.pluginConfig?.[f.requires] !== true ? `<span class="je-mth-badge-requires">${tx(f.requiresKey)}</span>` : '';
             return `
                 <div class="je-quality-cat-row je-mth-badge" data-cat-key="${f.key}">
                     <label class="je-mth-badge-main">
@@ -594,7 +595,7 @@
         #jellyfin-enhanced-panel .je-mth-switch input { width: 18px; height: 18px; margin: 2px 0 0; flex-shrink: 0; accent-color: var(--je-mth-accent); cursor: pointer; }
         #jellyfin-enhanced-panel .je-mth-switch-text, #jellyfin-enhanced-panel .je-mth-badge-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
         #jellyfin-enhanced-panel .je-mth-switch-name, #jellyfin-enhanced-panel .je-mth-badge-name { font-size: 14px; font-weight: 500; }
-        #jellyfin-enhanced-panel .je-mth-switch-desc, #jellyfin-enhanced-panel .je-mth-badge-desc { font-size: 13px; color: rgba(255,255,255,0.66); line-height: 1.4; }
+        #jellyfin-enhanced-panel .je-mth-switch-desc, #jellyfin-enhanced-panel .je-mth-badge-desc { font-size: 13px; color: rgba(255,255,255,0.66); line-height: 1.4; min-width: 0; }
         /* Two lines at rest; the row never changes height under the pointer. */
         #jellyfin-enhanced-panel .je-mth-switch-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
         #jellyfin-enhanced-panel .je-mth-badges { display: flex; flex-direction: column; gap: 6px; }

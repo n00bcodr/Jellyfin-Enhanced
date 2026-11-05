@@ -926,10 +926,12 @@
     // ── Where to show ───────────────────────────────────────────────────
     // Every card tag group can be limited to item types (movies, series,
     // seasons, episodes) and to the Continue Watching and Next Up home rows.
-    // Rating keeps its own six switches (ratingTagsOn…); the other groups keep
-    // theirs in tagGroupScopes ({ group: { scope: bool } }), where a missing
-    // switch follows the administrator's TagGroupScopes, else "on". People Tags
-    // are on cast cards, not media cards: no switch applies to them.
+    // A user's switches are in tagGroupScopes ({ group: { scope: bool } }); a
+    // missing one follows the administrator (TagGroupScopes, and RatingTagsOn…
+    // for Rating), else "on". An older document's ratingTagsOn… turned off is
+    // kept as the user's choice; its "on", the default everyone had, follows
+    // the administrator (TagLayoutRules.RatingScope). People Tags are on cast
+    // cards, not media cards: no switch applies to them.
     // Mirrors TagLayoutRules.ScopeAllows (server) for the item types.
     const SCOPE_IDS = ['movies', 'series', 'seasons', 'episodes', 'continueWatching', 'nextUp'];
     const SCOPED_GROUPS = ['quality', 'genre', 'language', 'ageRating', 'status', 'awards', 'logos', 'custom'];
@@ -946,12 +948,12 @@
      * @param {Object} [plugin]
      * @returns {boolean}
      */
+    // A key in camelCase (written here) or PascalCase (as the server stores it).
+    const either = (obj, key) => (obj && typeof obj === 'object' ? obj[key] ?? obj[key.charAt(0).toUpperCase() + key.slice(1)] : undefined);
+
     function scopeDefault(group, scope, plugin = JE.pluginConfig) {
         if (group === 'rating') return plugin?.[`RatingTagsOn${RATING_SCOPE_KEYS[scope]}`] !== false;
-        const raw = plugin?.TagGroupScopes;
-        const set = raw && typeof raw === 'object' ? raw[group] ?? raw[group.charAt(0).toUpperCase() + group.slice(1)] : null;
-        const value = set && typeof set === 'object' ? set[scope] ?? set[scope.charAt(0).toUpperCase() + scope.slice(1)] : null;
-        return value !== false;
+        return either(either(plugin?.TagGroupScopes, group), scope) !== false;
     }
 
     /**
@@ -962,12 +964,10 @@
      * @returns {boolean|null}
      */
     function scopeOwn(group, scope, settings = JE.currentSettings) {
-        if (group === 'rating') {
-            const value = settings?.[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`];
-            return typeof value === 'boolean' ? value : null;
-        }
-        const value = settings?.tagGroupScopes?.[group]?.[scope];
-        return typeof value === 'boolean' ? value : null;
+        const value = either(either(settings?.tagGroupScopes ?? settings?.TagGroupScopes, group), scope);
+        if (typeof value === 'boolean') return value;
+        if (group === 'rating' && settings?.[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`] === false) return false;
+        return null;
     }
 
     /** @returns {boolean} Whether the group shows in that scope (personal, else administrator, else on). */
@@ -1005,11 +1005,18 @@
      */
     function setScopeOwn(group, scope, value, settings = JE.currentSettings, plugin = JE.pluginConfig) {
         group = SCOPE_GROUP_ALIASES[group] || group;
-        if (group === 'rating') {
-            settings[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`] = value ?? scopeDefault('rating', scope, plugin);
-            return;
+        // An older document's Rating "off" would still count as the user's: the switch now lives in tagGroupScopes.
+        if (group === 'rating') settings[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`] = value !== false;
+        // One shape on write: camelCase groups and switches, whatever casing the stored document used.
+        const camel = (key) => key.charAt(0).toLowerCase() + key.slice(1);
+        const source = settings.tagGroupScopes && typeof settings.tagGroupScopes === 'object' ? settings.tagGroupScopes : {};
+        const scopes = {};
+        for (const [g, value] of Object.entries(source)) {
+            if (!value || typeof value !== 'object') continue;
+            const set = {};
+            for (const [s, v] of Object.entries(value)) if (typeof v === 'boolean') set[camel(s)] = v;
+            if (Object.keys(set).length) scopes[camel(g)] = set;
         }
-        const scopes = { ...(settings.tagGroupScopes && typeof settings.tagGroupScopes === 'object' ? settings.tagGroupScopes : {}) };
         const set = { ...(scopes[group] || {}) };
         if (value === null) delete set[scope]; else set[scope] = value;
         if (Object.keys(set).length) scopes[group] = set; else delete scopes[group];
@@ -1030,9 +1037,9 @@
     const MATRIX_GROUPS = ['quality', 'genre', 'language', 'rating', 'ageRating', 'status', 'awards', 'people', 'logos', 'custom'];
     const SETTINGS_MATRIX = {
         groups: MATRIX_GROUPS,
-        controls: ['enable', 'placement', 'scopes'],
+        controls: ['enable', 'position', 'limit', 'scopes'],
         // Groups without a control, everywhere, and why.
-        except: { people: { placement: 'tag_scope_people_na', scopes: 'tag_scope_people_na' } },
+        except: { people: { position: 'tag_scope_people_na', limit: 'tag_scope_people_na', scopes: 'tag_scope_people_na' } },
         // Controls a whole surface does not have, and why.
         surfaces: {
             admin: {},
@@ -1048,7 +1055,11 @@
      * @returns {true|string}
      */
     function matrixOffers(surface, group, control) {
-        return SETTINGS_MATRIX.except[group]?.[control] || SETTINGS_MATRIX.surfaces[surface]?.[control] || true;
+        const reason = SETTINGS_MATRIX.except[group]?.[control] || SETTINGS_MATRIX.surfaces[surface]?.[control];
+        if (reason) return reason;
+        // A group that always shows one tag (Status, Age rating; Logos limited to one) has no limit to choose.
+        if (control === 'limit' && JE.core.tagLayout?.singleChipGroup?.(group)) return 'tag_limit_single';
+        return true;
     }
     JE.core.tagSettingsMatrix = { ...SETTINGS_MATRIX, offers: matrixOffers };
 
