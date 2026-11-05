@@ -54,6 +54,9 @@ public class PrivacySpoilerStripTests
             EpisodeCount = 2, NextPremiere = 999,
             Categories = new() { ["resolution"] = new() { Best = "4K", Latest = "4K", Values = ["4K"], AllAgree = true } },
             LatestExtras = ["WEB", "edition:Custom episode reveal", "IMAX", "3D"],
+            LegacyAudio = new() { Best = "DTS-X 7.1", Latest = "DTS-X 7.1", Values = ["DTS-X 7.1"], AllAgree = true },
+            LegacyAudioByLanguage = new() { ["en"] = new() { Best = "DTS-X 7.1", Latest = "DTS-X 7.1", Values = ["DTS-X 7.1"], AllAgree = true } },
+            LegacyAudioRegionFallback = new() { ["en-gb"] = new() { Best = "DTS 5.1", Latest = "DTS 5.1", Values = ["DTS 5.1"], AllAgree = true } },
         };
         if (!hasStreams) source.StreamData = null;
         var result = stripper.StripEntry(policy, user, series, source, out var stripped);
@@ -62,6 +65,10 @@ public class PrivacySpoilerStripTests
         Assert.Equal(new[] { "IMAX", "3D" }, result.QualitySummary!.LatestExtras);
         Assert.Equal(new[] { "WEB", "edition:Custom episode reveal", "IMAX", "3D" }, source.QualitySummary.LatestExtras);
         Assert.Same(source.QualitySummary.Categories, result.QualitySummary.Categories);
+        // Settings saved before layouts read their sound from the version-0 facts: no title facts, kept.
+        Assert.Same(source.QualitySummary.LegacyAudio, result.QualitySummary.LegacyAudio);
+        Assert.Same(source.QualitySummary.LegacyAudioByLanguage, result.QualitySummary.LegacyAudioByLanguage);
+        Assert.Same(source.QualitySummary.LegacyAudioRegionFallback, result.QualitySummary.LegacyAudioRegionFallback);
         Assert.Equal(source.QualitySummary.NextPremiere, result.QualitySummary.NextPremiere);
         Assert.Equal(source.QualitySummary.EpisodeCount, result.QualitySummary.EpisodeCount);
         Assert.Equal(source.SubtitleLanguages, result.SubtitleLanguages);

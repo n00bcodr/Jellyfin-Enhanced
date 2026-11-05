@@ -482,6 +482,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     Categories = summary.Categories,
                     AudioByLanguage = summary.AudioByLanguage,
                     AudioRegionFallback = summary.AudioRegionFallback,
+                    // Settings saved before layouts read their sound from these: they are no title facts.
+                    LegacyAudio = summary.LegacyAudio,
+                    LegacyAudioByLanguage = summary.LegacyAudioByLanguage,
+                    LegacyAudioRegionFallback = summary.LegacyAudioRegionFallback,
                     LatestExtras = summary.LatestExtras.Where(label => QualityTagRules.CategoryOf(label)
                         is not (QualityTagRules.Source or QualityTagRules.Edition)).ToArray(),
                 };

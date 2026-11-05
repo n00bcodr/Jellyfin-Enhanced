@@ -1426,7 +1426,7 @@ Styles change colours, not size, shape, position or visibility. For web layout, 
     Saved Tag Styles use stronger important colour rules than simple CSS recipes, but sufficiently specific important custom CSS can override them. Status chips carry `data-je-status` (`added`, `newMovie`, `newSeries`, `newEpisode`, `trending`, or a schedule/milestone/series-state key such as `season_finale`) if you want to target one kind yourself. Prefer the corner controls to transforms that can disrupt shared-corner stacking. Genre-name styling requires **Hide Tags on Hover** off. Hiding a displayed flag with CSS does not make a fourth flag appear.
 
 ??? info "Style API routes"
-    The effective web colours are available through authenticated `GET /JellyfinEnhanced/tag-styles` (empty when disabled or targeting native posters only; optional `preset` for a user's own preset). The shipped defaults and preset palettes are administrator-only `GET /JellyfinEnhanced/tag-styles/catalog`.
+    The effective web colours are available through authenticated `GET /JellyfinEnhanced/tag-styles` (empty when disabled or targeting native posters only; optional `preset` for a user's own preset). The shipped defaults and preset palettes come from authenticated `GET /JellyfinEnhanced/tag-styles/catalog` (any signed-in user; it holds only the shipped palettes, no settings).
 
 ## Related badge systems
 
