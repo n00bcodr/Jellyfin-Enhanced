@@ -213,7 +213,9 @@
 
         const parsed = parseLanguageTag(code);
         if (parsed) {
-            const baseFlag = baseLanguageFlags[parsed.base] || null;
+            // The code itself, else its canonical language (ISO 639-2/B "gre" is "el"): the flag never depends
+            // on a display name, which follows the viewer's language.
+            const baseFlag = baseLanguageFlags[parsed.base] || baseLanguageFlags[canonicalBase(parsed.base)] || null;
             if (JE.pluginConfig?.LanguageTagsMergeRegions && baseFlag) return baseFlag;
             // A synthetic token is not a country and cannot be refined by a
             // region or script: `zxx-US` still means "no dialogue", not US.

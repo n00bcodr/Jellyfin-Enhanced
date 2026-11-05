@@ -57,6 +57,32 @@ public class LanguageTagDisplayTests
         Assert.Equal(expected, Jellyfin.Plugin.JellyfinEnhanced.Services.TagCacheService.NormalizeStreamLanguage(input));
     }
 
+    [Theory]
+    [InlineData("gre", "gr")]
+    [InlineData("cze", "cz")]
+    [InlineData("slo", "sk")]
+    [InlineData("alb", "al")]
+    [InlineData("mac", "mk")]
+    [InlineData("ice", "is")]
+    [InlineData("arm", "am")]
+    [InlineData("geo", "ge")]
+    [InlineData("ger", "de")]
+    [InlineData("chi", "cn")]
+    public void BibliographicCodesShowTheirLanguagesFlag(string code, string flag)
+    {
+        var entry = new TagCacheEntry { Type = "Movie", AudioLanguages = [code] };
+        var tags = Resolve(entry)!.Groups.Single().Tags.Cast<LanguageTag>().ToArray();
+        Assert.Equal(flag, Assert.Single(tags).FlagCode);
+    }
+
+    [Theory]
+    [InlineData("gre", "Griechisch", "gr")]
+    [InlineData("cze", "Tchèque", "cz")]
+    [InlineData("ice", "Islandés", "is")]
+    [InlineData("arm", "Armeens", "am")]
+    public void ABibliographicCodeFindsItsFlagWhateverLanguageItsNameIsIn(string code, string name, string flag)
+        => Assert.Equal(flag, LanguageFlagRules.ResolveFlag(code, name));
+
     [Fact]
     public void FlagsStyleKeepsLanguagesWithoutAFlagAsCodeChips()
     {

@@ -50,6 +50,20 @@ test('languageless codes match the server: und, root, mul, mis and qaa–qtz nev
   for (const code of ['eng', 'pt-BR', 'zxx', 'qu', 'que', 'qub']) assert.equal(of(code), false, code);
 });
 
+for (const [code, flag] of [['gre', 'gr'], ['cze', 'cz'], ['slo', 'sk'], ['alb', 'al'], ['mac', 'mk'], ['ice', 'is'], ['arm', 'am'], ['geo', 'ge'], ['ger', 'de'], ['chi', 'cn']]) {
+  test(`the bibliographic code ${code} shows its language's flag, as natively`, t => {
+    const h = setup(t);
+    h.renderer.renderFromServerCache(h.target, { AudioLanguages: [code] });
+    assert.deepEqual(h.chips().map(el => el.dataset.lang), [flag]);
+  });
+}
+
+test('a bibliographic code finds its flag whatever language its display name is in', t => {
+  const h = setup(t);
+  const flag = h.JE.core.mediaLanguage.resolveFlag;
+  for (const [code, name, expected] of [['gre', 'Griechisch', 'gr'], ['cze', 'Tchèque', 'cz'], ['ice', 'Islandés', 'is'], ['arm', 'Armeens', 'am']]) assert.equal(flag({ code, name }), expected, code);
+});
+
 test('Flags style keeps languages without a flag as code chips', t => {
   const h = setup(t, { languageTagsShowSubtitles: true, tagGroupCaps: { language: 0 }, tagLayoutSettingsVersion: 1 });
   h.renderer.renderFromServerCache(h.target, { AudioLanguages: ['eng', 'epo', 'cym', 'bos', 'khm'], SubtitleLanguages: ['epo'] });

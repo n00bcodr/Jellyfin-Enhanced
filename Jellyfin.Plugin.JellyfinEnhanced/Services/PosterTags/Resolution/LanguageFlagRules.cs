@@ -201,7 +201,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             if (Parse(code, out var parsed))
             {
                 string? baseFlag = null;
-                if (parsed.Base is not null) BaseLanguageFlags.TryGetValue(parsed.Base, out baseFlag);
+                // The code itself, else its canonical language (ISO 639-2/B "gre" is "el"): the flag never depends on a
+                // display name, which follows the viewer's language.
+                if (parsed.Base is not null && !BaseLanguageFlags.TryGetValue(parsed.Base, out baseFlag)
+                    && CanonicalBase(parsed.Base) is { } canonical) BaseLanguageFlags.TryGetValue(canonical, out baseFlag);
                 if (mergeRegions && baseFlag is not null) return baseFlag;
                 if (baseFlag == NoDialogueToken) return baseFlag;
                 if (parsed.Region is not null && baseFlag is not null)
