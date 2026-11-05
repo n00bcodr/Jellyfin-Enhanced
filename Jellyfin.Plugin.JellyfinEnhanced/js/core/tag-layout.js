@@ -1438,13 +1438,16 @@
         // Slots keep one order in the host (also the reading order), whichever group arrived first:
         // turning a group off and on again leaves the card exactly as it was.
         const rank = SLOT_ORDER.indexOf(slot);
-        const next = Array.from(ctrl.host.children).find((child) => child.classList.contains('je-tag-slot')
-            && SLOT_ORDER.indexOf(/** @type {HTMLElement} */ (child).dataset.jeSlot || '') > rank);
-        if (next) ctrl.host.insertBefore(el, next);
-        else {
-            const slots = Array.from(ctrl.host.children).filter((child) => child.classList.contains('je-tag-slot'));
-            if (slots.length) slots[slots.length - 1].after(el); else ctrl.host.appendChild(el);
+        const children = Array.from(ctrl.host.children);
+        const isSlot = (child) => child.classList.contains('je-tag-slot');
+        let next = children.find((child) => isSlot(child) && SLOT_ORDER.indexOf(/** @type {HTMLElement} */ (child).dataset.jeSlot || '') > rank);
+        if (!next) {
+            // After the last slot (any other child, such as the "+N" tooltip, stays after the slots).
+            let last = -1;
+            children.forEach((child, i) => { if (isSlot(child)) last = i; });
+            next = last >= 0 ? children[last + 1] : undefined;
         }
+        if (next) ctrl.host.insertBefore(el, next); else ctrl.host.appendChild(el);
         return el;
     }
 
