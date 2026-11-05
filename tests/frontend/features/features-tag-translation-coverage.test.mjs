@@ -18,7 +18,7 @@ test('every shipped locale is reported and its translated Media Tags strings kee
 
 // Every string the Media Tags code asks for is counted, so the coverage report cannot understate the gap.
 // Shared plugin strings (common buttons, other features' dialogs) are translated with those features.
-const SHARED = /^(common_|hidden_content_|remove_button_text$|track_off$|panel_settings_subtitles_position$|reviews_|jellyseerr_)/;
+const SHARED = /^(common_|hidden_content_|remove_button_text$|track_off$|awards_label$|panel_settings_subtitles_position$|reviews_|jellyseerr_)/;
 test('the coverage report counts every string the Media Tags code uses', () => {
   const js = new URL('../../../Jellyfin.Plugin.JellyfinEnhanced/js/', import.meta.url).pathname;
   const english = JSON.parse(readFileSync(join(js, 'locales/en.json'), 'utf8'));
