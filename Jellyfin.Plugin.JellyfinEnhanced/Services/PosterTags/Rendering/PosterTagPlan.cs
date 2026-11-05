@@ -259,7 +259,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             return new PlannedGroup(group.Group, group.Corner, width, height, gap, clips, items);
         }
 
-        /// <summary>The web chipsThatFit skip-and-continue policy, with +N space reserved on the final row.</summary>
+        /// <summary>
+        /// The web chipsThatFit policy, with +N space reserved on the final row: chips in priority order until
+        /// the first one with no room, which ends the rows (what is shown is a prefix, so removing a chip only
+        /// lets more of the others in). A chip that can never be shown (wider than a whole row; in a single
+        /// row, too wide to sit beside +N) is skipped on its own.
+        /// </summary>
         internal static bool[] BandChipsThatFit(IReadOnlyList<float> widths, float available, float gap, int maxRows, float moreWidth)
         {
             static bool Fits(float need, float room) => need <= room + 0.01f;
@@ -272,10 +277,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
             if (rows <= maxRows && widths.All(w => Fits(w, available))) return widths.Select(_ => true).ToArray();
             float Room(int row) => row == maxRows ? available - gap - moreWidth : available;
+            bool Usable(float width) => Fits(width, maxRows == 1 ? Room(1) : available);
             int current = 1;
             x = 0;
+            bool ended = false;
             return widths.Select(width =>
             {
+                if (maxRows <= 0 || ended || !Usable(width)) return false;
                 if (Fits(IsExactlyZero(x) ? width : x + gap + width, Room(current)))
                 {
                     x = IsExactlyZero(x) ? width : x + gap + width;
@@ -287,18 +295,36 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                     x = width;
                     return true;
                 }
+                ended = true;
                 return false;
             }).ToArray();
         }
 
-        /// <summary>Fit whole bottom-band chips in two rows, retrying one row when height requires it.</summary>
-        internal static List<PlannedItem> FitBandChips(IReadOnlyList<PlannedItem> items, float width, float maxHeight, float gap, Func<int, PlannedItem> overflow, float inset = 6f)
+        /// <summary>
+        /// The web rowBudget: the most rows (at most two) whose height fits even if they hold the r tallest
+        /// chips (+N included), so the budget does not depend on which chips share a row.
+        /// </summary>
+        internal static int RowBudget(IEnumerable<float> heights, float moreHeight, float limit, float rowGap)
         {
+            var tallest = heights.Append(moreHeight).Where(h => h > 0).OrderByDescending(h => h).ToArray();
+            if (tallest.Length == 0) return 2;
             for (int rows = 2; rows >= 1; rows--)
             {
-                // Web prepareFit measures +<total count> before selecting chips.
-                // Keep that reservation even when the actual omitted count is shorter.
-                var reserved = overflow(items.Count).Width;
+                if (tallest.Take(rows).Sum() + rowGap * (rows - 1) <= limit + 0.01f) return rows;
+            }
+            return 0;
+        }
+
+        /// <summary>Fit whole bottom-band chips in the rows the height has room for (RowBudget).</summary>
+        internal static List<PlannedItem> FitBandChips(IReadOnlyList<PlannedItem> items, float width, float maxHeight, float gap, Func<int, PlannedItem> overflow, float inset = 6f)
+        {
+            // Web prepareFit measures +<total count> before selecting chips.
+            // Keep that reservation even when the actual omitted count is shorter.
+            var reservedChip = overflow(items.Count);
+            int budget = RowBudget(items.Select(i => i.Height), reservedChip.Height, maxHeight, gap);
+            for (int rows = budget; rows >= 1; rows--)
+            {
+                var reserved = reservedChip.Width;
                 var fit = BandChipsThatFit(items.Select(i => i.Width).ToArray(), width, gap, rows, reserved);
                 var shown = items.Where((_, i) => fit[i]).ToList();
                 var hidden = items.Count - shown.Count;

@@ -50,6 +50,8 @@
         minimal: ['top', 'dots', 'corner', 'hover', 'off'],
     });
     const LAYOUTS = Object.keys(LAYOUT_SLOTS);
+    /** Every slot, in the order they sit in a card's host. */
+    const SLOT_ORDER = [...new Set(Object.values(LAYOUT_SLOTS).flat().filter((slot) => slot !== 'off'))];
 
     /** Built-in profiles (corners comes from the position settings instead). */
     const DEFAULT_PROFILES = {
@@ -758,6 +760,7 @@
      * @property {HTMLElement|null} pill
      * @property {string|null} layout - Layout the card is currently presented in.
      * @property {number} seq - Arrival counter (legacy ordering).
+     * @property {Map<string, number>} [arrived] - Each group's first arrival on the card.
      * @property {boolean} [narrow] - Last measured narrower than NARROW_CARD_PX (bands go compact).
      * @property {HTMLElement|null} [moreTip] - Names of the chips behind "+N" chips (moreTipOf).
      * @property {HTMLElement|null} [described] - The card link whose aria-describedby names moreTip.
@@ -1432,7 +1435,16 @@
         const el = document.createElement('div');
         el.className = 'je-tag-slot';
         el.dataset.jeSlot = slot;
-        ctrl.host.appendChild(el);
+        // Slots keep one order in the host (also the reading order), whichever group arrived first:
+        // turning a group off and on again leaves the card exactly as it was.
+        const rank = SLOT_ORDER.indexOf(slot);
+        const next = Array.from(ctrl.host.children).find((child) => child.classList.contains('je-tag-slot')
+            && SLOT_ORDER.indexOf(/** @type {HTMLElement} */ (child).dataset.jeSlot || '') > rank);
+        if (next) ctrl.host.insertBefore(el, next);
+        else {
+            const slots = Array.from(ctrl.host.children).filter((child) => child.classList.contains('je-tag-slot'));
+            if (slots.length) slots[slots.length - 1].after(el); else ctrl.host.appendChild(el);
+        }
         return el;
     }
 
@@ -1802,8 +1814,12 @@
      * all fit, chips are placed in priority order the way flex-wrap lays
      * them out (a chip joins the current row if it fits after the gap, else
      * starts the next row), keeping room for the "+N" chip at the end of the
-     * last row; a chip with no room left is hidden and the chips after it
-     * still fill the space, so a wide label never leaves a row empty.
+     * last row. The first chip with no room left ends the row: it and every
+     * chip after it are hidden, so what is shown is always a prefix of the
+     * priority order and removing a chip (or a whole group) can only let more
+     * of the others in, never fewer. A chip that can never be shown (wider
+     * than a whole row; in a single row, too wide to sit beside "+N") is
+     * skipped on its own and does not end the row.
      * @param {number[]} widths - Chip widths in display order.
      * @param {number} available - Content width of the row.
      * @param {number} gap - Gap between chips.
@@ -1832,19 +1848,26 @@
             return widths.map(() => true);
         }
         const roomOn = (row) => (row === maxRows ? available - gap - moreWidth : available);
+        // A chip that could never be shown (wider than a whole row; in a single row, too wide to sit
+        // beside "+N") is skipped on its own and does not end the row.
+        const usable = (w) => fits(w, maxRows === 1 ? roomOn(1) : available);
         let row = 1;
         x = 0;
+        let ended = false;
         const shown = widths.map((w) => {
-            if (fits(x === 0 ? w : x + gap + w, roomOn(row))) {
-                x = x === 0 ? w : x + gap + w;
-                rowsOut?.push(row);
-                return true;
-            }
-            if (row < maxRows && x > 0 && fits(w, roomOn(row + 1))) {
-                row++;
-                x = w;
-                rowsOut?.push(row);
-                return true;
+            if (maxRows > 0 && !ended && usable(w)) {
+                if (fits(x === 0 ? w : x + gap + w, roomOn(row))) {
+                    x = x === 0 ? w : x + gap + w;
+                    rowsOut?.push(row);
+                    return true;
+                }
+                if (row < maxRows && x > 0 && fits(w, roomOn(row + 1))) {
+                    row++;
+                    x = w;
+                    rowsOut?.push(row);
+                    return true;
+                }
+                ended = true;
             }
             rowsOut?.push(0);
             return false;
@@ -1871,6 +1894,26 @@
         return style.boxSizing === 'border-box'
             ? width - pad - (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0)
             : width;
+    }
+
+    /**
+     * How many rows a wrapping slot has room for: the most rows r whose height still fits even
+     * if they are the slot's r tallest chips ("+N" included). It does not depend on which chips
+     * end up sharing a row, so removing a chip can only keep or raise it (reads nothing).
+     * @param {number[]} heights - Chip heights.
+     * @param {number} moreHeight
+     * @param {number} limit - Height the rows must fit in.
+     * @param {number} rowGap
+     * @returns {number} 0..FIT_MAX_ROWS
+     */
+    function rowBudget(heights, moreHeight, limit, rowGap) {
+        const tallest = [moreHeight, ...heights].filter((h) => h > 0).sort((a, b) => b - a);
+        if (!tallest.length) return FIT_MAX_ROWS;
+        for (let rows = FIT_MAX_ROWS; rows >= 1; rows--) {
+            const height = tallest.slice(0, rows).reduce((sum, h) => sum + h, 0) + rowGap * (rows - 1);
+            if (height <= limit + 0.01) return rows;
+        }
+        return 0;
     }
 
     /** @type {Set<CardController>} cards waiting for the next fitting pass */
@@ -2439,11 +2482,10 @@
                     // still need both height and width to be shown whole.
                     shown = chipsThatFit(heights.map((height, i) => fitWidths[i] <= available + 0.01 ? height : Infinity), limit, rowGap, 1, moreRect.height);
                 } else {
-                    for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
-                        const rows = [], moreRow = { row: 0 };
-                        const fit = chipsThatFit(fitWidths, available, gap, n, moreRect.width, rows, moreRow);
-                        if (rowsHeight(fit, rows, heights, moreRect.height, rowGap, moreRow.row) <= limit) { shown = fit; fittedRows = rows; fittedMoreRow = moreRow.row; }
-                    }
+                    // The rows the height has room for, then chips in priority order until one no longer fits.
+                    const rows = [], moreRow = { row: 0 };
+                    const budget = rowBudget(heights, moreRect.height, limit, rowGap);
+                    if (budget > 0) { shown = chipsThatFit(fitWidths, available, gap, budget, moreRect.width, rows, moreRow); fittedRows = rows; fittedMoreRow = moreRow.row; }
                 }
                 if (!shown?.[0] && !ratingFirst) {
                     // An anchor always tells the user at least its first fact.
@@ -2465,16 +2507,14 @@
                 plan.rows.push({ slot: slotEl, chips, shown: chipsThatFit(widths, available, gap, FIT_MAX_ROWS, moreRect.width), more: true });
                 continue;
             }
-            // As many whole rows as the height has room for, "+N" included.
-            let shown = null;
-            for (let n = FIT_MAX_ROWS; n >= 1 && !shown; n--) {
-                const rows = [];
-                const more = { row: 0 };
-                const fit = chipsThatFit(widths, available, gap, n, moreRect.width, rows, more);
-                const height = rowsHeight(fit, rows, rects.map((r) => r.height), moreRect.height, room.gap, more.row);
-                if (height <= room.inside + 0.01 || (n === 1 && height <= room.oneRow + 0.01)) shown = fit;
-            }
-            plan.rows.push(shown
+            // As many whole rows as the height has room for, "+N" included, then chips in
+            // priority order until one no longer fits. A slot with room for only one row in
+            // its padding (a short hover reveal) uses that row.
+            const heights = rects.map((r) => r.height);
+            let budget = rowBudget(heights, moreRect.height, room.inside, room.gap);
+            if (budget === 0 && Math.max(moreRect.height, ...heights) <= room.oneRow + 0.01) budget = 1;
+            const shown = chipsThatFit(widths, available, gap, budget, moreRect.width);
+            plan.rows.push(budget > 0
                 ? { slot: slotEl, chips, shown, more: true }
                 : { slot: slotEl, chips, shown: chips.map(() => false), more: false });
         }
@@ -2827,7 +2867,11 @@
         if (!ctrl) return false;
         const conf = resolveLayout(ctrl);
         const previous = ctrl.groups.get(group);
-        ctrl.groups.set(group, { master: overlay, seq: previous ? previous.seq : ++ctrl.seq });
+        // A group keeps the place it first arrived at on this card, even after being removed and
+        // drawn again (legacy documents order a slot by arrival).
+        if (!ctrl.arrived) ctrl.arrived = new Map();
+        if (!ctrl.arrived.has(group)) ctrl.arrived.set(group, previous ? previous.seq : ++ctrl.seq);
+        ctrl.groups.set(group, { master: overlay, seq: ctrl.arrived.get(group) });
         if (ctrl.layout !== conf.layout || ctrl.lookKey !== conf.lookKey) {
             presentAll(ctrl);
         } else if (!isAwaiting(ctrl.host)) {
@@ -3240,6 +3284,7 @@
         flushFit,
         chipsThatFit,
         rowsHeight,
+        rowBudget,
         isGroup: (name) => GROUPS.has(/** @type {string} */ (normalizeGroup(name))),
     };
     JE.core.tagLayout = api;

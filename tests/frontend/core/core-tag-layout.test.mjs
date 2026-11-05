@@ -632,13 +632,24 @@ test('chipsThatFit wraps like flex-wrap and leaves room for the "+N" chip', t =>
   assert.equal(fit([30, 30, 30, 30], 100, 3, 2, 20), '1111', 'three on row one, one on row two: everything fits');
   assert.equal(fit([30, 30, 30, 30, 30, 30, 30], 100, 3, 2, 20), '1111100', 'row two keeps room for "+2"');
   assert.equal(fit([30, 30, 30, 30, 30, 30], 100, 3, 2, 20), '111111', 'exactly two full rows need no "+N"');
-  assert.equal(fit([30, 150, 30, 30], 100, 3, 1, 20), '1010', 'a chip wider than the row can never be shown whole: it goes behind "+N" and the rest still fill the rows');
+  assert.equal(fit([30, 150, 30, 30], 100, 3, 1, 20), '1010', 'a chip that can never be shown whole goes behind "+N" on its own; the next chip with no room ends the row');
   assert.equal(fit([150], 100, 3, 2, 20), '0', 'only "+1" is left');
   // Measured in the lab: a bottom band 0.4px short of room for "+2" wraps it to a third row.
-  assert.equal(fit([36.5, 33.5, 24.5, 34.6, 50, 16.9, 16.9, 16.9], 101, 3, 2, 24), '11110100', 'the second flag goes behind "+N" instead');
+  assert.equal(fit([36.5, 33.5, 24.5, 34.6, 50, 16.9, 16.9, 16.9], 101, 3, 2, 24), '11110000', 'the chip with no room ends the band: what is shown stays a prefix of the priority order');
   // Measured in the lab: a 113px caption strip, full labels.
-  assert.equal(fit([37, 34, 93, 40, 35, 36, 19.2, 20, 20, 20], 109, 3, 2, 22), '1101100000',
-    '"Dolby Digital+ 5.1" fits a row only without "+N" after it: the rating chips fill row two instead of leaving it empty');
+  assert.equal(fit([37, 34, 93, 40, 35, 36, 19.2, 20, 20, 20], 109, 3, 2, 22), '1100000000',
+    '"Dolby Digital+ 5.1" fits a row only without "+N" after it: it ends the strip, so no lower-priority chip takes its place');
+  // Monotonic: removing any chip never hides another one, and never shows fewer of the rest.
+  const widths = [37, 34, 93, 40, 35, 36, 19.2, 20, 20, 20, 50, 16.9];
+  for (const [available, maxRows] of [[109, 2], [101, 2], [160, 2], [109, 1]]) {
+    const all = h.layout.chipsThatFit(widths, available, 3, maxRows, 22);
+    widths.forEach((_, removed) => {
+      const rest = widths.filter((_, i) => i !== removed);
+      const after = h.layout.chipsThatFit(rest, available, 3, maxRows, 22);
+      const before = all.filter((_, i) => i !== removed);
+      before.forEach((was, i) => assert.ok(!was || after[i], `${available}px ${maxRows} rows without chip ${removed}: chip ${i} stays shown`));
+    });
+  }
 });
 
 test('chipsThatFit reports the row the "+N" chip lands on, and rowsHeight counts it', t => {
@@ -804,10 +815,12 @@ test('the reveal keeps only the chip rows its height has room for: one on a land
       fitCard(h, { width: 113, height });
       assert.equal(shown(), rows === 1 ? 2 : 5, `${height}px tall: ${rows} row(s)`);
     }
-    // Each row is as tall as its own tallest shown chip: 26px flags behind "+N" do not cost a row.
+    // The rows are budgeted as if they held the reveal's tallest chips, whichever chips share
+    // them: two 26px flags make two rows 55px, more than 40px, so one row.
     fitCard(h, { width: 113, height: 160, tall: 'language' });
-    assert.equal(shown(), 5, 'two 18px rows still fit in 40px');
-    assert.equal(reveal().querySelectorAll(':scope > [data-je-group="language"] > :not([data-je-overflow])').length, 0);
+    assert.equal(shown(), 2, 'one row, budgeted for the 26px chips');
+    assert.equal(h.layout.rowBudget([18, 18, 26, 26], 18, 40, 3), 1);
+    assert.equal(h.layout.rowBudget([18, 18, 18, 26], 18, 47, 3), 2, 'one tall chip: 26 + 18 + 3 fits 47px');
     // Too short for any row: nothing is half shown, and the empty scrim stays away.
     fitCard(h, { width: 113, height: 40 });
     assert.equal(shown(), 0);
@@ -1281,7 +1294,7 @@ test('legacy sizing retains original responsive expressions while normalized car
   h.render();
   assert.equal(h.host().dataset.jeLegacy, '1');
 });
-test('Bands shared native/web width and height fixtures retain later chips after a rejection', t => {
+test('Bands shared native/web width and height fixtures: a chip with no room ends the rows', t => {
   const h = setup(t);
   const fixtures = JSON.parse(readFileSync(new URL('../../fixtures/native-band-fit.json', import.meta.url), 'utf8'));
   for (const f of fixtures) {

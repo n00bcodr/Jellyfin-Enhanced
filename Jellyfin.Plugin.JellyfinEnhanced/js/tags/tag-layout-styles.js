@@ -432,6 +432,24 @@
             .je-tag-caption .language-flag { width: calc(20px * var(--je-tag-scale, 1)); box-shadow: none; }
             .je-tag-caption .genre-tag { width: calc(20px * var(--je-tag-scale, 1)); height: calc(20px * var(--je-tag-scale, 1)); min-width: calc(20px * var(--je-tag-scale, 1)); box-shadow: none; }
             .je-tag-caption .genre-tag .je-msym-outlined { font-size: calc(13px * var(--je-tag-scale, 1)); }
+            /* Awards and logos take the strip's chip box too: a taller chip could never share the
+               reserved two rows, so it would end the strip after its first row. */
+            html .je-tag-caption .awards-tag {
+                font-size: calc(clamp(9px, 6.4cqw, 11.5px) * var(--je-tag-scale, 1));
+                line-height: 1.15;
+                padding: calc(2px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
+                border-radius: 3px;
+                box-shadow: none;
+                gap: calc(3px * var(--je-tag-scale, 1));
+            }
+            html .je-tag-caption .awards-tag-logo { width: 1.15em; height: 1.15em; flex-basis: 1.15em; }
+            html .je-tag-caption .je-logo-chip {
+                height: calc(clamp(9px, 6.4cqw, 11.5px) * 1.15 * var(--je-tag-scale, 1) + 4px * var(--je-tag-scale, 1));
+                font-size: calc(clamp(9px, 6.4cqw, 11.5px) * var(--je-tag-scale, 1));
+                padding: calc(1px * var(--je-tag-scale, 1)) calc(5px * var(--je-tag-scale, 1));
+                border-radius: 3px;
+                box-shadow: none;
+            }
 
             /* "+N": the chips a wrapping slot had no room for. It never takes a
                pointer or focus; the card link's description and the tooltip
