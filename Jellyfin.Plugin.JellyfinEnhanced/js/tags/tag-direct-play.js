@@ -161,6 +161,31 @@
     let sessionHooked = false;
     const counters = { slices: 0, launched: 0, answered: 0, failed: 0, timedOut: 0, fromMemory: 0, maxSliceMs: 0 };
 
+    /**
+     * Every fact a direct-play answer depends on, version by version: a version's own facts, then each of its
+     * streams'. The server's MediaSourceInfo.Revision hashes exactly these (TagCacheService.DirectPlaySourceFields
+     * and DirectPlayStreamFields, kept equal by tests/fixtures/direct-play-inputs.json); a card without that
+     * revision (an item read through /tag-data) fingerprints the same list from the facts it holds.
+     */
+    const INPUTS = Object.freeze({
+        source: Object.freeze(['Id', 'Path', 'Container', 'Size', 'Bitrate', 'RunTimeTicks', 'Video3DFormat', 'Protocol', 'Timestamp', 'DefaultAudioStreamIndex']),
+        stream: Object.freeze(['Index', 'Type', 'Codec', 'CodecTag', 'Profile', 'Level', 'BitDepth', 'BitRate', 'Width', 'Height', 'IsInterlaced',
+            'RealFrameRate', 'AverageFrameRate', 'Channels', 'ChannelLayout', 'SampleRate', 'VideoRangeType', 'ColorTransfer', 'PixelFormat',
+            'Language', 'IsDefault', 'IsForced', 'IsExternal', 'IsAnamorphic', 'RefFrames', 'PacketLength', 'IsAVC', 'Rotation', 'NalLengthSize',
+            'DvProfile', 'DvLevel', 'DvBlSignalCompatibilityId', 'BlPresentFlag', 'ElPresentFlag', 'RpuPresentFlag', 'Hdr10PlusPresentFlag',
+            'ColorPrimaries', 'ColorSpace', 'ColorRange', 'IsHearingImpaired', 'Path']),
+    });
+
+    /**
+     * An item's key in memory and the store: its id, plus the version asked about when the user picked one
+     * (an answer for one version is no answer for another).
+     * @param {{id: string, source?: string}} entry
+     * @returns {string}
+     */
+    function itemKey(entry) {
+        return entry.source ? `${entry.id}@${entry.source}` : entry.id;
+    }
+
     /** @returns {string} `${serverId}:${userId}`, the tag cache store's scope. */
     function scope() {
         const server = JE.session?.getServerId?.() || (typeof ApiClient !== 'undefined' && ApiClient.serverId?.()) || '';
@@ -799,12 +824,15 @@
     }
 
     /**
-     * Read a PlaybackInfo answer: its first media source, as the player would.
+     * Read a PlaybackInfo answer: the version asked about, else its first media source, as the player would.
      * @param {*} info - PlaybackInfoResponse.
+     * @param {string} [sourceId] - The MediaSourceId the request named.
      * @returns {DirectPlayResult|null} Null when the answer has no media source.
      */
-    function classify(info) {
-        const source = Array.isArray(info?.MediaSources) ? info.MediaSources[0] : null;
+    function classify(info, sourceId = '') {
+        const sources = Array.isArray(info?.MediaSources) ? info.MediaSources : [];
+        // The version asked about (MediaSourceId), else the first: the one Jellyfin would play.
+        const source = (sourceId && sources.find((s) => s?.Id === sourceId)) || sources[0] || null;
         if (!source || typeof source !== 'object') return null;
         let reasons = Array.isArray(source.TranscodeReasons) ? source.TranscodeReasons.filter((r) => typeof r === 'string')
             : typeof source.TranscodeReasons === 'string' ? source.TranscodeReasons.split(/[,\s]+/).filter(Boolean) : [];
@@ -875,7 +903,7 @@
                 for (const card of visible) {
                     const entry = tracked.get(card);
                     if (!entry) continue;
-                    const memoryKey = `${hash}|${entry.id}`;
+                    const memoryKey = `${hash}|${itemKey(entry)}`;
                     if (memory.has(memoryKey) && !inFlight.has(memoryKey) && sameMedia(memory.get(memoryKey), entry.media)) { queue.delete(memoryKey); pendingNotify.add(entry.onResult); }
                 }
                 scheduleSlice();
@@ -922,10 +950,11 @@
      * A fresh answer for an item under the current profile and its current media, or null.
      * @param {string} itemId
      * @param {string} [media] - The item's media fingerprint (an answer for other media is no answer); omitted, any.
+     * @param {string} [source] - The version asked about ('' for the default one).
      * @returns {DirectPlayResult|null}
      */
-    function peek(itemId, media) {
-        const value = memory.get(`${current().hash}|${itemId}`);
+    function peek(itemId, media, source = '') {
+        const value = memory.get(`${current().hash}|${itemKey({ id: itemId, source })}`);
         if (!value || value.r === null || !sameMedia(value, media) || Date.now() - value.t >= TTL_MS) return null;
         return value.r;
     }
@@ -977,12 +1006,12 @@
     function enqueue(card) {
         const entry = tracked.get(card);
         if (!entry) return;
-        const key = `${current().hash}|${entry.id}`;
+        const key = `${current().hash}|${itemKey(entry)}`;
         const media = entry.media || '';
         // A request for these media already on the network answers this card too.
         if (inFlight.has(key) && inFlight.get(key).media === media) { inFlight.get(key).cards.add(card); return; }
         if (!inFlight.has(key) && !due(key, media)) { counters.fromMemory++; return; }
-        const job = queue.get(key) || { id: entry.id, cards: new Set(), media };
+        const job = queue.get(key) || { id: entry.id, source: entry.source || '', cards: new Set(), media };
         job.media = media;
         job.cards.add(card);
         queue.set(key, job);
@@ -995,14 +1024,16 @@
      * @param {string} itemId
      * @param {Function} onResult
      * @param {string} [media] - The item's media fingerprint: an answer for other media is asked again.
+     * @param {string} [source] - The version the card stands for (the user's pick, see qualitytags.js); '' for
+     *   the default one Jellyfin plays.
      */
-    function track(card, itemId, onResult, media = '') {
+    function track(card, itemId, onResult, media = '', source = '') {
         hookSession();
         const previous = tracked.get(card);
-        tracked.set(card, { id: itemId, onResult, media });
+        tracked.set(card, { id: itemId, onResult, media, source });
         prime();
         // Drawn again (an expired answer, another profile, changed media): ask again if it is due.
-        if (previous && previous.id === itemId) {
+        if (previous && previous.id === itemId && (previous.source || '') === source) {
             if (visible.has(card)) { enqueue(card); scheduleSlice(); }
             return;
         }
@@ -1070,7 +1101,7 @@
             if (network.size >= MAX_IN_FLIGHT || launched >= SLICE_LAUNCHES) break;
             if (!(left() >= STEP_MIN_MS || (late && launched === 0))) break;
             queue.delete(key);
-            for (const card of [...job.cards]) if (!card.isConnected || !visible.has(card) || tracked.get(card)?.id !== job.id) job.cards.delete(card);
+            for (const card of [...job.cards]) if (!card.isConnected || !visible.has(card) || (tracked.get(card) && itemKey(tracked.get(card))) !== itemKey(job)) job.cards.delete(card);
             if (!job.cards.size) continue;
             launched++;
             launch(key, job);
@@ -1152,10 +1183,10 @@
         let value;
         try {
             const info = await askPlaybackInfo(
-                ApiClient.getUrl(`Items/${encodeURIComponent(job.id)}/PlaybackInfo`, { UserId: userId, StartTimeTicks: 0, IsPlayback: false, AutoOpenLiveStream: false, MaxStreamingBitrate: bitrate }),
-                JSON.stringify({ UserId: userId, DeviceProfile: profile, MaxStreamingBitrate: bitrate, EnableDirectPlay: true, EnableDirectStream: true, EnableTranscoding: true, AllowVideoStreamCopy: true, AllowAudioStreamCopy: true, IsPlayback: false, AutoOpenLiveStream: false }),
+                ApiClient.getUrl(`Items/${encodeURIComponent(job.id)}/PlaybackInfo`, { UserId: userId, StartTimeTicks: 0, IsPlayback: false, AutoOpenLiveStream: false, MaxStreamingBitrate: bitrate, ...(job.source ? { MediaSourceId: job.source } : {}) }),
+                JSON.stringify({ UserId: userId, DeviceProfile: profile, MaxStreamingBitrate: bitrate, EnableDirectPlay: true, EnableDirectStream: true, EnableTranscoding: true, AllowVideoStreamCopy: true, AllowAudioStreamCopy: true, IsPlayback: false, AutoOpenLiveStream: false, ...(job.source ? { MediaSourceId: job.source } : {}) }),
             );
-            value = { r: classify(info), t: Date.now(), m: job.media || '' };
+            value = { r: classify(info, job.source), t: Date.now(), m: job.media || '' };
             counters.answered++;
         } catch (e) {
             // A failure, a stalled request included, is asked again after RETRY_MS.
@@ -1178,7 +1209,7 @@
         armRetry();
         for (const card of job.cards) {
             const entry = tracked.get(card);
-            if (entry && entry.id === job.id) pendingNotify.add(entry.onResult);
+            if (entry && itemKey(entry) === itemKey(job)) pendingNotify.add(entry.onResult);
         }
         scheduleSlice();
     }
@@ -1195,7 +1226,7 @@
         for (const card of visible) {
             const entry = tracked.get(card);
             if (!entry) continue;
-            const key = `${hash}|${entry.id}`;
+            const key = `${hash}|${itemKey(entry)}`;
             const value = memory.get(key);
             if (!value || value.r !== null || inFlight.has(key) || queue.has(key)) continue;
             const at = value.t + RETRY_MS;
@@ -1260,6 +1291,7 @@
     }
 
     JE.tagDirectPlay = {
+        INPUTS,
         track,
         untrack,
         peek,

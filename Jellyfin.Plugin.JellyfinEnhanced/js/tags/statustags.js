@@ -197,6 +197,7 @@
      * @property {number|null} episode - Episode: episode number.
      * @property {number|null} episodeEnd - Episode: the last episode a combined file covers (S01E09-E10 → 10), else null.
      * @property {string} [media] - A fingerprint of the item's versions and streams (direct-play answers follow it).
+     * @property {string[]} [versions] - The item's version ids, first one first (the direct-play lookup asks about the picked one).
      * @property {boolean|null} isLast - Whether this is the last locally available episode in its season.
      * @property {string|null} seriesId - The series whose TMDB schedule applies (Series: itself).
      * @property {string|null|undefined} seriesTmdb - That series' TMDB id; undefined when unknown.
@@ -392,6 +393,7 @@
             leaving: readLeaving(entry.Leaving),
             probed: probedOf(entry.StreamData?.Streams, entry.StreamData?.Sources),
             media: mediaKeyOf(entry.StreamData?.Streams, entry.StreamData?.Sources),
+            versions: versionIds(entry.StreamData?.Sources),
             // The cache keeps the file name in ItemPath only when no source names it.
             strm: isStrm([entry.StreamData?.ItemPath, ...sourcePaths(entry.StreamData?.Sources)]),
         };
@@ -425,6 +427,7 @@
             leaving: readLeaving(item.Leaving),
             probed: probedOf(item.MediaStreams, item.MediaSources),
             media: mediaKeyOf(item.MediaStreams, item.MediaSources),
+            versions: versionIds(item.MediaSources),
             strm: isStrm([item.Path, ...sourcePaths(item.MediaSources)]),
         };
     }
@@ -459,19 +462,38 @@
     function mediaKeyOf(streams, sources) {
         const parts = [];
         const list = Array.isArray(sources) ? sources : [];
-        for (const source of list) parts.push(`${source?.Id || ''}:${source?.Path || ''}:${source?.Revision || ''}`);
         const revised = list.length > 0 && list.every(source => typeof source?.Revision === 'string' && source.Revision);
+        // The inputs the server's Revision hashes (tag-direct-play.js INPUTS); without that module there is no warning.
+        const inputs = JE.tagDirectPlay?.INPUTS || { source: ['Id', 'Path'], stream: [] };
+        for (const source of list) {
+            parts.push(revised ? `${source?.Id || ''}:${source?.Path || ''}:${source.Revision}` : inputs.source.map(field => source?.[field] ?? '').join(','));
+        }
         for (const stream of !revised && Array.isArray(streams) ? streams : []) {
-            if (stream?.Type !== 'Video' && stream?.Type !== 'Audio') continue;
-            parts.push([stream.SourceId, stream.Type, stream.Codec, stream.CodecTag, stream.Profile, stream.Level, stream.BitDepth, stream.BitRate,
-                stream.Width, stream.Height, stream.IsInterlaced, stream.RealFrameRate, stream.AverageFrameRate, stream.Channels, stream.VideoRangeType,
-                stream.IsAnamorphic, stream.RefFrames, stream.PacketLength, stream.IsAVC, stream.Rotation, stream.SampleRate, stream.PixelFormat,
-                stream.ColorTransfer, stream.DvProfile, stream.DvLevel, stream.DvBlSignalCompatibilityId, stream.IsDefault, stream.Index]
-                .map(v => v ?? '').join(','));
+            parts.push([stream?.SourceId, ...inputs.stream.map(field => stream?.[field])].map(v => v ?? '').join(','));
         }
         let hash = 0x811c9dc5;
         for (const char of parts.join('|')) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
         return hash.toString(36);
+    }
+
+    /**
+     * @param {*} sources
+     * @returns {string[]} The item's version ids, first one first.
+     */
+    function versionIds(sources) {
+        return Array.isArray(sources) ? sources.map((source) => source?.Id).filter((id) => typeof id === 'string' && id) : [];
+    }
+
+    /**
+     * The version a card stands for: the user's pick (qualitytags.js) when it is one of the item's versions,
+     * else '' (the default one Jellyfin plays).
+     * @param {StatusData} data
+     * @param {string} itemId
+     * @returns {string}
+     */
+    function versionOf(data, itemId) {
+        const picked = JE.selectedMediaSource?.(itemId) || '';
+        return picked && (data.versions || []).includes(picked) ? picked : '';
     }
 
     /**
@@ -678,7 +700,7 @@
      */
     function directPlayBadge(data, itemId) {
         if (!itemId || !wantsDirectPlay(data)) return null;
-        const result = JE.tagDirectPlay.peek(String(itemId), data.media || '');
+        const result = JE.tagDirectPlay.peek(String(itemId), data.media || '', versionOf(data, String(itemId)));
         if (!result || result.directPlay) return null;
         const badge = makeBadge('playback', result.remux ? 'direct_play_remux' : 'direct_play_transcode');
         badge.title = JE.tagDirectPlay.describe(result, badge.label);
@@ -1030,7 +1052,7 @@
         if (readsSeries) observeSeriesCard(ctx, el);
         // A direct-play lookup only for a card that would show nothing else,
         // and only once it is on screen (the module's idle slices).
-        if (wantsDirectPlay(data) && itemId && (!badge || badge.kind === 'playback')) JE.tagDirectPlay.track(el, String(itemId), onDirectPlayAnswer, data.media || '');
+        if (wantsDirectPlay(data) && itemId && (!badge || badge.kind === 'playback')) JE.tagDirectPlay.track(el, String(itemId), onDirectPlayAnswer, data.media || '', versionOf(data, String(itemId)));
         else JE.tagDirectPlay?.untrack(el);
         applyStatusTag(ctx, el, badge);
     }

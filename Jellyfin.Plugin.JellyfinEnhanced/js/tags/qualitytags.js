@@ -349,6 +349,9 @@
         return id ? readSourcePrefs().get(id) || '' : '';
     }
 
+    // Status Tags' direct-play warning asks about the version the card shows.
+    JE.selectedMediaSource = selectedSourceFor;
+
     /** Remember a pick as the newest entry, keeping the stored JSON object format. */
     function rememberSource(itemId, sourceId) {
         const id = normItemId(itemId);

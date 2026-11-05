@@ -3132,20 +3132,59 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             var text = new System.Text.StringBuilder();
             static string N(object? value) => value is IFormattable formattable ? formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture) : value?.ToString() ?? string.Empty;
-            text.Append(source.Id).Append('|').Append(source.Path).Append('|').Append(source.Container).Append('|').Append(N(source.Size))
-                .Append('|').Append(N(source.Bitrate)).Append('|').Append(N(source.RunTimeTicks)).Append('|').Append(N(source.Video3DFormat))
-                .Append('|').Append(N(source.Protocol)).Append('|').Append(N(source.Timestamp)).Append('|').Append(N(source.DefaultAudioStreamIndex));
+            for (var i = 0; i < SourceReaders.Length; i++)
+            {
+                if (i > 0) text.Append('|');
+                text.Append(N(SourceReaders[i](source)));
+            }
+
             foreach (var s in source.MediaStreams ?? new List<MediaStream>())
             {
-                text.Append('\n').AppendJoin('|', N(s.Index), N(s.Type), s.Codec, s.CodecTag, s.Profile, N(s.Level), N(s.BitDepth), N(s.BitRate),
-                    N(s.Width), N(s.Height), N(s.IsInterlaced), N(s.RealFrameRate), N(s.AverageFrameRate), N(s.Channels), s.ChannelLayout,
-                    N(s.SampleRate), N(s.VideoRangeType), s.ColorTransfer, s.PixelFormat, s.Language, N(s.IsDefault), N(s.IsForced), N(s.IsExternal),
-                    N(s.IsAnamorphic), N(s.RefFrames), N(s.PacketLength), N(s.IsAVC), N(s.Rotation), N(s.NalLengthSize),
-                    N(s.DvProfile), N(s.DvLevel), N(s.DvBlSignalCompatibilityId), N(s.BlPresentFlag), N(s.ElPresentFlag), N(s.RpuPresentFlag),
-                    N(s.Hdr10PlusPresentFlag), s.ColorPrimaries, s.ColorSpace, s.ColorRange, N(s.IsHearingImpaired), s.Path);
+                text.Append('\n');
+                for (var i = 0; i < StreamReaders.Length; i++)
+                {
+                    if (i > 0) text.Append('|');
+                    text.Append(N(StreamReaders[i](s)));
+                }
             }
             return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..12];
         }
+
+        /// <summary>
+        /// The version facts <see cref="MediaRevision"/> hashes, in order: every one a device profile, container or
+        /// codec check can read. The web client fingerprints a card without a Revision from the same list
+        /// (js/tags/tag-direct-play.js INPUTS); tests/fixtures/direct-play-inputs.json holds both sides to it.
+        /// </summary>
+        internal static readonly string[] DirectPlaySourceFields =
+        [
+            "Id", "Path", "Container", "Size", "Bitrate", "RunTimeTicks", "Video3DFormat", "Protocol", "Timestamp", "DefaultAudioStreamIndex",
+        ];
+
+        /// <summary>The stream facts <see cref="MediaRevision"/> hashes for each stream of a version, in order (see <see cref="DirectPlaySourceFields"/>).</summary>
+        internal static readonly string[] DirectPlayStreamFields =
+        [
+            "Index", "Type", "Codec", "CodecTag", "Profile", "Level", "BitDepth", "BitRate", "Width", "Height", "IsInterlaced",
+            "RealFrameRate", "AverageFrameRate", "Channels", "ChannelLayout", "SampleRate", "VideoRangeType", "ColorTransfer", "PixelFormat",
+            "Language", "IsDefault", "IsForced", "IsExternal", "IsAnamorphic", "RefFrames", "PacketLength", "IsAVC", "Rotation", "NalLengthSize",
+            "DvProfile", "DvLevel", "DvBlSignalCompatibilityId", "BlPresentFlag", "ElPresentFlag", "RpuPresentFlag", "Hdr10PlusPresentFlag",
+            "ColorPrimaries", "ColorSpace", "ColorRange", "IsHearingImpaired", "Path",
+        ];
+
+        private static readonly Func<MediaBrowser.Model.Dto.MediaSourceInfo, object?>[] SourceReaders = Readers<MediaBrowser.Model.Dto.MediaSourceInfo>(DirectPlaySourceFields);
+        private static readonly Func<MediaStream, object?>[] StreamReaders = Readers<MediaStream>(DirectPlayStreamFields);
+
+        /// <summary>
+        /// Compiled property readers for <paramref name="names"/> (boxed values). A property this Jellyfin version
+        /// lacks reads as null, the same as an unset one.
+        /// </summary>
+        private static Func<T, object?>[] Readers<T>(string[] names) => names.Select(name =>
+        {
+            var property = typeof(T).GetProperty(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            if (property == null) return (Func<T, object?>)(_ => null);
+            var target = System.Linq.Expressions.Expression.Parameter(typeof(T));
+            var read = System.Linq.Expressions.Expression.Convert(System.Linq.Expressions.Expression.Property(target, property), typeof(object));
+            return System.Linq.Expressions.Expression.Lambda<Func<T, object?>>(read, target).Compile();
+        }).ToArray();
 
         private (List<TagMediaStream>, List<TagMediaSource>, string[], MediaNamingTags, string[]) ExtractMediaData(BaseItem item)
         {

@@ -23,6 +23,7 @@
     <EmbeddedResource Include="../fixtures/technical-quality.json" LogicalName="TechnicalQuality.json" />
     <EmbeddedResource Include="../fixtures/source-edition-names.json" LogicalName="SourceEditionNames.json" />
     <EmbeddedResource Include="../fixtures/track-roles.json" LogicalName="TrackRoles.json" />
+    <EmbeddedResource Include="../fixtures/direct-play-inputs.json" LogicalName="DirectPlayInputs.json" />
     <EmbeddedResource Include="../fixtures/first-chip-text-fit.json" LogicalName="FirstChipTextFit.json" />
     <EmbeddedResource Include="../fixtures/side-status-fit.json" LogicalName="SideStatusFit.json" />
     <EmbeddedResource Include="../fixtures/flush-edges.json" LogicalName="FlushEdges.json" />

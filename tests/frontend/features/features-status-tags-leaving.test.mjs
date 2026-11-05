@@ -966,6 +966,82 @@ for (const [field, before, after] of [['IsInterlaced', false, true], ['RealFrame
   });
 }
 
+const directPlayInputs = JSON.parse(readFileSync(new URL('../../fixtures/direct-play-inputs.json', import.meta.url), 'utf8'));
+
+test('direct play: the fingerprint inputs are the server revision\'s list (tests/fixtures/direct-play-inputs.json)', t => {
+  const h = setup(t);
+  assert.deepEqual([...h.JE.tagDirectPlay.INPUTS.source], directPlayInputs.source);
+  assert.deepEqual([...h.JE.tagDirectPlay.INPUTS.stream], directPlayInputs.stream);
+});
+
+// Every listed fact, on the version or on any stream (a subtitle one included), asks again without a server revision.
+const changed = value => (typeof value === 'number' ? value + 7 : typeof value === 'boolean' ? !value : value === undefined ? 'set' : `${value}-changed`);
+for (const [where, field] of [...directPlayInputs.source.filter(f => f !== 'Id').map(f => ['source', f]), ...directPlayInputs.stream.map(f => ['stream', f])]) {
+  test(`direct play: the ${where} fact ${field} alone asks again (no server revision)`, async t => {
+    let verdict = 'transcode';
+    const h = setup(t, { settings: { statusTagsDirectPlay: true }, answer: () => verdict });
+    const base = { Source: { Id: 's1', Path: 'Film.mkv', Container: 'mkv', Size: 1000 }, Subtitle: { Type: 'Subtitle', SourceId: 's1', Index: 2, Codec: 'srt', Language: 'eng' } };
+    const entry = (change) => {
+      const source = { ...base.Source };
+      const subtitle = { ...base.Subtitle };
+      if (change && where === 'source') source[field] = field === 'Size' ? 2000 : changed(source[field]);
+      if (change && where === 'stream') subtitle[field] = field === 'Type' ? 'Audio' : field === 'Index' ? 3 : changed(subtitle[field]);
+      return movie({ StreamData: { Sources: [source], Streams: [{ Type: 'Video', SourceId: 's1', Index: 0, Codec: 'h264', Width: 1920, Height: 1080 }, subtitle] } });
+    };
+    h.show(entry(false), h.hosts[0], 'm1');
+    await h.slice(); await h.slice();
+    assert.equal(h.badge(h.hosts[0]), 'Transcode');
+    verdict = 'direct';
+    h.show(entry(true), h.hosts[0], 'm1');
+    await h.slice(); await h.slice();
+    assert.equal(h.requests.length, 2, `${where} ${field}`);
+    assert.equal(h.chip(h.hosts[0]), null);
+  });
+}
+
+test('direct play: a card asks about the version the user picked, and keeps an answer per version', async t => {
+  const h = setup(t, { settings: { statusTagsDirectPlay: true }, answer: () => 'transcode' });
+  let picked = 's2';
+  h.JE.selectedMediaSource = () => picked;
+  const two = movie({ StreamData: {
+    Sources: [{ Id: 's1', Path: 'Film.1080p.mkv', Revision: 'aaaaaaaaaaaa' }, { Id: 's2', Path: 'Film.2160p.REMUX.mkv', Revision: 'bbbbbbbbbbbb' }],
+    Streams: [{ Type: 'Video', SourceId: 's1', Codec: 'h264', Width: 1920, Height: 1080 }, { Type: 'Video', SourceId: 's2', Codec: 'hevc', Width: 3840, Height: 2160 }],
+  } });
+  h.show(two, h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests[0].body.MediaSourceId, 's2');
+  assert.match(h.requests[0].url, /MediaSourceId=s2/);
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
+  // The default version is another question: asked without a MediaSourceId, answered on its own.
+  picked = '';
+  h.show(two, h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].body.MediaSourceId, undefined);
+  assert.doesNotMatch(h.requests[1].url, /MediaSourceId/);
+  // Back to the picked version: from memory, no request.
+  picked = 's2';
+  h.show(two, h.hosts[0], 'm1');
+  await h.slice();
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
+  // A pick that is not one of the item's versions (another item's, a removed file) means the default one.
+  picked = 'zz';
+  h.show(two, h.hosts[0], 'm1');
+  await h.slice();
+  assert.equal(h.requests.length, 2);
+});
+
+test('direct play: classify reads the version asked about, else the first', t => {
+  const h = setup(t);
+  const answer = { MediaSources: [{ Id: 's1', ...playback('direct').MediaSources[0] }, { Id: 's2', ...playback('transcode').MediaSources[0] }] };
+  assert.equal(h.JE.tagDirectPlay.classify(answer, 's2').directPlay, false);
+  assert.equal(h.JE.tagDirectPlay.classify(answer, 's1').directPlay, true);
+  assert.equal(h.JE.tagDirectPlay.classify(answer, '').directPlay, true);
+  assert.equal(h.JE.tagDirectPlay.classify(answer, 'missing').directPlay, true);
+});
+
 test('direct play: the server revision of a version decides, whatever the streams listed', async t => {
   let verdict = 'transcode';
   const h = setup(t, { settings: { statusTagsDirectPlay: true }, answer: () => verdict });

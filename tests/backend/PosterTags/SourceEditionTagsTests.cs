@@ -350,6 +350,79 @@ public class StructuredSourceFactsTests
         Assert.Equal(baseline, TagCacheService.MediaRevision(Version(v => v.Title = "Main video")));
     }
 
+    [Fact]
+    public void TheRevisionHashesTheSharedDirectPlayInputListInOrderAndEachOneInvalidatesIt()
+    {
+        using var resource = typeof(SourceEditionTagsTests).Assembly.GetManifestResourceStream("DirectPlayInputs.json")!;
+        using var document = System.Text.Json.JsonDocument.Parse(resource);
+        var fixture = document.RootElement;
+        Assert.Equal(fixture.GetProperty("source").EnumerateArray().Select(v => v.GetString()), TagCacheService.DirectPlaySourceFields);
+        Assert.Equal(fixture.GetProperty("stream").EnumerateArray().Select(v => v.GetString()), TagCacheService.DirectPlayStreamFields);
+        foreach (var name in TagCacheService.DirectPlaySourceFields) Assert.NotNull(typeof(MediaSourceInfo).GetProperty(name));
+        foreach (var name in TagCacheService.DirectPlayStreamFields) Assert.NotNull(typeof(MediaBrowser.Model.Entities.MediaStream).GetProperty(name));
+
+        MediaSourceInfo Version()
+        {
+            var video = new MediaBrowser.Model.Entities.MediaStream { Index = 0, Type = MediaBrowser.Model.Entities.MediaStreamType.Video, Codec = "hevc", CodecTag = "hvc1", Profile = "Main 10", Level = 150, BitDepth = 10, BitRate = 40_000_000, Width = 3840, Height = 2160, RealFrameRate = 23.976f, AverageFrameRate = 23.976f, ColorTransfer = "smpte2084", ColorPrimaries = "bt2020", ColorSpace = "bt2020nc", PixelFormat = "yuv420p10le", DvProfile = 8, DvLevel = 6, DvBlSignalCompatibilityId = 1, RpuPresentFlag = 1, BlPresentFlag = 1, NalLengthSize = "4", IsDefault = true, RefFrames = 1 };
+            var audio = new MediaBrowser.Model.Entities.MediaStream { Index = 1, Type = MediaBrowser.Model.Entities.MediaStreamType.Audio, Codec = "truehd", Channels = 8, ChannelLayout = "7.1", SampleRate = 48_000, Language = "eng", IsDefault = true };
+            var subtitle = new MediaBrowser.Model.Entities.MediaStream { Index = 2, Type = MediaBrowser.Model.Entities.MediaStreamType.Subtitle, Codec = "srt", Language = "eng", IsExternal = true, Path = "/movies/Film.en.srt" };
+            return new MediaSourceInfo { Id = "s1", Path = "/movies/Film.mkv", Container = "mkv", Size = 50_000_000_000, Bitrate = 60_000_000, RunTimeTicks = 72_000_000_000, Protocol = MediaBrowser.Model.MediaInfo.MediaProtocol.File, DefaultAudioStreamIndex = 1, MediaStreams = [video, audio, subtitle] };
+        }
+
+        // The text hashed before the list existed, field by field: a revision computed by an earlier build stays
+        // valid, so upgrading re-stamps no entry.
+        static string N(object? value) => value is IFormattable f ? f.ToString(null, System.Globalization.CultureInfo.InvariantCulture) : value?.ToString() ?? string.Empty;
+        var legacy = Version();
+        var text = new System.Text.StringBuilder();
+        text.Append(legacy.Id).Append('|').Append(legacy.Path).Append('|').Append(legacy.Container).Append('|').Append(N(legacy.Size))
+            .Append('|').Append(N(legacy.Bitrate)).Append('|').Append(N(legacy.RunTimeTicks)).Append('|').Append(N(legacy.Video3DFormat))
+            .Append('|').Append(N(legacy.Protocol)).Append('|').Append(N(legacy.Timestamp)).Append('|').Append(N(legacy.DefaultAudioStreamIndex));
+        foreach (var s in legacy.MediaStreams)
+        {
+            text.Append('\n').AppendJoin('|', N(s.Index), N(s.Type), s.Codec, s.CodecTag, s.Profile, N(s.Level), N(s.BitDepth), N(s.BitRate),
+                N(s.Width), N(s.Height), N(s.IsInterlaced), N(s.RealFrameRate), N(s.AverageFrameRate), N(s.Channels), s.ChannelLayout,
+                N(s.SampleRate), N(s.VideoRangeType), s.ColorTransfer, s.PixelFormat, s.Language, N(s.IsDefault), N(s.IsForced), N(s.IsExternal),
+                N(s.IsAnamorphic), N(s.RefFrames), N(s.PacketLength), N(s.IsAVC), N(s.Rotation), N(s.NalLengthSize),
+                N(s.DvProfile), N(s.DvLevel), N(s.DvBlSignalCompatibilityId), N(s.BlPresentFlag), N(s.ElPresentFlag), N(s.RpuPresentFlag),
+                N(s.Hdr10PlusPresentFlag), s.ColorPrimaries, s.ColorSpace, s.ColorRange, N(s.IsHearingImpaired), s.Path);
+        }
+        var baseline = TagCacheService.MediaRevision(Version());
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..12], baseline);
+
+        // Each listed fact, changed alone on the version or on any of its streams, changes the revision.
+        static object? Other(Type type, object? value)
+        {
+            var t = Nullable.GetUnderlyingType(type) ?? type;
+            if (t == typeof(string)) return (value as string ?? "x") + "-changed";
+            if (t == typeof(bool)) return !(value as bool? ?? false);
+            if (t == typeof(int)) return (value as int? ?? 0) + 7;
+            if (t == typeof(long)) return (value as long? ?? 0) + 7;
+            if (t == typeof(float)) return (value as float? ?? 0) + 7.5f;
+            if (t == typeof(double)) return (value as double? ?? 0) + 7.5;
+            if (t.IsEnum) return Enum.GetValues(t).Cast<object>().First(v => !v.Equals(value));
+            throw new InvalidOperationException($"no change rule for {t}");
+        }
+        foreach (var name in TagCacheService.DirectPlaySourceFields)
+        {
+            var version = Version();
+            var property = typeof(MediaSourceInfo).GetProperty(name)!;
+            property.SetValue(version, Other(property.PropertyType, property.GetValue(version)));
+            Assert.True(baseline != TagCacheService.MediaRevision(version), $"source {name}");
+        }
+        for (var index = 0; index < 3; index++)
+        {
+            foreach (var name in TagCacheService.DirectPlayStreamFields)
+            {
+                var version = Version();
+                var property = typeof(MediaBrowser.Model.Entities.MediaStream).GetProperty(name)!;
+                var stream = version.MediaStreams[index];
+                if (!property.CanWrite) continue;
+                property.SetValue(stream, Other(property.PropertyType, property.GetValue(stream)));
+                Assert.True(baseline != TagCacheService.MediaRevision(version), $"stream {index} {name}");
+            }
+        }
+    }
+
     // Every input Jellyfin's ConditionProcessor can test against a device profile, mapped to the change of
     // one media fact it reads. A new ProfileConditionValue in a Jellyfin update fails the inventory check until
     // it is mapped here (and hashed by MediaRevision if it reads a new fact).
