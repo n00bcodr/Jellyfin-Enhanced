@@ -58,7 +58,7 @@
     // the persistent cache only answers for this long before a re-fetch.
     const CACHE_FRESH_MS = 60 * 60 * 1000;
     // Shape of the fallback cache entries; older entries count as misses.
-    const CACHE_ENTRY_VERSION = 4;
+    const CACHE_ENTRY_VERSION = 5;
     const TRENDING_TTL_MS = 30 * 60 * 1000;
     // A failed or empty trending fetch is retried sooner than a good list expires.
     const TRENDING_RETRY_MS = 5 * 60 * 1000;
@@ -196,6 +196,7 @@
      * @property {number|null} season - Season/Episode: season number.
      * @property {number|null} episode - Episode: episode number.
      * @property {number|null} episodeEnd - Episode: the last episode a combined file covers (S01E09-E10 → 10), else null.
+     * @property {string} [media] - A fingerprint of the item's versions and streams (direct-play answers follow it).
      * @property {boolean|null} isLast - Whether this is the last locally available episode in its season.
      * @property {string|null} seriesId - The series whose TMDB schedule applies (Series: itself).
      * @property {string|null|undefined} seriesTmdb - That series' TMDB id; undefined when unknown.
@@ -390,6 +391,7 @@
             seriesTmdb: type === 'Series' ? tmdb : (entry.SeriesTmdbId ? String(entry.SeriesTmdbId) : null),
             leaving: readLeaving(entry.Leaving),
             probed: probedOf(entry.StreamData?.Streams, entry.StreamData?.Sources),
+            media: mediaKeyOf(entry.StreamData?.Streams, entry.StreamData?.Sources),
             // The cache keeps the file name in ItemPath only when no source names it.
             strm: isStrm([entry.StreamData?.ItemPath, ...sourcePaths(entry.StreamData?.Sources)]),
         };
@@ -422,6 +424,7 @@
             seriesTmdb: type === 'Series' ? tmdb : undefined,
             leaving: readLeaving(item.Leaving),
             probed: probedOf(item.MediaStreams, item.MediaSources),
+            media: mediaKeyOf(item.MediaStreams, item.MediaSources),
             strm: isStrm([item.Path, ...sourcePaths(item.MediaSources)]),
         };
     }
@@ -440,6 +443,26 @@
         const first = Array.isArray(sources) ? sources[0]?.Id : null;
         const ofFirst = first && streams.some((stream) => stream?.SourceId) ? streams.filter((stream) => stream?.SourceId === first) : streams;
         return ofFirst.some((stream) => stream?.Type === 'Video');
+    }
+
+    /**
+     * A short fingerprint of what a direct-play verdict depends on: the item's versions and their
+     * video/audio streams (codecs, profiles, sizes, channels, ranges). A replaced or re-encoded file
+     * changes it, so an old verdict is never shown for new media; score or review changes do not.
+     * @param {*} streams
+     * @param {*} [sources]
+     * @returns {string}
+     */
+    function mediaKeyOf(streams, sources) {
+        const parts = [];
+        for (const source of Array.isArray(sources) ? sources : []) parts.push(`${source?.Id || ''}:${source?.Path || ''}`);
+        for (const stream of Array.isArray(streams) ? streams : []) {
+            if (stream?.Type !== 'Video' && stream?.Type !== 'Audio') continue;
+            parts.push([stream.SourceId, stream.Type, stream.Codec, stream.Profile, stream.Width, stream.Height, stream.Channels, stream.VideoRangeType].map(v => v ?? '').join(','));
+        }
+        let hash = 0x811c9dc5;
+        for (const char of parts.join('|')) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
+        return hash.toString(36);
     }
 
     /**
@@ -646,7 +669,7 @@
      */
     function directPlayBadge(data, itemId) {
         if (!itemId || !wantsDirectPlay(data)) return null;
-        const result = JE.tagDirectPlay.peek(String(itemId));
+        const result = JE.tagDirectPlay.peek(String(itemId), data.media || '');
         if (!result || result.directPlay) return null;
         const badge = makeBadge('playback', result.remux ? 'direct_play_remux' : 'direct_play_transcode');
         badge.title = JE.tagDirectPlay.describe(result, badge.label);
@@ -868,6 +891,7 @@
             season: entry.sn ?? null,
             episode: entry.en ?? null,
             episodeEnd: entry.ee ?? null,
+            media: entry.mk ?? '',
             seriesId: entry.si ?? null,
             // Stored only when known (null and undefined both mean "unknown" here).
             seriesTmdb: entry.stm ?? (entry.t === 'Series' ? null : undefined),
@@ -899,6 +923,7 @@
         if (data.season !== null) entry.sn = data.season;
         if (data.episode !== null) entry.en = data.episode;
         if (data.episodeEnd != null) entry.ee = data.episodeEnd;
+        if (data.media) entry.mk = data.media;
         if (data.seriesId) entry.si = data.seriesId;
         if (data.seriesTmdb) entry.stm = data.seriesTmdb;
         if (data.leaving) entry.lv = [data.leaving.deleteAt];
@@ -996,7 +1021,7 @@
         if (readsSeries) observeSeriesCard(ctx, el);
         // A direct-play lookup only for a card that would show nothing else,
         // and only once it is on screen (the module's idle slices).
-        if (wantsDirectPlay(data) && itemId && (!badge || badge.kind === 'playback')) JE.tagDirectPlay.track(el, String(itemId), onDirectPlayAnswer);
+        if (wantsDirectPlay(data) && itemId && (!badge || badge.kind === 'playback')) JE.tagDirectPlay.track(el, String(itemId), onDirectPlayAnswer, data.media || '');
         else JE.tagDirectPlay?.untrack(el);
         applyStatusTag(ctx, el, badge);
     }

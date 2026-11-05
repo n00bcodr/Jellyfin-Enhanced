@@ -923,3 +923,25 @@ test('direct play: stored answers are restored before any request, and new ones 
   await new Promise(resolve => setTimeout(resolve, 2100));
   assert.deepEqual(puts, [{ scope: 'server-a:user-a', profileHash: hash.value, ids: ['m2'], cap: 2000 }]);
 });
+
+test('direct play: a replaced file is asked about again, and an answer for the old file never shows for the new one', async t => {
+  let verdict = 'transcode';
+  const h = setup(t, { settings: { statusTagsDirectPlay: true }, answer: () => verdict });
+  const hevc = movie({ StreamData: { Sources: [{ Id: 's1', Path: 'Film.mkv' }], Streams: [{ Type: 'Video', SourceId: 's1', Codec: 'hevc', Width: 3840, Height: 2160 }] } });
+  h.show(hevc, h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  assert.equal(h.badge(h.hosts[0]), 'Transcode');
+  assert.equal(h.requests.length, 1);
+  // The same item, its file replaced by a version the browser plays directly.
+  const h264 = movie({ StreamData: { Sources: [{ Id: 's1', Path: 'Film.mkv' }], Streams: [{ Type: 'Video', SourceId: 's1', Codec: 'h264', Width: 1920, Height: 1080 }] } });
+  verdict = 'direct';
+  h.show(h264, h.hosts[0], 'm1');
+  assert.equal(h.chip(h.hosts[0]), null, 'the old verdict is not shown for the new file');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2, 'asked again for the new file');
+  assert.equal(h.chip(h.hosts[0]), null, 'direct play: no warning');
+  // Drawn again with the same media: from memory.
+  h.show(h264, h.hosts[0], 'm1');
+  await h.slice();
+  assert.equal(h.requests.length, 2);
+});

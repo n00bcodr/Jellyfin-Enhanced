@@ -919,20 +919,36 @@
     }
 
     /**
-     * A fresh answer for an item under the current profile, or null.
+     * A fresh answer for an item under the current profile and its current media, or null.
      * @param {string} itemId
+     * @param {string} [media] - The item's media fingerprint (an answer for other media is no answer); omitted, any.
      * @returns {DirectPlayResult|null}
      */
-    function peek(itemId) {
+    function peek(itemId, media) {
         const value = memory.get(`${current().hash}|${itemId}`);
-        if (!value || value.r === null || Date.now() - value.t >= TTL_MS) return null;
+        if (!value || value.r === null || !sameMedia(value, media) || Date.now() - value.t >= TTL_MS) return null;
         return value.r;
     }
 
-    /** @param {string} key @returns {boolean} Whether a memory key needs asking (unknown, expired, or a failure due a retry). */
-    function due(key) {
+    /**
+     * Whether an answer was given for these media: a stored answer from before fingerprints (at most a day
+     * old) and a caller that names no media accept any.
+     * @param {{m?: string}} value
+     * @param {string|undefined} media
+     * @returns {boolean}
+     */
+    function sameMedia(value, media) {
+        return media === undefined || value.m === undefined || value.m === media;
+    }
+
+    /**
+     * @param {string} key
+     * @param {string} [media]
+     * @returns {boolean} Whether a memory key needs asking (unknown, other media, expired, or a failure due a retry).
+     */
+    function due(key, media) {
         const value = memory.get(key);
-        if (!value) return true;
+        if (!value || !sameMedia(value, media)) return true;
         return Date.now() - value.t >= (value.r === null ? RETRY_MS : TTL_MS);
     }
 
@@ -962,9 +978,12 @@
         const entry = tracked.get(card);
         if (!entry) return;
         const key = `${current().hash}|${entry.id}`;
-        if (inFlight.has(key)) { inFlight.get(key).cards.add(card); return; }
-        if (!due(key)) { counters.fromMemory++; return; }
-        const job = queue.get(key) || { id: entry.id, cards: new Set() };
+        const media = entry.media || '';
+        // A request for these media already on the network answers this card too.
+        if (inFlight.has(key) && inFlight.get(key).media === media) { inFlight.get(key).cards.add(card); return; }
+        if (!inFlight.has(key) && !due(key, media)) { counters.fromMemory++; return; }
+        const job = queue.get(key) || { id: entry.id, cards: new Set(), media };
+        job.media = media;
         job.cards.add(card);
         queue.set(key, job);
     }
@@ -975,13 +994,14 @@
      * @param {HTMLElement} card
      * @param {string} itemId
      * @param {Function} onResult
+     * @param {string} [media] - The item's media fingerprint: an answer for other media is asked again.
      */
-    function track(card, itemId, onResult) {
+    function track(card, itemId, onResult, media = '') {
         hookSession();
         const previous = tracked.get(card);
-        tracked.set(card, { id: itemId, onResult });
+        tracked.set(card, { id: itemId, onResult, media });
         prime();
-        // Drawn again (an expired answer, another profile): ask again if it is due.
+        // Drawn again (an expired answer, another profile, changed media): ask again if it is due.
         if (previous && previous.id === itemId) {
             if (visible.has(card)) { enqueue(card); scheduleSlice(); }
             return;
@@ -1124,6 +1144,8 @@
         const { profile, bitrate } = current();
         const userId = ApiClient.getCurrentUserId?.() || JE.session?.getUserId?.() || '';
         const request = {};
+        // The answer known when this request left: one stored meanwhile for other media is newer.
+        job.prior = memory.get(key);
         inFlight.set(key, job);
         network.add(request);
         counters.launched++;
@@ -1133,11 +1155,11 @@
                 ApiClient.getUrl(`Items/${encodeURIComponent(job.id)}/PlaybackInfo`, { UserId: userId, StartTimeTicks: 0, IsPlayback: false, AutoOpenLiveStream: false, MaxStreamingBitrate: bitrate }),
                 JSON.stringify({ UserId: userId, DeviceProfile: profile, MaxStreamingBitrate: bitrate, EnableDirectPlay: true, EnableDirectStream: true, EnableTranscoding: true, AllowVideoStreamCopy: true, AllowAudioStreamCopy: true, IsPlayback: false, AutoOpenLiveStream: false }),
             );
-            value = { r: classify(info), t: Date.now() };
+            value = { r: classify(info), t: Date.now(), m: job.media || '' };
             counters.answered++;
         } catch (e) {
             // A failure, a stalled request included, is asked again after RETRY_MS.
-            value = { r: null, t: Date.now() };
+            value = { r: null, t: Date.now(), m: job.media || '' };
             counters.failed++;
             if (e?.timedOut) counters.timedOut++;
         } finally {
@@ -1146,6 +1168,11 @@
         }
         // A freed slot: queued lookups (of this session) may go now.
         if (gen !== generation) { if (queue.size) scheduleSlice(); return; }
+        // An answer for media since replaced never overwrites the answer for the new media.
+        const newer = memory.get(key);
+        const superseded = (inFlight.has(key) && (inFlight.get(key).media || '') !== (job.media || ''))
+            || (newer !== undefined && newer !== job.prior && (newer.m || '') !== (job.media || ''));
+        if (superseded) { scheduleSlice(); return; }
         remember(key, value);
         if (value.r) { unsaved.set(key, value.t); persistSoon(); }
         armRetry();
