@@ -59,6 +59,26 @@ internal static class TechnicalQualityRules
         return value.ToString("0.##", CultureInfo.InvariantCulture) + (stream.IsInterlaced == true ? "i" : "p");
     }
 
+    /// <summary>
+    /// A runtime label ("1h 52m", "47m", the chip's identity) as the user reads it: the hour and minute
+    /// abbreviations come from the locale files (quality_runtime_*), Compact joins hours and minutes
+    /// ("1h52"); qualitytags.js runtimeText draws the same.
+    /// </summary>
+    internal static string RuntimeText(string label, bool compact, CultureInfo culture)
+    {
+        var hours = Regex.Match(label, @"^(\d+)h (\d+)m$", RegexOptions.CultureInvariant);
+        if (hours.Success)
+        {
+            return StatusRules.Text(compact ? "quality_runtime_hours_compact" : "quality_runtime_hours", culture)
+                .Replace("{hours}", hours.Groups[1].Value, StringComparison.Ordinal).Replace("{minutes}", hours.Groups[2].Value, StringComparison.Ordinal);
+        }
+
+        var minutes = Regex.Match(label, @"^(\d+)m$", RegexOptions.CultureInvariant);
+        return minutes.Success
+            ? StatusRules.Text("quality_runtime_minutes", culture).Replace("{minutes}", minutes.Groups[1].Value, StringComparison.Ordinal)
+            : compact ? Compact(label, QualityTagRules.Runtime) : label;
+    }
+
     /// <summary>Compact labels keep the same technical value.</summary>
     internal static string Compact(string label, string category) => category switch
     {

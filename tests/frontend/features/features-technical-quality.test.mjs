@@ -56,6 +56,21 @@ test('technical categories default off, reorder independently, and batch uses th
   assert.deepEqual(h.labels(), ['24p', '1h 52m']);
 });
 
+test('a runtime reads in the user\'s own hour and minute abbreviations, the label staying its identity', async t => {
+  const h = setup(t, { ...onlyTechnical, showAspectRatioTag: false, showFrameRateTag: false, tagLayoutSettingsVersion: 1, tagGroupCaps: { quality: 0 } }, true);
+  const forms = { quality_runtime_hours: '{hours} h {minutes} min', quality_runtime_hours_compact: '{hours}:{minutes}', quality_runtime_minutes: '{minutes} min' };
+  h.JE.t = (key, params = {}) => Object.entries(params).reduce((text, [name, value]) => text.replace(`{${name}}`, value), forms[key] || en[key] || key);
+  h.renderer.renderFromServerCache(h.host, { Type: 'Movie', StreamData: { RunTimeTicks: 112 * 600000000, Streams: [cases[0].video] } }, 'a');
+  assert.deepEqual(h.labels(), ['1 h 52 min']);
+  h.JE.currentSettings.tagLabelDensity = 'compact';
+  await h.JE.reinitializeTagLayout();
+  assert.deepEqual(h.labels(), ['1:52']);
+  const m = setup(t, { ...onlyTechnical, showAspectRatioTag: false, showFrameRateTag: false, tagLayoutSettingsVersion: 1, tagGroupCaps: { quality: 0 } }, true);
+  m.JE.t = h.JE.t;
+  m.renderer.renderFromServerCache(m.host, { Type: 'Movie', StreamData: { RunTimeTicks: 47 * 600000000, Streams: [cases[0].video] } }, 'a');
+  assert.deepEqual(m.labels(), ['47 min']);
+});
+
 test('cropped width corrects resolution while subtitle titles remain excluded from special-format signals', t => {
   const h = setup(t);
   h.renderer.renderFromServerCache(h.host, { StreamData: { Streams: [

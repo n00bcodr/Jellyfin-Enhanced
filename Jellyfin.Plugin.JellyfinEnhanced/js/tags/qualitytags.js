@@ -410,7 +410,7 @@
         const technical = ['runtime', 'aspectRatio', 'frameRate', 'versions'].includes(category);
         const edition = label.startsWith(EDITION_PREFIX);
         const displayLabel = edition || technical ? label.slice(label.indexOf(':') + 1) : label;
-        badge.textContent = edition ? editionLabel(displayLabel) : category === 'versions' ? versionsText(displayLabel) : displayLabel;
+        badge.textContent = edition ? editionLabel(displayLabel) : category === 'versions' ? versionsText(displayLabel) : category === 'runtime' ? runtimeText(displayLabel, false) : displayLabel;
         if (technical) {
             badge.dataset.jeQualityCategory = category;
             badge.dataset.jeCompact = category === 'versions' ? `×${displayLabel}` : compactTechnical(displayLabel, category);
@@ -591,9 +591,28 @@
         return listed.size || new Set((streams || []).map(s => s?.SourceId).filter(Boolean)).size;
     }
 
+    /**
+     * A runtime label ("1h 52m", "47m", the chip's identity) as the user reads it: the hour and minute
+     * abbreviations come from the locale files; Compact joins hours and minutes ("1h52")
+     * (TechnicalQualityRules.RuntimeText on posters).
+     * @param {string} label
+     * @param {boolean} compact
+     * @returns {string}
+     */
+    function runtimeText(label, compact) {
+        const say = (key, params, fallback) => {
+            const text = JE.t(key, params);
+            return text === key ? fallback : Object.entries(params).reduce((out, [name, value]) => out.replace(`{${name}}`, value), text);
+        };
+        const hours = /^(\d+)h (\d+)m$/.exec(label);
+        if (hours) return say(compact ? 'quality_runtime_hours_compact' : 'quality_runtime_hours', { hours: hours[1], minutes: hours[2] }, compact ? `${hours[1]}h${hours[2]}` : label);
+        const minutes = /^(\d+)m$/.exec(label);
+        return minutes ? say('quality_runtime_minutes', { minutes: minutes[1] }, label) : label;
+    }
+
     /** Compact technical text; values stay identical across densities. */
     function compactTechnical(label, category) {
-        if (category === 'runtime') return label.replace(/(\d+)h (\d+)m/, '$1h$2');
+        if (category === 'runtime') return runtimeText(label, true);
         if (category === 'aspectRatio') return label.replace(/^IMAX /, '').replace(/:1$/, '');
         return label;
     }

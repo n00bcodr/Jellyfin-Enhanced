@@ -47,4 +47,15 @@ public class PluralFormsTests
             Assert.Equal(own == StatusRules.Text(key, english) ? StatusRules.Text(key, english, 1) : own, StatusRules.Text(key, german, 1));
         }
     }
+
+    [Theory]
+    [InlineData("1h 52m", false, "1h 52m")]
+    [InlineData("1h 52m", true, "1h52")]
+    [InlineData("47m", false, "47m")]
+    [InlineData("47m", true, "47m")]
+    [InlineData("12h 05m", true, "12h05")]
+    public void RuntimeTextReadsTheLabelInTheLocaleUnitsAndEnglishIsUnchanged(string label, bool compact, string expected)
+    {
+        Assert.Equal(expected, Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution.TechnicalQualityRules.RuntimeText(label, compact, CultureInfo.GetCultureInfo("en")));
+    }
 }
