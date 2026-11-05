@@ -219,14 +219,26 @@ test('the editor starts from the look the item has now, shows it live and keeps 
   h.change(h.$('.je-tie input[value="bands"]'), true);
   await h.settle();
   assert.equal(h.JE.core.tagLayout.resolveLayout(h.$('.je-tie-card .je-tag-host')).layout, 'bands');
-  assert.equal(h.$('[data-tie-status]').textContent, 'tag_item_editor_not_kept', 'says it will not stick');
+  assert.equal(h.$('[data-tie-status]').textContent, 'tag_item_editor_lock_save_hint', 'says Save will lock it');
+  assert.equal(h.$('[data-tie-save]').textContent, 'tag_item_editor_lock_save');
 
-  // Save without Keep: nothing written.
+  // "Lock & save for me": the edit is kept as the user's lock.
   h.click(h.$('[data-tie-save]'));
+  await h.settle();
+  assert.equal(h.writes.length, 1, 'one settings save');
+  assert.equal(h.editor(), null);
+  assert.match(h.toasts.join('|'), /tag_item_editor_kept/);
+});
+
+test('Cancel still leaves an edit unkept', async t => {
+  const h = setup(t, { settings: { tagLookRules: [kidsRule] } });
+  await h.open(MOVIE);
+  h.change(h.$('.je-tie input[value="bands"]'), true);
+  await h.settle();
+  h.click(h.$('.je-tie-foot [data-tie-close]'));
   await h.settle();
   assert.equal(h.writes.length, 0);
   assert.equal(h.editor(), null);
-  assert.deepEqual(h.toasts, ['tag_item_editor_nothing_kept']);
 });
 
 test('Keep saves layout, density, every slot, hidden groups, Show up to, size, gap and edge spacing as the item\'s lock', async t => {
@@ -509,13 +521,16 @@ test('Show up to steps like the hub: All → 10 … 1, and back up to All only f
   assert.equal(step(3, 1, { capFixed: true }), null);
 });
 
-test('groups that draw for the user come first; groups switched off in their settings follow and say so', async t => {
+test('groups that draw for the user come first; groups switched off in their settings follow in their own closed list', async t => {
   const h = setup(t, { settings: { qualityTagsEnabled: false, genreTagsEnabled: true, ratingTagsEnabled: true } });
   await h.open(MOVIE);
-  const rows = Array.from(h.document.querySelectorAll('.je-tie-group'), (li) => [li.dataset.group, !!li.querySelector('small')]);
+  const rows = Array.from(h.document.querySelectorAll('.je-tie-group'), (li) => [li.dataset.group, !!li.closest('[data-tie-hidden]')]);
   assert.deepEqual(rows.slice(0, 2), [['rating', false], ['genre', false]]);
-  assert.ok(rows.slice(2).every(([, off]) => off), 'the rest are off for this user');
+  assert.ok(rows.slice(2).every(([, off]) => off), 'the rest are under "Hidden by your settings"');
+  assert.equal(h.$('[data-tie-hidden]').open, false, 'that list starts closed');
+  assert.match(h.$('[data-tie-hidden] summary').textContent, /tag_item_editor_hidden_groups/);
   assert.ok(rows.some(([g]) => g === 'quality'), 'still editable for the item');
+  assert.match(h.$('.je-tie-group[data-group="quality"] [data-tie-on]').getAttribute('aria-label'), /tag_item_editor_include_group/, 'the switch says it includes the group in this look');
 });
 
 test('focus goes back to the redrawn control when the opener was replaced meanwhile', async t => {
@@ -763,6 +778,11 @@ test('Show up to: stepping to either end keeps keyboard focus in the editor, on 
   await h.open(MOVIE);
   const row = () => h.$('.je-tie [data-group="quality"]');
   const step = (dir) => row().querySelector(`[data-tie-step="${dir}"]`);
+  // The row's position and limit open from its Edit button (one row at a time).
+  assert.equal(row().querySelector('.je-tie-detail').hidden, true, 'collapsed to its summary');
+  h.click(row().querySelector('[data-tie-open]'));
+  assert.equal(row().querySelector('.je-tie-detail').hidden, false);
+  assert.equal(row().querySelector('[data-tie-open]').getAttribute('aria-expanded'), 'true');
   // One step inside the range keeps focus on the same button (by key).
   step('1').focus();
   h.click(step('1'));
@@ -781,4 +801,45 @@ test('Show up to: stepping to either end keeps keyboard focus in the editor, on 
   assert.equal(h.document.activeElement, step('-1'));
   h.document.activeElement.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(h.editor(), null, 'Escape closes the editor');
+});
+
+test('the editor asks where the look is kept before the edits, and Save says where it goes', async t => {
+  const h = setup(t, { settings: { tagLookRules: [kidsRule] } });
+  assert.equal(await h.open(MOVIE), true);
+  const main = h.$('.je-tie-main');
+  assert.ok(main.firstElementChild.contains(h.$('[data-tie-keep]')), 'Keep comes first in the form');
+  const save = () => h.$('[data-tie-save]').textContent;
+  assert.equal(save(), 'tag_item_editor_done', 'nothing changed: Done');
+
+  h.change(h.$('.je-tie input[value="bands"]'), true);
+  await h.settle();
+  assert.equal(save(), 'tag_item_editor_lock_save', 'an edit with nowhere to go yet offers to lock it');
+  h.change(h.$('[data-tie-keep]'), true);
+  await h.settle();
+  assert.equal(save(), 'tag_item_editor_save_mine');
+
+  // An off group's position and limit controls are inert for the keyboard too.
+  const row = h.$('.je-tie-group[data-group="quality"]');
+  h.change(row.querySelector('[data-tie-on]'), false);
+  await h.settle();
+  const off = h.$('.je-tie-group[data-group="quality"]');
+  assert.equal(off.dataset.on, '0');
+  assert.ok(Array.from(off.querySelectorAll('.je-tie-where input, [data-tie-step]')).every(el => el.disabled), 'every control of the off group is disabled');
+  h.change(off.querySelector('[data-tie-on]'), true);
+  await h.settle();
+  assert.ok(Array.from(h.$('.je-tie-group[data-group="quality"]').querySelectorAll('.je-tie-where input')).every(el => !el.disabled), 'on again: usable');
+});
+
+test('Tab order includes the "Hidden by your settings" disclosure and skips what a closed disclosure holds', async t => {
+  const h = setup(t, { settings: { qualityTagsEnabled: false, genreTagsEnabled: true, ratingTagsEnabled: true } });
+  await h.open(MOVIE);
+  const summary = h.$('[data-tie-hidden] summary');
+  summary.focus();
+  summary.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+  const last = Array.from(h.document.querySelectorAll('.je-tie-foot button')).pop();
+  assert.notEqual(h.document.activeElement, last, 'Shift+Tab from the disclosure does not wrap to the footer');
+  // Nothing inside the closed disclosure takes part in the wrap: Tab from the last footer button returns to the start.
+  last.focus();
+  last.dispatchEvent(new h.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+  assert.ok(!h.document.activeElement.closest('[data-tie-hidden] ul'), 'focus never lands inside the closed list');
 });

@@ -35,6 +35,27 @@
             body.querySelector('#tagStylePreviewLabel').textContent = JE.t('common_preview');
             body.querySelector('#tagStylePresets').textContent = JE.t('hidden_content_admin_loading');
             body.querySelector('#tagStyleTabs').setAttribute('aria-label', JE.t('admin_tags_colours_group'));
+            // Apply to and the user-preset switch are options most visits never change: one closed row.
+            const section = body.closest('[data-section]');
+            const wraps = ['tagStyleTarget', 'tagStylesAllowUserPreset'].map((id) => section?.querySelector(`[data-field-row="${id}"]`)?.parentElement).filter(Boolean);
+            if (wraps.length && !section.querySelector('.je-ta-more')) {
+                const more = document.createElement('details');
+                more.className = 'je-ta-more';
+                more.innerHTML = '<summary class="je-ta-more-toggle"><span class="material-icons" aria-hidden="true">expand_more</span><span data-more-text></span></summary>';
+                wraps[0].before(more);
+                wraps.forEach((w) => more.appendChild(w));
+                const sum = () => {
+                    const target = /** @type {HTMLInputElement|null} */ (more.querySelector('[name="tagStyleTarget"]:checked'));
+                    const allow = /** @type {HTMLInputElement|null} */ (more.querySelector('#tagStylesAllowUserPreset'));
+                    const parts = [JE.t('admin_tags_colours_options')];
+                    // Apply to counts while tag colours are on (its row is shown then).
+                    if (target && ctx.config.TagStylesEnabled === true) parts.push(JE.t(`admin_tags_colours_applies_${['web', 'native', 'both'].includes(target.value) ? target.value : 'both'}`));
+                    if (allow) parts.push(JE.t(allow.checked ? 'admin_tags_colours_presets_on' : 'admin_tags_colours_presets_off'));
+                    /** @type {HTMLElement} */ (more.querySelector('[data-more-text]')).textContent = parts.filter(Boolean).join(' · ');
+                };
+                sum();
+                section.addEventListener('change', () => setTimeout(sum), { signal: ctx.signal });
+            }
             editor = A.createTagStylesEditor(ctx.root, () => [...new Set((ctx.config.CustomTagRules || []).map((r) => r.Label || r.label).filter(Boolean))], () => ctx.isCurrent());
             ctx.root.addEventListener('je-custom-labels', () => { if (ctx.isCurrent()) editor.refreshLabels(); }, { signal: ctx.signal });
             /** Save the editor's document when an edit changed it. */

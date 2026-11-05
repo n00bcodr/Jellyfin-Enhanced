@@ -170,9 +170,12 @@
     function pillsHtml(conf, group) {
         const current = conf.profiles[conf.layout][group];
         const name = JE.t(GROUP_META[group].nameKey);
-        return slotsFor(conf.layout, group).map((slot) => {
+        const slots = slotsFor(conf.layout, group);
+        // One Tab stop per picker (the chosen position); arrow keys move between positions.
+        const stop = slots.includes(current) ? current : slots[0];
+        return slots.map((slot) => {
             const label = slotLabel(conf.layout, slot);
-            return `<button type="button" class="je-tge-pill" data-slot="${slot}" aria-pressed="${slot === current}" aria-label="${escapeHtml(`${name}: ${label}`)}">${escapeHtml(label)}</button>`;
+            return `<button type="button" class="je-tge-pill" data-slot="${slot}" aria-pressed="${slot === current}" tabindex="${slot === stop ? 0 : -1}" aria-label="${escapeHtml(`${name}: ${label}`)}">${escapeHtml(label)}</button>`;
         }).join('');
     }
 
@@ -200,16 +203,16 @@
      */
     function qualityIncludeHtml() {
         const sorted = sortedQualityCats();
-        const up = escapeHtml(JE.t('panel_settings_ui_quality_tags_move_up'));
-        const down = escapeHtml(JE.t('panel_settings_ui_quality_tags_move_down'));
-        return `<div id="qualityTagsSubToggles" class="je-tge-cats">${sorted.map((c, idx) => `
+        // Each pair is named by its category ("Move HDR up"), as on the admin page.
+        return `<button type="button" class="je-tge-reset je-tge-reorder" data-tge-reorder="cats" aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reorder_categories'))}</span></button>
+        <div id="qualityTagsSubToggles" class="je-tge-cats">${sorted.map((c, idx) => `
             <div class="je-quality-cat-row je-tge-cat" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}">
                 <label class="je-tge-toggle-pill">
                     <input type="checkbox" id="${c.id}" ${effectiveBool(c.settingKey, c.pluginKey, c.fallback ?? true) ? 'checked' : ''}>
                     <span>${escapeHtml(JE.t(c.labelKey))}</span>
                 </label>
-                <button type="button" class="je-cat-btn je-cat-up" ${idx === 0 ? 'disabled' : ''} aria-label="${up}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
-                <button type="button" class="je-cat-btn je-cat-down" ${idx === sorted.length - 1 ? 'disabled' : ''} aria-label="${down}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
+                <button type="button" class="je-cat-btn je-cat-up" ${idx === 0 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_quality_tags_move_up_named', { name: JE.t(c.labelKey) }))}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
+                <button type="button" class="je-cat-btn je-cat-down" ${idx === sorted.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_quality_tags_move_down_named', { name: JE.t(c.labelKey) }))}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
             </div>`).join('')}
         </div>`;
     }
@@ -301,7 +304,11 @@
             // policy by name keeps it when the administrator changes theirs.
             const following = JE.isSettingInherited?.(JE.currentSettings, 'seriesQualityAggregation') === true;
             const serverPolicy = JE.inheritedSettingDefault?.(JE.currentSettings, 'seriesQualityAggregation') || 'representative';
+            // The display policies are details most people never change: one disclosure, closed.
             return `
+                <details class="je-tge-more">
+                <summary class="je-tge-more-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${escapeHtml(JE.t('panel_settings_ui_quality_more'))}</summary>
+                <div class="je-tge-more-body">
                 <div class="je-tge-extra" data-quality-display>
                     <p class="je-tge-hint">${escapeHtml(JE.t('quality_display_help'))}</p>
                     ${['qualityAudioDisplayMode', 'qualityVideoCodecDisplayMode', 'qualityHdrDisplayMode', 'qualityMinimumResolution', 'qualityHideSdr'].map((key, index) => {
@@ -337,7 +344,9 @@
                         <option value="none">${escapeHtml(JE.t('panel_settings_ui_quality_tags_audio_language_none'))}</option>
                     </select>
                     <div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_quality_tags_audio_language_desc'))}</div>
-                </div>`;
+                </div>
+                </div>
+                </details>`;
         }
         if (group === 'rating') {
             return `
@@ -384,7 +393,7 @@
         else include = `<div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_nothing_to_include'))}</div>`;
         // The Status row opens the hub's Status badges tab (its include list).
         const badges = group === 'status'
-            ? `<button type="button" class="je-tge-badges" data-je-goto="badges">${escapeHtml(JE.t('common_badges'))}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>`
+            ? `<button type="button" class="je-tge-badges" data-je-goto="badges">${escapeHtml(JE.t('panel_media_tags_choose_badges'))}<span class="material-icons" aria-hidden="true">arrow_forward</span></button>`
             : '';
         return `
             <li class="je-tge-row" data-group="${group}" style="--je-tge-swatch:${meta.color};">
@@ -393,6 +402,7 @@
                         <button type="button" class="je-tge-move" data-dir="up" ${index === 0 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_move_up', { group: name }))}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
                         <button type="button" class="je-tge-move" data-dir="down" ${index === GROUP_IDS.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_move_down', { group: name }))}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
                     </div>
+                    <label class="je-tge-enable-hit"><input type="checkbox" class="je-tge-enable" id="${meta.toggleId}" ${JE.currentSettings?.[meta.settingKey] ? 'checked' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_enable', { group: name }))}" style="accent-color:${ctx.toggleAccentColor};"></label>
                     <span class="je-tge-swatch" aria-hidden="true"></span>
                     <button type="button" class="je-tge-expand" aria-expanded="false" aria-controls="${bodyId}">
                         <span class="je-tge-text">
@@ -401,17 +411,16 @@
                         </span>
                         <span class="material-icons je-tge-chevron" aria-hidden="true">expand_more</span>
                     </button>
-                    ${badges}
-                    <input type="checkbox" class="je-tge-enable" id="${meta.toggleId}" ${JE.currentSettings?.[meta.settingKey] ? 'checked' : ''} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_enable', { group: name }))}" style="accent-color:${ctx.toggleAccentColor};">
                 </div>
                 <div class="je-tge-body" id="${bodyId}" hidden>
                     <div class="je-tge-hint">${escapeHtml(JE.t(meta.descKey))}</div>
+                    ${badges}
                     <div class="je-tge-field" role="group" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position'))}">
-                        <div class="je-tge-label" aria-hidden="true">${escapeHtml(JE.t('panel_settings_subtitles_position'))}</div>
+                        <div class="je-tge-label je-tge-section" aria-hidden="true">${escapeHtml(JE.t('panel_settings_subtitles_position'))}</div>
                         <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
                     </div>
                     <div class="je-tge-field" data-je-cap-control ${layoutApi().singleChipGroup(group) ? 'hidden' : ''}>
-                        <div class="je-tge-label" id="jeTgeCapLabel-${group}">${escapeHtml(JE.t('panel_settings_ui_tag_editor_show_up_to'))}</div>
+                        <div class="je-tge-label je-tge-section" id="jeTgeCapLabel-${group}">${escapeHtml(JE.t('panel_settings_ui_tag_editor_show_up_to'))}</div>
                         <div class="je-tge-stepper" role="group" aria-labelledby="jeTgeCapLabel-${group}">
                             <button type="button" class="je-tge-step" data-step="-1" ${step.canDown ? '' : 'disabled'} aria-label="${escapeHtml(JE.t('panel_settings_ui_tag_editor_cap_decrease', { group: name }))}"><span class="material-icons" aria-hidden="true">remove</span></button>
                             <output class="je-tge-cap" aria-live="polite">${escapeHtml(step.text)}</output>
@@ -419,7 +428,7 @@
                         </div>
                     </div>
                     <div class="je-tge-field">
-                        <div class="je-tge-label">${escapeHtml(JE.t('panel_settings_ui_tag_editor_include'))}</div>
+                        <div class="je-tge-label je-tge-section">${escapeHtml(JE.t('panel_settings_ui_tag_editor_include'))}</div>
                         ${include}
                     </div>
                     ${extrasHtml(group, ctx)}
@@ -446,6 +455,7 @@
                         <div class="je-tge-hint">${escapeHtml(JE.t('panel_settings_ui_tag_editor_desc'))}</div>
                     </div>
                     <button type="button" class="je-tge-reset" id="jeTgeReset"><span class="material-icons" aria-hidden="true">restart_alt</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reset'))}</span></button>
+                    <button type="button" class="je-tge-reset je-tge-reorder" data-tge-reorder="groups" aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${escapeHtml(JE.t('panel_settings_ui_tag_editor_reorder_groups'))}</span></button>
                 </div>
                 <ol class="je-tge-rows" aria-labelledby="jeTgeTitle">${rows}</ol>
             </div>`;
@@ -606,46 +616,78 @@
         #jellyfin-enhanced-panel .je-language-priority-add { display: flex; gap: 8px; margin-top: 8px; }
         #jellyfin-enhanced-panel .je-language-priority-add select { flex: 1; }
 
-        #jellyfin-enhanced-panel .je-tge { margin-bottom: 16px; padding: 12px; background: var(--je-tge-box); border-radius: 6px; border-left: 3px solid var(--je-tge-accent); }
+        #jellyfin-enhanced-panel .je-tge { --je-tge-sel: color-mix(in srgb, var(--je-tge-accent) 72%, #000); margin-bottom: 16px; padding: 12px 14px; background: var(--je-tge-box); border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); }
         #jellyfin-enhanced-panel .je-tge-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; }
         #jellyfin-enhanced-panel .je-tge-top > div { flex: 1 1 220px; min-width: 0; }
-        #jellyfin-enhanced-panel .je-tge-title { margin: 0; font-size: 15px; font-weight: 600; }
-        #jellyfin-enhanced-panel .je-tge-badges { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-tge-title { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+        #jellyfin-enhanced-panel .je-tge-badges { align-self: flex-start; flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.22); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-badges .material-icons { font-size: 16px; }
-        #jellyfin-enhanced-panel .je-tge-hint { font-size: 12px; color: rgba(255,255,255,0.6); margin: 2px 0 6px; }
-        #jellyfin-enhanced-panel .je-tge-label { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.75); margin-bottom: 6px; }
-        #jellyfin-enhanced-panel .je-tge-reset { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-tge-hint { font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); margin: 2px 0 6px; }
+        #jellyfin-enhanced-panel .je-tge-label { display: block; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.88); margin-bottom: 6px; }
+        #jellyfin-enhanced-panel .je-tge-section { font-size: 11.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.62); margin-bottom: 8px; }
+        #jellyfin-enhanced-panel .je-tge-more { border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
+        #jellyfin-enhanced-panel .je-tge-more-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; font-size: 14px; font-weight: 600; cursor: pointer; list-style: none; border-radius: 8px; }
+        #jellyfin-enhanced-panel .je-tge-more-toggle::-webkit-details-marker { display: none; }
+        #jellyfin-enhanced-panel .je-tge-more-toggle:hover { background: rgba(255,255,255,0.05); }
+        #jellyfin-enhanced-panel .je-tge-more-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        #jellyfin-enhanced-panel .je-tge-more-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        #jellyfin-enhanced-panel .je-tge-more[open] > .je-tge-more-toggle .material-icons { transform: rotate(180deg); }
+        #jellyfin-enhanced-panel .je-tge-more-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 12px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
+        #jellyfin-enhanced-panel .je-tge-extra select { min-height: 40px; }
+        #jellyfin-enhanced-panel .je-tge-reset { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; background: rgba(255,255,255,0.06); color: #fff; border: 1px solid rgba(255,255,255,0.22); border-radius: 6px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-reset .material-icons { font-size: 18px; }
         #jellyfin-enhanced-panel .je-tge-rows { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-        #jellyfin-enhanced-panel .je-tge-row { border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; background: rgba(0,0,0,0.15); }
-        #jellyfin-enhanced-panel .je-tge-row-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; }
+        #jellyfin-enhanced-panel .je-tge-row { border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; background: rgba(0,0,0,0.15); }
+        #jellyfin-enhanced-panel .je-tge-row:has(.je-tge-expand[aria-expanded="true"]) { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
+        #jellyfin-enhanced-panel .je-tge-row-head { display: flex; align-items: center; gap: 8px; min-height: 48px; box-sizing: border-box; padding: 6px 10px 6px 8px; }
         #jellyfin-enhanced-panel .je-tge-moves { display: flex; gap: 2px; flex-shrink: 0; }
-        #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.15); color: rgba(255,255,255,0.85); border-radius: 4px; width: 28px; height: 28px; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.46); color: rgba(255,255,255,0.85); border-radius: 6px; width: 32px; height: 32px; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
         #jellyfin-enhanced-panel .je-tge-move .material-icons, #jellyfin-enhanced-panel .je-tge-step .material-icons { font-size: 16px; }
         #jellyfin-enhanced-panel .je-tge-move:disabled, #jellyfin-enhanced-panel .je-tge-step:disabled { opacity: 0.35; cursor: not-allowed; }
-        #jellyfin-enhanced-panel .je-tge-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: var(--je-tge-swatch); }
+        /* The group's colour is an edge bar (a round dot reads as on / off elsewhere). */
+        #jellyfin-enhanced-panel .je-tge-swatch { display: none; }
+        #jellyfin-enhanced-panel .je-tge-row { border-left: 3px solid var(--je-tge-swatch); }
         #jellyfin-enhanced-panel .je-tge-expand { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: transparent; border: 0; color: #fff; text-align: left; padding: 4px; font: inherit; cursor: pointer; border-radius: 4px; }
         #jellyfin-enhanced-panel .je-tge-text { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
-        #jellyfin-enhanced-panel .je-tge-name { font-weight: 500; }
-        #jellyfin-enhanced-panel .je-tge-summary { font-size: 12px; color: rgba(255,255,255,0.6); }
+        #jellyfin-enhanced-panel .je-tge-name { font-size: 14px; font-weight: 600; }
+        #jellyfin-enhanced-panel .je-tge-summary { font-size: 13px; color: rgba(255,255,255,0.68); }
         #jellyfin-enhanced-panel .je-tge-chevron { flex-shrink: 0; font-size: 20px; transition: transform 0.2s ease; }
         #jellyfin-enhanced-panel .je-tge-expand[aria-expanded="true"] .je-tge-chevron { transform: rotate(180deg); }
-        #jellyfin-enhanced-panel .je-tge-enable { width: 18px; height: 18px; flex-shrink: 0; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-tge-body { padding: 4px 12px 12px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 12px; }
+        #jellyfin-enhanced-panel .je-tge-enable { width: 18px; height: 18px; margin: 0; flex-shrink: 0; cursor: pointer; }
+        /* The switch's own 44px target: it only turns the group on or off (the name opens the row). */
+        #jellyfin-enhanced-panel .je-tge-enable-hit { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 44px; height: 44px; margin: -6px 0 -6px -6px; border-radius: 8px; cursor: pointer; }
+        #jellyfin-enhanced-panel .je-tge-enable-hit:hover { background: rgba(255,255,255,0.06); }
+        #jellyfin-enhanced-panel .je-tge-enable-hit:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: -2px; }
+        #jellyfin-enhanced-panel .je-tge .je-tge-enable-hit input:focus-visible { outline: none; }
+        #jellyfin-enhanced-panel .je-tge-body { padding: 12px 14px 14px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 16px; }
         #jellyfin-enhanced-panel .je-tge-body[hidden] { display: none; }
         #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
         #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > [data-slot="off"] { grid-column: 1 / -1; }
+        /* Corners: the nine positions by name in a 3 × 3 grid (the admin page and item editor use the same picker). */
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] { gap: 6px; max-width: 440px; }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill { justify-content: center; min-height: 36px; border-radius: 8px; text-align: center; line-height: 1.2; }
         #jellyfin-enhanced-panel .je-tge-pills, #jellyfin-enhanced-panel .je-tge-includes, #jellyfin-enhanced-panel .je-tge-cats { display: flex; flex-wrap: wrap; gap: 6px; }
-        #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; padding: 4px 12px; background: transparent; color: rgba(255,255,255,0.85); font: inherit; font-size: 12px; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-tge-pill[aria-pressed="true"], #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:checked) { background: var(--je-tge-accent); border-color: var(--je-tge-accent); color: #fff; }
+        #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.46); border-radius: 999px; min-height: 32px; box-sizing: border-box; padding: 4px 12px; background: transparent; color: rgba(255,255,255,0.88); font: inherit; font-size: 13px; cursor: pointer; }
+        #jellyfin-enhanced-panel :is(.je-tge-pill, .je-tge-toggle-pill):hover { background: rgba(255,255,255,0.06); }
+        #jellyfin-enhanced-panel .je-tge-pill[aria-pressed="true"], #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:checked) { background: var(--je-tge-sel); border-color: var(--je-tge-sel); color: #fff; font-weight: 600; }
         /* Keep the hidden focus target inside its scrolling pill, rather
            than absolutely positioning it against the fixed dialog frame. */
         #jellyfin-enhanced-panel .je-tge-toggle-pill { position: relative; }
         #jellyfin-enhanced-panel .je-tge-toggle-pill input { position: absolute; top: 50%; left: 50%; opacity: 0; width: 1px; height: 1px; margin: 0; }
         #jellyfin-enhanced-panel .je-tge-toggle-pill:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-tge-cat { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; }
-        #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 24px; height: 24px; padding: 0; justify-content: center; }
-        #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn .material-icons { font-size: 14px; }
+        #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 32px; height: 32px; padding: 0; justify-content: center; }
+        #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn .material-icons { font-size: 16px; }
+        /* Quality's Include list: an ordered checklist, one category per row with its order buttons at the end. */
+        #jellyfin-enhanced-panel .je-tge-cats { flex-direction: column; flex-wrap: nowrap; gap: 0; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-cat { display: flex; align-items: center; gap: 4px; padding: 4px 6px 4px 4px; }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-cat + .je-tge-cat { border-top: 1px solid rgba(255,255,255,0.07); }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill, #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill:has(input:checked) { flex: 1 1 auto; min-width: 0; justify-content: flex-start; gap: 10px; border: 0; border-radius: 6px; padding: 4px 8px; background: transparent; color: #fff; font-weight: 400; }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill:hover { background: rgba(255,255,255,0.05); }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill input { position: static; opacity: 1; width: 18px; height: 18px; margin: 0; flex-shrink: 0; accent-color: var(--je-tge-accent); cursor: pointer; }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill:has(input:not(:checked)) > span { color: rgba(255,255,255,0.68); }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill:has(input:focus-visible) { outline: none; }
+        #jellyfin-enhanced-panel .je-tge-cats .je-tge-toggle-pill input:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         #jellyfin-enhanced-panel [data-je-cap-control][hidden] { display: none !important; }
         #jellyfin-enhanced-panel .je-tge-stepper { display: inline-flex; align-items: center; gap: 8px; }
         #jellyfin-enhanced-panel .je-tge-cap { min-width: 32px; text-align: center; font-weight: 600; }
@@ -653,10 +695,21 @@
         #jellyfin-enhanced-panel .je-tge :is(button, select, input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         @media (prefers-reduced-motion: reduce) { #jellyfin-enhanced-panel .je-tge-chevron { transition: none; } }
         /* A narrow pane puts Badges on its own line under the Status name, clear of the checkbox. */
+        #jellyfin-enhanced-panel .je-tge-reorder { display: none; }
         @container je-mth (max-width: 560px) {
-            #jellyfin-enhanced-panel .je-tge-row[data-group="status"] .je-tge-row-head { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 4px; }
-            #jellyfin-enhanced-panel .je-tge-badges { grid-column: 3; grid-row: 2; justify-self: start; min-height: 40px; }
-            #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step { width: 36px; height: 36px; }
+            #jellyfin-enhanced-panel .je-tge-badges, #jellyfin-enhanced-panel .je-tge-reset { min-height: 44px; }
+            /* Phone: reordering is its own mode, so the rows give their width to names and summaries. */
+            #jellyfin-enhanced-panel .je-tge-reorder { display: inline-flex; min-height: 44px; }
+            #jellyfin-enhanced-panel .je-tge-reorder[aria-pressed="true"] { background: rgba(255,255,255,0.12); border-width: 2px; }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-groups) .je-tge-moves { display: none; }
+            #jellyfin-enhanced-panel .je-tge:not(.je-tge--reorder-cats) .je-tge-cat .je-cat-btn { display: none; }
+            #jellyfin-enhanced-panel .je-tge-cats { margin-top: 8px; }
+            #jellyfin-enhanced-panel .je-tge-body { padding: 12px 10px 14px; }
+
+
+            #jellyfin-enhanced-panel .je-tge-expand { min-height: 44px; }
+            #jellyfin-enhanced-panel .je-tge-move, #jellyfin-enhanced-panel .je-tge-step, #jellyfin-enhanced-panel .je-tge-cat .je-cat-btn { width: 44px; height: 44px; }
+            #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill, #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill { min-height: 44px; }
         }
     `;
 
@@ -860,6 +913,19 @@
             touch();
         };
 
+        // Arrow keys, Home and End move along a group's position picker (Enter or Space picks).
+        root.addEventListener('keydown', (e) => {
+            const pill = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.je-tge-pills .je-tge-pill'));
+            if (!pill || e.altKey || e.ctrlKey || e.metaKey) return;
+            const pills = Array.from(/** @type {HTMLElement} */ (pill.parentElement).querySelectorAll('.je-tge-pill'));
+            const at = pills.indexOf(pill);
+            const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+            const next = step ? pills[(at + step + pills.length) % pills.length] : e.key === 'Home' ? pills[0] : e.key === 'End' ? pills[pills.length - 1] : null;
+            if (!next) return;
+            e.preventDefault();
+            pills.forEach((p) => { p.tabIndex = p === next ? 0 : -1; });
+            next.focus();
+        });
         root.addEventListener('click', (e) => {
             const target = /** @type {HTMLElement} */ (e.target);
             const sourceMove = target.closest('[data-rating-move]');
@@ -930,6 +996,18 @@
                 return;
             }
 
+            // Phone: the order buttons show only in reorder mode (one switch for groups, one for categories).
+            const reorder = /** @type {HTMLElement|null} */ (target.closest('[data-tge-reorder]'));
+            if (reorder) {
+                const kind = reorder.dataset.tgeReorder;
+                const on = !root.classList.contains(`je-tge--reorder-${kind}`);
+                root.classList.toggle(`je-tge--reorder-${kind}`, on);
+                root.querySelectorAll(`[data-tge-reorder="${kind}"]`).forEach((b) => {
+                    b.setAttribute('aria-pressed', String(on));
+                    /** @type {HTMLElement} */ (b.lastElementChild).textContent = JE.t(on ? 'panel_settings_ui_tag_editor_reorder_done' : (kind === 'groups' ? 'panel_settings_ui_tag_editor_reorder_groups' : 'panel_settings_ui_tag_editor_reorder_categories'));
+                });
+                return;
+            }
             if (target.closest('#jeTgeReset')) {
                 resetToDefaults();
                 sync();

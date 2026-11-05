@@ -168,7 +168,7 @@
         ],
         render(ctx, body) {
             body.innerHTML = `
-                <p class="je-ta-off" data-rules-empty>${ctx.tx('admin_tags_rules_none')}</p>
+                <p class="je-ta-empty" data-rules-empty>${ctx.tx('admin_tags_rules_none')}</p>
                 <ol class="je-ta-rules" data-rules></ol>
                 <h4 class="je-ta-sub" id="jeTaRuleAddTitle">${ctx.tx('tag_looks_add_a_rule')}</h4>
                 <div class="je-ta-rule-form" role="group" aria-labelledby="jeTaRuleAddTitle">
@@ -309,7 +309,9 @@
     A.registerSection({
         id: 'rules-locks',
         tab: 'rules',
-        order: 20,
+        // A pointer, not a list: after the server-wide item looks, drawn as a note.
+        order: 40,
+        note: true,
         title: 'tag_looks_locked_heading',
         hint: 'admin_tags_locks_desc',
     });
@@ -373,7 +375,7 @@
         const scope = info?.type === 'Series' ? ` · ${JE.t(look.scope === 'item' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_series')}` : '';
         const label = info?.name || id;
         return `<li class="je-ta-rule" data-item="${ctx.esc(id)}" data-je-focus-key="admin-item-look-row-${ctx.esc(id)}">
-            <span class="je-ta-rule-text"><strong>${ctx.esc(name)}</strong> ${ctx.esc(type)}${ctx.esc(outcome)}${ctx.esc(scope)}</span>
+            <span class="je-ta-rule-text"><strong class="je-ta-rule-title">${ctx.esc(name)}</strong> <span class="je-ta-rule-meta">${ctx.esc(type)}${ctx.esc(outcome)}${ctx.esc(scope)}</span></span>
             <span class="je-ta-rule-tools">
                 <button type="button" class="je-ta-button" data-act="edit" data-je-focus-key="admin-item-look-edit-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('reviews_edit')}</button>
                 <button type="button" class="je-ta-icon-btn" data-act="remove" data-je-focus-key="admin-item-look-remove-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_remove_named', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
@@ -391,7 +393,7 @@
         render(ctx, body) {
             const heading = body.closest('[data-section]')?.querySelector('h3');
             if (heading) heading.tabIndex = -1;
-            body.innerHTML = `<p class="je-ta-off" data-item-looks-empty>${ctx.tx('admin_tags_item_looks_none')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
+            body.innerHTML = `<p class="je-ta-empty" data-item-looks-empty>${ctx.tx('admin_tags_item_looks_none')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
             body.querySelector('[data-item-looks]')?.addEventListener('click', (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('button[data-act]'));
                 const row = /** @type {HTMLElement|null} */ (button?.closest('[data-item]') || null);

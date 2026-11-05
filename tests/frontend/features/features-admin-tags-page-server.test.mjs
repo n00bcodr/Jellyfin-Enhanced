@@ -56,7 +56,9 @@ test('both administrators editing the same field: Changed elsewhere, nothing ove
   assert.equal(h.server.TagsHideOnHover, true, 'the other field in the refused request still saves');
   const chip = h.$('#jeTaSaved');
   assert.equal(chip.dataset.state, 'conflict');
-  assert.match(chip.textContent, /admin_tags_conflict:admin_tags_badges_just_added_days/);
+  assert.match(chip.textContent, /admin_tags_conflict_one:admin_tags_badges_just_added_days\|9\|8/, 'names the field, the value saved elsewhere and this page\'s');
+  assert.equal(chip.querySelector('[data-je-keep]').textContent, 'admin_tags_keep_value:8', 'each button names the value it keeps');
+  assert.equal(chip.querySelector('[data-je-theirs]').textContent, 'admin_tags_use_value:9');
   // A later edit elsewhere saves without touching the refused field.
   h.change(h.$('#disableTagsOnSearchPage'), true);
   assert.equal(await h.ctx.flush(), false);

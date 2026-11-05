@@ -147,30 +147,40 @@
         if (state.layout === 'corners') {
             const anchors = ANCHORS.map((a) => {
                 const label = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`]);
-                return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" aria-label="${ctx.esc(JE.t('admin_tags_position_aria', { group: name, slot: label }))}" title="${ctx.esc(label)}"></button>`;
+                return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" tabindex="${slot === a ? 0 : -1}" aria-label="${ctx.esc(JE.t('admin_tags_position_aria', { group: name, slot: label }))}">${ctx.esc(label)}</button>`;
             }).join('');
-            const where = slot === 'off' ? JE.t('panel_settings_ui_tag_slot_off') : JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${slot}`]);
-            slots = `<span class="je-ta-anchors" role="group" id="${L().POSITION_SETTINGS[g].userKey}" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${anchors}</span>`
-                + `<span class="je-ta-slot-name">${ctx.esc(where)}</span>`
-                + `<button type="button" class="je-ta-pill" data-slot="off" aria-pressed="${slot === 'off'}">${ctx.tx('panel_settings_ui_tag_slot_off')}</button>`;
+            // The nine positions by name, as on the hub and in the item editor; Hidden spans the row under them.
+            slots = `<span class="je-ta-anchors" role="group" id="${L().POSITION_SETTINGS[g].userKey}" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${anchors}`
+                + `<button type="button" class="je-ta-pill je-ta-anchor-off" data-slot="off" aria-pressed="${slot === 'off'}" tabindex="${slot === 'off' ? 0 : -1}">${ctx.tx('panel_settings_ui_tag_slot_off')}</button></span>`;
         } else {
             slots = `<span class="je-ta-pills" role="group" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${L().LAYOUT_SLOTS[state.layout].filter((s) => s !== 'dots' || g === 'quality').map((s) => {
                 const label = JE.t(s === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${s}`]);
                 return `<button type="button" class="je-ta-pill" data-slot="${s}" aria-pressed="${slot === s}">${ctx.esc(label)}</button>`;
             }).join('')}</span>`;
         }
-        return `<li class="je-ta-lrow" data-group="${g}" data-off="${off}">
+        const fixed = L().singleChipGroup(g, c);
+        const where = JE.t(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${slot}`]);
+        const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
+        const summary = slot === 'off' || fixed ? where : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where, cap: capText });
+        // Collapsed, a row says where the group goes and its limit; one row's controls open at a time.
+        const open = openGroups.get(ctx) === g;
+        return `<li class="je-ta-lrow" data-group="${g}" data-off="${off}" data-open="${open}" data-je-anchor="placement-${g}">
             <span class="je-ta-lrow-move">
                 <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="-1" aria-label="${ctx.esc(JE.t('admin_tags_move_up', { name }))}" ${index === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
                 <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="1" aria-label="${ctx.esc(JE.t('admin_tags_move_down', { name }))}" ${index === count - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
             </span>
             <span class="je-ta-lrow-name">${ctx.esc(name)}${off ? `<small>${ctx.tx('admin_tags_group_off_for_new')}</small>` : ''}</span>
-            ${L().singleChipGroup(g, c) ? '' : `<span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(JE.t('admin_tags_limit_for', { group: name }))}">${ctx.tx('admin_tags_limit')}
+            <span class="je-ta-lrow-sum">${ctx.esc(summary)}</span>
+            <button type="button" class="je-ta-button je-ta-lrow-open" data-act="open" data-dir="0" aria-expanded="${open}" aria-controls="jeTaLrow-${g}" aria-label="${ctx.esc(JE.t('tag_item_editor_group_edit', { group: name }))}">${ctx.tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+            <span class="je-ta-lrow-detail" id="jeTaLrow-${g}" ${open ? '' : 'hidden'}>
+            <span class="je-ta-lrow-slots">${slots}</span>
+            ${fixed ? '' : `<span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(JE.t('admin_tags_limit_for', { group: name }))}">${ctx.tx('panel_settings_ui_tag_editor_show_up_to')}
                 <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="-1" aria-label="${ctx.esc(JE.t('tag_shapes_fewer', { group: name }))}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">remove</span></button>
-                <output aria-live="polite">${cap === 0 ? ctx.tx('panel_settings_ui_tag_editor_summary_all') : cap}</output>
+                <output aria-live="polite">${cap === 0 ? ctx.tx('panel_settings_ui_tag_editor_cap_all') : cap}</output>
                 <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="1" aria-label="${ctx.esc(JE.t('tag_shapes_more', { group: name }))}" ${stepCap(cap, 1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">add</span></button>
             </span>`}
-            <span class="je-ta-lrow-slots">${slots}</span>
+            ${groupSettingsLink(ctx, g, name)}
+            </span>
         </li>`;
     }
 
@@ -183,9 +193,10 @@
         fields: [
             { id: 'tagLayout', key: 'TagLayout', type: 'custom', label: 'admin_tags_layout_default' },
             { id: 'tagLabelDensity', key: 'TagLabelDensity', type: 'pills', label: 'panel_settings_ui_tag_density', desc: 'panel_settings_ui_tag_density_desc', options: [['full', 'panel_settings_ui_tag_density_full'], ['compact', 'panel_settings_ui_tag_density_compact']], read: (v) => (String(v || '').toLowerCase() === 'compact' ? 'compact' : 'full') },
-            { id: 'tagScale', key: 'TagScale', type: 'select', label: 'admin_tags_tagScale', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
-            { id: 'tagGap', key: 'TagGap', type: 'select', label: 'admin_tags_tagGap', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
-            { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'select', label: 'admin_tags_tagEdgeSpacing', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
+            // Size, gap and edge as the hub shows them: a row of choices with its help line.
+            { id: 'tagScale', key: 'TagScale', type: 'pills', label: 'admin_tags_tagScale', desc: 'tag_scale_desc', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
+            { id: 'tagGap', key: 'TagGap', type: 'pills', label: 'admin_tags_tagGap', desc: 'tag_gap_desc', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
+            { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'pills', label: 'admin_tags_tagEdgeSpacing', desc: 'panel_settings_ui_tag_edge_desc', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
         ],
         render(ctx, body) {
             const card = body.closest('.je-ta-card');
@@ -220,7 +231,21 @@
         return own && `.je-ta-lrow[data-group="${g}"] ${own}`;
     }
 
-    A.registerSection({
+    /**
+     * The link from a placement row to the group's own settings on the Groups tab.
+     * @param {Object} ctx
+     * @param {string} g
+     * @param {string} name
+     * @returns {string}
+     */
+    function groupSettingsLink(ctx, g, name) {
+        return `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="groups:${g}">${ctx.esc(JE.t('admin_tags_goto_group', { group: name }))}<span class="material-icons" aria-hidden="true">arrow_forward</span></a>`;
+    }
+
+    /** Per page view: the group row whose controls are open. */
+    const openGroups = new WeakMap();
+
+    const groupsSection = {
         id: 'layout-groups',
         tab: 'layout',
         order: 20,
@@ -239,7 +264,28 @@
             { id: 'customTagsPosition', key: 'CustomTagsPosition', type: 'custom', label: 'admin_tags_customTagsPosition' },
         ],
         render(ctx, body) {
-            body.innerHTML = '<p class="je-ta-hint" data-layout-note></p><ol class="je-ta-lrows" id="tagGroupAdminRows"></ol>';
+            body.innerHTML = `<p class="je-ta-hint" data-layout-note></p><button type="button" class="je-ta-button je-ta-reorder" data-reorder aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${ctx.tx('panel_settings_ui_tag_editor_reorder_groups')}</span></button><ol class="je-ta-lrows" id="tagGroupAdminRows"></ol>`;
+            // Phone: the order buttons show only in reorder mode.
+            body.querySelector('[data-reorder]')?.addEventListener('click', (e) => {
+                const toggle = /** @type {HTMLElement} */ (e.currentTarget);
+                const on = !body.classList.contains('je-ta-reordering');
+                body.classList.toggle('je-ta-reordering', on);
+                toggle.setAttribute('aria-pressed', String(on));
+                /** @type {HTMLElement} */ (toggle.lastElementChild).textContent = JE.t(on ? 'panel_settings_ui_tag_editor_reorder_done' : 'panel_settings_ui_tag_editor_reorder_groups');
+            });
+            // One Tab stop per position picker; arrow keys, Home and End move along it (Enter or Space picks).
+            body.addEventListener('keydown', (e) => {
+                const cell = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('.je-ta-anchors [data-slot]'));
+                if (!cell || e.altKey || e.ctrlKey || e.metaKey) return;
+                const cells = Array.from(/** @type {HTMLElement} */ (cell.closest('.je-ta-anchors')).querySelectorAll('[data-slot]'));
+                const at = cells.indexOf(cell);
+                const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -3, ArrowDown: 3 }[e.key];
+                const next = step ? cells[Math.min(cells.length - 1, Math.max(0, at + step))] : e.key === 'Home' ? cells[0] : e.key === 'End' ? cells[cells.length - 1] : null;
+                if (!next) return;
+                e.preventDefault();
+                cells.forEach((c) => { c.tabIndex = c === next ? 0 : -1; });
+                next.focus();
+            });
             body.addEventListener('click', (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('button'));
                 const row = /** @type {HTMLElement|null} */ (button?.closest('.je-ta-lrow') || null);
@@ -249,6 +295,12 @@
                 const state = readState(c);
                 const values = {};
                 let keep = '';
+                if (button.dataset.act === 'open') {
+                    openGroups.set(ctx, openGroups.get(ctx) === g ? null : g);
+                    groupsSection.refresh(ctx, body);
+                    /** @type {HTMLElement|null} */ (ctx.root.querySelector(`#tagGroupAdminRows .je-ta-lrow[data-group="${g}"] [data-act="open"]`))?.focus();
+                    return;
+                }
                 if (button.dataset.act === 'move') {
                     const list = state.order ? state.order.slice() : L().DEFAULT_ORDER.slice();
                     const from = list.indexOf(g);
@@ -302,7 +354,8 @@
             const note = body.querySelector('[data-layout-note]');
             if (note) note.textContent = JE.t('admin_tags_layout_groups_for', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[state.layout]) });
         },
-    });
+    };
+    A.registerSection(groupsSection);
 
     /**
      * Card shape defaults: each shape keeps the default look, takes the

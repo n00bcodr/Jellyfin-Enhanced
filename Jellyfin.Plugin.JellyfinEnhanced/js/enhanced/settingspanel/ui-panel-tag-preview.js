@@ -367,10 +367,10 @@
     const PREVIEW_CSS = (JE.awardsTags?.CSS || '') + `
         #jellyfin-enhanced-panel .je-mtp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
         #jellyfin-enhanced-panel .je-mtp-title { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; margin: 0; }
-        #jellyfin-enhanced-panel .je-mtp-title::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
+
         #jellyfin-enhanced-panel .je-mtp-view { display: inline-flex; border: 1px solid var(--je-mtp-line, rgba(255,255,255,0.22)); border-radius: 999px; overflow: hidden; }
         #jellyfin-enhanced-panel .je-mtp-view button { background: transparent; color: var(--je-mtp-text, rgba(255,255,255,0.85)); border: 0; padding: 5px 12px; min-height: 30px; font: inherit; font-size: 12px; cursor: pointer; }
-        #jellyfin-enhanced-panel .je-mtp-view button[aria-pressed="true"] { background: var(--je-mtp-pressed-bg, rgba(255,255,255,0.9)); color: var(--je-mtp-pressed-text, #111); font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-view button[aria-pressed="true"] { background: var(--je-mtp-pressed-bg, rgba(255,255,255,0.16)); color: var(--je-mtp-pressed-text, #fff); font-weight: 600; }
         #jellyfin-enhanced-panel .je-mtp-view button:focus-visible { outline: 2px solid var(--je-mtp-strong, #fff); outline-offset: -3px; }
         #jellyfin-enhanced-panel .je-mtp-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
         #jellyfin-enhanced-panel .je-mtp-sample { margin: 0; min-width: 0; }
@@ -396,12 +396,20 @@
         #jellyfin-enhanced-panel .je-mtp-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
         #jellyfin-enhanced-panel .je-mtp-card-title { font-size: 12px; padding: 3px 2px 0; color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         #jellyfin-enhanced-panel .je-mtp-meta { font-size: 12px; line-height: 1.35; color: var(--je-mtp-muted, rgba(255,255,255,0.7)); padding: 2px 2px 0; overflow-wrap: anywhere; }
-        #jellyfin-enhanced-panel .je-mtp-meta strong { color: var(--je-mtp-strong, #fff); font-weight: 600; white-space: nowrap; }
+        #jellyfin-enhanced-panel .je-mtp-meta strong { color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 400; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="lock"] { color: var(--je-mtp-lock, #ffd166); }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="shape"] { white-space: normal; }
         #jellyfin-enhanced-panel .je-mtp-meta [data-source="rule"] { color: var(--je-mtp-rule, #7fd3ff); }
         #jellyfin-enhanced-panel .je-mtp-meta .je-mtp-look { display: block; white-space: nowrap; }
         #jellyfin-enhanced-panel .je-mtp-foot { margin: 12px 0 0; font-size: 12px; line-height: 1.45; color: var(--je-mtp-muted, rgba(255,255,255,0.7)); }
+        #jellyfin-enhanced-panel .je-mtp-foot p { margin: 0; }
+        #jellyfin-enhanced-panel .je-mtp-why { margin-top: 4px; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; padding: 0 6px 0 2px; border-radius: 6px; cursor: pointer; list-style: none; color: var(--je-mtp-text, rgba(255,255,255,0.9)); font-weight: 600; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary::-webkit-details-marker { display: none; }
+        #jellyfin-enhanced-panel .je-mtp-why > summary::before { content: 'expand_more'; font-family: 'Material Icons'; font-size: 18px; font-weight: normal; line-height: 1; font-feature-settings: 'liga'; transition: transform 0.2s ease; }
+        #jellyfin-enhanced-panel .je-mtp-why[open] > summary::before { transform: rotate(180deg); }
+        #jellyfin-enhanced-panel .je-mtp-why > summary:hover { background: var(--je-mtp-surface, rgba(255,255,255,0.05)); }
+        #jellyfin-enhanced-panel .je-mtp-why > summary:focus-visible { outline: 2px solid var(--je-mtp-strong, #fff); outline-offset: 2px; }
         #jellyfin-enhanced-panel .je-mtp-foot strong { color: var(--je-mtp-strong, #fff); }
         #jellyfin-enhanced-panel .je-mtp-note { margin: 6px 0 0; font-size: 12px; color: var(--je-mtp-lock, #ffd166); }
         #jellyfin-enhanced-panel .je-mtp-note[hidden] { display: none; }
@@ -510,7 +518,7 @@
         grid.className = 'je-mtp-samples';
         const figures = SAMPLES.map((sample) => buildSample(sample));
         grid.append(...figures);
-        const foot = document.createElement('p');
+        const foot = document.createElement('div');
         foot.className = 'je-mtp-foot';
         const note = document.createElement('p');
         note.className = 'je-mtp-note';
@@ -600,7 +608,24 @@
             const defaultLook = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[base.layout]), density: JE.t(base.density === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') });
             const strong = document.createElement('strong');
             strong.textContent = preset ? `${defaultLook} · ${preset}` : defaultLook;
-            foot.replaceChildren(document.createTextNode(`${JE.t('panel_media_tags_preview_default')} `), strong, document.createTextNode(`. ${JE.t('panel_media_tags_preview_precedence')}`));
+            // The admin page's preview (drawn from a seeded new user) speaks of the new-user default, not the viewer's own.
+            const forNewUsers = !!options.source;
+            const line = document.createElement('p');
+            line.append(document.createTextNode(`${JE.t(forNewUsers ? 'admin_tags_preview_default' : 'panel_media_tags_preview_default')} `), strong,
+                document.createTextNode(forNewUsers ? `. ${JE.t('admin_tags_preview_existing')}.` : '.'));
+            if (forNewUsers) foot.replaceChildren(line);
+            else {
+                // How a card's look is chosen: on request, so the preview stays short.
+                const why = document.createElement('details');
+                why.className = 'je-mtp-why';
+                why.open = foot.querySelector('.je-mtp-why')?.hasAttribute('open') || false;
+                const summary = document.createElement('summary');
+                summary.textContent = JE.t('panel_media_tags_preview_why');
+                const text = document.createElement('p');
+                text.textContent = JE.t('panel_media_tags_preview_precedence');
+                why.append(summary, text);
+                foot.replaceChildren(line, why);
+            }
             interaction.sync();
             drawStrip();
         };
@@ -637,13 +662,16 @@
                 thumb.replaceChildren(...marks);
             }
             const sample = SAMPLES.find((s) => s.key === followKey);
+            // First line: which sample and its look; second: where the look comes from, then its tags.
+            // First line: the look itself. Second: the sample, then the tags of the group being edited
+            // (spotlighted) or, with none, where the sample's look comes from.
             if (text && sample) text.textContent = JE.t('panel_media_tags_preview_summary', { title: JE.t(sample.titleKey), source: item.source, look: item.look });
-            if (chips) {
-                const all = chipTexts(item.card, root.dataset.spot || null);
+            if (chips && sample) {
+                const spot = root.dataset.spot || null;
+                const all = spot ? chipTexts(item.card, spot) : [];
                 const shown = all.slice(0, 4);
                 const more = all.length - shown.length;
-                chips.textContent = shown.join(' · ') + (more > 0 ? ` +${more}` : '');
-                if (!all.length) chips.textContent = JE.t('panel_media_tags_preview_none');
+                chips.textContent = `${JE.t(sample.titleKey)} · ${shown.length ? shown.join(' · ') + (more > 0 ? ` +${more}` : '') : item.source}`;
             }
         };
 

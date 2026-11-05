@@ -183,13 +183,13 @@ The administrator's **Display** → **Media Tags** settings provide defaults. Al
 | **Enable Status Tags** (admin) / **Show Status Tags** (viewer) | Off | `StatusTagsEnabled`: Just Added, New Movie/Series/Episode and trending rank badges. |
 | **Enable Logo Tags** (admin) / **Logos** (viewer) | Off | `LogoTagsEnabled`: streaming service, network or studio logos. |
 | **Enable People Tags** (admin) / **Show People Tags** (viewer) | Off | `PeopleTagsEnabled`: cast ages, birthplace, and deceased status. |
-| **Hide Tags on Hover** (admin and viewer) | Off | `TagsHideOnHover`: adds `body.je-tags-hide-on-hover`; an important hover rule hides the poster tag host. |
+| **Hide tags on hover** (admin and viewer) | Off | `TagsHideOnHover`: adds `body.je-tags-hide-on-hover`; an important hover rule hides the poster tag host. |
 
 New user settings for the eight tag features are seeded from the plugin configuration. Existing non-null user values take precedence over admin defaults. Changing a default does not replace a saved personal choice. See [Settings Overview](../getting-started/settings-overview.md) for default management.
 
 Server and saved user properties use PascalCase. Resolved client settings use camelCase, such as `qualityTagsEnabled`.
 
-Users can change **Hide Tags on Hover** later in their personal **Media Tags** section (**Layout** tab).
+Users can change **Hide tags on hover** later in their personal **Media Tags** section (**Layout** tab).
 
 If tag data is stale or missing, also check the server's cache configuration under **Display** → **Media Tags**:
 
@@ -250,7 +250,7 @@ Native poster pixels now include Status and the saved Bands layout. They have no
 
 In the Corners layout, containers carry `data-je-corner` with one of the nine stored position values (`top-left`, `top-center`, `top-right`, `center-left`, `center`, `center-right`, `bottom-left`, `bottom-center`, `bottom-right`). Containers sharing a corner stack in their slot with a 4px gap (top corners downward, bottom corners upward) instead of inline transforms. When a group is set to top right and the card shows Jellyfin's played or unplayed-count indicator, the host gets `data-je-indicator-gap` and the `tr` slot moves below it. Settings saved before layouts existed keep the original rule instead (their host carries `data-je-legacy`): only the container of a group set to exactly `top-right` carries `data-je-indicator-gap` and moves below the indicator, with the containers stacked after it; and on screens up to 480px wide the rating, age rating and status containers sit 4px from the card edges instead of 6px. The centre hooks are `tc` (top centre), `bc` (bottom centre), `ml` (left centre), `mr` (right centre) and `c` (centre). The rows use horizontal flex wrapping with centred chips; side anchors use columns aligned to their edge. Their group wrappers use `display: contents`, retaining the chip classes. Batched measurements set `--je-anchor-reserve` on these slots to keep them clear of occupied corner stacks; `--je-anchor-top` and `--je-anchor-bottom` clear native web overlays. Their excess chips use the same `data-je-overflow` and `.je-tag-more` hooks as flowing layouts. The original four corner geometry rules stay unchanged. Position slots rather than containers when you move tags: a container's own `top`, `left` or `transform` no longer places it.
 
-**Edge Spacing** other than Default marks a Corners host with `data-je-edge="tight"` or `data-je-edge="flush"` and sets `--je-edge` (`3px` or `0px`) on it; every anchor's offset, the corner containers' size limits, the centre budgets' defaults and the indicator gap use it. Default has no marker and keeps the original rules. A flush host clips its chips with `overflow: hidden` and `border-radius: var(--je-card-radius)`, where `--je-card-radius` is the artwork's corner radius, measured once per card; box chips touching an edge get square corners there. For example, `.je-tag-host[data-je-edge="flush"] .quality-overlay-label { border-radius: 0; }` makes every flush quality chip square.
+**Edge spacing** other than Default marks a Corners host with `data-je-edge="tight"` or `data-je-edge="flush"` and sets `--je-edge` (`3px` or `0px`) on it; every anchor's offset, the corner containers' size limits, the centre budgets' defaults and the indicator gap use it. Default has no marker and keeps the original rules. A flush host clips its chips with `overflow: hidden` and `border-radius: var(--je-card-radius)`, where `--je-card-radius` is the artwork's corner radius, measured once per card; box chips touching an edge get square corners there. For example, `.je-tag-host[data-je-edge="flush"] .quality-overlay-label { border-radius: 0; }` makes every flush quality chip square.
 
 A card whose look comes from a lock (see [Rules and locked items](../enhanced/tags.md#rules-and-locked-items)) has `data-je-locked="1"` on its `.je-tag-host`; nothing styles it by default. For example, `.je-tag-host[data-je-locked="1"] { outline: 1px dashed #fff8; }` marks locked cards. A server-wide item look does not set it.
 
@@ -395,7 +395,7 @@ Use these hooks to style genre icons and their hover labels. Up to three genres 
 
 By default, text appears on hover and floats inward from the selected corner. To keep labels visible inside wider chips:
 
-1. Turn off **Hide Tags on Hover** (with it on, the names are hidden on the poster).
+1. Turn off **Hide tags on hover** (with it on, the names are hidden on the poster).
 2. Apply the following CSS:
 
 ```css

@@ -57,17 +57,72 @@
 
     // ── Shared helpers (the admin page uses them too) ───────────────────
 
-    /** @param {string} field - A PascalCase field. @returns {string} Its name spelled out ("Tag Group Caps"). */
-    const fieldName = (field) => String(field).replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    /** Fields the settings show under their own label (the label key the control uses). */
+    const FIELD_LABELS = {
+        TagLayout: 'common_layout',
+        TagLabelDensity: 'panel_settings_ui_tag_density',
+        TagScale: 'tag_scale_label',
+        TagGap: 'tag_gap_label',
+        TagEdgeSpacing: 'panel_settings_ui_tag_edge',
+        TagStylePreset: 'panel_settings_ui_tag_style_preset',
+    };
+
+    /** Group switches, by the group's vocabulary key. */
+    const GROUP_FIELDS = {
+        QualityTagsEnabled: 'quality', GenreTagsEnabled: 'genre', LanguageTagsEnabled: 'language', RatingTagsEnabled: 'rating',
+        AgeRatingTagsEnabled: 'age_rating', StatusTagsEnabled: 'status', AwardsTagsEnabled: 'awards', LogoTagsEnabled: 'logos', CustomTagsEnabled: 'custom',
+    };
+
+    /**
+     * A field's name as the settings label it ("Tag size", "Genre tags"),
+     * else spelled out ("Tag Group Caps").
+     * @param {string} field - A PascalCase field.
+     * @returns {string}
+     */
+    const fieldName = (field) => {
+        const key = String(field);
+        const vocab = JE.core?.tagLayout?.VOCABULARY_KEYS;
+        if (FIELD_LABELS[key] && JE.t(FIELD_LABELS[key]) !== FIELD_LABELS[key]) return JE.t(FIELD_LABELS[key]);
+        if (GROUP_FIELDS[key] && vocab?.group?.[GROUP_FIELDS[key]]) {
+            const group = JE.t(vocab.group[GROUP_FIELDS[key]]);
+            if (group !== vocab.group[GROUP_FIELDS[key]]) return JE.t('tag_portable_field_group', { group });
+        }
+        return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+    };
+
+    /**
+     * A field's value as the option the settings show for it ("115%", "Corners"), or null.
+     * @param {string} field
+     * @param {*} value
+     * @returns {string|null}
+     */
+    function optionText(field, value) {
+        const L = JE.core?.tagLayout;
+        if (!L || typeof value !== 'string' || !value) return null;
+        const vocab = L.VOCABULARY_KEYS;
+        let key = null;
+        if (field === 'TagScale' && L.TAG_SCALES?.[value] !== undefined) return L.sizeLabel('scale', value);
+        if (field === 'TagLayout') key = vocab.layout?.[value];
+        else if (field === 'TagLabelDensity') key = `panel_settings_ui_tag_density_${value}`;
+        else if (field === 'TagGap') key = vocab.gap?.[value];
+        else if (field === 'TagEdgeSpacing') key = vocab.edge?.[value];
+        else if (field === 'TagStylePreset') key = vocab.preset?.[value];
+        if (!key) return null;
+        const text = JE.t(key);
+        return text === key ? null : text;
+    }
 
     /**
      * A value as one short line for the change list.
      * @param {*} value
+     * @param {string} [field] - The field, to name the value as its option.
      * @returns {string}
      */
-    function valueText(value) {
+    function valueText(value, field) {
         if (value === null || value === undefined) return JE.t('tag_portable_value_inherit');
         if (typeof value === 'boolean') return JE.t(value ? 'tag_portable_value_on' : 'tag_portable_value_off');
+        const option = field ? optionText(field, value) : null;
+        if (option) return option;
         const text = typeof value === 'string' ? (value === '' ? JE.t('tag_portable_value_empty') : value) : JSON.stringify(value);
         return text.length > MAX_VALUE_TEXT ? `${text.slice(0, MAX_VALUE_TEXT - 1)}…` : text;
     }
@@ -81,9 +136,9 @@
     function previewHtml(preview, opts = {}) {
         const changes = preview.changes || [];
         const skipped = preview.skipped || [];
-        const rows = changes.map((c) => `<li class="je-pt-change"><span class="je-pt-field">${esc(fieldName(c.field))}</span>`
-            + `<span class="je-pt-values"><span class="je-pt-from">${esc(valueText(c.from))}</span><span class="je-pt-arrow" aria-label="${tx('tag_portable_becomes')}">→</span><span class="je-pt-to">${esc(valueText(c.to))}</span></span></li>`).join('');
-        const skips = skipped.map((s) => `<li class="je-pt-skip"><span class="je-pt-field">${esc(fieldName(s.field))}</span>`
+        const rows = changes.map((c) => `<li class="je-pt-change"><span class="je-pt-field" data-je-field="${esc(c.field)}">${esc(fieldName(c.field))}</span>`
+            + `<span class="je-pt-values"><span class="je-pt-sr">${tx('tag_portable_was')} </span><span class="je-pt-from">${esc(valueText(c.from, c.field))}</span><span class="je-pt-arrow" aria-hidden="true">→</span><span class="je-pt-sr"> ${tx('tag_portable_becomes')} </span><span class="je-pt-to">${esc(valueText(c.to, c.field))}</span></span></li>`).join('');
+        const skips = skipped.map((s) => `<li class="je-pt-skip"><span class="je-pt-field" data-je-field="${esc(s.field)}">${esc(fieldName(s.field))}</span>`
             + `<span class="je-pt-reason">${tx(`tag_portable_skip_${['unknown', 'secret', 'signal', 'invalid'].includes(s.reason) ? s.reason : 'unknown'}`)}${s.detail ? ` <span class="je-pt-detail">(${esc(s.detail)})</span>` : ''}</span></li>`).join('');
         return (opts.summary === false ? '' : `<p class="je-pt-summary" data-je-summary>${tx(changes.length ? 'tag_portable_changes_count' : 'tag_portable_no_changes', { count: changes.length })}</p>`)
             + (changes.length ? `<ul class="je-pt-changes" aria-label="${tx('tag_portable_changes')}">${rows}</ul>` : '')
@@ -158,6 +213,8 @@
             }
         } catch { /* fall back */ }
         if (!fallback) return false;
+        // The document may sit in a closed disclosure: show it to select it.
+        fallback.closest('details')?.setAttribute('open', '');
         fallback.focus();
         fallback.select();
         try { return window.document.execCommand('copy'); } catch { return false; }
@@ -201,8 +258,9 @@
         const dialog = /** @type {HTMLElement} */ (backdrop.firstElementChild);
         const statusEl = /** @type {HTMLElement} */ (dialog.querySelector('.je-pt-status'));
         let isClosed = false;
-        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]'))
-            .filter((el) => !el.closest('[hidden]'));
+        // Tab order: disclosure rows included; nothing inside a closed disclosure, hidden or taken out of it.
+        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], summary'))
+            .filter((el) => !el.closest('[hidden]') && !(el.tagName !== 'SUMMARY' && el.closest('details:not([open])')) && /** @type {HTMLElement} */ (el).tabIndex >= 0);
         const close = () => {
             if (isClosed) return;
             isClosed = true;
@@ -287,39 +345,52 @@
         .je-pt-close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
         .je-pt-close:hover { background: rgba(255,255,255,0.08); }
         .je-pt-body { padding: 0 16px; max-height: min(60vh, 520px); overflow-y: auto; }
-        .je-pt-hint { margin: 4px 0 10px; font-size: 12.5px; line-height: 1.45; color: rgba(255,255,255,0.7); }
+        .je-pt-hint { margin: 4px 0 10px; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.7); }
         .je-pt-label { display: block; margin: 10px 0 4px; font-size: 13px; font-weight: 600; }
-        .je-pt-text, .je-pt-input { box-sizing: border-box; width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #5a606b; background: #12141a; color: #fff; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .je-pt-text, .je-pt-input { box-sizing: border-box; width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #80868f; background: #12141a; color: #fff; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
         .je-pt-input { font: inherit; font-size: 14px; min-height: 40px; }
         .je-pt-text[readonly] { color: #d6dbe4; }
         .je-pt-file { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 6px; border: 1px dashed rgba(255,255,255,0.35); cursor: pointer; font-size: 13px; font-weight: 600; }
         .je-pt-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
         .je-pt-file:focus-within { outline: 2px solid #fff; outline-offset: 2px; }
         .je-pt-summary { margin: 4px 0 8px; font-weight: 600; }
+        .je-pt-doc { margin: 4px 0 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; }
+        .je-pt-doc > :not(summary) { margin-left: 10px; margin-right: 10px; }
+        .je-pt-doc > textarea { width: calc(100% - 20px); margin-bottom: 10px; }
+        .je-pt-doc-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px 0 6px; list-style: none; cursor: pointer; font-weight: 600; border-radius: 8px; }
+        .je-pt-doc-toggle::-webkit-details-marker { display: none; }
+        .je-pt-doc-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        .je-pt-doc-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        .je-pt-doc[open] > .je-pt-doc-toggle .material-icons { transform: rotate(180deg); }
         .je-pt-subtitle { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: #ffd699; }
         .je-pt-changes, .je-pt-skips { list-style: none; margin: 0 0 6px; padding: 0; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
-        .je-pt-change, .je-pt-skip { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; padding: 7px 10px; font-size: 13px; }
+        .je-pt-change, .je-pt-skip { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; padding: 9px 12px; font-size: 14px; }
         .je-pt-change + .je-pt-change, .je-pt-skip + .je-pt-skip { border-top: 1px solid rgba(255,255,255,0.07); }
         .je-pt-field { font-weight: 600; }
-        .je-pt-values { display: inline-flex; flex-wrap: wrap; gap: 6px; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
-        .je-pt-from { color: rgba(255,255,255,0.6); text-decoration: line-through; overflow-wrap: anywhere; }
-        .je-pt-to { color: #8fe3a5; overflow-wrap: anywhere; }
+        .je-pt-values { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; }
+        .je-pt-from { color: rgba(255,255,255,0.62); text-decoration: line-through; overflow-wrap: anywhere; }
+        .je-pt-to { color: #8fe3a5; font-weight: 600; overflow-wrap: anywhere; }
         .je-pt-arrow { color: rgba(255,255,255,0.5); }
-        .je-pt-reason { color: #ffd699; font-size: 12.5px; }
+        .je-pt-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+        .je-pt-reason { color: #ffd699; font-size: 13px; }
         .je-pt-detail { color: rgba(255,255,255,0.6); }
-        .je-pt-status { min-height: 18px; margin: 8px 16px 0; font-size: 12.5px; color: #8fe3a5; }
+        .je-pt-status { min-height: 18px; margin: 8px 16px 0; font-size: 13px; color: #8fe3a5; }
+        .je-pt-status:empty { min-height: 0; margin-top: 0; }
         .je-pt-status[data-kind="error"] { color: #ff8a80; }
         .je-pt-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
-        .je-pt-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+        .je-pt-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.46); background: rgba(255,255,255,0.06); color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
         .je-pt-btn:hover { background: rgba(255,255,255,0.12); }
-        .je-pt-btn[data-primary] { background: #00a4dc; border-color: #00a4dc; }
-        .je-pt-btn[data-primary]:hover { background: #0aa9e0; }
+        .je-pt-btn[data-primary] { background: #0077a3; border-color: #0077a3; }
+        .je-pt-btn[data-primary]:hover { background: #00688f; }
         .je-pt-btn:is(:disabled, [aria-disabled="true"]) { opacity: 0.45; cursor: default; }
         .je-pt-btn .material-icons { font-size: 18px; }
         :is(.je-pt-btn, .je-pt-close, .je-pt-text, .je-pt-input):focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         @media (max-width: 480px) {
             .je-pt-backdrop { padding: 8px; }
             .je-pt-foot .je-pt-btn { flex: 1 1 auto; justify-content: center; }
+            .je-pt-btn, .je-pt-file { min-height: 44px; }
+            .je-pt-close { width: 44px; height: 44px; }
+            .je-pt-text, .je-pt-input { font-size: 16px; }
         }
     `;
 
@@ -690,7 +761,7 @@
             const offerRetry = () => {
                 const retry = /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'));
                 if (retry) { retry.removeAttribute('aria-disabled'); return; }
-                d.foot.innerHTML = buttonHtml('retry', 'admin_tags_retry', { primary: true }) + buttonHtml('close', 'awards_close');
+                d.foot.innerHTML = buttonHtml('close', 'awards_close') + buttonHtml('retry', 'admin_tags_retry', { primary: true });
                 /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
             };
             const load = async () => {
@@ -727,9 +798,10 @@
         const showExport = (d, document) => {
             const text = JSON.stringify(document, null, 2);
             d.body.innerHTML = `<p class="je-pt-hint">${tx('tag_portable_export_desc')}</p>
+                <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_portable_show_document', { count: Object.keys(document?.settings || {}).length })}</summary>
                 <label class="je-pt-label" for="jePtExport">${tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
-                <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea>`;
-            d.foot.innerHTML = buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true }) + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('close', 'awards_close');
+                <textarea id="jePtExport" class="je-pt-text" rows="12" readonly spellcheck="false">${esc(text)}</textarea></details>`;
+            d.foot.innerHTML = buttonHtml('close', 'awards_close') + buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true });
             const area = /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'));
             d.foot.onclick = async (e) => {
                 const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');

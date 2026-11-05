@@ -275,11 +275,11 @@ Everything about poster tags for your account: the layout, the tag groups, statu
     | --- | --- | --- |
     | **Episode thumbnails** / **List rows** → **Use a different look** | Off | Optional layout, density, Position pills and chip limit per shape. **Use recommended** starts with compact bands for thumbnails or compact corners for list images. Locks and rules take precedence. Portrait and square cards, and Native Poster Tags, keep the default look. |
     | Layout tiles: **Corners**, **Bands**, **Caption**, **Summary**, **Minimal** | **Corners** | Your default layout; the line under the tiles describes the selected one. Arrow keys move between tiles. |
-    | **Label Density**: **Full** / **Compact** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
+    | **Label density**: **Full** / **Compact** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
     | **Tag size** | **Default (100%)** | **Smaller (85%)**, **Default (100%)**, **Larger (115%)** or **Largest (130%)**; scales text, icons, flags and padding on web and native posters. |
     | **Gap** | **Default** | **Tight** (75%), **Default** (100%) or **Roomy** (150%) spacing between tags. Shape overrides can inherit or set their own size and gap. |
-    | **Edge Spacing**: **Default** / **Tight** / **Flush** | The administrator's (**Default**) | How far Corners tags sit from the poster edge: 6px, 3px or touching it. Flush tags follow the poster's rounded corners. Settings saved before layouts keep **Default** until you change it. |
-    | **Hide Tags on Hover** | Off | Fades poster tags while you hover a card. |
+    | **Edge spacing**: **Default** / **Tight** / **Flush** | The administrator's (**Default**) | How far Corners tags sit from the poster edge: 6px, 3px or touching it. Flush tags follow the poster's rounded corners. Settings saved before layouts keep **Default** until you change it. |
+    | **Hide tags on hover** | Off | Fades poster tags while you hover a card. |
     | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags, including Status, into posters for native apps. Corners and Bands are supported; Caption, Summary and Minimal use Corners. Bands follows its profile, limits and density. |
     | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
     | **Presets** | Built-in presets | **Apply** previews a preset's changes first; **Share** copies it; **Save as preset** keeps your settings (up to 10, on the server); **Import preset** adds a shared one; administrators can offer more. |
@@ -332,7 +332,7 @@ Everything about poster tags for your account: the layout, the tag groups, statu
 
     Shortcuts to the Media Tags settings page: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that tab. Other users never get this tab. The page's **Server** tab also exports and imports the server-wide Media Tags settings and lists the **Presets for users** ([Import, export and presets](tags.md#import-export-and-presets)).
 
-See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, [Rules and locked items](tags.md#rules-and-locked-items) for how rules match, and [One item's look](tags.md#one-items-look) for the per-item editor in an item's ⋮ menu (layout, density, each group's place and limit, size and spacing, **Keep this look for this item**, and for administrators **For everyone**). It starts from the item’s resolved look, including shape-specific size and limits. Saving from the admin Rules list returns keyboard focus to that item’s Edit button, or its series after a scope move.
+See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, [Rules and locked items](tags.md#rules-and-locked-items) for how rules match, and [One item's look](tags.md#one-items-look) for the per-item editor in an item's ⋮ menu (layout, density, each group's place and limit, size and spacing, **Lock this look for me**, and for administrators **For everyone (server-wide)**). It starts from the item’s resolved look, including shape-specific size and limits. Saving from the admin Rules list returns keyboard focus to that item’s Edit button, or its series after a scope move.
 
 ### Hidden Content
 

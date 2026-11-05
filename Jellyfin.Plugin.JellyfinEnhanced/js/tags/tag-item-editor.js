@@ -61,77 +61,160 @@
         .je-tie-chip { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid #ffb74d; border-radius: 4px; color: #ffb74d; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: middle; }
         .je-tie-close { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; }
         .je-tie-close:hover { background: rgba(255,255,255,0.08); }
+        .je-tie-jump { display: none; }
         .je-tie-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 14px 16px; }
         .je-tie-side { position: sticky; top: 0; align-self: start; }
         .je-tie-card { position: relative; width: 100%; }
         .je-tie-card:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-view { margin-top: 8px; }
         .je-tie-view button { font: inherit; color: inherit; }
-        .je-tie-view [aria-pressed="true"] { border-color: #00a4dc; background: rgba(0,164,220,0.18); }
+        /* Resting / Hover: one joined control, as on the hub's and the admin page's previews. */
+        .je-tie-view.je-tie-pills { display: inline-flex; flex-wrap: nowrap; gap: 0; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; overflow: hidden; }
+        .je-tie-view .je-tie-pill { min-height: 32px; padding: 0 14px; border: 0; border-radius: 0; background: transparent; font-size: 13px; font-weight: 400; }
+        .je-tie-view .je-tie-pill[aria-pressed="true"] { background: rgba(255,255,255,0.16); color: #fff; font-weight: 600; }
+        .je-tie-view .je-tie-pill:disabled { opacity: 0.45; cursor: default; }
+        .je-tie-view .je-tie-pill:focus-visible { outline-offset: -3px; }
         .je-tie-card .cardBox { margin: 0; }
         .je-tie-scalable { position: relative; width: 100%; aspect-ratio: 2 / 3; border-radius: 6px; overflow: hidden; contain: paint; background: #2b303a center / cover no-repeat; }
         .je-tie-card[data-je-shape="landscape"] .je-tie-scalable { aspect-ratio: 16 / 9; }
         .je-tie-card .je-tag-host { position: absolute; inset: 0; pointer-events: none; container-type: inline-size; }
         .je-tie-card-title { font-size: 12px; padding: 4px 2px 0; color: rgba(255,255,255,0.9); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .je-tie-source { margin: 8px 0 0; font-size: 12px; line-height: 1.4; color: rgba(255,255,255,0.7); }
-        .je-tie-source strong { color: #7fd3ff; }
-        .je-tie-note { margin: 6px 0 0; font-size: 12px; color: #ffd699; }
+        .je-tie-source { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.7); }
+        .je-tie-source strong { color: #fff; font-weight: 600; }
+        .je-tie-note { margin: 6px 0 0; font-size: 13px; color: #ffd699; }
         .je-tie-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-        .je-tie-box { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
-        .je-tie-box > legend, .je-tie-h { padding: 0; margin: 0 0 6px; font-size: 13px; font-weight: 600; }
-        .je-tie-hint { margin: 2px 0 0; font-size: 12px; line-height: 1.4; color: rgba(255,255,255,0.65); }
+        .je-tie-box { margin: 0; padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.03); min-width: 0; }
+        .je-tie-box > legend, .je-tie-h { padding: 0; margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+        /* A legend sits on the fieldset's border by default: float it into the box like the section headings. */
+        .je-tie-box > legend { float: left; width: 100%; }
+        .je-tie-box > legend + * { clear: both; }
+        .je-tie-hint { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,0.68); }
         .je-tie input[type="radio"] { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
         .je-tie-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-        .je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 8px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.2); cursor: pointer; font-size: 13px; font-weight: 600; text-align: center; }
+        .je-tie-tile, .je-tie-pill { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 4px 12px; box-sizing: border-box; border-radius: 999px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; font-weight: 400; text-align: center; }
+        .je-tie-tile { flex-direction: column; gap: 6px; padding: 10px 4px 8px; border-radius: 8px; border-color: rgba(255,255,255,0.46); background: rgba(0,0,0,0.2); font-weight: 600; }
         .je-tie-tile:hover, .je-tie-pill:hover { background: rgba(255,255,255,0.06); }
-        .je-tie-tile:has(input:checked), .je-tie-pill:has(input:checked) { border-color: #00a4dc; background: rgba(0,164,220,0.18); box-shadow: inset 0 0 0 1px #00a4dc; }
+        .je-tie-pill:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
+        .je-tie-tile:has(input:checked) { border: 2px solid #00a4dc; padding: 9px 3px 7px; background: rgba(0,164,220,0.14); }
+        /* The hub's layout pictures (ui-panel-media-tags.js, admin-tags.css). */
+        .je-tie-art { position: relative; width: 22px; height: 32px; border-radius: 3px; background: #4a5160; }
+        .je-tie-art i { position: absolute; display: none; height: 4px; border-radius: 1px; }
+        .je-tie-art[data-layout="corners"] i { display: block; width: 7px; }
+        .je-tie-art[data-layout="corners"] i:nth-child(1) { left: 2px; top: 2px; background: #42a5f5; }
+        .je-tie-art[data-layout="corners"] i:nth-child(2) { right: 2px; top: 2px; background: #ef5350; }
+        .je-tie-art[data-layout="corners"] i:nth-child(3) { left: 2px; bottom: 2px; background: #ab47bc; }
+        .je-tie-art[data-layout="corners"] i:nth-child(4) { right: 2px; bottom: 2px; background: #ffca28; }
+        .je-tie-art[data-layout="bands"] { width: 26px; height: 26px; margin: 3px 0; }
+        .je-tie-art[data-layout="bands"] i:nth-child(-n+4) { display: block; width: 6px; }
+        .je-tie-art[data-layout="bands"] i:nth-child(1) { left: 2px; top: -6px; background: #ef5350; }
+        .je-tie-art[data-layout="bands"] i:nth-child(2) { left: 9px; top: -6px; background: #42a5f5; }
+        .je-tie-art[data-layout="bands"] i:nth-child(3) { left: 2px; bottom: -6px; background: #ffca28; }
+        .je-tie-art[data-layout="bands"] i:nth-child(4) { left: 9px; bottom: -6px; background: #66bb6a; }
+        .je-tie-art[data-layout="caption"] { height: 26px; margin-bottom: 6px; }
+        .je-tie-art[data-layout="caption"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
+        .je-tie-art[data-layout="caption"] i:nth-child(2) { display: block; left: 0; bottom: -7px; width: 7px; background: #42a5f5; }
+        .je-tie-art[data-layout="caption"] i:nth-child(3) { display: block; left: 8px; bottom: -7px; width: 7px; background: #ffca28; }
+        .je-tie-art[data-layout="caption"] i:nth-child(4) { display: block; left: 16px; bottom: -7px; width: 6px; background: #66bb6a; }
+        .je-tie-art[data-layout="summary"] i:nth-child(1) { display: block; left: 3px; right: 3px; bottom: 3px; height: 5px; border-radius: 3px; background: #111; box-shadow: inset 0 0 0 1px #ffca28; }
+        .je-tie-art[data-layout="minimal"] i:nth-child(1) { display: block; right: 2px; top: 2px; width: 7px; background: #ef5350; }
+        .je-tie-art[data-layout="minimal"] i:nth-child(2) { display: block; left: 3px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #42a5f5; }
+        .je-tie-art[data-layout="minimal"] i:nth-child(3) { display: block; left: 9px; bottom: 3px; width: 4px; height: 4px; border-radius: 50%; background: #66bb6a; }
         .je-tie-tile:has(input:focus-visible), .je-tie-pill:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-pills { display: flex; flex-wrap: wrap; gap: 6px; }
         .je-tie-scope { display: flex; flex-direction: column; gap: 6px; }
         .je-tie-scope .je-tie-pill { justify-content: flex-start; text-align: left; }
+        .je-tie-groups-hint { margin: -2px 0 10px; }
+        .je-tie-under { margin-top: 8px; }
+        .je-tie-hidden { margin-top: 12px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
+        .je-tie-hidden-toggle { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px 0 8px; list-style: none; cursor: pointer; font-size: 14px; font-weight: 600; border-radius: 8px; }
+        .je-tie-hidden-toggle::-webkit-details-marker { display: none; }
+        .je-tie-hidden-toggle:hover { background: rgba(255,255,255,0.05); }
+        .je-tie-hidden-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+        .je-tie-hidden-toggle .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        .je-tie-hidden[open] > .je-tie-hidden-toggle .material-icons { transform: rotate(180deg); }
+        .je-tie-hidden > .je-tie-hint { margin: 0 12px 10px; }
+        .je-tie-hidden > .je-tie-groups { padding: 0 8px 8px; }
         .je-tie-groups { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-        .je-tie-group { display: grid; grid-template-columns: 150px minmax(0, 1fr) 176px; align-items: center; gap: 6px 10px; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
-        .je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; pointer-events: none; }
-        .je-tie-gname { display: flex; flex-direction: column; min-width: 0; }
-        .je-tie-gname small { font-size: 11px; color: #ffd699; font-weight: 400; }
-        .je-tie-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; font-weight: 600; min-height: 32px; }
-        .je-tie-switch input { width: 34px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #00a4dc; cursor: pointer; }
+        .je-tie-group { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; min-height: 56px; box-sizing: border-box; padding: 8px 10px 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.16); }
+        .je-tie-group[data-open="1"] { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.03); }
+        .je-tie-gsum { min-width: 0; font-size: 13px; color: rgba(255,255,255,0.72); }
+        .je-tie-group[data-on="0"] .je-tie-gsum { color: rgba(255,255,255,0.5); }
+        .je-tie-gopen { display: inline-flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 8px 0 12px; font: inherit; font-size: 13px; font-weight: 600; color: #fff; background: transparent; border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; cursor: pointer; }
+        .je-tie-gopen:hover { background: rgba(255,255,255,0.06); }
+        .je-tie-gopen:disabled { opacity: 0.4; cursor: default; }
+        .je-tie-gopen .material-icons { font-size: 20px; transition: transform 0.2s ease; }
+        .je-tie-gopen[aria-expanded="true"] .material-icons { transform: rotate(180deg); }
+        .je-tie-detail { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 10px 0 2px; border-top: 1px solid rgba(255,255,255,0.08); }
+        .je-tie-detail[hidden] { display: none; }
+        .je-tie-detail .je-tie-where { flex: 1 1 280px; }
+        .je-tie-group[data-on="0"] .je-tie-where, .je-tie-group[data-on="0"] .je-tie-cap { opacity: 0.4; }
+        .je-tie-gname { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .je-tie-gname small { padding-left: 26px; font-size: 12px; color: rgba(255,255,255,0.62); font-weight: 400; }
+        .je-tie-switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; min-height: 36px; }
+        .je-tie-switch input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #00a4dc; cursor: pointer; }
         .je-tie-where .je-tie-pill { min-height: 30px; padding: 2px 8px; font-size: 12px; }
-        .je-tie-anchors { display: grid; grid-template-columns: repeat(3, 30px); grid-auto-rows: 22px; gap: 3px; }
-        .je-tie-anchor { position: relative; display: block; border-radius: 4px; border: 1px solid rgba(255,255,255,0.22); background: rgba(0,0,0,0.25); cursor: pointer; }
-        .je-tie-anchor::after { content: ''; position: absolute; inset: 6px 9px; border-radius: 2px; background: rgba(255,255,255,0.25); }
-        .je-tie-anchor:has(input:checked) { border-color: #00a4dc; background: rgba(0,164,220,0.25); }
-        .je-tie-anchor:has(input:checked)::after { background: #00a4dc; }
+        /* Corners positions by name in a 3 × 3 grid, as on the hub and the admin page. */
+        .je-tie-anchors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; max-width: 420px; }
+        .je-tie-anchor { position: relative; display: flex; align-items: center; justify-content: center; min-height: 36px; padding: 2px 6px; box-sizing: border-box; border-radius: 8px; border: 1px solid rgba(255,255,255,0.46); background: transparent; cursor: pointer; font-size: 13px; line-height: 1.2; text-align: center; }
+        .je-tie-anchor:hover { background: rgba(255,255,255,0.06); }
+        .je-tie-anchor:has(input:checked) { border-color: #0077a3; background: #0077a3; color: #fff; font-weight: 600; }
+        .je-tie-group[data-on="0"] :is(.je-tie-anchor, .je-tie-pill) { cursor: default; }
         .je-tie-anchor:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: 1px; }
-        .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; font-size: 12px; white-space: nowrap; }
-        .je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
-        .je-tie-cap button { width: 32px; padding: 0; }
+        .je-tie-cap { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; font-size: 13px; white-space: nowrap; }
+        .je-tie-cap button, .je-tie-foot button, .je-tie-toast button { font: inherit; color: #fff; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.46); border-radius: 6px; min-height: 32px; cursor: pointer; font-weight: 600; }
+        .je-tie-cap button { width: 36px; min-height: 36px; padding: 0; }
         .je-tie-cap button:disabled { opacity: 0.35; cursor: default; }
         .je-tie-cap output { min-width: 26px; text-align: center; font-weight: 600; }
-        .je-tie-row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-        .je-tie-row3 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; min-width: 0; }
-        .je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #5a606b; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
+        /* Size and spacing: one row each, label left and the whole choice readable on the right. */
+        .je-tie-row3 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+        .je-tie-row3 label { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: center; gap: 12px; font-size: 14px; font-weight: 600; min-width: 0; }
+        .je-tie select { font: inherit; font-size: 13px; color: #fff; background: #12141a; border: 1px solid #80868f; border-radius: 6px; padding: 6px; min-height: 36px; min-width: 0; }
         .je-tie select option { background: #222; color: #fff; }
+        /* Where Save keeps the look: first in the form, so the choice comes before the edits. */
+        .je-tie-keeps { display: flex; flex-direction: column; gap: 8px; }
         .je-tie-keep { border-color: rgba(0,164,220,0.45); }
         .je-tie-keep[data-everyone] { border-color: rgba(255,183,77,0.5); }
+        .je-tie-keep .je-tie-hint { padding-left: 26px; }
         .je-tie-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
-        .je-tie-foot .je-tie-status { flex: 1 1 200px; margin: 0; font-size: 12px; color: #ffd699; }
+        .je-tie-foot .je-tie-status { flex: 1 1 200px; margin: 0; font-size: 13px; color: #ffd699; }
+        .je-tie-foot .je-tie-status:empty { display: none; }
         .je-tie-foot button { padding: 0 16px; min-height: 40px; }
-        .je-tie-foot .je-tie-save { background: #00a4dc; border-color: #00a4dc; }
+        .je-tie-foot .je-tie-save { background: #0077a3; border-color: #0077a3; }
         .je-tie button:focus-visible, .je-tie select:focus-visible, .je-tie-switch input:focus-visible, .je-tie-toast button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
         .je-tie-toast { position: fixed; left: 50%; bottom: 24px; z-index: 100001; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 12px 10px 16px; border-radius: 8px; background: #2b2f38; color: #fff; box-shadow: 0 6px 24px rgba(0,0,0,0.5); font-size: 14px; }
         .je-tie-toast button { padding: 0 12px; color: #7fd3ff; }
+        /* Desktop: title and actions stay in view; the form scrolls between them. */
+        @media (min-width: 641px) {
+            .je-tie { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); overflow: hidden; }
+            .je-tie-head, .je-tie-foot { flex-shrink: 0; }
+            .je-tie-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+            .je-tie-foot { min-height: 64px; box-sizing: border-box; padding: 12px 16px; }
+            .je-tie-foot button { min-height: 44px; }
+        }
         @media (max-width: 640px) {
             .je-tie-backdrop { padding: 0; }
+            .je-tie-row3 label { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+            .je-tie-close { width: 44px; height: 44px; }
             .je-tie { border-radius: 0; min-height: 100%; border: 0; }
             .je-tie-body { grid-template-columns: minmax(0, 1fr); padding: 10px 12px; }
             .je-tie-side { position: static; display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; align-items: start; }
             .je-tie-card[data-je-shape="landscape"] { grid-column: 1 / -1; max-width: 260px; }
             .je-tie-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .je-tie-anchors { max-width: none; }
+            .je-tie-cap button, .je-tie-pill, .je-tie-anchor { min-height: 44px; }
+            .je-tie-cap button { width: 44px; }
             .je-tie-group { grid-template-columns: minmax(0, 1fr) auto; }
-            .je-tie-where { grid-column: 1 / -1; grid-row: 2; }
+            .je-tie-gsum { grid-column: 1; grid-row: 2; padding-left: 26px; }
+            .je-tie-gopen { grid-column: 2; grid-row: 1 / span 2; min-height: 44px; }
             .je-tie-row3 { grid-template-columns: minmax(0, 1fr); }
             .je-tie-foot { position: sticky; bottom: 0; background: #1d2026; }
+            .je-tie-head { position: sticky; top: 0; z-index: 3; background: #1d2026; }
+            /* Keyboard scrolling keeps focus clear of the sticky title and footer. */
+            .je-tie-backdrop { scroll-padding: 76px 0 84px; }
+            .je-tie-hint, .je-tie-gsum { font-size: 14px; line-height: 1.45; }
+            .je-tie-jump:not([hidden]) { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 44px; padding: 0 12px 0 6px; border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; background: transparent; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+            .je-tie-jump-thumb { width: 22px; height: 33px; border-radius: 3px; background: #2b303a center / cover no-repeat; }
+            .je-tie-foot button, .je-tie-gopen, .je-tie select, .je-tie-view .je-tie-pill { min-height: 44px; }
         }
     `;
 
@@ -305,9 +388,11 @@
      * @param {HTMLElement} target - The sample's render target.
      * @param {string} id
      * @param {Object|null} entry - The server tag-cache entry, or null.
+     * @param {Object|null} [item] - The item's /tag-data answer, drawn when there is no entry or card
+     *   (the admin page shows no cards of the item).
      * @returns {boolean} Whether any group was drawn.
      */
-    function drawTags(target, id, entry) {
+    function drawTags(target, id, entry, item = null) {
         const L = layoutApi();
         const pipeline = JE.tagPipeline;
         L.ensureHost(target);
@@ -329,6 +414,7 @@
             if (!renderer || !renderer.isEnabled?.()) continue;
             try {
                 if (entry && renderer.renderFromServerCache) renderer.renderFromServerCache(target, entry, id);
+                else if (item && renderer.render) renderer.render(target, item, { renderTarget: target, stripRevision: pipeline.tagStripRevision?.() ?? null });
                 else if (renderer.renderFromCache) renderer.renderFromCache(target, id);
             } catch (err) {
                 console.warn(`${logPrefix} the item editor's sample could not draw ${name}:`, err);
@@ -426,7 +512,9 @@
         // Where the item's look comes from now, and the look it has.
         const serverEntry = JE.tagPipeline?.peekServerEntry?.(id) || null;
         let facts = serverEntry;
-        if (!facts && !serverMode) {
+        // The server-wide editor opens from the admin page, where no card of the item
+        // was drawn: its /tag-data answer is what the preview draws.
+        if (!facts) {
             try { facts = await JE.tagPipeline?.itemLookFacts?.(id); } catch { facts = null; }
             if (!live()) return abandon();
             // An editor another open mounted meanwhile is replaced.
@@ -473,6 +561,10 @@
             edge: effective.edge === base.edge ? null : effective.edge,
         };
         for (const layout of LAYOUTS) draft.slots[layout] = { ...base.profiles[layout] };
+        /** @type {string|null} the group row whose position and limit are open (one at a time) */
+        let openGroup = null;
+        /** Whether the list of groups the user's settings hide is open. */
+        let hiddenOpen = false;
         /** @type {Object<string, string>} "layout:group" → the position a group had before it was switched off */
         const lastSlot = {};
         draft.slots[startLayout] = { ...effective.slots };
@@ -493,10 +585,13 @@
         const uid = `jeTie${++sequence}`;
         const backdrop = document.createElement('div');
         backdrop.className = 'je-tie-backdrop';
+        // Opened from the admin page on a light dashboard: the dialog follows it (admin-tags.css).
+        if (opener?.closest?.('.je-ta-light')) backdrop.classList.add('je-tie-light');
         const typeName = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[type.toLowerCase()]);
         const titleKey = serverMode ? 'tag_item_editor_title_server' : 'tag_item_editor_title';
         backdrop.innerHTML = `<div class="je-tie" role="dialog" aria-modal="true" aria-labelledby="${uid}Title" tabindex="-1">
             <div class="je-tie-head"><h3 class="je-tie-title" id="${uid}Title"><span data-tie-title></span>${serverMode ? `<span class="je-tie-chip">${tx('common_admin')}</span>` : ''}</h3>
+                <button type="button" class="je-tie-jump" data-tie-jump hidden aria-label="${tx('tag_item_editor_show_preview')}"><span class="je-tie-jump-thumb" aria-hidden="true"></span>${tx('common_preview')}</button>
                 <button type="button" class="je-tie-close" data-tie-close aria-label="${tx('awards_close')}"><span class="material-icons" aria-hidden="true">close</span></button></div>
             <div class="je-tie-body">
                 <div class="je-tie-side">
@@ -508,24 +603,24 @@
                         <p class="je-tie-source" data-tie-source></p><p class="je-tie-note" data-tie-note hidden></p></div>
                 </div>
                 <div class="je-tie-main">
+                    ${serverMode ? `<p class="je-tie-box je-tie-keep je-tie-hint" data-everyone>${tx('tag_item_editor_server_hint')}</p>` : `<div class="je-tie-keeps"><div class="je-tie-box je-tie-keep">
+                        <label class="je-tie-switch"><input type="checkbox" data-tie-keep aria-describedby="${uid}KeepHint">${tx('tag_item_editor_keep')}</label>
+                        <p class="je-tie-hint" id="${uid}KeepHint">${tx('tag_item_editor_keep_hint')}</p></div>
+                    ${admin ? `<div class="je-tie-box je-tie-keep" data-everyone>
+                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx('tag_item_editor_everyone')}<span class="je-tie-chip">${tx('common_admin')}</span></label>
+                        <p class="je-tie-hint" id="${uid}EveryoneHint">${tx('tag_item_editor_everyone_hint')}</p></div>` : ''}</div>`}
                     ${hasSeries ? `<fieldset class="je-tie-box"><legend>${tx('tag_item_editor_scope')}</legend><div class="je-tie-scope" role="radiogroup">
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="item">${tx(type === 'Series' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_item', { type: typeName })}</label>
                         <label class="je-tie-pill"><input type="radio" name="${uid}Scope" value="series">${tx('tag_item_editor_scope_series')}</label></div></fieldset>` : ''}
-                    <fieldset class="je-tie-box"><legend>${tx('common_layout')}</legend><div class="je-tie-tiles">
-                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}">${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div></fieldset>
-                    <fieldset class="je-tie-box"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
-                        ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div></fieldset>
-                    <section class="je-tie-box" aria-labelledby="${uid}Groups"><h4 class="je-tie-h" id="${uid}Groups">${tx('common_groups')}</h4><ul class="je-tie-groups" data-tie-groups></ul></section>
+                    <fieldset class="je-tie-box" aria-describedby="${uid}LayoutDesc"><legend>${tx('common_layout')}</legend><div class="je-tie-tiles">
+                        ${LAYOUTS.map((l) => `<label class="je-tie-tile"><input type="radio" name="${uid}Layout" value="${l}"><span class="je-tie-art" data-layout="${l}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</label>`).join('')}</div><p class="je-tie-hint je-tie-under" id="${uid}LayoutDesc" aria-live="polite"></p></fieldset>
+                    <fieldset class="je-tie-box" aria-describedby="${uid}DensityDesc"><legend>${tx('panel_settings_ui_tag_density')}</legend><div class="je-tie-pills">
+                        ${['full', 'compact'].map((d) => `<label class="je-tie-pill"><input type="radio" name="${uid}Density" value="${d}">${tx(`panel_settings_ui_tag_density_${d}`)}</label>`).join('')}</div><p class="je-tie-hint je-tie-under" id="${uid}DensityDesc">${tx('panel_settings_ui_tag_density_desc')}</p></fieldset>
+                    <section class="je-tie-box" aria-labelledby="${uid}Groups" aria-describedby="${uid}GroupsHint"><h4 class="je-tie-h" id="${uid}Groups">${tx('tag_item_editor_groups_title')}</h4><p class="je-tie-hint je-tie-groups-hint" id="${uid}GroupsHint">${tx(serverMode ? 'tag_item_editor_groups_hint_server' : 'tag_item_editor_groups_hint')}</p><div data-tie-groups></div></section>
                     <fieldset class="je-tie-box"><legend>${tx('tag_item_editor_spacing')}</legend><div class="je-tie-row3">
                         <label>${tx('tag_scale_label')}<select data-tie-select="tagScale"></select></label>
                         <label>${tx('tag_gap_label')}<select data-tie-select="tagGap"></select></label>
                         <label>${tx('panel_settings_ui_tag_edge')}<select data-tie-select="edge"></select></label></div></fieldset>
-                    ${serverMode ? `<p class="je-tie-hint">${tx('tag_item_editor_server_hint')}</p>` : `<div class="je-tie-box je-tie-keep">
-                        <label class="je-tie-switch"><input type="checkbox" data-tie-keep aria-describedby="${uid}KeepHint">${tx('tag_item_editor_keep')}</label>
-                        <p class="je-tie-hint" id="${uid}KeepHint">${tx('tag_item_editor_keep_hint')}</p></div>`}
-                    ${!serverMode && admin ? `<div class="je-tie-box je-tie-keep" data-everyone>
-                        <label class="je-tie-switch"><input type="checkbox" data-tie-everyone aria-describedby="${uid}EveryoneHint">${tx('tag_item_editor_everyone')}<span class="je-tie-chip">${tx('common_admin')}</span></label>
-                        <p class="je-tie-hint" id="${uid}EveryoneHint">${tx('tag_item_editor_everyone_hint')}</p></div>` : ''}
                 </div>
             </div>
             <div class="je-tie-foot"><p class="je-tie-status" data-tie-status role="status" aria-live="polite"></p>
@@ -542,6 +637,7 @@
         const sourceEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-source]'));
         const noteEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-note]'));
         const statusEl = /** @type {HTMLElement} */ (dialog.querySelector('[data-tie-status]'));
+        const saveButton = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-save]'));
         const keepBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-keep]'));
         const everyoneBox = /** @type {HTMLInputElement|null} */ (dialog.querySelector('[data-tie-everyone]'));
 
@@ -557,9 +653,23 @@
         // The poster (the episode's still) under the tags.
         const image = item.ImageTags?.Primary ? ApiClient.getScaledImageUrl(id, { type: 'Primary', maxHeight: 480, tag: item.ImageTags.Primary }) : '';
         if (image) target.style.backgroundImage = `url("${image}")`;
-        const drawn = drawTags(target, id, serverEntry);
+        // Phone: once the preview scrolls away, the sticky title row offers a way back to it.
+        const jump = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-jump]'));
+        if (image) /** @type {HTMLElement} */ (jump.firstElementChild).style.backgroundImage = `url("${image}")`;
+        jump.addEventListener('click', () => {
+            dialog.querySelector('.je-tie-side')?.scrollIntoView?.({ block: 'start' });
+            /** @type {HTMLElement|null} */ (dialog.querySelector('.je-tie-card'))?.focus({ preventScroll: true });
+        });
+        const sideWatch = typeof IntersectionObserver === 'function'
+            ? new IntersectionObserver(([entry]) => { jump.hidden = !!entry?.isIntersecting; }, { root: backdrop, threshold: 0 })
+            : null;
+        const side = dialog.querySelector('.je-tie-side');
+        if (sideWatch && side) sideWatch.observe(side);
+        const drawn = drawTags(target, id, serverEntry, serverEntry ? null : facts);
         noteEl.hidden = drawn;
         noteEl.textContent = drawn ? '' : JE.t('tag_item_editor_no_tags');
+        // Nothing to show at rest or on hover: the switch would only look useful.
+        if (!drawn) dialog.querySelectorAll('.je-tie-view button').forEach((b) => { /** @type {HTMLButtonElement} */ (b).disabled = true; });
 
         /** @type {ReturnType<typeof setTimeout>|null} */
         let presentTimer = null;
@@ -571,15 +681,29 @@
             const inherited = (before.source === 'lock' && !own) || (before.source === 'override' && !ownOverride);
             // Without the item's data a rule or series look could not be matched: say so rather than guess.
             const unknown = !facts && (read.rules.length > 0 || !!seriesId);
-            sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_now')} `), Object.assign(document.createElement('strong'), { textContent: unknown ? JE.t('tag_item_editor_source_unknown') : sourceText(before, !!inherited) }));
+            if (serverMode) sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_editing')} `), Object.assign(document.createElement('strong'), { textContent: JE.t('tag_item_editor_editing_server') }));
+            else sourceEl.replaceChildren(document.createTextNode(`${JE.t('tag_item_editor_now')} `), Object.assign(document.createElement('strong'), { textContent: unknown ? JE.t('tag_item_editor_source_unknown') : sourceText(before, !!inherited) }));
             if (dirty) sourceEl.append(document.createElement('br'), document.createTextNode(JE.t('tag_item_editor_draft')));
             showStatus();
         };
         /** @type {string} a failed save's message, shown until the next change */
         let saveError = '';
-        /** The footer line: a failed save, else whether the changes will stick. */
+        /** The footer line: a failed save, else what Save will do with an edit nothing keeps yet. */
         const showStatus = () => {
-            statusEl.textContent = saveError || (!serverMode && !keep && !everyone && dirty ? JE.t('tag_item_editor_not_kept') : '');
+            statusEl.textContent = saveError || (saveLabelKey() === 'tag_item_editor_lock_save' ? JE.t('tag_item_editor_lock_save_hint') : '');
+            saveButton.textContent = JE.t(saveLabelKey());
+        };
+        /** @returns {string} Save's label: where the look goes, a removal, or that nothing is kept. */
+        const saveLabelKey = () => {
+            if (serverMode) return 'tag_item_editor_save_server';
+            if (keep && everyone) return 'tag_item_editor_save_both';
+            if (keep) return 'tag_item_editor_save_mine';
+            if (everyone) return 'tag_item_editor_save_everyone';
+            const target = targetOf();
+            const removes = !!keptAt(target) || (target !== id && !!own) || (!!everyoneBox && !!overrideAt(target));
+            if (removes) return 'elsewhere_settings_save';
+            // An edit with nowhere to go yet: Save locks it for this user (the button says so).
+            return dirty ? 'tag_item_editor_lock_save' : 'tag_item_editor_done';
         };
         /** Coalesce bursts of changes (a stepper held down) into one re-present. */
         const schedule = () => {
@@ -600,7 +724,9 @@
             // The groups that draw for this user first, the ones switched off in their settings after.
             const ordered = base.order || L.DEFAULT_ORDER;
             const order = [...ordered.filter((g) => groupOn(g)), ...ordered.filter((g) => !groupOn(g))];
-            groupsList.innerHTML = order.map((group) => {
+            // Personal editor: groups the user's settings hide go in their own closed list.
+            const tucked = (group) => !serverMode && !groupOn(group);
+            const rowHtml = (group) => {
                 const meta = GROUPS[group];
                 if (!meta) return '';
                 const slot = slots[group] || 'off';
@@ -608,33 +734,56 @@
                 const gname = JE.t(meta.nameKey);
                 const positions = positionsFor(draft.layout, group);
                 const current = on ? slot : (lastSlot[`${draft.layout}:${group}`] || positions[0]);
+                // An off group's controls are shown dimmed and are not operable (the keyboard skips them too).
+                const off = on ? '' : 'disabled';
                 const where = draft.layout === 'corners'
-                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor" title="${tx(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`])}"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" aria-label="${esc(slotLabel('corners', a))}" ${a === current ? 'checked' : ''}></label>`).join('')}</div>`
-                    : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
+                    ? `<div class="je-tie-anchors" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${ANCHORS.map((a) => `<label class="je-tie-anchor"><input type="radio" name="${uid}-${group}" value="${a}" data-tie-key="${group}-${a}" ${a === current ? 'checked' : ''} ${off}>${esc(slotLabel('corners', a))}</label>`).join('')}</div>`
+                    : `<div class="je-tie-pills" role="radiogroup" aria-label="${tx('tag_item_editor_position', { group: gname })}">${positions.map((p) => `<label class="je-tie-pill"><input type="radio" name="${uid}-${group}" value="${p}" data-tie-key="${group}-${p}" ${p === current ? 'checked' : ''} ${off}>${esc(slotLabel(draft.layout, p))}</label>`).join('')}</div>`;
                 const fixed = L.singleChipGroup(group);
                 const cap = fixed ? 1 : (draft.caps[group] ?? base.caps[group]);
                 const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
                 const stepper = fixed ? '' : `<div class="je-tie-cap" role="group" aria-label="${tx('tag_item_editor_cap_named', { group: gname })}">
                     <span>${tx('panel_settings_ui_tag_editor_show_up_to')}</span>
-                    <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
+                    <button type="button" data-tie-step="-1" data-tie-key="${group}-down" aria-label="${tx('tag_item_editor_cap_fewer', { group: gname })}" ${!on || stepCap(cap, -1, meta) === null ? 'disabled' : ''}>−</button>
                     <output aria-live="polite">${esc(capText)}</output>
-                    <button type="button" data-tie-step="1" data-tie-key="${group}-up" aria-label="${tx('tag_item_editor_cap_more', { group: gname })}" ${stepCap(cap, 1, meta) === null ? 'disabled' : ''}>+</button></div>`;
-                return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}">
-                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''}>${esc(gname)}</label>${groupOn(group) ? '' : `<small>${tx('tag_item_editor_group_off_for_you')}</small>`}</div>
-                    <div class="je-tie-where">${where}</div>${stepper}</li>`;
-            }).join('');
+                    <button type="button" data-tie-step="1" data-tie-key="${group}-up" aria-label="${tx('tag_item_editor_cap_more', { group: gname })}" ${!on || stepCap(cap, 1, meta) === null ? 'disabled' : ''}>+</button></div>`;
+                // Collapsed, a row says where the group goes and how many it shows; one row opens at a time.
+                const open = openGroup === group;
+                const summary = on ? (fixed ? slotLabel(draft.layout, slot)
+                    : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where: slotLabel(draft.layout, slot), cap: capText }))
+                    : JE.t('panel_settings_ui_tag_slot_off');
+                // The server-wide look's rows describe the draft; the admin's own switches are not the point there.
+                const offNote = tucked(group);
+                return `<li class="je-tie-group" data-group="${group}" data-on="${on ? 1 : 0}" data-open="${open ? 1 : 0}">
+                    <div class="je-tie-gname"><label class="je-tie-switch"><input type="checkbox" data-tie-on data-tie-key="${group}-on" ${on ? 'checked' : ''} aria-label="${tx('tag_item_editor_include_group', { group: gname })}"${offNote ? ` aria-describedby="${uid}HiddenHint"` : ''}>${esc(gname)}</label></div>
+                    <span class="je-tie-gsum">${esc(summary)}</span>
+                    <button type="button" class="je-tie-gopen" data-tie-open data-tie-key="${group}-open" aria-expanded="${open}" aria-controls="${uid}-${group}-detail" aria-label="${tx('tag_item_editor_group_edit', { group: gname })}" ${on ? '' : 'disabled'}>${tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+                    <div class="je-tie-detail" id="${uid}-${group}-detail" ${open && on ? '' : 'hidden'}><div class="je-tie-where">${where}</div>${stepper}</div></li>`;
+            };
+            const shown = order.filter((g) => GROUPS[g] && !tucked(g));
+            const hidden = order.filter((g) => GROUPS[g] && tucked(g));
+            groupsList.innerHTML = `<ul class="je-tie-groups">${shown.map(rowHtml).join('')}</ul>`
+                + (hidden.length ? `<details class="je-tie-hidden" data-tie-hidden ${hiddenOpen ? 'open' : ''}><summary class="je-tie-hidden-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${tx('tag_item_editor_hidden_groups', { n: hidden.length })}</summary>`
+                    + `<p class="je-tie-hint" id="${uid}HiddenHint">${tx('tag_item_editor_hidden_groups_hint')}</p><ul class="je-tie-groups">${hidden.map(rowHtml).join('')}</ul></details>` : '');
             if (!focusKey) return;
-            const usable = (el) => !!el && !/** @type {HTMLButtonElement} */ (el).disabled;
+            const usable = (el) => !!el && !/** @type {HTMLButtonElement} */ (el).disabled && !el.closest('[hidden]');
             let next = /** @type {HTMLElement|null} */ (groupsList.querySelector(`[data-tie-key="${focusKey}"]`));
             if (!usable(next)) {
                 const row = focusGroup ? groupsList.querySelector(`[data-group="${focusGroup}"]`) : null;
-                next = /** @type {HTMLElement|null} */ (row?.querySelector('[data-tie-step]:not([disabled])') || row?.querySelector('[data-tie-on]') || null);
+                // The row's other step button, else its Edit button, else its switch.
+                next = /** @type {HTMLElement|null} */ (['[data-tie-step]', '[data-tie-open]', '[data-tie-on]'].map((sel) => Array.from(row?.querySelectorAll(sel) || []).find(usable)).find(Boolean) || null);
             }
             (usable(next) ? next : dialog).focus({ preventScroll: true });
         };
 
+        /** The chosen layout in words, under the layout tiles. */
+        const describeLayout = () => {
+            const desc = dialog.querySelector(`#${uid}LayoutDesc`);
+            if (desc) desc.textContent = JE.t(`panel_settings_ui_tag_layout_${draft.layout}`);
+        };
         /** Put every control in step with the draft. */
         const sync = () => {
+            describeLayout();
             dialog.querySelectorAll(`input[name="${uid}Layout"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === draft.layout; });
             dialog.querySelectorAll(`input[name="${uid}Density"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === draft.density; });
             dialog.querySelectorAll(`input[name="${uid}Scope"]`).forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === scope; });
@@ -651,7 +800,8 @@
         };
         for (const [key, spec] of Object.entries(selectOptions)) {
             const select = /** @type {HTMLSelectElement} */ (dialog.querySelector(`[data-tie-select="${key}"]`));
-            select.innerHTML = `<option value="">${tx('tag_item_editor_same_as_default', { value: spec.label(spec.base) })}</option>`
+            // Inherited: the viewer's own value; for the server-wide look each user keeps theirs.
+            select.innerHTML = `<option value="">${serverMode ? tx('tag_item_editor_same_as_user') : tx('tag_item_editor_same_as_default', { value: spec.label(spec.base) })}</option>`
                 + spec.values.map((v) => `<option value="${v}">${esc(spec.label(v))}</option>`).join('');
             select.value = draft[key] || '';
             select.addEventListener('change', () => {
@@ -665,6 +815,7 @@
             const input = /** @type {HTMLInputElement} */ (e.target);
             if (input.name === `${uid}Layout`) {
                 draft.layout = input.value;
+                describeLayout();
                 renderGroups();
             } else if (input.name === `${uid}Density`) {
                 draft.density = input.value;
@@ -694,7 +845,17 @@
             saveError = '';
             schedule();
         });
+        groupsList.addEventListener('toggle', (e) => {
+            if (/** @type {HTMLElement} */ (e.target).matches?.('[data-tie-hidden]')) hiddenOpen = /** @type {HTMLDetailsElement} */ (e.target).open;
+        }, true);
         groupsList.addEventListener('click', (e) => {
+            const opener = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tie-open]'));
+            if (opener && !opener.disabled) {
+                const group = /** @type {HTMLElement} */ (opener.closest('[data-group]')).dataset.group || '';
+                openGroup = openGroup === group ? null : group;
+                renderGroups();
+                return;
+            }
             const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('[data-tie-step]'));
             if (!button || button.disabled) return;
             const group = /** @type {HTMLElement} */ (button.closest('[data-group]')).dataset.group || '';
@@ -710,8 +871,9 @@
         });
 
         // ── Closing, focus, saving ──
-        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'))
-            .filter((el) => !el.closest('[hidden]') && !(/** @type {HTMLInputElement} */ (el).type === 'radio' && !/** @type {HTMLInputElement} */ (el).checked && dialog.querySelector(`input[name="${/** @type {HTMLInputElement} */ (el).name}"]:checked`)));
+        // Tab order: disclosure rows included; nothing inside a closed disclosure, hidden, disabled or taken out of it.
+        const focusables = () => Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex="0"]'))
+            .filter((el) => !el.closest('[hidden]') && !(el.tagName !== 'SUMMARY' && el.closest('details:not([open])')) && /** @type {HTMLElement} */ (el).tabIndex >= 0 && !(/** @type {HTMLInputElement} */ (el).type === 'radio' && !/** @type {HTMLInputElement} */ (el).checked && dialog.querySelector(`input[name="${/** @type {HTMLInputElement} */ (el).name}"]:checked`)));
         const onFocusIn = (e) => {
             // Jellyfin's closing action sheet hands focus back to its button: keep it here.
             if (backdrop.isConnected && !backdrop.contains(/** @type {Node} */ (e.target))) dialog.focus({ preventScroll: true });
@@ -726,6 +888,7 @@
             document.removeEventListener('focusin', onFocusIn, true);
             window.removeEventListener('hashchange', onNavigate);
             interaction.dispose();
+            sideWatch?.disconnect();
             L.setPreviewLook(target, null);
             L.clearCard(target);
             backdrop.remove();
@@ -758,7 +921,6 @@
         document.addEventListener('focusin', onFocusIn, true);
         window.addEventListener('hashchange', onNavigate);
 
-        const saveButton = /** @type {HTMLButtonElement} */ (dialog.querySelector('[data-tie-save]'));
         saveButton.addEventListener('click', async () => {
             if (saveButton.disabled || !isCurrent()) return;
             const targetId = targetOf();
@@ -767,6 +929,11 @@
                 options.onSave?.(chosen, targetId);
                 finish();
                 return;
+            }
+            // "Lock & save for me": the edit is kept as this user's lock.
+            if (saveLabelKey() === 'tag_item_editor_lock_save') {
+                keep = true;
+                if (keepBox) keepBox.checked = true;
             }
             saveButton.disabled = true;
             statusEl.textContent = JE.t('hidden_content_admin_loading');

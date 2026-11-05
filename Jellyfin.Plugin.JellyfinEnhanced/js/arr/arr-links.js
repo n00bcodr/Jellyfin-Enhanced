@@ -509,7 +509,7 @@
                             if (size) tipParts.push(size);
                             if (m.rootFolderPath) tipParts.push(m.rootFolderPath);
                             const tip = tipParts.join('\n');
-                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(document.createTextNode(JE.pluginConfig.ShowArrLinksAsText ? ', ' : ' '));
                             anchorElement.appendChild(createLinkButton('Sonarr', url, 'arr-link-sonarr', status, badge, tip));
                         } else if (validMatches.length > 1) {
                             const items = validMatches.map(m => {
@@ -523,7 +523,7 @@
                                     status, badge, size, tip
                                 };
                             });
-                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(document.createTextNode(JE.pluginConfig.ShowArrLinksAsText ? ', ' : ' '));
                             anchorElement.appendChild(createDropdown('Sonarr', 'arr-link-sonarr', items));
                         }
                     }
@@ -543,7 +543,7 @@
                             // Tooltip keeps the "Downloaded/Missing" detail regardless, so info
                             // isn't lost when the visible badge is suppressed.
                             const tip = [m.name, badgeValue, size, m.rootFolderPath].filter(Boolean).join('\n');
-                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(document.createTextNode(JE.pluginConfig.ShowArrLinksAsText ? ', ' : ' '));
                             anchorElement.appendChild(createLinkButton('Radarr', url, 'arr-link-radarr', status, badge, tip));
                         } else if (validMatches.length > 1) {
                             const items = validMatches.map(m => {
@@ -557,18 +557,18 @@
                                     status, badge, size, tip
                                 };
                             });
-                            anchorElement.appendChild(document.createTextNode(' '));
+                            anchorElement.appendChild(document.createTextNode(JE.pluginConfig.ShowArrLinksAsText ? ', ' : ' '));
                             anchorElement.appendChild(createDropdown('Radarr', 'arr-link-radarr', items));
                         }
                     }
 
                     if (item.Type === 'Series' && bazarrUrl) {
                         const url = `${bazarrUrl}/series/`;
-                        anchorElement.appendChild(document.createTextNode(' '));
+                        anchorElement.appendChild(document.createTextNode(JE.pluginConfig.ShowArrLinksAsText ? ', ' : ' '));
                         anchorElement.appendChild(createLinkButton("Bazarr", url, "arr-link-bazarr"));
                     } else if (item.Type === 'Movie' && bazarrUrl) {
                         const url = `${bazarrUrl}/movies/`;
-                        anchorElement.appendChild(document.createTextNode(' '));
+                        anchorElement.appendChild(document.createTextNode(JE.pluginConfig.ShowArrLinksAsText ? ', ' : ' '));
                         anchorElement.appendChild(createLinkButton("Bazarr", url, "arr-link-bazarr"));
                     }
                 } finally {

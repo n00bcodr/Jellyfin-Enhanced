@@ -388,7 +388,7 @@ test('the preview spotlights the group being edited and the phone strip follows 
   assert.equal(preview.dataset.spot, undefined);
   h.click(h.$('.je-tge-row[data-group="quality"] .je-tge-expand'));
   assert.equal(preview.dataset.spot, 'quality');
-  assert.match(h.$('.je-mth-strip-chips').textContent, /^4K · Dolby Vision/, 'the edited group\'s chips lead');
+  assert.match(h.$('.je-mth-strip-chips').textContent, /^panel_media_tags_preview_title_movie · 4K · Dolby Vision/, 'the sample, then the edited group\'s chips');
   h.click(h.tab('rules'));
   assert.match(stripText(), /panel_media_tags_preview_title_episode/);
 
@@ -831,4 +831,22 @@ test('audio detail languages stay in UI Settings after file sizes, outside Media
   assert.equal(link.isConnected, false, 'the existing listener removes detail-page language links immediately');
   await h.change(toggle, true);
   assert.equal(h.saved().showAudioLanguages, true);
+});
+
+test('reordering groups or categories is a mode of its own (the order buttons show in it on a phone)', async t => {
+  const h = setup(t);
+  await h.open();
+  h.click(h.tab('groups'));
+  const root = h.$('#jeTagGroupEditor');
+  const groups = h.$('[data-tge-reorder="groups"]');
+  assert.equal(groups.getAttribute('aria-pressed'), 'false');
+  h.click(groups);
+  assert.ok(root.classList.contains('je-tge--reorder-groups'));
+  assert.equal(groups.getAttribute('aria-pressed'), 'true');
+  assert.equal(groups.lastElementChild.textContent, 'panel_settings_ui_tag_editor_reorder_done');
+  h.click(groups);
+  assert.ok(!root.classList.contains('je-tge--reorder-groups'), 'Finish reordering leaves the mode');
+  h.click(h.$('[data-tge-reorder="cats"]'));
+  assert.ok(root.classList.contains('je-tge--reorder-cats'));
+  assert.ok(!root.classList.contains('je-tge--reorder-groups'), 'the two modes are separate');
 });

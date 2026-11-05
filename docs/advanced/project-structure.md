@@ -337,7 +337,7 @@ Administrator settings under **\*arr** → **Shoko**:
 | `peopletags.js` | Cast age, birthplace flags and deceased indicators. |
 | `userreviewtags.js` | Average of rated reviews visible to the current viewer, composed into the rating group through the layout controller. Uses tag-cache averages or batched `/JellyfinEnhanced/reviews/ratings` requests. |
 | `tag-cache-store.js` | IndexedDB snapshot scoped by server and user; memory-only fallback when unavailable. A snapshot from another entry schema is not restored. |
-| `tag-item-editor.js` | The per-item Media Tags editor: a dialog with the item's poster and real tags in the draft look (through `setPreviewLook`), layout, density, each group's place and limit, size, gap and edge spacing, **Keep this look** (the item's lock) and, for administrators, **For everyone** (the server-wide item look); also the admin page's editor for those looks. |
+| `tag-item-editor.js` | The per-item Media Tags editor: a dialog with the item's poster and real tags in the draft look (through `setPreviewLook`), layout, density, each group's place and limit, size, gap and edge spacing, **Lock this look for me** (the item's lock) and, for administrators, **For everyone** (the server-wide item look); also the admin page's editor for those looks. |
 | `tag-item-menu.js` | The **Media Tags** row in Jellyfin's item ⋮ menu (detail page and cards): captures the item on the ⋮ press and appends a native-markup row to the open action sheet. |
 | `tag-pipeline.js` | Restores/downloads the bulk server cache, applies `?since=` deltas and scans cards in idle slices. |
 | `tag-layout-styles.js` | The one stylesheet for every tag layout, keyed off `.je-tag-host[data-je-layout]` and `.je-tag-slot[data-je-slot]`. |
