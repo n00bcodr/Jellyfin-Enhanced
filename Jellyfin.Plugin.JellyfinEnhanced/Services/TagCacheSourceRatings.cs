@@ -151,6 +151,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             return id != null && service.NeedsFetch(owner is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", id);
         }
 
+        /// <summary>
+        /// When a browser should ask again for <paramref name="item"/>'s named-source scores (Unix ms): a
+        /// minute from now while they are still being fetched or are due, else when MDBList's answer for the
+        /// title stops being current (its found/missing lifetime, or the retry time after a failure, with any
+        /// last good scores kept meanwhile). Null when no named source is in use or the title has no TMDB id.
+        /// </summary>
+        public long? SourceRatingsRefreshAt(BaseItem item)
+        {
+            var service = _mdblistService;
+            if (service == null || !HasSourceRatingDemand()
+                || string.IsNullOrWhiteSpace(JellyfinEnhanced.Instance?.Configuration.MdblistApiKey)) return null;
+            var owner = RatingOwner(item);
+            var id = owner == null ? null : RatingTmdbId(owner);
+            if (id == null) return null;
+            var type = owner is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie";
+            var soon = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (long)PendingRatingRetry.TotalMilliseconds;
+            return service.NeedsFetch(type, id) ? soon : Math.Max(service.RefreshAtUnixMs(type, id) ?? soon, soon);
+        }
+
+        /// <summary>How soon a browser asks again for scores still on their way.</summary>
+        internal static readonly TimeSpan PendingRatingRetry = TimeSpan.FromMinutes(1);
+
         private (string MediaType, string Id)[] RatingTitles(IEnumerable<BaseItem> items) => items.Select(RatingOwner).OfType<BaseItem>()
             .Select(item => (MediaType: item is MediaBrowser.Controller.Entities.TV.Series ? "tv" : "movie", Id: RatingTmdbId(item)))
             .Where(title => title.Id != null)

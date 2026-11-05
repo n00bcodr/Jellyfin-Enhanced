@@ -9935,6 +9935,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Ratings = _tagCacheService.GetSourceRatings(item),
                     // Scores still on their way from MDBList: the browser re-asks soon instead of keeping this answer.
                     RatingsPending = _tagCacheService.SourceRatingsPending(item) ? true : (bool?)null,
+                    // When these scores stop being current (Unix ms): a browser keeps this answer until then, not its own cache lifetime.
+                    RatingsRefreshAt = _tagCacheService.SourceRatingsRefreshAt(item),
                     Awards = _tagCacheService.GetAwards(item),
                     Logos = _tagCacheService.GetLogos(item),
                     OfficialRating = ResolveTagDataOfficialRating(item),

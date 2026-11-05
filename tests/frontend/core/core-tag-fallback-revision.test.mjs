@@ -110,3 +110,19 @@ test('a rating answer given while the server was still fetching scores is asked 
   const again = await page(t, group, store, 'none', { CommunityRating: 8.1 }, 'none', { now: start + 10 * 60000 });
   assert.equal(again.calls.length, 0); assert.ok(again.chips() > 0);
 });
+
+test('a rating answer lasts only until the server\'s refresh time, so a failed lookup recovers after its retry', async t => {
+  const group = cases.find(c => c[0] === 'rating'), store = new Map(), start = Date.UTC(2026, 10, 5, 12), hour = 3600000;
+  // The lookup failed: no scores, and the server will try again in an hour.
+  const failed = await page(t, group, store, 'none', { RatingsRefreshAt: start + hour }, 'none', { now: start });
+  assert.equal(failed.calls.length, 1); assert.equal(failed.chips(), 0);
+  const withinRetry = await page(t, group, store, 'none', { CommunityRating: 8.1 }, 'none', { now: start + 30 * 60000 });
+  assert.equal(withinRetry.calls.length, 0, 'no request storm during the provider retry');
+  const recovered = await page(t, group, store, 'none', { CommunityRating: 8.1, RatingsRefreshAt: start + 2 * hour + 7 * 24 * hour }, 'none', { now: start + 2 * hour });
+  assert.equal(recovered.calls.length, 1); assert.ok(recovered.chips() > 0);
+  // Fresh scores last their refresh time, then are asked for again.
+  const week = await page(t, group, store, 'none', { CommunityRating: 8.1 }, 'none', { now: start + 5 * 24 * hour });
+  assert.equal(week.calls.length, 0);
+  const due = await page(t, group, store, 'none', { CommunityRating: 7.9 }, 'none', { now: start + 10 * 24 * hour });
+  assert.equal(due.calls.length, 1);
+});

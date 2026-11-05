@@ -12,6 +12,7 @@
     const tagClass = 'rating-tag';
     // How long a batch answer given while the server was still fetching named-source scores counts as a hit.
     const PENDING_RETRY_MS = 60 * 1000;
+    // A batch answer is never kept past the time the server gave for asking again (RatingsRefreshAt).
 
     /**
      * Normalize a raw critic rating to a 0-100 integer percentage.
@@ -167,8 +168,9 @@
     function getCachedEntry(ctx, itemId) {
         const entry = ctx.getPersistent(itemId) ?? ctx.hot?.get(itemId);
         if (!entry) return null;
-        // An answer given while the server was still fetching the scores counts only briefly.
-        if (typeof entry === 'object' && Number.isFinite(entry.pendingUntil) && Date.now() >= entry.pendingUntil) return null;
+        // An answer counts only until the server said to ask again (scores still on their way, a retry after
+        // a failed refresh, or the end of MDBList's lifetime for the scores it has).
+        if (typeof entry === 'object' && Number.isFinite(entry.refreshAt) && Date.now() >= entry.refreshAt) return null;
         if (typeof entry === 'string' || typeof entry === 'number') {
             return { tmdb: String(entry), critic: null };
         }
@@ -353,9 +355,11 @@
                 const tmdbId = item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb || null;
                 const seriesTmdbId = extras?.parentSeries?.ProviderIds?.Tmdb || extras?.parentSeries?.ProviderIds?.tmdb || null;
                 const tmdbMediaType = item.Type === 'Series' ? 'tv' : 'movie';
-                // The server was still fetching the named-source scores: keep this answer only for a minute.
-                const pending = item.RatingsPending === true ? { pendingUntil: Date.now() + PENDING_RETRY_MS } : {};
-                setCachedEntry(ctx, itemId, { ...rating, ...pending, tmdbId, seriesTmdbId, tmdbMediaType,
+                // Named-source scores still on their way are asked for again in a minute; otherwise this answer
+                // lasts until the server's refresh time (never longer than the Local Storage lifetime).
+                const refreshAt = item.RatingsPending === true ? Date.now() + PENDING_RETRY_MS
+                    : Number.isFinite(item.RatingsRefreshAt) ? Math.max(item.RatingsRefreshAt, Date.now() + PENDING_RETRY_MS) : null;
+                setCachedEntry(ctx, itemId, { ...rating, ...(refreshAt !== null ? { refreshAt } : {}), tmdbId, seriesTmdbId, tmdbMediaType,
                     seasonNumber: item.IndexNumber ?? null,
                     episodeNumber: item.Type === 'Episode' ? item.IndexNumber : null,
                     parentSeasonNumber: item.Type === 'Episode' ? item.ParentIndexNumber : null,

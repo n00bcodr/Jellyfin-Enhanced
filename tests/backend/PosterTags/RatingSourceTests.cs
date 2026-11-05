@@ -1010,4 +1010,41 @@ public class RatingSourceTests
         cache.OnRatingSourceSettingsChanged();
         Assert.False(cache.SourceRatingsPending(new Movie { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = "999" } }));
     }
+
+    [Fact]
+    public void ABrowserIsToldToAskAgainWhenAnAnswerStopsBeingCurrent()
+    {
+        using var f = new ApiPluginFixture();
+        f.Plugin.Configuration.MdblistApiKey = "fixture-key";
+        f.Plugin.Configuration.RatingTagsEnabled = true;
+        f.Plugin.Configuration.RatingTagsSources = ["imdb"];
+        using var transport = new IntegrationTransport((_, _) => throw new InvalidOperationException("no provider call expected"));
+        using var service = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var library = new Mock<ILibraryManager>();
+        using var cache = new TagCacheService(library.Object, f.Core.Paths.Object, Mock.Of<ILocalizationManager>(), f.Core.Logger, new MatroskaLanguageCache(f.Core.Paths.Object, f.Core.Logger), service);
+        Movie Title(string id) => new() { Id = Guid.NewGuid(), ProviderIds = new() { ["Tmdb"] = id } };
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long Hours(double h) => (long)TimeSpan.FromHours(h).TotalMilliseconds;
+        void Near(long expected, long? actual) => Assert.InRange(actual!.Value, expected - 5000, expected + 5000);
+        // Never fetched: a minute from now.
+        Near(now + 60000, cache.SourceRatingsRefreshAt(Title("1")));
+        // A failed lookup with nothing kept: retried after an hour, and the browser asks again then.
+        service.MergeMediaBatchIntoCache("movie", ["2"], new Dictionary<string, MdblistCacheEntry> { ["2"] = new() { Found = false, Confirmed = false, FetchedAtUnixMs = now } });
+        Assert.False(cache.SourceRatingsPending(Title("2")));
+        Near(now + Hours(1), cache.SourceRatingsRefreshAt(Title("2")));
+        // Scores kept through a failed refresh: their retry time, not their seven-day lifetime.
+        var stale = new MdblistCacheEntry { Found = true, Confirmed = true, FetchedAtUnixMs = now - Hours(24 * 8) };
+        service.MergeMediaBatchIntoCache("movie", ["3"], new Dictionary<string, MdblistCacheEntry> { ["3"] = MdblistService.KeepLastGood(stale, new MdblistCacheEntry { Found = false, Confirmed = false, FetchedAtUnixMs = now }) });
+        Near(now + Hours(1), cache.SourceRatingsRefreshAt(Title("3")));
+        // Fresh scores last their seven days; a confirmed miss its three.
+        service.MergeMediaBatchIntoCache("movie", ["4"], new Dictionary<string, MdblistCacheEntry> { ["4"] = new() { Found = true, Confirmed = true, FetchedAtUnixMs = now } });
+        Near(now + Hours(24 * 7), cache.SourceRatingsRefreshAt(Title("4")));
+        service.MergeMediaBatchIntoCache("movie", ["5"], new Dictionary<string, MdblistCacheEntry> { ["5"] = new() { Found = false, Confirmed = true, FetchedAtUnixMs = now } });
+        Near(now + Hours(24 * 3), cache.SourceRatingsRefreshAt(Title("5")));
+        // No TMDB id, or nobody names a source: nothing to refresh.
+        Assert.Null(cache.SourceRatingsRefreshAt(new Movie { Id = Guid.NewGuid() }));
+        f.Plugin.Configuration.RatingTagsSources = ["community"];
+        cache.OnRatingSourceSettingsChanged();
+        Assert.Null(cache.SourceRatingsRefreshAt(Title("4")));
+    }
 }

@@ -168,6 +168,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public MdblistCacheEntry? GetCachedEntry(string mediaType, string tmdbId) =>
             _cache.TryGetValue(CacheKey(mediaType, tmdbId), out var entry) ? entry : null;
 
+        /// <summary>
+        /// When this title's cached answer stops being current (Unix ms): its retry time after a failed
+        /// refresh, else its fetch time plus the found, confirmed-missing or failure lifetime, the moment
+        /// <see cref="NeedsFetch"/> turns true. Null when nothing is cached for it.
+        /// </summary>
+        public long? RefreshAtUnixMs(string mediaType, string tmdbId)
+        {
+            if (!_cache.TryGetValue(CacheKey(mediaType, tmdbId), out var entry)) return null;
+            if (entry.RetryAfterUnixMs is { } retryAfter) return retryAfter;
+            var ttl = entry.Found ? PositiveTtl : entry.Confirmed ? NegativeTtl : RetryTtl;
+            return entry.FetchedAtUnixMs + (long)ttl.TotalMilliseconds;
+        }
+
         /// <summary>True when this title has no cached entry yet, or its cached entry
         /// is stale enough to be worth a real MDBList lookup (see IsExpired). Used by
         /// MdblistRatingsFetchTask to build its candidate list, purely about cache
