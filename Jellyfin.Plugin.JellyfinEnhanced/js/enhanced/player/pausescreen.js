@@ -33,6 +33,7 @@
           this.imgProbeCache = new Map();
           this.itemCache = new Map();
           this.seriesGenreCache = new Map();
+          this.trimCache = new Map();
           this.fetchAbort = null;
           this.observer = null;
           this.prevFocused = null;
@@ -40,6 +41,7 @@
           // Pause screen delay state
           this.pauseScreenDelayMs = (JE.currentSettings.pauseScreenDelaySeconds ?? 5) * 1000;
           this.pauseScreenTimer = null;
+          this.endsAtTimer = null;
           this.lastUserInteractionAt = Date.now();
           this.interactionListeners = null;
           this._dismissedThisPause = false;
@@ -53,7 +55,6 @@
           this.overlayDisc = null;
           this.overlayPoster = null;
           this.overlayMain = null;
-          this.overlayKicker = null;
           this.overlayTitle = null;
           this.overlaySubtitle = null;
           this.overlayGenres = null;
@@ -86,6 +87,8 @@
             if (this.destroyed) return;
             this.clearState();
             for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);
+            for (const [src, url] of this.trimCache) if (url !== src) URL.revokeObjectURL(url);
+            this.trimCache.clear();
             this.imgBlobCache.clear();
             this.imgProbeCache.clear();
             this.itemCache.clear();
@@ -136,21 +139,24 @@
           style.textContent = `
             :root {
               --pause-screen-overlay-bg: rgba(10, 10, 14, .6);
-              --pause-screen-blur: 10px;
+              --pause-screen-blur: 8px;
               --pause-screen-accent: var(--theme-primary-color, var(--primary-accent-color, #00a4dc));
               --pause-screen-gutter-x: clamp(24px, 6vw, 110px);
               --pause-screen-gutter-y: clamp(20px, 5vh, 64px);
               --pause-screen-logo-max-w: min(46vw, 640px);
               --pause-screen-logo-max-h: 22vh;
-              --pause-screen-text-size: clamp(14px, 1.05vw, 19px);
-              --pause-screen-plot-font: clamp(15px, 1.15vw, 20px);
+              --pause-screen-text-size: clamp(14px, 1.2vw, 24px);
+              --pause-screen-meta-size: clamp(14px, 1.2vw, 24px);
+              --pause-screen-hint-size: clamp(14px, 1.1vw, 21px);
+              --pause-screen-plot-font: clamp(15px, 1.3vw, 26px);
               --pause-screen-plot-lines: 4;
-              --pause-screen-plot-max-w: 62ch;
+              --pause-screen-plot-max-w: 56ch;
               --pause-screen-progress-height: 4px;
               --pause-screen-progress-radius: 999px;
-              --pause-screen-disc-w: clamp(220px, 22vw, 420px);
+              --pause-screen-disc-w: clamp(220px, 24vw, 460px);
               --pause-screen-disc-rot-sec: 90s;
-              --pause-screen-poster-w: clamp(170px, 17vw, 320px);
+              --pause-screen-poster-w: clamp(170px, 20vw, 400px);
+              --pause-screen-still-w: clamp(240px, 26vw, 500px);
             }
 
             #pause-screen-overlay {
@@ -175,7 +181,8 @@
                 visibility: visible !important;
                 background: transparent !important;
                 width: 10vw !important;
-
+                transform: none !important;
+                top: 0 !important;
             }
             .pause-screen-active .skinHeader.osdHeader .headerRight {
                 display: none !important;
@@ -203,7 +210,7 @@
               position: absolute; inset: -4%;
               background-position: center;
               background-size: cover;
-              filter: blur(var(--pause-screen-blur)) saturate(1.2);
+              filter: blur(var(--pause-screen-blur));
               opacity: .78;
               pointer-events: none;
             }
@@ -231,11 +238,6 @@
               max-width: min(100%, 60vw);
               animation: pause-screen-rise .4s ease-out;
             }
-            #pause-screen-kicker {
-              font-size: calc(var(--pause-screen-text-size) * .85);
-              letter-spacing: .12em; text-transform: uppercase;
-              font-weight: 600; opacity: .72;
-            }
             #pause-screen-logo {
               display: block;
               max-width: var(--pause-screen-logo-max-w);
@@ -254,7 +256,7 @@
             }
             .pause-screen-main.has-logo #pause-screen-title { display: none; }
             #pause-screen-subtitle {
-              font-size: clamp(17px, 1.5vw, 28px);
+              font-size: clamp(18px, 1.75vw, 34px);
               font-weight: 600; line-height: 1.25;
               text-shadow: 0 1px 12px rgba(0,0,0,.4);
             }
@@ -268,15 +270,16 @@
             #pause-screen-details .mediaInfoOfficialRating { font-size: .85em; margin: 0; }
             #pause-screen-details .pause-screen-score { display: inline-flex; align-items: center; gap: .2em; }
             #pause-screen-details .pause-screen-score .material-icons { font-size: 1.15em; color: #f2b01e; }
+            #pause-screen-details .pause-screen-date-short { display: none; }
             #pause-screen-genres {
               font-size: var(--pause-screen-text-size);
-              color: rgba(255,255,255,.62);
+              color: #d0d0d0;
               margin-top: calc(-1 * clamp(4px, .8vh, 10px));
             }
             #pause-screen-plot {
               font-size: var(--pause-screen-plot-font);
-              line-height: 1.55;
-              color: rgba(255,255,255,.86);
+              line-height: 1.5;
+              color: #f0f0f0;
               max-width: var(--pause-screen-plot-max-w);
               display: -webkit-box; -webkit-box-orient: vertical;
               -webkit-line-clamp: var(--pause-screen-plot-lines);
@@ -293,6 +296,7 @@
               animation: pause-screen-spin var(--pause-screen-disc-rot-sec) linear infinite;
               filter: drop-shadow(0 18px 40px rgba(0,0,0,.55));
             }
+            #pause-screen-poster.is-still { width: var(--pause-screen-still-w); aspect-ratio: 16 / 9; }
             #pause-screen-poster {
               width: var(--pause-screen-poster-w);
               aspect-ratio: 2 / 3;
@@ -327,47 +331,60 @@
             }
             #pause-screen-progress-meta {
               margin-top: .75em;
-              display: flex; justify-content: space-between; align-items: baseline;
+              display: flex; justify-content: space-between; align-items: center;
               gap: .5em 2em; flex-wrap: wrap;
-              font-size: calc(var(--pause-screen-text-size) * .92);
-              color: rgba(255,255,255,.82);
+              font-size: var(--pause-screen-meta-size);
+              color: rgba(255,255,255,.88);
               font-variant-numeric: tabular-nums;
             }
             #pause-screen-progress-meta .pause-screen-meta-group { display: inline-flex; align-items: center; gap: .6em; flex-wrap: wrap; }
             .pause-screen-status { display: inline-flex; align-items: center; gap: .25em; font-weight: 600; color: #fff; }
-            .pause-screen-status .material-icons { font-size: 1.3em; }
+            .pause-screen-status .material-icons { font-size: 1.5em; }
+            #pause-screen-progress-meta .progress-percentage { display: none; }
             #pause-screen-progress-meta .progress-time:not(:empty)::before,
             #pause-screen-progress-meta .progress-percentage:not(:empty)::before,
             #pause-screen-progress-meta .progress-ends-at:not(:empty)::before { content: '·'; opacity: .5; margin-right: .6em; }
             .pause-screen-hint {
-              margin-top: .45em;
-              font-size: calc(var(--pause-screen-text-size) * .85);
-              color: rgba(255,255,255,.55);
-              text-align: right;
+              margin-top: .5em;
+              width: fit-content;
+              font-size: var(--pause-screen-hint-size);
+              line-height: 1.4;
+              color: rgba(255,255,255,.85);
+              border-radius: 4px;
+            }
+            #pause-screen-content:focus-visible .pause-screen-hint {
+              outline: 2px solid #fff;
+              outline-offset: 6px;
             }
             #pause-screen-close-btn {
               position: absolute;
-              top: 20px;
-              right: 24px;
-              width: 44px; height: 44px;
-              padding: 0;
-              background: rgba(20,20,24,.55);
-              border: 1px solid rgba(255,255,255,.22);
+              top: 2px;
+              right: 16px;
+              min-width: 44px; height: 44px;
+              padding: 0 10px;
+              background: transparent;
+              border: 1px solid transparent;
               color: #fff;
-              border-radius: 50%;
+              border-radius: 22px;
               display: flex;
               align-items: center;
               justify-content: center;
+              gap: 4px;
+              font: inherit;
+              font-size: 15px;
               cursor: pointer;
               z-index: 2;
               transition: background 0.2s, border-color .2s;
             }
             #pause-screen-close-btn .material-icons { font-size: 24px; }
+            #pause-screen-close-btn .pause-screen-close-label { display: none; padding-right: 4px; }
             #pause-screen-close-btn:hover,
             #pause-screen-close-btn:focus-visible {
-              background: rgba(255,255,255,.18);
-              border-color: rgba(255,255,255,.5);
+              background: rgba(20,20,24,.6);
+              border-color: rgba(255,255,255,.35);
             }
+            #pause-screen-close-btn:hover .pause-screen-close-label,
+            #pause-screen-close-btn:focus-visible .pause-screen-close-label { display: inline; }
             #pause-screen-close-btn:focus-visible {
               outline: 2px solid #fff;
               outline-offset: 2px;
@@ -385,12 +402,20 @@
                 text-align: left !important;
             }
 
-            /* Narrow landscape (tablets, phones on their side): no room for the art column */
+            /* Large screens: thicker track for distance viewing */
+            @media (min-width: 1200px) {
+              :root { --pause-screen-progress-height: 6px; }
+            }
+
+            /* Narrow landscape (tablets, phones on their side): no room for the art column, text spans the width */
             @media (max-width: 1000px) {
               .pause-screen-layout { grid-template-columns: minmax(0, 1fr); }
               .pause-screen-art { display: none; }
               .pause-screen-main { max-width: 100%; }
               :root { --pause-screen-logo-max-w: min(60vw, 520px); }
+              .pause-screen-scrim {
+                background: linear-gradient(180deg, rgba(8,9,13,.55) 0%, rgba(8,9,13,.70) 20%, rgba(8,9,13,.70) 75%, rgba(8,9,13,.92) 100%);
+              }
             }
 
             /* Portrait phone: one column, left-aligned, footer pinned */
@@ -401,15 +426,18 @@
                 --pause-screen-logo-max-w: 78vw;
                 --pause-screen-logo-max-h: 18vh;
                 --pause-screen-text-size: 14px;
+                --pause-screen-meta-size: 14px;
+                --pause-screen-hint-size: 14px;
                 --pause-screen-plot-font: 15px;
-                --pause-screen-plot-lines: 6;
+                --pause-screen-plot-lines: 4;
               }
-              .pause-screen-layout { padding-top: 76px; padding-bottom: 150px; align-items: center; }
+              .pause-screen-layout { padding-top: 76px; padding-bottom: 176px; align-items: end; }
               #pause-screen-title { font-size: clamp(28px, 8vw, 40px); }
               #pause-screen-subtitle { font-size: 18px; }
+              #pause-screen-details .pause-screen-date-long { display: none; }
+              #pause-screen-details .pause-screen-date-short { display: inline; }
               #pause-screen-progress-meta { flex-direction: column; align-items: flex-start; gap: .35em; }
-              .pause-screen-hint { text-align: left; }
-              #pause-screen-close-btn { top: 16px; right: 16px; }
+              #pause-screen-close-btn { top: 4px; right: 8px; }
             }
 
             /* Phone landscape: short viewport */
@@ -419,13 +447,18 @@
                 --pause-screen-logo-max-h: 15vh;
                 --pause-screen-plot-lines: 2;
                 --pause-screen-text-size: 13px;
+                --pause-screen-meta-size: 14px;
+                --pause-screen-hint-size: 14px;
                 --pause-screen-plot-font: 14px;
               }
-              .pause-screen-layout { padding-top: 56px; padding-bottom: 92px; }
+              .pause-screen-layout { padding-top: 56px; padding-bottom: 108px; }
               .pause-screen-main { gap: 8px; }
               #pause-screen-subtitle { font-size: 16px; }
+              #pause-screen-details .pause-screen-date-long { display: none; }
+              #pause-screen-details .pause-screen-date-short { display: inline; }
               #pause-screen-progress-meta { margin-top: .4em; }
-              .pause-screen-hint { display: none; }
+              #pause-screen-progress-meta .progress-ends-at { display: none; }
+              .pause-screen-hint { margin-top: .3em; }
             }
 
             /* Reduced motion: no spin, no fade */
@@ -436,7 +469,7 @@
 
             /* Hide absent images and empty text slots */
             #pause-screen-logo:not([src]), #pause-screen-disc:not([src]), #pause-screen-poster:not([src]) { display: none; }
-            #pause-screen-kicker:empty, #pause-screen-title:empty, #pause-screen-subtitle:empty, #pause-screen-genres:empty, .pause-screen-hint:empty { display: none; }
+            #pause-screen-title:empty, #pause-screen-subtitle:empty, #pause-screen-genres:empty, .pause-screen-hint:empty { display: none; }
 
           `;
           document.head.appendChild(style);
@@ -479,9 +512,6 @@
           art.className = "pause-screen-art";
 
           // UI nodes
-          this.overlayKicker = document.createElement("div");
-          this.overlayKicker.id = "pause-screen-kicker";
-
           this.overlayLogo = document.createElement("img");
           this.overlayLogo.id = "pause-screen-logo";
           this.overlayLogo.alt = "";
@@ -523,6 +553,7 @@
           this.progressBar.setAttribute("role", "progressbar");
           this.progressBar.setAttribute("aria-valuemin", "0");
           this.progressBar.setAttribute("aria-valuemax", "100");
+          this.progressBar.setAttribute("aria-label", JE.t('pausescreen_progress_label'));
           const fill = document.createElement("span");
           this.progressBar.appendChild(fill);
           this.progressMeta = document.createElement("div");
@@ -541,6 +572,8 @@
           `;
           this.progressHint = document.createElement("div");
           this.progressHint.className = "pause-screen-hint";
+          this.progressHint.id = "pause-screen-hint";
+          this.overlay.setAttribute("aria-describedby", "pause-screen-hint");
           this.progressWrap.appendChild(this.progressBar);
           this.progressWrap.appendChild(this.progressMeta);
           this.progressWrap.appendChild(this.progressHint);
@@ -551,14 +584,13 @@
           closeButton.type = "button";
           closeButton.setAttribute("aria-label", JE.t('pausescreen_dismiss'));
           closeButton.title = JE.t('pausescreen_dismiss');
-          closeButton.innerHTML = '<span class="material-icons" aria-hidden="true">close</span>';
+          closeButton.innerHTML = `<span class="material-icons" aria-hidden="true">close</span><span class="pause-screen-close-label" aria-hidden="true">${JE.core.ui.escapeHtml(JE.t('pausescreen_hide'))}</span>`;
           closeButton.onclick = () => {
               this.hideOverlay(true);
           };
           this.closeButton = closeButton;
 
           // Assemble
-          this.overlayMain.appendChild(this.overlayKicker);
           this.overlayMain.appendChild(this.overlayLogo);
           this.overlayMain.appendChild(this.overlayTitle);
           this.overlayMain.appendChild(this.overlaySubtitle);
@@ -648,6 +680,11 @@
               if (e.code === 'Space' || e.code === 'Enter') {
                 e.preventDefault();
                 e.stopPropagation(); // stop Jellyfin binding
+                if (document.activeElement === this.closeButton) {
+                  // The focused × keeps its own meaning: hide the details, stay paused.
+                  this.hideOverlay(true);
+                  return;
+                }
                 this.hideOverlay();
                 if (this.currentVideo && this.currentVideo.paused) {
                     this.currentVideo.play().catch(err => console.warn("🪼 Jellyfin Enhanced: Play() blocked:", err));
@@ -902,13 +939,30 @@
                 this.overlayDisc.style.animation = '';
             }
             this.progressHint.textContent = this.resumeHint();
+            // "Ends at" is relative to now: recompute when the overlay shows and keep it honest while it stays up.
+            this.updateProgressStatic();
+            if (this.endsAtTimer) clearInterval(this.endsAtTimer);
+            this.endsAtTimer = setInterval(() => this.updateProgressStatic(), 60000);
             this.prevFocused = document.activeElement;
             document.documentElement.classList.add('pause-screen-active');
             this.overlay.setAttribute('aria-hidden', 'false');
+            this.alignCloseButton();
             this.overlayContent.focus();
             }
 
+        /** Puts the × on the same line as Jellyfin's back arrow, wherever the player's header lays it out. */
+        alignCloseButton() {
+          const back = document.querySelector('.skinHeader.osdHeader .headerBackButton, .skinHeader.osdHeader .videoOsd-appBar > button:first-child');
+          const rect = back?.getBoundingClientRect?.();
+          if (rect && rect.height > 0) {
+            this.closeButton.style.top = `${Math.max(0, Math.round(rect.top + rect.height / 2 - 22))}px`;
+          } else {
+            this.closeButton.style.top = '';
+          }
+        }
+
         hideOverlay(dismissed = false) {
+            if (this.endsAtTimer) { clearInterval(this.endsAtTimer); this.endsAtTimer = null; }
             document.documentElement.classList.remove('pause-screen-active');
             this.overlay.setAttribute('aria-hidden', 'true');
             if (dismissed) {
@@ -921,7 +975,6 @@
         clearDisplayData() {
           this.overlayPlot.textContent = "";
           this.overlayDetails.innerHTML = "";
-          this.overlayKicker.textContent = "";
           this.overlayTitle.textContent = "";
           this.overlaySubtitle.textContent = "";
           this.overlayGenres.textContent = "";
@@ -999,16 +1052,22 @@
             this.firstAvailableBlobURL(discUrls),
             this.firstAvailableBlobURL(backdropUrls)
           ]);
-          // The poster stands in for the disc, so only look for it when there is no disc art.
-          const posterURL = discURL ? null : await this.firstAvailableBlobURL(this.getPosterUrls(item, domain, itemId));
+          // Art column: disc art first; for an episode its own still (16:9), then a poster.
+          let stillURL = null, posterURL = null;
+          if (!discURL) {
+            if (isEpisode && item.ImageTags?.Primary) stillURL = await this.firstAvailableBlobURL([`${domain}/Items/${itemId}/Images/Primary?maxWidth=1000&tag=${item.ImageTags.Primary}`]);
+            if (!stillURL) posterURL = await this.firstAvailableBlobURL(this.getPosterUrls(item, domain, itemId));
+          }
+          const trimmedLogoURL = logoURL ? await this.trimTransparentEdges(logoURL) : null;
 
           if (this.destroyed || generation !== this.generation) return;
-          if (logoURL) {
-            this.overlayLogo.src = logoURL;
+          if (trimmedLogoURL) {
+            this.overlayLogo.src = trimmedLogoURL;
             this.overlayMain.classList.add('has-logo');
           }
           if (discURL) this.overlayDisc.src = discURL;
-          if (posterURL) this.overlayPoster.src = posterURL;
+          this.overlayPoster.classList.toggle('is-still', !!stillURL);
+          if (stillURL || posterURL) this.overlayPoster.src = stillURL || posterURL;
           if (backdropURL) this.overlayBackdrop.style.backgroundImage = `url("${backdropURL}")`;
 
           // Episodes rarely carry genres of their own; borrow the series' list.
@@ -1049,7 +1108,9 @@
          * @param {object} item - The Jellyfin item DTO.
          */
         renderDetails(item) {
-          const when = item.Type === 'Episode' && item.PremiereDate ? this.formatDate(item.PremiereDate) : (item.ProductionYear || '');
+          const premiere = item.Type === 'Episode' && item.PremiereDate ? new Date(item.PremiereDate) : null;
+          const when = premiere && Number.isFinite(premiere.getTime()) ? this.formatDate(item.PremiereDate) : (item.ProductionYear || '');
+          const whenShort = premiere && Number.isFinite(premiere.getTime()) ? String(premiere.getFullYear()) : '';
           const rating = item.OfficialRating || '';
           const runtime = this.formatRuntime(item.RunTimeTicks);
           const score = Number.isFinite(item.CommunityRating) && item.CommunityRating > 0 ? item.CommunityRating.toFixed(1) : '';
@@ -1057,12 +1118,19 @@
           for (const [value, kind] of [[when, 'text'], [rating, 'rating'], [runtime, 'text'], [score, 'score']]) {
             if (!value) continue;
             const span = document.createElement('span');
-            if (kind === 'rating') {
+            if (kind === 'text' && value === when && whenShort && whenShort !== when) {
+              // Phones get the year only; the full date is more than they can spend on it.
+              const long = document.createElement('span'); long.className = 'pause-screen-date-long'; long.textContent = String(value);
+              const short = document.createElement('span'); short.className = 'pause-screen-date-short'; short.textContent = whenShort;
+              span.className = 'pause-screen-date';
+              span.appendChild(long); span.appendChild(short);
+            } else if (kind === 'rating') {
               span.className = 'mediaInfoOfficialRating';
               span.setAttribute('rating', String(value));
               span.textContent = String(value);
             } else if (kind === 'score') {
               span.className = 'pause-screen-score';
+              span.setAttribute('aria-label', JE.t('pausescreen_community_rating', { score: String(value) }));
               const star = document.createElement('span');
               star.className = 'material-icons';
               star.setAttribute('aria-hidden', 'true');
@@ -1096,6 +1164,55 @@
             this.overlayGenres.textContent = genres.slice(0, 3).join(' · ');
           } catch {
             // Genres are decoration; a failed lookup just leaves the line empty.
+          }
+        }
+
+        /**
+         * Crops the transparent padding many logo files carry, so the gap under the logo is the same for every title.
+         * @param {string} blobURL - Object URL of the logo image.
+         * @returns {Promise<string>} An object URL of the cropped image, or the input when nothing can be cropped.
+         */
+        async trimTransparentEdges(blobURL) {
+          if (this.trimCache.has(blobURL)) return this.trimCache.get(blobURL);
+          const keep = () => { this.trimCache.set(blobURL, blobURL); return blobURL; };
+          try {
+            if (typeof HTMLCanvasElement === 'undefined') return keep();
+            const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = blobURL; });
+            const w = img.naturalWidth, h = img.naturalHeight;
+            if (!w || !h || w * h > 4_000_000) return keep();
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) return keep();
+            ctx.drawImage(img, 0, 0);
+            const data = ctx.getImageData(0, 0, w, h).data;
+            let top = h, left = w, right = -1, bottom = -1;
+            for (let y = 0; y < h; y++) {
+              for (let x = 0; x < w; x++) {
+                if (data[(y * w + x) * 4 + 3] > 8) {
+                  if (y < top) top = y;
+                  if (y > bottom) bottom = y;
+                  if (x < left) left = x;
+                  if (x > right) right = x;
+                }
+              }
+            }
+            if (right < 0) return keep();
+            const pad = 2;
+            left = Math.max(0, left - pad); top = Math.max(0, top - pad);
+            right = Math.min(w - 1, right + pad); bottom = Math.min(h - 1, bottom + pad);
+            const cw = right - left + 1, ch = bottom - top + 1;
+            if (cw >= w - 4 && ch >= h - 4) return keep();
+            const out = document.createElement('canvas');
+            out.width = cw; out.height = ch;
+            out.getContext('2d').drawImage(canvas, left, top, cw, ch, 0, 0, cw, ch);
+            const blob = await new Promise(resolve => out.toBlob(resolve, 'image/png'));
+            if (!blob) return keep();
+            const url = URL.createObjectURL(blob);
+            this.trimCache.set(blobURL, url);
+            return url;
+          } catch {
+            return keep();
           }
         }
 
@@ -1143,6 +1260,10 @@
           const pct = duration > 0 ? Math.max(0, Math.min(100, (current / duration) * 100)) : 0;
           fill.style.width = `${pct}%`;
           this.progressBar.setAttribute('aria-valuenow', String(Math.round(pct)));
+          const remainingSeconds = duration > 0 && current < duration ? duration - current : 0;
+          const leftText = remainingSeconds > 0 ? JE.t('pausescreen_time_left', { time: this.formatDuration(Math.max(1, Math.round(remainingSeconds / 60))) }) : '';
+          const valueText = duration > 0 ? [`${this.formatClock(current)} / ${this.formatClock(duration)}`, leftText].filter(Boolean).join(', ') : '';
+          if (valueText) this.progressBar.setAttribute('aria-valuetext', valueText); else this.progressBar.removeAttribute('aria-valuetext');
 
           const timeEl = this.progressMeta.querySelector('.progress-time');
           const endsAtEl = this.progressMeta.querySelector('.progress-ends-at');
@@ -1157,10 +1278,7 @@
             percentageEl.textContent = duration > 0 ? JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }) : '';
           }
 
-          const remainingSeconds = duration > 0 && current < duration ? duration - current : 0;
-          if (leftEl) {
-            leftEl.textContent = remainingSeconds > 0 ? JE.t('pausescreen_time_left', { time: this.formatDuration(Math.max(1, Math.round(remainingSeconds / 60))) }) : '';
-          }
+          if (leftEl) leftEl.textContent = leftText;
 
           if (endsAtEl) {
             if (remainingSeconds > 0) {
@@ -1263,6 +1381,7 @@
          */
         getPosterUrls(item, domain, itemId) {
           const urls = [];
+          if (item.SeasonId) urls.push(`${domain}/Items/${item.SeasonId}/Images/Primary?maxHeight=900`);
           if (item.SeriesId) urls.push(`${domain}/Items/${item.SeriesId}/Images/Primary?maxHeight=900`);
           if (item.Type !== 'Episode' && item.ImageTags?.Primary) urls.push(`${domain}/Items/${itemId}/Images/Primary?maxHeight=900&tag=${item.ImageTags.Primary}`);
           if (!item.SeriesId && item.ParentId && item.Type !== 'Movie') urls.push(`${domain}/Items/${item.ParentId}/Images/Primary?maxHeight=900`);
@@ -1315,6 +1434,9 @@
 
           // Revoke blob URLs
           for (const url of this.imgBlobCache.values()) URL.revokeObjectURL(url);
+          for (const [src, url] of this.trimCache) if (url !== src) URL.revokeObjectURL(url);
+          this.trimCache.clear();
+          if (this.endsAtTimer) { clearInterval(this.endsAtTimer); this.endsAtTimer = null; }
           this.imgBlobCache.clear();
           this.imgProbeCache.clear();
           this.itemCache.clear();

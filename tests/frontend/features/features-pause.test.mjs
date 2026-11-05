@@ -48,6 +48,14 @@ test('pause overlay keeps remote keys on TV layout and Back closes only the over
  p._dismissedThisPause=false;p.showOverlay();press({key:'Unidentified',keyCode:10009});assert.equal(p.overlay.getAttribute('aria-hidden'),'true');
  assert.equal(reached,0);
 });
+test('Space or Enter on the focused close button hides the overlay without resuming',t=>{
+ const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;let played=0;p.currentVideo={paused:true,play:()=>{played++;return Promise.resolve();}};
+ const press=(code)=>{const e=new h.window.KeyboardEvent('keydown',{code,bubbles:true,cancelable:true});h.document.dispatchEvent(e);return e;};
+ p.showOverlay();p.closeButton.focus();assert.equal(h.document.activeElement,p.closeButton);
+ assert.equal(press('Space').defaultPrevented,true);assert.equal(p.overlay.getAttribute('aria-hidden'),'true');assert.equal(p._dismissedThisPause,true);assert.equal(played,0);
+ p._dismissedThisPause=false;p.showOverlay();p.closeButton.focus();press('Enter');assert.equal(p.overlay.getAttribute('aria-hidden'),'true');assert.equal(played,0);
+ p._dismissedThisPause=false;p.showOverlay();assert.equal(h.document.activeElement,p.overlayContent);press('Space');assert.equal(p.overlay.getAttribute('aria-hidden'),'true');assert.equal(p._dismissedThisPause,false);assert.equal(played,1);
+});
 test('pause overlay leaves arrow keys alone outside the TV layout',t=>{
  const h=setup(t);h.JE.initializePauseScreen();const p=h.JE.pauseScreenInstance;p.showOverlay();
  const e=new h.window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true});h.document.dispatchEvent(e);
