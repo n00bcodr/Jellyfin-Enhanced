@@ -370,10 +370,10 @@
               display: inline-flex; align-items: center; gap: 8px;
               min-height: 44px;
               padding: 0 16px 0 12px;
-              background: rgba(255,255,255,.10);
-              border: 1px solid rgba(255,255,255,.28);
+              background: #ededed;
+              border: 1px solid #ededed;
               border-radius: 6px;
-              color: #fff;
+              color: #111;
               font: inherit;
               font-size: max(14px, var(--pause-screen-hint-size));
               font-weight: 600;
@@ -382,11 +382,10 @@
               transition: background .2s, border-color .2s;
             }
             .pause-screen-resume .material-icons { font-size: 1.4em; }
-            .pause-screen-resume:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.45); }
+            .pause-screen-resume:hover { background: #fff; border-color: #fff; }
             .pause-screen-resume:focus-visible { outline: 2px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
             @media (min-width: 1200px) {
-              .pause-screen-resume { min-height: 48px; font-size: 18px; background: #ededed; border-color: #ededed; color: #111; }
-              .pause-screen-resume:hover { background: #fff; border-color: #fff; }
+              .pause-screen-resume { min-height: 48px; font-size: 18px; }
             }
             @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } }
             /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
@@ -448,7 +447,7 @@
 
             /* Large screens: thicker track and bigger playback facts for distance viewing */
             @media (min-width: 1200px) {
-              :root { --pause-screen-progress-height: 6px; --pause-screen-meta-size: max(var(--pause-screen-text-size), min(28px, calc(1.89vw - 8.3px))); }
+              :root { --pause-screen-progress-height: 6px; --pause-screen-meta-size: max(21px, min(28px, 1.46vw)); }
               .pause-screen-main:not(.has-logo) #pause-screen-title { font-size: clamp(56px, 4.4vw, 88px); line-height: 1.08; max-width: 18ch; }
             }
             @media (min-width: 1600px) {
