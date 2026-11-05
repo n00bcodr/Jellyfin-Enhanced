@@ -378,7 +378,7 @@ Request the next collection movie based on playback.
 | **Only request if released** | On | Skips a movie with a valid future release date. Missing/unparseable dates do not block a request. |
 | **Quality Profile Mode:** | **Default** | **Default** lets Seerr choose. **Original** copies settings from the watched movie's first Seerr request. **Custom** sends the configured selections below. |
 | **Use default instead of 4K fallback** | On | In **Original**, falls back to Seerr defaults when the copied request was 4K. Turn off to preserve those 4K settings. |
-| **Radarr Server:** | Unset | Destination used only in **Custom**. |
+| **Radarr Server:** | Unset | Destination used only in **Custom**. A server marked **(4K)** is requested as a 4K request. |
 | **Quality Profile:** | Unset | Profile used only in **Custom**. |
 | **Root Folder:** | Empty | Folder used only in **Custom**. |
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -26,6 +27,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         private readonly object _movieCacheLock = new();
         private readonly Dictionary<string, (string JellyseerrUserId, DateTime CachedAt)> _jellyseerrUserIdCache = new();
         private readonly object _userIdCacheLock = new();
+
+        // 4K flag per Radarr server id from Seerr's /service/radarr, cached briefly so custom-mode
+        // requests don't re-read the server list every time. Keyed by the configured Seerr URLs and a
+        // hash of the API key, so a credential change behind the same URL drops the cached list.
+        private static readonly TimeSpan RadarrServerCacheTtl = TimeSpan.FromMinutes(5);
+        private (string Urls, string ApiKeyHash, Dictionary<int, bool> Is4kById, DateTime CachedAt)? _radarrServerCache;
+        private readonly object _radarrServerCacheLock = new();
 
         public AutoMovieRequestService(
             IHttpClientFactory httpClientFactory,
@@ -148,6 +156,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // Resolve quality profile settings based on configuration mode
             var qualitySettings = await ResolveQualityProfileAsync(tmdbId);
 
+            // A 4K request is tracked in Seerr's status4k, not status, so the collection check above
+            // can't see it. Treat a pending, processing or available 4K copy as already requested.
+            if (qualitySettings?.Is4k == true && nextMovieInfo.Status4k is 2 or 3 or 5)
+            {
+                lock (_movieCacheLock)
+                {
+                    if (_requestedMovies.ContainsKey(user.Id.ToString()))
+                    {
+                        _requestedMovies[user.Id.ToString()].Remove(requestKey);
+                    }
+                }
+                _logger.Debug($"[Auto-Movie-Request] Next movie already available or requested in 4K (status4k: {nextMovieInfo.Status4k})");
+                return;
+            }
+
             // Request the movie
             var success = await RequestMovie(nextMovieInfo.TmdbId.ToString(), user.Id.ToString(), qualitySettings);
 
@@ -188,6 +211,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         {
             public int TmdbId { get; set; }
             public string Title { get; set; } = string.Empty;
+            public int? Status4k { get; set; }
         }
 
         // Quality profile settings for Jellyseerr requests
@@ -305,8 +329,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                     var nextPart = parts[nextIndex.Value];
 
                                     // Check if next movie is available or already requested
+                                    int? status4k = null;
                                     if (nextPart.TryGetProperty("mediaInfo", out var mediaInfo))
                                     {
+                                        // The 4K copy's status; checked once the request is known to be 4K
+                                        if (mediaInfo.TryGetProperty("status4k", out var status4kProp) &&
+                                            status4kProp.ValueKind == JsonValueKind.Number)
+                                        {
+                                            status4k = status4kProp.GetInt32();
+                                        }
+
                                         if (mediaInfo.TryGetProperty("status", out var statusProp))
                                         {
                                             var statusValue = statusProp.GetInt32();
@@ -345,7 +377,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                                         return new MovieInfo
                                         {
                                             TmdbId = nextIdProp.GetInt32(),
-                                            Title = titleProp.GetString() ?? "Unknown Title"
+                                            Title = titleProp.GetString() ?? "Unknown Title",
+                                            Status4k = status4k
                                         };
                                     }
                                 }
@@ -509,6 +542,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 // Only return if at least one value is set
                 if (settings.ServerId.HasValue || settings.ProfileId.HasValue || !string.IsNullOrEmpty(settings.RootFolder))
                 {
+                    // Seerr matches serverId against its 4K or non-4K server list depending on is4k,
+                    // so a 4K server has to be requested as a 4K request.
+                    if (settings.ServerId.HasValue)
+                    {
+                        settings.Is4k = await IsRadarrServer4kAsync(settings.ServerId.Value);
+                    }
                     return settings;
                 }
 
@@ -522,6 +561,107 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 _logger.Warning($"[Auto-Movie-Request] Unrecognized quality mode '{mode}', treating as default");
             }
             return null;
+        }
+
+        // Returns whether the given Radarr server is a 4K server in Seerr. If the server list can't be
+        // read or doesn't contain the id, logs a warning and returns false (request sent without is4k).
+        private async Task<bool> IsRadarrServer4kAsync(int serverId)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (config == null || string.IsNullOrEmpty(config.JellyseerrUrls) || string.IsNullOrEmpty(config.JellyseerrApiKey))
+            {
+                return false;
+            }
+
+            var apiKeyHash = HashApiKey(config.JellyseerrApiKey);
+            Dictionary<int, bool>? is4kById = null;
+            lock (_radarrServerCacheLock)
+            {
+                if (_radarrServerCache is { } cached &&
+                    cached.Urls == config.JellyseerrUrls &&
+                    cached.ApiKeyHash == apiKeyHash &&
+                    DateTime.UtcNow - cached.CachedAt < RadarrServerCacheTtl)
+                {
+                    is4kById = cached.Is4kById;
+                }
+            }
+
+            if (is4kById == null)
+            {
+                var httpClient = Helpers.Jellyseerr.SeerrHttpHelper.CreateClient(_httpClientFactory);
+                var urls = GetConfiguredUrls(config.JellyseerrUrls);
+                for (var i = 0; i < urls.Length; i++)
+                {
+                    var url = urls[i];
+                    try
+                    {
+                        var requestUrl = $"{url}/api/v1/service/radarr";
+                        using var request = Helpers.Jellyseerr.SeerrHttpHelper.BuildRequest(
+                            HttpMethod.Get, requestUrl, config.JellyseerrApiKey);
+                        using var response = await httpClient.SendAsync(request);
+                        var (content, error) = await Helpers.Jellyseerr.SeerrHttpHelper.ReadResponseAsync(response, requestUrl);
+                        if (error != null)
+                        {
+                            _logger.Debug($"[Auto-Movie-Request] Radarr server list fetch from Seerr URL #{i + 1} failed: code={error.Code} status={error.HttpStatus} cf-ray={error.CfRay}");
+                            continue;
+                        }
+
+                        using (JsonDocument doc = JsonDocument.Parse(content!))
+                        {
+                            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                            {
+                                _logger.Debug($"[Auto-Movie-Request] Unexpected Radarr server list from Seerr URL #{i + 1}");
+                                continue;
+                            }
+
+                            var servers = new Dictionary<int, bool>();
+                            foreach (var server in doc.RootElement.EnumerateArray())
+                            {
+                                if (server.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.Number)
+                                {
+                                    servers[id.GetInt32()] = server.TryGetProperty("is4k", out var is4k) && is4k.ValueKind == JsonValueKind.True;
+                                }
+                            }
+                            is4kById = servers;
+                        }
+
+                        lock (_radarrServerCacheLock)
+                        {
+                            _radarrServerCache = (config.JellyseerrUrls, apiKeyHash, is4kById, DateTime.UtcNow);
+                        }
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Exception messages can name the Seerr host and port without a scheme
+                        // ("Connection refused (host:5055)"), so log the exception type and HTTP error only.
+                        var detail = ex is HttpRequestException httpEx
+                            ? $" error={httpEx.HttpRequestError}{(httpEx.StatusCode is { } status ? $" status={(int)status}" : string.Empty)}"
+                            : string.Empty;
+                        _logger.Debug($"[Auto-Movie-Request] Error reading Radarr server list from Seerr URL #{i + 1}: {ex.GetType().Name}{detail}");
+                    }
+                }
+            }
+
+            if (is4kById == null)
+            {
+                _logger.Warning($"[Auto-Movie-Request] Could not read the Radarr server list from Jellyseerr; requesting with custom server {serverId} as a non-4K request");
+                return false;
+            }
+
+            if (!is4kById.TryGetValue(serverId, out var isServer4k))
+            {
+                _logger.Warning($"[Auto-Movie-Request] Custom Radarr server {serverId} was not found in Jellyseerr; requesting it as a non-4K request");
+                return false;
+            }
+
+            return isServer4k;
+        }
+
+        // Short, non-reversible identity of the Seerr API key for cache keys; never log or store the key.
+        private static string HashApiKey(string apiKey)
+        {
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)))[..16];
         }
 
         // Gets TMDB ID from movie metadata
