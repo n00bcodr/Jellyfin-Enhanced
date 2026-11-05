@@ -465,7 +465,7 @@ Administrators configure the same defaults on the Media Tags settings page under
     | Category | Examples the detector can produce |
     |---|---|
     | Resolution | `8K`, `4K`, `1440p`, `1080p`, `720p`, `576p`, `480p`, `LOW-RES` |
-    | Source | `REMUX`, `BluRay`, `WEB`, `HD DVD`, `HDTV`, `DVD`; physical stubs also support `VHS`, `Physical`; optional `CAM`, `TS`, `TC`, `SCR` |
+    | Source | `REMUX`, `BluRay`, `WEB`, `HD DVD`, `DVD`, `VHS`, `HDTV`, `SDTV`; physical stubs also support `Physical`; optional `CAM`, `TS`, `TC`, `SCR` |
     | Dynamic range | `Dolby Vision`, `HDR10+`, `HDR10`, `HLG`, `HDR`; All mode also shows a Dolby Vision stream's base layer (`HDR10`, `HDR10+` or `HLG`) and `SDR` |
     | Special format | `IMAX`, `3D` |
     | Video codec | `VVC`, `AV1`, `HEVC`, `H265`, `VP9`, `H264`, `VP8`, `XVID`, `DIVX`, `VC-1`, `WMV`, `MPEG2`, `MPEG4`, `MJPEG`, `THEORA`, `ProRes` |

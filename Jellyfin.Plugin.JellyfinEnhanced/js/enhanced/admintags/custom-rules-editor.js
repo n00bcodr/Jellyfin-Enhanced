@@ -1,14 +1,17 @@
 /** The Custom rules editor: bounded rows, existing library suggestions and reserved labels. */
 (function(JE) {
     'use strict';
-    const CUSTOM_HTML = `<div id="customTagRules" class="je-ct-rules" role="table" aria-describedby="customTagRulesHelp">
+    /** A string from the locale files, escaped for markup. */
+    const tr = (key, params) => (typeof JE.t === 'function' ? JE.t(key, params) : key);
+    const trHtml = (key, params) => String(tr(key, params)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const customHtml = () => `<div id="customTagRules" class="je-ct-rules" role="table" aria-describedby="customTagRulesHelp">
                                         <div class="je-ct-row je-ct-head" role="row">
-                                            <span role="columnheader">Match</span><span role="columnheader">Tag or collection</span><span role="columnheader">Label</span><span role="columnheader">Icon</span><span role="columnheader"><span class="je-ct-sr">Remove</span></span>
+                                            <span role="columnheader">${trHtml('custom_tags_rules_col_match')}</span><span role="columnheader">${trHtml('custom_tags_rules_col_value')}</span><span role="columnheader">${trHtml('custom_tags_rules_col_label')}</span><span role="columnheader">${trHtml('custom_tags_rules_col_icon')}</span><span role="columnheader"><span class="je-ct-sr">${trHtml('custom_tags_rules_col_remove')}</span></span>
                                         </div>
                                         <div id="customTagRuleRows" role="rowgroup"></div>
                                     </div>
                                     <div class="je-ct-actions">
-                                        <button id="customTagRuleAdd" is="emby-button" type="button" class="raised raised-mini emby-button"><span>Add rule</span></button>
+                                        <button id="customTagRuleAdd" is="emby-button" type="button" class="raised raised-mini emby-button"><span>${trHtml('custom_tags_rules_add')}</span></button>
                                         <span id="customTagRulesStatus" class="fieldDescription" role="status" aria-live="polite"></span>
                                     </div>
                                     <datalist id="customTagTagOptions"></datalist>
@@ -131,7 +134,7 @@
             if (!rows.length) {
                 var empty = document.createElement('div');
                 empty.className = 'je-ct-empty fieldDescription';
-                empty.textContent = 'No rules yet. Add one to turn a tag or collection into a chip.';
+                empty.textContent = tr('custom_tags_rules_empty');
                 box.appendChild(empty);
             }
             rows.forEach(function (r, index) {
@@ -149,8 +152,8 @@
                     return control;
                 };
                 var match = document.createElement('select');
-                match.setAttribute('aria-label', 'Rule ' + n + ' match');
-                [['tag', 'Tag'], ['collection', 'Collection']].forEach(function (o) {
+                match.setAttribute('aria-label', tr('custom_tags_rules_match_aria', { n: n }));
+                [['tag', tr('custom_tags_rules_match_tag')], ['collection', tr('custom_tags_rules_match_collection')]].forEach(function (o) {
                     var option = document.createElement('option');
                     option.value = o[0];
                     option.textContent = o[1];
@@ -163,9 +166,9 @@
                 value.type = 'text';
                 value.maxLength = 200;
                 value.value = r.value;
-                value.placeholder = 'e.g. 4K Remaster';
+                value.placeholder = tr('custom_tags_rules_value_placeholder');
                 value.setAttribute('list', r.match === 'collection' ? 'customTagCollectionOptions' : 'customTagTagOptions');
-                value.setAttribute('aria-label', 'Rule ' + n + ' tag or collection name');
+                value.setAttribute('aria-label', tr('custom_tags_rules_value_aria', { n: n }));
                 value.setAttribute('aria-invalid', String(!clean(r.value)));
                 value.addEventListener('focus', loadSources);
                 value.addEventListener('input', function () { r.value = value.value; value.setAttribute('aria-invalid', String(!clean(r.value))); changed(); });
@@ -174,8 +177,8 @@
                 label.type = 'text';
                 label.maxLength = MAX_LABEL;
                 label.value = r.label;
-                label.placeholder = 'e.g. Remaster';
-                label.setAttribute('aria-label', 'Rule ' + n + ' label');
+                label.placeholder = tr('custom_tags_rules_label_placeholder');
+                label.setAttribute('aria-label', tr('custom_tags_rules_label_aria', { n: n }));
                 var hint = document.createElement('span');
                 hint.className = 'je-ct-hint fieldDescription';
                 hint.id = 'customTagRuleLabelHint' + index;
@@ -183,18 +186,18 @@
                 var checkLabel = function () {
                     var reserved = isReservedLabel(r.label);
                     label.setAttribute('aria-invalid', String(!clean(r.label) || reserved));
-                    hint.textContent = reserved ? 'Use a letter, number or symbol: punctuation alone (such as *) is reserved, and this rule will not be saved.' : '';
+                    hint.textContent = reserved ? tr('custom_tags_rules_reserved') : '';
                     hint.hidden = !reserved;
                 };
                 checkLabel();
                 label.addEventListener('input', function () { r.label = label.value; checkLabel(); changed(); });
                 cell('je-ct-label', label).parentNode.appendChild(hint);
                 var icon = document.createElement('select');
-                icon.setAttribute('aria-label', 'Rule ' + n + ' icon');
+                icon.setAttribute('aria-label', tr('custom_tags_rules_icon_aria', { n: n }));
                 [''].concat(ICONS).forEach(function (name) {
                     var option = document.createElement('option');
                     option.value = name;
-                    option.textContent = name ? name.replace(/_/g, ' ') : 'No icon';
+                    option.textContent = name ? name.replace(/_/g, ' ') : tr('custom_tags_rules_no_icon');
                     option.selected = (r.icon || '') === name;
                     icon.appendChild(option);
                 });
@@ -203,7 +206,7 @@
                 var remove = document.createElement('button');
                 remove.type = 'button';
                 remove.className = 'raised raised-mini je-ct-remove';
-                remove.setAttribute('aria-label', 'Remove rule ' + n);
+                remove.setAttribute('aria-label', tr('custom_tags_rules_remove_aria', { n: n }));
                 remove.innerHTML = '<i class="material-icons" aria-hidden="true">delete</i>';
                 remove.addEventListener('click', function () {
                     rows.splice(index, 1);
@@ -230,7 +233,7 @@
             var add = byId('customTagRuleAdd');
             if (add) add.disabled = rows.length >= MAX_RULES;
             var status = byId('customTagRulesStatus');
-            if (status) status.textContent = rows.length + ' of ' + MAX_RULES + ' rules';
+            if (status) status.textContent = tr('custom_tags_rules_count', { count: rows.length, max: MAX_RULES });
         }
 
         /** Load the stored rules into the table. */
@@ -271,6 +274,7 @@
             onLabelsChanged: function (fn) { onLabels = fn; }
         };
     }
-    JE.adminTags.CUSTOM_HTML = CUSTOM_HTML;
+    // Drawn when read, so the table speaks the language loaded by then.
+    Object.defineProperty(JE.adminTags, 'CUSTOM_HTML', { get: customHtml, configurable: true, enumerable: true });
     JE.adminTags.createCustomTagRules = createCustomTagRules;
 })(window.JellyfinEnhanced);

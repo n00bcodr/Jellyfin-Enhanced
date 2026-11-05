@@ -45,10 +45,10 @@
 
     /** Inline flags (data URIs), so the preview never touches the network. */
     const FLAGS = {
-        fr: { name: 'French', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#002395"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ed2939"/></svg>' },
-        jp: { name: 'Japanese', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20"><rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="6" fill="#bc002d"/></svg>' },
-        de: { name: 'German', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 3"><rect width="5" height="1" fill="#000"/><rect y="1" width="5" height="1" fill="#d00"/><rect y="2" width="5" height="1" fill="#ffce00"/></svg>' },
-        it: { name: 'Italian', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ce2b37"/></svg>' },
+        fr: { lang: 'fr', name: 'French', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#002395"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ed2939"/></svg>' },
+        jp: { lang: 'ja', name: 'Japanese', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 20"><rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="6" fill="#bc002d"/></svg>' },
+        de: { lang: 'de', name: 'German', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 3"><rect width="5" height="1" fill="#000"/><rect y="1" width="5" height="1" fill="#d00"/><rect y="2" width="5" height="1" fill="#ffce00"/></svg>' },
+        it: { lang: 'it', name: 'Italian', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3 2"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ce2b37"/></svg>' },
     };
 
     /**
@@ -187,7 +187,8 @@
                     const img = document.createElement('img');
                     img.className = 'language-flag';
                     img.src = `data:image/svg+xml,${encodeURIComponent(FLAGS[code].svg)}`;
-                    img.alt = img.title = FLAGS[code].name;
+                    // The language's name in the user's language; the English one only where the browser has none.
+                    img.alt = img.title = JE.core.mediaLanguage?.localName?.(FLAGS[code].lang) || FLAGS[code].name;
                     img.dataset.lang = code;
                     img.dataset.langName = FLAGS[code].name;
                     wrap.appendChild(img);

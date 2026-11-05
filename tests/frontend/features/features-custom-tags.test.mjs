@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createHarness, plain, jsRoot } from '../helpers/harness.mjs';
+import { createHarness, plain, jsRoot, englishT } from '../helpers/harness.mjs';
 
 /** Opaque rule ids, as the server derives them (a keyed hash of the match type and value). */
 const ID = { criterion: 'collection:9f2c1e0b7a6d5c4e', remaster: 'tag:1a2b3c4d5e6f7081', signed: 'tag:aa11bb22cc33dd44', approved: 'tag:0f0e0d0c0b0a0908' };
@@ -340,7 +340,7 @@ test('the icon list is the bundled genre icon set, the same on the server and th
 });
 
 test('the rules table flags punctuation-only labels such as "*" and leaves them out of the save', t => {
-  const h = createHarness();
+  const h = createHarness({ JE: { t: englishT } });
   t.after(() => h.close());
   h.JE.adminTags = {}; h.load('enhanced/admintags/custom-rules-editor.js');
   h.document.body.innerHTML = h.JE.adminTags.CUSTOM_HTML;
@@ -373,7 +373,7 @@ test('the rules table classifies reserved labels by Unicode scalar value, exactl
   // The same cases CustomTagRulesTests checks Normalize, IsValidLabel and Tag Styles against.
   const cases = JSON.parse(readFileSync(new URL('../../fixtures/custom-tag-labels.json', import.meta.url), 'utf8'));
   assert.ok(cases.some(c => [...c.label].length < c.label.length && !c.kept), 'covers supplementary-plane punctuation');
-  const h = createHarness();
+  const h = createHarness({ JE: { t: englishT } });
   t.after(() => h.close());
   h.JE.adminTags = {}; h.load('enhanced/admintags/custom-rules-editor.js');
   h.document.body.innerHTML = h.JE.adminTags.CUSTOM_HTML;

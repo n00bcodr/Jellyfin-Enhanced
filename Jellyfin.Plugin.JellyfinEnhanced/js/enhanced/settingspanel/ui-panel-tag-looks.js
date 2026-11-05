@@ -507,7 +507,7 @@
                     saveRules(next);
                     // Keep focus on the moved rule: the same button, or at an end its other one.
                     focusOn(pressed.disabled ? (delta < 0 ? row.down : row.up) : pressed);
-                    view.announce(JE.t('tag_looks_rule_moved', { rule: conditionText(moved.when, state), n: String(at + delta + 1) }));
+                    view.announce(JE.t('tag_looks_rule_moved', { rule: conditionText(moved.when, state), n: at + delta + 1 }));
                 };
                 row.up = iconButton('arrow_upward', () => move(-1), '');
                 row.down = iconButton('arrow_downward', () => move(1), '');
@@ -577,7 +577,7 @@
         view.locks.classList.toggle('je-open', state.lockedOpen);
         view.locksToggle.textContent = JE.t(state.lockedOpen ? 'hidden_content_hide_button' : 'tag_looks_show');
         view.locksToggle.setAttribute('aria-expanded', state.lockedOpen ? 'true' : 'false');
-        view.locksToggle.setAttribute('aria-label', JE.t(state.lockedOpen ? 'tag_looks_locks_hide' : 'tag_looks_locks_show', { count: String(locks.size) }));
+        view.locksToggle.setAttribute('aria-label', JE.t(state.lockedOpen ? 'tag_looks_locks_hide' : 'tag_looks_locks_show', { count: locks.size }));
         view.unlockAll.disabled = locks.size === 0;
         // Nothing to unfold without locks (a narrow pane shows only the count then).
         view.locksToggle.hidden = locks.size === 0;
@@ -718,7 +718,7 @@
                 remove.setAttribute('aria-label', JE.t('tag_looks_remove_condition_named', { n }));
             });
             addCondition.disabled = rows.length >= look.MAX_CONDITIONS;
-            condCount.textContent = JE.t('tag_looks_condition_count', { count: String(rows.length), max: String(look.MAX_CONDITIONS) });
+            condCount.textContent = JE.t('tag_looks_condition_count', { count: rows.length, max: look.MAX_CONDITIONS });
         };
 
         /**
@@ -817,7 +817,7 @@
         const syncCapacity = () => {
             const full = !existing && look.read().rules.length >= look.MAX_RULES;
             save.disabled = full;
-            hint.textContent = JE.t(full ? 'tag_looks_limit' : existing ? 'tag_looks_edit_hint' : 'tag_looks_add_hint', { count: String(look.MAX_RULES) });
+            hint.textContent = JE.t(full ? 'tag_looks_limit' : existing ? 'tag_looks_edit_hint' : 'tag_looks_add_hint', { count: look.MAX_RULES });
             return full;
         };
         syncCapacity();
@@ -844,7 +844,7 @@
             const still = existing ? current.find((r) => r.id === existing.id) : null;
             // The rule being edited was deleted meanwhile: this would add one.
             if (!still && current.length >= look.MAX_RULES) {
-                error.textContent = JE.t('tag_looks_limit', { count: String(look.MAX_RULES) });
+                error.textContent = JE.t('tag_looks_limit', { count: look.MAX_RULES });
                 return;
             }
             // Editing keeps the rule's On/Off state (a switched-off rule stays off).
@@ -912,7 +912,7 @@
                 focusOn(row?.edit);
                 const index = look.read().rules.findIndex((r) => r.id === savedId);
                 const rule = look.read().rules[index];
-                if (rule) view.announce(JE.t(added ? 'tag_looks_rule_added' : 'tag_looks_rule_saved', { n: String(index + 1), rule: conditionText(rule.when, state) }));
+                if (rule) view.announce(JE.t(added ? 'tag_looks_rule_added' : 'tag_looks_rule_saved', { n: index + 1, rule: conditionText(rule.when, state) }));
             }, () => {
                 const was = state.editing;
                 state.editing = '';

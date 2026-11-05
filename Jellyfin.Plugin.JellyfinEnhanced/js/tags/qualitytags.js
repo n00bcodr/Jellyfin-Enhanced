@@ -573,7 +573,9 @@
      * @returns {string}
      */
     function versionsText(count) {
-        const text = JE.t('quality_versions_count', { count });
+        // A number, so JE.t picks the plural form; the label keeps its digits as they are.
+        const n = Number(count);
+        const text = JE.t('quality_versions_count', { count: Number.isFinite(n) ? n : count });
         return (text === 'quality_versions_count' ? '{count} versions' : text).replace('{count}', count);
     }
 

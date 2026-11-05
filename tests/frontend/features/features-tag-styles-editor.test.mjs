@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { createHarness } from '../helpers/harness.mjs';
+import { createHarness, englishT } from '../helpers/harness.mjs';
 import { repositoryRoot } from '../helpers/discovery.mjs';
 
 // The Tag Styles editor lives on the Media Tags admin page
@@ -89,7 +89,7 @@ function fakeCanvas(window) {
  * is false: the preview styles itself with its buildCss.
  */
 async function setup(t, json = '', preset = 'default', { generator = true, cat = catalog, poster = false } = {}) {
-  const h = createHarness({ html: markup, apiClient: { ajax: async () => cat }, globals: { jeCdnUrl: path => `http://jellyfin.test/cdn/${path}` } });
+  const h = createHarness({ html: markup, JE: { t: englishT }, apiClient: { ajax: async () => cat }, globals: { jeCdnUrl: path => `http://jellyfin.test/cdn/${path}` } });
   t.after(() => h.close());
   fakeCanvas(h.window);
   if (generator) h.load('tags/tag-styles.js');
@@ -103,7 +103,7 @@ async function setup(t, json = '', preset = 'default', { generator = true, cat =
 }
 
 test('the contrast helpers composite over the dark poster and grade like WCAG', () => {
-  const api = new Function(`${contrastSource}\nreturn { rgbaOf, compositeOver, luminance, contrastRatio, contrastLevel };`)();
+  const api = new Function('T', `${contrastSource}\nreturn { rgbaOf, compositeOver, luminance, contrastRatio, contrastLevel };`)(englishT);
   const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 0.01, `${actual} ≈ ${expected}`);
   near(api.contrastRatio('#ffffff', '#000000'), 21);
   near(api.contrastRatio('#767676', '#ffffff'), 4.54);

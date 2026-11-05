@@ -80,6 +80,17 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
   };
 }
 
+/**
+ * The English source strings with plugin.js's placeholder rules (and `_one` forms for a count of one), for
+ * tests that read what a surface shows in English.
+ */
+const englishStrings = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
+export function englishT(key, params = {}) {
+  const counted = params && ['count', 'days', 'n', 'items', 'hours', 'minutes', 'seconds'].find(name => typeof params[name] === 'number');
+  const form = counted && params[counted] === 1 && englishStrings[`${key}_one`] ? `${key}_one` : key;
+  return Object.entries(params || {}).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), englishStrings[form] ?? key);
+}
+
 export function deferred() {
   let resolve, reject;
   const promise = new Promise((res, rej) => { resolve = res; reject = rej; });

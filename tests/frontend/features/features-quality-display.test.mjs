@@ -466,6 +466,22 @@ test('the Versions chip counts an item\'s versions; series and seasons never sho
   assert.ok(!h.render(movieEntry, 'off').some(label => /versions/.test(label)));
 });
 
+test('the Versions chip hands JE.t a numeric count, so plural forms apply', t => {
+  const h = setup(t);
+  Object.assign(h.JE.currentSettings, { showVersionsTag: true });
+  // A Russian-style translator: one, few or many by the CLDR category of a numeric count; a string count gets none.
+  const seen = [];
+  h.JE.t = (key, params = {}) => {
+    if (key !== 'quality_versions_count') return key;
+    seen.push(typeof params.count);
+    const category = typeof params.count === 'number' ? new Intl.PluralRules('ru').select(params.count) : 'base';
+    return `${category.toUpperCase()} {count}`;
+  };
+  const entry = n => ({ Type: 'Movie', StreamData: { Streams: Array.from({ length: n }, (_, i) => ({ Type: 'Video', Height: 1080, Codec: 'h264', SourceId: `v${i}` })), Sources: Array.from({ length: n }, (_, i) => ({ Id: `v${i}` })) } });
+  for (const [n, form] of [[2, 'FEW'], [5, 'MANY'], [21, 'ONE']]) assert.ok(h.render(entry(n), `n${n}`).includes(`${form} ${n}`), `${n} versions`);
+  assert.deepEqual([...new Set(seen)], ['number']);
+});
+
 test("Jellyfin's own 3D format marks a version 3D without release words in its name", t => {
   const h = setup(t);
   const streams = [{ Type: 'Video', Height: 1080, Width: 1920, Codec: 'h264' }];
