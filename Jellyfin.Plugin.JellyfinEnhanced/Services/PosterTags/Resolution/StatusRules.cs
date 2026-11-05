@@ -251,7 +251,7 @@ public static class StatusRules
     {
         var definition = Table.Badges[key];
         var label = settings.CompactLabels && definition.Compact != null ? definition.Compact : definition.Label;
-        var text = Translate(label, settings.StatusCulture).Replace("{date}", date ?? string.Empty, StringComparison.Ordinal)
+        var text = (days.HasValue ? Text(label, settings.StatusCulture, days.Value) : Translate(label, settings.StatusCulture)).Replace("{date}", date ?? string.Empty, StringComparison.Ordinal)
             .Replace("{rank}", rank?.ToString(settings.StatusCulture) ?? string.Empty, StringComparison.Ordinal)
             .Replace("{days}", days?.ToString(settings.StatusCulture) ?? string.Empty, StringComparison.Ordinal);
         return new(key, text, definition.Style);
@@ -261,11 +261,39 @@ public static class StatusRules
     /// <summary>A web string (js/locales) in the culture, falling back to English, then the key: the vocabulary posters share with the web.</summary>
     internal static string Text(string key, CultureInfo culture) => Translate(key, culture);
 
+    /// <summary>
+    /// <see cref="Text(string, CultureInfo)"/> for a count: the `key_one`, `key_few` … form of the count's CLDR
+    /// category (<see cref="Helpers.PluralRules"/>) in the language the string is written in, else `key_other`,
+    /// else the key's own string, by JE.t's rule (js/plugin.js): a form comes from the same locale as the key's
+    /// string (English forms for an English fallback, or for any kind of English).
+    /// </summary>
+    internal static string Text(string key, CultureInfo culture, long count)
+    {
+        var name = string.IsNullOrEmpty(culture.Name) ? "en" : culture.Name;
+        var own = LocaleStrings(name);
+        var english = LocaleStrings("en");
+        var keyIsOwn = own.TryGetValue(key, out var ownValue) && !string.IsNullOrEmpty(ownValue);
+        var source = keyIsOwn ? own : english;
+        var language = keyIsOwn ? name : "en";
+        var category = Helpers.PluralRules.Category(language, count);
+        foreach (var variant in new[] { key + "_" + category, key + "_other" })
+        {
+            if (source.TryGetValue(variant, out var form) && !string.IsNullOrEmpty(form)) return form;
+            if (keyIsOwn && name.Split('-')[0].Equals("en", StringComparison.OrdinalIgnoreCase)
+                && english.TryGetValue(variant, out var englishForm) && !string.IsNullOrEmpty(englishForm)) return englishForm;
+        }
+
+        return Translate(key, culture);
+    }
+
+    private static IReadOnlyDictionary<string, string> LocaleStrings(string name)
+        => Locales.GetOrAdd(name, static locale => Read<Dictionary<string, string>>("locales." + locale)
+            ?? Read<Dictionary<string, string>>("locales." + locale.Split('-')[0]) ?? new Dictionary<string, string>());
+
     private static string Translate(string key, CultureInfo culture)
     {
         var name = string.IsNullOrEmpty(culture.Name) ? "en" : culture.Name;
-        var translations = Locales.GetOrAdd(name, static locale => Read<Dictionary<string, string>>("locales." + locale)
-            ?? Read<Dictionary<string, string>>("locales." + locale.Split('-')[0]) ?? new Dictionary<string, string>());
+        var translations = LocaleStrings(name);
         if (translations.TryGetValue(key, out var value) && !string.IsNullOrEmpty(value)) return value;
         if (name != "en") return Translate(key, CultureInfo.GetCultureInfo("en"));
         return key;

@@ -190,10 +190,16 @@
      * @returns {Promise<Object>} The merged translations.
      */
     async function withEnglishFallback(result, pluginVersion) {
+        // JE.t picks plural forms by the language a string is written in (see plugin.js).
+        JE.translationsLang = result?.usedLang || 'en';
+        JE.translationsFromEnglish = null;
         if (!result || result.usedLang === 'en') return result.translations;
         try {
             const english = await tryLoadSingleLanguage('en', pluginVersion);
-            if (english && english.translations) return Object.assign({}, english.translations, result.translations);
+            if (english && english.translations) {
+                JE.translationsFromEnglish = new Set(Object.keys(english.translations).filter((key) => !(key in result.translations)));
+                return Object.assign({}, english.translations, result.translations);
+            }
         } catch (e) {
             console.warn('🪼 Jellyfin Enhanced: English fallback strings unavailable', e);
         }

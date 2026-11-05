@@ -231,6 +231,10 @@
       "category": "Helpers"
     },
     {
+      "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/PluralRules.cs",
+      "category": "Helpers"
+    },
+    {
       "path": "Jellyfin.Plugin.JellyfinEnhanced/Helpers/ProviderHelper.cs",
       "category": "Helpers"
     },
@@ -7424,6 +7428,14 @@
     },
     {
       "class": "TagGroupScopes",
+      "name": "Rating",
+      "type": "TagScopeSet?",
+      "initializer": null,
+      "constructor_assignment": null,
+      "file": "Jellyfin.Plugin.JellyfinEnhanced/Configuration/TagLayoutSettings.cs"
+    },
+    {
+      "class": "TagGroupScopes",
       "name": "Quality",
       "type": "TagScopeSet?",
       "initializer": null,
@@ -10117,9 +10129,9 @@
   ],
   "counts": {
     "build_targets": 2,
-    "files": 462,
+    "files": 463,
     "routes": 194,
-    "configuration_properties": 740,
+    "configuration_properties": 741,
     "storage_references": 86,
     "scheduled_tasks": 15,
     "locales": 33

@@ -226,7 +226,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 // "2 versions" in the user's language; Compact "×2" (qualitytags.js versionsText).
                 list = list.Select(t => t is QualityTag { Category: QualityTagRules.Versions } q
-                    ? q with { DisplayText = settings.CompactLabels ? "×" + q.Label : StatusRules.Text("quality_versions_count", settings.StatusCulture).Replace("{count}", q.Label, StringComparison.Ordinal) }
+                    ? q with { DisplayText = settings.CompactLabels ? "×" + q.Label : (long.TryParse(q.Label, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var versions) ? StatusRules.Text("quality_versions_count", settings.StatusCulture, versions) : StatusRules.Text("quality_versions_count", settings.StatusCulture)).Replace("{count}", q.Label, StringComparison.Ordinal) }
                     : t).ToList();
             }
 

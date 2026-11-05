@@ -99,6 +99,24 @@
         t: (key, params = {}) => { // Actual implementation defined later
             const translations = window.JellyfinEnhanced?.translations || {};
             let text = translations[key] || key;
+            // Plural forms: `${key}_one`, `_few`… by the CLDR category (Intl.PluralRules) of the count
+            // (`count`, else `days`, else the other counted params) in the language the string is written in,
+            // falling back to `${key}_other`, then the key. A form English filled in for a locale is used only
+            // where the key itself is English (or the locale is a kind of English), so a translated sentence
+            // never turns English for one count.
+            const counted = params && ['count', 'days', 'n', 'items', 'hours', 'minutes', 'seconds'].find((name) => typeof params[name] === 'number' && Number.isFinite(params[name]));
+            if (counted && translations[key]) {
+                const english = window.JellyfinEnhanced?.translationsFromEnglish;
+                const ownLang = window.JellyfinEnhanced?.translationsLang || 'en';
+                const keyIsEnglish = !!english?.has(key);
+                const lang = keyIsEnglish ? 'en' : ownLang;
+                const sameSource = (variant) => variant in translations
+                    && (!english || keyIsEnglish === english.has(variant) || /^en\b/i.test(ownLang));
+                let category = 'other';
+                try { category = new Intl.PluralRules(lang).select(params[counted]); } catch { /* unknown language: other */ }
+                const variant = [`${key}_${category}`, `${key}_other`].find(sameSource);
+                if (variant) text = translations[variant];
+            }
             if (params) {
                 for (const [param, value] of Object.entries(params)) {
                     text = text.replace(new RegExp(`{${param}}`, 'g'), value);
