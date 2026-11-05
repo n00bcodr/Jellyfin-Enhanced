@@ -42,6 +42,7 @@
           this.pauseScreenDelayMs = (JE.currentSettings.pauseScreenDelaySeconds ?? 5) * 1000;
           this.pauseScreenTimer = null;
           this.endsAtTimer = null;
+          this.resizeListener = null;
           this.lastUserInteractionAt = Date.now();
           this.interactionListeners = null;
           this._dismissedThisPause = false;
@@ -216,6 +217,11 @@
               opacity: .78;
               pointer-events: none;
             }
+            #pause-screen-backdrop.is-still {
+              inset: -10%;
+              filter: blur(clamp(24px, 2.2vw, 44px)) saturate(1.2);
+              opacity: .72;
+            }
             .pause-screen-scrim {
               position: absolute; inset: 0;
               pointer-events: none;
@@ -290,6 +296,7 @@
               -webkit-line-clamp: var(--pause-screen-plot-lines);
               overflow: hidden;
               text-align: left;
+              text-wrap: pretty;
               text-shadow: 0 1px 12px rgba(0,0,0,.35);
             }
 
@@ -323,7 +330,8 @@
               width: 100%;
               height: var(--pause-screen-progress-height);
               border-radius: var(--pause-screen-progress-radius);
-              background: rgba(255,255,255,.22);
+              background: #30343b;
+              box-shadow: 0 0 0 1px rgba(140,143,150,.55);
               overflow: hidden;
               position: relative;
             }
@@ -344,34 +352,41 @@
             }
             #pause-screen-progress-meta .pause-screen-meta-group { display: inline-flex; align-items: center; gap: .6em; flex-wrap: wrap; }
             .pause-screen-status { display: inline-flex; align-items: center; gap: .25em; font-weight: 600; color: #fff; }
-            .pause-screen-status .material-icons { font-size: 1.5em; }
+            .pause-screen-status .material-icons { font-size: 1.5em; margin-left: -.18em; }
             #pause-screen-progress-meta .progress-percentage { display: none; }
             #pause-screen-progress-meta .progress-time:not(:empty)::before,
             #pause-screen-progress-meta .progress-percentage:not(:empty)::before,
             #pause-screen-progress-meta .progress-ends-at:not(:empty)::before { content: '·'; opacity: .5; margin-right: .6em; }
-            .pause-screen-hint {
-              display: block;
-              margin: .25em 0 0 -4px;
-              width: fit-content;
+            .pause-screen-actions {
+              display: flex; flex-wrap: wrap; align-items: center;
+              gap: .4em 1em;
+              margin-top: .6em;
+            }
+            .pause-screen-resume {
+              display: inline-flex; align-items: center; gap: 8px;
               min-height: 44px;
-              padding: 0 4px;
-              background: none;
-              border: 0;
+              padding: 0 16px 0 12px;
+              background: rgba(255,255,255,.10);
+              border: 1px solid rgba(255,255,255,.28);
+              border-radius: 6px;
+              color: #fff;
               font: inherit;
+              font-size: calc(var(--pause-screen-hint-size) * .95);
+              font-weight: 600;
+              line-height: 1.2;
+              cursor: pointer;
+              transition: background .2s, border-color .2s;
+            }
+            .pause-screen-resume .material-icons { font-size: 1.4em; }
+            .pause-screen-resume:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.45); }
+            .pause-screen-resume:focus-visible { outline: 2px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
+            @media (min-width: 1600px) { .pause-screen-resume { min-height: 52px; padding: 0 20px 0 14px; } }
+            .pause-screen-hint {
               font-size: var(--pause-screen-hint-size);
               line-height: 1.4;
               color: rgba(255,255,255,.85);
-              text-align: left;
-              cursor: pointer;
-              border-radius: 4px;
             }
-            .pause-screen-hint:hover { color: #fff; }
-            .pause-screen-hint:focus-visible {
-              outline: 2px solid #fff;
-              outline-offset: 4px;
-              color: #fff;
-            }
-            @media (min-width: 1600px) { .pause-screen-hint:focus-visible { outline-width: 3px; } }
+            @media (min-width: 1600px) { .pause-screen-resume:focus-visible { outline-width: 3px; } :root { --pause-screen-progress-height: 8px; } }
             #pause-screen-close-btn {
               position: absolute;
               top: 2px;
@@ -393,16 +408,14 @@
               transition: background 0.2s, border-color .2s;
             }
             #pause-screen-close-btn .material-icons { font-size: 24px; }
-            #pause-screen-close-btn .pause-screen-close-label { display: none; padding-right: 4px; }
+            #pause-screen-close-btn .pause-screen-close-label { display: inline; padding-right: 4px; }
+            @media (min-width: 1600px) { #pause-screen-close-btn { font-size: 18px; } }
             #pause-screen-close-btn:hover,
             #pause-screen-close-btn:focus-visible {
               background: rgba(20,20,24,.6);
               border-color: rgba(255,255,255,.35);
             }
-            #pause-screen-close-btn:hover .pause-screen-close-label,
-            #pause-screen-close-btn:focus-visible .pause-screen-close-label { display: inline; }
-            @media (hover: none) and (pointer: coarse) { #pause-screen-close-btn .pause-screen-close-label { display: inline; } }
-            .layout-tv #pause-screen-close-btn .pause-screen-close-label { display: inline; }
+
             #pause-screen-close-btn:focus-visible {
               outline: 2px solid #fff;
               outline-offset: 2px;
@@ -439,23 +452,25 @@
             /* Portrait phone and tablet: one column, left-aligned, footer pinned */
             @media (max-width: 768px), (max-width: 1000px) and (orientation: portrait) {
               :root {
-                --pause-screen-gutter-x: 20px;
+                --pause-screen-gutter-x: clamp(20px, 5vw, 48px);
                 --pause-screen-gutter-y: 22px;
                 --pause-screen-logo-max-w: 78vw;
                 --pause-screen-logo-max-h: 18vh;
-                --pause-screen-text-size: 14px;
-                --pause-screen-meta-size: 14px;
-                --pause-screen-hint-size: 14px;
-                --pause-screen-plot-font: 15px;
+                --pause-screen-text-size: clamp(14px, 2vw, 18px);
+                --pause-screen-meta-size: clamp(14px, 2vw, 18px);
+                --pause-screen-hint-size: clamp(14px, 2vw, 18px);
+                --pause-screen-plot-font: clamp(15px, 2.2vw, 20px);
                 --pause-screen-plot-lines: 4;
               }
+              #pause-screen-close-btn { opacity: .85; }
               .pause-screen-layout { padding-top: 76px; padding-bottom: 176px; align-items: end; }
+              @media (min-height: 800px) and (orientation: portrait) { :root { --pause-screen-plot-lines: 5; } }
               @media (min-height: 740px) and (orientation: portrait) {
-                .pause-screen-layout { grid-template-rows: minmax(0, 1fr) auto; row-gap: 24px; }
-                .pause-screen-art { display: flex; order: -1; align-self: end; justify-content: flex-start; min-height: 0; }
-                #pause-screen-poster { width: 140px; }
-                #pause-screen-poster.is-still { width: 300px; max-width: 100%; }
-                #pause-screen-disc { width: 170px; animation: none; }
+                .pause-screen-layout { grid-template-rows: auto auto; align-content: start; align-items: start; row-gap: 16px; }
+                .pause-screen-art { display: flex; order: -1; align-self: start; justify-content: flex-start; min-height: 0; }
+                #pause-screen-poster { width: 120px; }
+                #pause-screen-poster.is-still { width: 100%; max-width: 420px; }
+                #pause-screen-disc { width: 144px; animation: none; }
               }
               #pause-screen-title { font-size: clamp(28px, 8vw, 40px); }
               #pause-screen-subtitle { font-size: 18px; }
@@ -484,7 +499,7 @@
               #pause-screen-details .pause-screen-date-long { display: none; }
               #pause-screen-details .pause-screen-date-short { display: inline; }
               #pause-screen-progress-meta { margin-top: .4em; }
-              .pause-screen-hint { margin-top: 0; min-height: 36px; }
+              .pause-screen-actions { margin-top: .3em; }
             }
             @media (max-height: 500px) and (orientation: landscape) and (min-width: 700px) {
               .pause-screen-layout { grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; }
@@ -502,6 +517,7 @@
             @media (prefers-reduced-motion: reduce) {
               #pause-screen-disc { animation: none !important; }
               #pause-screen-overlay[aria-hidden="false"], .pause-screen-main { animation: none !important; }
+              #pause-screen-overlay[aria-hidden="false"], #pause-screen-close-btn, .pause-screen-resume { transition: none !important; }
             }
 
             /* Hide absent images and empty text slots */
@@ -607,16 +623,23 @@
                 <span class="progress-ends-at"></span>
               </span>
           `;
-          this.progressHint = document.createElement("button");
-          this.progressHint.type = "button";
+          const actions = document.createElement("div");
+          actions.className = "pause-screen-actions";
+          this.resumeButton = document.createElement("button");
+          this.resumeButton.type = "button";
+          this.resumeButton.id = "pause-screen-resume";
+          this.resumeButton.className = "pause-screen-resume";
+          this.resumeButton.innerHTML = `<span class="material-icons" aria-hidden="true">play_arrow</span><span>${JE.core.ui.escapeHtml(JE.t('pausescreen_resume_label'))}</span>`;
+          this.resumeButton.addEventListener('click', (e) => { e.stopPropagation(); this.resume(); });
+          // The input hint ("Space or click anywhere") describes the dialog; the button is the named action.
+          this.progressHint = document.createElement("span");
           this.progressHint.className = "pause-screen-hint";
           this.progressHint.id = "pause-screen-hint";
-          this.progressHint.setAttribute("aria-label", JE.t('pausescreen_resume_label'));
-          this.progressHint.addEventListener('click', (e) => { e.stopPropagation(); this.resume(); });
-          this.resumeButton = this.progressHint;
+          actions.appendChild(this.resumeButton);
+          actions.appendChild(this.progressHint);
           this.progressWrap.appendChild(this.progressBar);
           this.progressWrap.appendChild(this.progressMeta);
-          this.progressWrap.appendChild(this.progressHint);
+          this.progressWrap.appendChild(actions);
           footer.appendChild(this.progressWrap);
 
           const closeButton = document.createElement("button");
@@ -991,6 +1014,10 @@
             this.alignCloseButton();
             this.resumeButton.focus();
             this.fitOverview();
+            if (!this.resizeListener) {
+              this.resizeListener = () => { if (this.overlay.getAttribute('aria-hidden') === 'false') { this.fitOverview(); this.alignCloseButton(); } };
+              window.addEventListener('resize', this.resizeListener);
+            }
             }
 
         /** Puts the × on the same line as Jellyfin's back arrow, wherever the player's header lays it out. */
@@ -1033,6 +1060,7 @@
           this.overlayDisc.removeAttribute('src');
           this.overlayPoster.removeAttribute('src');
           this.overlayBackdrop.style.backgroundImage = '';
+          this.overlayBackdrop.classList.remove('is-still');
           this.overlay.setAttribute('aria-label', JE.t('pausescreen_paused'));
           // reset progress
           this.setProgress(0, 0);
@@ -1086,8 +1114,9 @@
           // Title text is the fallback for a missing logo; episodes show the series name there.
           const titleText = (isEpisode ? (item.SeriesName || item.Name) : item.Name) || '';
           this.overlayTitle.textContent = titleText;
-          this.overlay.setAttribute('aria-label', titleText ? `${JE.t('pausescreen_paused')}: ${titleText}` : JE.t('pausescreen_paused'));
           this.renderSubtitle(item);
+          const nameParts = [titleText, this.overlaySubtitle.textContent.trim()].filter(Boolean);
+          this.overlay.setAttribute('aria-label', nameParts.length ? `${JE.t('pausescreen_paused')}: ${nameParts.join(', ')}` : JE.t('pausescreen_paused'));
           this.renderDetails(item);
           this.overlayGenres.textContent = (Array.isArray(item.Genres) ? item.Genres : []).slice(0, 3).join(' · ');
           this.overviewText = item.Overview || JE.t('pausescreen_no_description');
@@ -1121,6 +1150,7 @@
           this.overlayPoster.classList.toggle('is-still', !!stillURL);
           if (stillURL || posterURL) this.overlayPoster.src = stillURL || posterURL;
           const backdropChoice = stillURL || backdropURL;
+          this.overlayBackdrop.classList.toggle('is-still', !!stillURL);
           if (backdropChoice) this.overlayBackdrop.style.backgroundImage = `url("${backdropChoice}")`;
 
           // Episodes rarely carry genres of their own; borrow the series' list.
@@ -1172,6 +1202,7 @@
             const episodeText = Number.isFinite(item.IndexNumberEnd) && item.IndexNumberEnd > episode ? `${episode}–${item.IndexNumberEnd}` : String(episode);
             code.textContent = JE.t('pausescreen_episode_code', { season, episode: episodeText });
             this.overlaySubtitle.appendChild(code);
+            this.overlaySubtitle.appendChild(document.createTextNode(' '));
           }
           if (item.Name) {
             const name = document.createElement('span');
@@ -1550,6 +1581,7 @@
           for (const [src, url] of this.trimCache) if (url !== src) URL.revokeObjectURL(url);
           this.trimCache.clear();
           if (this.endsAtTimer) { clearInterval(this.endsAtTimer); this.endsAtTimer = null; }
+          if (this.resizeListener) { window.removeEventListener('resize', this.resizeListener); this.resizeListener = null; }
           this.imgBlobCache.clear();
           this.imgProbeCache.clear();
           this.itemCache.clear();

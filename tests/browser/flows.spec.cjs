@@ -223,7 +223,7 @@ test.describe('TV layout remote navigation', () => {
       JellyfinEnhanced.initializePauseScreen();
       JellyfinEnhanced.pauseScreenInstance.showOverlay();
     });
-    const resume = page.locator('#pause-screen-hint');
+    const resume = page.locator('#pause-screen-resume');
     const close = page.locator('#pause-screen-close-btn');
     await expect(resume).toBeFocused();
 
