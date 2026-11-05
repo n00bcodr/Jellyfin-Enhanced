@@ -285,7 +285,7 @@
      * @returns {boolean}
      */
     function matchesAudioPreference(entry) {
-        return entry.namingVersion === 20 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
+        return entry.namingVersion === 21 && entry.legacyAudio === legacyFullAudio() && entry.displayModeKey === displayModeKey() && (entry.audioLang || '') === audioPreferenceKey();
     }
 
     // The version (media source) the user last picked for an item, remembered
@@ -438,7 +438,7 @@
     }
 
     // Full words are translatable; compact edition codes and proper nouns are literals.
-    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"], "Rogue Cut": [null, "Rogue"], "Producer's Cut": [null, "PC"], "Alternate Cut": [null, "Alt"], "Assembly Cut": [null, "Asm"], "International Cut": [null, "Intl"], "Restored": [null, "Rest"], "Hybrid": [null, "Hyb"], "Black and Chrome": [null, "B&C"], "Masters of Cinema": [null, "MoC"]};
+    const EDITIONS = {"Director's Cut": ["quality_edition_directors_cut", "DC"], "Extended": ["quality_edition_extended", "Ext"], "Unrated": ["quality_edition_unrated", "Unr"], "Theatrical": ["quality_edition_theatrical", null], "IMAX": [null, "IMAX"], "Remastered": ["quality_edition_remastered", "Rem"], "Criterion": [null, "CC"], "Uncut": ["quality_edition_uncut", null], "Final Cut": ["quality_edition_final_cut", null], "Special Edition": ["quality_edition_special", "quality_edition_special_compact"], "Redux": [null, "Redux"], "Ultimate": ["quality_edition_ultimate", "Ult"], "Collector's Edition": ["quality_edition_collectors", "CE"], "Anniversary": ["quality_edition_anniversary", "Anniv"], "Uncensored": ["quality_edition_uncensored", "Unc"], "Open Matte": [null, "OM"], "Rogue Cut": [null, "Rogue"], "Producer's Cut": ["quality_edition_producers_cut", "PC"], "Alternate Cut": ["quality_edition_alternate_cut", "Alt"], "Assembly Cut": ["quality_edition_assembly_cut", "Asm"], "International Cut": ["quality_edition_international_cut", "Intl"], "Restored": ["quality_edition_restored", "Rest"], "Hybrid": ["quality_edition_hybrid", "Hyb"], "Black and Chrome": [null, "B&C"], "Masters of Cinema": [null, "MoC"]};
     /** @param {string} label Canonical edition. @returns {string} Its full display name. */
     function editionLabel(label) {
         const row = Object.hasOwn(EDITIONS, label) && EDITIONS[label];
@@ -978,7 +978,8 @@
                 const width = portrait ? primaryVideoStream.Height : primaryVideoStream.Width || 0;
                 if (height >= 3000 || width >= 7000) {
                     resolutionTag = '8K';
-                } else if (height >= 1550 || width >= 3500) {
+                } else if ((height >= 1550 && (width >= 2700 || width <= 0)) || width >= 3500) {
+                    // A 4K-class height needs a matching width: 2560x1600 (16:10) is a 1440p-class frame.
                     resolutionTag = '4K';
                 } else if (height >= 1250) {
                     // Only a 1440-class height: a 2560-wide frame is usually ultrawide 1080p (2560x1080).
@@ -1552,7 +1553,7 @@
                 {
                     const audioLang = audioPreferenceKey();
                     const record = { qualities, representativeQualities, type: item.Type, qualitySummary: item.QualitySummary,
-                        namingVersion: 20, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
+                        namingVersion: 21, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), timestamp: Date.now(), audioLang, srcId, aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() };
                     ctx.setPersistent(itemId, record);
                     ctx.hot?.set(itemId, record);
                     if (qualities.length) insertOverlay(ctx, el, qualities);
@@ -1590,7 +1591,7 @@
                     // A version count would describe the representative episode, not the series or season.
                     .filter(label => !(entry.Type === 'Series' || entry.Type === 'Season') || !label.startsWith('versions:'));
                 const qualities = aggregateQualities(entry, representative);
-                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 20, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
+                serverQualityCache.set(itemId, { audioLang, srcId, qualities, entry, namingVersion: 21, legacyAudio: legacyFullAudio(), displayModeKey: displayModeKey(), aggregationPolicy: aggregationPolicy(), aggregationCategories: aggregationCategoriesKey() });
                 if (qualities.length > 0) insertOverlay(ctx, el, qualities);
             },
             onServerCacheRefresh(ctx, updatedIds) {

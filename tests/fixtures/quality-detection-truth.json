@@ -2059,6 +2059,32 @@
     "4K",
     "HEVC"
    ]
+  },
+  {
+   "name": "A 2560x1600 frame is 1440p-class, not 4K",
+   "why": "A 4K-class height needs a 4K-class width; 16:10 WQXGA is a 1440p frame",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 2560,
+     "Height": 1600,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1440p",
+    "HEVC"
+   ],
+   "all": [
+    "1440p",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "1440p",
+    "HEVC"
+   ]
   }
  ]
 }

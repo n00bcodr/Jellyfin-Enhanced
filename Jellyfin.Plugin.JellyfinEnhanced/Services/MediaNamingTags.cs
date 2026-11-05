@@ -82,7 +82,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     // An episode marker: SxxEyy, Sonarr's 1x05, a daily air date (2024-03-15) or an absolute number between
     // " - " separators (anime and absolute naming, " - 105 - " or " - 05 [").
     private static readonly Regex EpisodeToken = new(@"(?:^|[. _\-\[\](){}])(?:s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*|\d{1,2}x\d{2,4}(?:-\d{1,2}x\d{2,4})*|(?:19|20)\d{2}[.\-](?:0[1-9]|1[0-2])[.\-](?:0[1-9]|[12]\d|3[01]))(?=$|[. _\-\[\](){}])"
-        + @"|\s-\s\d{1,4}(?=\s-\s|\s*[\[(]|\s*$)", Options, Timeout);
+        + @"|\s-\s(?!(?:19|20)\d{2}(?!\d))\d{1,4}(?=\s-\s|\s*[\[(]|\s*$)", Options, Timeout);
     // A scene release group closing the name after its last codec, audio, resolution or source token
     // ("...WEB.H264-TS", "...DTS-HD.MA.5.1-GRP"): its letters are a name, not a release word, so a group called
     // TS or CAM never outranks the release's own source. Compounds such as BD-REMUX, WEB-DL or HD-DVD stay whole.
@@ -141,7 +141,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         var parts = path.Replace('\\', '/').TrimEnd('/').Split('/');
         var file = parts[^1];
         var extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
-        if (extension is ".mkv" or ".mp4" or ".avi" or ".ts" or ".m2ts" or ".webm" or ".wmv" or ".mpg" or ".mpeg" or ".iso")
+        if (extension is ".mkv" or ".mp4" or ".m4v" or ".mov" or ".avi" or ".ts" or ".m2ts" or ".webm" or ".wmv" or ".mpg" or ".mpeg" or ".iso" or ".strm")
             file = file[..^extension.Length];
         var parent = parts.Length > 1 ? parts[^2] : string.Empty;
         var fileRest = WithoutTitles(file, itemName, originalTitle);
@@ -172,9 +172,10 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         var joined = string.Join(@"[^\p{L}\p{N}]+", words);
         var title = new Regex(@"^[^\p{L}\p{N}]*" + joined + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name);
         if (title.Success) return TitleRemoved + name[title.Length..];
-        // An episode's own title right after its SxxEyy marker ("Show.S01E01.The.Web.720p.HDTV" for the episode
-        // "The Web") is read past too, so its words never become a source or an edition.
-        var episode = new Regex(@"(?:^|[. _\-\[\](){}])s\d{1,3}e\d{1,4}(?:-?e\d{1,4})*(?=[^\p{L}\p{N}])", Options, Timeout).Match(name);
+        // An episode's own title right after its episode marker (SxxEyy, 1x05, a daily date or an absolute number:
+        // "Show.S01E01.The.Web.720p.HDTV" for the episode "The Web") is read past too, so its words never become a
+        // source or an edition.
+        var episode = EpisodeToken.Match(name);
         if (!episode.Success) return name;
         var afterMarker = episode.Index + episode.Length;
         var episodeTitle = new Regex(@"\G[^\p{L}\p{N}]+" + joined + @"(?![\p{L}\p{N}])", Options, Timeout).Match(name, afterMarker);
@@ -199,9 +200,10 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
     private static string? SourceIn(string name)
     {
         var release = ReleasePart(name);
-        static string? Source(string text) => Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(text)).Label ?? (BareWeb.IsMatch(text) ? "WEB" : null);
-        // The group only counts when nothing else names a source ("Movie.2007.HD-DVD").
-        return Source(TrailingGroup.Replace(release, string.Empty)) ?? Source(release);
+        // A release group is a name: when nothing else names a source, there is none (compounds such as
+        // HD-DVD, WEB-DL or BD-REMUX are not groups; see TrailingGroup).
+        var text = TrailingGroup.Replace(release, string.Empty);
+        return Sources.FirstOrDefault(rule => rule.Pattern.IsMatch(text)).Label ?? (BareWeb.IsMatch(text) ? "WEB" : null);
     }
 
     /// <summary>The part of a file or folder name after its title (see <see cref="YearToken"/>); the whole name when no boundary is known.</summary>
@@ -238,7 +240,7 @@ internal sealed record MediaNamingTags(string? Source = null, string? Edition = 
         // Explicit custom labels are bounded, plain text and never accept path separators or controls.
         var nonImax = NonImax.IsMatch(value);
         string? Known(string text) => Editions.FirstOrDefault(rule => (rule.Label != "IMAX" || !nonImax) && rule.Pattern.IsMatch(text)).Label;
-        var known = explicitTag.Success ? Known(value) : Known(TrailingGroup.Replace(value, string.Empty)) ?? Known(value);
+        var known = Known(explicitTag.Success ? value : TrailingGroup.Replace(value, string.Empty));
         if (known != null) return known;
         return explicitTag.Success && value.Length > 0 && !value.Any(char.IsControl) ? value : null;
     }

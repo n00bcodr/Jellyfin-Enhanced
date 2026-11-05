@@ -263,6 +263,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             ["Theatrical"] = "quality_edition_theatrical", ["Remastered"] = "quality_edition_remastered", ["Uncut"] = "quality_edition_uncut",
             ["Final Cut"] = "quality_edition_final_cut", ["Special Edition"] = "quality_edition_special", ["Ultimate"] = "quality_edition_ultimate",
             ["Collector's Edition"] = "quality_edition_collectors", ["Anniversary"] = "quality_edition_anniversary", ["Uncensored"] = "quality_edition_uncensored",
+            ["Producer's Cut"] = "quality_edition_producers_cut", ["Alternate Cut"] = "quality_edition_alternate_cut", ["Assembly Cut"] = "quality_edition_assembly_cut",
+            ["International Cut"] = "quality_edition_international_cut", ["Restored"] = "quality_edition_restored", ["Hybrid"] = "quality_edition_hybrid",
             ["Mixed"] = "series_quality_mixed",
         };
 

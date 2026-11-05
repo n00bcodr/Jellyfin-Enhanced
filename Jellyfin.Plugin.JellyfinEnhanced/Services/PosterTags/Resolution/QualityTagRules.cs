@@ -671,7 +671,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             // Width covers cropped scope encodes (1920x800 is 1080p, a cropped DVD 720x304 is 480p).
             // 1440p needs a 1440-class height: a 2560-wide frame is usually ultrawide 1080p (2560x1080).
             if (height >= 3000 || width >= 7000) return "8K";
-            if (height >= 1550 || width >= 3500) return "4K";
+            // A 4K-class height needs a matching width: 2560x1600 (16:10) is a 1440p-class frame.
+            if ((height >= 1550 && (width >= 2700 || width <= 0)) || width >= 3500) return "4K";
             if (height >= 1250) return "1440p";
             if (height >= 1000 || width >= 1800) return "1080p";
             if (height >= 700 || width >= 1200) return "720p";

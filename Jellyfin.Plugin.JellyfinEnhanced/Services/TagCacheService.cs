@@ -346,7 +346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 42;
+        internal const int CurrentCacheSchemaVersion = 43;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call

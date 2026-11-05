@@ -1248,6 +1248,77 @@
     "itemName": "Restored"
   },
   {
+    "path": "Movies/Film (2020)/Film.2020.1080p.H264-CAM.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.1080p.H264-TS.mkv",
+    "source": null,
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.WEB.H264-TS.strm",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.WEB.H264-Extended.mkv",
+    "source": "WEB",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.HD-DVD.mkv",
+    "source": "HD DVD",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "Movies/Film (2024)/Film.2024.DVD-R.mkv",
+    "source": "DVD",
+    "edition": null,
+    "itemName": "Film"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.1x05.Web.of.Lies.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.2024-03-15.Web.of.Lies.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show - 105 - Web of Lies Extended Interview [1080p HDTV].mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.S01E05.Web.of.Lies.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "Web of Lies: Extended Interview"
+  },
+  {
+    "path": "TV/Show/Season 01/Show.1x05.The.Web.Extended.Interview.1080p.HDTV.mkv",
+    "source": "HDTV",
+    "edition": null,
+    "itemName": "The Web Extended Interview"
+  },
+  {
+    "path": "Movies/Title (1982)/Title - 1982 - Final Cut.mkv",
+    "source": null,
+    "edition": "Final Cut"
+  },
+  {
     "path": "Show/Season 01/Show.S01E01.The.Web.mkv",
     "source": null,
     "edition": null,
