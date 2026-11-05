@@ -60,6 +60,7 @@
           this.overlaySubtitle = null;
           this.overlayGenres = null;
           this.progressHint = null;
+          this.progressSpoken = null;
           this.resumeButton = null;
           this.overlayBackdrop = null;
           this.progressWrap = null;
@@ -143,7 +144,8 @@
               --pause-screen-overlay-bg: rgba(10, 10, 14, .6);
               --pause-screen-blur: 8px;
               --pause-screen-accent: var(--theme-primary-color, var(--primary-accent-color, #00a4dc));
-              --pause-screen-gutter-x: max(clamp(24px, 6vw, 110px), calc(env(safe-area-inset-left, 0px) + 16px), calc(env(safe-area-inset-right, 0px) + 16px));
+              --pause-screen-gutter-base: clamp(24px, 6vw, 110px);
+              --pause-screen-gutter-x: max(var(--pause-screen-gutter-base), calc(env(safe-area-inset-left, 0px) + 16px), calc(env(safe-area-inset-right, 0px) + 16px));
               --pause-screen-gutter-y: clamp(20px, 5vh, 64px);
               --pause-screen-logo-max-w: min(46vw, 640px);
               --pause-screen-logo-max-h: 22vh;
@@ -156,7 +158,7 @@
               --pause-screen-progress-height: 4px;
               --pause-screen-progress-radius: 999px;
               --pause-screen-disc-w: clamp(220px, 20vw, 360px);
-              --pause-screen-disc-rot-sec: 90s;
+              --pause-screen-disc-rot-sec: 0s;
               --pause-screen-poster-w: clamp(170px, 16vw, 300px);
               --pause-screen-still-w: clamp(240px, 26vw, 500px);
             }
@@ -239,7 +241,7 @@
               grid-template-columns: minmax(0, 1fr) auto;
               align-items: center;
               column-gap: clamp(24px, 4vw, 80px);
-              padding: calc(var(--pause-screen-gutter-y) + env(safe-area-inset-top, 0px)) calc(var(--pause-screen-gutter-x) + env(safe-area-inset-right, 0px)) calc(var(--pause-screen-gutter-y) + 110px + env(safe-area-inset-bottom, 0px)) calc(var(--pause-screen-gutter-x) + env(safe-area-inset-left, 0px));
+              padding: calc(var(--pause-screen-gutter-y) + env(safe-area-inset-top, 0px)) var(--pause-screen-gutter-x) calc(var(--pause-screen-gutter-y) + var(--pause-screen-footer-h, 110px) + 24px + env(safe-area-inset-bottom, 0px)) var(--pause-screen-gutter-x);
               box-sizing: border-box;
             }
             .pause-screen-main {
@@ -327,8 +329,8 @@
             /* Progress UI */
             .pause-screen-footer {
               position: absolute;
-              left: calc(var(--pause-screen-gutter-x) + env(safe-area-inset-left, 0px));
-              right: calc(var(--pause-screen-gutter-x) + env(safe-area-inset-right, 0px));
+              left: var(--pause-screen-gutter-x);
+              right: var(--pause-screen-gutter-x);
               bottom: calc(var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px));
             }
             #pause-screen-progress-wrap { user-select: none; }
@@ -337,7 +339,7 @@
               height: var(--pause-screen-progress-height);
               border-radius: var(--pause-screen-progress-radius);
               background: #30343b;
-              box-shadow: 0 0 0 1px #9ca3af;
+              box-shadow: 0 0 0 1px rgba(156,163,175,.6);
               overflow: hidden;
               position: relative;
             }
@@ -389,7 +391,7 @@
             @media (min-width: 1200px) {
               .pause-screen-resume { min-height: 48px; font-size: 18px; }
             }
-            @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } }
+            @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } .pause-screen-actions { column-gap: 24px; } }
             /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
             .layout-tv .pause-screen-resume:focus { outline: 3px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
             .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -4px; background: #fff; border-color: #fff; color: #111; }
@@ -410,7 +412,8 @@
               min-width: 44px; height: 44px;
               padding: 0 10px;
               background: transparent;
-              border: 1px solid transparent;
+              border: 4px solid transparent;
+              background-clip: padding-box;
               color: #fff;
               border-radius: 22px;
               display: flex;
@@ -425,7 +428,7 @@
             }
             #pause-screen-close-btn .material-icons { font-size: 24px; }
             #pause-screen-close-btn .pause-screen-close-label { display: inline; padding-right: 4px; }
-            @media (min-width: 1600px) { #pause-screen-close-btn { font-size: 20px; } }
+            @media (min-width: 1600px) { #pause-screen-close-btn { font-size: 24px; height: 56px; border-radius: 28px; padding: 0 12px; } #pause-screen-close-btn .material-icons { font-size: 30px; } }
             #pause-screen-close-btn:hover,
             #pause-screen-close-btn:focus-visible {
               background: rgba(20,20,24,.6);
@@ -452,12 +455,17 @@
             }
 
             /* Large screens: thicker track and bigger playback facts for distance viewing */
+            @media (min-width: 1200px) and (max-width: 1599px) {
+              :root { --pause-screen-logo-max-w: min(42vw, 540px); --pause-screen-text-size: 18px; --pause-screen-plot-font: 20px; --pause-screen-hint-size: 17px; }
+              .pause-screen-main { gap: 14px; }
+            }
             @media (min-width: 1200px) {
               :root { --pause-screen-progress-height: 6px; --pause-screen-meta-size: max(21px, min(28px, 1.46vw)); }
               .pause-screen-main:not(.has-logo) #pause-screen-title { font-size: clamp(56px, 4.4vw, 88px); line-height: 1.08; max-width: 18ch; }
             }
             @media (min-width: 1600px) {
-              :root { --pause-screen-progress-height: 8px; }
+              :root { --pause-screen-progress-height: 8px; --pause-screen-text-size: 24px; --pause-screen-hint-size: 24px; }
+              #pause-screen-details .mediaInfoOfficialRating { font-size: .92em; }
             }
 
             /* Narrow landscape (tablets, phones on their side): no room for the art column, text spans the width */
@@ -474,7 +482,7 @@
             /* Portrait phone and tablet: one column, left-aligned, footer pinned */
             @media (max-width: 768px), (max-width: 1000px) and (orientation: portrait) {
               :root {
-                --pause-screen-gutter-x: clamp(20px, 5vw, 48px);
+                --pause-screen-gutter-base: clamp(20px, 5vw, 48px);
                 --pause-screen-gutter-y: 22px;
                 --pause-screen-logo-max-w: 78vw;
                 --pause-screen-logo-max-h: 18vh;
@@ -485,8 +493,7 @@
                 --pause-screen-plot-lines: 4;
               }
               #pause-screen-close-btn { opacity: .85; }
-              #pause-screen-progress-bar { box-shadow: 0 0 0 1px rgba(156,163,175,.6); }
-              .pause-screen-layout { padding-top: calc(76px + env(safe-area-inset-top, 0px)); padding-bottom: calc(176px + env(safe-area-inset-bottom, 0px)); align-items: end; }
+              .pause-screen-layout { padding-top: calc(76px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 152px) + 24px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); align-items: end; }
               @media (min-height: 800px) and (orientation: portrait) {
                 :root { --pause-screen-plot-lines: 7; --pause-screen-plot-font: clamp(16px, 2.2vw, 20px); --pause-screen-meta-size: clamp(16px, 2vw, 18px); --pause-screen-hint-size: clamp(15px, 2vw, 18px); }
               }
@@ -517,7 +524,7 @@
               #pause-screen-details .pause-screen-date-long { display: none; }
               #pause-screen-details .pause-screen-date-short { display: inline; }
               #pause-screen-progress-meta { flex-direction: column; align-items: flex-start; gap: .35em; }
-              #pause-screen-close-btn { top: 4px; right: 8px; }
+              #pause-screen-close-btn { right: calc(8px + env(safe-area-inset-right, 0px)); }
             }
 
             /* Phone landscape: short viewport */
@@ -533,7 +540,7 @@
                 --pause-screen-hint-size: 14px;
                 --pause-screen-plot-font: 14px;
               }
-              .pause-screen-layout { padding-top: 56px; padding-bottom: 108px; }
+              .pause-screen-layout { padding-top: calc(56px + env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--pause-screen-footer-h, 84px) + 16px + var(--pause-screen-gutter-y) + env(safe-area-inset-bottom, 0px)); }
               .pause-screen-main { gap: 8px; }
               #pause-screen-subtitle { font-size: 16px; }
               #pause-screen-details .pause-screen-date-long { display: none; }
@@ -544,7 +551,7 @@
             @media (max-height: 500px) and (orientation: landscape) and (min-width: 700px) {
               .pause-screen-layout { grid-template-columns: minmax(0, 1fr) auto; column-gap: 24px; }
               .pause-screen-art { display: flex; }
-              #pause-screen-poster { width: 135px; }
+              #pause-screen-poster { width: 112px; }
               #pause-screen-poster.is-still { width: 240px; }
               #pause-screen-disc { width: 150px; }
             }
@@ -577,7 +584,7 @@
           this.overlay.setAttribute("aria-hidden", "true");
           this.overlay.setAttribute("aria-modal", "true");
           this.overlay.setAttribute("aria-label", JE.t('pausescreen_paused'));
-          this.overlay.setAttribute("aria-describedby", "pause-screen-progress-meta pause-screen-hint");
+          this.overlay.setAttribute("aria-describedby", "pause-screen-progress-spoken pause-screen-hint");
 
           this.focusStart = document.createElement('div');
           this.focusStart.id = 'pause-screen-focus-start';
@@ -653,6 +660,7 @@
           this.progressBar.appendChild(fill);
           this.progressMeta = document.createElement("div");
           this.progressMeta.id = "pause-screen-progress-meta";
+          this.progressMeta.setAttribute("aria-hidden", "true");
           const statusLabel = JE.core.ui.escapeHtml(JE.t('pausescreen_paused'));
           this.progressMeta.innerHTML = `
               <span class="pause-screen-meta-group">
@@ -677,10 +685,14 @@
           this.progressHint = document.createElement("span");
           this.progressHint.className = "pause-screen-hint";
           this.progressHint.id = "pause-screen-hint";
+          this.progressSpoken = document.createElement("span");
+          this.progressSpoken.className = "pause-screen-sr";
+          this.progressSpoken.id = "pause-screen-progress-spoken";
           actions.appendChild(this.resumeButton);
           actions.appendChild(this.progressHint);
           this.progressWrap.appendChild(this.progressBar);
           this.progressWrap.appendChild(this.progressMeta);
+          this.progressWrap.appendChild(this.progressSpoken);
           this.progressWrap.appendChild(actions);
           footer.appendChild(this.progressWrap);
 
@@ -694,6 +706,10 @@
               this.hideOverlay(true);
           };
           this.closeButton = closeButton;
+          for (const el of [closeButton, this.resumeButton]) {
+            el.addEventListener('focus', () => this.refreshHint());
+            el.addEventListener('blur', () => setTimeout(() => this.refreshHint(), 0));
+          }
 
           // Assemble
           this.overlayMain.appendChild(this.overlayLogo);
@@ -1039,13 +1055,26 @@
           return JE.t('pausescreen_resume_hint');
         }
 
+        /**
+         * The hint describes the focused control: Resume by default, the × when it has focus.
+         */
+        refreshHint() {
+          if (!this.progressHint) return;
+          const closeFocused = document.activeElement === this.closeButton;
+          if (closeFocused) {
+            this.progressHint.textContent = JE.core?.ui?.isTvLayout?.() ? JE.t('pausescreen_hide_hint_tv') : JE.t('pausescreen_hide_hint');
+          } else {
+            this.progressHint.textContent = this.resumeHint();
+          }
+        }
+
         showOverlay() {
             if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
                 this.overlayDisc.style.animation = 'none';
             } else {
                 this.overlayDisc.style.animation = '';
             }
-            this.progressHint.textContent = this.resumeHint();
+            this.refreshHint();
             // "Ends at" is relative to now: recompute when the overlay shows and keep it honest while it stays up.
             this.updateProgressStatic();
             if (this.endsAtTimer) clearInterval(this.endsAtTimer);
@@ -1055,9 +1084,11 @@
             this.overlay.setAttribute('aria-hidden', 'false');
             this.alignCloseButton();
             this.resumeButton.focus();
+            this.refreshHint();
+            this.reserveFooter();
             this.fitOverview();
             if (!this.resizeListener) {
-              this.resizeListener = () => { if (this.overlay.getAttribute('aria-hidden') === 'false') { this.fitOverview(); this.alignCloseButton(); } };
+              this.resizeListener = () => { if (this.overlay.getAttribute('aria-hidden') === 'false') { this.alignCloseButton(); this.fitOverview(); } };
               window.addEventListener('resize', this.resizeListener);
             }
             }
@@ -1072,10 +1103,21 @@
             if (r.height > 0 && r.width > 0) { rect = r; break; }
           }
           if (rect && rect.height > 0) {
-            this.closeButton.style.top = `${Math.max(0, Math.round(rect.top + rect.height / 2 - 22))}px`;
+            // centred on the arrow's row and mirroring its inset from the edge; never under a notch
+            const half = this.closeButton.offsetHeight / 2 || 22;
+            this.closeButton.style.top = `max(${Math.max(0, Math.round(rect.top + rect.height / 2 - half))}px, env(safe-area-inset-top, 0px))`;
+            this.closeButton.style.right = `calc(${Math.max(8, Math.round(rect.left))}px + env(safe-area-inset-right, 0px))`;
           } else {
-            this.closeButton.style.top = '';
+            this.closeButton.style.top = 'max(2px, env(safe-area-inset-top, 0px))';
+            this.closeButton.style.right = '';
           }
+          this.reserveFooter();
+        }
+
+        /** Reserves the footer's real height (plus breathing room) above it, whatever the hint wraps to. */
+        reserveFooter() {
+          const h = this.progressWrap?.offsetHeight;
+          if (h) this.overlay.style.setProperty('--pause-screen-footer-h', `${Math.round(h)}px`);
         }
 
         hideOverlay(dismissed = false) {
@@ -1273,11 +1315,23 @@
           const rating = item.OfficialRating || '';
           const runtime = this.formatRuntime(item.RunTimeTicks);
           const score = Number.isFinite(item.CommunityRating) && item.CommunityRating > 0 ? item.CommunityRating.toFixed(1) : '';
+          const critic = Number.isFinite(item.CriticRating) ? String(Math.round(item.CriticRating)) : '';
           this.overlayDetails.replaceChildren();
-          for (const [value, kind] of [[when, 'text'], [rating, 'rating'], [runtime, 'text'], [score, 'score']]) {
+          for (const [value, kind] of [[when, 'text'], [rating, 'rating'], [runtime, 'text'], [critic, 'critic'], [score, 'score']]) {
             if (!value) continue;
             const span = document.createElement('span');
-            if (kind === 'score') {
+            if (kind === 'critic') {
+              // Jellyfin's own critic badge (fresh / rotten tomato), as on its player and detail page
+              span.className = `pause-screen-critic mediaInfoCriticRating ${Number(value) < 60 ? 'mediaInfoCriticRatingRotten' : 'mediaInfoCriticRatingFresh'}`;
+              const visible = document.createElement('span');
+              visible.setAttribute('aria-hidden', 'true');
+              visible.textContent = String(value);
+              const sr = document.createElement('span');
+              sr.className = 'pause-screen-sr';
+              sr.textContent = JE.t('pausescreen_critic_rating', { score: String(value) });
+              span.appendChild(visible);
+              span.appendChild(sr);
+            } else if (kind === 'score') {
               span.className = 'pause-screen-score';
               const visible = document.createElement('span');
               visible.setAttribute('aria-hidden', 'true');
@@ -1460,6 +1514,7 @@
           const leftText = remainingSeconds > 0 ? JE.t('pausescreen_time_left', { time: this.formatDuration(Math.max(1, Math.round(remainingSeconds / 60))) }) : '';
           const valueText = duration > 0 ? [JE.t('pausescreen_watched_percent', { percent: Math.round(pct) }), JE.t('pausescreen_spoken_position', { position: this.spokenClock(current), total: this.spokenClock(duration) }), leftText].filter(Boolean).join('; ') : '';
           if (valueText) this.progressBar.setAttribute('aria-valuetext', valueText); else this.progressBar.removeAttribute('aria-valuetext');
+          if (this.progressSpoken) this.progressSpoken.textContent = valueText;
 
           const timeEl = this.progressMeta.querySelector('.progress-time');
           const endsAtEl = this.progressMeta.querySelector('.progress-ends-at');

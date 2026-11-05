@@ -420,7 +420,7 @@ The overlay shows the logo (or the title as text when there is no logo), the sea
 
 ??? note "Pause-screen artwork and layout"
 
-    The backdrop is the item's (or series') backdrop, blurred; an episode uses its own still instead, so no series title shows through. The art column shows disc art when the library has it, otherwise the episode still (16:9) or the poster. Logos are cropped of their transparent padding so the gap under them is the same for every title. On phones the artwork sits beside the facts under the title; in short landscape layouts the overview shortens to three lines. The disc stops rotating, and the overlay stops fading, with a reduced-motion preference. Light rating badges get dark lettering.
+    The backdrop is the item's (or series') backdrop, blurred; an episode uses its own still instead, so no series title shows through. The art column shows disc art when the library has it, otherwise the episode still (16:9) or the poster. Logos are cropped of their transparent padding so the gap under them is the same for every title. On phones the artwork sits beside the facts under the title; in short landscape layouts the overview shortens to three lines. The disc stays upright (custom CSS can spin it), and the overlay stops fading with a reduced-motion preference. Light rating badges get dark lettering.
 
 ### Smart Playback
 

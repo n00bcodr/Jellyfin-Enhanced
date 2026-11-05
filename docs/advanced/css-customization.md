@@ -70,7 +70,7 @@ Use these selectors to style or hide individual parts of the pause screen.
 | Genres | `#pause-screen-genres` | Up to three genres. |
 | Plot | `#pause-screen-plot` | Synopsis clamped to whole lines (`--pause-screen-plot-lines`). |
 | Art column | `.pause-screen-art` | Disc, episode still or poster. |
-| Spinning disc | `#pause-screen-disc` | Disc image; static on phones. |
+| Disc | `#pause-screen-disc` | Disc image; upright by default. Set `--pause-screen-disc-rot-sec: 90s` to spin it. |
 | Poster or still | `#pause-screen-poster` | Poster (2:3) or, with `is-still`, the episode still (16:9). |
 | Footer | `.pause-screen-footer` | Progress wrapper. |
 | Progress wrapper | `#pause-screen-progress-wrap` | Bar, labels and the resume row. |
@@ -120,8 +120,8 @@ Keep only the selectors for regions you want to hide. You can style the remainin
     --pause-screen-blur: 20px;
 }
 
-#pause-screen-disc {
-    animation: none !important;
+:root {
+    --pause-screen-disc-rot-sec: 90s; /* spin the disc once every 90 seconds */
 }
 
 #pause-screen-backdrop {
