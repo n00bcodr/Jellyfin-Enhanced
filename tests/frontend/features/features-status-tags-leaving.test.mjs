@@ -908,20 +908,24 @@ test('direct play: stored answers are restored before any request, and new ones 
     getDirectPlay: async (scope, profileHash) => {
       hash.value = profileHash;
       assert.equal(scope, 'server-a:user-a');
-      return new Map([['m1', { r: { directPlay: false, remux: true, reasons: ['ContainerNotSupported'], container: 'mkv', video: 'h264', audio: 'aac' }, t: NOW - 1000 }]]);
+      // m1 was answered for its current media (the fingerprint of an item with no versions or streams listed:
+      // FNV-1a of the empty string); m3 before fingerprints existed, so it is asked again.
+      return new Map([['m1', { r: { directPlay: false, remux: true, reasons: ['ContainerNotSupported'], container: 'mkv', video: 'h264', audio: 'aac' }, t: NOW - 1000, m: (0x811c9dc5).toString(36) }],
+        ['m3', { r: { directPlay: false, remux: true, reasons: ['ContainerNotSupported'], container: 'mkv', video: 'h264', audio: 'aac' }, t: NOW - 1000 }]]);
     },
     putDirectPlay: async (scope, profileHash, values, cap) => { puts.push({ scope, profileHash, ids: [...values.keys()], cap }); },
   };
   const h = setup(t, { settings: { statusTagsDirectPlay: true }, store });
   h.show(movie(), h.hosts[0], 'm1');
   h.show(movie(), h.hosts[1], 'm2');
+  h.show(movie(), h.hosts[2], 'm3');
   await h.settle();
   await h.slice(); await h.slice(); await h.slice();
-  assert.deepEqual(h.requests.map(r => r.id), ['m2'], 'the stored item is not asked about');
+  assert.deepEqual(h.requests.map(r => r.id).sort(), ['m2', 'm3'], 'the stored item is not asked about; one stored without a fingerprint is');
   assert.equal(h.badge(h.hosts[0]), "Won't direct play");
   assert.equal(h.chip(h.hosts[0]).title, "Won't direct play: container mkv");
   await new Promise(resolve => setTimeout(resolve, 2100));
-  assert.deepEqual(puts, [{ scope: 'server-a:user-a', profileHash: hash.value, ids: ['m2'], cap: 2000 }]);
+  assert.deepEqual(puts.map(p => ({ ...p, ids: p.ids.sort() })), [{ scope: 'server-a:user-a', profileHash: hash.value, ids: ['m2', 'm3'], cap: 2000 }]);
 });
 
 test('direct play: a replaced file is asked about again, and an answer for the old file never shows for the new one', async t => {
@@ -944,4 +948,36 @@ test('direct play: a replaced file is asked about again, and an answer for the o
   h.show(h264, h.hosts[0], 'm1');
   await h.slice();
   assert.equal(h.requests.length, 2);
+});
+
+for (const [field, before, after] of [['IsInterlaced', false, true], ['RealFrameRate', 24, 60], ['CodecTag', 'avc1', 'avc3'], ['BitRate', 8e6, 1e8], ['BitDepth', 8, 10]]) {
+  test(`direct play: a change in ${field} alone asks again (batch streams, no server revision)`, async t => {
+    let verdict = 'transcode';
+    const h = setup(t, { settings: { statusTagsDirectPlay: true }, answer: () => verdict });
+    const entry = value => movie({ StreamData: { Sources: [{ Id: 's1', Path: 'Film.mkv' }], Streams: [{ Type: 'Video', SourceId: 's1', Codec: 'h264', Width: 1920, Height: 1080, [field]: value }] } });
+    h.show(entry(before), h.hosts[0], 'm1');
+    await h.slice(); await h.slice();
+    assert.equal(h.badge(h.hosts[0]), 'Transcode');
+    verdict = 'direct';
+    h.show(entry(after), h.hosts[0], 'm1');
+    await h.slice(); await h.slice();
+    assert.equal(h.requests.length, 2);
+    assert.equal(h.chip(h.hosts[0]), null);
+  });
+}
+
+test('direct play: the server revision of a version decides, whatever the streams listed', async t => {
+  let verdict = 'transcode';
+  const h = setup(t, { settings: { statusTagsDirectPlay: true }, answer: () => verdict });
+  const entry = revision => movie({ StreamData: { Sources: [{ Id: 's1', Path: 'Film.mkv', Revision: revision }], Streams: [{ Type: 'Video', SourceId: 's1', Codec: 'h264', Width: 1920, Height: 1080 }] } });
+  h.show(entry('aaaaaaaaaaaa'), h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  verdict = 'direct';
+  h.show(entry('aaaaaaaaaaaa'), h.hosts[0], 'm1');
+  await h.slice();
+  assert.equal(h.requests.length, 1, 'same revision: from memory');
+  h.show(entry('bbbbbbbbbbbb'), h.hosts[0], 'm1');
+  await h.slice(); await h.slice();
+  assert.equal(h.requests.length, 2, 'new revision: asked again');
+  assert.equal(h.chip(h.hosts[0]), null);
 });

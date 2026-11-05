@@ -446,19 +446,25 @@
     }
 
     /**
-     * A short fingerprint of what a direct-play verdict depends on: the item's versions and their
-     * video/audio streams (codecs, profiles, sizes, channels, ranges). A replaced or re-encoded file
-     * changes it, so an old verdict is never shown for new media; score or review changes do not.
+     * A short fingerprint of what a direct-play verdict depends on. The server gives each version a
+     * Revision over every fact Jellyfin has for it (bitrates, bit depth, level, scan type, frame rate,
+     * codec tag…); without one, the version ids and paths and the video/audio stream facts at hand.
+     * A replaced or re-encoded file changes it, so an old verdict is never shown for new media; score
+     * or review changes do not.
      * @param {*} streams
      * @param {*} [sources]
      * @returns {string}
      */
     function mediaKeyOf(streams, sources) {
         const parts = [];
-        for (const source of Array.isArray(sources) ? sources : []) parts.push(`${source?.Id || ''}:${source?.Path || ''}`);
-        for (const stream of Array.isArray(streams) ? streams : []) {
+        const list = Array.isArray(sources) ? sources : [];
+        for (const source of list) parts.push(`${source?.Id || ''}:${source?.Path || ''}:${source?.Revision || ''}`);
+        const revised = list.length > 0 && list.every(source => typeof source?.Revision === 'string' && source.Revision);
+        for (const stream of !revised && Array.isArray(streams) ? streams : []) {
             if (stream?.Type !== 'Video' && stream?.Type !== 'Audio') continue;
-            parts.push([stream.SourceId, stream.Type, stream.Codec, stream.Profile, stream.Width, stream.Height, stream.Channels, stream.VideoRangeType].map(v => v ?? '').join(','));
+            parts.push([stream.SourceId, stream.Type, stream.Codec, stream.CodecTag, stream.Profile, stream.Level, stream.BitDepth, stream.BitRate,
+                stream.Width, stream.Height, stream.IsInterlaced, stream.RealFrameRate, stream.AverageFrameRate, stream.Channels, stream.VideoRangeType]
+                .map(v => v ?? '').join(','));
         }
         let hash = 0x811c9dc5;
         for (const char of parts.join('|')) hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;

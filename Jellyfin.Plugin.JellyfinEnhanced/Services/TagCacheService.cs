@@ -346,7 +346,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // audio out of the per-track sound facts of versions with an ordinary track.
         // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
         // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 46;
+        internal const int CurrentCacheSchemaVersion = 47;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call
@@ -3084,6 +3084,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             };
         }
 
+        /// <summary>
+        /// <see cref="TagMediaSource.Revision"/>: 12 hex characters of a SHA-256 over every fact Jellyfin has for the
+        /// version and its streams, so a replaced or re-encoded file changes it even with the same id, path, codec and size.
+        /// </summary>
+        internal static string MediaRevision(MediaBrowser.Model.Dto.MediaSourceInfo source)
+        {
+            var text = new System.Text.StringBuilder();
+            static string N(object? value) => value is IFormattable formattable ? formattable.ToString(null, System.Globalization.CultureInfo.InvariantCulture) : value?.ToString() ?? string.Empty;
+            text.Append(source.Id).Append('|').Append(source.Path).Append('|').Append(source.Container).Append('|').Append(N(source.Size))
+                .Append('|').Append(N(source.Bitrate)).Append('|').Append(N(source.RunTimeTicks)).Append('|').Append(N(source.Video3DFormat));
+            foreach (var s in source.MediaStreams ?? new List<MediaStream>())
+            {
+                text.Append('\n').AppendJoin('|', N(s.Index), N(s.Type), s.Codec, s.CodecTag, s.Profile, N(s.Level), N(s.BitDepth), N(s.BitRate),
+                    N(s.Width), N(s.Height), N(s.IsInterlaced), N(s.RealFrameRate), N(s.AverageFrameRate), N(s.Channels), s.ChannelLayout,
+                    N(s.SampleRate), N(s.VideoRangeType), s.ColorTransfer, s.PixelFormat, s.Language, N(s.IsDefault), N(s.IsForced), N(s.IsExternal));
+            }
+            return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString())))[..12];
+        }
+
         private (List<TagMediaStream>, List<TagMediaSource>, string[], MediaNamingTags, string[]) ExtractMediaData(BaseItem item)
         {
             var streams = new List<TagMediaStream>();
@@ -3120,6 +3139,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Path = string.IsNullOrEmpty(source.Path) ? null : MediaNamingTags.FileName(source.Path),
                         Name = sourceName,
                         Is3D = source.Video3DFormat != null ? true : null,
+                        Revision = MediaRevision(source),
                     });
 
                     foreach (var resolved in MediaStreamLanguageResolver.Resolve(source, item.Path, _languageCache))

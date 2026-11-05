@@ -876,7 +876,7 @@
                     const entry = tracked.get(card);
                     if (!entry) continue;
                     const memoryKey = `${hash}|${entry.id}`;
-                    if (memory.has(memoryKey) && !inFlight.has(memoryKey)) { queue.delete(memoryKey); pendingNotify.add(entry.onResult); }
+                    if (memory.has(memoryKey) && !inFlight.has(memoryKey) && sameMedia(memory.get(memoryKey), entry.media)) { queue.delete(memoryKey); pendingNotify.add(entry.onResult); }
                 }
                 scheduleSlice();
             } catch { /* the store marks itself unavailable */ }
@@ -931,14 +931,14 @@
     }
 
     /**
-     * Whether an answer was given for these media: a stored answer from before fingerprints (at most a day
-     * old) and a caller that names no media accept any.
+     * Whether an answer was given for these media. A caller that names no media accepts any; an answer
+     * stored before fingerprints existed is asked again for known media.
      * @param {{m?: string}} value
      * @param {string|undefined} media
      * @returns {boolean}
      */
     function sameMedia(value, media) {
-        return media === undefined || value.m === undefined || value.m === media;
+        return media === undefined || value.m === media;
     }
 
     /**

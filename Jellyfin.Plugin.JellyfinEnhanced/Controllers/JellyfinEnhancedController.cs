@@ -9894,6 +9894,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 Path = Services.MediaNamingTags.FileName(s.Path),
                                 Name = Services.MediaNamingTags.FileName(s.Name),
                                 Is3D = s.Video3DFormat != null ? true : (bool?)null,
+                                Revision = Services.TagCacheService.MediaRevision(s),
                             };
                         })
                         .ToList();

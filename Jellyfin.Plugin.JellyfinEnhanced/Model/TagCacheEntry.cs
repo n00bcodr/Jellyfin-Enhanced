@@ -483,11 +483,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Model
         public bool? Is3D { get; set; }
 
         /// <summary>
+        /// A short hash of every fact Jellyfin has for this version and its streams (container, size, bitrates,
+        /// codecs and tags, profiles and levels, bit depths, sizes, scan type, frame rates, channels, sample rates,
+        /// ranges, languages, default/forced/external flags): it changes whenever the file does. Clients key
+        /// device-specific answers (direct play) by it.
+        /// </summary>
+        public string? Revision { get; set; }
+
+        /// <summary>
         /// Value-compare for the no-op-rebuild check (see TagCacheEntry.ContentEquals).
         /// Compares EVERY property — an omitted field hides real changes from clients.
         /// </summary>
         public static bool ContentEquals(TagMediaSource a, TagMediaSource b) =>
             a.Id == b.Id && a.Source == b.Source && a.Edition == b.Edition
-            && a.RunTimeTicks == b.RunTimeTicks && a.Path == b.Path && a.Name == b.Name && a.Is3D == b.Is3D;
+            && a.RunTimeTicks == b.RunTimeTicks && a.Path == b.Path && a.Name == b.Name && a.Is3D == b.Is3D && a.Revision == b.Revision;
     }
 }

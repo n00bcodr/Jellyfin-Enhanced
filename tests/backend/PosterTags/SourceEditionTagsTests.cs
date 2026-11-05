@@ -328,4 +328,24 @@ public class StructuredSourceFactsTests
         };
         Assert.Equal(threeD, QualityTagRules.Detect(data, null).Contains("3D"));
     }
+
+    [Fact]
+    public void AVersionRevisionFollowsEveryFactJellyfinHasForTheFile()
+    {
+        MediaSourceInfo Version(Action<MediaBrowser.Model.Entities.MediaStream>? change = null)
+        {
+            var video = new MediaBrowser.Model.Entities.MediaStream { Index = 0, Type = MediaBrowser.Model.Entities.MediaStreamType.Video, Codec = "h264", CodecTag = "avc1", Width = 1920, Height = 1080, BitDepth = 8, BitRate = 8_000_000, RealFrameRate = 24 };
+            change?.Invoke(video);
+            return new MediaSourceInfo { Id = "s1", Path = "/movies/Film.mkv", Container = "mkv", Size = 1000, MediaStreams = [video] };
+        }
+        var baseline = TagCacheService.MediaRevision(Version());
+        Assert.Matches("^[0-9a-f]{12}$", baseline);
+        Assert.Equal(baseline, TagCacheService.MediaRevision(Version()));
+        foreach (var change in new Action<MediaBrowser.Model.Entities.MediaStream>[]
+        {
+            v => v.IsInterlaced = true, v => v.RealFrameRate = 60, v => v.CodecTag = "avc3",
+            v => v.BitRate = 100_000_000, v => v.BitDepth = 10, v => v.Level = 51, v => v.Profile = "High 10",
+        })
+            Assert.NotEqual(baseline, TagCacheService.MediaRevision(Version(change)));
+    }
 }
