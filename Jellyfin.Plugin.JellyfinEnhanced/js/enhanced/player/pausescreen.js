@@ -391,7 +391,7 @@
             @media (min-width: 1600px) { .pause-screen-resume { min-height: 56px; font-size: 24px; padding: 0 22px 0 12px; gap: 10px; } }
             /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
             .layout-tv .pause-screen-resume:focus { outline: 3px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
-            .layout-tv #pause-screen-close-btn:focus { outline: 2px solid #fff; outline-offset: 2px; background: rgba(20,20,24,.6); border-color: rgba(255,255,255,.35); }
+            .layout-tv #pause-screen-close-btn:focus { outline: 3px solid #fff; outline-offset: -4px; background: rgba(20,20,24,.6); border-color: rgba(255,255,255,.35); }
             .pause-screen-hint {
               font-size: var(--pause-screen-hint-size);
               line-height: 1.4;
@@ -427,11 +427,12 @@
               border-color: rgba(255,255,255,.35);
             }
 
+            /* the ring sits inside the button: it touches the top edge of the screen */
             #pause-screen-close-btn:focus-visible {
               outline: 2px solid #fff;
-              outline-offset: 2px;
+              outline-offset: -3px;
             }
-            @media (min-width: 1600px) { #pause-screen-close-btn:focus-visible { outline-width: 3px; } }
+            @media (min-width: 1600px) { #pause-screen-close-btn:focus-visible { outline-width: 3px; outline-offset: -4px; } }
             /* Accessibility helpers */
             #pause-screen-focus-start, #pause-screen-focus-end {
               position: fixed; width:1px; height:1px; overflow:hidden; clip: rect(0 0 0 0);
