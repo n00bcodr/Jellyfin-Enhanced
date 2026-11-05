@@ -78,9 +78,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         };
 
         /// <summary>
-        /// The user-review chip, or null when the web shows none. In the server-cache path the web
-        /// resolves the review key only for Movie and Series (Season/Episode need a parent series
-        /// the cache path never supplies), and only when the entry has a TMDB id.
+        /// The user-review chip, or null when the web shows none: an entry with a review key (a movie or
+        /// series with a TMDB id, a season or episode with its series' TMDB id and its numbers).
         /// </summary>
         /// <param name="entry">The tag-cache entry.</param>
         /// <param name="settings">Effective settings.</param>
@@ -88,7 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         public static RatingTag? ResolveUserReview(TagCacheEntry entry, PosterTagSettings settings, double? average)
         {
             if (!settings.UserReviewChipEnabled) return null;
-            if (entry.Type is not ("Movie" or "Series") || string.IsNullOrEmpty(entry.TmdbId)) return null;
+            if (PosterTagReviewRatings.ReviewKey(entry) == null) return null;
             if (average is null || double.IsNaN(average.Value) || double.IsInfinity(average.Value))
             {
                 return settings.ShowUserRatingDash ? new RatingTag(PosterRatingSource.UserReview, Dash, false) : null;

@@ -437,9 +437,11 @@
             return id ? { tmdbKey: String(id), mediaType: 'tv' } : null;
         }
         if (type === 'Season' || type === 'Episode') {
-            // SeriesProviderIds is not in the tag-data response — use parentSeries from extras
+            // The batch path supplies the parent series in extras; the server-cache path puts its
+            // TMDB id on the item itself (SeriesProviderIds, from the entry's SeriesTmdbId).
             const series = extras?.parentSeries;
-            const seriesTmdbId = series?.ProviderIds?.Tmdb || series?.ProviderIds?.tmdb;
+            const seriesTmdbId = series?.ProviderIds?.Tmdb || series?.ProviderIds?.tmdb
+                || item.SeriesProviderIds?.Tmdb || item.SeriesProviderIds?.tmdb;
             if (!seriesTmdbId) return null;
 
             if (type === 'Season') {

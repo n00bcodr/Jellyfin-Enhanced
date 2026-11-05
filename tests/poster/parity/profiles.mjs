@@ -304,8 +304,12 @@ const adminCache = read(`tagcache-${admin.id}.json`);
 const averages = [null, 4.5, 3, 3.6666666666666665, 2.25, 1, 5, 4.75, 3.35, 2.5];
 let r = 0;
 for (const entry of [...Object.values(adminCache), ...Object.values(syntheticEntries)]) {
-    if ((entry.Type === 'Movie' || entry.Type === 'Series') && /^\d+$/.test(entry.TmdbId || '')) {
-        const key = `${entry.Type === 'Movie' ? 'movie' : 'tv'}:${entry.TmdbId}`;
+    // Seasons and episodes carry their series' TMDB id and their numbers (PosterTagReviewRatings.ReviewKey).
+    const series = /^\d+$/.test(entry.SeriesTmdbId || '') ? entry.SeriesTmdbId : null;
+    const key = (entry.Type === 'Movie' || entry.Type === 'Series') && /^\d+$/.test(entry.TmdbId || '') ? `${entry.Type === 'Movie' ? 'movie' : 'tv'}:${entry.TmdbId}`
+        : entry.Type === 'Season' && series && Number.isInteger(entry.SeasonNumber) ? `tv:${series}:s${entry.SeasonNumber}`
+        : entry.Type === 'Episode' && series && Number.isInteger(entry.SeasonNumber) && Number.isInteger(entry.EpisodeNumber) ? `tv:${series}:s${entry.SeasonNumber}:e${entry.EpisodeNumber}` : null;
+    if (key) {
         if (key in syntheticReviews) continue;
         const average = averages[r++ % averages.length];
         syntheticReviews[key] = average === null ? null : { average, count: (r % 3) + 1 };

@@ -217,3 +217,23 @@ public class StatusEpisodeRangeTests
         Assert.Equal(finale, StatusRules.Resolve(series, settings, new(DateTimeOffset.Parse(now), schedule))?.Key == "series_finale");
     }
 }
+
+public class UserReviewKeyTests
+{
+    [Theory]
+    [InlineData("Movie", "603", null, null, null, "movie:603")]
+    [InlineData("Series", "1399", null, null, null, "tv:1399")]
+    [InlineData("Season", null, "1399", 1, null, "tv:1399:s1")]
+    [InlineData("Episode", null, "1399", 1, 2, "tv:1399:s1:e2")]
+    [InlineData("Season", null, null, 1, null, null)]
+    [InlineData("Episode", null, "1399", 1, null, null)]
+    [InlineData("BoxSet", "10", null, null, null, null)]
+    public void SeasonsAndEpisodesTakeTheirSeriesTmdbIdAndNumbers(string type, string? tmdb, string? series, int? season, int? episode, string? expected)
+    {
+        var entry = new TagCacheEntry { Type = type, TmdbId = tmdb, SeriesTmdbId = series, SeasonNumber = season, EpisodeNumber = episode };
+        Assert.Equal(expected, PosterTagReviewRatings.ReviewKey(entry));
+        var settings = PosterTagSettings.FromSettingsJson("{\"RatingTagsEnabled\":true}", new PluginConfiguration { ShowUserReviews = true, ShowUserRatingOnPosters = true });
+        Assert.True(settings.UserReviewChipEnabled);
+        Assert.Equal(expected != null, RatingRules.ResolveUserReview(entry, settings, 4) != null);
+    }
+}

@@ -23,9 +23,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
     // match (store key ends with ":" + key), same per-viewer visibility
     // (ReviewVisibility), same "only a non-zero rating counts" rule.
     //
-    // The web chip only resolves a key for Movie ("movie:{tmdb}") and Series
-    // ("tv:{tmdb}") cards in server-cache mode; Season/Episode cards never get
-    // the chip there (spec-visual §6, a web quirk kept for parity).
+    // The web chip's key: "movie:{tmdb}", "tv:{tmdb}", and for seasons and
+    // episodes their series' TMDB id with the season ("tv:{series}:s{n}") and
+    // episode ("tv:{series}:s{n}:e{m}") numbers, in every delivery mode.
     //
     // reviews.json is read once into an index (by every ":"-tail of each store
     // key, mirroring the endpoint's suffix match) and rebuilt after a review
@@ -103,17 +103,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             return count == 0 ? new PosterTagReviewSummary(null, 0) : new PosterTagReviewSummary(sum / count, count);
         }
 
-        /// <summary>The web chip's review key for an entry (Movie and Series only), or null.</summary>
-        public static string? ReviewKey(TagCacheEntry entry)
+        /// <summary>The web chip's review key for an entry, or null when it has no TMDB identity.</summary>
+        public static string? ReviewKey(TagCacheEntry entry) => entry.Type switch
         {
-            if (string.IsNullOrEmpty(entry.TmdbId)) return null;
-            return entry.Type switch
-            {
-                "Movie" => "movie:" + entry.TmdbId,
-                "Series" => "tv:" + entry.TmdbId,
-                _ => null,
-            };
-        }
+            "Movie" when !string.IsNullOrEmpty(entry.TmdbId) => "movie:" + entry.TmdbId,
+            "Series" when !string.IsNullOrEmpty(entry.TmdbId) => "tv:" + entry.TmdbId,
+            "Season" when !string.IsNullOrEmpty(entry.SeriesTmdbId) && entry.SeasonNumber is { } season
+                => FormattableString.Invariant($"tv:{entry.SeriesTmdbId}:s{season}"),
+            "Episode" when !string.IsNullOrEmpty(entry.SeriesTmdbId) && entry.SeasonNumber is { } season && entry.EpisodeNumber is { } episode
+                => FormattableString.Invariant($"tv:{entry.SeriesTmdbId}:s{season}:e{episode}"),
+            _ => null,
+        };
 
         public void Dispose()
         {
