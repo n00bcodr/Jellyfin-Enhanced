@@ -54,10 +54,16 @@ public class ApiAssetTests
         using var fixture = new CoreFixture();
         var controller = Controller(fixture);
         foreach (var (result, mime) in new[] {
-            (controller.GetConfigPageStylesheet(), "text/css"),
+            (controller.GetAdminStylesheet(), "text/css"),
             (controller.GetScript("component-scripts.json"), "application/json"),
             (controller.GetMainScript(), "application/javascript") })
         {
+            if (result is ContentResult content)
+            {
+                Assert.Equal(mime, content.ContentType);
+                Assert.NotEmpty(content.Content ?? string.Empty);
+                continue;
+            }
             var file = Assert.IsType<FileStreamResult>(result);
             using var reader = new StreamReader(file.FileStream);
             Assert.Equal(mime, file.ContentType);
