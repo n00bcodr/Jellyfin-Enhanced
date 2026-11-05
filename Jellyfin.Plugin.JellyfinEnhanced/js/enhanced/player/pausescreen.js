@@ -155,9 +155,9 @@
               --pause-screen-plot-max-w: 56ch;
               --pause-screen-progress-height: 4px;
               --pause-screen-progress-radius: 999px;
-              --pause-screen-disc-w: clamp(220px, 24vw, 460px);
+              --pause-screen-disc-w: clamp(220px, 20vw, 360px);
               --pause-screen-disc-rot-sec: 90s;
-              --pause-screen-poster-w: clamp(170px, 18vw, 360px);
+              --pause-screen-poster-w: clamp(170px, 16vw, 300px);
               --pause-screen-still-w: clamp(240px, 26vw, 500px);
             }
 
@@ -187,9 +187,12 @@
                 transform: none !important;
                 top: 0 !important;
             }
-            .pause-screen-active .skinHeader.osdHeader .headerRight {
+            .pause-screen-active .skinHeader.osdHeader .headerRight,
+            .pause-screen-active .skinHeader.osdHeader .pageTitle,
+            .pause-screen-active .skinHeader.osdHeader .videoOsd-appBar > :not(button) {
                 display: none !important;
             }
+            .pause-screen-active .skinHeader.osdHeader .videoOsd-appBar { align-items: flex-start !important; }
 
             .pause-screen-active .skinHeader.osdHeader {
                 visibility: hidden !important;
@@ -314,8 +317,9 @@
               aspect-ratio: 2 / 3;
               object-fit: cover; display: block;
               border-radius: 12px;
-              box-shadow: 0 24px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08);
+              box-shadow: 0 12px 32px rgba(0,0,0,.35), 0 0 0 1px rgba(255,255,255,.08);
             }
+            #pause-screen-poster:not(.is-still) { filter: brightness(.9); }
 
             @keyframes pause-screen-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
@@ -331,7 +335,7 @@
               height: var(--pause-screen-progress-height);
               border-radius: var(--pause-screen-progress-radius);
               background: #30343b;
-              box-shadow: 0 0 0 1px rgba(140,143,150,.55);
+              box-shadow: 0 0 0 1px #9ca3af;
               overflow: hidden;
               position: relative;
             }
@@ -371,7 +375,7 @@
               border-radius: 6px;
               color: #fff;
               font: inherit;
-              font-size: calc(var(--pause-screen-hint-size) * .95);
+              font-size: max(14px, var(--pause-screen-hint-size));
               font-weight: 600;
               line-height: 1.2;
               cursor: pointer;
@@ -380,13 +384,16 @@
             .pause-screen-resume .material-icons { font-size: 1.4em; }
             .pause-screen-resume:hover { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.45); }
             .pause-screen-resume:focus-visible { outline: 2px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
-            @media (min-width: 1600px) { .pause-screen-resume { min-height: 52px; padding: 0 20px 0 14px; } }
+            @media (min-width: 1600px) { .pause-screen-resume { min-height: 52px; padding: 0 20px 0 10px; gap: 10px; } }
+            /* Older TV browsers (webOS 5/6, Tizen ≤ 6.5) have no :focus-visible; give the remote a focus style anyway */
+            .layout-tv .pause-screen-resume:focus { outline: 3px solid #fff; outline-offset: 4px; background: #fff; border-color: #fff; color: #111; }
+            .layout-tv #pause-screen-close-btn:focus { outline: 2px solid #fff; outline-offset: 2px; background: rgba(20,20,24,.6); border-color: rgba(255,255,255,.35); }
             .pause-screen-hint {
               font-size: var(--pause-screen-hint-size);
               line-height: 1.4;
               color: rgba(255,255,255,.85);
             }
-            @media (min-width: 1600px) { .pause-screen-resume:focus-visible { outline-width: 3px; } :root { --pause-screen-progress-height: 8px; } }
+            @media (min-width: 1600px) { .pause-screen-resume:focus-visible { outline-width: 3px; } }
             #pause-screen-close-btn {
               position: absolute;
               top: 2px;
@@ -433,9 +440,12 @@
                 text-align: left !important;
             }
 
-            /* Large screens: thicker track for distance viewing */
+            /* Large screens: thicker track and bigger playback facts for distance viewing */
             @media (min-width: 1200px) {
-              :root { --pause-screen-progress-height: 6px; }
+              :root { --pause-screen-progress-height: 6px; --pause-screen-meta-size: clamp(20px, 1.5vw, 28px); }
+            }
+            @media (min-width: 1600px) {
+              :root { --pause-screen-progress-height: 8px; }
             }
 
             /* Narrow landscape (tablets, phones on their side): no room for the art column, text spans the width */
@@ -464,13 +474,29 @@
               }
               #pause-screen-close-btn { opacity: .85; }
               .pause-screen-layout { padding-top: 76px; padding-bottom: 176px; align-items: end; }
-              @media (min-height: 800px) and (orientation: portrait) { :root { --pause-screen-plot-lines: 5; } }
+              @media (min-height: 800px) and (orientation: portrait) { :root { --pause-screen-plot-lines: 6; } }
+              @media (min-height: 900px) and (orientation: portrait) { :root { --pause-screen-plot-lines: 7; } }
               @media (min-height: 740px) and (orientation: portrait) {
-                .pause-screen-layout { grid-template-rows: auto auto; align-content: start; align-items: start; row-gap: 16px; }
-                .pause-screen-art { display: flex; order: -1; align-self: start; justify-content: flex-start; min-height: 0; }
-                #pause-screen-poster { width: 120px; }
+                .pause-screen-layout {
+                  grid-template-columns: auto minmax(0, 1fr);
+                  grid-template-areas: "logo logo" "title title" "sub sub" "art facts" "art genres" "plot plot";
+                  align-content: start; align-items: start; row-gap: 0; column-gap: 16px;
+                }
+                .pause-screen-main { display: contents; }
+                .pause-screen-main > * { margin-bottom: 12px; }
+                #pause-screen-logo { grid-area: logo; }
+                #pause-screen-title { grid-area: title; }
+                #pause-screen-subtitle { grid-area: sub; }
+                .pause-screen-art { display: flex; grid-area: art; align-self: start; justify-content: flex-start; min-height: 0; margin-bottom: 12px; }
+                #pause-screen-details { grid-area: facts; align-self: end; }
+                #pause-screen-genres { grid-area: genres; align-self: start; margin-top: 0; }
+                #pause-screen-plot { grid-area: plot; margin-top: 4px; }
+                #pause-screen-poster { width: 96px; }
+                #pause-screen-disc { width: 112px; animation: none; }
+                /* an episode still goes under the episode line, full width */
+                #pause-screen-overlay.has-still .pause-screen-layout { grid-template-areas: "logo logo" "title title" "sub sub" "art art" "facts facts" "genres genres" "plot plot"; }
+                #pause-screen-overlay.has-still .pause-screen-art { align-self: start; }
                 #pause-screen-poster.is-still { width: 100%; max-width: 420px; }
-                #pause-screen-disc { width: 144px; animation: none; }
               }
               #pause-screen-title { font-size: clamp(28px, 8vw, 40px); }
               #pause-screen-subtitle { font-size: 18px; }
@@ -510,6 +536,7 @@
             }
 
             @media (forced-colors: active) {
+              #pause-screen-progress-bar { border: 1px solid CanvasText; }
               #pause-screen-progress-bar > span { background: Highlight; forced-color-adjust: none; }
             }
 
@@ -536,6 +563,7 @@
           this.overlay.setAttribute("aria-hidden", "true");
           this.overlay.setAttribute("aria-modal", "true");
           this.overlay.setAttribute("aria-label", JE.t('pausescreen_paused'));
+          this.overlay.setAttribute("aria-describedby", "pause-screen-progress-meta pause-screen-hint");
 
           this.focusStart = document.createElement('div');
           this.focusStart.id = 'pause-screen-focus-start';
@@ -679,7 +707,7 @@
 
           // Pointer/touch anywhere but the close button resumes
           const tryResume = (event) => {
-            if (event.target?.closest?.('#pause-screen-close-btn, #pause-screen-hint')) return;
+            if (event.target?.closest?.('#pause-screen-close-btn, #pause-screen-resume')) return;
             // Introduce a delay to allow for long-press detection; fade right away so the tap reads as taken
             this.overlay.classList.add('is-resuming');
             JE.state.pauseScreenClickTimer = setTimeout(() => this.resume(), 500);
@@ -1061,6 +1089,7 @@
           this.overlayPoster.removeAttribute('src');
           this.overlayBackdrop.style.backgroundImage = '';
           this.overlayBackdrop.classList.remove('is-still');
+          this.overlay.classList.remove('has-still');
           this.overlay.setAttribute('aria-label', JE.t('pausescreen_paused'));
           // reset progress
           this.setProgress(0, 0);
@@ -1151,6 +1180,7 @@
           if (stillURL || posterURL) this.overlayPoster.src = stillURL || posterURL;
           const backdropChoice = stillURL || backdropURL;
           this.overlayBackdrop.classList.toggle('is-still', !!stillURL);
+          this.overlay.classList.toggle('has-still', !!stillURL);
           if (backdropChoice) this.overlayBackdrop.style.backgroundImage = `url("${backdropChoice}")`;
 
           // Episodes rarely carry genres of their own; borrow the series' list.
