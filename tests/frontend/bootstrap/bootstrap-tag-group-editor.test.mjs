@@ -492,7 +492,8 @@ test('centre pills save both position representations and repaint the live previ
   }
   assert.equal(h.row('quality').querySelector('.je-tge-pills').dataset.layout, 'corners');
   const css = h.document.getElementById('je-tag-group-editor').textContent;
-  assert.match(css, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(css, /grid-template-columns: repeat\(3, 1fr\); grid-template-rows: repeat\(3, 1fr\)/, 'the nine positions are drawn as a 3 x 3 grid on a poster');
+  assert.match(css, /aspect-ratio: 2 \/ 3;/, 'the grid is a poster-shaped rectangle');
 });
 
 test('language Priority editor adds by name/code, moves/removes, preserves focus and drives the real preview', async t => {

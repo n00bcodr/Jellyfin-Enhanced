@@ -175,7 +175,8 @@
         const stop = slots.includes(current) ? current : slots[0];
         return slots.map((slot) => {
             const label = slotLabel(conf.layout, slot);
-            return `<button type="button" class="je-tge-pill" data-slot="${slot}" aria-pressed="${slot === current}" tabindex="${slot === stop ? 0 : -1}" aria-label="${escapeHtml(`${name}: ${label}`)}">${escapeHtml(label)}</button>`;
+            const content = slot === 'off' && conf.layout === 'corners' ? '<span class="material-icons" aria-hidden="true">visibility_off</span>' : escapeHtml(label);
+            return `<button type="button" class="je-tge-pill" data-slot="${slot}" aria-pressed="${slot === current}" tabindex="${slot === stop ? 0 : -1}" aria-label="${escapeHtml(`${name}: ${label}`)}" title="${escapeHtml(label)}">${content}</button>`;
         }).join('');
     }
 
@@ -436,7 +437,7 @@
                 <div class="je-tge-body" id="${bodyId}" hidden>
                     <div class="je-tge-hint">${escapeHtml(JE.t(meta.descKey))}</div>
                     ${badges}
-                    <div class="je-tge-field" role="group" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position'))}">
+                    <div class="je-tge-field" data-je-position role="group" aria-label="${escapeHtml(JE.t('panel_settings_subtitles_position'))}">
                         <div class="je-tge-label je-tge-section" aria-hidden="true">${escapeHtml(JE.t('panel_settings_subtitles_position'))}</div>
                         <div class="je-tge-pills" data-layout="${conf.layout}">${pillsHtml(conf, group)}</div>
                     </div>
@@ -660,6 +661,7 @@
         #jellyfin-enhanced-panel .je-tge-more[open] > .je-tge-more-toggle .material-icons { transform: rotate(180deg); }
         #jellyfin-enhanced-panel .je-tge-more-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 12px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
         #jellyfin-enhanced-panel .je-tge-extra select { min-height: 40px; }
+        #jellyfin-enhanced-panel select option { background: #262626; color: #fff; }
         #jellyfin-enhanced-panel .je-tge-reset { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; background: rgba(255,255,255,0.06); color: #fff; border: 1px solid rgba(255,255,255,0.22); border-radius: 6px; padding: 0 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
         #jellyfin-enhanced-panel .je-tge-reset .material-icons { font-size: 18px; }
         #jellyfin-enhanced-panel .je-tge-rows { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -685,13 +687,27 @@
         #jellyfin-enhanced-panel .je-tge-enable-hit:hover { background: rgba(255,255,255,0.06); }
         #jellyfin-enhanced-panel .je-tge-enable-hit:has(input:focus-visible) { outline: 2px solid #fff; outline-offset: -2px; }
         #jellyfin-enhanced-panel .je-tge .je-tge-enable-hit input:focus-visible { outline: none; }
-        #jellyfin-enhanced-panel .je-tge-body { padding: 12px 14px 14px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 16px; }
+        /* The group's settings sit in two columns on a wide panel: the position picker on the left, "Show up to" beside it;
+           everything else (description, badges, include, where to show) spans the full width. A narrow panel stacks them. */
+        #jellyfin-enhanced-panel .je-tge-body { padding: 12px 14px 14px; border-top: 1px solid rgba(255,255,255,0.08); display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 16px 32px; align-items: start; }
+        #jellyfin-enhanced-panel .je-tge-body > * { grid-column: 1 / -1; min-width: 0; }
+        #jellyfin-enhanced-panel .je-tge-body > .je-tge-field[data-je-position] { grid-column: 1; }
+        #jellyfin-enhanced-panel .je-tge-body > .je-tge-field[data-je-cap-note], #jellyfin-enhanced-panel .je-tge-body > .je-tge-field[data-je-cap-control] { grid-column: 2; }
+        @media (max-width: 640px) {
+            #jellyfin-enhanced-panel .je-tge-body { display: flex; flex-direction: column; }
+            #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] { margin-right: 0; }
+        }
         #jellyfin-enhanced-panel .je-tge-body[hidden] { display: none; }
-        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > [data-slot="off"] { grid-column: 1 / -1; }
-        /* Corners: the nine positions by name in a 3 × 3 grid (the admin page and item editor use the same picker). */
-        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] { gap: 6px; max-width: 440px; }
-        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill { justify-content: center; min-height: 36px; border-radius: 8px; text-align: center; line-height: 1.2; }
+        /* Corners: the nine positions as a small poster-shaped grid, like the single-corner picker the panel always had:
+           a tile per position, the chosen one filled with the accent (each tile's name is its tooltip and accessible
+           name); Hidden is a plain button beside it. */
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 3px; box-sizing: border-box; width: 84px; aspect-ratio: 2 / 3; margin-right: 56px; padding: 4px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.3); }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill:not([data-slot="off"]) { display: block; width: 100%; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 3px; background: rgba(255,255,255,0.1); font-size: 0; line-height: 0; color: transparent; transition: background 0.2s; }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill:not([data-slot="off"]):hover { background: rgba(255,255,255,0.22); }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill:not([data-slot="off"])[aria-pressed="true"] { background: var(--je-tge-sel); }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > .je-tge-pill:not([data-slot="off"]):focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > [data-slot="off"] { position: absolute; left: calc(100% + 12px); top: 0; width: 40px; min-height: 40px; padding: 0; justify-content: center; border-radius: 8px; font-size: 0; }
+        #jellyfin-enhanced-panel .je-tge-pills[data-layout="corners"] > [data-slot="off"] .material-icons { font-size: 22px; line-height: 1; }
         #jellyfin-enhanced-panel .je-tge-pills, #jellyfin-enhanced-panel .je-tge-includes, #jellyfin-enhanced-panel .je-tge-cats { display: flex; flex-wrap: wrap; gap: 6px; }
         #jellyfin-enhanced-panel .je-tge-pill, #jellyfin-enhanced-panel .je-tge-toggle-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.46); border-radius: 999px; min-height: 32px; box-sizing: border-box; padding: 4px 12px; background: transparent; color: rgba(255,255,255,0.88); font: inherit; font-size: 13px; cursor: pointer; }
         #jellyfin-enhanced-panel :is(.je-tge-pill, .je-tge-toggle-pill):hover { background: rgba(255,255,255,0.06); }
