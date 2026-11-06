@@ -17,7 +17,12 @@
 // - JE.reinitializeXTags function names (defined by each tag module,
 //   delegating to reinitialize() here)
 //
-// Public surface: JE.core.tagRenderer { register, reinitialize, resolvePosition }.
+// Placement: the six poster groups are handed to the shared layout
+// controller (js/core/tag-layout.js), which owns where and how they appear;
+// a renderer it does not know keeps the original direct-append behaviour.
+//
+// Public surface: JE.core.tagRenderer { register, reinitialize, resolvePosition,
+// isIgnoredContext, applyCornerStacking, scheduleCornerStacking }.
 (function(JE) {
     'use strict';
 
@@ -41,9 +46,13 @@
      * @property {Function} render - (ctx, el, item, extras) => void.
      * @property {Function} [renderFromCache] - (ctx, el, itemId) => boolean.
      * @property {Function} [renderFromServerCache] - (ctx, el, entry, itemId) => void.
-     * @property {Function} [onServerCacheRefresh] - (ctx, updatedIds|null) => void.
+     * @property {Function} [onServerCacheRefresh] - (ctx, updatedIds|null, info?) => void;
+     *   info.replaced is true when the pipeline swapped in a replacement cache
+     *   under cards it will not re-render itself.
+     * @property {Function} [cleanup] - (ctx) => void; release feature resources on reinitialize/teardown.
      * @property {boolean} [needsFirstEpisode]
      * @property {boolean} [needsParentSeries]
+     * @property {boolean} [needsLatestEpisode]
      */
 
     /**
@@ -84,6 +93,53 @@
 
     /** @type {Map<string, any>} name → tag instance */
     const tags = new Map();
+
+    /** @type {Map<string, TagSpec>} Base styles available even when a renderer is disabled. */
+    const styleSpecs = new Map();
+
+    /** @type {Map<HTMLElement, Set<object>>} Sheets borrowed only by live previews. */
+    const previewStyles = new Map();
+
+    /** @type {string|null} STANDARD_IGNORE_SELECTORS (+ search page) joined, per DisableTagsOnSearchPage */
+    let standardIgnoreSelector = null;
+    let standardIgnoreSearch = null;
+
+    /**
+     * Whether a card sits in a context that never shows poster tags (the
+     * standard exclusions every renderer but genre uses, plus the search page
+     * when DisableTagsOnSearchPage is set). The layout controller asks before
+     * reserving caption space for a card no renderer will tag.
+     * @param {HTMLElement} el - A render target or anything inside the card.
+     * @returns {boolean}
+     */
+    function isIgnoredContext(el) {
+        if (!el) return true;
+        const search = JE.pluginConfig?.DisableTagsOnSearchPage === true;
+        if (standardIgnoreSelector === null || standardIgnoreSearch !== search) {
+            standardIgnoreSearch = search;
+            standardIgnoreSelector = STANDARD_IGNORE_SELECTORS
+                .concat(search ? ['#searchPage .cardImageContainer'] : [])
+                .join(', ');
+        }
+        const target = el.closest('.cardImageContainer')
+            || el.closest('.cardScalable')?.querySelector('.cardImageContainer')
+            || el;
+        try {
+            return target.closest(standardIgnoreSelector) !== null;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * The layout controller when it manages this renderer's group, else null.
+     * @param {string} name - Pipeline renderer name.
+     * @returns {any}
+     */
+    function layoutFor(name) {
+        const layout = JE.core.tagLayout;
+        return layout && layout.normalizeGroup(name) ? layout : null;
+    }
 
     /**
      * Resolve a tag position setting (user → admin default → hardcoded) into
@@ -257,6 +313,63 @@
             unloadRegistered: false,
         };
 
+        // Only the accepted /tag-data callback can authorize a fallback write. Never
+        // label /Items, IndexedDB or server-cache projections with mutable page state.
+        let writeRevision = null;
+        const ENVELOPE_VERSION = 1;
+        function revision() {
+            try {
+                const value = JE.tagPipeline?.tagStripRevision?.();
+                return typeof value === 'string' && value.length ? value : null;
+            } catch { return null; }
+        }
+        function dirty() { JE._cacheManager?.markDirty(); }
+        function discard(itemId) {
+            delete state.cache[itemId];
+            state.hot?.delete(itemId);
+            dirty();
+        }
+        function valid(entry, stamp) {
+            return !!entry && entry.v === ENVELOPE_VERSION && entry.stripRevision === stamp
+                && Object.prototype.hasOwnProperty.call(entry, 'payload')
+                && Number.isFinite(entry.timestamp) && Date.now() - entry.timestamp < state.cacheTtl;
+        }
+        function readFallback(itemId, persistent) {
+            const stamp = revision();
+            // Bootstrap failure/guard invalidation is unknown, not permission to reuse
+            // a copy. Leave it intact until an authoritative answer arrives.
+            if (stamp === null) return undefined;
+            const entry = persistent ? state.cache[itemId] : state.hot?.get(itemId);
+            if (entry === undefined) return undefined;
+            if (!valid(entry, stamp) || (persistent && stamp !== 'none')) {
+                discard(itemId);
+                return undefined;
+            }
+            return entry.payload;
+        }
+        function writeFallback(itemId, payload, persistent) {
+            if (writeRevision === null || !spec.cache) return;
+            const entry = { v: ENVELOPE_VERSION, stripRevision: writeRevision, payload,
+                timestamp: Number.isFinite(payload?.timestamp) ? payload.timestamp : Date.now() };
+            // Every persistent write also has a page-local copy, including empty facts.
+            if (state.hot) state.hot.set(itemId, entry);
+            if (writeRevision === 'none' && persistent) state.cache[itemId] = entry;
+            else if (writeRevision !== 'none') delete state.cache[itemId];
+            dirty();
+        }
+        // Preserve the module-facing Map vocabulary, but never expose raw hot entries.
+        const hot = {
+            get: itemId => readFallback(itemId, false),
+            set(itemId, payload) { writeFallback(itemId, payload, false); return hot; },
+            delete(itemId) { discard(itemId); return true; },
+            clear() { state.hot?.clear(); },
+            get size() { return state.hot?.size || 0; },
+        };
+        function invalidateFallback(updatedIds) {
+            if (!updatedIds) { state.cache = {}; state.hot?.clear(); dirty(); }
+            else for (const id of updatedIds) discard(String(id));
+        }
+
         // ── Ignore / tagged helpers ────────────────────────────────────
 
         /** @returns {string[]} */
@@ -321,6 +434,10 @@
             // Attribute first: the common case (this renderer hasn't tagged the
             // card yet) then costs a dataset read, not a subtree query.
             if (/** @type {HTMLElement} */ (card).dataset?.[TAGGED_ATTR] !== '1') return false;
+            // Layout-managed groups: the controller holds what the card shows
+            // (a pill or dots carry no wrapper class to look for).
+            const layout = layoutFor(name);
+            if (layout) return layout.hasGroup(el, name);
             // The overlay is normally a direct child of the render target.
             for (const child of el.children) {
                 if (child.classList.contains(containerClass)) return true;
@@ -393,10 +510,9 @@
         function saveCache() {
             if (!spec.cache || !state.localStorageEnabled) return;
             try {
-                if (spec.cache.pruneOnSave) {
-                    const now = Date.now();
+                { // Every saved envelope must be authoritative, unstripped and within TTL.
                     for (const [key, entry] of Object.entries(state.cache)) {
-                        if (entry && now - entry.timestamp > state.cacheTtl) {
+                        if (!valid(entry, 'none')) {
                             delete state.cache[key];
                         }
                     }
@@ -457,7 +573,17 @@
         /** Inject (or replace) this tag's stylesheet under its frozen style id. */
         function injectCss() {
             if (!spec.styleId || typeof spec.buildCss !== 'function') return;
-            JE.core.ui.injectCss(spec.styleId, spec.buildCss(ctx));
+            const css = spec.buildCss(ctx);
+            const text = JE.core.tagLayout?.preserveLegacySizing?.(css) || css;
+            const existing = document.getElementById(spec.styleId);
+            if (existing && previewStyles.delete(existing)) {
+                // A personal renderer takes over the preview's sheet in place.
+                // Its lifetime now belongs to the renderer, regardless of previews.
+                delete existing.dataset.jeTagPreviewOwned;
+                existing.textContent = text;
+            } else {
+                JE.core.ui.injectCss(spec.styleId, text);
+            }
         }
 
         // ── Context handed to spec callbacks ───────────────────────────
@@ -468,25 +594,20 @@
             containerClass,
             taggedAttr: TAGGED_ATTR,
             /** @returns {Map<string, any>|null} shared hot cache bucket */
-            get hot() { return state.hot; },
+            get hot() { return state.hot ? hot : null; },
             /** @returns {number} cache TTL in ms */
             get cacheTtl() { return state.cacheTtl; },
             /** @returns {boolean} whether localStorage fallback is active */
             get localStorageEnabled() { return state.localStorageEnabled; },
             /**
              * @param {string} itemId
-             * @returns {*} the persistent cache entry (raw, module-defined shape)
+             * @returns {*} the validated, module-defined payload
              */
-            getPersistent(itemId) { return state.cache[itemId]; },
-            /**
-             * Store a persistent cache entry and schedule a save.
-             * @param {string} itemId
-             * @param {*} value
-             */
-            setPersistent(itemId, value) {
-                state.cache[itemId] = value;
-                if (JE._cacheManager) JE._cacheManager.markDirty();
-            },
+            getPersistent(itemId) { return readFallback(itemId, true); },
+            /** Only called within an authoritative batch render (see writeRevision). */
+            setPersistent(itemId, value) { writeFallback(itemId, value, true); },
+            deletePersistent: discard,
+            clearPersistent() { state.cache = {}; dirty(); },
             isTagged,
             markTagged,
             shouldIgnore,
@@ -496,12 +617,14 @@
              * @param {HTMLElement} el
              */
             removeExistingOverlay(el) {
+                layoutFor(name)?.removeGroup(el, name);
                 const existing = el.querySelector(`.${containerClass}`);
                 if (existing) existing.remove();
             },
             /**
-             * Append the overlay if it has content and mark the card tagged.
-             * Does NOT run corner-stacking itself: up to 4 renderers can each
+             * Hand the overlay to the layout controller (or, for a renderer it
+             * does not manage, append it) if it has content, and mark the card
+             * tagged. Unmanaged overlays are NOT corner-stacked here: up to 4 renderers can each
              * commit an overlay onto the same host, and re-measuring
              * (getBoundingClientRect) after every single one forces a layout
              * per renderer per card. The pipeline calls
@@ -512,6 +635,17 @@
              * @returns {boolean} true if the overlay was attached
              */
             commitOverlay(el, overlay) {
+                const layout = layoutFor(name);
+                // "Where to show": a group switched off for this card's type or home row is not drawn.
+                if (name !== 'rating' && JE.core.tagScopes?.excludes(name, el)) {
+                    if (layout) layout.removeGroup(el, name);
+                    return false;
+                }
+                if (layout) {
+                    if (!layout.commitGroup(el, name, overlay)) return false;
+                    markTagged(el);
+                    return true;
+                }
                 if (spec.position) {
                     const p = resolvePosition(spec.position.userKey, spec.position.pluginKey, spec.position.fallback);
                     overlay.dataset.jeCorner = p.pos;
@@ -572,19 +706,27 @@
                 return;
             }
             JE.tagPipeline.registerRenderer(name, {
-                render: (el, item, extras) => p.render(ctx, el, item, extras),
+                render: (el, item, extras) => {
+                    writeRevision = typeof extras?.stripRevision === 'string' && extras.stripRevision.length
+                        ? extras.stripRevision : null;
+                    try { return p.render(ctx, el, item, extras); }
+                    finally { writeRevision = null; }
+                },
                 renderFromCache: p.renderFromCache
                     ? (el, itemId) => p.renderFromCache(ctx, el, itemId)
                     : undefined,
                 renderFromServerCache: p.renderFromServerCache
                     ? (el, entry, itemId) => p.renderFromServerCache(ctx, el, entry, itemId)
                     : undefined,
-                onServerCacheRefresh: p.onServerCacheRefresh
-                    ? (updatedIds) => p.onServerCacheRefresh(ctx, updatedIds)
-                    : undefined,
+                onServerCacheRefresh: (updatedIds, info) => {
+                    invalidateFallback(updatedIds);
+                    p.onServerCacheRefresh?.(ctx, updatedIds, info);
+                },
+                cleanup: p.cleanup ? () => p.cleanup(ctx) : undefined,
                 isEnabled: () => !!JE.currentSettings?.[spec.settingKey],
                 needsFirstEpisode: !!p.needsFirstEpisode,
                 needsParentSeries: !!p.needsParentSeries,
+                needsLatestEpisode: !!p.needsLatestEpisode,
                 injectCss,
             });
             console.log(`${logPrefix} Registered with unified tag pipeline.`);
@@ -597,7 +739,15 @@
          */
         function reinitialize() {
             console.log(`${logPrefix} Re-initializing...`);
+            spec.pipeline?.cleanup?.(ctx);
 
+            // Settings (positions, layout) may have changed: re-read them, and
+            // drop this group's masters and every representation built from them.
+            const layout = layoutFor(name);
+            if (layout) {
+                layout.invalidateSettings();
+                layout.removeGroupEverywhere(name);
+            }
             document.querySelectorAll(`.${containerClass}`).forEach((el) => el.remove());
             document.querySelectorAll(`[data-${toKebab(TAGGED_ATTR)}]`).forEach((el) => {
                 delete /** @type {HTMLElement} */ (el).dataset[TAGGED_ATTR];
@@ -656,13 +806,275 @@
      * @param {TagSpec} spec
      */
     function reinitialize(name, spec) {
+        // Nothing to redraw for a renderer that never registered (its group is off).
+        if (!spec && !tags.has(name)) return;
         getOrCreate(name, spec).reinitialize();
     }
 
+    /**
+     * Make a group's base styles available without activating its renderer,
+     * caches, session hooks or network work. Called when its module loads.
+     * @param {TagSpec} spec
+     */
+    function registerStyles(spec) {
+        styleSpecs.set(spec.settingKey, spec);
+    }
+
+    /**
+     * Load missing base sheets for the groups this preview's document enables.
+     * Existing sheets stay intact; previewing never reinitializes real cards.
+     * @param {Object} settings - The preview source's effective group switches.
+     * @param {object} owner - The preview borrowing these sheets.
+     */
+    function ensureStyles(settings, owner) {
+        for (const [key, spec] of styleSpecs) {
+            if (!settings?.[key] || !spec.styleId) continue;
+            const existing = document.getElementById(spec.styleId);
+            if (existing) {
+                previewStyles.get(existing)?.add(owner);
+                continue;
+            }
+            if (typeof spec.buildCss !== 'function') continue;
+            const css = spec.buildCss();
+            JE.core.ui.injectCss(spec.styleId, JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
+            const sheet = document.getElementById(spec.styleId);
+            if (sheet) {
+                sheet.dataset.jeTagPreviewOwned = '';
+                previewStyles.set(sheet, new Set([owner]));
+            }
+        }
+    }
+
+    /** Release only sheets still owned exclusively by previews. @param {object} owner */
+    function releaseStyles(owner) {
+        for (const [sheet, owners] of previewStyles) {
+            if (!owners.delete(owner) || owners.size) continue;
+            sheet.remove();
+            previewStyles.delete(sheet);
+        }
+    }
+
+    /**
+     * Shared quality/language chip box, including responsive fallback and card-width metrics.
+     * @param {string} selector Internal chip selector.
+     * @param {boolean} [code=false] Tight padding for a two/three-letter language code.
+     * @returns {string} Base CSS; group colours are layered on by the renderers and Tag Styles.
+     */
+    function chipBaseCss(selector, code = false) {
+        const css = `
+                ${selector} {
+                    font-weight: bold;
+                    border-radius: 5px;
+                    padding: calc(2px * var(--je-tag-scale, 1)) calc(${code ? 4 : 10}px * var(--je-tag-scale, 1));
+                    font-size: calc(clamp(0.65rem, 2vw, 0.85rem) * var(--je-tag-scale, 1));
+                    user-select: none;
+                    pointer-events: none;
+                    font-variant-caps: small-caps;
+                    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+                    border: 1px solid rgba(255,255,255,0.15);
+                    /* backdrop-filter removed — blur causes jank during hover animations */
+                    opacity: 1;
+                    transform: translateY(0);
+                    white-space: nowrap;
+                    flex-shrink: 0;
+                    line-height: 1.2;
+                }
+                .layout-mobile ${selector} {
+                    padding: calc(0px * var(--je-tag-scale, 1)) calc(${code ? 3 : 6}px * var(--je-tag-scale, 1));
+                    font-size: calc(0.65rem * var(--je-tag-scale, 1));
+                    border-radius: 3px;
+                }
+                @media (min-width: 1440px) {
+                ${selector} {
+                        padding: calc(3px * var(--je-tag-scale, 1)) calc(${code ? 4 : 12}px * var(--je-tag-scale, 1));
+                        font-size: calc(0.9rem * var(--je-tag-scale, 1));
+                        border-radius: 6px;
+                    }
+                }
+                @media (max-width: 768px) {
+                ${selector} {
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(${code ? 3 : 6}px * var(--je-tag-scale, 1));
+                        font-size: calc(0.65rem * var(--je-tag-scale, 1));
+                        border-radius: 3px;
+                    }
+                }
+                @media (max-width: 480px) {
+                ${selector} {
+                        padding: calc(0px * var(--je-tag-scale, 1)) calc(${code ? 2 : 5}px * var(--je-tag-scale, 1));
+                        font-size: calc(0.6rem * var(--je-tag-scale, 1));
+                        border-radius: 2px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+                    }
+                }
+
+                @supports (container-type: inline-size) {
+                    html:not(.layout-mobile) .je-tag-host ${selector} {
+                        font-size: calc(clamp(9px, 6.6cqw, 13.6px) * var(--je-tag-scale, 1));
+                        padding: calc(clamp(0px, 0.6cqw, 2px) * var(--je-tag-scale, 1)) calc(clamp(${code ? 2 : 4}px, ${code ? 1.5 : 4.2}cqw, ${code ? 4 : 10}px) * var(--je-tag-scale, 1));
+                        border-radius: calc(clamp(2px, 2.4cqw, 5px) * var(--je-tag-scale, 1));
+                    }
+                }
+        `;
+        // Code selectors are more specific than the shared chip selector. Only
+        // override padding, so they cannot reset partial opacity or preset paint.
+        return code ? css.replace(/([^{}]+)\{([^{}]*)\}/g, (_, rule, body) => {
+            const padding = body.split(';').filter(declaration => /^\s*padding\s*:/.test(declaration)).join(';');
+            return `${rule}{${padding};}`;
+        }) : css;
+    }
+
+    // ── Where to show ───────────────────────────────────────────────────
+    // Every card tag group can be limited to item types (movies, series,
+    // seasons, episodes) and to the Continue Watching and Next Up home rows.
+    // A user's switches are in tagGroupScopes ({ group: { scope: bool } }); a
+    // missing one follows the administrator (TagGroupScopes, and RatingTagsOn…
+    // for Rating), else "on". An older document's ratingTagsOn… turned off is
+    // kept as the user's choice; its "on", the default everyone had, follows
+    // the administrator (TagLayoutRules.RatingScope). People Tags are on cast
+    // cards, not media cards: no switch applies to them.
+    // Mirrors TagLayoutRules.ScopeAllows (server) for the item types.
+    const SCOPE_IDS = ['movies', 'series', 'seasons', 'episodes', 'continueWatching', 'nextUp'];
+    const SCOPED_GROUPS = ['quality', 'genre', 'language', 'ageRating', 'status', 'awards', 'logos', 'custom'];
+    const TYPE_SCOPES = { Movie: 'movies', Series: 'series', Season: 'seasons', Episode: 'episodes' };
+    const ROW_SCOPES = { continuewatching: 'continueWatching', nextup: 'nextUp' };
+    // Renderer names that differ from their group id.
+    const SCOPE_GROUP_ALIASES = { agerating: 'ageRating' };
+    const RATING_SCOPE_KEYS = { movies: 'Movies', series: 'Series', seasons: 'Seasons', episodes: 'Episodes', continueWatching: 'ContinueWatching', nextUp: 'NextUp' };
+
+    /**
+     * The administrator's switch for a group's scope (true when unset).
+     * @param {string} group
+     * @param {string} scope
+     * @param {Object} [plugin]
+     * @returns {boolean}
+     */
+    // A key in camelCase (written here) or PascalCase (as the server stores it).
+    const either = (obj, key) => (obj && typeof obj === 'object' ? obj[key] ?? obj[key.charAt(0).toUpperCase() + key.slice(1)] : undefined);
+
+    function scopeDefault(group, scope, plugin = JE.pluginConfig) {
+        if (group === 'rating') return plugin?.[`RatingTagsOn${RATING_SCOPE_KEYS[scope]}`] !== false;
+        return either(either(plugin?.TagGroupScopes, group), scope) !== false;
+    }
+
+    /**
+     * The personal switch for a group's scope, or null when it follows the administrator.
+     * @param {string} group
+     * @param {string} scope
+     * @param {Object} [settings]
+     * @returns {boolean|null}
+     */
+    function scopeOwn(group, scope, settings = JE.currentSettings) {
+        const value = either(either(settings?.tagGroupScopes ?? settings?.TagGroupScopes, group), scope);
+        if (typeof value === 'boolean') return value;
+        if (group === 'rating' && settings?.[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`] === false) return false;
+        return null;
+    }
+
+    /** @returns {boolean} Whether the group shows in that scope (personal, else administrator, else on). */
+    function scopeAllows(group, scope, settings = JE.currentSettings, plugin = JE.pluginConfig) {
+        group = SCOPE_GROUP_ALIASES[group] || group;
+        if (group !== 'rating' && !SCOPED_GROUPS.includes(group)) return true;
+        return scopeOwn(group, scope, settings) ?? scopeDefault(group, scope, plugin);
+    }
+
+    /**
+     * True when a group is switched off for this card: by its item type (the card's own
+     * data-type wins over the fetched item's, as for rating) or by the home row it sits in.
+     * @param {string} group
+     * @param {Element} el - The card or anything inside it.
+     * @param {string|null} [type] - Fetched item type, used when the card carries none.
+     * @returns {boolean}
+     */
+    function scopeExcludes(group, el, type) {
+        group = SCOPE_GROUP_ALIASES[group] || group;
+        if (group !== 'rating' && !SCOPED_GROUPS.includes(group)) return false;
+        const itemType = el?.closest?.('[data-type]')?.getAttribute('data-type') || type || null;
+        const typeScope = itemType ? TYPE_SCOPES[itemType] : null;
+        if (typeScope && !scopeAllows(group, typeScope)) return true;
+        // Row detection reads the home section, so it only runs when a row switch is off.
+        if (typeof JE.detectCardRowSurface === 'function' && ['continueWatching', 'nextUp'].some((scope) => !scopeAllows(group, scope))) {
+            const rowScope = ROW_SCOPES[JE.detectCardRowSurface(el)];
+            if (rowScope && !scopeAllows(group, rowScope)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Set (or, with null, clear) a personal switch on a settings document.
+     * Rating's switches are plain booleans: clearing one takes the administrator's value.
+     */
+    function setScopeOwn(group, scope, value, settings = JE.currentSettings, plugin = JE.pluginConfig) {
+        group = SCOPE_GROUP_ALIASES[group] || group;
+        // An older document's Rating "off" would still count as the user's: the switch now lives in tagGroupScopes.
+        if (group === 'rating') settings[`ratingTagsOn${RATING_SCOPE_KEYS[scope]}`] = value !== false;
+        // One shape on write: camelCase groups and switches, whatever casing the stored document used.
+        const camel = (key) => key.charAt(0).toLowerCase() + key.slice(1);
+        const source = settings.tagGroupScopes && typeof settings.tagGroupScopes === 'object' ? settings.tagGroupScopes : {};
+        const scopes = {};
+        for (const [g, value] of Object.entries(source)) {
+            if (!value || typeof value !== 'object') continue;
+            const set = {};
+            for (const [s, v] of Object.entries(value)) if (typeof v === 'boolean') set[camel(s)] = v;
+            if (Object.keys(set).length) scopes[camel(g)] = set;
+        }
+        const set = { ...(scopes[group] || {}) };
+        if (value === null) delete set[scope]; else set[scope] = value;
+        if (Object.keys(set).length) scopes[group] = set; else delete scopes[group];
+        settings.tagGroupScopes = Object.keys(scopes).length ? scopes : null;
+    }
+
+    /** Make a group follow the administrator's "Where to show" again. */
+    function followScopeDefaults(group, settings = JE.currentSettings, plugin = JE.pluginConfig) {
+        for (const scope of SCOPE_IDS) setScopeOwn(group, scope, null, settings, plugin);
+    }
+
+    // ── Settings matrix ─────────────────────────────────────────────────
+    // The common controls every tag group offers, per settings surface: the
+    // admin Media Tags page, the personal Media Tags hub and the item editor.
+    // The surfaces render from it, and tests/browser/settings-matrix.spec.cjs
+    // checks each surface against it. A control a group or surface does not
+    // have names the reason it shows instead (an i18n key).
+    const MATRIX_GROUPS = ['quality', 'genre', 'language', 'rating', 'ageRating', 'status', 'awards', 'people', 'logos', 'custom'];
+    const SETTINGS_MATRIX = {
+        groups: MATRIX_GROUPS,
+        controls: ['enable', 'position', 'limit', 'scopes'],
+        // Groups without a control, everywhere, and why.
+        except: { people: { position: 'tag_scope_people_na', limit: 'tag_scope_people_na', scopes: 'tag_scope_people_na' } },
+        // Controls a whole surface does not have, and why.
+        surfaces: {
+            admin: {},
+            hub: {},
+            itemEditor: { scopes: 'tag_item_editor_scope_note' },
+        },
+    };
+    /**
+     * Whether a group offers a common control on a surface: true, or the i18n key of the reason it does not.
+     * @param {string} surface - admin, hub or itemEditor.
+     * @param {string} group
+     * @param {string} control - enable, placement or scopes.
+     * @returns {true|string}
+     */
+    function matrixOffers(surface, group, control) {
+        const reason = SETTINGS_MATRIX.except[group]?.[control] || SETTINGS_MATRIX.surfaces[surface]?.[control];
+        if (reason) return reason;
+        // A group that always shows one tag (Status, Age rating; Logos limited to one) has no limit to choose.
+        if (control === 'limit' && JE.core.tagLayout?.singleChipGroup?.(group)) return 'tag_limit_single';
+        return true;
+    }
+    JE.core.tagSettingsMatrix = { ...SETTINGS_MATRIX, offers: matrixOffers };
+
+    JE.core.tagScopes = { SCOPE_IDS, SCOPED_GROUPS, TYPE_SCOPES, scopeDefault, scopeOwn, allows: scopeAllows, excludes: scopeExcludes,
+        setOwn: setScopeOwn, follow: followScopeDefaults };
+
     JE.core.tagRenderer = {
+        chipBaseCss,
+        registerStyles,
+        ensureStyles,
+        releaseStyles,
         register,
         reinitialize,
         resolvePosition,
+        isIgnoredContext,
         applyCornerStacking,
         scheduleCornerStacking,
     };

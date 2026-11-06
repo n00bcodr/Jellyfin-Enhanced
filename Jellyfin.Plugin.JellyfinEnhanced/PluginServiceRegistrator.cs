@@ -75,6 +75,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // endpoint (no API key), cached to disk indefinitely for hits / with a TTL
             // for misses — see WikidataAwardsService for details.
             serviceCollection.AddSingleton<WikidataAwardsService>();
+            serviceCollection.AddSingleton<AwardTagsService>();
+            // Leaving soon facts (Maintainerr API or collection names), refreshed by RefreshLeavingSoonTagsTask.
+            // Its Maintainerr client never follows redirects (the API key must not reach another origin).
+            LeavingSoonService.AddHttpClient(serviceCollection);
+            serviceCollection.AddSingleton<LeavingSoonService>();
             serviceCollection.AddSingleton<AnilistReviewsService>();
             serviceCollection.AddSingleton<ReviewTranslationService>();
             serviceCollection.AddSingleton<MdblistService>();
@@ -82,6 +87,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             // In-memory, size-bounded cache + single-flight for TMDB passthrough and
             // person lookups -- see TmdbResponseCache for TTLs and why it is account-safe.
             serviceCollection.AddSingleton<TmdbResponseCache>();
+            // Server-wide trending list for the Status Tags poster badges (30-minute cache).
+            serviceCollection.AddSingleton<StatusTagsTrendingService>();
+            // TMDB schedule facts for the Status Tags series badges (rate-limited lookups).
+            serviceCollection.AddSingleton<StatusTagsSeriesService>();
+            serviceCollection.AddSingleton<NativeStatusRefreshService>();
+            serviceCollection.AddHostedService(sp => sp.GetRequiredService<NativeStatusRefreshService>());
+            // Logos tag group: daily TMDB provider/network/studio lookups and the logo image proxy cache.
+            serviceCollection.AddSingleton<TagLogoService>();
+            serviceCollection.AddSingleton<StatusTagsScenesService>();
             // Size / watch-progress of an item subtree in a handful of queries
             // (details-page media-info chips) -- see ItemStatsService.
             serviceCollection.AddSingleton<ItemStatsService>();
@@ -100,6 +114,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddTransient<MdblistRatingsFetchTask>();
             serviceCollection.AddTransient<MdblistRatingsSyncTask>();
             serviceCollection.AddTransient<BuildTagCacheTask>();
+            serviceCollection.AddTransient<RefreshAwardTagsTask>();
             serviceCollection.AddTransient<JellyseerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyfinToSeerrWatchlistSyncTask>();
             serviceCollection.AddTransient<JellyseerrUserImportTask>();
@@ -187,6 +202,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
             serviceCollection.AddSingleton<PosterTagDataProvider>();
             serviceCollection.AddSingleton<CompositeImageCache>();
             serviceCollection.AddSingleton<PosterTagRenderer>();
+            serviceCollection.AddSingleton<PosterTagStatusProvider>();
             serviceCollection.AddSingleton<PosterTagComposer>();
             serviceCollection.AddSingleton<NativePosterTagStamper>();
             serviceCollection.AddSingleton<PosterTagImageFilter>();

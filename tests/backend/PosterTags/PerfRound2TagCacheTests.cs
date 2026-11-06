@@ -41,7 +41,7 @@ public class PerfRound2TagCacheTests
             ParentId = directSeriesParent ? series.Id : seasonNumber == 0 ? specialSeason.Id : season.Id,
             SeasonId = seasonNumber == 0 ? specialSeason.Id : season.Id,
             Genres = [seasonNumber == 0 ? "Special genre" : "Drama"],
-            Sources = usable ? [new() { MediaStreams = [new() { Type = MediaStreamType.Audio, Language = lang }, new() { Type = MediaStreamType.Video, Height = seasonNumber == 0 ? 720 : 1080 }] }] : []
+            Sources = usable ? [new() { Path = "/private/Show.{edition-Extended}/Episode.WEB-DL.mkv", MediaStreams = [new() { Type = MediaStreamType.Audio, Language = lang }, new() { Type = MediaStreamType.Video, Height = seasonNumber == 0 ? 720 : 1080 }] }] : []
         };
         var episodes = new List<Episode> { Make(1, 0, "fra"), Make(2, 1, "eng", !unprobedFirst), Make(3, 1, "deu") };
         var all = new BaseItem[] { series, season, specialSeason }.Concat(episodes).ToArray();
@@ -66,6 +66,10 @@ public class PerfRound2TagCacheTests
             var expected = cache.BuildEntryOnDemand(container);
             Assert.NotNull(expected);
             Assert.True(cache.TryGetEntry(container.Id, out var actual));
+            Assert.Equal("WEB", actual.Source);
+            Assert.Equal("Extended", actual.Edition);
+            Assert.Equal(expected.Source, actual.Source);
+            Assert.Equal(expected.Edition, actual.Edition);
             Assert.Equal(expected.AudioLanguages, actual.AudioLanguages);
             Assert.Equal(expected.PartialAudioLanguages, actual.PartialAudioLanguages);
             Assert.Equal(expected.Genres, actual.Genres);

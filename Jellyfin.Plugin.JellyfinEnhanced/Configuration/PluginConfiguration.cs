@@ -104,6 +104,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             QualityTagsEnabled = false;
             ShowResolutionTag = true;
             ShowSourceTag = true;
+
+            // Source and edition defaults.
+            ShowEditionTag = true;
+            ShowRuntimeTag = false;
+            ShowVersionsTag = false;
+            ShowAspectRatioTag = false;
+            ShowFrameRateTag = false;
+            EditionTagOrder = 7;
+            RuntimeTagOrder = 8;
+            VersionsTagOrder = 11;
+            AspectRatioTagOrder = 9;
+            FrameRateTagOrder = 10;
+            ShowLowQualitySourceTag = false;
+
             ShowDynamicRangeTag = true;
             ShowSpecialFormatTag = true;
             ShowVideoCodecTag = true;
@@ -118,6 +132,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             LanguageTagsEnabled = false;
             RatingTagsEnabled = false;
             AgeRatingTagsEnabled = false;
+            LogoTagsEnabled = false;
+            StatusTagsEnabled = false;
             PeopleTagsEnabled = false;
             NativePosterTagsEnabled = false;
             NativePosterTagsWebClientNames = string.Empty;
@@ -125,12 +141,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             TagStyleTarget = "both";
             TagStylePreset = "default";
             TagStyleApplyScope = "all";
+            TagStylesAllowUserPreset = false;
             TagsCacheTtlDays = 30;
             DisableTagsOnSearchPage = false;
             TagsHideOnHover = false;
             TagCacheServerMode = true;
             EnableTagsLocalStorageFallback = false;
             QualityTagsPosition = "top-left";
+            // Series/season quality aggregation default.
+            SeriesQualityAggregation = "representative";
+            QualityAudioDisplayMode = "highest";
+            QualityVideoCodecDisplayMode = "highest";
+            QualityHdrDisplayMode = "highest";
+            QualityMinimumResolution = "off";
+            QualityHideSdr = false;
             GenreTagsPosition = "top-right";
             LanguageTagsPosition = "bottom-left";
             LanguageTagsPriority = string.Empty;
@@ -145,7 +169,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
             RatingTagsOnEpisodes = true;
             RatingTagsOnContinueWatching = true;
             RatingTagsOnNextUp = true;
+            RatingTagsShowCommunity = true;
+            RatingTagsShowCritic = true;
+            // Language Tags display defaults (today's look: audio flags, no badge).
+            LanguageTagsShowAudio = true;
+            LanguageTagsShowSubtitles = false;
+            LanguageTagsStyle = "flags";
+            LanguageTagsCountBadge = "off";
             AgeRatingTagsPosition = "bottom-right";
+            LogoTagsPosition = "bottom-left";
+            LogoTagsMovieMode = "provider";
+            LogoTagsSeriesMode = "network";
+            LogoTagsRegion = string.Empty;
+            LogoTagsMaxLogos = 1;
+            StatusTagsPosition = "top-right";
+            StatusTagsJustAdded = true;
+            StatusTagsNewRelease = true;
+            StatusTagsTrending = true;
+            // Status Tags schedule, milestone and series-status defaults.
+            StatusTagsSchedule = true;
+            StatusTagsMilestones = true;
+            StatusTagsSeriesStatus = false;
+            StatusTagsScenes = false;
+            StatusTagsJustAddedDays = 7;
+            StatusTagsNewReleaseDays = 30;
+            StatusTagsLeaving = false;
+            StatusTagsDirectPlay = false;
+            LeavingSoonRefreshHours = 6;
+            TagLayout = "corners";
+            TagLayouts = null;
+            TagGroupOrder = null;
+            TagGroupCaps = null;
+            TagGroupScopes = null;
+            TagLabelDensity = "full";
+            TagScale = "default";
+            TagGap = "default";
+            TagEdgeSpacing = "default";
+            TagLookRules = null;
+            TagLookItemOverrides = null;
+            TagShapeOverrides = null;
+            CustomTagsEnabled = false;
+            CustomTagsPosition = "top-left";
+            CustomTagRules = new List<CustomTagRule>();
             ShowRatingInPlayer = true;
             DisableAllShortcuts = false;
             DefaultSubtitleStyle = 0;
@@ -631,6 +696,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;
+
+        // Source and edition defaults.
+        public bool ShowEditionTag { get; set; } = true;
+        public bool ShowRuntimeTag { get; set; } = false;
+
+        /// <summary>Quality category: how many versions (media sources) a movie or episode has, from two up ("2 versions").</summary>
+        public bool ShowVersionsTag { get; set; } = false;
+        public bool ShowAspectRatioTag { get; set; } = false;
+        public bool ShowFrameRateTag { get; set; } = false;
+        public int EditionTagOrder { get; set; } = 7;
+        public int RuntimeTagOrder { get; set; } = 8;
+
+        public int VersionsTagOrder { get; set; } = 11;
+        public int AspectRatioTagOrder { get; set; } = 9;
+        public int FrameRateTagOrder { get; set; } = 10;
+        public bool ShowLowQualitySourceTag { get; set; } = false;
+
         public bool ShowDynamicRangeTag { get; set; } = true;
         public bool ShowSpecialFormatTag { get; set; } = true;
         public bool ShowVideoCodecTag { get; set; } = true;
@@ -644,6 +726,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
+        /// <summary>Default for the per-user Logos tag group (streaming provider, network or studio logos).</summary>
+        public bool LogoTagsEnabled { get; set; }
+        /// <summary>Default for the per-user Status Tags (Just Added / New / Trending poster badges). Also gates the trending endpoint.</summary>
+        public bool StatusTagsEnabled { get; set; }
+
+        /// <summary>Opt-in Awards poster group; administrator also gates refresh work.</summary>
+        public bool AwardsTagsEnabled { get; set; }
+        public bool AwardsTagsImdb { get; set; } = true;
+        public bool AwardsTagsCertifiedFresh { get; set; } = true;
+        public bool AwardsTagsOscar { get; set; } = true;
+        public bool AwardsTagsEmmy { get; set; } = true;
+        public bool AwardsTagsLetterboxd { get; set; } = true;
+        /// <summary>MDBList numeric id or owner/list slug; never a URL or credential.</summary>
+        public string AwardsTagsImdbList { get; set; } = "sacwooky/imdb-top-250";
+        public string AwardsTagsLetterboxdList { get; set; } = "abdulwahabaa/letterboxd-top-250";
+        /// <summary>Refresh TTL in hours, clamped to 1..168 at use.</summary>
+        public int AwardsTagsRefreshHours { get; set; } = 24;
+        /// <summary>Legacy corner fallback for Awards.</summary>
+        public string AwardsTagsPosition { get; set; } = "top-left";
         public bool PeopleTagsEnabled { get; set; }
         /// <summary>Allows experimental poster tags drawn into poster images for native clients that don't run the web overlays.</summary>
         public bool NativePosterTagsEnabled { get; set; }
@@ -660,8 +761,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public string TagStyleTarget { get; set; }
         [AnalyticsInclude]
         public string TagStylePreset { get; set; }
+        /// <summary>Retired with the Tag Styles editor redesign: kept so older configurations still load, no longer read.</summary>
         [AnalyticsInclude]
         public string TagStyleApplyScope { get; set; }
+
+        // Tag Styles: user presets
+        /// <summary>Lets each user pick their own Tag Styles preset in the settings panel; the admin's group and label overrides stay on top.</summary>
+        [AnalyticsInclude]
+        public bool TagStylesAllowUserPreset { get; set; }
+
         public int TagsCacheTtlDays { get; set; }
         public bool DisableTagsOnSearchPage { get; set; }
         public bool TagsHideOnHover { get; set; }
@@ -679,6 +787,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool DisableCustomSubtitleStyles { get; set; }
         [AnalyticsInclude]
         public string QualityTagsPosition { get; set; } = "top-left";
+
+        // Stream-derived quality display defaults.
+        /// <summary>QualityAudioDisplayMode: highest or all distinct stream values.</summary>
+        [AnalyticsInclude]
+        public string QualityAudioDisplayMode { get; set; } = "highest";
+        /// <summary>QualityVideoCodecDisplayMode: highest or all distinct stream values.</summary>
+        [AnalyticsInclude]
+        public string QualityVideoCodecDisplayMode { get; set; } = "highest";
+        /// <summary>QualityHdrDisplayMode: highest or all distinct stream values.</summary>
+        [AnalyticsInclude]
+        public string QualityHdrDisplayMode { get; set; } = "highest";
+        /// <summary>QualityMinimumResolution: minimum resolution threshold.</summary>
+        [AnalyticsInclude]
+        public string QualityMinimumResolution { get; set; } = "off";
+        /// <summary>QualityHideSdr: hide SDR in All mode.</summary>
+        [AnalyticsInclude]
+        public bool QualityHideSdr { get; set; } = false;
+
+        // Series/season quality aggregation default (independent of poster layout).
+        [AnalyticsInclude]
+        public string SeriesQualityAggregation { get; set; } = "representative";
         [AnalyticsInclude]
         public string GenreTagsPosition { get; set; } = "top-right";
         [AnalyticsInclude]
@@ -737,8 +866,138 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsOnEpisodes { get; set; } = true;
         public bool RatingTagsOnContinueWatching { get; set; } = true;
         public bool RatingTagsOnNextUp { get; set; } = true;
+        // Which scores the rating group includes (community star, critic
+        // tomato). Per-user defaults like the scope switches; both default to
+        // true so existing installs render exactly as before.
+        public bool RatingTagsShowCommunity { get; set; } = true;
+        public bool RatingTagsShowCritic { get; set; } = true;
+
+        // Multi-source rating preferences. Null source list preserves legacy include switches.
+        /// <summary>Enabled rating sources in display order; empty hides all source scores.</summary>
+        public string[]? RatingTagsSources { get; set; }
+        /// <summary>Minimum rating normalised to ten (zero shows every score).</summary>
+        public double RatingTagsMinScore { get; set; } = 0;
+        /// <summary>Colour rating text by score, below explicit Tag Styles.</summary>
+        public bool RatingTagsColorByScore { get; set; } = false;
+        // ── Language Tags display (per-user defaults, see LanguageTagDisplay) ──
+        /// <summary>Starting default: the language group shows audio track languages.</summary>
+        public bool LanguageTagsShowAudio { get; set; } = true;
+        /// <summary>Starting default: the language group also shows subtitle languages (with a CC mark).</summary>
+        public bool LanguageTagsShowSubtitles { get; set; }
+        /// <summary>Starting default: "flags" or "codes" (uppercase ISO 639 codes with tooltips).</summary>
+        [AnalyticsInclude]
+        public string LanguageTagsStyle { get; set; } = "flags";
+        /// <summary>Starting default for the Dual/Multi audio badge: "off", "only" (instead of the audio chips) or "both".</summary>
+        [AnalyticsInclude]
+        public string LanguageTagsCountBadge { get; set; } = "off";
         [AnalyticsInclude]
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        // ── Logos tag group (see LogoTagRules) ──
+        /// <summary>Default corner of the Logos group (per user, like the other positions).</summary>
+        [AnalyticsInclude]
+        public string LogoTagsPosition { get; set; } = "bottom-left";
+        /// <summary>Admin-only: a movie's logo is its streaming provider ("provider"), its first studio ("studio") or none ("off").</summary>
+        [AnalyticsInclude]
+        public string LogoTagsMovieMode { get; set; } = "provider";
+        /// <summary>Admin-only: a series' logo (also on its seasons and episodes) is its network ("network"), streaming provider ("provider") or none ("off").</summary>
+        [AnalyticsInclude]
+        public string LogoTagsSeriesMode { get; set; } = "network";
+        /// <summary>Admin-only: two-letter watch-provider region; empty uses DEFAULT_REGION.</summary>
+        public string LogoTagsRegion { get; set; } = string.Empty;
+        /// <summary>Admin-only: most logos per item (1 or 2).</summary>
+        public int LogoTagsMaxLogos { get; set; } = 1;
+        [AnalyticsInclude]
+        public string StatusTagsPosition { get; set; } = "top-right";
+        // Which Status Tags badges may show (per-user defaults, like the rating
+        // tag scope switches). All default to true; the master switch is off.
+        public bool StatusTagsJustAdded { get; set; } = true;
+        public bool StatusTagsNewRelease { get; set; } = true;
+        /// <summary>Default for the trending badge. Admin off also disables the trending endpoint for everyone.</summary>
+        public bool StatusTagsTrending { get; set; } = true;
+        // Status Tags schedule, milestone and series-status defaults.
+        /// <summary>Default for the schedule badges (Airing Today, Airs {date}, Returns {date}, Coming Soon).</summary>
+        public bool StatusTagsSchedule { get; set; } = true;
+        /// <summary>Default for the milestone badges (New Season, Season Premiere, Season/Series Finale, Complete Season).</summary>
+        public bool StatusTagsMilestones { get; set; } = true;
+        /// <summary>Default for the lowest-priority series status badge (Returning, Ended, Cancelled).</summary>
+        public bool StatusTagsSeriesStatus { get; set; } = false;
+        public bool StatusTagsScenes { get; set; } = false;
+        /// <summary>Admin-only: days an item counts as "Just Added" (or a series/season's latest episode as "New Episode"). 1-365.</summary>
+        public int StatusTagsJustAddedDays { get; set; } = 7;
+        /// <summary>Admin-only: days after its premiere date a Movie/Series counts as "New Movie"/"New Series". 1-365.</summary>
+        public int StatusTagsNewReleaseDays { get; set; } = 30;
+
+        // Leaving soon status family (Maintainerr or collection names) and the
+        // web-only direct-play warning family. Both off by default.
+        /// <summary>Starting value of the Leaving soon family switch for new users.</summary>
+        public bool StatusTagsLeaving { get; set; } = false;
+        /// <summary>Starting value of the direct-play warning family switch for new users (web only).</summary>
+        public bool StatusTagsDirectPlay { get; set; } = false;
+        /// <summary>Maintainerr base URL (http/https); empty uses only the collection names.</summary>
+        public string LeavingSoonMaintainerrUrl { get; set; } = string.Empty;
+        /// <summary>Maintainerr API key. A secret: never in public config, responses, logs or exports.</summary>
+        public string LeavingSoonMaintainerrApiKey { get; set; } = string.Empty;
+        /// <summary>Existing Jellyfin collection names (one per line or comma separated) whose members count as leaving.</summary>
+        public string LeavingSoonCollections { get; set; } = string.Empty;
+        /// <summary>Hours between Leaving soon refreshes (1-168).</summary>
+        public int LeavingSoonRefreshHours { get; set; } = 6;
+        /// <summary>Starting poster tag layout for new users (corners, bands, caption, summary, minimal).</summary>
+        [AnalyticsInclude]
+        public string TagLayout { get; set; } = "corners";
+        /// <summary>Starting slot profiles per layout; null uses the built-in profiles (corners follows the position settings).</summary>
+        public TagLayoutProfiles? TagLayouts { get; set; }
+        /// <summary>Starting group priority order; null uses arrival order on corners and the built-in order elsewhere.</summary>
+        public List<string>? TagGroupOrder { get; set; }
+        /// <summary>Starting per-group chip limits; null uses the built-in limits.</summary>
+        public TagGroupCaps? TagGroupCaps { get; set; }
+        /// <summary>Where each tag group shows by default (item types and home rows); null shows every group everywhere.</summary>
+        public TagGroupScopes? TagGroupScopes { get; set; }
+        /// <summary>Starting label density (full or compact).</summary>
+        [AnalyticsInclude]
+        public string TagLabelDensity { get; set; } = "full";
+
+        /// <summary>Poster tag size: smaller, default, larger or largest; null inherits the administrator default.</summary>
+        public string TagScale { get; set; } = "default";
+
+        /// <summary>Poster tag spacing: tight, default or roomy; null inherits the administrator default.</summary>
+        public string TagGap { get; set; } = "default";
+        /// <summary>Starting corners-layout edge spacing (default 6px, tight 3px, flush 0px).</summary>
+        [AnalyticsInclude]
+        public string TagEdgeSpacing { get; set; } = "default";
+        /// <summary>Starting tag look rules for new users (first match wins); null = none.</summary>
+        public List<TagLookRule>? TagLookRules { get; set; }
+        /// <summary>
+        /// Server-wide per-item looks (the item editor's "For everyone"), at most
+        /// <see cref="TagLookValidation.MaxItemOverrides"/>: every user's cards of the item get
+        /// this look unless the user locked the item; it wins over every rule. Null = none.
+        /// </summary>
+        public List<TagLookItemOverride>? TagLookItemOverrides { get; set; }
+        /// <summary>Starting per-shape tag looks (landscape cards, list rows) for new users; null = every shape uses the default look.</summary>
+        public TagShapeOverrides? TagShapeOverrides { get; set; }
+
+        // Custom tag group: administrator rules that turn Jellyfin tags or collection
+        // membership into poster chips (see CustomTagRules).
+        /// <summary>Default for the per-user Custom tags group.</summary>
+        public bool CustomTagsEnabled { get; set; }
+        /// <summary>Starting corner of the Custom tags group (a position string, as the other groups).</summary>
+        [AnalyticsInclude]
+        public string CustomTagsPosition { get; set; } = "top-left";
+        /// <summary>Custom tag rules (match type, value, label, optional icon), normalised on save; at most 20.</summary>
+        public List<CustomTagRule> CustomTagRules { get; set; } = new List<CustomTagRule>();
+        /// <summary>
+        /// Secret the Custom tag rule ids are derived from (see <see cref="CustomTagRuleSet.RuleId"/>),
+        /// so the ids clients see do not reveal a rule's tag or collection name. Generated when
+        /// rules are first saved and kept across saves; admin-only (never in the public config).
+        /// </summary>
+        public string CustomTagRuleKey { get; set; } = string.Empty;
+
+        // Media Tags presets the administrator offers users (see Helpers/MediaTagsPortable.cs).
+        /// <summary>
+        /// The presets offered to every user's Presets list: a JSON array of preset documents
+        /// (<c>{"v":1,"kind":"je-media-tags-preset","id","name","description","settings":{…}}</c>), at most 20,
+        /// validated on save; empty offers none. Admin-written; users read it through the presets endpoint.
+        /// </summary>
+        public string TagOfferedPresets { get; set; } = string.Empty;
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool GenreTagsEnabled { get; set; }
         public string DefaultLanguage { get; set; }

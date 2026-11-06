@@ -832,7 +832,7 @@
                 const collectAudioLanguages = (streams) => {
                     streams?.filter(stream => stream.Type === 'Audio').forEach(stream => {
                         const langCode = stream.Language;
-                        if (langCode && !['und', 'root'].includes(langCode.toLowerCase())) {
+                        if (langCode && !JE.core.mediaLanguage.isLanguageless(langCode)) {
                             try {
                                 const langName = JE.core.mediaLanguage.displayName(langCode);
                                 languages.add(JSON.stringify({ name: langName, code: langCode }));

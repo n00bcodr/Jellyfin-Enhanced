@@ -5,6 +5,7 @@
 // the admin's tag cache plus hand-made edge-case entries.
 //
 // Output: data/profiles.json and data/synthetic/{entries,userdata,reviews}.json.
+import { createHmac } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,6 +28,28 @@ const sd = (streams, sources = [{ Path: 'Movie (2020).mkv', Name: 'Movie (2020)'
 const movie = (o) => ({ Type: 'Movie', TmdbId: '1000', Genres: ['Drama'], CommunityRating: 7.1, CriticRating: 81, OfficialRating: 'PG-13', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]), ...o });
 
 const synthetic = {
+    upstreamCropped1080: movie({ StreamData: sd([video({ Width: 1920, Height: 800, DisplayTitle: '' })]) }),
+    upstreamCropped1440: movie({ StreamData: sd([video({ Width: 2560, Height: 1080, DisplayTitle: '' })]) }),
+    upstreamMerged: movie({ StreamData: sd([
+        video({ SourceId: 'first', Width: 1920, Height: 800, DisplayTitle: '' }), audio({ SourceId: 'first', Codec: 'ac3', Channels: 6, DisplayTitle: 'AC3 5.1' }),
+        video({ SourceId: 'second', Width: 3840, Height: 1600, Codec: 'hevc', VideoRangeType: 'HDR10', DisplayTitle: '' }), audio({ SourceId: 'second', DisplayTitle: 'ATMOS 7.1', Channels: 8 }),
+    ], [{ Id: 'first', Path: 'first.mkv', Source: 'WEB' }, { Id: 'second', Path: 'second.IMAX.mkv', Source: 'REMUX', Edition: 'IMAX' }]) }),
+    audio0: movie({ StreamData: sd([{"Type": "Audio", "Codec": "ac3", "DisplayTitle": "English - Dolby Digital 5.1", "Profile": "", "Channels": 6}]) }),
+    audio1: movie({ StreamData: sd([{"Type": "Audio", "Codec": "ac3", "DisplayTitle": "", "Profile": "", "Channels": 6}]) }),
+    audio2: movie({ StreamData: sd([{"Type": "Audio", "Codec": "", "DisplayTitle": "", "Profile": "Dolby Digital", "Channels": 6}]) }),
+    audio3: movie({ StreamData: sd([{"Type": "Audio", "Codec": "", "DisplayTitle": "Dolby Digital", "Profile": "", "Channels": 6}]) }),
+    audio4: movie({ StreamData: sd([{"Type": "Audio", "Codec": "eac3", "DisplayTitle": "English - Dolby Digital+ 5.1", "Profile": "", "Channels": 6}]) }),
+    audio5: movie({ StreamData: sd([{"Type": "Audio", "Codec": "eac3", "DisplayTitle": "", "Profile": "", "Channels": 6}]) }),
+    audio6: movie({ StreamData: sd([{"Type": "Audio", "Codec": "truehd", "DisplayTitle": "Dolby TrueHD", "Profile": "", "Channels": 6}]) }),
+    audio7: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS", "Profile": "", "Channels": 6}]) }),
+    audio8: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS-HD MA", "Profile": "", "Channels": 6}]) }),
+    audio9: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "", "Profile": "DTS-HD MA", "Channels": 6}]) }),
+    audio10: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS-HD HRA", "Profile": "", "Channels": 6}]) }),
+    audio11: movie({ StreamData: sd([{"Type": "Audio", "Codec": "dts", "DisplayTitle": "DTS:X", "Profile": "", "Channels": 6}]) }),
+    audio12: movie({ StreamData: sd([{"Type": "Audio", "Codec": "truehd", "DisplayTitle": "Dolby Atmos", "Profile": "", "Channels": 6}]) }),
+    audio13: movie({ StreamData: sd([{"Type": "Audio", "Codec": "aac", "DisplayTitle": "AAC", "Profile": "", "Channels": 6}]) }),
+    audio14: movie({ StreamData: sd([{"Type": "Audio", "Codec": "flac", "DisplayTitle": "FLAC", "Profile": "", "Channels": 6}]) }),
+    audio15: movie({ StreamData: sd([{"Type": "Audio", "Codec": "opus", "DisplayTitle": "Opus", "Profile": "", "Channels": 6}]) }),
     // Quality detection
     q01: movie({ StreamData: sd([video({ DisplayTitle: '4K HEVC Dolby Vision Profile 8', Codec: 'hevc', Height: 2160, VideoRangeType: 'DOVIWithHDR10' }), audio({ DisplayTitle: 'English - TrueHD Atmos 7.1', Codec: 'truehd', Channels: 8, ChannelLayout: '7.1' })]) }),
     q02: movie({ StreamData: sd([video({ DisplayTitle: '4K HEVC HDR10', Codec: 'hevc', Height: 1080, VideoRangeType: 'HDR10' }), audio({ DisplayTitle: 'DTS-HD MA 5.1', Codec: 'dts', Profile: 'DTS-HD MA', Channels: 6, ChannelLayout: '5.1(side)' })]) }), // falsely 4K
@@ -71,6 +94,47 @@ const synthetic = {
     q38: movie({ StreamData: sd([video()], [{ Path: 'movie.mkv', Name: 'Movie' }, null], 'Movie', 'movie.mkv') }),
     q39: movie({ StreamData: sd([video()], [{ Name: 'Movie' }, { Path: 'x.3d.mvc.mkv' }, null], 'Movie', 'movie.mkv') }),
     q40: movie({ StreamData: sd([video(), null]) }),
+    q41: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - Dolby Digital Plus - 5.1', Codec: 'eac3', Profile: 'JOC', Channels: 6, ChannelLayout: '5.1' })]) }),
+    q42: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - DTS-HD - 5.1', Codec: 'dts', Profile: '', Channels: 6, ChannelLayout: '5.1' })]) }),
+    q43: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - TrueHD Atmos - 7.1', Codec: 'truehd', Profile: 'Dolby TrueHD + Dolby Atmos', Channels: 8, ChannelLayout: '7.1' }), audio({ DisplayTitle: 'English - TrueHD Atmos 7.1.4', Codec: 'truehd', Profile: 'Dolby TrueHD + Dolby Atmos', Channels: 12, ChannelLayout: '' })]) }),
+    q44: movie({ StreamData: sd([video(), audio({ DisplayTitle: '日本語 - Dolby Digital - 5.1', Codec: 'ac3', Channels: 6, ChannelLayout: '5.1', Language: 'jpn' }), audio({ Title: '音声解説', DisplayTitle: '音声解説 - TrueHD - 7.1', Codec: 'truehd', Channels: 8, ChannelLayout: '7.1', Language: 'jpn' })]) }),
+    q45: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - DTS-HD Master Audio - 5.1', Codec: 'dts', Profile: '', Channels: 6, ChannelLayout: '5.1' })]) }),
+    q46: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - Dolby Digital Plus + Dolby Atmos - 5.1', Codec: 'eac3', Profile: 'Dolby Digital Plus + Dolby Atmos', Channels: 6, ChannelLayout: '5.1' }), audio({ DisplayTitle: 'English - DTS:X - 7.1', Codec: 'dts', Profile: 'DTS:X', Channels: 8, ChannelLayout: '7.1' })]) }),
+    q47: movie({ StreamData: sd([video(), audio({ DisplayTitle: 'English - AAC - 5.1', Codec: 'aac', Channels: 6, ChannelLayout: '5.1' }), audio({ DisplayTitle: 'Français - Dolby Digital - Stereo', Codec: 'ac3', Channels: 2, ChannelLayout: 'stereo', Language: 'fre' })]) }),
+    q48: movie({ StreamData: sd([video({ DisplayTitle: '480p MPEG2', Codec: 'mpeg2video', Width: 720, Height: 304 }), audio()]) }),
+    q49: movie({ StreamData: sd([video({ DisplayTitle: '1080p H264', Codec: 'h264', Width: 2560, Height: 1080 }), audio()]) }),
+    q50: movie({ StreamData: sd([video({ DisplayTitle: '4K HEVC', Codec: 'hevc', Width: 3840, Height: 2160, VideoRangeType: 'Unknown', VideoRange: 'HDR' }), audio()]) }),
+    q51: movie({ StreamData: sd([video({ DisplayTitle: '480p MPEG4', Codec: 'mpeg4', CodecTag: 'XVID', Width: 640, Height: 352 }), audio()]) }),
+    q52: movie({ StreamData: sd([video({ DisplayTitle: '', Codec: 'h264', Width: 2048, Height: 1080, AspectRatio: '' }), audio()]) }),
+    // Server-derived source and edition facts, including unprobed media and IMAX dedupe.
+    ns01: movie({ Source: 'REMUX', Edition: "Director's Cut" }),
+    ns02: movie({ Source: 'BluRay', Edition: 'Extended' }),
+    ns03: movie({ Source: 'WEB', Edition: 'Unrated' }),
+    ns04: movie({ Source: 'HDTV', Edition: 'Remastered' }),
+    ns05: movie({ Source: 'DVD', Edition: 'Criterion' }),
+    ns06: movie({ Source: 'CAM', Edition: 'Theatrical' }),
+    ns07: movie({ Source: 'TS', Edition: 'Final Cut' }),
+    ns08: movie({ Source: 'TC', Edition: 'Special Edition' }),
+    ns09: movie({ Source: 'SCR', Edition: 'Uncut' }),
+    ns10: movie({ Source: 'WEB', Edition: 'IMAX', StreamData: sd([], [], 'Film.IMAX') }),
+    ns11: movie({ Source: 'REMUX', Edition: 'Fan Edit', StreamData: null }),
+    ns12: movie({ Source: 'BluRay', Edition: 'Redux' }),
+    ns13: movie({ Source: 'REMUX', Edition: 'Ultimate' }),
+    ns14: movie({ Source: 'BluRay', Edition: "Collector's Edition" }),
+    ns15: movie({ Source: 'WEB', Edition: 'Anniversary' }),
+    ns16: movie({ Source: 'WEB', Edition: 'Uncensored' }),
+    ns17: movie({ Source: 'WEB', Edition: 'Open Matte' }),
+    // Display modes: multi-video/HDR and per-track audio combinations, with duplicates.
+    display01: movie({ StreamData: sd([video(), video({ Codec: 'hevc', VideoRangeType: 'HDR10', DisplayTitle: '4K HDR10', Height: 2160 }),
+        audio({ Codec: 'dts', DisplayTitle: 'DTS 5.1', Channels: 6, ChannelLayout: '' }),
+        audio({ Codec: 'truehd', DisplayTitle: 'ATMOS 7.1', Channels: 8, ChannelLayout: '' }),
+        audio({ Codec: 'dts', DisplayTitle: 'DTS 5.1', Channels: 6, ChannelLayout: '' }),
+        audio({ Language: 'deu', Codec: 'eac3', DisplayTitle: 'Dolby Digital+ 5.1', Channels: 6, ChannelLayout: '' })]) }),
+    display02: movie({ StreamData: { Streams: [video()], DistinctQualities: [
+        { Category: 'videoCodec', Label: 'AV1' }, { Category: 'videoCodec', Label: 'H264' },
+        { Category: 'dynamicRange', Label: 'HDR10' }, { Category: 'dynamicRange', Label: 'SDR' },
+        { Category: 'audioInfo', Label: 'DTS 5.1', Language: 'eng' }, { Category: 'audioInfo', Label: 'ATMOS 7.1', Language: 'deu' },
+    ] } }),
     // Genres
     g01: movie({ Genres: ['Science Fiction', 'Action', 'Adventure', 'Comedy'] }),
     g02: movie({ Genres: ['SCIENCE-FICTION', 'Comédie', 'Ciencia Ficción', 'Боевик'] }),
@@ -82,6 +146,10 @@ const synthetic = {
     g07: movie({ Genres: ['constructor', '__proto__', 'Constructor'] }),
     g08: movie({ Genres: ['toString', 'hasOwnProperty', '__PROTO__'] }),
     // Languages
+    sub01: movie({ AudioLanguages: ['eng', 'en', 'jpn'], SubtitleLanguages: ['eng', 'fra', 'pt-BR'] }),
+    sub02: movie({ Type: 'Series', AudioLanguages: ['hi', 'ta', 'te'], PartialAudioLanguages: ['ta'], SubtitleLanguages: ['ger', 'deu', 'fr'] }),
+    sub03: movie({ AudioLanguages: [], SubtitleLanguages: ['eo', 'zxx', 'pt-br', 'pt-pt'] }),
+    sub04: movie({ AudioLanguages: ['en-US', 'en-GB', 'zxx'], SubtitleLanguages: ['zh-Hant', 'zh-Hans', 'pt_BR'] }),
     l01: { Type: 'Series', TmdbId: '2000', Genres: ['Animation'], CommunityRating: 8.4, OfficialRating: 'TV-Y7', AudioLanguages: ['en', 'eng', 'en-us', 'pt-br', 'es-419', 'ja'], PartialAudioLanguages: ['en-us', 'pt-br', 'es-419'], StreamData: sd([video(), audio()]) },
     l02: { Type: 'Season', SeriesTmdbId: '2000', SeasonNumber: 2, Genres: ['Animation'], CommunityRating: 8.4, OfficialRating: 'TV-Y7', AudioLanguages: ['pt-br', 'es-419', 'nb', 'nb-no', 'zxx'], PartialAudioLanguages: ['pt-br', 'zxx'], StreamData: sd([video(), audio()]), SeriesId: 'x' },
     l03: movie({ AudioLanguages: ['pt_BR', 'zh-Hant', 'zh-hans-cn', 'es-LA', 'iw', 'gre', 'fil', 'tgl', 'cnr', 'sh', 'mo', 'in'] }),
@@ -125,6 +193,17 @@ const synthetic = {
     // toFixed switches to exponent notation from 1e21.
     r18: movie({ CommunityRating: 1e21, CriticRating: 1e21 }),
     r19: movie({ CommunityRating: -3e38, CriticRating: -1e21 }),
+    // Seven independent sources, native units, zero, missing values and parent-series entries.
+    rs01: movie({ Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92, rtAudience: 88, metacritic: 74, letterboxd: 4.1, trakt: 85 } }),
+    rs02: movie({ Ratings: { imdb: 0, tmdb: null, rtAudience: 49, letterboxd: 2.5 } }),
+    rs03: { Type: 'Season', SeriesTmdbId: '2000', SeasonNumber: 2, Ratings: { imdb: 8.1, rtCritic: 92 } },
+    // Logos: an image logo, two logos, a long name (initialism), one word cut short,
+    // an unknown kind, a malformed logo path and an empty name.
+    lg01: movie({ Logos: [{ kind: 'provider', name: 'Streamflix', logo: '/synthLogo01.png' }] }),
+    lg02: { Type: 'Series', TmdbId: '2000', Logos: [{ kind: 'network', name: 'Northwind Broadcasting Company' }, { kind: 'network', name: 'Harbor', logo: '/synthLogo02.png' }] },
+    lg03: movie({ Logos: [{ kind: 'studio', name: 'Supercalifragilistic' }, { kind: 'studio', name: 'A24' }, { kind: 'studio', name: 'Third' }] }),
+    lg04: movie({ Logos: [{ kind: 'channel', name: 'Nope' }, { kind: 'studio', name: '  ', logo: '/x.png' }, { kind: 'provider', name: 'Bad Path', logo: '../etc/passwd' }] }),
+    lg05: { Type: 'Episode', SeriesTmdbId: '2000', Logos: [{ kind: 'network', name: 'Home Box Office' }] },
     // Age ratings
     a01: movie({ OfficialRating: 'DE-12' }),
     a02: movie({ OfficialRating: '  FSK   16 ' }),
@@ -143,6 +222,52 @@ const synthetic = {
     a15: movie({ OfficialRating: '𐐨' }),
     a16: movie({ OfficialRating: 'pg-𐐨𐐩 ος' }),
 };
+// Aggregation facts deliberately disagree with representative streams; native and web must use the policy.
+for (const type of ['Series', 'Season']) {
+    const facts = (best, latest = best, agree = true) => ({ Best: best, Latest: latest, Values: [best], AllAgree: agree, All: [...new Set([best, latest].filter(Boolean))], Shared: agree && best ? [best] : [], LatestAll: latest ? [latest] : [], AllSetsAgree: agree });
+    const data = { Type: type, Source: 'WEB', Edition: 'Criterion', AudioLanguages: ['eng', 'jpn'], SubtitleLanguages: ['fra', 'eng'], Ratings: { imdb: 8.1, tmdb: 81, rtCritic: 92 },
+        StreamData: sd([video(), audio()]), QualitySummary: { EpisodeCount: 2,
+        Categories: { resolution: facts('4K', '720p', false), dynamicRange: facts('Dolby Vision', null, false), videoCodec: facts('AV1'), audioInfo: facts('ATMOS 7.1', 'DTS 5.1', false) },
+        LegacyAudio: facts('ATMOS 7.1', 'DTS 5.1', false), LegacyAudioByLanguage: { de: facts('DTS 5.1') }, AudioByLanguage: { de: facts('DTS 5.1') }, LatestExtras: ['IMAX', 'REMUX', 'edition:Extended'] } };
+    synthetic[`aggregate-${type.toLowerCase()}`] = data;
+}
+
+
+// Alias rows share Full/Compact expectations with both consumer suites.
+for (const [index, row] of JSON.parse(readFileSync(join(here, '../../fixtures/audio-alias-labels.json'), 'utf8')).entries()) {
+    synthetic[`audio-alias-title-${index}`] = movie({ StreamData: sd([row.stream || { Type: 'Audio', Channels: 6, DisplayTitle: row.alias }]) });
+    synthetic[`audio-alias-profile-${index}`] = movie({ StreamData: sd([row.stream || { Type: 'Audio', Channels: 6, Codec: row.codec, Profile: row.alias }]) });
+}
+
+// Shared audio regression summaries have independent version-0/current facts.
+for (const row of JSON.parse(readFileSync(join(here, '../../fixtures/audio-aggregation.json'), 'utf8')))
+    for (const type of ['Series', 'Season']) synthetic[`audio-aggregate-${row.name}-${type}`] = { ...row.entry, Type: type };
+
+// ISO display identity stays distinct from audio-equivalence grouping/counting.
+for (const code of ['tl', 'tgl', 'nb', 'nob', 'nn', 'nno', 'fil', 'srd', 'cmn']) {
+    synthetic[`iso-${code}`] = movie({ AudioLanguages: [code], SubtitleLanguages: [code] });
+}
+synthetic.isoAliases = movie({ AudioLanguages: ['tgl', 'tl', 'fil', 'nob', 'nb', 'nno', 'nn', 'nor'] });
+synthetic.awardsMovie = movie({ Awards: { ImdbRank: 12, CertifiedFresh: true, OscarWinner: true, OscarYear: 2024, LetterboxdRank: 24 } });
+synthetic.awardsSeries = { Type: 'Series', Awards: { EmmyWinner: true, EmmyYear: 2023 } };
+synthetic.awardsEmpty = movie({ Awards: { ImdbRank: 251, CertifiedFresh: false } });
+// Custom tag rule matches: one chip with an icon, one without, a retired rule id, and a series.
+// Rule ids are the server's keyed hash of the match type and value (CustomTagRuleSet.RuleId),
+// here under the profiles' CustomTagRuleKey.
+const customKey = 'parity';
+const customId = (match, value) => `${match}:${createHmac('sha256', customKey).update(`${match}:${value.toLowerCase()}`).digest('hex').slice(0, 16)}`;
+synthetic.custom1 = movie({ CustomTags: [customId('tag', '4K Remaster')] });
+synthetic.custom2 = movie({ CustomTags: [customId('collection', 'Criterion')] });
+synthetic.custom3 = movie({ CustomTags: [customId('tag', 'Signed'), customId('collection', 'Criterion'), 'tag:0000000000000000', customId('tag', '4K Remaster')] });
+synthetic.custom4 = { ...movie({ CustomTags: [customId('collection', 'Criterion'), customId('tag', 'Signed')] }), Type: 'Series' };
+// Shared technical formatting cases also run through the real web/native resolver harness.
+for (const row of JSON.parse(readFileSync(new URL('../../fixtures/technical-quality.json', import.meta.url), 'utf8'))) {
+    synthetic['technical-' + row.name] = movie({ SubtitleLanguages: ['eng'], SdhSubtitleLanguages: ['en'], StreamData: { Streams: [row.video], RunTimeTicks: row.ticks } });
+}
+// The same text-logo cases feed browser/native typography regressions.
+for (const [i, row] of JSON.parse(readFileSync(new URL('../../fixtures/first-chip-text-fit.json', import.meta.url), 'utf8')).entries()) {
+    synthetic['sideTextLogo' + i] = movie({ Logos: [{ kind: 'studio', name: row.name }], DateCreated: Date.UTC(2026, 9, 31) });
+}
 const syntheticEntries = {};
 const syntheticUserData = {};
 const syntheticReviews = {};
@@ -155,13 +280,36 @@ for (const [key, entry] of Object.entries(synthetic)) {
     syntheticUserData[id] = { Played: mode === 1, UnplayedItemCount: mode === 2 ? 3 : (mode === 3 ? 0 : null), PlayedPercentage: null };
 }
 
+// Per-item looks (the item editor): entries with real item ids, so a user lock or an
+// administrator item look can name them. Native posters draw Corners and Bands, so the looks
+// stay on those; these Corners looks select Full labels explicitly (native Corners follows the
+// chosen density). See the item-looks profiles below.
+const LOOK = Object.fromEntries(['movieLock', 'movieItemLook', 'movieBoth', 'series', 'seriesEpisode', 'seriesPoster', 'seriesPosterEpisode'].map((key, i) => [key, `00000000000000000000000000000f${(i + 1).toString(16).padStart(2, '0')}`]));
+const lookEntries = {
+    [LOOK.movieLock]: movie({ Genres: ['Drama', 'Comedy', 'Family'], AudioLanguages: ['eng', 'fra', 'deu'], StreamData: sd([video(), audio({ Codec: 'ac3', Channels: 6, DisplayTitle: 'AC-3 5.1' })]) }),
+    [LOOK.movieItemLook]: movie({ Genres: ['Drama', 'Comedy'], LibraryId: 'a1b2c3d4e5f60718293a4b5c6d7e8f90' }),
+    [LOOK.movieBoth]: movie({ Genres: ['Animation'] }),
+    [LOOK.series]: { Type: 'Series', TmdbId: '3000', Genres: ['Drama'], CommunityRating: 8.2, OfficialRating: 'TV-14', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]) },
+    [LOOK.seriesEpisode]: { Type: 'Episode', SeriesTmdbId: '3000', SeasonNumber: 1, EpisodeNumber: 1, SeriesId: LOOK.series, CommunityRating: 7.5, OfficialRating: 'TV-14', AudioLanguages: ['eng'], StreamData: sd([video(), audio()]) },
+    [LOOK.seriesPoster]: { Type: 'Series', TmdbId: '3001', Genres: ['Comedy'], CommunityRating: 6.4, OfficialRating: 'TV-PG', StreamData: sd([video(), audio()]) },
+    [LOOK.seriesPosterEpisode]: { Type: 'Episode', SeriesTmdbId: '3001', SeasonNumber: 2, EpisodeNumber: 3, SeriesId: LOOK.seriesPoster, CommunityRating: 6.9, OfficialRating: 'TV-PG', StreamData: sd([video(), audio()]) },
+};
+for (const [id, entry] of Object.entries(lookEntries)) {
+    syntheticEntries[id] = entry;
+    syntheticUserData[id] = { Played: false, UnplayedItemCount: null, PlayedPercentage: null };
+}
+
 // Synthetic review averages for every movie/tv key of the admin cache + synthetic entries.
 const adminCache = read(`tagcache-${admin.id}.json`);
 const averages = [null, 4.5, 3, 3.6666666666666665, 2.25, 1, 5, 4.75, 3.35, 2.5];
 let r = 0;
 for (const entry of [...Object.values(adminCache), ...Object.values(syntheticEntries)]) {
-    if ((entry.Type === 'Movie' || entry.Type === 'Series') && /^\d+$/.test(entry.TmdbId || '')) {
-        const key = `${entry.Type === 'Movie' ? 'movie' : 'tv'}:${entry.TmdbId}`;
+    // Seasons and episodes carry their series' TMDB id and their numbers (PosterTagReviewRatings.ReviewKey).
+    const series = /^\d+$/.test(entry.SeriesTmdbId || '') ? entry.SeriesTmdbId : null;
+    const key = (entry.Type === 'Movie' || entry.Type === 'Series') && /^\d+$/.test(entry.TmdbId || '') ? `${entry.Type === 'Movie' ? 'movie' : 'tv'}:${entry.TmdbId}`
+        : entry.Type === 'Season' && series && Number.isInteger(entry.SeasonNumber) ? `tv:${series}:s${entry.SeasonNumber}`
+        : entry.Type === 'Episode' && series && Number.isInteger(entry.SeasonNumber) && Number.isInteger(entry.EpisodeNumber) ? `tv:${series}:s${entry.SeasonNumber}:e${entry.EpisodeNumber}` : null;
+    if (key) {
         if (key in syntheticReviews) continue;
         const average = averages[r++ % averages.length];
         syntheticReviews[key] = average === null ? null : { average, count: (r % 3) + 1 };
@@ -191,7 +339,176 @@ for (const user of users) {
 const synth = (name, settingsRaw, pluginOverrides = {}, jellyfinAudioPreference = null) =>
     profiles.push({ name, user: admin.id, synthetic: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference, reviews: 'synthetic' });
 
+// Per-item looks: the user's lock → the administrator's item look → the user's settings, a
+// series look its episodes inherit unless it stays on the series poster, caps, size, gap,
+// edge spacing and hidden groups from a look, on a normalized and on a legacy document.
+const itemLooks = [
+    { ItemId: LOOK.movieItemLook, Layout: 'corners', Density: 'full', EdgeSpacing: 'flush', TagScale: 'larger', Slots: [{ Group: 'rating', Slot: 'off' }, { Group: 'quality', Slot: 'bc' }], LockedAt: 3 },
+    { ItemId: LOOK.movieBoth, Layout: 'bands', Density: 'compact', LockedAt: 2 },
+    { ItemId: LOOK.series, Layout: 'bands', Density: 'full', Caps: { Genre: 1 }, LockedAt: 1 },
+    { ItemId: LOOK.seriesPoster, Layout: 'bands', Density: 'compact', Scope: 'item', LockedAt: 4 },
+];
+const userLocks = {
+    [LOOK.movieLock]: { Layout: 'bands', Density: 'compact', Caps: { Language: 1, Genre: 2 }, TagGap: 'roomy', LockedAt: 5 },
+    [LOOK.movieBoth]: { Layout: 'corners', Density: 'full', TagScale: 'smaller', Slots: [{ Group: 'genre', Slot: 'tl' }], LockedAt: 6 },
+};
+const synthLooks = (name, settingsRaw, pluginOverrides) =>
+    profiles.push({ name, user: admin.id, synthetic: true, itemLooks: true, settingsRaw, settingsWeb: null, pluginOverrides, jellyfinAudioPreference: null, reviews: 'synthetic' });
+synthLooks('item-looks', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks });
+synthLooks('item-looks-bands-default', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact', TagEdgeSpacing: 'tight', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks });
+synthLooks('item-looks-legacy', { ...allOn, GenreTagsPosition: 'bottom-left', TagLayoutLocks: userLocks }, { TagLookItemOverrides: itemLooks, TagGroupCaps: { Genre: 5, Language: 1 }, TagScale: 'largest', TagEdgeSpacing: 'flush' });
+for (const version of [0, 1]) synthLooks(`item-looks-flush-single-${version}`, {
+    ...allOn, TagLayoutSettingsVersion: version, LogoTagsEnabled: true,
+    TagLayoutLocks: { [LOOK.movieLock]: { Layout: 'corners', Density: 'compact', EdgeSpacing: 'flush', Caps: { Status: 9, AgeRating: 0, Logos: 8 }, LockedAt: 9 } },
+}, { LogoTagsMaxLogos: 1, TagLookItemOverrides: [{ ItemId: LOOK.movieItemLook, Layout: 'corners', Density: 'compact', EdgeSpacing: 'flush', Caps: { Status: 0, AgeRating: 9, Logos: 8 }, LockedAt: 8 }] });
+
+
+for (const layout of ['caption', 'summary', 'minimal']) {
+    const slots = [{ Group: 'quality', Slot: 'off' }, { Group: 'genre', Slot: 'off' }, { Group: 'rating', Slot: 'off' }];
+    const look = { Layout: layout, Density: 'compact', Slots: slots, TagScale: 'larger', TagGap: 'roomy', Caps: { Language: 1 }, LockedAt: 8 };
+    synthLooks(`item-look-fallback-${layout}`, { ...allOn, TagLayoutSettingsVersion: 1, TagLayoutLocks: { [LOOK.movieLock]: look } },
+        { TagLookItemOverrides: [{ ItemId: LOOK.movieItemLook, ...look }] });
+}
+
+// Tag look rules (core/tag-look.js matches), decided natively from the same entry facts:
+// type, genre, age rating and library conditions, rule order (the first enabled match wins),
+// a disabled rule, a lock and an item look over a rule, Caption/Summary falling back to
+// Corners with the rule's hidden groups, the administrator's rules for a normalized document,
+// none for an explicit empty list or a document saved before layouts.
+const off = (...groups) => groups.map((Group) => ({ Group, Slot: 'off' }));
+const lookRules = [
+    { Id: 'paused', Enabled: false, When: [{ Field: 'type', Value: 'Movie' }], Layout: 'bands', Density: 'full' },
+    { Id: 'library', When: [{ Field: 'library', Value: 'a1b2c3d4e5f60718293a4b5c6d7e8f90' }], Layout: 'caption', Density: 'compact', Slots: off('genre') },
+    { Id: 'tv14', When: [{ Field: 'ageRating', Value: 'tv-14' }, { Field: 'type', Value: 'Episode' }], Layout: 'bands', Density: 'compact' },
+    { Id: 'animation', When: [{ Field: 'genre', Value: 'animation' }], Layout: 'summary', Density: 'compact', Slots: off('rating', 'language') },
+    { Id: 'movies', When: [{ Field: 'type', Value: 'movie' }], Layout: 'bands', Density: 'compact', Slots: off('quality') },
+    { Id: 'series', When: [{ Field: 'type', Value: 'Series' }, { Field: 'genre', Value: 'Comedy' }], Layout: 'corners', Density: 'compact', Slots: [{ Group: 'genre', Slot: 'bc' }] },
+];
+synthLooks('look-rules', { ...allOn, TagLayoutSettingsVersion: 1, TagLookRules: lookRules, TagLayoutLocks: { [LOOK.movieLock]: userLocks[LOOK.movieLock] } }, { TagLookItemOverrides: [itemLooks[1]] });
+synthLooks('look-rules-admin', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' }, { TagLookRules: lookRules });
+synthLooks('look-rules-empty-personal', { ...allOn, TagLayoutSettingsVersion: 1, TagLookRules: [] }, { TagLookRules: lookRules });
+synthLooks('look-rules-legacy-admin', { ...allOn }, { TagLookRules: lookRules });
+synthLooks('look-rules-legacy-own', { ...allOn, TagLookRules: lookRules.slice(3) });
+
+// Score numbers in the user's language: decimal separator and digits (web Intl, native ScoreNumbers).
+for (const DisplayLanguage of ['de', 'fa', 'ar-SA']) {
+    synth(`rating-locale-${DisplayLanguage}`, { RatingTagsEnabled: true, TagLayoutSettingsVersion: 1, DisplayLanguage,
+        RatingTagsSources: ['community', 'critic', 'imdb', 'letterboxd', 'metacritic'] });
+}
+
+// Version count chips ("2 versions" / "×2") on items with several media versions; series and seasons never show one.
+synth('quality-versions', { QualityTagsEnabled: true, TagLayoutSettingsVersion: 1, ShowVersionsTag: true, VersionsTagOrder: 1 });
+synth('quality-versions-compact', { QualityTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLabelDensity: 'compact', ShowVersionsTag: true });
+
 synth('all-on-defaults', { ...allOn });
+for (const TagScale of ['smaller', 'larger', 'largest']) {
+    synth(`tag-scale-${TagScale}`, { ...allOn, TagLayoutSettingsVersion: 1, TagScale });
+}
+for (const TagGap of ['tight', 'roomy']) {
+    synth(`tag-gap-${TagGap}`, { ...allOn, TagLayoutSettingsVersion: 1, TagGap });
+}
+// "Where to show": personal switches over the administrator's, Rating's own switches, item types only
+// (an image request has no home row).
+synth('where-to-show', { ...allOn, TagLayoutSettingsVersion: 1, TagGroupScopes: { Genre: { Episodes: false, Series: false }, Quality: { Seasons: false }, Rating: { Movies: false }, Custom: { Movies: false } } });
+synth('where-to-show-admin', { ...allOn, TagLayoutSettingsVersion: 1, TagGroupScopes: { Language: { Movies: true } } },
+    { TagGroupScopes: { Language: { Movies: false, Series: false }, AgeRating: { Episodes: false }, Awards: { Movies: false } }, RatingTagsOnSeries: false });
+synth('where-to-show-rating-legacy-off', { ...allOn, TagLayoutSettingsVersion: 1, RatingTagsOnEpisodes: false }, { RatingTagsOnMovies: false });
+synth('tag-size-invalid-personal', { ...allOn, TagLayoutSettingsVersion: 1, TagScale: 'huge', TagGap: 'wide' }, { TagScale: 'larger', TagGap: 'roomy' });
+synth('tag-size-admin-inherit', { ...allOn, TagLayoutSettingsVersion: 1 }, { TagScale: 'larger', TagGap: 'roomy' });
+synth('tag-size-legacy', { ...allOn, TagScale: 'largest', TagGap: 'roomy' }, { TagScale: 'larger', TagGap: 'tight' });
+
+synth('naming-low-source-opt-in', { QualityTagsEnabled: true, ShowLowQualitySourceTag: true, EditionTagOrder: 0 });
+synth('naming-categories-off', { QualityTagsEnabled: true, ShowLowQualitySourceTag: true, ShowSourceTag: false, ShowEditionTag: false });
+synth('naming-imax-edition-only', { QualityTagsEnabled: true, ShowSpecialFormatTag: false });
+synth('naming-admin-defaults', { QualityTagsEnabled: true }, { ShowEditionTag: false, ShowLowQualitySourceTag: true, EditionTagOrder: 1 });
+synth('naming-user-overrides', { QualityTagsEnabled: true, ShowEditionTag: true, ShowLowQualitySourceTag: false, EditionTagOrder: 7 }, { ShowEditionTag: false, ShowLowQualitySourceTag: true, EditionTagOrder: 1 });
+synth('rating-sources-all', { RatingTagsEnabled: true, RatingTagsSources: ['trakt', 'imdb', 'tmdb', 'rtCritic', 'rtAudience', 'metacritic', 'letterboxd'] });
+synth('rating-sources-minimum-cap', { RatingTagsEnabled: true, RatingTagsSources: ['metacritic', 'letterboxd', 'imdb', 'tmdb', 'rtCritic'], RatingTagsMinScore: 8, RatingTagsColorByScore: true, TagGroupCaps: { Rating: 2 }, TagLayoutSettingsVersion: 1 });
+synth('rating-sources-empty', { RatingTagsEnabled: true, RatingTagsSources: [] });
+synth('rating-sources-unknown', { RatingTagsEnabled: true, RatingTagsSources: ['invalid', 'imdb', 'imdb', 'trakt'] });
+for (const [i, row] of JSON.parse(readFileSync(new URL('../../fixtures/first-chip-text-fit.json', import.meta.url), 'utf8')).entries()) {
+    synth(`text-logo-side-${row.slot}-${row.scale}`, {
+        LogoTagsEnabled: true, StatusTagsEnabled: true, TagLayoutSettingsVersion: 1,
+        TagScale: row.scale, TagGap: 'tight', TagEdgeSpacing: 'flush',
+        TagLayouts: { Corners: { Groups: [{ Group: 'logos', Slot: row.slot }, { Group: 'status', Slot: row.slot === 'ml' ? 'mr' : 'ml' }] } },
+    });
+    profiles.at(-1).now = Date.UTC(2026, 9, 31);
+}
+synth('logos-defaults', { LogoTagsEnabled: true });
+synth('logos-with-groups', { ...allOn, LogoTagsEnabled: true, LogoTagsPosition: 'top-right' });
+synth('logos-capped-ordered', { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Logos: 1 },
+    TagGroupOrder: ['logos', 'quality'], TagLayouts: { Corners: { Groups: [{ Group: 'logos', Slot: 'tl' }] } } });
+synth('logos-hidden', { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: { Groups: [{ Group: 'logos', Slot: 'off' }] } } });
+synth('logos-admin-position', { LogoTagsEnabled: true }, { LogoTagsPosition: 'bottom-center' });
+
+for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed']) {
+    synth('aggregate-' + policy, { QualityTagsEnabled: true, SeriesQualityAggregation: policy });
+    synth('aggregate-' + policy + '-de', { QualityTagsEnabled: true, SeriesQualityAggregation: policy, QualityTagsPreferredAudioLanguage: 'de' });
+}
+for (const version of [0, 1]) for (const mode of ['highest', 'all'])
+    for (const policy of ['best', 'latest', 'shared', 'mixed']) for (const language of ['none', 'eng', 'en-US', 'en-GB', 'de', 'fra'])
+        synth(`audio-aggregate-v${version}-${mode}-${policy}-${language}`, { QualityTagsEnabled: true,
+            TagLayoutSettingsVersion: version, QualityAudioDisplayMode: mode, SeriesQualityAggregation: policy,
+            QualityTagsPreferredAudioLanguage: language });
+for (const row of JSON.parse(readFileSync(join(here, '../../fixtures/audio-legacy-documents.json'), 'utf8')))
+    synth(`audio-gate-${row.name}`, row.settings);
+// Display modes independently, inherited defaults, native caps/density and all container policies.
+const displayAll = { QualityTagsEnabled: true, QualityAudioDisplayMode: 'all', QualityVideoCodecDisplayMode: 'all', QualityHdrDisplayMode: 'all' };
+for (const field of ['QualityAudioDisplayMode', 'QualityVideoCodecDisplayMode', 'QualityHdrDisplayMode'])
+    synth('display-' + field, { QualityTagsEnabled: true, [field]: 'all' });
+for (const policy of ['representative', 'latest', 'best', 'shared', 'mixed'])
+    synth('display-all-' + policy, { ...displayAll, SeriesQualityAggregation: policy });
+synth('display-all-language', { ...displayAll, QualityTagsPreferredAudioLanguage: 'de' });
+synth('display-all-admin', { QualityTagsEnabled: true }, displayAll);
+synth('display-user-highest', { QualityTagsEnabled: true, QualityAudioDisplayMode: 'highest', QualityVideoCodecDisplayMode: 'highest', QualityHdrDisplayMode: 'highest' }, displayAll);
+for (const minimum of ['off', '720p', '1080p', '4k'])
+    synth('display-minimum-' + minimum, { ...displayAll, QualityMinimumResolution: minimum, QualityHideSdr: true });
+for (const max of [1, 2]) synth(`single-chip-caps-${max}`, { ...allOn, LogoTagsEnabled: true, TagLayoutSettingsVersion: 1,
+    TagGroupCaps: { Status: 9, AgeRating: 0, Genre: 2, Logos: 9 } }, { LogoTagsMaxLogos: max });
+synth('display-compact-cap', { ...displayAll, TagLayout: 'bands', TagLabelDensity: 'compact', TagLayoutSettingsVersion: 1, TagGroupCaps: { Quality: 3 } });
+synth('aggregate-admin-default', { QualityTagsEnabled: true }, { SeriesQualityAggregation: 'best' });
+for (const policy of ['latest', 'mixed']) {
+    synth('tier1-combined-' + policy, { QualityTagsEnabled: true, RatingTagsEnabled: true,
+        LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes',
+        SeriesQualityAggregation: policy, RatingTagsSources: ['imdb', 'tmdb', 'rtCritic'] });
+}
+
+synth('positions-centres-legacy', {
+    ...allOn, QualityTagsPosition: 'top-center', GenreTagsPosition: 'center',
+    LanguageTagsPosition: 'center-left', RatingTagsPosition: 'bottom-center', AgeRatingTagsPosition: 'center-right',
+});
+synth('positions-centres-profile', {
+    ...allOn, TagLayoutSettingsVersion: 1,
+    TagLayouts: { Corners: { Groups: [
+        { Group: 'quality', Slot: 'tc' }, { Group: 'genre', Slot: 'c' },
+        { Group: 'language', Slot: 'ml' }, { Group: 'rating', Slot: 'bc' }, { Group: 'ageRating', Slot: 'mr' },
+    ] } },
+});
+// Edge spacing: every anchor at Tight and Flush (four corners, then the five centre
+// anchors), an administrator default a normalized user inherits, and a legacy
+// document that keeps the default inset whatever the administrator picks.
+const cornersProfile = { Groups: [
+    { Group: 'quality', Slot: 'tl' }, { Group: 'genre', Slot: 'tr' },
+    { Group: 'language', Slot: 'bl' }, { Group: 'rating', Slot: 'br' }, { Group: 'ageRating', Slot: 'tr' },
+] };
+const centresProfile = { Groups: [
+    { Group: 'quality', Slot: 'tc' }, { Group: 'genre', Slot: 'c' },
+    { Group: 'language', Slot: 'ml' }, { Group: 'rating', Slot: 'bc' }, { Group: 'ageRating', Slot: 'mr' },
+] };
+for (const edge of ['tight', 'flush']) {
+    synth(`edge-${edge}-corners`, { ...allOn, TagLayoutSettingsVersion: 1, TagEdgeSpacing: edge, TagLayouts: { Corners: cornersProfile } });
+    synth(`edge-${edge}-centres`, { ...allOn, TagLayoutSettingsVersion: 1, TagEdgeSpacing: edge, TagLayouts: { Corners: centresProfile } });
+}
+// Fixed edge insets coexist with scaled chip and gap metrics at every anchor.
+for (const edge of ['tight', 'flush']) for (const [scale, gap] of [['smaller', 'tight'], ['largest', 'roomy']]) {
+    for (const [name, profile] of [['corners', cornersProfile], ['centres', centresProfile]]) {
+        synth(`edge-${edge}-${scale}-${gap}-${name}`, { ...allOn, TagLayoutSettingsVersion: 1,
+            TagEdgeSpacing: edge, TagScale: scale, TagGap: gap, TagLayouts: { Corners: profile } });
+    }
+}
+synth('edge-admin-flush-inherited', { ...allOn, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: cornersProfile } }, { TagEdgeSpacing: 'flush' });
+synth('edge-admin-flush-user-default', { ...allOn, TagLayoutSettingsVersion: 1, TagEdgeSpacing: 'default' }, { TagEdgeSpacing: 'flush' });
+synth('edge-legacy-ignores-admin', { ...allOn, TagEdgeSpacing: 'flush' }, { TagEdgeSpacing: 'tight' });
 synth('positions-mirror', {
     ...allOn, QualityTagsPosition: 'bottom-right', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'top-left',
     AgeRatingTagsPosition: 'top-left', LanguageTagsPosition: 'top-right', VideoCodecTagOrder: 0,
@@ -221,6 +538,18 @@ synth('audio-admin-from-user-no-pref', { QualityTagsEnabled: true }, { QualityTa
 synth('audio-admin-fixed', { QualityTagsEnabled: true, QualityTagsPreferredAudioLanguage: '' }, { QualityTagsPreferredAudioLanguage: 'en-GB' });
 synth('language-priority', { LanguageTagsEnabled: true }, { LanguageTagsPriority: 'Japanese, en, pt-br, brazilian portuguese, Norwegian Bokmål,, ' });
 synth('language-priority-strict', { LanguageTagsEnabled: true, GenreTagsEnabled: true }, { LanguageTagsPriority: 'fr,ja, Latin American Spanish', LanguageTagsPriorityStrict: true });
+for (const style of ['flags', 'codes']) {
+    for (const strict of [null, true, false]) {
+        synth(`personal-language-${style}-strict-${strict}`, { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true,
+            LanguageTagsStyle: style, LanguageTagsCountBadge: 'both', LanguageTagsPriority: ['jpn', 'eng', 'tam', 'por'], LanguageTagsPriorityStrict: strict },
+            { LanguageTagsPriority: 'French', LanguageTagsPriorityStrict: true });
+    }
+}
+synth('personal-language-empty', { LanguageTagsEnabled: true, LanguageTagsPriority: [] }, { LanguageTagsPriority: 'French', LanguageTagsPriorityStrict: true });
+synth('personal-language-aliases', { LanguageTagsEnabled: true, LanguageTagsPriority: ['tl', 'fil', 'nn', 'nob'], LanguageTagsPriorityStrict: true });
+synth('personal-language-follow-strict-override', { LanguageTagsEnabled: true, LanguageTagsPriorityStrict: false }, { LanguageTagsPriority: 'Japanese', LanguageTagsPriorityStrict: true });
+synth('personal-language-badge-only', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsPriority: ['ja', 'en'], LanguageTagsPriorityStrict: true, LanguageTagsCountBadge: 'only' });
+synth('personal-language-invalid', { LanguageTagsEnabled: true, LanguageTagsPriority: ['Japanese'] }, { LanguageTagsPriority: 'French' });
 synth('rating-scopes', { RatingTagsEnabled: true, RatingTagsOnMovies: false, RatingTagsOnSeries: true, RatingTagsOnSeasons: false, RatingTagsOnEpisodes: false, RatingTagsOnNextUp: false }, { ShowUserRatingDash: false });
 synth('rating-scopes-2', { RatingTagsEnabled: true, AgeRatingTagsEnabled: true, RatingTagsOnMovies: true, RatingTagsOnSeries: false, RatingTagsOnSeasons: true, RatingTagsOnEpisodes: true, RatingTagsOnContinueWatching: false });
 synth('reviews-off', { RatingTagsEnabled: true }, { ShowUserRatingOnPosters: false });
@@ -248,6 +577,34 @@ synth('language-priority-strict-casing', { LanguageTagsEnabled: true }, {
     LanguageTagsPriorityStrict: true,
 });
 
+// Tag layouts (native posters always draw corners): the corners profile's corner slots and
+// "off", the user's own priority order (stacking within a shared corner; the admin's order is
+// never inherited, only copied in by seeding) and the per-group caps (admin caps fill gaps);
+// a document from before layouts (version 0) ignores order and caps.
+const allBottomLeft = { QualityTagsPosition: 'bottom-left', GenreTagsPosition: 'bottom-left', RatingTagsPosition: 'bottom-left', AgeRatingTagsPosition: 'bottom-left', LanguageTagsPosition: 'bottom-left' };
+synth('layout-order-caps', {
+    ...allOn, ...allBottomLeft, TagLayoutSettingsVersion: 1, TagLayout: 'corners',
+    TagGroupOrder: ['language', 'rating', 'genre', 'quality', 'ageRating', 'status'],
+    TagGroupCaps: { Quality: 2, Genre: 1, Language: 5, Rating: 1 },
+});
+synth('layout-corners-profile-off', {
+    ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands',
+    TagLayouts: { Corners: { Groups: [{ Group: 'genre', Slot: 'off' }, { Group: 'quality', Slot: 'br' }, { Group: 'rating', Slot: 'tr' }, { Group: 'agerating', Slot: 'bl' }] } },
+});
+synth('layout-admin-caps-not-order', { ...allOn, ...allBottomLeft, TagLayoutSettingsVersion: 1, TagLayout: 'corners' }, {
+    TagGroupOrder: ['ageRating', 'genre', 'quality'], TagGroupCaps: { Genre: 0, Language: 0, Quality: 3 },
+});
+synth('layout-legacy-ignores-order', {
+    ...allOn, ...allBottomLeft, TagGroupOrder: ['language', 'genre'], TagGroupCaps: { Genre: 1, Language: 1 },
+}, { TagGroupOrder: ['ageRating', 'genre'], TagGroupCaps: { Genre: 5 } });
+synth('layout-all-off', {
+    ...allOn, TagLayoutSettingsVersion: 1,
+    TagLayouts: { Corners: { Groups: ['quality', 'genre', 'rating', 'ageRating', 'language'].map((g) => ({ Group: g, Slot: 'off' })) } },
+});
+synth('rating-include-community-off', { RatingTagsEnabled: true, AgeRatingTagsEnabled: true, RatingTagsShowCommunity: false });
+synth('rating-include-critic-off-admin', { RatingTagsEnabled: true }, { RatingTagsShowCritic: false });
+synth('rating-include-none', { RatingTagsEnabled: true, RatingTagsShowCommunity: false, RatingTagsShowCritic: false, TagLayoutSettingsVersion: 1, TagGroupCaps: { Rating: 1 } });
+
 // Raw settings.json text (the provider hands PosterTagSettings.FromSettingsJson the file as read):
 // the server reads it with Newtonsoft (JSON5-ish syntax, case-insensitive keys, last duplicate wins)
 // and falls back to the UserSettings defaults when it is empty, null, not an object or unreadable.
@@ -261,6 +618,74 @@ synthText('settings-text-array', '[{"GenreTagsEnabled": true}]', adminTagDefault
 synthText('settings-text-garbage', '{"GenreTagsEnabled": tru', adminTagDefaults);
 synthText('settings-text-json5', "{'GenreTagsEnabled': true, RatingTagsEnabled: true, /* note */ RatingTagsPosition: 'top-left', // x\n QualityTagsEnabled: true,}", adminTagDefaults);
 synthText('settings-text-duplicates', '{"GenreTagsEnabled": false, "genreTagsEnabled": true, "LanguageTagsEnabled": true, "LANGUAGETAGSENABLED": null}', adminTagDefaults);
+
+// Language includes, codes, combined caps and badge modes over every fixture.
+for (const style of ['flags', 'codes']) {
+    for (const badge of ['off', 'only', 'both']) {
+        synth(`language-${style}-${badge}`, { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: style, LanguageTagsCountBadge: badge });
+    }
+}
+// Custom tags: the administrator's rules (labels and icons by rule id), the group's corner,
+// arrival order next to quality and age rating, explicit order and cap, and "off" in corners.
+// The server reads Match/Value (under CustomTagRuleKey); the web reads Id/Label/Icon, as the
+// public configuration serves them.
+const customRules = { CustomTagRuleKey: customKey, CustomTagRules: [
+    { Id: customId('collection', 'Criterion'), Match: 'collection', Value: 'Criterion', Label: 'Criterion', Icon: null },
+    { Id: customId('tag', '4K Remaster'), Match: 'tag', Value: '4K Remaster', Label: 'Remaster', Icon: 'auto_awesome' },
+    { Id: customId('tag', 'Signed'), Match: 'tag', Value: 'Signed', Label: 'Signed', Icon: null },
+] };
+synth('custom-defaults', { CustomTagsEnabled: true }, customRules);
+synth('custom-shared-corner', { QualityTagsEnabled: true, AgeRatingTagsEnabled: true, AgeRatingTagsPosition: 'top-left', CustomTagsEnabled: true }, customRules);
+synth('custom-order-cap-position', { ...allOn, CustomTagsEnabled: true, CustomTagsPosition: 'top-right', TagLayoutSettingsVersion: 1, TagGroupOrder: ['custom', 'genre'], TagGroupCaps: { Custom: 1 } }, customRules);
+synth('custom-off-in-corners', { CustomTagsEnabled: true, TagLayoutSettingsVersion: 1, TagLayouts: { Corners: { Groups: [{ Group: 'custom', Slot: 'off' }] } } }, customRules);
+synth('custom-rules-group-off', { QualityTagsEnabled: true }, customRules);
+synth('custom-admin-default-on', null, { ...customRules, CustomTagsEnabled: true, CustomTagsPosition: 'bottom-left' });
+// Rules reordered after the entries were matched (their ids keep the old order): both sides draw the new order.
+synth('custom-reordered-cap', { CustomTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Custom: 1 } }, { ...customRules, CustomTagRules: [...customRules.CustomTagRules].reverse() });
+
+synth('language-subs-only', { LanguageTagsEnabled: true, LanguageTagsShowAudio: false, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes' });
+synth('language-subs-strict-merge', { LanguageTagsEnabled: true, LanguageTagsShowSubtitles: true, LanguageTagsStyle: 'codes', LanguageTagsCountBadge: 'both' }, { LanguageTagsPriority: 'French, English, Hindi', LanguageTagsPriorityStrict: true, LanguageTagsMergeRegions: true });
+
+synth('awards-all', { AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Awards: 0 } }, { AwardsTagsEnabled: true });
+synth('awards-cap', { AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupCaps: { Awards: 2 }, AwardsTagsPosition: 'bottom-right' }, { AwardsTagsEnabled: true });
+synth('awards-disabled', { AwardsTagsEnabled: true }, { AwardsTagsEnabled: false });
+synth('awards-combined', { ...allOn, AwardsTagsEnabled: true, TagLayoutSettingsVersion: 1, TagGroupOrder: ['awards', 'quality', 'rating'] }, { AwardsTagsEnabled: true, AwardsTagsCertifiedFresh: false });
+// Native Bands now follows its active profile, density, order and limits.
+synth('native-bands-full', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' });
+synth('native-corners-compact', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLabelDensity: 'compact' });
+synth('native-bands-compact', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: 'compact' });
+synth('native-bands-custom', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagGroupOrder: ['language', 'quality', 'genre'], TagGroupCaps: { Quality: 2 },
+    TagLayouts: { Bands: { Groups: [{ Group: 'language', Slot: 'top' }, { Group: 'quality', Slot: 'top' }, { Group: 'rating', Slot: 'off' }, { Group: 'genre', Slot: 'bottom' }] } } });
+synth('native-bands-admin', { ...allOn, TagLayoutSettingsVersion: 1, TagLayout: 'bands' }, { TagLayouts: { Bands: { Groups: [{ Group: 'quality', Slot: 'top' }, { Group: 'language', Slot: 'off' }] } } });
+
+// Integrated Awards use active Bands slots with non-default native size/gap.
+for (const [scale, gap] of [['smaller', 'tight'], ['largest', 'roomy']]) {
+    synth(`native-bands-integrated-${scale}`, { ...allOn, AwardsTagsEnabled: true,
+        TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagScale: scale, TagGap: gap,
+        TagGroupOrder: ['status', 'awards', 'quality', 'rating', 'language'],
+        TagLayouts: { Bands: { Groups: [{ Group: 'awards', Slot: 'top' }] } } }, { AwardsTagsEnabled: true });
+}
+
+// Both new groups participate in scale/gap, all nine edge anchors and Bands.
+for (const [TagScale, TagGap] of [['smaller', 'tight'], ['largest', 'roomy']])
+for (const TagLayout of ['corners', 'bands'])
+for (const TagEdgeSpacing of ['tight', 'flush']) {
+    synth(`logos-custom-${TagLayout}-${TagEdgeSpacing}-${TagScale}`, {
+        LogoTagsEnabled: true, CustomTagsEnabled: true, TagLayoutSettingsVersion: 1,
+        TagScale, TagGap, TagLayout, TagEdgeSpacing, TagGroupOrder: ['logos', 'custom'],
+    }, customRules);
+}
+
+for (const density of ['full', 'compact']) for (const LanguageTagsStyle of ['flags', 'codes']) {
+    synth(`technical-${density}-${LanguageTagsStyle}`, { QualityTagsEnabled: true, LanguageTagsEnabled: true,
+        LanguageTagsShowSubtitles: true, LanguageTagsStyle, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
+        TagLayoutSettingsVersion: 1, TagLayout: 'bands', TagLabelDensity: density, TagGroupCaps: { Quality: 0 } });
+    synth(`technical-corners-${density}-${LanguageTagsStyle}`, { QualityTagsEnabled: true, LanguageTagsEnabled: true,
+        LanguageTagsShowSubtitles: true, LanguageTagsStyle, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
+        TagLayoutSettingsVersion: 1, TagLayout: 'corners', TagLabelDensity: density, TagGroupCaps: { Quality: 0 } });
+}
+synth('technical-reordered', { QualityTagsEnabled: true, ShowRuntimeTag: true, ShowAspectRatioTag: true, ShowFrameRateTag: true,
+    RuntimeTagOrder: 1, FrameRateTagOrder: 2, AspectRatioTagOrder: 3, TagLayoutSettingsVersion: 1, TagGroupCaps: { Quality: 0 } });
 
 writeFileSync(join(dataDir, 'profiles.json'), JSON.stringify(profiles, null, 1));
 console.log(`${profiles.length} profiles (${users.length} real users), ${Object.keys(syntheticEntries).length} synthetic entries, ${Object.keys(syntheticReviews).length} synthetic review keys`);

@@ -11,12 +11,17 @@ The admin page controls server features, service connections, and starting prefe
 3. Check the unsaved indicator, then click **Save Settings**.
 4. Refresh affected web clients.
 
+Media Tags have their own tab, **Media Tags** (under **Appearance**, after **Display**; the **Media Tags** card on the **Display** tab opens it too). It is laid out like the personal Media Tags settings, with its sections (**Overview**, **Layout defaults**, **Groups**, **Rules**, **Colours**, **Status badges**, **Server**) listed under it in the sidebar. It saves each change as you make it (no **Save Settings**), and previews the cards a new user would see. **Save Settings** on the other tabs never changes a Media Tags setting. See [Tags & badges](../enhanced/tags.md).
+
+![The Media Tags card on the Display tab](../images/media-tags-admin-card.png)
+
 ![Enhanced administrator Overview tab](../images/admin/overview.webp)
 
 | Tab | What you'll find | Detailed guide |
 | --- | --- | --- |
 | **Overview** | **Service Status** (with the remaining request budget for MDBList and DoesTheDogDie), **Optional Dependencies**, **Features**, and **Quick Actions** for connection tests, applying all plugin settings to users, and clearing client tag caches | [Defaults and resets](#admin-defaults-and-personal-overrides), [compatibility](compatibility.md) |
-| **Display** | Watch progress, file information, poster/detail tags and their styles, native poster tags, Spoiler Guard, icons/theme, random-button defaults, language, awards, and MDBList ratings | [Enhanced settings](../enhanced/enhanced-settings.md), [Tags & badges](../enhanced/tags.md), [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md) |
+| **Display** | Watch progress, file information, the **Media Tags** card (a summary that opens the **Media Tags** tab), Spoiler Guard, icons/theme, random-button defaults, language, awards, and MDBList ratings | [Enhanced settings](../enhanced/enhanced-settings.md), [Tags & badges](../enhanced/tags.md), [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md) |
+| **Media Tags** | Poster tags: which groups new users start with, their default layout, rules and colours, status badges, the tag cache and Native Poster Tags, with a live preview. Saves each change as you make it | [Tags & badges](../enhanced/tags.md) |
 | **Playback** | Tab-switch playback behavior, pause screen, long-press speed, automatic intro/outro skipping, subtitle defaults, and panel/toast timing | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Pages** | Enablement, content options, and placement for Bookmarks, Hidden Content, Requests, Calendar, Recommendations, Activity, and Catch Up | [JE pages & tabs](pages-and-tabs.md) |
 | **Services** | TMDB, AniList, MDBList and DoesTheDogDie in one place. Each card is a linked copy of the one in its feature tab, so changing it in either place changes both | [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md), [Tags & badges](../enhanced/tags.md) |
@@ -25,7 +30,7 @@ The admin page controls server features, service connections, and starting prefe
 | **Elsewhere & Reviews** | Streaming providers, regions, shared TMDB key, provider branding, TMDB reviews, release dates, and user reviews | [Elsewhere & Reviews Settings](../elsewhere/elsewhere-settings.md) |
 | **Extras** | UI tweaks, header shortcuts, active streams, plugin icons, Letterboxd links, and **Custom Image Assets** | [Other settings](../other/other-settings.md) |
 | **Keyboard** | **Disable Keyboard Shortcuts** and the server's shortcut bindings; click a key to edit it | [Enhanced features](../enhanced/enhanced-features.md#playback-controls) and [personal shortcut controls](#admin-defaults-and-personal-overrides) |
-| **Admin** | Optional usage statistics, maintenance mode, tag-cache operations, and **Dev Mode** | [Other settings](../other/other-settings.md), [Community Analytics](../advanced/community-analytics.md), [Tags & badges](../enhanced/tags.md) |
+| **Admin** | Optional usage statistics, maintenance mode, and **Dev Mode** (the tag cache rebuild is in the **Server** section of the Media Tags tab) | [Other settings](../other/other-settings.md), [Community Analytics](../advanced/community-analytics.md), [Tags & badges](../enhanced/tags.md) |
 | **Credits** | The community projects the plugin's features build on | |
 | **Docs** | **Documentation** embedded from the hosted site, with **Open in new tab** | [Quick start](index.md) |
 
@@ -55,7 +60,7 @@ Select a tab to see it on the admin page.
 
     ![Admin tab with maintenance and diagnostic groups](../images/admin/admin.webp)
 
-In **Overview**, the What's New notice links to the settings groups that contain controls added since the last dismissal. Use the release-notes link for the full changelog.
+In **Overview**, the What's New notice links to the settings groups that contain controls added since the last dismissal. New Media Tags settings are listed as **Media Tags > _section_** and open the Media Tags tab at that section. Use the release-notes link for the full changelog.
 
 ![Administrator What's New notice with links to settings groups](../images/other/whats-new.webp)
 
@@ -105,7 +110,8 @@ You can change your own preferences without administrator access. Open the panel
 | **Auto-Skip Settings** | Personal intro/outro skipping preferences | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Subtitle Settings** | **Disable Custom Styles**, style/color, size, font, text effect, and position | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Random Button Settings** | Enablement, unwatched-only selection, item types, and random source | [Enhanced settings](../enhanced/enhanced-settings.md) |
-| **UI Settings** | Watch progress, file size, tag categories/order/positions, native poster preference, and other display choices | [Enhanced settings](../enhanced/enhanced-settings.md), [Tags & badges](../enhanced/tags.md) |
+| **UI Settings** | Watch progress, file size and other display choices | [Enhanced settings](../enhanced/enhanced-settings.md) |
+| **Media Tags** | Poster tag layout, groups and their order/positions/limits, status badges, rules and locks, colour preset, native poster preference, people tags and audio language links | [Enhanced settings](../enhanced/enhanced-settings.md#media-tags), [Tags & badges](../enhanced/tags.md) |
 | **Hidden Content** | Personal hide controls and surface filters, plus access to the hidden list; present when the server feature is enabled | [Enhanced settings](../enhanced/enhanced-settings.md) |
 | **Spoiler Guard** | Personal overrides for admin-enabled categories and **Don't ask me to confirm when turning Spoiler Guard off**; present only when admin **Enable Spoiler Guard** is on | [Spoiler Guard settings](../spoiler-guard/spoiler-guard-settings.md#per-user-overrides) |
 | **Language Settings** | **Display Language** and **Clear Translation Cache** | [Enhanced settings](../enhanced/enhanced-settings.md) |

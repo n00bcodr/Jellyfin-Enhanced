@@ -239,7 +239,7 @@
 
     // Sidebar groups. Tabs not listed (e.g. ones added by Custom Tabs) stay at the end, ungrouped.
     const NAV_GROUPS = [
-        ['Appearance', ['display', 'elsewhere']],
+        ['Appearance', ['display', 'media-tags', 'elsewhere']],
         ['Behaviour', ['playback', 'pages', 'extras', 'keyboard']],
         ['Connections', ['services', 'seerr', 'arr']],
         ['Server', ['admin']],
@@ -333,6 +333,8 @@
 
         const label = () => { const a = bar.querySelector('.jellyfin-tab-button.active'); toggle.querySelector('.jea-nav-current').textContent = a ? [...a.querySelector('h3').childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim() : 'Settings'; };
         label();
+        // A tab shown without a click (restored from the session, opened by an address or a link) relabels the phone menu too.
+        new MutationObserver(label).observe(bar, { subtree: true, attributes: true, attributeFilter: ['class'] });
         toggle.addEventListener('click', () => setOpen(!nav.classList.contains('jea-open')));
         // Tab clicks are handled by the page; close the phone menu after the active class has moved.
         bar.addEventListener('click', (e) => { if (e.target.closest('.jea-drawer-head')) return; setTimeout(() => { label(); setOpen(false); syncMirrors(); }, 0); });

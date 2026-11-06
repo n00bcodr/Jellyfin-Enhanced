@@ -19,29 +19,48 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         public const string Dash = "\u2014";
 
         /// <summary>
-        /// The critic and community chips (critic first). Empty when the entry carries neither
-        /// rating; the web then creates no rating container of its own.
+        /// The configured source chips, filtered by minimum score. Legacy documents retain
+        /// the critic/community include switches and their original ordering. Empty when none is left;
+        /// the web then creates no rating container of its own.
         /// </summary>
-        public static List<PosterTag> ResolveScores(TagCacheEntry entry)
+        public static List<PosterTag> ResolveScores(TagCacheEntry entry, PosterTagSettings settings)
         {
-            var tags = new List<PosterTag>(2);
-            // normalizeCriticPercent: Number.isFinite fails for NaN and the infinities, no chip.
-            if (entry.CriticRating is { } criticRaw && float.IsFinite(criticRaw))
+            var tags = new List<PosterTag>();
+            var sources = settings.RatingTagsSources ?? new[] { "critic", "community" };
+            foreach (var id in sources)
             {
-                var critic = Math.Max(0, Math.Min(100, JsText.MathRound(JsText.FloatAsJsNumber(criticRaw))));
-                var percent = (int)critic;
-                tags.Add(new RatingTag(PosterRatingSource.Critic, percent.ToString(CultureInfo.InvariantCulture) + "%", percent >= FreshThreshold));
-            }
-
-            if (entry.CommunityRating is { } communityRaw)
-            {
-                // parseFloat(v).toFixed(1); "0.0" (no data) shows a dash.
-                var text = JsText.ToFixed(JsText.FloatAsJsNumber(communityRaw), 1);
-                var display = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture) == 0 ? Dash : text;
-                tags.Add(new RatingTag(PosterRatingSource.Community, display, false));
+                if (settings.RatingTagsSources == null && ((id == "community" && !settings.RatingTagsShowCommunity) || (id == "critic" && !settings.RatingTagsShowCritic))) continue;
+                double? raw = id == "community" ? entry.CommunityRating : id == "critic" ? entry.CriticRating : entry.Ratings?.Get(id);
+                if (raw is not { } value || !double.IsFinite(value)) continue;
+                // Legacy DTOs are floats; JS receives their shortest decimal JSON, then formats
+                // community to one decimal / critic to a percent before the shared source helper.
+                if (id == "community" && entry.CommunityRating is { } community)
+                    value = double.Parse(JsText.ToFixed(JsText.FloatAsJsNumber(community), 1), CultureInfo.InvariantCulture);
+                if (id == "critic" && entry.CriticRating is { } critic)
+                    value = JsText.MathRound(JsText.FloatAsJsNumber(critic));
+                var maximum = id is "community" or "imdb" ? 10 : id == "letterboxd" ? 5 : 100;
+                value = Math.Clamp(value, 0, maximum);
+                var score = value * 10 / maximum;
+                if (score < settings.RatingTagsMinScore) continue;
+                // Exact zero is the legacy unrated sentinel, including negative zero.
+                var text = id == "community" && value.Equals(0d) ? Dash : maximum <= 10
+                    ? JsText.ToFixed(value, 1)
+                    : JsText.MathRound(value).ToString(CultureInfo.InvariantCulture) + (id == "metacritic" ? "" : "%");
+                if (!Enum.TryParse<PosterRatingSource>(id, true, out var source)) continue;
+                tags.Add(new RatingTag(source, ScoreNumbers.Localize(text, settings.StatusCulture), value >= FreshThreshold,
+                    settings.RatingTagsColorByScore ? ScoreColor(score) : null, settings.RatingTagsCompact && source is not (PosterRatingSource.Community or PosterRatingSource.Critic)));
             }
 
             return tags;
+        }
+
+        /// <summary>Same red/amber/green interpolation as the web source renderer.</summary>
+        public static string ScoreColor(double score)
+        {
+            if (score < 5) return "#ef5350";
+            if (score >= 7.5) return "#66bb6a";
+            var t = (score - 5) / 2.5;
+            return $"#{(int)Math.Floor(255 - 153 * t + .5):x2}{(int)Math.Floor(179 + 8 * t + .5):x2}{(int)Math.Floor(106 * t + .5):x2}";
         }
 
         /// <summary>
@@ -59,9 +78,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         };
 
         /// <summary>
-        /// The user-review chip, or null when the web shows none. In the server-cache path the web
-        /// resolves the review key only for Movie and Series (Season/Episode need a parent series
-        /// the cache path never supplies), and only when the entry has a TMDB id.
+        /// The user-review chip, or null when the web shows none: an entry with a review key (a movie or
+        /// series with a TMDB id, a season or episode with its series' TMDB id and its numbers).
         /// </summary>
         /// <param name="entry">The tag-cache entry.</param>
         /// <param name="settings">Effective settings.</param>
@@ -69,7 +87,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
         public static RatingTag? ResolveUserReview(TagCacheEntry entry, PosterTagSettings settings, double? average)
         {
             if (!settings.UserReviewChipEnabled) return null;
-            if (entry.Type is not ("Movie" or "Series") || string.IsNullOrEmpty(entry.TmdbId)) return null;
+            if (PosterTagReviewRatings.ReviewKey(entry) == null) return null;
             if (average is null || double.IsNaN(average.Value) || double.IsInfinity(average.Value))
             {
                 return settings.ShowUserRatingDash ? new RatingTag(PosterRatingSource.UserReview, Dash, false) : null;
@@ -80,7 +98,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution
             var text = Math.Floor(raw) == raw && Math.Abs(raw) < 1e21
                 ? ((decimal)raw).ToString(CultureInfo.InvariantCulture)
                 : JsText.ToFixed(raw, 1);
-            return new RatingTag(PosterRatingSource.UserReview, text, false);
+            return new RatingTag(PosterRatingSource.UserReview, ScoreNumbers.Localize(text, settings.StatusCulture), false);
         }
     }
 }

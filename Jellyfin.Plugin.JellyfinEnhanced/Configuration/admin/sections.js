@@ -82,26 +82,12 @@ JEAdmin.define({
  * lines in configPage.html (clamps, defaults, JS-populated lists); the schema only renders them. */
 (function () {
     const UL = (...li) => '<ul class="je-desc-list">' + li.map((x) => '<li>' + x + '</li>').join('') + '</ul>';
-    const POS = [['top-left', 'Top Left'], ['top-right', 'Top Right'], ['bottom-left', 'Bottom Left'], ['bottom-right', 'Bottom Right']];
     const tog = (id, label, desc, extra) => Object.assign({ id, type: 'toggle', manual: true, label, desc }, extra);
     const sel = (id, label, options, desc, extra) => Object.assign({ id, type: 'select', manual: true, label, options, desc }, extra);
-    const pos = (id, on) => Object.assign({ id, type: 'position', manual: true, label: 'Position', options: POS, showIf: on, rowClass: 'je-tag-position' });
     const RS = [['tmdb', 'TMDB'], ['tomatoes', 'RT Critic'], ['popcorn', 'RT Audience'], ['imdb', 'IMDb'], ['trakt', 'Trakt'],
         ['metacritic', 'Metascore'], ['metacriticuser', 'Metacritic User'], ['letterboxd', 'Letterboxd'], ['myanimelist', 'MAL'], ['anilist', 'AniList'], ['master', 'Master']];
     const RSN = [['', 'None']].concat(RS);
     const arrow = (d) => '<i class="material-icons je-cat-arrow-icon" aria-hidden="true">arrow_' + d + 'ward</i>';
-    const catRow = (cat, ord, def, id, label) => '<div class="je-quality-cat-admin-row" data-cat-key="' + cat + '" data-order-key="' + ord + '" data-default-order="' + def + '">'
-        + '<div class="checkboxContainer"><label><input id="' + id + '" type="checkbox"/><span>' + label + '</span></label></div>'
-        + '<button type="button" class="jea-btn je-cat-up" aria-label="Move up"><i class="material-icons" aria-hidden="true">arrow_upward</i></button>'
-        + '<button type="button" class="jea-btn je-cat-down" aria-label="Move down"><i class="material-icons" aria-hidden="true">arrow_downward</i></button></div>';
-    const qualityCats = '<div id="qualityCategoriesAdmin"><div class="fieldDescription je-field-desc-sm">Pick which categories of quality tags should appear, and the order they stack within the chosen corner. Use the '
-        + arrow('up') + ' / ' + arrow('down') + ' buttons to reorder.</div>'
-        + catRow('ShowResolutionTag', 'ResolutionTagOrder', 1, 'showResolutionTag', 'Show resolution (4K, 1080p, ...)')
-        + catRow('ShowSourceTag', 'SourceTagOrder', 2, 'showSourceTag', 'Show source (BluRay, DVD, HDTV, VHS, ...)')
-        + catRow('ShowDynamicRangeTag', 'DynamicRangeTagOrder', 3, 'showDynamicRangeTag', 'Show HDR (HDR10+, Dolby Vision)')
-        + catRow('ShowSpecialFormatTag', 'SpecialFormatTagOrder', 4, 'showSpecialFormatTag', 'Show special format (IMAX, 3D)')
-        + catRow('ShowVideoCodecTag', 'VideoCodecTagOrder', 5, 'showVideoCodecTag', 'Show video format (HEVC, H264, AV1, ...)')
-        + catRow('ShowAudioInfoTag', 'AudioInfoTagOrder', 6, 'showAudioInfoTag', 'Show sound (Atmos, DTS, 5.1, 7.1, ...)') + '</div>';
 
     JEAdmin.define({
         'overview-status': {
@@ -125,85 +111,20 @@ JEAdmin.define({
                 + '</div>' }]
         },
 
+        // Media Tags settings (quality, genre, language, rating and the other tag groups, layout, rules, colours, the tag
+        // cache and native poster tags) live on the Media Tags tab (#media-tags, outside this page's form, saved one field
+        // at a time). This card has no fields, so this page's load, Save and apply-to-users never read or write any of
+        // them; its links open that tab in place (configPage.html handles links to this page itself).
         'media-tags': {
-            title: 'Media Tags', icon: 'sell', class: 'je-fieldset-wide',
-            items: [
-                { type: 'group', title: 'Quality tags', open: true, items: [
-                    tog('qualityTagsEnabled', 'Enable Quality Tags', 'Resolution, source, HDR, format and sound badges on poster cards.'),
-                    pos('qualityTagsPosition', 'qualityTagsEnabled'),
-                    { type: 'custom', html: '<details id="qualityCategoriesAdminDetails" class="je-details-section"><summary>Categories and sound language</summary><div class="je-details-body">' + qualityCats + '</div></details>' },
-                    sel('qualityTagsPreferredAudioLanguage', 'Preferred Audio Language for Sound Tags', [['', 'No preference (best track overall)']],
-                        'The sound tag (Atmos, DTS, 5.1, ...) describes the best audio track in this language rather than the best track in the file. A film whose English track is Atmos but whose German dub is plain AC3 then reads AC3. Titles with no audio in the language fall back to their best track. Users can override this in their own settings.', { showIf: 'qualityTagsEnabled' }),
-                    tog('qualityTagsAudioLanguageFromUser', 'Use Each User\'s Jellyfin Audio Language', 'Judge sound tags by each user\'s own Jellyfin audio language (Settings, Playback, Preferred audio language) instead of the language above. Users who have not set one keep the language above.', { showIf: 'qualityTagsEnabled' })
-                ] },
-                { type: 'group', title: 'Genre tags', items: [
-                    tog('genreTagsEnabled', 'Enable Genre Tags', 'Identify genres with themed icons on poster cards.'),
-                    pos('genreTagsPosition', 'genreTagsEnabled')
-                ] },
-                { type: 'group', title: 'Language tags', items: [
-                    tog('languageTagsEnabled', 'Enable Language Tags', 'Display available audio languages as country flags on poster cards.'),
-                    pos('languageTagsPosition', 'languageTagsEnabled'),
-                    { id: 'languageTagsPriority', type: 'text', manual: true, label: 'Priority Languages', placeholder: 'e.g. English, Japanese, fr', showIf: 'languageTagsEnabled',
-                      desc: 'Comma-separated language names or codes, e.g. <code>English, Japanese, fr</code>. A title with audio in one of these gets that flag guaranteed a spot among the ones shown, ahead of anything else it has. Leave blank to just show whichever languages are found first.' },
-                    tog('languageTagsPriorityStrict', 'Only Show Priority Languages', 'Hide flags for every language not listed above. A title with none of them shows no flags at all.', { showIf: 'languageTagsEnabled' }),
-                    tog('languageTagsMergeRegions', 'Merge Regional Variants', 'Show one flag per language, matching Jellyfin\'s own audio language filter. For example, English and English (United Kingdom) share a single flag instead of two.', { showIf: 'languageTagsEnabled' })
-                ] },
-                { type: 'group', title: 'Rating tags', items: [
-                    tog('ratingTagsEnabled', 'Enable Rating Tags', 'Show TMDB and Rotten Tomatoes ratings on poster cards.'),
-                    pos('ratingTagsPosition', 'ratingTagsEnabled'),
-                    { type: 'note', html: 'Pick which item types get rating tags, and whether the Continue Watching and Next Up rows show them (on the home screen, and the Next Up shelf on a series page). Untick episodes to keep ratings off every episode card, including Next Up and Continue Watching; untick a row to hide them for every card in that row only. Users can override these in their personal settings.' },
-                    tog('ratingTagsOnMovies', 'Show on movies', null, { showIf: 'ratingTagsEnabled' }),
-                    tog('ratingTagsOnSeries', 'Show on series', null, { showIf: 'ratingTagsEnabled' }),
-                    tog('ratingTagsOnSeasons', 'Show on seasons', null, { showIf: 'ratingTagsEnabled' }),
-                    tog('ratingTagsOnEpisodes', 'Show on episodes', null, { showIf: 'ratingTagsEnabled' }),
-                    tog('ratingTagsOnContinueWatching', 'Show in the Continue Watching row', null, { showIf: 'ratingTagsEnabled' }),
-                    tog('ratingTagsOnNextUp', 'Show in the Next Up row', null, { showIf: 'ratingTagsEnabled' })
-                ] },
-                { type: 'group', title: 'Age rating and people tags', items: [
-                    tog('ageRatingTagsEnabled', 'Enable Age Rating Tags', 'Show the age rating (PG-13, TV-MA, FSK 12, ...) as a colour-coded badge on poster cards. Episodes and seasons use their series\' rating. Shares the colour scheme of Colored Ratings.'),
-                    pos('ageRatingTagsPosition', 'ageRatingTagsEnabled'),
-                    tog('peopleTagsEnabled', 'Enable People Tags', 'Display age and birthplace information for cast members on item detail pages.')
-                ] },
-                { type: 'group', title: 'General (shared by every tag type)', items: [
-                    { id: 'tagsCacheTtlDays', type: 'number', manual: true, label: 'Tags Cache Duration (days)', min: 1, max: 365, desc: 'How long to cache tag data (1-365 days, default: 30).' },
-                    tog('showRatingInPlayer', 'Show Rating in Video Player', 'Display TMDB and Rotten Tomatoes ratings before "Ends at" time in video player.'),
-                    tog('disableTagsOnSearchPage', 'Disable Tags on Search Page', 'Prevents quality/language/genre/rating tags from showing on search results. Recommended for compatibility with <b>Gelato</b> plugin.'),
-                    tog('tagsHideOnHover', 'Hide Tags on Hover', 'When enabled, tag overlays fade out when users hover over cards. Users can override this in their personal settings.'),
-                    tog('tagCacheServerMode', 'Server-Side Tag Cache', 'Pre-computes tag data on the server and serves it in a single request. Tags load instantly without per-page API calls. Disable to use the legacy per-page batch mode: the cache is not loaded, built, or maintained while off, and the in-memory cache is released. Re-enabling restores the last snapshot and catches up on missed changes automatically in the background.'),
-                    tog('tagCacheExcludeLibraries', 'Exclude libraries from the tag cache'),
-                    { type: 'custom', html: '<div id="tagCacheExcludedLibrariesBox" class="jea-subbox" style="display: none;"><div class="jea-subbox-title">Libraries to exclude</div><div class="fieldDescription">Tick a library to leave it out of the tag cache. Useful for very large libraries that use a lot of memory to scan. Takes effect on the next cache rebuild.</div><div id="tagCacheExcludedLibraryList"><div class="fieldDescription">Loading libraries...</div></div></div>' },
-                    tog('enableTagsLocalStorageFallback', 'Persist Tag Fallback Cache in Browser Storage', 'Stores fallback tag cache entries in browser localStorage for faster repeat loads. Only used while Server-Side Tag Cache is off.', { rowAttrs: { id: 'tagsLocalStorageFallbackContainer' } }),
-                    { type: 'custom', html: '<div id="clientTagCacheControls" class="jea-actions"><button id="clearTagsCacheBtn" class="jea-btn" type="button"><span>Clear All Client Caches</span></button><span class="jea-hint">Forces clients to clear caches on next load. May cause initial slowness.</span></div>' }
-                ] },
-                { type: 'group', title: 'Native poster tags (experimental)', items: [
-                    { type: 'note', html: 'The tags above, drawn into poster images for apps that can\'t show the web overlays.' },
-                    tog('nativePosterTagsEnabled', 'Enable Native Poster Tags (Experimental)', UL(
-                        'Experimental. Draws each user\'s Media Tags into poster images for native apps such as Android TV, which can\'t show Jellyfin Enhanced\'s web overlays',
-                        'Uses each user\'s own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients in the Enhanced panel under UI Settings',
-                        'Web-based apps (Jellyfin Web, Media Player, Desktop, WebOS, Android) already show the overlays, so they keep the original posters',
-                        'Each poster is drawn the first time it is viewed, which uses some server CPU, and is then cached',
-                        'Apps may need to reopen the library or restart to show changes',
-                        'Original artwork files are never modified')),
-                    { id: 'nativePosterTagsWebClientNames', type: 'textarea', manual: true, label: 'Additional Excluded Clients', placeholder: 'One per line', rows: 3, showIf: 'nativePosterTagsEnabled',
-                      desc: UL('Apps listed here never get tags drawn into their posters',
-                        'Add apps that already show Jellyfin Enhanced\'s tags themselves, such as a custom wrapper around the Jellyfin web UI, so tags aren\'t shown twice',
-                        'Always excluded already: Jellyfin Web, Jellyfin Media Player, Jellium Desktop, Jellyfin Desktop, Jellyfin for WebOS and Jellyfin for Android. No need to list these',
-                        'Every other app gets drawn-in tags',
-                        'Enter each name exactly as shown under Dashboard, Devices, one per line or comma separated') }
-                ] },
-                { type: 'group', title: 'Tag styles (colours)', items: [
-                    tog('tagStylesEnabled', 'Enable Tag Styles', 'Change the colours of quality, age rating, rating and genre tags. While off, the tags keep their built-in colours and any custom CSS you use for them keeps working. Edits you made are kept.'),
-                    { type: 'custom', html: '<div id="tagStylesBody">'
-                        + '<div class="inputContainer jea-row selectContainer"><label class="inputLabel selectLabel" for="tagStyleTarget">Apply Tag Styles To</label>'
-                        + '<select id="tagStyleTarget" name="tagStyleTarget" class="jea-input"><option value="both">Both (Jellyfin Web and poster images)</option><option value="web">Jellyfin Web only</option><option value="native">Poster images only (apps without web overlays)</option></select></div>'
-                        + '<div class="je-setting-description" data-desc-for="tagStyleTarget"><div class="fieldDescription">' + UL(
-                            'Jellyfin Web: recolours the overlay tags in the web interface. Only the tags you edit are affected, and they win over any custom CSS colours. Custom CSS that hides or moves tags still works',
-                            'Poster images: the colours are drawn into the posters shown by apps that cannot run the web overlays, such as Android TV. Custom CSS can never reach these. Needs Enable Native Poster Tags above, and posters redraw the next time they are viewed',
-                            'Each tag keeps its default colours until you change it. Tag size, shape and position are not affected') + '</div></div>'
-                        + '<div id="tagStyleEditor" class="je-ts-editor"><div id="tagStylePresets" class="je-ts-presets"></div><div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div><div id="tagStyleGrid" class="je-ts-grid"><div class="fieldDescription">Loading tags...</div></div><div id="tagStylePanel" class="je-ts-panel" style="display: none;"></div>'
-                        + '<button id="tagStyleResetAll" class="jea-btn" type="button"><span>Reset All Tag Styles</span></button></div></div>' }
-                ] }
-            ]
+            title: 'Media Tags', icon: 'sell', id: 'mediaTagsCard',
+            items: [{ type: 'custom', html: '<div class="je-media-tags-card"><div class="je-media-tags-card-text">'
+                + '<div class="fieldDescription">Poster tags (quality, genre, language, rating, age rating, status, people), their default layout, rules and colours, the tag cache and Native Poster Tags have their own tab, Media Tags, which saves each change as you make it.</div>'
+                + '<dl class="je-media-tags-card-facts" id="jeMediaTagsCardFacts" aria-live="polite"></dl></div>'
+                + '<a class="jea-btn jea-btn-primary je-media-tags-open" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags"><i class="material-icons" aria-hidden="true">sell</i><span>Open Media Tags</span></a>'
+                + '<div class="je-media-tags-card-links">'
+                + [['layout', 'Layout defaults'], ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'], ['badges', 'Status badges'], ['server', 'Tag cache &amp; native posters']]
+                    .map(([section, label]) => '<a class="je-media-tags-card-link" href="#/configurationpage?name=Jellyfin%20Enhanced&amp;jeSection=media-tags&amp;tab=' + section + '">' + label + '</a>').join('')
+                + '</div></div>' }]
         },
 
         'spoiler-guard': {
@@ -1211,16 +1132,6 @@ JEAdmin.define({
                 { id: 'mmSchedAction_remote', type: 'toggle', manual: true, label: 'Disable remote connections' }
             ] }
             ] }
-        ]
-    },
-
-    'tag-cache': {
-        title: 'Tag Cache',
-        icon: 'sell',
-        items: [
-            { type: 'custom', html:
-                '<div id="serverTagCacheControls"><div class="jea-actions"><button type="button" id="rebuildTagCacheBtn" class="jea-btn jea-btn-primary">Rebuild Server Tag Cache</button></div>'
-                + '<div class="fieldDescription">Forces a full rebuild of every item\'s cached tag data (quality, genre, language, ratings). Use this after a plugin update changes how tags are computed (or when instructed). Scans the whole library, so it may take a few minutes on large libraries.</div></div>' }
         ]
     },
 

@@ -184,8 +184,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// details-page sub-resources fetches the whole set in one upstream call
         /// (see the class remarks); callers that only ever want one resource
         /// for many titles (the watch-providers batch) leave it off.
+        /// With <paramref name="bypassCache"/>, a body already cached for the
+        /// URL is not used (an in-flight fetch is still joined, and the fresh
+        /// answer is stored as usual): for a caller that knows the cached
+        /// answer was empty and wants to see whether upstream has recovered.
+        /// <paramref name="notBefore"/> additionally rejects responses fetched before that instant.
         /// </summary>
-        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false)
+        public Task<TmdbResponse> GetAsync(string apiPath, string query, string apiKey, CancellationToken cancellationToken, bool bundle = false, bool bypassCache = false, DateTimeOffset? notBefore = null)
         {
             BundleTarget? target = bundle ? ResolveBundleTarget(apiPath, query) : null;
             if (target.HasValue)
@@ -205,7 +210,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             {
                 var keyPrefix = GetKeyHash(apiKey) + "|";
                 key = keyPrefix + upstreamUrl;
-                if (TryGetFreshLocked(key, out var cached))
+                if (!bypassCache && TryGetFreshLocked(key, out var cached, notBefore, GetTtl(apiPath)))
                 {
                     return Task.FromResult(cached);
                 }
@@ -272,6 +277,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             }
 
             return shared.WaitAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// The cached answer for <paramref name="apiPath"/> + <paramref name="query"/>
+        /// when it is still fresh, without fetching or joining anything: for a
+        /// caller that rate-limits only the lookups that would go upstream.
+        /// </summary>
+        public bool TryGetFresh(string apiPath, string query, string apiKey, out TmdbResponse response)
+        {
+            lock (_lock)
+            {
+                return TryGetFreshLocked(GetKeyHash(apiKey) + "|" + UpstreamUrl(apiPath, query), out response);
+            }
         }
 
         private static string UpstreamUrl(string apiPath, string query) => $"https://api.themoviedb.org/3/{apiPath}{query}";
@@ -351,12 +369,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         }
 
         // Caller holds _lock. Touches the entry (most recently used) on a hit.
-        private bool TryGetFreshLocked(string key, out TmdbResponse response)
+        private bool TryGetFreshLocked(string key, out TmdbResponse response, DateTimeOffset? notBefore = null, TimeSpan ttl = default)
         {
             if (_entries.TryGetValue(key, out var node))
             {
                 if (node.Value.ExpiresAt > _timeProvider.GetUtcNow())
                 {
+                    if (notBefore.HasValue && node.Value.ExpiresAt - ttl < notBefore.Value)
+                    {
+                        response = null!;
+                        return false;
+                    }
                     _lru.Remove(node);
                     _lru.AddFirst(node);
                     response = node.Value.Response;

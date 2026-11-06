@@ -99,9 +99,28 @@
         t: (key, params = {}) => { // Actual implementation defined later
             const translations = window.JellyfinEnhanced?.translations || {};
             let text = translations[key] || key;
+            // Plural forms: `${key}_one`, `_few`… by the CLDR category (Intl.PluralRules, English rules for a language it does not know) of the count
+            // (`count`, else `days`, else the other counted params) in the language the string is written in,
+            // falling back to `${key}_other`, then the key. A form English filled in for a locale is used only
+            // where the key itself is English (or the locale is a kind of English), so a translated sentence
+            // never turns English for one count.
+            const counted = params && ['count', 'days', 'n', 'items', 'hours', 'minutes', 'seconds'].find((name) => typeof params[name] === 'number' && Number.isFinite(params[name]));
+            if (counted && translations[key]) {
+                const english = window.JellyfinEnhanced?.translationsFromEnglish;
+                const ownLang = window.JellyfinEnhanced?.translationsLang || 'en';
+                const keyIsEnglish = !!english?.has(key);
+                const lang = keyIsEnglish ? 'en' : ownLang;
+                const sameSource = (variant) => variant in translations
+                    && (!english || keyIsEnglish === english.has(variant) || /^en\b/i.test(ownLang));
+                let category = 'other';
+                try { category = new Intl.PluralRules([lang, 'en']).select(params[counted]); } catch { /* malformed tag: other */ }
+                const variant = [`${key}_${category}`, `${key}_other`].find(sameSource);
+                if (variant) text = translations[variant];
+            }
             if (params) {
                 for (const [param, value] of Object.entries(params)) {
-                    text = text.replace(new RegExp(`{${param}}`, 'g'), value);
+                    // A function, so a value is inserted as written ("$&" or "$$" in a title are not replacement patterns).
+                    text = text.replace(new RegExp(`{${param}}`, 'g'), () => String(value));
                 }
             }
             // Replace {{icon:name}} tokens with JE.icon() calls
@@ -449,6 +468,44 @@
         const value = privateConfig && typeof privateConfig === 'object' ? privateConfig : {};
         privateConfigKeys = Object.keys(value);
         Object.assign(JE.pluginConfig, value);
+    }
+
+    /**
+     * Public config fields the server projects per caller (item looks are
+     * filtered to the items that user can see). The rest of the public
+     * config is the same for every signed-in user.
+     */
+    const USER_SCOPED_PUBLIC_KEYS = ['TagLookItemOverrides'];
+
+    /**
+     * Applies the per-user part of a public config answered for the incoming
+     * user (a same-tab switch keeps every user-independent field as it is).
+     * @param {object|null|undefined} publicConfig - null clears them.
+     */
+    function applyUserPublicConfig(publicConfig) {
+        for (const key of USER_SCOPED_PUBLIC_KEYS) {
+            JE.pluginConfig[key] = publicConfig && typeof publicConfig === 'object' ? (publicConfig[key] ?? null) : null;
+        }
+    }
+
+    /**
+     * Re-fetches the public config for the signed-in user and applies its
+     * per-user fields (the per-endpoint fallback of a user switch).
+     * @param {() => boolean} isCurrent - Epoch guard; false means the answer is stale.
+     * @returns {Promise<void>}
+     */
+    async function loadUserPublicConfig(isCurrent) {
+        try {
+            const config = await ApiClient.ajax({
+                type: 'GET',
+                url: ApiClient.getUrl(`/JellyfinEnhanced/public-config?_=${Date.now()}`),
+                dataType: 'json'
+            });
+            if (isCurrent()) applyUserPublicConfig(config);
+        } catch (e) {
+            // Left cleared: the user's per-item looks wait for the next load.
+            console.warn('🪼 Jellyfin Enhanced: Could not reload the per-user public configuration.', e);
+        }
     }
 
     /**
@@ -1031,8 +1088,9 @@
     }
 
     /**
-     * Loads the signed-in user's scoped data — the userConfig documents and the
-     * admin-only private config — and applies both to the globals. One bootstrap
+     * Loads the signed-in user's scoped data — the userConfig documents, the
+     * per-user public config fields and the admin-only private config — and
+     * applies them to the globals. One bootstrap
      * request when possible, otherwise the per-endpoint path. Used by the
      * user-switch re-bootstrap and the boot-time "user changed during boot"
      * recovery; the caller's epoch guard is consulted before every write so a
@@ -1049,10 +1107,11 @@
         if (!isCurrent()) return false;
         if (bootstrap && bootstrapMatchesUser(bootstrap, userId)) {
             JE.userConfig = buildUserConfigFromBootstrap(bootstrap.UserSettings);
+            applyUserPublicConfig(bootstrap.PublicConfig);
             applyPrivateConfig(bootstrap.PrivateConfig);
             return true;
         }
-        const userConfig = await fetchUserScopedConfig(userId);
+        const [userConfig] = await Promise.all([fetchUserScopedConfig(userId), loadUserPublicConfig(isCurrent)]);
         if (!isCurrent()) return false;
         JE.userConfig = userConfig;
         await loadPrivateConfig(); // internally epoch-guarded
@@ -1112,6 +1171,8 @@
             // during the re-bootstrap below.
             for (const key of privateConfigKeys) delete JE.pluginConfig[key];
             privateConfigKeys = [];
+            // Item looks were projected for the previous user's access.
+            applyUserPublicConfig(null);
             // Untaken startup answers belong to the previous user.
             prefetched = null;
         });
@@ -1151,7 +1212,11 @@
                     if (JE.currentSettings?.genreTagsEnabled && typeof JE.initializeGenreTags === 'function') JE.initializeGenreTags();
                     if (JE.currentSettings?.ratingTagsEnabled && typeof JE.initializeRatingTags === 'function') JE.initializeRatingTags();
                     if (JE.currentSettings?.ageRatingTagsEnabled && typeof JE.initializeAgeRatingTags === 'function') JE.initializeAgeRatingTags();
+                    if (JE.currentSettings?.statusTagsEnabled && typeof JE.initializeStatusTags === 'function') JE.initializeStatusTags();
+                    if (JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false && typeof JE.initializeAwardsTags === 'function') JE.initializeAwardsTags();
+                    if (JE.currentSettings?.customTagsEnabled && typeof JE.initializeCustomTags === 'function') JE.initializeCustomTags();
                     if (JE.currentSettings?.languageTagsEnabled && typeof JE.initializeLanguageTags === 'function') JE.initializeLanguageTags();
+                    if (JE.currentSettings?.logoTagsEnabled && typeof JE.initializeLogoTags === 'function') JE.initializeLogoTags();
 
                     // Translations follow the per-user language choice.
                     try {
@@ -1352,6 +1417,9 @@
             if (typeof JE.initializeGenreTags === 'function' && JE.currentSettings?.genreTagsEnabled) JE.initializeGenreTags();
             if (typeof JE.initializeRatingTags === 'function' && JE.currentSettings?.ratingTagsEnabled) JE.initializeRatingTags();
             if (typeof JE.initializeAgeRatingTags === 'function' && JE.currentSettings?.ageRatingTagsEnabled) JE.initializeAgeRatingTags();
+            if (typeof JE.initializeStatusTags === 'function' && JE.currentSettings?.statusTagsEnabled) JE.initializeStatusTags();
+            if (typeof JE.initializeAwardsTags === 'function' && JE.currentSettings?.awardsTagsEnabled && JE.pluginConfig?.AwardsTagsEnabled !== false) JE.initializeAwardsTags();
+            if (typeof JE.initializeCustomTags === 'function' && JE.currentSettings?.customTagsEnabled) JE.initializeCustomTags();
             if (typeof JE.initializeTagStyles === 'function' && JE.pluginConfig?.TagStyleWebActive) JE.initializeTagStyles();
             if (typeof JE.initializeUserReviewTags === 'function' && JE.pluginConfig?.ShowUserReviews && JE.pluginConfig?.ShowUserRatingOnPosters && JE.currentSettings?.ratingTagsEnabled) JE.initializeUserReviewTags();
             if (typeof JE.initializeArrLinksScript === 'function' && JE.pluginConfig?.ArrLinksEnabled) JE.initializeArrLinksScript();
@@ -1363,6 +1431,7 @@
             if (typeof JE.initializeDoesTheDogDieScript === 'function' && JE.pluginConfig?.DoesTheDogDieEnabled) JE.initializeDoesTheDogDieScript();
             if (typeof JE.initializeMdblistRatingsScript === 'function' && JE.pluginConfig?.MdblistRatingsEnabled && JE.pluginConfig?.MdblistRatingsShowOnItemDetails) JE.initializeMdblistRatingsScript();
             if (typeof JE.initializeLanguageTags === 'function' && JE.currentSettings?.languageTagsEnabled) JE.initializeLanguageTags();
+            if (typeof JE.initializeLogoTags === 'function' && JE.currentSettings?.logoTagsEnabled) JE.initializeLogoTags();
             if (typeof JE.initializePeopleTags === 'function' && JE.currentSettings?.peopleTagsEnabled) JE.initializePeopleTags();
             // Initialize the unified tag pipeline AFTER all tag renderers have registered
             if (typeof JE.tagPipeline?.initialize === 'function') JE.tagPipeline.initialize();

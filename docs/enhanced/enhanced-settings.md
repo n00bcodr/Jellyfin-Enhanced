@@ -1,5 +1,7 @@
 # Enhanced settings
 
+Series and season quality can summarize a representative episode (default), the latest aired episode, the best value per category, values shared by every episode, or best quality with a **Mixed** marker (**±** in compact mode). Choose **Media Tags** → **Groups** → **Quality** → **Series and seasons show:**. The admin default seeds new users and **Apply defaults to all users**; personal choices override it. **Follow server (…)** keeps following the administrator's later changes, while choosing a policy by name keeps it, even when it is the administrator's current one. Native Poster Tags use the same policy. See [Quality Tags](tags.md#quality-tags) for missing metadata, language and source/format behavior.
+
 Use the Enhanced panel for your preferences, or **Dashboard** → **Plugins** → **Jellyfin Enhanced** for server features and new users' starting values. This page covers Enhanced; [Tags & Badges](tags.md) and specialist settings pages cover their own controls. Defaults below are for plugin 12.12.0.0; your administrator may choose different starting values.
 
 ## Enhanced Settings — User configuration
@@ -23,7 +25,9 @@ The Enhanced panel lets you choose how Jellyfin Enhanced works for your account.
 
 In mobile or TV web layouts, the player button appears beside the native settings button when those controls are available. Desktop web layouts hide it.
 
-Use **Search settings…** to filter sections by their contents, then select a section. On a phone, use the back-arrow button to return to the section list. Close the panel with ×, ++esc++, or ++question++ outside editable fields. On desktop, you can drag the header to move it.
+Use **Search settings…** to filter sections by their contents, then select a section. Matching **Media Tags** controls are also listed under the box by name: pick one (or press ++enter++ for the first) to open its tab with the control focused. On a phone, the section select and search stay above the open section; the back-arrow button returns to the section list. Close the panel with ×, ++esc++, or ++question++ outside editable fields; focus returns to where you opened it. While the panel is open, the page behind it is inert and focus stays inside the dialog. On desktop, you can drag the header to move it.
+
+**Make the panel bigger:** in a browser window at least 900 pixels wide, choose **Default**, **Large** (90% of the window) or **Fill** (the whole window less a small margin) beside the × in the header, or drag the grip in the bottom-right corner, or the bottom edge. With the grip focused, the arrow keys change the size (hold ++shift++ for bigger steps); a polite status announces the dimensions and the maximum size. The size is remembered per user in this browser and shrinks to fit a smaller window; **Reset size** appears after dragging or resizing with the arrow keys and returns to **Default**. The section list and the open section, including the Media Tags preview, use the extra room. Size controls are hidden below 900 pixels wide; the full-screen layout applies at the phone breakpoint (760 pixels and below).
 
 !!! note "Use a supported web client"
 
@@ -31,7 +35,7 @@ Use **Search settings…** to filter sections by their contents, then select a s
 
 ??? info "How it works"
 
-    The sections are **Shortcuts**, **Playback Settings**, **Auto-Skip Settings**, **Subtitle Settings**, **Random Button Settings**, **UI Settings**, **Hidden Content**, **Spoiler Guard**, **Language Settings**, and **About**. **Shortcuts** is hidden when the administrator disables shortcuts. **Hidden Content** and **Spoiler Guard** require their server features to be enabled.
+    The sections are **Shortcuts**, **Playback Settings**, **Auto-Skip Settings**, **Subtitle Settings**, **Random Button Settings**, **UI Settings**, **Media Tags**, **Hidden Content**, **Spoiler Guard**, **Language Settings**, and **About**. **Shortcuts** is hidden when the administrator disables shortcuts. **Hidden Content** and **Spoiler Guard** require their server features to be enabled.
 
     On desktop, the panel restores your last-opened section. A new account starts at **Shortcuts**, or the first available section if shortcuts are disabled. At widths up to 760 pixels, the panel fills the screen and starts with the section list. Tap a section to open it.
 
@@ -233,7 +237,7 @@ Choose the extra information you see on item details and add removal buttons to 
 
 Open **UI Settings** and turn on the options you want.
 
-![Personal UI Settings with progress, information and tag options](../images/enhanced/panel-ui.webp)
+![Personal UI Settings with progress and file size options and the note pointing to Media Tags](../images/enhanced/panel-ui.webp)
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -241,10 +245,10 @@ Open **UI Settings** and turn on the options you want.
 | **Percentage** / **Time Watched** / **Time Remaining** | **Percentage** | Chooses how **Show Watch Progress** shows progress. |
 | **h:m** / **y:mo:d:h:m** | **h:m** | Selects the time format for time-based progress displays. |
 | **Show File Sizes** | Off | Shows total file size on item details. |
-| **Show Audio Languages** | On | Shows available audio languages on item details. |
+| **Show Audio Languages** | On | Audio language links on item details. |
 | **Add Remove from Continue Watching & Next Up Buttons** | Off | Adds removal buttons to home rows and keeps your playback position. |
 
-Tag toggles, corners, category ordering, rating scopes, hover behavior, and the conditional native-client preference also live in **UI Settings**. See [Tags & Badges](tags.md) for their complete settings reference.
+Poster tags moved to [Media Tags](#media-tags); **UI Settings** keeps a **Media Tags moved to its own section** note with an **Open** button.
 
 ??? info "How it works"
 
@@ -258,6 +262,77 @@ Tag toggles, corners, category ordering, rating scopes, hover behavior, and the 
     - Use **Unhide** for Next Up or combined entries.
 
     Resuming clears Continue Watching-only hides. Combined hides retain their Next Up scope. Next Up-only and global hides remain until removed manually. See [Content management](enhanced-features.md#content-management).
+
+### Media Tags
+
+Everything about poster tags for your account: the layout, the tag groups, status badges, rules and locked items, and your colour preset. (Administrators set the server defaults on the [Media Tags tab](tags.md) of the Jellyfin Enhanced configuration page; the **Server** tab here links to it.) Each tab does one job; a live preview beside the tabs (a strip under them on a phone) shows the result as you change it. See [The Media Tags section](tags.md#the-media-tags-section) for the preview, the phone layout and search.
+
+![Media Tags on its Layout tab with the live preview](../images/tags/media-tags-hub.webp)
+
+=== "Layout"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | **Episode thumbnails** / **List rows** → **Use a different look** | Off | Optional layout, density, Position pills and chip limit per shape. **Use recommended** starts with compact bands for thumbnails or compact corners for list images. Locks and rules take precedence. Portrait and square cards, and Native Poster Tags, keep the default look. |
+    | Layout tiles: **Corners**, **Bands**, **Caption**, **Summary**, **Minimal** | **Corners** | Your default layout; the line under the tiles describes the selected one. Arrow keys move between tiles. |
+    | **Label density**: **Full** / **Compact** | **Full** | **Compact** shortens quality labels and hides the critic score next to a community score. |
+    | **Tag size** | **Default (100%)** | **Smaller (85%)**, **Default (100%)**, **Larger (115%)** or **Largest (130%)**; scales text, icons, flags and padding on web and native posters. |
+    | **Gap** | **Default** | **Tight** (75%), **Default** (100%) or **Roomy** (150%) spacing between tags. Shape overrides can inherit or set their own size and gap. |
+    | **Edge spacing**: **Default** / **Tight** / **Flush** | The administrator's (**Default**) | How far Corners tags sit from the poster edge: 6px, 3px or touching it. Flush tags follow the poster's rounded corners. Settings saved before layouts keep **Default** until you change it. |
+    | **Hide tags on hover** | Off | Fades poster tags while you hover a card. |
+    | **Show Tags in Native Clients (Experimental)** | On | Shown only while the administrator has Native Poster Tags on. Draws your tags, including Status, into posters for native apps. Corners and Bands are supported; Caption, Summary and Minimal use Corners. Bands follows its profile, limits and density. |
+    | **Show People Tags** | Off | Age, birthplace and deceased status on cast cards. |
+    | **Presets** | Built-in presets | **Apply** previews a preset's changes first; **Share** copies it; **Save as preset** keeps your settings (up to 10, on the server); **Import preset** adds a shared one; administrators can offer more. |
+    | **Import & export** | — | **Export settings** downloads or copies your Media Tags settings; **Import settings** checks a file or pasted text on the server, shows what changes and what is skipped, and applies it with **Undo**. See [Import, export and presets](tags.md#import-export-and-presets). |
+
+=== "Groups"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | Move up / move down | Status, quality, rating, age rating, language, genre, custom | Sets the priority order. Higher groups win when space is short. |
+    | Group switch | Off | Turns the group's tags on or off. |
+    | **Position** | Depends on the layout | Where the group goes in the selected layout, or **Hidden**. Corners offers a 3×3 grid with four corners, top/bottom centre, left/right centre and centre. Native Poster Tags use these picks for Corners and Bands. |
+    | **Show up to** | Genre 3, language 3, custom 3, awards 2, age rating and status 1, quality, rating and logos **All** | How many tags the group shows (1–10, or **All** for quality and rating). |
+    | **Include** | Categories on; low-quality sources off | Quality: resolution, source, HDR, special format, video format, sound and edition, their stack order and the sound language. Edition defaults on after sound; **Include low-quality sources (CAM, TS, TC, SCR)** defaults off. Source/edition naming is resolved on the server. Language: **Audio** and **Subtitles** (CC marker), **Style: Flags / Codes** and **Audio count badge: Off / Badge only / Badge and flags**. Rating: ordered source checkboxes with move buttons, **Minimum score**, **Colour by score** and where to show ratings. Status: the **Badges** button opens **Status badges**. Custom chips follow the administrator’s rules (see [Custom Tags](tags.md#custom-tags)). |
+    | Language **Style** / **Audio count badge** | Flags / Off | Codes show uppercase language codes with full-name tooltips. Dual means two audio languages, Multi three or more. The badge and included audio/subtitle chips share the language limit, audio first. |
+    | Language **Priority** → **Follow server policy** | On | Uses the administrator's live language list. Turn off to search by name or ISO code, add up to 12 languages, move them or remove them. An empty personal list has no priorities. Applies to audio/subtitle chips, Dual/Multi counts, Summary and native posters. |
+    | Language **Only show priority languages** | Follow server | Inherit the current strict policy, show only prioritized languages, or keep other languages after them. The administrator's regional-merge setting still applies. |
+    | Quality **Follow server settings** | — | Edition, low-quality sources, the quality category order and **Series and seasons show:** follow the administrator again, including later changes. Any change to one of them keeps it as your own, even a change back to the administrator's value. |
+    | **Reset to defaults** | — | Restores the administrator's layout, density, positions, order and limits. Group switches and includes stay. |
+
+    Priority controls pause until their save finishes. A failed save restores the previous policy while keeping other settings changes. Retry the priority edit once the controls become available.
+
+=== "Status badges"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | **Just Added** / **New releases** / **Trending** / **Schedule** / **Milestones** | On | Which badge families the Status group may show. A poster shows one badge at a time. |
+    | **Series status** | Off | Returning / Ended / Cancelled. |
+    | **Leaving soon** | Off | **Leaving in 5d** / **Leaving soon** on items the server will remove (Maintainerr or the administrator's leaving collections). Says *needs a Leaving soon source on the server* until an administrator sets one. |
+    | **Direct-play warning** | Off | **Transcode** / **Won't direct play** on movies and episodes this browser can't play as they are, with the reasons on hover. Web only; checked for cards on screen whose media Jellyfin has already probed (`.strm` items are always skipped, since Jellyfin probes them on every lookup). |
+
+    The administrator's two time windows show beside **Just Added** and **New releases**; administrators also get a link to change them. Turn the Status group itself on in **Groups**. Native posters follow these family switches and time windows too; their trending badge requires a TMDB key. A personal web save remembers the date locale and timezone used for native relative dates. Invalid or oversized context values are dropped, retaining the display-language/server-timezone fallback.
+
+=== "Rules & locks"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | **Rules** | None | In order, the first enabled rule whose conditions (library, type, genre, age rating) all hold gives the card its layout and density. Arrows reorder, **On**/**Off** pauses a rule, **Edit** loads it into the form, **Delete** removes it. |
+    | **Otherwise** | Your layout | Every other card uses its shape override, if enabled, or your default layout and density; **Change** goes to the Layout tab. |
+    | **Locked items** | None | The items you gave their own look in their ⋮ menu's **Media Tags** editor, each with **Edit** and **Unlock**, plus **Unlock all**. Locks always win. |
+    | **Add a rule** | Library condition, **Caption**, **Compact** | Up to five conditions, each needing a value; **Add rule** adds it at the end of the list. |
+
+=== "Colours"
+
+    | Setting | Default | What it does |
+    | --- | --- | --- |
+    | **Tag Colours** | **Server default** | Shown only when the administrator turns on **Let users pick their own preset** in Tag Styles. Each tile shows three chips in that preset's colours; colours the administrator changed for a group or a single tag stay on top. Applies right away on the web; posters drawn for native apps follow the next time they load. |
+
+=== "Server (administrators)"
+
+    Shortcuts to the Media Tags admin tab: **Server defaults for new users**, **Tag colours editor**, **Tag cache** and **Native poster tags**. Each **Open** goes straight to that section of it. Other users never get this tab. The admin tab's **Server** section also exports and imports the server-wide Media Tags settings and lists the **Presets for users** ([Import, export and presets](tags.md#import-export-and-presets)).
+
+See [Tags & Badges](tags.md#layouts) for the layouts and their complete settings reference, [Rules and locked items](tags.md#rules-and-locked-items) for how rules match, and [One item's look](tags.md#one-items-look) for the per-item editor in an item's ⋮ menu (layout, density, each group's place and limit, size and spacing, **Lock this look for me**, and for administrators **For everyone (server-wide)**). It starts from the item’s resolved look, including shape-specific size and limits. Saving from the admin Rules list returns keyboard focus to that item’s Edit button, or its series after a scope move.
 
 ### Hidden Content
 
@@ -372,7 +447,7 @@ Use the admin configuration page to turn server features on and set starting pre
 
 ??? info "How it works"
 
-    The tabs are **Overview**, **Display**, **Elsewhere & Reviews**, **Playback**, **Pages**, **Extras**, **Keyboard**, **Services**, **Seerr**, **\*arr**, **Admin**, **Credits**, and **Docs**. The sidebar groups them and lists each tab's cards underneath. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`.
+    The tabs are **Overview**, **Display**, **Media Tags**, **Elsewhere & Reviews**, **Playback**, **Pages**, **Extras**, **Keyboard**, **Services**, **Seerr**, **\*arr**, **Admin**, **Credits**, and **Docs**. The sidebar groups them and lists each tab's cards (for Media Tags, its sections) underneath. The configuration page uses `#/configurationpage?name=Jellyfin%20Enhanced`, and `&tab=<id>` opens a tab (`&jeSection=media-tags&tab=groups` a section of Media Tags). The **Media Tags** tab saves each change as you make it, so it has no **Save Settings**; **Save Settings** on the other tabs never changes a Media Tags setting. See [Tags & badges](tags.md).
 
     Some server effects happen immediately. Page integrations can have additional requirements, described below.
 
@@ -420,7 +495,7 @@ Open **Display** → **UI Preferences** and set the starting values:
 | **Watch Progress Default** | **Percentage** | Starts the personal display at **Percentage**, **Time Watched**, or **Time Remaining**. |
 | **Watch Progress Time Format** | **h:m** | Starts the personal time format at **h:m** or **y:mo:d:h:m**. |
 | **Show file sizes** | Off | Starts **Show File Sizes** enabled. |
-| **Show available audio languages on item detail page** | On | Starts **Show Audio Languages** enabled. |
+| **Show available audio languages on item detail page** | On | Starts **Show Audio Languages** enabled; users override it in **UI Settings**. |
 | **Enable "Remove from Continue Watching"** | Off | Starts **Add Remove from Continue Watching & Next Up Buttons** enabled. |
 
 Under **Display** → **Icons & Theme**, these are server settings with no personal-panel counterpart:
@@ -453,7 +528,7 @@ Open **Playback** → **Player Behaviour** to set these starting preferences. Th
 | **Enable Custom Pause Screen** | On | Starts personal **Custom Pause Screen** enabled. |
 | **Show Age Rating When Playback Starts** | Off | Shows rating information when playback starts. No personal-panel toggle. |
 
-Player rating chips have a separate admin server control under **Display** → **Media Tags**:
+Player rating chips have a separate admin server control under **Media Tags** → **Groups** → **Rating**:
 
 | Setting | Default | What it does |
 | --- | --- | --- |
@@ -684,13 +759,25 @@ See [Enhanced features](enhanced-features.md) for the full gesture workflow and 
 
     The server retains `catchup-log.jsonl` and `catchup-log.1.jsonl` in the plugin configuration folder. It rotates before the next append once the live file exceeds 5 MiB.
 
-### Tags: Quality, Genre, Language, Rating, Age Rating, People
+### Tags: Quality, Genre, Language, Rating, Age Rating, Status, Awards, Logos, Custom, People
 
-All tag settings have moved to [Tags & Badges](tags.md): personal **UI Settings** controls, admin **Display** → **Media Tags** defaults, quality categories/order, language preferences, rating scopes, people/review badges, hover behavior, and Tag Styles.
+All tag settings have moved to [Tags & Badges](tags.md): personal **Media Tags** controls, the admin **Media Tags** tab's defaults, quality categories/order, language preferences, rating scopes, custom tag rules, people/review badges, hover behavior, and Tag Styles.
+
+#### Custom tag rules
+
+**Media Tags** → **Groups** → **Custom** (the configuration page's Media Tags tab) turns Jellyfin tags and collections into poster chips: up to 20 rules of match type, name, label and optional icon, plus **Enable Custom Tags** and its **Position** as defaults for users. Colour the labels under **Tag Styles** → **Custom**. See [Custom Tags](tags.md#custom-tags).
 
 #### Configuration
 
-For personal tag choices, open **UI Settings**. Administrators use **Display** → **Media Tags**. See [Tags & Badges](tags.md) for exact labels, defaults, and configuration instructions.
+For personal tag choices, open **Media Tags**. Administrators use the configuration page's **Media Tags** tab. See [Tags & Badges](tags.md) for exact labels, defaults, and configuration instructions.
+
+#### Status Tags badge groups
+
+Under **Media Tags** → **Status badges**, the eight personal switches are Just Added, New releases (New Movie / New Series / New Episode), Trending, Schedule (Airing Today / Airs / Returns / Coming Soon), Milestones (New Season / Premiere / Finale / Complete Season), Series status (Returning / Ended / Cancelled), Leaving soon (Maintainerr or leaving collections) and Direct-play warning (Transcode / Won't direct play, web only). The first five default on; the last three off. The administrator sets the Leaving soon source (Maintainerr URL and API key, or existing collection names, and how often it is read) in the **Status badges** section of the Media Tags admin tab; see [Leaving soon](tags.md#leaving-soon-maintainerr) and [Direct-play warning](tags.md#direct-play-warning). Administrators set starting defaults and the two shared day windows in the **Status badges** section of that tab. Finale and series schedule enrichment require a TMDB key; Jellyfin date badges work without one. **Compact** density shortens long milestone labels. See [Status Tags](tags.md#status-tags) for sources and first-match priority by card type.
+
+#### Logo Tags
+
+The **Logos** row on the **Groups** tab of **Media Tags** turns the group on (off by default) and sets its position and **Show up to**. What the logo shows is the administrator's choice under **Media Tags** → **Groups** → **Logos**: **Movies show** (streaming service, studio or no logo), **Series show** (network, streaming service or no logo), **Streaming region** and **Logos per title** (1 or 2). Logos need the TMDB API key for images; without one, names are shown. See [Logo Tags](tags.md#logo-tags).
 
 #### Server-Side Tag Cache
 
@@ -702,7 +789,7 @@ The controls under **Display** → **Audio Language Tags** and the **Sync Audio 
 
 #### Native Poster Tags (Experimental)
 
-Admin **Display** → **Media Tags** controls and personal **Show Tags in Native Clients (Experimental)** are covered in [Tags & Badges](tags.md), including eligible clients, exclusions, and refresh requirements.
+The admin **Media Tags** tab's controls and personal **Show Tags in Native Clients (Experimental)** are covered in [Tags & Badges](tags.md), including eligible clients, exclusions, and refresh requirements.
 
 ### Settings in other areas
 
@@ -725,3 +812,30 @@ Open **Docs** to load **Documentation** from the GitHub Pages site, or choose **
     The tab needs connectivity from your browser; it is not an offline copy bundled with the plugin. It loads the document when first opened and retains it when you switch tabs.
 
     If no iframe load event arrives within eight seconds, a fallback message and link replace it. **Open in new tab** is always an alternative.
+
+### Awards poster group
+
+**Media Tags → Groups → Awards** enables chart and winner chips, with the usual position, priority and cap controls (default two). Existing users start off. Administrators first enable Awards under **Display → Media Tags → Awards Tags**, choose ribbons, configure the two MDBList lists and a freshness interval (24 hours), and run **Refresh Awards Tags**. IMDb/Letterboxd charts and Certified Fresh require the server MDBList key; Wikidata Oscar/Emmy wins do not. Native posters follow the same group preference. See [Awards Tags](tags.md#awards-tags).
+
+
+### Quality stream display
+
+In **Media Tags → Groups → Quality**, the Sound, Video codec and HDR display modes independently choose **Highest only** (the unchanged default) or **All distinct values**. **Minimum resolution to show** filters resolution chips below Off / 720p / 1080p / 4K; **Hide SDR** removes SDR exposed by All HDR mode. Each field offers **Server default**; **Follow server settings** also restores these five overrides and the technical category switches/orders. Explicit choices stay personal even if they equal the server defaults. Administrator defaults live on the dedicated **Media Tags → Groups → Quality** page. The Quality group limit and Compact labels apply to the resulting chips, including the existing layout overflow count. See [quality display and aggregation](tags.md#highest-only-or-every-stream-value).
+
+### Technical poster facts
+
+**Media Tags → Groups → Quality → Include** adds **Runtime**, **Aspect ratio** and **Frame rate**, all off initially, with the usual stacking-order controls. The administrator sets their new-user defaults on the Media Tags admin tab, **Groups → Quality**. Full/Compact density changes duration and ratio labels. **Media Tags → Status badges → Scenes** is also off initially and allows Post-credits/Mid-credits movie badges once the administrator enables the family and configures TMDB. Language subtitle chips automatically use **SDH** for hearing-impaired tracks when **Include → Subtitles** is on; no extra language switch is required. See [Tags & badges](tags.md#runtime-aspect-ratio-and-frame-rate).
+
+The Media Tags group editor hides **Show up to** for Status and Age rating, and for Logos when the administrator allows only one logo. Other groups keep their limit control.
+
+Changing Quality includes or display modes in Media Tags keeps the dialog frame and preview in place, preserving the inner pane scroll and the changed control's focus.
+
+In Compact quality labels, AC-3 is **DD 5.1** and E-AC-3 is **DD+ 5.1**; Full shows **Dolby Digital 5.1** / **Dolby Digital+ 5.1**. Flush edge styling includes overflow tabs and keeps styled Rating/Awards rings inside the chip on inward sides. Single-chip limits remain effective presentation limits; valid saved caps round-trip unchanged.
+
+Series and season quality policies preserve version-0 audio labels in Highest and All modes, including preferred-language summaries. Editing an unrelated preference leaves the audio vocabulary unchanged.
+
+In the Corners tag layout, left-centre and right-centre groups use the available poster width, sharing it when both sides are occupied. The first chip remains visible even on a narrow poster; long labels use an ellipsis, and `+N` counts later chips.
+
+When a first chip needs an ellipsis in Corners, only its text shrinks: Custom icons, rating logos and the chip’s height and inward Flush borders stay in place. Awards and Language poster links use the same constraint on their inner chip.
+
+Media Tags live previews react to each sample’s pointer hover or keyboard focus. **Hover** pins every sample for touch comparison; **Resting** releases that pin. Tag sizes show percentage values. Language code, CC/SDH and Dual/Multi chips follow the Language Tag Styles colours, including Poster artwork colours.

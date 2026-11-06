@@ -1231,27 +1231,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return false;
         }
 
-        /// <summary>Tag colour overrides for the Jellyfin Web overlays (empty unless the target includes web).</summary>
+        /// <summary>
+        /// Effective Tag Styles for the Jellyfin Web overlays (empty unless the target includes web). <paramref name="preset"/>
+        /// is the caller's own preset, honoured only while the admin lets users pick one.
+        /// </summary>
+        /// <param name="preset">The user's preset id, or null for the admin's.</param>
+        /// <returns>The web model of <see cref="TagStyleSet.ToWebModel"/>.</returns>
         [HttpGet("tag-styles")]
         [Authorize]
-        public ActionResult GetTagStyles()
+        public ActionResult GetTagStyles([FromQuery] string? preset = null)
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
             if (config == null) return StatusCode(503);
-            var set = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both" ? TagStyleSet.Parse(config.TagStyleOverrides) : TagStyleSet.Empty;
+            var set = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both"
+                ? TagStyleSet.Parse(config.TagStyleOverrides, config.TagStylePreset).ForUser(preset, config.TagStylesAllowUserPreset)
+                : TagStyleSet.Empty;
             return new JsonResult(set.ToWebModel());
         }
 
-        /// <summary>The shipped default tag colours the config page's style editor starts from.</summary>
+        /// <summary>
+        /// What the config page's style editor draws from: the shipped default colours, every group's labels and
+        /// each preset's palette (resolved to concrete colours, with the WCAG contrast of text over background).
+        /// </summary>
+        /// <returns>The catalog.</returns>
         [HttpGet("tag-styles/catalog")]
         [Authorize]
         public ActionResult GetTagStyleCatalog()
         {
-            if (!IsAdminUser()) return Forbid();
+            // Shipped labels and palettes contain no user or administrator configuration.
+            static object Web(TagColors c) => new { background = c.Background, border = c.Border, color = c.Text };
+            var groups = TagStyleKeys.Groups.ToDictionary(
+                g => g,
+                g => TagStyleCatalog.Labels(g).Select(l => new { key = l.Key, name = l.Name }).ToList(),
+                StringComparer.Ordinal);
+            // Custom labels are the administrator's (the editor reads them from the rules table):
+            // every custom chip takes the "custom:*" palette colours.
+            var palettes = TagStyleKeys.Presets.ToDictionary(
+                p => p,
+                p => TagStyleKeys.Groups
+                    .SelectMany(g => TagStyleCatalog.Labels(g).Select(l => (Key: g + ":" + l.Key, Colors: TagStylePalettes.Concrete(p, g, l.Key))))
+                    .Append((Key: TagStyleKeys.Custom + ":" + TagStyleKeys.AnyLabel, Colors: TagStylePalettes.Concrete(p, TagStyleKeys.Custom, TagStyleKeys.AnyLabel)))
+                    .ToDictionary(e => e.Key, e => Web(e.Colors), StringComparer.Ordinal),
+                StringComparer.Ordinal);
             return new JsonResult(new
             {
                 quality = TagStyleCatalog.Quality.Select(q => new { label = q.Label, background = q.Background, color = q.Text }),
-                age = TagStyleCatalog.AgeGroups.Select(g => new { id = g.Id, background = g.Background, border = g.Border, color = g.Text, ratings = g.Ratings }),
+                age = TagStyleCatalog.AgeGroups.Select(g => new { id = g.Id, background = g.Background, border = g.Border, color = g.Text, ratings = g.Ratings, sample = g.Sample }),
+                presets = TagStyleKeys.Presets,
+                groups,
+                palettes,
+                // The Poster preset's colours depend on each artwork: the editor's contrast badge shows the worst
+                // case its normalisation band allows, and its preview the example artwork's colours (palettes.poster).
+                poster = new { worstContrast = Math.Round(PosterColour.WorstCaseContrast, 2), example = Web(PosterColour.Example) },
+                // The glyph each genre label's tile shows (Other: the default one).
+                genreIcons = TagStyleCatalog.Labels(TagStyleKeys.Genre).ToDictionary(l => l.Key, l => TagStyleCatalog.GenreIcon(l.Key), StringComparer.Ordinal),
             });
         }
 
@@ -2401,6 +2434,125 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public Task<IActionResult> DiscoverTrending([FromQuery] int page = 1)
         {
             return ProxyJellyseerrRequest(AppendDiscoverFilters($"/api/v1/discover/trending?page={page}"), HttpMethod.Get);
+        }
+
+        /// <summary>
+        /// Trending ranks for the Status Tags poster badges:
+        /// <c>{ source: "tmdb-day" | "seerr-week" | null, movies: { "&lt;tmdbId&gt;": rank }, series: { ... } }</c>.
+        /// Any signed-in user: the list is public TMDB data shared server-wide (see
+        /// <see cref="Services.StatusTagsTrendingService"/>), and the client only uses
+        /// it to decorate items the user can already see. Empty while the admin has
+        /// Status Tags or their trending badge switched off.
+        /// </summary>
+        [HttpGet("status-tags/trending")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> GetStatusTagsTrending([FromServices] Services.StatusTagsTrendingService trendingService)
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var snapshot = Services.StatusTagsTrendingService.Empty;
+            if (config != null && config.StatusTagsEnabled && config.StatusTagsTrending)
+            {
+                try
+                {
+                    snapshot = await trendingService.GetAsync(config, HttpContext.RequestAborted).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+                {
+                    return StatusCode(499); // browser went away
+                }
+            }
+
+            Response.Headers["Cache-Control"] = "private, max-age=300";
+            return Ok(new { source = snapshot.Source, movies = snapshot.Movies, series = snapshot.Series });
+        }
+
+        /// <summary>
+        /// TMDB schedule facts for the Status Tags series badges, for up to
+        /// <see cref="Services.StatusTagsSeriesService.MaxIds"/> Series item ids
+        /// (comma-separated): <c>{ "&lt;itemId&gt;": { status, lastAired: { date,
+        /// season, episode, type }, nextAired: { date, season, episode } } }</c>.
+        /// Ids are resolved through the caller, so a series they cannot see (or
+        /// one without a TMDB id) is simply left out, as are series TMDB has no
+        /// answer for. Empty while the admin has Status Tags off or no TMDB key
+        /// is set. The client asks only for series cards on screen (and the
+        /// series of season/episode cards).
+        /// </summary>
+        [HttpGet("status-tags/series")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> GetStatusTagsSeries([FromQuery] string? ids, [FromServices] Services.StatusTagsSeriesService seriesService)
+        {
+            var requested = (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (requested.Length == 0)
+            {
+                return BadRequest(new { error = "ids required" });
+            }
+
+            if (requested.Length > Services.StatusTagsSeriesService.MaxIds)
+            {
+                return BadRequest(new { error = $"Maximum {Services.StatusTagsSeriesService.MaxIds} ids per request" });
+            }
+
+            var callerId = UserHelper.GetCurrentUserId(User);
+            var user = callerId is { } id && id != Guid.Empty ? _userManager.GetUserById(id) : null;
+            if (user == null)
+            {
+                return Forbid();
+            }
+
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            var payload = new Dictionary<string, object>(StringComparer.Ordinal);
+            var retry = false;
+            if (config != null && config.StatusTagsEnabled && !string.IsNullOrWhiteSpace(config.TMDB_API_KEY))
+            {
+                var tmdbIds = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var raw in requested)
+                {
+                    if (!Guid.TryParse(raw, out var itemId) || itemId == Guid.Empty)
+                    {
+                        continue;
+                    }
+
+                    // Through the user: library access, parental rating and blocked tags apply.
+                    if (_libraryManager.GetItemById<BaseItem>(itemId, user) is MediaBrowser.Controller.Entities.TV.Series series
+                        && series.ProviderIds?.TryGetValue("Tmdb", out var tmdbId) == true
+                        && long.TryParse(tmdbId, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var tmdbNumber)
+                        && tmdbNumber > 0)
+                    {
+                        tmdbIds[itemId.ToString("N")] = tmdbNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                }
+
+                try
+                {
+                    var schedules = await seriesService.GetAsync(config.TMDB_API_KEY, tmdbIds, HttpContext.RequestAborted).ConfigureAwait(false);
+                    foreach (var (key, schedule) in schedules)
+                    {
+                        if (schedule.Retry)
+                        {
+                            retry = true;
+                            payload[key] = new { retry = true };
+                            continue;
+                        }
+                        payload[key] = new
+                        {
+                            status = schedule.Status,
+                            lastRegularAired = schedule.LastRegularAired == null ? null : new { date = schedule.LastRegularAired.Date, season = schedule.LastRegularAired.Season, episode = schedule.LastRegularAired.Episode, type = schedule.LastRegularAired.Type },
+                            lastAired = schedule.LastAired == null ? null : new { date = schedule.LastAired.Date, season = schedule.LastAired.Season, episode = schedule.LastAired.Episode, type = schedule.LastAired.Type },
+                            nextAired = schedule.NextAired == null ? null : new { date = schedule.NextAired.Date, season = schedule.NextAired.Season, episode = schedule.NextAired.Episode },
+                            seasonEpisodes = schedule.SeasonEpisodes,
+                        };
+                    }
+                }
+                catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+                {
+                    return StatusCode(499); // browser went away
+                }
+            }
+
+            Response.Headers["Cache-Control"] = retry ? "private, no-store" : "private, max-age=600";
+            return Ok(payload);
         }
 
         [HttpGet("jellyseerr/discover/movies")]
@@ -3581,7 +3733,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // action endpoint to round-trip a corruption error envelope.
                 SonarrInstancesCorrupt = config.IsSonarrInstancesCorrupt(),
                 RadarrInstancesCorrupt = config.IsRadarrInstancesCorrupt(),
+
+                // What each Custom tag rule matches, by rule id (the chip tooltip's second line).
+                CustomTagRuleSources = CustomTagRuleSourcesForAdmins(config),
             };
+        }
+
+        /// <summary>The Custom tag rules as every client may see them: id, label and icon, in table order.</summary>
+        private static object[] CustomTagRulesForClients(PluginConfiguration config)
+        {
+            var matcher = CustomTagMatcher.For(config);
+            return matcher.Rules.Select((rule, i) => (object)new { Id = matcher.Ids[i], rule.Label, rule.Icon }).ToArray();
+        }
+
+        /// <summary>The tag or collection each Custom tag rule matches, by id (admins only).</summary>
+        private static object[] CustomTagRuleSourcesForAdmins(PluginConfiguration config)
+        {
+            var matcher = CustomTagMatcher.For(config);
+            return matcher.Rules.Select((rule, i) => (object)new { Id = matcher.Ids[i], rule.Match, rule.Value }).ToArray();
         }
         // [AllowAnonymous]: public-config is loaded by `loadLoginImageEarly` before
         // the user logs in, so we cannot gate the whole endpoint on [Authorize].
@@ -3590,6 +3759,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // EnableLoginImage. Authenticated callers (any Jellyfin user) get the full
         // payload so client-side "Open in Seerr" deep links still work.
         [HttpGet("public-config")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
         public ActionResult GetPublicConfig()
         {
             var config = JellyfinEnhanced.Instance?.Configuration;
@@ -3599,6 +3769,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             return new JsonResult(BuildPublicConfig(config));
+        }
+
+        /// <summary>
+        /// Publish item looks only for targets the caller can see. The library's
+        /// user-aware lookup applies Jellyfin's library and parental access checks,
+        /// including series targets whose scoped look is inherited by children.
+        /// No shared response cache or ETag is used for this per-request projection.
+        /// </summary>
+        private List<TagLookItemOverride>? VisibleItemLooks(PluginConfiguration config)
+        {
+            if (User?.Identity?.IsAuthenticated != true) return null;
+            var looks = TagLookValidation.NormalizeItemOverrides(config.TagLookItemOverrides);
+            if (looks is null) return null;
+            var id = UserHelper.GetCurrentUserId(User);
+            var user = id.HasValue ? _userManager?.GetUserById(id.Value) : null;
+            if (user is null || _libraryManager is null) return null;
+            var visible = looks.Where(look => _libraryManager.GetItemById<BaseItem>(Guid.Parse(look.ItemId), user) is not null).ToList();
+            return visible.Count == 0 ? null : visible;
         }
 
         /// <summary>
@@ -3710,10 +3898,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.PauseScreenDelaySeconds,
                 config.ShowPlaybackRatingBadge,
                 config.NativePosterTagsEnabled,
-                TagStyleWebActive = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both" && !TagStyleSet.Parse(config.TagStyleOverrides).IsEmpty,
+                TagStyleWebActive = config.TagStylesEnabled && config.TagStyleTarget is "web" or "both"
+                    && (config.TagStylesAllowUserPreset || !TagStyleSet.Parse(config.TagStyleOverrides, config.TagStylePreset).IsEmpty),
+                // Tag Styles: user presets
+                TagStylesAllowUserPreset = config.TagStylesEnabled && config.TagStylesAllowUserPreset,
+                TagStylePreset = TagStyleKeys.NormalizePreset(config.TagStylePreset),
                 config.QualityTagsEnabled,
                 config.ShowResolutionTag,
                 config.ShowSourceTag,
+                // Source and edition defaults.
+                config.ShowEditionTag,
+                config.ShowRuntimeTag,
+                config.ShowVersionsTag,
+                config.ShowAspectRatioTag,
+                config.ShowFrameRateTag,
+                config.EditionTagOrder,
+                config.RuntimeTagOrder,
+                config.VersionsTagOrder,
+                config.AspectRatioTagOrder,
+                config.FrameRateTagOrder,
+                config.ShowLowQualitySourceTag,
                 config.ShowDynamicRangeTag,
                 config.ShowSpecialFormatTag,
                 config.ShowVideoCodecTag,
@@ -3728,6 +3932,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsEnabled,
                 config.RatingTagsEnabled,
                 config.AgeRatingTagsEnabled,
+                config.LogoTagsEnabled,
+                config.StatusTagsEnabled,
+                config.AwardsTagsEnabled,
+                config.AwardsTagsPosition,
+                config.AwardsTagsImdb,
+                config.AwardsTagsCertifiedFresh,
+                config.AwardsTagsOscar,
+                config.AwardsTagsEmmy,
+                config.AwardsTagsLetterboxd,
+                config.CustomTagsEnabled,
                 config.PeopleTagsEnabled,
                 config.DisableAllShortcuts,
                 config.DefaultSubtitleStyle,
@@ -3744,6 +3958,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.LanguageTagsPriorityStrict,
                 config.LanguageTagsMergeRegions,
                 config.QualityTagsPreferredAudioLanguage,
+                SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(config.SeriesQualityAggregation),
+                config.QualityHideSdr,
+                QualityMinimumResolution = QualityDisplayRules.Minimum(config.QualityMinimumResolution),
+                QualityHdrDisplayMode = QualityDisplayRules.Mode(config.QualityHdrDisplayMode),
+                QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(config.QualityVideoCodecDisplayMode),
+                QualityAudioDisplayMode = QualityDisplayRules.Mode(config.QualityAudioDisplayMode),
                 config.QualityTagsAudioLanguageFromUser,
                 config.RatingTagsPosition,
                 config.RatingTagsOnMovies,
@@ -3752,7 +3972,60 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 config.RatingTagsOnEpisodes,
                 config.RatingTagsOnContinueWatching,
                 config.RatingTagsOnNextUp,
+                config.RatingTagsShowCommunity,
+                config.RatingTagsShowCritic,
+                // Multi-source rating defaults.
+                RatingTagsSources = RatingSourceSettings.Defaults(config),
+                RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(config.RatingTagsMinScore),
+                config.RatingTagsColorByScore,
+                // Language Tags display starting defaults (normalized)
+                config.LanguageTagsShowAudio,
+                config.LanguageTagsShowSubtitles,
+                LanguageTagsStyle = LanguageTagDisplay.NormalizeStyle(config.LanguageTagsStyle),
+                LanguageTagsCountBadge = LanguageTagDisplay.NormalizeCountBadge(config.LanguageTagsCountBadge),
                 config.AgeRatingTagsPosition,
+                // Logos group: its starting corner and the administrator's (read-only) choices.
+                config.LogoTagsPosition,
+                LogoTagsMovieMode = LogoTagRules.MovieMode(config.LogoTagsMovieMode),
+                LogoTagsSeriesMode = LogoTagRules.SeriesMode(config.LogoTagsSeriesMode),
+                LogoTagsMaxLogos = LogoTagRules.Max(config.LogoTagsMaxLogos),
+                config.StatusTagsPosition,
+                // Custom tag group: starting corner and rules.
+                config.CustomTagsPosition,
+                // Rule ids, labels and icons only: the tag or collection a rule matches is
+                // admin-only (CustomTagRuleSources in the private config).
+                CustomTagRules = CustomTagRulesForClients(config),
+                config.StatusTagsJustAdded,
+                config.StatusTagsNewRelease,
+                config.StatusTagsTrending,
+                config.StatusTagsSchedule,
+                config.StatusTagsMilestones,
+                config.StatusTagsSeriesStatus,
+                config.StatusTagsScenes,
+                // Leaving soon / direct-play families: starting values, and whether a
+                // Leaving soon source is set (never its URL, key or collection names).
+                config.StatusTagsLeaving,
+                config.StatusTagsDirectPlay,
+                LeavingSoonAvailable = Services.LeavingSoonService.Configured(config),
+                config.StatusTagsJustAddedDays,
+                config.StatusTagsNewReleaseDays,
+                // Poster tag layout starting defaults (normalized; null = built-in)
+                TagLayout = TagLayoutRules.NormalizeLayout(config.TagLayout),
+                TagLayouts = TagLayoutRules.NormalizeProfiles(config.TagLayouts),
+                TagGroupOrder = TagLayoutRules.NormalizeOrder(config.TagGroupOrder),
+                TagGroupCaps = TagLayoutRules.NormalizeCaps(config.TagGroupCaps),
+                TagGroupScopes = TagLayoutRules.NormalizeScopes(config.TagGroupScopes),
+                TagLabelDensity = TagLayoutRules.NormalizeDensity(config.TagLabelDensity),
+                TagScale = TagLayoutRules.NormalizeScale(config.TagScale),
+                TagGap = TagLayoutRules.NormalizeGap(config.TagGap),
+                TagEdgeSpacing = TagLayoutRules.NormalizeEdgeSpacing(config.TagEdgeSpacing) ?? "default",
+                // Tag look rules starting default (normalized; null = none)
+                TagLookRules = TagLookValidation.NormalizeRules(config.TagLookRules),
+                // Server-wide per-item looks (normalized; null = none): ids and looks only,
+                // and only for signed-in callers (item ids are not for the login page).
+                TagLookItemOverrides = VisibleItemLooks(config),
+                // Per-shape tag looks starting default (normalized; null = none)
+                TagShapeOverrides = TagShapeRules.NormalizeDefaults(config.TagShapeOverrides),
                 config.ShowRatingInPlayer,
 
                 config.TagsCacheTtlDays,
@@ -4018,10 +4291,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         ///   SeerrUserStatus      — GET jellyseerr/user-status, when no Seerr lookup is needed
         ///   SeerrStatus          — GET jellyseerr/status, from the 30-second probe cache only
         ///   ActiveStreamSessions — GET active-streams/sessions, admins or ActiveStreamsAllUsers
+        ///   TagStripRevision     — the StripRevision POST tag-data answers carry (no endpoint of its
+        ///                          own), null when the Spoiler Guard state could not be read
         /// </summary>
         private object BuildBootstrapPrefetched(PluginConfiguration config, Guid userId, string authorizedUserId, bool isAdmin)
         {
-            object? spoilerBlurSeries = null;
+            UserSpoilerBlur? spoilerBlurSeries = null;
             object? seerrUserStatus = null;
             object? seerrStatus = null;
             List<object>? activeStreamSessions = null;
@@ -4030,6 +4305,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             {
                 spoilerBlurSeries = TryReadSpoilerBlurStateForBootstrap(authorizedUserId);
             }
+
+            // Lets the web batch fallback check what it kept from earlier pages before
+            // its first request (tags/tag-pipeline.js); unknown when the state is unreadable.
+            string? tagStripRevision = !Services.SpoilerTagDataStripper.IsConfigured(config)
+                ? Services.SpoilerTagDataStripper.NoTagStrip
+                : spoilerBlurSeries == null
+                    ? null
+                    : Services.SpoilerTagDataStripper.TagStripRevision(Services.SpoilerTagDataStripper.CreatePolicy(config, spoilerBlurSeries));
 
             if (config.JellyseerrEnabled)
             {
@@ -4065,6 +4348,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 SeerrUserStatus = seerrUserStatus,
                 SeerrStatus = seerrStatus,
                 ActiveStreamSessions = activeStreamSessions,
+                TagStripRevision = tagStripRevision,
             };
         }
 
@@ -4743,6 +5027,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
                 return Ok(result);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return StatusCode(499); // browser went away; nothing was cached
+            }
             catch (Exception ex)
             {
                 _logger.Error($"Failed to fetch MDBList ratings for {mediaType}:{tmdbId}. Error: {ex.Message}");
@@ -4919,6 +5207,32 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         }
 
         /// <summary>
+        /// A TMDB provider, network or company logo for the Logos tag group,
+        /// from the server's disk cache (fetched from TMDB's image server once).
+        /// <paramref name="size"/> is w45 or w92; <paramref name="file"/> a logo
+        /// file name the server has seen in a provider or details lookup, so this
+        /// is not an open TMDB image proxy and the browser never contacts TMDB.
+        /// Anonymous like the CDN assets: &lt;img&gt; cannot carry a Jellyfin token,
+        /// and these are public logos. 404 when not allowed or unavailable.
+        /// </summary>
+        [HttpGet("logo/{size}/{file}")]
+        public async Task<IActionResult> GetLogoImage(string size, string file, [FromServices] Services.TagLogoService logos, CancellationToken cancellationToken)
+        {
+            if (!logos.IsAllowed(size, file)) return NotFound();
+            var image = await logos.GetImageAsync(size, file, cancellationToken).ConfigureAwait(false);
+            if (image == null) return NotFound();
+            Response.Headers["Cache-Control"] = "public, max-age=604800";
+            Response.Headers["ETag"] = image.ETag;
+            Response.Headers["X-Content-Type-Options"] = "nosniff";
+            if (Services.TmdbResponseCache.IfNoneMatchMatches(Request.Headers["If-None-Match"], image.ETag))
+            {
+                return StatusCode(StatusCodes.Status304NotModified);
+            }
+
+            return File(image.Bytes, image.ContentType);
+        }
+
+        /// <summary>
         /// Local CDN route. Serves a third-party static asset (icon, flag, theme
         /// sheet, remote locale, …) from the plugin's on-disk cache, fetching it from the
         /// fixed upstream CDN on a cache miss. This is the ONLY endpoint clients use for
@@ -5051,7 +5365,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // changes on every build and immutable caching is safe.
             var devMode = JellyfinEnhanced.Instance?.Configuration?.DevMode == true;
             Response.Headers["Cache-Control"] = devMode ? "no-store" : "public, max-age=31536000, immutable";
-            return new FileStreamResult(stream, contentType);
+            // Say it is UTF-8: these files carry characters such as "·" and "★", and a script or stylesheet
+            // with no charset is decoded with the page's encoding, which has shown them as "Â·" and "â˜…".
+            return new FileStreamResult(stream, contentType + "; charset=utf-8");
         }
 
         private IActionResult? AuthorizeUserConfigAccess(string requestedUserId, out string authorizedUserId)
@@ -5261,6 +5577,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                         ShowResolutionTag = defaultConfig.ShowResolutionTag,
                         ShowSourceTag = defaultConfig.ShowSourceTag,
+                        // Source and edition defaults.
+                        ShowEditionTag = defaultConfig.ShowEditionTag,
+                        ShowRuntimeTag = defaultConfig.ShowRuntimeTag,
+                        ShowVersionsTag = defaultConfig.ShowVersionsTag,
+                        ShowAspectRatioTag = defaultConfig.ShowAspectRatioTag,
+                        ShowFrameRateTag = defaultConfig.ShowFrameRateTag,
+                        EditionTagOrder = defaultConfig.EditionTagOrder,
+                        RuntimeTagOrder = defaultConfig.RuntimeTagOrder,
+                        VersionsTagOrder = defaultConfig.VersionsTagOrder,
+                        AspectRatioTagOrder = defaultConfig.AspectRatioTagOrder,
+                        FrameRateTagOrder = defaultConfig.FrameRateTagOrder,
+                        ShowLowQualitySourceTag = defaultConfig.ShowLowQualitySourceTag,
                         ShowDynamicRangeTag = defaultConfig.ShowDynamicRangeTag,
                         ShowSpecialFormatTag = defaultConfig.ShowSpecialFormatTag,
                         ShowVideoCodecTag = defaultConfig.ShowVideoCodecTag,
@@ -5275,19 +5603,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                         RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                         AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+                        LogoTagsEnabled = defaultConfig.LogoTagsEnabled,
+                        StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
+                        AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
+                        AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
+                        CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
                         PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                         TagsHideOnHover = defaultConfig.TagsHideOnHover,
                         QualityTagsPosition = defaultConfig.QualityTagsPosition,
+                        // Series/season quality aggregation default.
+                        SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
+                        QualityHideSdr = defaultConfig.QualityHideSdr,
+                        QualityMinimumResolution = QualityDisplayRules.Minimum(defaultConfig.QualityMinimumResolution),
+                        QualityHdrDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityHdrDisplayMode),
+                        QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityVideoCodecDisplayMode),
+                        QualityAudioDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityAudioDisplayMode),
                         GenreTagsPosition = defaultConfig.GenreTagsPosition,
                         LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                         RatingTagsPosition = defaultConfig.RatingTagsPosition,
-                        RatingTagsOnMovies = defaultConfig.RatingTagsOnMovies,
-                        RatingTagsOnSeries = defaultConfig.RatingTagsOnSeries,
-                        RatingTagsOnSeasons = defaultConfig.RatingTagsOnSeasons,
-                        RatingTagsOnEpisodes = defaultConfig.RatingTagsOnEpisodes,
-                        RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
-                        RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
+                        RatingTagsOnMovies = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnSeries = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnSeasons = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnEpisodes = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnContinueWatching = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsOnNextUp = true, // follows the administrator (TagLayoutRules.RatingScope)
+                        RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
+                        RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
+                        // Multi-source rating defaults (copy the ordered array).
+                        RatingTagsSources = RatingSourceSettings.Defaults(defaultConfig).ToArray(),
+                        RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(defaultConfig.RatingTagsMinScore),
+                        RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                         AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+                        LogoTagsPosition = defaultConfig.LogoTagsPosition,
+                        StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                        CustomTagsPosition = defaultConfig.CustomTagsPosition,
+                        StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
+                        StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
+                        StatusTagsTrending = defaultConfig.StatusTagsTrending,
+                        // Tag Styles preset: null follows the admin's preset.
+                        TagStylePreset = null,
+                        StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
+                        StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
+                        StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
+                        StatusTagsScenes = defaultConfig.StatusTagsScenes,
+                        StatusTagsLeaving = defaultConfig.StatusTagsLeaving,
+                        StatusTagsDirectPlay = defaultConfig.StatusTagsDirectPlay,
                         ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                         RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                         ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -5296,6 +5656,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         CalendarDefaultViewMode = "agenda",
                         LastOpenedTab = "shortcuts"
                     };
+                    TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
+                    TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
+                    LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
+                    TagShapeRules.ApplyDefaults(defaultUserSettings, defaultConfig);
 
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", defaultUserSettings);
                     _logger.Info($"Saved default settings.json for new user {ResolveUserDisplay(authorizedUserId)} from plugin configuration.");
@@ -5360,13 +5724,24 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return authorizationResult;
             }
 
+            if (userConfiguration == null)
+            {
+                return BadRequest(new { success = false, message = "Missing settings document." });
+            }
+
+            // The same normalisation a settings import is checked with (MediaTagsPortable.PreviewUser).
+            if (!MediaTagsPortable.TryNormalizeUser(userConfiguration, out var invalid))
+            {
+                return BadRequest(new { success = false, message = invalid });
+            }
+
             try
             {
                 // Diff against the existing config so the log shows what actually changed
+                // (GetUserConfiguration returns a default document when none is stored, never null).
                 var existing = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
                 var changes = new System.Collections.Generic.List<string>();
                 var isIdentical = false;
-                if (existing != null)
                 {
                     var existingJson = System.Text.Json.JsonSerializer.Serialize(existing);
                     var newJson      = System.Text.Json.JsonSerializer.Serialize(userConfiguration);
@@ -5389,6 +5764,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 if (!isIdentical)
                 {
                     _userConfigurationManager.SaveUserConfiguration(authorizedUserId, "settings.json", userConfiguration);
+                    // Turning the Logos group on (or the last user off) changes whether cache entries carry logos.
+                    if (existing.LogoTagsEnabled != userConfiguration.LogoTagsEnabled)
+                        Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+                    // The first user naming an MDBList source starts enrichment at once (and the last stops it).
+                    if (existing.RatingTagsEnabled != userConfiguration.RatingTagsEnabled
+                        || !(existing.RatingTagsSources ?? Array.Empty<string>()).SequenceEqual(userConfiguration.RatingTagsSources ?? Array.Empty<string>()))
+                        Services.TagCacheService.Instance?.OnRatingSourceSettingsChanged();
 
                     if (changes.Count > 0)
                         _logger.Info($"Saved user settings for {ResolveUserDisplay(authorizedUserId)}: {string.Join(", ", changes)}");
@@ -5402,6 +5784,164 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 return StatusCode(500, new { success = false, message = "Failed to save user settings." });
             }
         }
+
+        /// <summary>
+        /// The user's Media Tags settings as a portable document (<see cref="MediaTagsPortable.ExportUser"/>):
+        /// <c>{"v":1,"kind":"je-media-tags-user","settings":{…}}</c>, the fields of <see cref="MediaTagsPortable.UserFields"/>.
+        /// </summary>
+        /// <param name="userId">The user (the caller, or any user for an administrator).</param>
+        /// <returns>The document.</returns>
+        [HttpGet("user-settings/{userId}/media-tags/export")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public IActionResult ExportUserMediaTags(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            var settings = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            return Ok(MediaTagsPortable.ExportUser(settings));
+        }
+
+        /// <summary>
+        /// What importing a Media Tags document (a user export or a preset) would change, checked field by field with
+        /// the settings save path's validators (<see cref="MediaTagsPortable.PreviewUser"/>). Nothing is saved: the
+        /// client applies the changed fields through <c>POST user-settings/{userId}/settings.json</c>.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="document">The document.</param>
+        /// <returns>200 <c>{kind, v, name, description, imported, changes, skipped}</c>; 400 <c>{error}</c> for a document refused as a whole.</returns>
+        [HttpPost("user-settings/{userId}/media-tags/preview")]
+        [Authorize]
+        [RequestSizeLimit(MediaTagsPortable.MaxDocumentBytes)]
+        [Produces("application/json")]
+        public IActionResult PreviewUserMediaTags(string userId, [FromBody] JsonElement document)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            var current = _userConfigurationManager.GetUserConfiguration<JellyfinEnhancedUserSettings>(authorizedUserId, "settings.json");
+            var preview = MediaTagsPortable.PreviewUser(document, current);
+            return preview.Error != null ? BadRequest(new { error = preview.Error }) : Ok(PreviewBody(preview));
+        }
+
+        /// <summary>
+        /// The presets a user can apply: the built-in ones, those the administrator offers and the user's own
+        /// (<see cref="MediaTagsPortable.UserPresetsFile"/>, at most <see cref="MediaTagsPortable.MaxUserPresets"/>).
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <returns><c>{max, builtIn, offered, mine}</c>, each a list of preset documents.</returns>
+        [HttpGet("user-settings/{userId}/media-tags/presets")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public IActionResult GetMediaTagsPresets(string userId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            var store = _userConfigurationManager.GetUserConfiguration<MediaTagsPortable.UserPresetStore>(authorizedUserId, MediaTagsPortable.UserPresetsFile);
+            return Ok(new
+            {
+                max = MediaTagsPortable.MaxUserPresets,
+                builtIn = MediaTagsPortable.BuiltInPresets,
+                offered = MediaTagsPortable.OfferedPresets(JellyfinEnhanced.Instance?.Configuration ?? new PluginConfiguration()),
+                mine = (store.Presets ?? new List<MediaTagsPortable.StoredPreset>()).Select(MediaTagsPortable.ToDocument),
+            });
+        }
+
+        /// <summary>
+        /// Saves a preset to the user's own list: a preset document, or a user export with a <c>name</c>. Unknown and
+        /// invalid settings are dropped and reported; the preset gets a new id.
+        /// </summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="document">The preset.</param>
+        /// <returns>200 <c>{preset, skipped}</c>; 400 <c>{error}</c> (a document error, <c>name</c>, <c>description</c>, <c>empty</c>, or <c>full</c> with <c>max</c>).</returns>
+        [HttpPost("user-settings/{userId}/media-tags/presets")]
+        [Authorize]
+        [RequestSizeLimit(MediaTagsPortable.MaxDocumentBytes)]
+        [Produces("application/json")]
+        public IActionResult SaveMediaTagsPreset(string userId, [FromBody] JsonElement document)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            if (!MediaTagsPortable.TryReadPreset(document, null, out var preset, out var skipped, out var error))
+            {
+                return BadRequest(new { error });
+            }
+
+            var stored = new MediaTagsPortable.StoredPreset
+            {
+                Id = Guid.NewGuid().ToString("N")[..12],
+                Name = (string?)preset["name"] ?? string.Empty,
+                Description = (string?)preset["description"] ?? string.Empty,
+                Settings = preset["settings"]!.ToJsonString(),
+            };
+            var full = false;
+            try
+            {
+                _userConfigurationManager.RmwUserConfiguration<MediaTagsPortable.UserPresetStore>(authorizedUserId, MediaTagsPortable.UserPresetsFile, store =>
+                {
+                    store.Presets ??= new List<MediaTagsPortable.StoredPreset>();
+                    if (store.Presets.Count >= MediaTagsPortable.MaxUserPresets)
+                    {
+                        full = true;
+                        return 0;
+                    }
+
+                    store.Presets.Add(stored);
+                    return 1;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to save a Media Tags preset for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { error = "save" });
+            }
+
+            if (full) return BadRequest(new { error = "full", max = MediaTagsPortable.MaxUserPresets });
+            return Ok(new { preset = MediaTagsPortable.ToDocument(stored), skipped = SkipBody(skipped) });
+        }
+
+        /// <summary>Deletes one of the user's own presets.</summary>
+        /// <param name="userId">The user.</param>
+        /// <param name="presetId">The preset's id.</param>
+        /// <returns>200, or 404 when the user has no such preset.</returns>
+        [HttpDelete("user-settings/{userId}/media-tags/presets/{presetId}")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult DeleteMediaTagsPreset(string userId, string presetId)
+        {
+            var authorizationResult = AuthorizeUserConfigAccess(userId, out var authorizedUserId);
+            if (authorizationResult != null) return authorizationResult;
+            int removed;
+            try
+            {
+                removed = _userConfigurationManager.RmwUserConfiguration<MediaTagsPortable.UserPresetStore>(authorizedUserId, MediaTagsPortable.UserPresetsFile, store =>
+                    store.Presets?.RemoveAll(p => string.Equals(p.Id, presetId, StringComparison.Ordinal)) ?? 0);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error($"Failed to delete a Media Tags preset for {ResolveUserDisplay(authorizedUserId)}: {ex.Message}");
+                return StatusCode(500, new { error = "save" });
+            }
+
+            return removed > 0 ? Ok(new { success = true }) : NotFound(new { error = "missing" });
+        }
+
+        /// <summary>An import preview as the endpoints answer it.</summary>
+        private static object PreviewBody(MediaTagsPortable.Preview preview) => new
+        {
+            kind = preview.Kind,
+            v = preview.V,
+            name = preview.Name,
+            description = preview.Description,
+            imported = preview.Imported,
+            changes = preview.Changes.Select(c => new { field = c.Field, from = c.From, to = c.To }),
+            skipped = SkipBody(preview.Skipped),
+        };
+
+        /// <summary>Skipped fields as the endpoints answer them.</summary>
+        private static object SkipBody(IEnumerable<MediaTagsPortable.Skip> skipped)
+            => skipped.Select(s => new { field = s.Field, reason = s.Reason, detail = s.Detail }).ToList();
 
         [HttpPost("user-settings/{userId}/shortcuts.json")]
         [Authorize]
@@ -8277,6 +8817,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 QualityTagsEnabled = defaultConfig.QualityTagsEnabled,
                 ShowResolutionTag = defaultConfig.ShowResolutionTag,
                 ShowSourceTag = defaultConfig.ShowSourceTag,
+                // Source and edition defaults.
+                ShowEditionTag = defaultConfig.ShowEditionTag,
+                ShowRuntimeTag = defaultConfig.ShowRuntimeTag,
+                ShowVersionsTag = defaultConfig.ShowVersionsTag,
+                ShowAspectRatioTag = defaultConfig.ShowAspectRatioTag,
+                ShowFrameRateTag = defaultConfig.ShowFrameRateTag,
+                EditionTagOrder = defaultConfig.EditionTagOrder,
+                RuntimeTagOrder = defaultConfig.RuntimeTagOrder,
+                VersionsTagOrder = defaultConfig.VersionsTagOrder,
+                AspectRatioTagOrder = defaultConfig.AspectRatioTagOrder,
+                FrameRateTagOrder = defaultConfig.FrameRateTagOrder,
+                ShowLowQualitySourceTag = defaultConfig.ShowLowQualitySourceTag,
                 ShowDynamicRangeTag = defaultConfig.ShowDynamicRangeTag,
                 ShowSpecialFormatTag = defaultConfig.ShowSpecialFormatTag,
                 ShowVideoCodecTag = defaultConfig.ShowVideoCodecTag,
@@ -8291,19 +8843,51 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 LanguageTagsEnabled = defaultConfig.LanguageTagsEnabled,
                 RatingTagsEnabled = defaultConfig.RatingTagsEnabled,
                 AgeRatingTagsEnabled = defaultConfig.AgeRatingTagsEnabled,
+                LogoTagsEnabled = defaultConfig.LogoTagsEnabled,
+                StatusTagsEnabled = defaultConfig.StatusTagsEnabled,
+                        AwardsTagsEnabled = defaultConfig.AwardsTagsEnabled,
+                        AwardsTagsPosition = defaultConfig.AwardsTagsPosition,
+                CustomTagsEnabled = defaultConfig.CustomTagsEnabled,
                 PeopleTagsEnabled = defaultConfig.PeopleTagsEnabled,
                 TagsHideOnHover = defaultConfig.TagsHideOnHover,
                 QualityTagsPosition = defaultConfig.QualityTagsPosition,
+                // Series/season quality aggregation default.
+                SeriesQualityAggregation = Services.SeriesQualityAggregation.Normalize(defaultConfig.SeriesQualityAggregation),
+                QualityHideSdr = defaultConfig.QualityHideSdr,
+                QualityMinimumResolution = QualityDisplayRules.Minimum(defaultConfig.QualityMinimumResolution),
+                QualityHdrDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityHdrDisplayMode),
+                QualityVideoCodecDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityVideoCodecDisplayMode),
+                QualityAudioDisplayMode = QualityDisplayRules.Mode(defaultConfig.QualityAudioDisplayMode),
                 GenreTagsPosition = defaultConfig.GenreTagsPosition,
                 LanguageTagsPosition = defaultConfig.LanguageTagsPosition,
                 RatingTagsPosition = defaultConfig.RatingTagsPosition,
-                RatingTagsOnMovies = defaultConfig.RatingTagsOnMovies,
-                RatingTagsOnSeries = defaultConfig.RatingTagsOnSeries,
-                RatingTagsOnSeasons = defaultConfig.RatingTagsOnSeasons,
-                RatingTagsOnEpisodes = defaultConfig.RatingTagsOnEpisodes,
-                RatingTagsOnContinueWatching = defaultConfig.RatingTagsOnContinueWatching,
-                RatingTagsOnNextUp = defaultConfig.RatingTagsOnNextUp,
+                RatingTagsOnMovies = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnSeries = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnSeasons = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnEpisodes = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnContinueWatching = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsOnNextUp = true, // follows the administrator (TagLayoutRules.RatingScope)
+                RatingTagsShowCommunity = defaultConfig.RatingTagsShowCommunity,
+                RatingTagsShowCritic = defaultConfig.RatingTagsShowCritic,
+                // Multi-source rating defaults (copy the ordered array).
+                RatingTagsSources = RatingSourceSettings.Defaults(defaultConfig).ToArray(),
+                RatingTagsMinScore = RatingSourceSettings.NormalizeMinimum(defaultConfig.RatingTagsMinScore),
+                RatingTagsColorByScore = defaultConfig.RatingTagsColorByScore,
                 AgeRatingTagsPosition = defaultConfig.AgeRatingTagsPosition,
+                LogoTagsPosition = defaultConfig.LogoTagsPosition,
+                StatusTagsPosition = defaultConfig.StatusTagsPosition,
+                CustomTagsPosition = defaultConfig.CustomTagsPosition,
+                StatusTagsJustAdded = defaultConfig.StatusTagsJustAdded,
+                StatusTagsNewRelease = defaultConfig.StatusTagsNewRelease,
+                StatusTagsTrending = defaultConfig.StatusTagsTrending,
+                // Tag Styles preset: null follows the admin's preset.
+                TagStylePreset = null,
+                StatusTagsSchedule = defaultConfig.StatusTagsSchedule,
+                StatusTagsMilestones = defaultConfig.StatusTagsMilestones,
+                StatusTagsSeriesStatus = defaultConfig.StatusTagsSeriesStatus,
+                StatusTagsScenes = defaultConfig.StatusTagsScenes,
+                StatusTagsLeaving = defaultConfig.StatusTagsLeaving,
+                StatusTagsDirectPlay = defaultConfig.StatusTagsDirectPlay,
                 ShowRatingInPlayer = defaultConfig.ShowRatingInPlayer,
                 RemoveContinueWatchingEnabled = defaultConfig.RemoveContinueWatchingEnabled,
                 ReviewsExpandedByDefault = defaultConfig.ReviewsExpandedByDefault,
@@ -8312,6 +8896,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 CalendarDefaultViewMode = "agenda",
                 LastOpenedTab = "shortcuts"
             };
+            TagLayoutRules.ApplyDefaults(defaultUserSettings, defaultConfig);
+            TagLookValidation.ApplyDefaults(defaultUserSettings, defaultConfig);
+            LanguageTagDisplay.ApplyDefaults(defaultUserSettings, defaultConfig);
+            TagShapeRules.ApplyDefaults(defaultUserSettings, defaultConfig);
 
             var userCount = 0;
             var skippedSettings = new System.Collections.Generic.List<string>();
@@ -8377,6 +8965,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
+            // Every user took the admin's Logos switch and rating sources: re-check who shows them.
+            Services.TagCacheService.Instance?.OnLogoSettingsChanged();
+            Services.TagCacheService.Instance?.OnRatingSourceSettingsChanged();
             _logger.Info($"Reset settings for {userCount}/{userIds.Count()} users to plugin defaults. Skipped settings: {skippedSettings.Count}, skipped HC: {skippedHc.Count}.");
             return Ok(new
             {
@@ -8407,7 +8998,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         /// <summary>
         /// Copies only the named plugin settings into each user's existing personal settings, leaving every other personal
         /// preference alone (unlike reset-all-users-settings, which replaces the whole file). Users with no saved settings are
-        /// skipped: they already follow the plugin defaults. Names that have no per-user counterpart are returned as unsupported.
+        /// skipped: they already follow the plugin defaults. Names that have no per-user counterpart, and Media Tags settings
+        /// (<see cref="MediaTagsPageFields"/>, applied from the Media Tags tab), are returned as unsupported.
         /// </summary>
         [HttpPost("apply-user-settings")]
         [Authorize]
@@ -8443,7 +9035,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var unsupported = new List<string>();
             foreach (var name in requested)
             {
-                if (!cfgProps.TryGetValue(name, out var from))
+                // Media Tags settings are owned by the Media Tags tab, which applies them to users through
+                // reset-all-users-settings (normalized there); this page never sends them, so refuse them here too.
+                if (!cfgProps.TryGetValue(name, out var from) || MediaTagsPageFields.Allowed.Contains(name))
                 {
                     unsupported.Add(name);
                     continue;
@@ -8557,10 +9151,141 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             return Ok(new { success = true, message = "Tag cache rebuild started in the background." });
         }
 
+        /// <summary>
+        /// Server tag cache state for the Media Tags admin page's Overview: whether
+        /// the cache is on, how many items it holds, when it last changed (Unix ms,
+        /// 0 = never) and whether a full build is running. Admin only.
+        /// </summary>
+        [HttpGet("tag-cache/summary")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetTagCacheSummary()
+        {
+            if (!IsAdminUser()) return Forbid();
+
+            var enabled = JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode == true;
+            return Ok(new
+            {
+                enabled,
+                entries = enabled ? _tagCacheService.Count : 0,
+                lastModified = enabled ? _tagCacheService.LastModified : 0,
+                rebuilding = enabled && _tagCacheService.IsRebuilding,
+            });
+        }
+
+        /// <summary>
+        /// The Leaving soon source state for the Media Tags tab (counts, times, last failure). Never the URL,
+        /// key or names. Admin only.
+        /// </summary>
+        /// <param name="leavingSoon">The Leaving soon service.</param>
+        /// <returns>The status.</returns>
+        [HttpGet("admin/leaving-soon")]
+        [Authorize]
+        [Produces("application/json")]
+        public IActionResult GetLeavingSoonStatus([FromServices] Services.LeavingSoonService leavingSoon)
+        {
+            if (!IsAdminUser()) return Forbid();
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+        }
+
+        /// <summary>Refresh the Leaving soon facts now (the Media Tags tab's Refresh), then answer the status. Admin only.</summary>
+        /// <param name="leavingSoon">The Leaving soon service.</param>
+        /// <param name="cancellationToken">The request's cancellation.</param>
+        /// <returns>The status after the refresh.</returns>
+        [HttpPost("admin/leaving-soon/refresh")]
+        [Authorize]
+        [Produces("application/json")]
+        public async Task<IActionResult> RefreshLeavingSoon([FromServices] Services.LeavingSoonService leavingSoon, CancellationToken cancellationToken)
+        {
+            if (!IsAdminUser()) return Forbid();
+            await _tagCacheService.RefreshLeavingAsync(force: true, cancellationToken).ConfigureAwait(false);
+            return Ok(leavingSoon.Status(JellyfinEnhanced.Instance?.Configuration));
+        }
+
+        /// <summary>
+        /// Saves a few plugin configuration fields on top of the configuration the server holds now (the Media Tags
+        /// page saves field by field). It reads and writes inside the same critical section as every other save, so
+        /// it never puts back an older value of a field it was not asked to change, even one another save (the main
+        /// configuration page's) wrote while this request was waiting. Only the Media Tags tab's own fields
+        /// (<see cref="MediaTagsPageFields"/>) are accepted; every other field stays with the main page's full save.
+        /// A field listed in <c>Expected</c> with the value the caller read before editing it is refused with 409 and
+        /// the server's value when that value has changed since; nothing is written then. Admin only.
+        /// </summary>
+        /// <param name="request">The changed fields and, per field, the value read before the edit.</param>
+        /// <returns>
+        /// 200 with the stored values, 400 for a field the page does not own or a value outside the field's contract
+        /// (<see cref="MediaTagsPageFields.TryNormalize"/>), 409 with the conflicts. A body (the whole `Changes` and `Expected` document) over 8 MiB is refused while
+        /// it is read, before the action runs (Jellyfin's exception middleware answers 500).
+        /// </returns>
+        [HttpPost("admin/configuration")]
+        [Authorize]
+        [RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)]
+        [Produces("application/json")]
+        public IActionResult PatchConfiguration([FromBody] ConfigurationPatchRequest? request)
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null) return StatusCode(503);
+            if (request?.Changes == null || request.Changes.Count == 0) return BadRequest(new { error = "No changes." });
+
+            var result = PluginConfigurationPatch.Apply(plugin, request.Changes, request.Expected, MediaTagsPageFields.Allowed);
+            if (result.Error != null) return BadRequest(new { error = result.Error });
+            if (result.Conflicts.Count > 0) return Conflict(new { conflicts = result.Conflicts });
+            return Ok(new { values = result.Values });
+        }
+
+        /// <summary>
+        /// The server-wide Media Tags settings as a portable document (<see cref="MediaTagsPortable.ExportAdmin"/>):
+        /// every field the Media Tags tab writes except signals and secrets (API keys and the custom rule key are
+        /// never part of it). Admin only.
+        /// </summary>
+        /// <returns>The document.</returns>
+        [HttpGet("admin/media-tags/export")]
+        [Authorize]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        [Produces("application/json")]
+        public IActionResult ExportAdminMediaTags()
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null) return StatusCode(503);
+            return Ok(MediaTagsPortable.ExportAdmin(plugin.Configuration, MediaTagsPageFields.Allowed));
+        }
+
+        /// <summary>
+        /// What importing a server-wide Media Tags document would change: each field read and checked as the field
+        /// patch reads it; unknown, secret and invalid fields are reported and skipped. Nothing is written: the page
+        /// applies the changes through <c>POST admin/configuration</c> with the values it read as expected. Admin only.
+        /// </summary>
+        /// <param name="document">The document.</param>
+        /// <returns>200 <c>{kind, v, imported, changes, skipped}</c>; 400 <c>{error}</c> for a document refused as a whole.</returns>
+        [HttpPost("admin/media-tags/preview")]
+        [Authorize]
+        [RequestSizeLimit(PluginConfigurationPatch.MaxRequestBytes)]
+        [Produces("application/json")]
+        public IActionResult PreviewAdminMediaTags([FromBody] JsonElement document)
+        {
+            if (!IsAdminUser()) return Forbid();
+            var plugin = JellyfinEnhanced.Instance;
+            if (plugin == null) return StatusCode(503);
+            var preview = MediaTagsPortable.PreviewAdmin(document, plugin.Configuration, MediaTagsPageFields.Allowed);
+            return preview.Error != null ? BadRequest(new { error = preview.Error }) : Ok(PreviewBody(preview));
+        }
+
+        /// <summary>The body of <see cref="PatchConfiguration"/>.</summary>
+        public sealed class ConfigurationPatchRequest
+        {
+            /// <summary>Gets or sets the changed fields (PluginConfiguration property name → value).</summary>
+            public Dictionary<string, JsonElement>? Changes { get; set; }
+
+            /// <summary>Gets or sets, per changed field, the value read before it was edited.</summary>
+            public Dictionary<string, JsonElement>? Expected { get; set; }
+        }
+
         [HttpGet("tag-cache/{userId}")]
         [Authorize]
         [Produces("application/json")]
-        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null)
+        public IActionResult GetTagCache(Guid userId, [FromQuery] long? since = null, [FromQuery] string? known = null, [FromQuery] string? after = null, [FromQuery] int? limit = null)
         {
             if (JellyfinEnhanced.Instance?.Configuration?.TagCacheServerMode != true)
             {
@@ -8639,6 +9364,22 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // mutated nothing is shared (TryGetSerializedItems reports it not
             // shareable) and the request is serialized on its own below, like
             // the delta and strip paths.
+            // A paged full load (`limit`, then `after` = the previous page's `next`): one bounded page of the
+            // same generation. Its strip fingerprint covers every guarded entry, as a delta's does, so every
+            // page and the catch-up delta carry the same filterRevision.
+            if (!since.HasValue && limit is > 0)
+            {
+                var pageItems = _tagCacheService.GetCachePageForUser(user, string.IsNullOrEmpty(after) ? null : after, Math.Clamp(limit.Value, 100, 5000), out var pageVersion, out var pageTimestamp, out var pageAccess, out var next);
+                if (spPolicy != null)
+                {
+                    var guarded = _tagCacheService.GetCacheForUser(user, out _, out _, out _, long.MaxValue, guardedRider ?? ((key, e) => _spoilerTagDataStripper.GetGuardedKind(spPolicy.State, key, e) != null));
+                    stripFingerprint = _spoilerTagDataStripper.StripTagCache(spPolicy, user, guarded);
+                    _spoilerTagDataStripper.StripTagCache(spPolicy, user, pageItems);
+                }
+
+                return Respond(pageVersion, pageTimestamp, pageAccess, JsonSerializer.SerializeToUtf8Bytes(pageItems, jsonOptions), pageItems.Count, null, next);
+            }
+
             if (!since.HasValue && spPolicy == null)
             {
                 if (_tagCacheService.TryGetSerializedItems(user, out var sharedVersion, out var sharedTimestamp, out var sharedAccessRevision, out var sharedItemsJson, out var sharedCount, out var shareable))
@@ -8671,20 +9412,39 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 }
             }
 
-            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, since, guardedRider);
+            var items = _tagCacheService.GetCacheForUser(user, out var cacheVersion, out var cacheTimestamp, out var accessRevision, out var removed, since, guardedRider);
 
             if (spPolicy != null)
             {
                 stripFingerprint = _spoilerTagDataStripper.StripTagCache(spPolicy, user, items);
             }
 
+            // A caller whose filter differs only in access reconciles its copy from this delta (`visible` drops
+            // what it can no longer see). The entries it still sees whose projection depends on access (a
+            // series' facts from an episode it lost, a collection's Custom Tag or Leaving fact) kept their
+            // LastUpdated, so they ride along freshly projected; the walk runs again only on that mismatch.
+            if (since.HasValue && known != null && !string.Equals(known, FilterRevisionOf(accessRevision), StringComparison.Ordinal))
+            {
+                Func<string, Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry, bool> reconcileRider = guardedRider == null
+                    ? (_, e) => Services.TagCacheService.ProjectsAccess(e)
+                    : (key, e) => Services.TagCacheService.ProjectsAccess(e) || guardedRider(key, e);
+                items = _tagCacheService.GetCacheForUser(user, out cacheVersion, out cacheTimestamp, out accessRevision, out removed, since, reconcileRider);
+                if (spPolicy != null)
+                {
+                    stripFingerprint = _spoilerTagDataStripper.StripTagCache(spPolicy, user, items);
+                }
+            }
+
             // `items` is final (post Spoiler Guard strip above); serialized once.
             var itemsJson = JsonSerializer.SerializeToUtf8Bytes(items, jsonOptions);
-            return Respond(cacheVersion, cacheTimestamp, accessRevision, itemsJson, items.Count);
+            return Respond(cacheVersion, cacheTimestamp, accessRevision, itemsJson, items.Count, removed);
+
+            string FilterRevisionOf(string access) => Convert.ToHexString(
+                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
 
             // The rest of the response — review ratings, filterRevision, body,
             // ETag/304 — for either source of `items`.
-            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount)
+            IActionResult Respond(long version, long timestamp, string access, byte[] itemsBytes, int itemCount, string[]? removedIds = null, string? next = null)
             {
                 // The poster review chips resolve from this map instead of asking
                 // /reviews/ratings for every page of cards: it holds the average for
@@ -8705,10 +9465,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     }
                 }
 
-                var filterRevision = Convert.ToHexString(
-                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(access + "#" + stripFingerprint)), 0, 12);
+                var filterRevision = FilterRevisionOf(access);
+                // The same fingerprint without the access part: when only access changed (an item the user cannot
+                // see was added, or one they could see was hidden), a delta can still correct a stored copy by
+                // dropping what is no longer `visible`; any other change still needs a full download.
+                var filterBase = Convert.ToHexString(
+                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(stripFingerprint + "#ratings:" + Services.TagCacheService.SourceRatingsConfigured)), 0, 12);
+                var visible = since.HasValue && known != null && !string.Equals(known, filterRevision, StringComparison.Ordinal)
+                    ? _tagCacheService.VisibleKeys(user, version)
+                    : null;
 
-                // Body { version, timestamp, servedAt, filterRevision, count, items,
+                // Body { version, timestamp, servedAt, filterRevision, [removed,] count, items,
                 // reviewRatings }, assembled around the serialized items without
                 // another serialization. The ETag is a hash of the FINAL response
                 // body minus servedAt (see TagCacheResponseBody.ETag), not of
@@ -8724,7 +9491,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     filterRevision,
                     itemCount,
                     itemsBytes,
-                    reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions));
+                    reviewRatings == null ? null : JsonSerializer.SerializeToUtf8Bytes(reviewRatings, jsonOptions),
+                    removedIds,
+                    filterBase,
+                    visible,
+                    next);
 
                 // no-cache (not no-store): the client may keep a copy to revalidate against,
                 // but must always revalidate. Freshness is unchanged, this only avoids
@@ -8749,7 +9520,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         // does — the first registered JSON formatter that writes
         // application/json (Jellyfin registers its own PascalCase profile
         // formatter ahead of the default one) — and cached, since the formatter
-        // list is fixed for the process.
+        // list is fixed for the process. The one difference: a copy that leaves
+        // out TagCacheEntry.LatestEpisodeId and StatusEpisodeIds, which only the
+        // server's per-user filter reads (the disk snapshot keeps them).
         private static JsonSerializerOptions? _tagCacheJsonOptions;
 
         // One shareable full-load serialization at a time (see GetTagCache):
@@ -8776,6 +9549,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             }
 
             options ??= HttpContext.RequestServices.GetRequiredService<IOptions<Microsoft.AspNetCore.Mvc.JsonOptions>>().Value.JsonSerializerOptions;
+            options = new JsonSerializerOptions(options)
+            {
+                TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.WithAddedModifier(
+                    options.TypeInfoResolver ?? new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver(),
+                    static typeInfo =>
+                    {
+                        if (typeInfo.Type != typeof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry)) return;
+                        foreach (var property in typeInfo.Properties)
+                        {
+                            // By CLR name: the JSON name follows the host's naming policy.
+                            if (property.AttributeProvider is System.Reflection.PropertyInfo clrProperty
+                                && (clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.LatestEpisodeId)
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.StatusEpisodeIds)
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.QualityEpisodeIds)
+                                    || clrProperty.Name == nameof(Jellyfin.Plugin.JellyfinEnhanced.Model.TagCacheEntry.NextEpisodePremiere)))
+                            {
+                                property.ShouldSerialize = static (_, _) => false;
+                            }
+                        }
+                    }),
+            };
             _tagCacheJsonOptions = options;
             return options;
         }
@@ -8820,10 +9614,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var state = _whatsNewService.GetState();
             if (state == null)
             {
-                return Ok(new { pluginVersion = (string?)null, newSettings = new Dictionary<string, string>() });
+                return Ok(new { pluginVersion = default(string), newSettings = new Dictionary<string, string>(), mediaTags = new Dictionary<string, object>() });
             }
 
-            return Ok(new { pluginVersion = state.PluginVersion, newSettings = state.NewSettings });
+            // New settings that live on the Media Tags tab: where on it, so the banner can open it there.
+            var locations = _whatsNewService.GetMediaTagsLocations();
+            var mediaTags = state.NewSettings.Keys
+                .Where(locations.ContainsKey)
+                .ToDictionary(id => id, id => (object)new { page = Services.WhatsNewService.MediaTagsPageName, tab = locations[id].Tab, group = locations[id].Group }, StringComparer.Ordinal);
+            return Ok(new { pluginVersion = state.PluginVersion, newSettings = state.NewSettings, mediaTags });
         }
 
         [HttpPost("whats-new/dismiss")]
@@ -8842,7 +9641,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
         public IActionResult GetTagData(
             Guid userId,
             [FromBody] string[] ids,
-            [FromQuery] string? mediaSourceId = null)
+            [FromQuery] string? mediaSourceId = null,
+            [FromQuery] bool latestEpisode = false)
         {
             var authorizationResult = AuthorizeUserAccess(userId, out var user);
             if (authorizationResult != null)
@@ -8883,6 +9683,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     .ToList();
             }
 
+            // Subtitle languages for the Language Tags overlay, the way the server
+            // tag cache stores them (TagCacheService.ExtractMediaData): lower-cased,
+            // languageless codes ("und", "mul", "qaa"…) dropped, one per language however many SDH tracks carry
+            // it, forced-only languages left out. Subtitle languages are Jellyfin's
+            // own (the Matroska BCP-47 reader only aligns audio tracks).
+            static string[] TagDataSubtitleLanguages(List<MediaSourceInfo> sources) => sources
+                .SelectMany(source => (IEnumerable<MediaStream>?)source.MediaStreams ?? Array.Empty<MediaStream>())
+                .Where(stream => stream.Type == MediaStreamType.Subtitle && !stream.IsForced)
+                .Select(stream => Services.TagCacheService.NormalizeStreamLanguage(stream.Language))
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
             // Age rating for the Age Rating Tags overlay. Seasons/Episodes rarely
             // carry their own, so fall back to the Series — resolved here (not on
             // the client) so batch mode matches the server tag cache, which does
@@ -8895,6 +9708,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             // A batch is typically one series' worth of episodes, so the parent
             // lookup is memoized per request rather than repeated per item.
             var seriesRatingMemo = new Dictionary<Guid, string?>();
+            // Library id for the tag look rules, as the server tag cache stores
+            // it (Seasons/Episodes take their Series'), memoized per series.
+            var seriesLibraryMemo = new Dictionary<Guid, string?>();
+            string? TagDataLibraryId(BaseItem tagItem) => Services.ItemLibraryResolver.Resolve(_libraryManager, tagItem, null, seriesLibraryMemo);
+            // Custom tag rule ids, as the server tag cache stores them, with collection
+            // matches only for collections this user can access. The Spoiler Guard stubs
+            // drop them with the genres (SpoilerStripTags): a tag or collection label can
+            // be a plot fact.
+            var customSeriesMemo = new Dictionary<Guid, BaseItem?>();
+            string[]? TagDataCustomTags(BaseItem tagItem) => _tagCacheService.GetCustomTags(tagItem, user, customSeriesMemo);
             string? ResolveTagDataOfficialRating(BaseItem tagItem, bool seriesOnly = false)
             {
                 if (!seriesOnly && !string.IsNullOrWhiteSpace(tagItem.OfficialRating))
@@ -8943,19 +9766,61 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
             var spStripRatings = spoilerPolicy?.StripRatings == true;
             var spReplaceTitle = spoilerPolicy?.ReplaceTitle == true;
 
-            var itemIds = ids;
-            var results = new List<object>(itemIds.Length);
-
-            // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources)
-            foreach (var idStr in itemIds)
+            // Status Tags dates (Unix ms, like the server tag cache's entries; null
+            // is omitted). The episode-derived facts (LatestEpisodeAdded and the
+            // schedule/milestone facts) cost one episode query per Series/Season,
+            // so they are only resolved when the client's Status Tags ask for them
+            // (?latestEpisode=true), and through the user so only episodes they can
+            // see count (the server cache gets the same rules from
+            // StatusTagsEpisodeFacts and filters them per user instead).
+            long? TagDataPremiereDate(BaseItem tagItem) =>
+                tagItem is MediaBrowser.Controller.Entities.Movies.Movie
+                    || tagItem is MediaBrowser.Controller.Entities.TV.Series
+                    || tagItem is MediaBrowser.Controller.Entities.TV.Episode
+                    ? Services.TagCacheService.ToUnixMilliseconds(tagItem.PremiereDate)
+                    : null;
+            string? TagDataSeriesStatus(BaseItem tagItem) =>
+                tagItem is MediaBrowser.Controller.Entities.TV.Series statusSeries ? statusSeries.Status?.ToString() : null;
+            // A few sorted, limited queries per container (never every episode),
+            // once per container per request.
+            var episodeFactsMemo = new Dictionary<Guid, (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts)>();
+            var factsNow = DateTime.UtcNow;
+            (long? LatestAdded, Services.StatusTagsEpisodeFacts? Facts) TagDataEpisodeFacts(BaseItem tagItem)
             {
-                if (!Guid.TryParse(idStr.Trim(), out var itemId))
-                    continue;
+                if (!latestEpisode || tagItem is not (MediaBrowser.Controller.Entities.TV.Series or MediaBrowser.Controller.Entities.TV.Season))
+                {
+                    return (null, null);
+                }
 
-                var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
-                if (item == null)
-                    continue;
+                if (episodeFactsMemo.TryGetValue(tagItem.Id, out var memo)) return memo;
+                return episodeFactsMemo[tagItem.Id] = Services.StatusTagsEpisodeLookup.Load(_libraryManager, tagItem, () => new InternalItemsQuery(user)
+                {
+                    ParentId = tagItem.Id,
+                    IncludeItemTypes = new[] { BaseItemKind.Episode },
+                    Recursive = true,
+                    IsVirtualItem = false,
+                    DtoOptions = new DtoOptions(false) { EnableImages = false, EnableUserData = false },
+                }, factsNow);
+            }
 
+            // The Series/Movie stubs carry no provider ids, but a trending rank is
+            // not a spoiler, so the Status Tags get the TMDB id on its own (the
+            // server tag cache's strip keeps TmdbId the same way).
+            string? TagDataTmdbId(BaseItem tagItem) =>
+                tagItem.ProviderIds?.TryGetValue("Tmdb", out var tmdbId) == true && !string.IsNullOrEmpty(tmdbId) ? tmdbId : null;
+
+            // Hydrate through the viewer before enrichment; denied ids never trigger upstream requests.
+            var accessibleItems = ids.Where(id => Guid.TryParse(id?.Trim(), out _))
+                .Select(id => _libraryManager.GetItemById<BaseItem>(Guid.Parse(id.Trim()), user))
+                .Where(item => item != null).Select(item => item!).ToArray();
+            _tagCacheService.WarmSourceRatingsForRequest(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
+            _tagCacheService.WarmLogosForItems(accessibleItems, HttpContext?.RequestAborted ?? CancellationToken.None);
+            _tagCacheService.QueueScenesRefresh(accessibleItems);
+            var results = new List<object>(accessibleItems.Length);
+
+            // Process items sequentially (Jellyfin library manager is not fully thread-safe for GetMediaSources).
+            foreach (var item in accessibleItems)
+            {
                 var kind = item.GetBaseItemKind();
                 var isContainer = kind == BaseItemKind.Series || kind == BaseItemKind.Season;
                 var spoilerStub = stripTagsEnabled
@@ -8989,15 +9854,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // stripped episodes only is the correct trade-off.
                     List<object>? stubStreams = null;
                     List<object>? stubSources = null;
+                    string[]? stubSubtitles = null;
                     if (!spStripGenres)
                     {
                         var stubMediaSources =
                             SelectTagDataMediaSources(spEp.GetMediaSources(false));
+                        stubSubtitles = TagDataSubtitleLanguages(stubMediaSources);
                         stubStreams = stubMediaSources
                             .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spEp.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                             .Where(resolved =>
                                 resolved.Resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio)
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Subtitle)
                             .Select(resolved =>
                             {
                                 var s = resolved.Resolved.Stream;
@@ -9011,9 +9879,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     Profile = s.Profile,
                                     Height = s.Height,
                                     Width = s.Width,
+                                    AspectRatio = s.AspectRatio,
+                                    RealFrameRate = s.RealFrameRate,
+                                    AverageFrameRate = s.AverageFrameRate,
+                                    IsInterlaced = s.IsInterlaced,
+                                    IsHearingImpaired = SubtitleAccessibility.IsSdh(s.IsHearingImpaired, s.Title, s.DisplayTitle),
+                                    Title = default(string?),
                                     Channels = s.Channels,
                                     ChannelLayout = s.ChannelLayout,
                                     VideoRangeType = s.VideoRangeType,
+                                    VideoRange = s.Type == MediaStreamType.Video ? Services.PosterTags.Resolution.QualityTagRules.CoarseRange(s.VideoRangeType.ToString(), s.VideoRange.ToString()) : null,
                                     // DisplayTitle's GETTER prepends the raw Title field,
                                     // which on user-muxed mkvs (MakeMKV / Plex / Sonarr
                                     // renamers) commonly carries the episode name — under
@@ -9037,19 +9912,29 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spEp.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spEp.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spEp.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spEp),
+                        // Hide tags strips the Logos group like genres (shared/native strip too).
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spEp),
                         OfficialRating = ResolveTagDataOfficialRating(spEp, seriesOnly: spStripRatings),
+                        LibraryId = TagDataLibraryId(spEp),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spEp),
+                        Leaving = spStripGenres ? null : _tagCacheService.GetLeavingForUser(spEp, user),
                         // Suppress the parent-series rating fallback only when the
                         // rating strip is requested; leaving SeriesId set under tag-only
                         // strip lets the rating overlay keep rendering.
                         SeriesId = spStripRatings ? (Guid?)null : spEp.SeriesId,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
-                        Path = (string?)null,
+                        RunTimeTicks = item.RunTimeTicks,
+                        Path = default(string),
                         MediaStreams = stubStreams,
                         MediaSources = stubSources,
+                        SubtitleLanguages = stubSubtitles,
                         FirstEpisode = (object?)null,
                         // Align with the field-strip filter (which empties Tags).
                         Tags = spStripGenres ? Array.Empty<string>() : (spEp.Tags ?? Array.Empty<string>()),
+                        // When it was added is not a spoiler (Jellyfin lists it as Date Added).
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spEp.DateCreated),
                     });
                     continue;
                 }
@@ -9070,6 +9955,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                             ? "Spoiler Guard activated"
                             : spoilerCfg.SpoilerOverviewPlaceholder;
                     }
+                    var seriesFacts = TagDataEpisodeFacts(spSeries);
                     results.Add(new
                     {
                         Id = item.Id,
@@ -9077,15 +9963,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spSeries.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spSeries.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeries.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeries),
+                        Awards = spStripRatings ? null : _tagCacheService.GetAwards(spSeries),
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spSeries),
                         OfficialRating = ResolveTagDataOfficialRating(spSeries),
-                        SeriesId = (Guid?)null,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        LibraryId = TagDataLibraryId(spSeries),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spSeries),
+                        Leaving = spStripGenres ? null : _tagCacheService.GetLeavingForUser(spSeries, user),
+                        SeriesId = default(Guid?),
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
+                        RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,
                         MediaStreams = (List<object>?)null,
                         MediaSources = (List<object>?)null,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spSeries.Tags ?? Array.Empty<string>()),
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spSeries.DateCreated),
+                        PremiereDate = TagDataPremiereDate(spSeries),
+                        LatestEpisodeAdded = seriesFacts.LatestAdded,
+                        // A new season or the show's status says nothing about the plot.
+                        Status = TagDataSeriesStatus(spSeries),
+                        LatestEpisodeAired = seriesFacts.Facts?.LatestAired,
+                        LatestEpisodeIndex = seriesFacts.Facts?.LatestIndex,
+                        SeasonPremiere = seriesFacts.Facts?.SeasonPremiere,
+                        TmdbId = TagDataTmdbId(spSeries),
                     });
                     continue;
                 }
@@ -9101,15 +10003,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     string? stubName = item.Name;
 
                     List<object>? stubStreams = null;
+                    string[]? stubSubtitles = null;
                     if (!spStripGenres)
                     {
                         var stubMs =
                             SelectTagDataMediaSources(spMovie.GetMediaSources(false));
+                        stubSubtitles = TagDataSubtitleLanguages(stubMs);
                         stubStreams = stubMs
                             .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, spMovie.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                             .Where(resolved =>
                                 resolved.Resolved.Stream.Type == MediaStreamType.Video
-                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio)
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Audio
+                                || resolved.Resolved.Stream.Type == MediaStreamType.Subtitle)
                             .Select(resolved =>
                             {
                                 var s = resolved.Resolved.Stream;
@@ -9123,9 +10028,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                     Profile = s.Profile,
                                     Height = s.Height,
                                     Width = s.Width,
+                                    AspectRatio = s.AspectRatio,
+                                    RealFrameRate = s.RealFrameRate,
+                                    AverageFrameRate = s.AverageFrameRate,
+                                    IsInterlaced = s.IsInterlaced,
+                                    IsHearingImpaired = SubtitleAccessibility.IsSdh(s.IsHearingImpaired, s.Title, s.DisplayTitle),
+                                    Title = default(string?),
                                     Channels = s.Channels,
                                     ChannelLayout = s.ChannelLayout,
                                     VideoRangeType = s.VideoRangeType,
+                                    VideoRange = s.Type == MediaStreamType.Video ? Services.PosterTags.Resolution.QualityTagRules.CoarseRange(s.VideoRangeType.ToString(), s.VideoRange.ToString()) : null,
                                     DisplayTitle = default(string?),
                                 };
                             })
@@ -9139,15 +10051,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spMovie.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spMovie.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spMovie.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spMovie),
+                        Awards = spStripRatings ? null : _tagCacheService.GetAwards(spMovie),
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spMovie),
+                        Scenes = spStripGenres ? null : _tagCacheService.GetScenes(spMovie),
                         OfficialRating = ResolveTagDataOfficialRating(spMovie),
-                        SeriesId = (Guid?)null,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        LibraryId = TagDataLibraryId(spMovie),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spMovie),
+                        Leaving = spStripGenres ? null : _tagCacheService.GetLeavingForUser(spMovie, user),
+                        SeriesId = default(Guid?),
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
-                        Path = (string?)null,
+                        RunTimeTicks = item.RunTimeTicks,
+                        Path = default(string),
                         MediaStreams = stubStreams,
-                        MediaSources = (List<object>?)null,
+                        MediaSources = default(List<object>),
+                        SubtitleLanguages = stubSubtitles,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spMovie.Tags ?? Array.Empty<string>()),
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spMovie.DateCreated),
+                        PremiereDate = TagDataPremiereDate(spMovie),
+                        TmdbId = TagDataTmdbId(spMovie),
                     });
                     continue;
                 }
@@ -9169,6 +10093,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     {
                         stubName = $"Season {spSeason.IndexNumber.Value}";
                     }
+                    var seasonFacts = TagDataEpisodeFacts(spSeason);
                     results.Add(new
                     {
                         Id = item.Id,
@@ -9176,15 +10101,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                         Genres = spStripGenres ? Array.Empty<string>() : (spSeason.Genres ?? Array.Empty<string>()),
                         CommunityRating = spStripRatings ? (float?)null : spSeason.CommunityRating,
                         CriticRating = spStripRatings ? (float?)null : spSeason.CriticRating,
+                        Ratings = spStripRatings ? null : _tagCacheService.GetSourceRatings(spSeason),
+                        Logos = spStripGenres ? null : _tagCacheService.GetLogos(spSeason),
                         OfficialRating = ResolveTagDataOfficialRating(spSeason, seriesOnly: spStripRatings),
+                        LibraryId = TagDataLibraryId(spSeason),
+                        CustomTags = spStripGenres ? null : TagDataCustomTags(spSeason),
+                        Leaving = spStripGenres ? null : _tagCacheService.GetLeavingForUser(spSeason, user),
                         SeriesId = spStripRatings ? (Guid?)null : spSeason.SeriesId,
-                        ProviderIds = (IDictionary<string, string>?)null,
+                        ProviderIds = default(IDictionary<string, string>),
                         Name = stubName,
+                        RunTimeTicks = item.RunTimeTicks,
                         Path = (string?)null,
                         MediaStreams = (List<object>?)null,
                         MediaSources = (List<object>?)null,
                         FirstEpisode = (object?)null,
                         Tags = spStripGenres ? Array.Empty<string>() : (spSeason.Tags ?? Array.Empty<string>()),
+                        DateCreated = Services.TagCacheService.ToUnixMilliseconds(spSeason.DateCreated),
+                        LatestEpisodeAdded = seasonFacts.LatestAdded,
+                        // Only the added span: air dates and numbers are what the
+                        // premiere/finale badges read (the cache strip drops them too).
+                        SeasonAddedSpan = seasonFacts.Facts?.AddedSpan,
                     });
                     continue;
                 }
@@ -9193,16 +10129,25 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 // Series and Season are containers with no media files — skip the expensive call
                 List<object>? trimmedStreams = null;
                 List<object>? trimmedSources = null;
+                var namingTags = new Services.MediaNamingTags();
+                string[]? subtitleLanguages = null;
+                string[]? sdhSubtitleLanguages = null;
                 if (!isContainer)
                 {
                     var mediaSources =
                         SelectTagDataMediaSources(item.GetMediaSources(false));
+                    namingTags = Services.MediaNamingTags.Detect(item.Path, mediaSources, item.Name, item.OriginalTitle);
+                    subtitleLanguages = TagDataSubtitleLanguages(mediaSources);
+                    sdhSubtitleLanguages = mediaSources.SelectMany(source => source.MediaStreams ?? new List<MediaStream>())
+                        .Where(stream => stream.Type == MediaStreamType.Subtitle && !stream.IsForced && SubtitleAccessibility.IsSdh(stream.IsHearingImpaired, stream.Title, stream.DisplayTitle))
+                        .Select(stream => Services.TagCacheService.NormalizeStreamLanguage(stream.Language)).OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
                     // OPT-5: Only include fields tag renderers need from MediaStreams
                     trimmedStreams = mediaSources
                         .SelectMany(source => MediaStreamLanguageResolver.Resolve(source, item.Path, _matroskaLanguageCache).Select(r => (SourceId: source.Id, Resolved: r)))
                         .Where(resolved =>
                             resolved.Resolved.Stream.Type == MediaStreamType.Video
-                            || resolved.Resolved.Stream.Type == MediaStreamType.Audio)
+                            || resolved.Resolved.Stream.Type == MediaStreamType.Audio
+                            || (resolved.Resolved.Stream.Type == MediaStreamType.Subtitle && !resolved.Resolved.Stream.IsForced))
                         .Select(resolved =>
                         {
                             var s = resolved.Resolved.Stream;
@@ -9216,9 +10161,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                                 Profile = s.Profile,
                                 Height = s.Height,
                                 Width = s.Width,
+                                AspectRatio = s.AspectRatio,
+                                RealFrameRate = s.RealFrameRate,
+                                AverageFrameRate = s.AverageFrameRate,
+                                IsInterlaced = s.IsInterlaced,
+                                IsHearingImpaired = s.IsHearingImpaired,
+                                Title = s.Title,
                                 Channels = s.Channels,
                                 ChannelLayout = s.ChannelLayout,
                                 VideoRangeType = s.VideoRangeType,
+                                    VideoRange = s.Type == MediaStreamType.Video ? Services.PosterTags.Resolution.QualityTagRules.CoarseRange(s.VideoRangeType.ToString(), s.VideoRange.ToString()) : null,
                                 DisplayTitle = s.DisplayTitle,
                             };
                         })
@@ -9226,10 +10178,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     // Include filenames only (not full paths) for IMAX/3D/media-stub detection.
                     // Full server paths are not exposed to avoid disclosing filesystem layout.
                     trimmedSources = mediaSources
-                        .Select(s => (object)new
+                        .Select(s =>
                         {
-                            Path = string.IsNullOrEmpty(s.Path) ? null : System.IO.Path.GetFileName(s.Path),
-                            Name = s.Name,
+                            var versionNaming = Services.MediaNamingTags.Detect(item.Path, new[] { s }, item.Name, item.OriginalTitle);
+                            return (object)new
+                            {
+                                Id = s.Id,
+                                Source = versionNaming.Source,
+                                Edition = versionNaming.Edition,
+                                RunTimeTicks = s.RunTimeTicks,
+                                Path = Services.MediaNamingTags.FileName(s.Path),
+                                Name = Services.MediaNamingTags.FileName(s.Name),
+                                Is3D = s.Video3DFormat != null ? true : (bool?)null,
+                                Revision = Services.TagCacheService.MediaRevision(s),
+                            };
                         })
                         .ToList();
                 }
@@ -9258,6 +10220,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 var seriesId = (item is MediaBrowser.Controller.Entities.TV.Episode epItem) ? epItem.SeriesId
                              : (item is MediaBrowser.Controller.Entities.TV.Season sItem) ? sItem.SeriesId
                              : (Guid?)null;
+                var episodeFacts = TagDataEpisodeFacts(item);
 
                 results.Add(new
                 {
@@ -9266,18 +10229,50 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     Genres = item.Genres,
                     CommunityRating = item.CommunityRating,
                     CriticRating = item.CriticRating,
+                    Ratings = _tagCacheService.GetSourceRatings(item),
+                    // Scores still on their way from MDBList: the browser re-asks soon instead of keeping this answer.
+                    RatingsPending = _tagCacheService.SourceRatingsPending(item) ? true : (bool?)null,
+                    // When these scores stop being current (Unix ms): a browser keeps this answer until then, not its own cache lifetime.
+                    RatingsRefreshAt = _tagCacheService.SourceRatingsRefreshAt(item),
+                    Awards = _tagCacheService.GetAwards(item),
+                    Logos = _tagCacheService.GetLogos(item),
                     OfficialRating = ResolveTagDataOfficialRating(item),
+                    LibraryId = TagDataLibraryId(item),
+                    CustomTags = TagDataCustomTags(item),
+                    Leaving = _tagCacheService.GetLeavingForUser(item, user),
                     SeriesId = seriesId,
                     ProviderIds = item.ProviderIds,
                     Name = item.Name,
-                    Path = string.IsNullOrEmpty(item.Path) ? null : System.IO.Path.GetFileName(item.Path),
+                    RunTimeTicks = item.RunTimeTicks,
+                    Path = Services.MediaNamingTags.FileName(item.Path),
+                    Source = namingTags.Source,
+                    Edition = namingTags.Edition,
                     MediaStreams = trimmedStreams,
                     MediaSources = trimmedSources,
-                    FirstEpisode = firstEpisodeData
+                    SubtitleLanguages = subtitleLanguages,
+                    SdhSubtitleLanguages = sdhSubtitleLanguages,
+                    Scenes = _tagCacheService.GetScenes(item),
+                    FirstEpisode = firstEpisodeData,
+                    QualitySummary = isContainer ? _tagCacheService.GetQualitySummaryForUser(item, user) : null,
+                    DateCreated = Services.TagCacheService.ToUnixMilliseconds(item.DateCreated),
+                    PremiereDate = TagDataPremiereDate(item),
+                    LatestEpisodeAdded = episodeFacts.LatestAdded,
+                    Status = TagDataSeriesStatus(item),
+                    LatestEpisodeAired = episodeFacts.Facts?.LatestAired,
+                    LatestEpisodeIndex = episodeFacts.Facts?.LatestIndex,
+                    SeasonPremiere = episodeFacts.Facts?.SeasonPremiere,
+                    SeasonAddedSpan = episodeFacts.Facts?.AddedSpan,
+                    EpisodeIndex = latestEpisode && item is MediaBrowser.Controller.Entities.TV.Episode statusEpisode
+                        ? _tagCacheService.BuildStatusEpisodeIndex(statusEpisode, user, out _) : null,
+                    // Episodes: their numbers, for the premiere/finale badges.
+                    IndexNumber = item is MediaBrowser.Controller.Entities.TV.Episode numbered ? numbered.IndexNumber : null,
+                    ParentIndexNumber = item is MediaBrowser.Controller.Entities.TV.Episode numberedIn ? numberedIn.ParentIndexNumber : null,
                 });
             }
 
-            return Ok(new { Items = results });
+            // What Hide tags stripped from these answers ("none": nothing). The web batch
+            // fallback stamps what it keeps with it (SpoilerTagDataStripper.TagStripRevision).
+            return Ok(new { Items = results, StripRevision = Services.SpoilerTagDataStripper.TagStripRevision(spoilerPolicy) });
         }
 
 
@@ -9365,7 +10360,20 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                     SupportedOutputFormats = new[] { MediaBrowser.Model.Drawing.ImageFormat.Jpg },
                 }).ConfigureAwait(false);
 
-                var settings = posterTagSettings.Get(user.Id);
+                // The item's own look (a lock, a server-wide item look, a matching rule), as native clients get it.
+                var previewSeriesId = item switch
+                {
+                    MediaBrowser.Controller.Entities.TV.Episode episode => episode.SeriesId,
+                    MediaBrowser.Controller.Entities.TV.Season season => season.SeriesId,
+                    _ => Guid.Empty,
+                };
+                var previewSeriesIdN = previewSeriesId == Guid.Empty ? null : previewSeriesId.ToString("N");
+                Services.PosterTags.PosterTagLookFacts? LookFacts() => _tagCacheService.TryGetEntry(item.Id, out var lookEntry)
+                    ? Services.PosterTags.PosterTagLookFacts.FromEntry(lookEntry)
+                    : Services.PosterTags.PosterTagLookFacts.FromItem(_libraryManager, item);
+                var userPosterSettings = posterTagSettings.Get(user.Id);
+                var settings = userPosterSettings.ForItem(item.Id, previewSeriesIdN, LookFacts);
+                var lookSource = userPosterSettings.ResolveLook(item.Id.ToString("N"), previewSeriesIdN, LookFacts).Source;
                 // Same rule the stamper applies to the card's own indicator
                 // (NativePosterTagStamper.StampItem): played check or unplayed count.
                 var offset = topRightOffset ?? (_userDataManager.GetUserDataDto(item, user) is { } userData
@@ -9389,6 +10397,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Controllers
                 Response.Headers["X-JE-Poster-Tags-User-Enabled"] = settings.NativeEnabled ? "true" : "false";
                 Response.Headers["X-JE-Poster-Tags-Any-Group"] = settings.AnyGroupEnabled ? "true" : "false";
                 Response.Headers["X-JE-Poster-Tags-Settings-Digest"] = settings.Digest;
+                Response.Headers["X-JE-Poster-Tags-Look"] = lookSource;
                 Response.Headers["X-JE-Poster-Tags-Spoiler-Stripped"] = result.SpoilerStripped ? "true" : "false";
                 return File(result.Bytes ?? original, "image/jpeg");
             }

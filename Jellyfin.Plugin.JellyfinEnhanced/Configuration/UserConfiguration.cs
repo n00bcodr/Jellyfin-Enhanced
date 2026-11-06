@@ -40,6 +40,23 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool QualityTagsEnabled { get; set; }
         public bool ShowResolutionTag { get; set; } = true;
         public bool ShowSourceTag { get; set; } = true;
+
+        // Source and edition preferences.
+        /// <summary>Show the edition quality category; absent values inherit the admin default.</summary>
+        public bool? ShowEditionTag { get; set; }
+        public bool? ShowRuntimeTag { get; set; }
+        public bool? ShowVersionsTag { get; set; }
+        public bool? ShowAspectRatioTag { get; set; }
+        public bool? ShowFrameRateTag { get; set; }
+        /// <summary>Edition stack position after the six existing quality categories.</summary>
+        public int? EditionTagOrder { get; set; }
+        public int? RuntimeTagOrder { get; set; }
+        public int? VersionsTagOrder { get; set; }
+        public int? AspectRatioTagOrder { get; set; }
+        public int? FrameRateTagOrder { get; set; }
+        /// <summary>Allow CAM, TS, TC and SCR source tags; absent values inherit the admin default.</summary>
+        public bool? ShowLowQualitySourceTag { get; set; }
+
         public bool ShowDynamicRangeTag { get; set; } = true;
         public bool ShowSpecialFormatTag { get; set; } = true;
         public bool ShowVideoCodecTag { get; set; } = true;
@@ -54,6 +71,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool LanguageTagsEnabled { get; set; }
         public bool RatingTagsEnabled { get; set; }
         public bool AgeRatingTagsEnabled { get; set; }
+        public bool LogoTagsEnabled { get; set; }
+        public bool StatusTagsEnabled { get; set; }
+
+        /// <summary>Opt-in Awards poster group; administrator also gates refresh work.</summary>
+        public bool AwardsTagsEnabled { get; set; }
+        /// <summary>Legacy corner fallback for Awards.</summary>
+        public string AwardsTagsPosition { get; set; } = "top-left";
+        // Custom tag group (the administrator's tag/collection rules).
+        public bool CustomTagsEnabled { get; set; }
         public bool PeopleTagsEnabled { get; set; }
         public bool TagsHideOnHover { get; set; }
         public string QualityTagsPosition { get; set; } = "top-left";
@@ -61,6 +87,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         // "auto" = the user's Jellyfin audio language, "none" = no preference,
         // otherwise an ISO 639 code.
         public string QualityTagsPreferredAudioLanguage { get; set; } = string.Empty;
+        // Stream-derived quality display; nullable personal values follow the administrator.
+        /// <summary>QualityAudioDisplayMode: highest or all distinct stream values.</summary>
+        public string? QualityAudioDisplayMode { get; set; }
+        /// <summary>QualityVideoCodecDisplayMode: highest or all distinct stream values.</summary>
+        public string? QualityVideoCodecDisplayMode { get; set; }
+        /// <summary>QualityHdrDisplayMode: highest or all distinct stream values.</summary>
+        public string? QualityHdrDisplayMode { get; set; }
+        /// <summary>QualityMinimumResolution: minimum resolution threshold.</summary>
+        public string? QualityMinimumResolution { get; set; }
+        /// <summary>QualityHideSdr: hide SDR in All mode.</summary>
+        public bool? QualityHideSdr { get; set; }
+
+        // Series/season quality aggregation. Null inherits the administrator's default.
+        public string? SeriesQualityAggregation { get; set; }
+
         public string GenreTagsPosition { get; set; } = "top-right";
         public string LanguageTagsPosition { get; set; } = "bottom-left";
         public string RatingTagsPosition { get; set; } = "bottom-right";
@@ -70,11 +111,85 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Configuration
         public bool RatingTagsOnEpisodes { get; set; } = true;
         public bool RatingTagsOnContinueWatching { get; set; } = true;
         public bool RatingTagsOnNextUp { get; set; } = true;
+        public bool RatingTagsShowCommunity { get; set; } = true;
+        public bool RatingTagsShowCritic { get; set; } = true;
+
+        // Multi-source rating preferences. Null source list preserves legacy include switches.
+        /// <summary>Enabled rating sources in display order; empty hides all source scores.</summary>
+        public string[]? RatingTagsSources { get; set; }
+        /// <summary>Minimum rating normalised to ten (zero shows every score).</summary>
+        public double RatingTagsMinScore { get; set; } = 0;
+        /// <summary>Colour rating text by score, below explicit Tag Styles.</summary>
+        public bool RatingTagsColorByScore { get; set; } = false;
+        // Language Tags display (see LanguageTagDisplay): which tracks the
+        // group shows, flags or codes, and the Dual/Multi audio count badge.
+        public bool LanguageTagsShowAudio { get; set; } = true;
+        public bool LanguageTagsShowSubtitles { get; set; }
+        public string LanguageTagsStyle { get; set; } = "flags";
+        public string LanguageTagsCountBadge { get; set; } = "off";
+        /// <summary>Personal ISO 639 language priorities; null follows the server, empty means no priorities.</summary>
+        public string[]? LanguageTagsPriority { get; set; }
+        /// <summary>Only show priority languages; null inherits the current administrator policy.</summary>
+        public bool? LanguageTagsPriorityStrict { get; set; }
         public string AgeRatingTagsPosition { get; set; } = "bottom-right";
+        public string LogoTagsPosition { get; set; } = "bottom-left";
+        public string StatusTagsPosition { get; set; } = "top-right";
+        public string CustomTagsPosition { get; set; } = "top-left";
+        public bool StatusTagsJustAdded { get; set; } = true;
+        public bool StatusTagsNewRelease { get; set; } = true;
+        public bool StatusTagsTrending { get; set; } = true;
+        // Status Tags schedule / milestone / series-status badge groups.
+        public bool StatusTagsSchedule { get; set; } = true;
+        public bool StatusTagsMilestones { get; set; } = true;
+        public bool StatusTagsSeriesStatus { get; set; } = false;
+        public bool StatusTagsScenes { get; set; } = false;
+        // Leaving soon and the web-only direct-play warning families.
+        public bool StatusTagsLeaving { get; set; } = false;
+        public bool StatusTagsDirectPlay { get; set; } = false;
+        // Poster tag layout (see TagLayoutRules). Version 0 marks a document
+        // written before layouts existed: it keeps the corners layout, its
+        // position settings above, arrival ordering and the original limits
+        // until the user saves a layout setting, which writes version 1.
+        public string TagLayout { get; set; } = "corners";
+        public int TagLayoutSettingsVersion { get; set; }
+        public TagLayoutProfiles? TagLayouts { get; set; }
+        public List<string>? TagGroupOrder { get; set; }
+        public TagGroupCaps? TagGroupCaps { get; set; }
+        /// <summary>Personal "Where to show" switches per tag group; a null switch follows the administrator's default.</summary>
+        public TagGroupScopes? TagGroupScopes { get; set; }
+        public string TagLabelDensity { get; set; } = "full";
+
+        /// <summary>Poster tag size: smaller, default, larger or largest; null inherits the administrator default.</summary>
+        public string? TagScale { get; set; }
+
+        /// <summary>Poster tag spacing: tight, default or roomy; null inherits the administrator default.</summary>
+        public string? TagGap { get; set; }
+        // How close corners-layout chips sit to the card edge (default 6px, tight 3px,
+        // flush 0px); null follows the admin's default (normalized documents only).
+        public string? TagEdgeSpacing { get; set; }
+        // Tag Styles preset this user picked (TagStyleKeys.Presets); null follows the
+        // admin's preset. Only honoured while TagStylesAllowUserPreset is on.
+        public string? TagStylePreset { get; set; }
+        // Tag looks by rule and per-item lock (see TagLookValidation). Null
+        // rules inherit the administrator's default rules (normalized
+        // documents only); locks are this user's alone, keyed by item id.
+        public List<TagLookRule>? TagLookRules { get; set; }
+        public Dictionary<string, TagLayoutLock>? TagLayoutLocks { get; set; }
+        // Per-shape tag looks (see TagShapeRules): landscape cards and list rows
+        // can have their own layout, density, slots and caps. Null inherits the
+        // administrator's (normalized documents only); a null shape uses the
+        // default look.
+        public TagShapeOverrides? TagShapeOverrides { get; set; }
         public bool ShowRatingInPlayer { get; set; } = true;
         public bool RemoveContinueWatchingEnabled { get; set; }
         public string LastOpenedTab { get; set; } = string.Empty;
         public bool ReviewsExpandedByDefault { get; set; }
+        /// <summary>Last web date context, captured only when saving personal preferences; null uses JE language/server timezone.</summary>
+        private string? _nativePosterDateLocale;
+        private string? _nativePosterTimeZone;
+        public string? NativePosterDateLocale { get => _nativePosterDateLocale; set => _nativePosterDateLocale = NativePosterDateContext.Locale(value); }
+        public string? NativePosterTimeZone { get => _nativePosterTimeZone; set => _nativePosterTimeZone = NativePosterDateContext.TimeZone(value); }
+
         public string DisplayLanguage { get; set; } = string.Empty;
         public string CalendarDisplayMode { get; set; } = "list";
         public string CalendarDefaultViewMode { get; set; } = "agenda";

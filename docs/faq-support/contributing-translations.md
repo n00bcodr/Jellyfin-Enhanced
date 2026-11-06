@@ -32,6 +32,14 @@ Translate the visible wording while keeping the parts the interface needs to wor
     - Functional HTML, such as `<kbd>`, `<br>`, and links. Translate visible text without breaking the markup or changing required attributes.
     - Escape sequences and valid JSON syntax. For example, a newline inside a JSON string is written as `\n`.
 
+## Plural forms
+
+A string that holds a count (`{count}`, `{days}`, `{n}`, `{items}`, `{hours}`, `{minutes}` or `{seconds}`) can have one form per [CLDR plural category](https://cldr.unicode.org/index/cldr-spec/plural-rules) of your language: add the key with `_zero`, `_one`, `_two`, `_few`, `_many` or `_other` appended, next to the plain key. For example, English has `"panel_media_tags_badge_window_added": "within {days} days of being added"` and `"panel_media_tags_badge_window_added_one": "within {days} day of being added"`.
+
+The browser and the server-drawn posters both choose the form by your language's rules (Russian 21 is `_one`, 3 is `_few`, 5 is `_many`). A category your file has no form for uses `_other`, then the plain key, so the plain key should read correctly for the most common count. Forms keep the same variables as the plain key. English forms are never used for a sentence your file translates.
+
+Weblate lists the keys the English file has, so it offers the `_one` forms. A category English does not need (`_few`, `_many`, `_two`, `_zero`) can be added to your language's file through the manual JSON route below; until then the plain key covers it.
+
 ## Maintainer Fallback: Manual JSON Changes
 
 When Weblate is unavailable, maintainers can update locale JSON in the repository. Prefer the Weblate workflow for normal contributions so edits stay coordinated.
@@ -89,3 +97,5 @@ Merged translations normally reach your installed plugin with a plugin release. 
 See [How do I change the plugin's language?](faq.md#how-do-i-change-the-plugins-language) for administrator defaults and personal overrides.
 
 If a translated string is wrong, report it through Weblate. Include the language, affected screen, English source or string key, and suggested correction. Use [Support & Community](support.md) if you need help finding the string.
+
+Media Tags reuses existing keys for repeated UI words. Its enum tables reference the shared keys directly; compact codec/edition codes and proper rating-source names remain literals. Tag size choices are the numeric percentages `85%`, `100%`, `115%`, and `130%`. Translate descriptive words (including **Mixed** and full edition names), rather than adding keys for numbers or codes.

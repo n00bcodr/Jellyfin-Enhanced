@@ -8,6 +8,91 @@ public class PosterTokenTests : IDisposable
     private readonly Guid item = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private PosterTagVariantToken Tokens() => PosterTagVariantToken.CreateForPath(Path.Combine(directory, "secret"), _ => { });
 
+    [Fact]
+    public void ImagesFromBeforeMixedHadANativeColourCannotReuseTheCurrentPixelToken()
+    {
+        var service = Tokens();
+        var old = service.Mint(user, item, "mixed-settings", "1.1", PosterTagVariantFlags.None, "abcdef");
+        var current = service.Mint(user, item, "mixed-settings", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.NotEqual(old, current);
+        Assert.False(service.Verify(old, user, item, "mixed-settings", PosterTagComposer.PixelVersion, out _));
+        Assert.True(service.Verify(current, user, item, "mixed-settings", PosterTagComposer.PixelVersion, out _));
+    }
+
+    [Fact]
+    public void AudioResolverTenToElevenRetiresTokensAtTheSamePixelIdentity()
+    {
+        // Same subtitle-only document and defaults, resolver 10 then 11, both at pixel 7.1.
+        // Only resolver.version changes in this document's canonical digest.
+        const string version10Digest = "5c28225fcda7dccf";
+        const string version11Digest = "223695b6d0444ff8";
+        var settings = PosterTagSettings.FromSettingsJson("{\"LanguageTagsEnabled\":true,\"LanguageTagsShowSubtitles\":true,\"LanguageTagsStyle\":\"codes\"}", new());
+        Assert.Equal("39", PosterTagSettings.ResolverVersion);
+        Assert.Equal("8.6", PosterTagComposer.PixelVersion);
+        var service = Tokens();
+        var old = service.Mint(user, item, version10Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+        var version11 = service.Mint(user, item, version11Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.NotEqual(old, version11);
+        Assert.False(service.Verify(old, user, item, version11Digest, "7.1", out _));
+        Assert.True(service.Verify(version11, user, item, version11Digest, "7.1", out _));
+        Assert.False(service.Verify(old, user, item, settings.Digest, "7.1", out _));
+        Assert.False(service.Verify(version11, user, item, settings.Digest, "7.1", out _));
+        var current = service.Mint(user, item, settings.Digest, "7.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, settings.Digest, "7.1", out _));
+    }
+
+    [Fact]
+    public void TextLogoMetricsRetireAlreadyFittedPixelTokens()
+    {
+        var service = Tokens();
+        Assert.Equal("8.6", PosterTagComposer.PixelVersion);
+        var old = service.Mint(user, item, "logo-side-settings", "8.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.False(service.Verify(old, user, item, "logo-side-settings", PosterTagComposer.PixelVersion, out _));
+        var current = service.Mint(user, item, "logo-side-settings", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, "logo-side-settings", PosterTagComposer.PixelVersion, out _));
+    }
+
+    [Fact]
+    public void CompactCornersRetireFullLabelPixelTokens()
+    {
+        var service = Tokens();
+        var old = service.Mint(user, item, "compact-corners", "8.2", PosterTagVariantFlags.None, "abcdef");
+        Assert.Equal("8.6", PosterTagComposer.PixelVersion);
+        Assert.False(service.Verify(old, user, item, "compact-corners", PosterTagComposer.PixelVersion, out _));
+        var current = service.Mint(user, item, "compact-corners", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, "compact-corners", PosterTagComposer.PixelVersion, out _));
+    }
+
+    [Fact]
+    public void SharedLanguageChipPixelsRetireOutlinedChipTokens()
+    {
+        var service = Tokens();
+        Assert.Equal("8.6", PosterTagComposer.PixelVersion);
+        var old = service.Mint(user, item, "language-chips", "8.3", PosterTagVariantFlags.None, "abcdef");
+        Assert.False(service.Verify(old, user, item, "language-chips", PosterTagComposer.PixelVersion, out _));
+        var current = service.Mint(user, item, "language-chips", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, "language-chips", PosterTagComposer.PixelVersion, out _));
+    }
+
+    [Fact]
+    public void TightLanguageCodePaddingRetiresWiderChipTokens()
+    {
+        var service = Tokens();
+        var old = service.Mint(user, item, "language-codes", "8.4", PosterTagVariantFlags.None, "abcdef");
+        Assert.False(service.Verify(old, user, item, "language-codes", PosterTagComposer.PixelVersion, out _));
+    }
+
+    [Theory]
+    [InlineData("4.1")]
+    [InlineData("5.1")]
+    public void TierTwoPixelsRejectTierOneAndRoundOneTokens(string historicalVersion)
+    {
+        var service = Tokens();
+        Assert.Equal("8.6", PosterTagComposer.PixelVersion);
+        var old = service.Mint(user, item, "settings", historicalVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
+    }
+
     [Theory]
     [InlineData(PosterTagVariantFlags.None)]
     [InlineData(PosterTagVariantFlags.TopRightOffset)]
@@ -32,6 +117,16 @@ public class PosterTokenTests : IDisposable
             Assert.False(service.Verify(new string(tampered), user, item, "settings", "renderer", out _));
         }
         Assert.True(Tokens().Verify(token, user, item, "settings", "renderer", out _));
+    }
+
+    [Fact]
+    public void Posters_from_the_category_blind_tile_cache_are_invalidated()
+    {
+        var service = Tokens();
+        var old = service.Mint(user, item, "settings", "2.1", PosterTagVariantFlags.None, "abcdef");
+        Assert.False(service.Verify(old, user, item, "settings", PosterTagComposer.PixelVersion, out _));
+        var current = service.Mint(user, item, "settings", PosterTagComposer.PixelVersion, PosterTagVariantFlags.None, "abcdef");
+        Assert.True(service.Verify(current, user, item, "settings", PosterTagComposer.PixelVersion, out _));
     }
 
     [Theory]

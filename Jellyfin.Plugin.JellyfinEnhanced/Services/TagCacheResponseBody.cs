@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -55,10 +56,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         public long Length => (long)_prefix.Length + _items.Length + _suffix.Length;
 
         /// <summary>
-        /// Assemble the body <c>{"version":…,"timestamp":…,"servedAt":…,"filterRevision":"…","count":…,"items":…,"reviewRatings":…}</c>
+        /// Assemble the body <c>{"version":…,"timestamp":…,"servedAt":…,"filterRevision":"…","removed":[…],"count":…,"items":…,"reviewRatings":…}</c>
         /// from the already serialized <paramref name="itemsJson"/> and
         /// <paramref name="reviewRatingsJson"/> (null when the chips are off,
         /// which omits the property) and compute its ETag in the same pass.
+        /// <c>removed</c> (the ids a delta removes) is written only when there are any.
         /// </summary>
         public static TagCacheResponseBody Compose(
             JsonSerializerOptions options,
@@ -68,7 +70,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             string filterRevision,
             int count,
             byte[] itemsJson,
-            byte[]? reviewRatingsJson)
+            byte[]? reviewRatingsJson,
+            IReadOnlyList<string>? removed = null,
+            string? filterBase = null,
+            IReadOnlyList<string>? visible = null,
+            string? next = null)
         {
             var prefix = new ArrayBufferWriter<byte>(256);
             int servedAtStart;
@@ -89,6 +95,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 writer.Flush();
                 servedAtEnd = prefix.WrittenCount;
                 writer.WriteString("filterRevision", filterRevision);
+                if (filterBase != null) writer.WriteString("filterBase", filterBase);
+                if (removed is { Count: > 0 })
+                {
+                    writer.WriteStartArray("removed");
+                    foreach (var id in removed) writer.WriteStringValue(id);
+                    writer.WriteEndArray();
+                }
+                if (visible != null)
+                {
+                    writer.WriteStartArray("visible");
+                    foreach (var id in visible) writer.WriteStringValue(id);
+                    writer.WriteEndArray();
+                }
+                // A page of a paged full load: the cursor of the following page (absent on the last one).
+                if (next != null) writer.WriteString("next", next);
                 writer.WriteNumber("count", count);
                 writer.WritePropertyName("items");
                 writer.Flush();

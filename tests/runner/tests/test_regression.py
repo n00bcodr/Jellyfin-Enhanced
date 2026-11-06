@@ -16,6 +16,29 @@ class RegressionToolingTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.output = Path(self.temporary.name)
 
+    def test_quality_asset_regeneration_preserves_unrelated_assets_and_manifest_records(self):
+        import importlib.util
+        import hashlib
+        spec = importlib.util.spec_from_file_location('poster_assets', ROOT / 'scripts/build_poster_assets.py')
+        generator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(generator)
+        source = ROOT / 'Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags'
+        manifest = json.loads((source / 'manifest.json').read_text())
+        before = json.loads(json.dumps(manifest))
+        (self.output / 'manifest.json').write_text(json.dumps(manifest))
+        age = source.joinpath('age-rating-colours.json').read_bytes()
+        self.output.joinpath('age-rating-colours.json').write_bytes(age)
+        generator.build_quality(self.output)
+        after = json.loads((self.output / 'manifest.json').read_text())
+        data = (self.output / 'quality-colours.json').read_bytes()
+        self.assertEqual('#546e7a', json.loads(data)['labels']['Mixed']['background'])
+        self.assertEqual({'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest()}, after['outputs']['quality-colours.json'])
+        self.assertEqual(age, self.output.joinpath('age-rating-colours.json').read_bytes())
+        for section, key in [('outputs', 'quality-colours.json'), ('inputs', 'Jellyfin.Plugin.JellyfinEnhanced/js/tags/qualitytags.js')]:
+            before[section].pop(key)
+            after[section].pop(key)
+        self.assertEqual(before, after)
+
     def coverage(self, folder, lines=0.5, branches=0.4, plugin=True):
         path = self.output / folder / 'coverage.cobertura.xml'
         path.parent.mkdir(parents=True, exist_ok=True)

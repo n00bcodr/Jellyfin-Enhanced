@@ -15,11 +15,12 @@ Outputs (relative to the output directory):
                               merged and Brotli-compressed. Every tag text is
                               bold (CSS 600 resolves to the 700 face).
   icons.json                  Material Symbols Outlined genre glyphs (the names in
-                              js/tags/genretags.js), Material Symbols Rounded
+                              js/tags/genre-icons.json), Material Symbols Rounded
                               person_heart and Material Icons star, as SVG path data
                               in font units (y down from hhea.ascent) plus metrics.
   vector-icons.json           jellyfin-web's Rotten Tomatoes fresh/rotten SVGs as
                               path data + fills.
+  rating-source-icons.json    Bundled source logos from js/tags/rating-sources.js.
   flags/<code>.webp           flag-icons 4x3 for every code js/core/media-language.js
                               can emit (+ its inline "zxx" no-dialogue artwork),
                               rasterised by headless Chromium at 160x120, lossless WebP.
@@ -33,7 +34,7 @@ Outputs (relative to the output directory):
                               Not embedded in the plugin.
 
 Pinned inputs are downloaded once into the cache directory and verified by sha256;
-in-repo inputs (genretags.js, media-language.js, qualitytags.js, css/ratings.css,
+in-repo inputs (genre-icons.json, genretags.js, media-language.js, qualitytags.js, css/ratings.css,
 js/fonts/materialsymbols*.woff2) are versioned by git.
 
 Requirements (output is byte-reproducible with these versions; manifest.json
@@ -47,6 +48,7 @@ records the ones that produced the committed files):
 
 Usage:
   python3 scripts/build_poster_assets.py            regenerate everything
+  python3 scripts/build_poster_assets.py --quality-only  regenerate only quality colours and their manifest records
   python3 scripts/build_poster_assets.py --check    fast CI check: in-repo inputs still
                                                      match the committed outputs, and
                                                      every output matches manifest.json.
@@ -115,6 +117,8 @@ IN_REPO = {
     "genretags": PLUGIN / "js/tags/genretags.js",
     "media-language": PLUGIN / "js/core/media-language.js",
     "qualitytags": PLUGIN / "js/tags/qualitytags.js",
+    "rating-sources": PLUGIN / "js/tags/rating-sources.js",
+    "award-tags": PLUGIN / "js/tags/awardstags.js",
     "ratings-css": REPO / "css/ratings.css",
     "symbols-outlined": PLUGIN / "js/fonts/materialsymbolsoutlined.woff2",
     "symbols-rounded": PLUGIN / "js/fonts/materialsymbolsrounded.woff2",
@@ -123,7 +127,10 @@ IN_REPO = {
 NOTO_SUBSETS = ["latin", "latin-ext", "cyrillic", "greek"]
 FLAG_WIDTH, FLAG_HEIGHT = 160, 120
 
-# Icons outside genretags.js's map; the genre icons are read from the module itself.
+# The genre table genretags.js is generated from (scripts/generate_genre_labels.py), which native code reads too.
+GENRE_TABLE = PLUGIN / "js/tags/genre-icons.json"
+
+# Icons outside the genre table; the genre icons are read from the table itself.
 EXTRA_ICONS = {
     "MaterialSymbolsRounded": ["person_heart"],  # userreviewtags.js
     "MaterialIcons": ["star"],                   # ratingtags.js (TMDB chip, jellyfin-web's Material Icons)
@@ -187,13 +194,10 @@ def read_repo(name: str) -> str:
 # ── Data derived from the repo's JS/CSS (standard library only: used by --check) ──
 
 def genre_icon_names() -> list:
-    js = read_repo("genretags")
-    m = re.search(r"const genreIconMap = \{(.*?)\n\s*\};", js, re.S)
-    if not m:
-        sys.exit("genretags.js: genreIconMap not found")
-    names = sorted(set(re.findall(r":\s*'([a-z0-9_]+)'", m.group(1))))
+    table = json.loads(GENRE_TABLE.read_text(encoding="utf-8"))
+    names = sorted({table["defaultIcon"], *(icon for names in table["names"].values() for icon in names.values())})
     if "theaters" not in names:
-        sys.exit("genretags.js: default icon 'theaters' missing from genreIconMap")
+        sys.exit("genre-icons.json: default icon 'theaters' missing")
     return names
 
 
@@ -225,8 +229,8 @@ def quality_colours() -> dict:
     if not m:
         sys.exit("qualitytags.js: qualityColors not found")
     colours = {}
-    for label, bg, text in re.findall(r"'([^']+)':\s*\{\s*bg:\s*'([^']+)',\s*text:\s*'([^']+)'\s*\}", m.group(1)):
-        colours[label] = {"background": bg, "color": text}
+    for label, bg, text in re.findall(r"'((?:\\.|[^'\\])+)':\s*\{\s*bg:\s*'([^']+)',\s*text:\s*'([^']+)'\s*\}", m.group(1)):
+        colours[label.replace("\\'", "'")] = {"background": bg, "color": text}
     # The generic LOW-RES rule lives in the CSS template, not in qualityColors.
     lm = re.search(r'\[data-quality="LOW-RES"\]\s*\{([^}]*)\}', js)
     if not lm:
@@ -284,6 +288,8 @@ def derived_json() -> dict:
     return {
         "age-rating-colours.json": to_json(age_rating_colours()),
         "quality-colours.json": to_json(quality_colours()),
+        "rating-source-icons.json": to_json(rating_source_icons()),
+        "award-icons.json": to_json(award_icons()),
     }
 
 
@@ -411,6 +417,38 @@ def svg_to_paths(svg: bytes) -> dict:
     return {"viewBox": vb, "paths": paths}
 
 
+def rating_source_icons() -> dict:
+    """Convert the web's bundled source logos to the native renderer's path format."""
+    source = IN_REPO["rating-sources"].read_text(encoding="utf-8")
+    match = re.search(r"const LOGOS = (\{[^\n]+\});", source)
+    if not match:
+        raise ValueError("rating-sources.js: bundled LOGOS object not found")
+    logos = json.loads(match.group(1))
+    return {"rating-" + name: svg_to_paths(svg.encode("utf-8")) for name, svg in logos.items()}
+
+
+def award_icons() -> dict:
+    """Convert the same bundled nominative marks used by Awards web chips."""
+    source = IN_REPO["award-tags"].read_text(encoding="utf-8")
+    match = re.search(r"const LOGOS = (\{[^\n]+\});", source)
+    if not match:
+        raise ValueError("awardstags.js: bundled LOGOS object not found")
+    return {"award-" + name: svg_to_paths(svg.encode("utf-8")) for name, svg in json.loads(match.group(1)).items()}
+
+
+def build_awards(out: Path) -> None:
+    """Regenerate Awards logos and their provenance without unrelated asset drift."""
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    name = "award-icons.json"
+    data = to_json(award_icons()).encode("utf-8")
+    write(out / name, data.decode("utf-8"))
+    manifest["inputs"][str(IN_REPO["award-tags"].relative_to(REPO))] = sha256(IN_REPO["award-tags"].read_bytes())
+    manifest["outputs"][name] = {"bytes": len(data), "sha256": sha256(data)}
+    write(manifest_path, json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    print(f"{out / name}: regenerated Awards logos and manifest records")
+
+
 def build_vector_icons(out: Path, cache: Path) -> None:
     data = {"rt-fresh": svg_to_paths(fetch("rt-fresh", cache)),
             "rt-rotten": svg_to_paths(fetch("rt-rotten", cache))}
@@ -495,6 +533,8 @@ for the native poster tag renderer (`Services/PosterTags/Rendering`).
 | `flags/*.webp` | flag-icons 4x3 SVGs, {PINS['flag-icons']['version']}, rasterised at {FLAG_WIDTH}x{FLAG_HEIGHT} by headless Chromium. Copyright (c) 2013 Panayiotis Lipiridis. | MIT, full text below |
 | `flags/zxx.webp` | JE's own "no dialogue" artwork (`specialFlags.zxx` in `js/core/media-language.js`). | GPL-3.0 (this project) |
 | `vector-icons.json` | `fresh.svg` and `rotten.svg` from jellyfin-web v12.1 (`src/assets/img/`, commit `{JELLYFIN_WEB_COMMIT}`), converted to path data unchanged. jellyfin-web ships them for its critic rating indicator (`CriticRatingMediaInfo`); JE's web rating tags load the same files from jellyfin-web. | GPL-2.0-or-later (jellyfin-web). Rotten Tomatoes and the tomato and splat marks are trademarks of Fandango; they are used only to identify the source of a critic rating, as in jellyfin-web. |
+| `award-icons.json` | Derived from JE’s bundled simplified award silhouettes and rating source marks in `js/tags/awardstags.js`, identical to the web chips. Nominative identification only; trademarks belong to their respective owners. | GPL-3.0 (this project); service and award marks belong to their respective owners |
+| `rating-source-icons.json` | Derived from the bundled SVG source-identification logos in JE’s `js/tags/rating-sources.js`; shared with the web chips. Source marks identify their respective rating services. | GPL-3.0 (this project); service marks belong to their respective owners |
 | `age-rating-colours.json` | Derived from JE's `css/ratings.css` (the rules `js/tags/ageratingtags.js` applies to the poster badge). | GPL-3.0 (this project) |
 | `quality-colours.json` | Derived from JE's `js/tags/qualitytags.js`. | GPL-3.0 (this project) |
 {texts}""")
@@ -554,6 +594,19 @@ def build(out: Path, cache: Path, tmp: Path) -> None:
     print(f"{out}: {len(manifest['outputs'])} files, {total} bytes (flags {len(codes) + 1} = {flags} bytes)")
 
 
+def build_quality(out: Path) -> None:
+    """Regenerate quality colours without changing unrelated generated assets or their provenance."""
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    name = "quality-colours.json"
+    data = to_json(quality_colours()).encode("utf-8")
+    write(out / name, data.decode("utf-8"))
+    manifest["inputs"][str(IN_REPO["qualitytags"].relative_to(REPO))] = sha256(IN_REPO["qualitytags"].read_bytes())
+    manifest["outputs"][name] = {"bytes": len(data), "sha256": sha256(data)}
+    write(manifest_path, json.dumps(manifest, indent=1, sort_keys=True) + "\n")
+    print(f"{out / name}: regenerated quality colours and manifest records")
+
+
 # ── Check ────────────────────────────────────────────────────────────────────
 
 def check(out: Path, full: bool, cache: Path, keep_tmp: bool) -> int:
@@ -576,7 +629,7 @@ def check(out: Path, full: bool, cache: Path, keep_tmp: bool) -> int:
         if not p.is_file() or p.read_text(encoding="utf-8") != text:
             problems.append(f"{name}: stale, its in-repo source (js/css) changed")
     if manifest.get("genreIcons") != genre_icon_names():
-        problems.append("genre icon list in js/tags/genretags.js changed: icons.json is stale")
+        problems.append("genre icon list in js/tags/genre-icons.json changed: icons.json is stale")
     codes, zxx = flag_codes()
     if manifest.get("flagCodes") != codes + ["zxx"]:
         problems.append("flag codes in js/core/media-language.js changed: flags/ are stale")
@@ -622,10 +675,22 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--cache", type=Path,
                     default=Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "jellyfin-enhanced" / "poster-assets")
+    ap.add_argument("--awards-only", action="store_true", help="regenerate only Awards logos and their manifest records")
+    ap.add_argument("--quality-only", action="store_true", help="regenerate only quality colours and their manifest records")
     ap.add_argument("--check", action="store_true", help="verify instead of writing")
     ap.add_argument("--full", action="store_true", help="with --check: regenerate everything and compare bytes")
     ap.add_argument("--keep-tmp", action="store_true")
     a = ap.parse_args()
+    if a.awards_only:
+        if a.check or a.full or a.quality_only:
+            ap.error("--awards-only cannot be combined with other modes")
+        build_awards(a.out)
+        return 0
+    if a.quality_only:
+        if a.check or a.full:
+            ap.error("--quality-only cannot be combined with --check or --full")
+        build_quality(a.out)
+        return 0
     if a.full and not a.check:
         ap.error("--full requires --check")
     if a.check:

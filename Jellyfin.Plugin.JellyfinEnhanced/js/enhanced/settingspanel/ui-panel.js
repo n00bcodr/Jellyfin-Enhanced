@@ -2,6 +2,10 @@
  * @file Settings/help panel host (JE.showEnhancedPanel): open/close lifecycle,
  * settings refresh, dragging, auto-close, tab switching; delegates the
  * HTML template and section wiring to the ui-panel-*.js modules.
+ * The host owns the one dialog contract every section relies on: dialog
+ * semantics, initial focus, Tab kept inside, the page behind inert while it
+ * is open, focus given back on close, and
+ * the settings search (sections add their controls through ctx.registerSearch).
  * Split from ui.js (code motion; bodies verbatim).
  */
 (function(JE) {
@@ -10,12 +14,22 @@
     JE.internals = JE.internals || {};
     const internal = JE.internals.enhancedUi = JE.internals.enhancedUi || {};
 
+    /** @type {Function|null} closes the open panel through its full teardown */
+    let closeOpenPanel = null;
+
     /**
      * Toggles the main settings and help panel for the plugin.
      */
     JE.showEnhancedPanel = async () => {
         // Refresh user settings when panel opens to ensure correct user's settings are displayed
         const currentUserId = ApiClient.getCurrentUserId();
+        const openingEpoch = JE.session?.getEpoch();
+        /** Read the host's server identity, including clients exposing it as a property. */
+        const serverId = () => typeof ApiClient.serverId === 'function' ? ApiClient.serverId() : ApiClient.serverId;
+        const openingServerId = serverId();
+        /** Reject replies from an earlier session, even after an A → B → A switch. */
+        const sameOpeningIdentity = () => ApiClient.getCurrentUserId() === currentUserId
+            && serverId() === openingServerId && JE.session?.getEpoch() === openingEpoch;
         if (currentUserId) {
             try {
                 // Fetch fresh settings for the current user
@@ -24,6 +38,7 @@
                     url: ApiClient.getUrl(`/JellyfinEnhanced/user-settings/${currentUserId}/settings.json?_=${Date.now()}`),
                     dataType: 'json'
                 });
+                if (!sameOpeningIdentity()) return;
 
                 // Update the userConfig with fresh data
                 if (settingsResponse) {
@@ -36,9 +51,12 @@
                     }
                 }
             } catch (e) {
+                if (!sameOpeningIdentity()) return;
                 console.warn("🪼 Jellyfin Enhanced: Could not refresh settings for panel display:", e);
             }
         }
+
+        if (!sameOpeningIdentity()) return;
 
         // Re-initialize shortcuts to ensure they're populated before building the panel
         if (typeof JE.initializeShortcuts === 'function') {
@@ -48,7 +66,8 @@
         const panelId = 'jellyfin-enhanced-panel';
         const existing = document.getElementById(panelId);
         if (existing) {
-            existing.remove();
+            if (closeOpenPanel) closeOpenPanel();
+            else existing.remove();
             return;
         }
         // Get theme-appropriate styles
@@ -69,8 +88,14 @@
         const releaseNotesTextColor = themeVars.textColor;
         const logoUrl = themeVars.logo;
 
+        // Focus goes back here when the panel closes (the menu button that opened it).
+        const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
         const help = document.createElement('div');
         help.id = panelId;
+        help.setAttribute('role', 'dialog');
+        help.setAttribute('aria-modal', 'true');
+        help.setAttribute('aria-labelledby', 'jePanelTitle');
+        help.tabIndex = -1;
         Object.assign(help.style, {
             position: 'fixed',
             top: '50%',
@@ -94,7 +119,9 @@
             maxHeight: '90vh',
             boxShadow: '0 10px 30px rgba(0,0,0,0.7)',
             border: '1px solid rgba(255,255,255,0.1)',
-            overflow: 'hidden',
+            // The dialog clips its rounded frame but must never become an
+            // extra scroll container when a focused control is re-presented.
+            overflow: 'clip',
             display: 'flex',
             fontFamily: 'inherit',
             flexDirection: 'column'
@@ -115,26 +142,103 @@
         let offset = { x: 0, y: 0 };
         let autoCloseTimer = null;
         let isMouseInside = false;
-        // Listeners bound outside the panel element (matchMedia and friends) that
-        // removing the panel would otherwise leak; drained on every close path.
+        // Listeners bound outside the panel element (matchMedia and friends) and
+        // section teardowns (ctx.onClose) that removing the panel would otherwise
+        // leak; drained on every close path.
         const panelMediaCleanups = [];
         const runPanelCleanups = () => {
             while (panelMediaCleanups.length) panelMediaCleanups.pop()();
         };
 
+        // --- The page behind is inert while the dialog is open ---------
+        // Native inert retargets background clicks to body; newly appended
+        // controls also belong to the background. Guard by dialog containment,
+        // rather than membership in the list of nodes made inert at opening.
+        /** @type {HTMLElement[]} body children this panel made inert */
+        const inertBackground = [];
+        /** @type {HTMLElement|null} the last control focused inside the dialog */
+        let lastFocusInside = null;
+        /** @param {EventTarget|null} target @returns {boolean} */
+        const isInside = (target) => target instanceof Node && help.contains(target);
+        /** Restore focus after an outside press, script focus or destinationless blur. */
+        const restoreFocus = () => {
+            if (!help.isConnected || isInside(document.activeElement)) return;
+            const back = lastFocusInside && lastFocusInside.isConnected
+                && help.contains(lastFocusInside) && !lastFocusInside.matches(':disabled')
+                && !lastFocusInside.closest('[inert], [hidden]')
+                ? lastFocusInside : help;
+            back.focus({ preventScroll: true });
+            // A control disabled since it last had focus cannot take focus again.
+            if (!isInside(document.activeElement)) help.focus({ preventScroll: true });
+        };
+        /** Remember the most recent control inside the active dialog. */
+        const trackFocusInside = (e) => {
+            if (e.target instanceof HTMLElement) lastFocusInside = e.target;
+        };
+        /** Reject focus into any element outside the dialog, including late additions. */
+        const guardFocus = (e) => {
+            if (!isInside(e.target)) restoreFocus();
+        };
+        /** A blur to body need not emit focusin; wait for the browser's focus move to finish. */
+        const guardBlur = (e) => {
+            if (!isInside(e.relatedTarget)) queueMicrotask(restoreFocus);
+        };
+        /** Prevent outside activation and the default pointer action that blurs to body. */
+        const guardPointer = (e) => {
+            if (isInside(e.target)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            restoreFocus();
+        };
+        /** Hold the page and install the active dialog's focus/pointer boundary. */
+        const holdBackground = () => {
+            for (const node of Array.from(document.body.children)) {
+                if (node === help || !(node instanceof HTMLElement) || node.hasAttribute('inert')) continue;
+                node.setAttribute('inert', '');
+                inertBackground.push(node);
+            }
+            help.addEventListener('focusin', trackFocusInside);
+            help.addEventListener('focusout', guardBlur);
+            document.addEventListener('focusin', guardFocus, true);
+            for (const type of ['pointerdown', 'mousedown', 'click']) document.addEventListener(type, guardPointer, true);
+        };
+        /** Release only nodes held by this dialog and remove every boundary listener. */
+        const releaseBackground = () => {
+            while (inertBackground.length) inertBackground.pop().removeAttribute('inert');
+            help.removeEventListener('focusin', trackFocusInside);
+            help.removeEventListener('focusout', guardBlur);
+            document.removeEventListener('focusin', guardFocus, true);
+            for (const type of ['pointerdown', 'mousedown', 'click']) document.removeEventListener(type, guardPointer, true);
+        };
+
+        let closed = false;
+        /**
+         * Close this panel: every close path (Escape/?, the close button,
+         * auto-close, navigation, the toggle) goes through here.
+         */
+        const closePanel = () => {
+            if (closed) return;
+            closed = true;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            if (closeOpenPanel === closePanel) closeOpenPanel = null;
+            help.remove();
+            runPanelCleanups();
+            // Before giving focus back: an inert opener can't take it.
+            releaseBackground();
+            if (opener && opener.isConnected) opener.focus({ preventScroll: true });
+            document.removeEventListener('keydown', closeHelp);
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            if (!JE.pluginConfig.DisableAllShortcuts) {
+                document.addEventListener('keydown', JE.keyListener, true);
+            }
+        };
+
         const resetAutoCloseTimer = () => {
+            if (closed) return;
             if (autoCloseTimer) clearTimeout(autoCloseTimer);
             autoCloseTimer = setTimeout(() => {
-                if (!isMouseInside && document.getElementById(panelId)) {
-                    help.remove();
-                    runPanelCleanups();
-                    document.removeEventListener('keydown', closeHelp);
-                    document.removeEventListener('mousemove', handleMouseMove);
-                    document.removeEventListener('mouseup', handleMouseUp);
-                    if (!JE.pluginConfig.DisableAllShortcuts) {
-                        document.addEventListener('keydown', JE.keyListener, true);
-                    }
-                }
+                if (!isMouseInside && document.getElementById(panelId)) closePanel();
             }, JE.CONFIG.HELP_PANEL_AUTOCLOSE_DELAY);
         };
 
@@ -182,12 +286,35 @@
         help.addEventListener('click', resetAutoCloseTimer);
         help.addEventListener('wheel', (e) => { e.stopPropagation(); resetAutoCloseTimer(); });
 
+        /**
+         * Settings search providers: each section that wants its controls
+         * found by name registers { search(query) → [{ label, path, run }] }.
+         * @type {Array<{pane: string, search: (query: string) => Array<{label: string, path: string, run: () => void}>}>}
+         */
+        const searchProviders = [];
+
         // Shared context handed to the split panel modules
         // (ui-panel-template.js and the ui-panel-*.js wiring files).
         const ctx = {
             help,
             pluginShortcuts,
             resetAutoCloseTimer,
+            /** Register a teardown that runs when the panel closes (any path). */
+            onClose: (fn) => { panelMediaCleanups.push(fn); },
+            /** Close the panel through its full teardown. */
+            closePanel: () => closePanel(),
+            /**
+             * Let the settings search find a section's controls. Choosing a
+             * result opens the provider's pane first, then runs the result.
+             * @param {{pane: string, search: (query: string) => Array<{label: string, path: string, run: () => void}>}} provider
+             * @returns {() => void} Unregisters it.
+             */
+            registerSearch: (provider) => {
+                searchProviders.push(provider);
+                return () => { const i = searchProviders.indexOf(provider); if (i >= 0) searchProviders.splice(i, 1); };
+            },
+            /** Show a pane by its data-pane slug (set by the section nav below). */
+            openPane: (slug) => {},
             panelBgColor,
             headerFooterBg,
             detailsBackground,
@@ -205,7 +332,40 @@
         help.innerHTML = internal.buildPanelHtml(ctx);
 
         document.body.appendChild(help);
+        closeOpenPanel = closePanel;
+        holdBackground();
+        const stopNavigation = JE.core?.navigation?.onNavigate(closePanel);
+        if (stopNavigation) panelMediaCleanups.push(stopNavigation);
+        // The dialog itself takes focus first (no ring: it is not a control).
+        help.focus({ preventScroll: true });
 
+        // Keep Tab inside the dialog: past the last control it wraps to the
+        // first, and Shift+Tab before the first wraps to the last. Hidden and
+        // inert controls (the phone layer not shown) don't count.
+        const tabbables = () => {
+            // An unchecked radio is skipped by Tab when its group has a checked one.
+            const checkedGroups = new Set(Array.from(help.querySelectorAll('input[type="radio"]:checked'), (r) => r.name));
+            return Array.from(help.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+                .filter((el) => !el.closest('[inert], [hidden]') && el.getClientRects().length > 0
+                    && !(el.type === 'radio' && !el.checked && checkedGroups.has(el.name)));
+        };
+        help.addEventListener('keydown', (e) => {
+            if (e.key !== 'Tab') return;
+            const list = tabbables();
+            if (!list.length) return;
+            const first = list[0];
+            const last = list[list.length - 1];
+            const active = document.activeElement;
+            if (e.shiftKey && (active === first || active === help)) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && active === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        });
+
+        internal.wirePanelResize?.(ctx);
         internal.wireShortcutEditor(ctx);
         resetAutoCloseTimer();
 
@@ -228,8 +388,16 @@
             const navColumn = help.querySelector('.je-panel-nav');
             const mainColumn = help.querySelector('.je-panel-main');
             const phoneMedia = window.matchMedia('(max-width: 760px)');
+            const dock = help.querySelector('.je-panel-dock');
+            const sectionSelect = help.querySelector('#jePanelSection');
+            const searchInput = help.querySelector('#jePanelSearch');
+            const searchResults = help.querySelector('#jePanelSearchResults');
             const syncLayerFocus = (moveFocus) => {
                 if (!navColumn || !mainColumn) return;
+                if (dock && navColumn && searchInput && searchResults) {
+                    if (phoneMedia.matches) dock.append(searchInput, searchResults);
+                    else navColumn.prepend(searchInput, searchResults);
+                }
                 if (phoneMedia.matches) {
                     const detailOpen = body.classList.contains('je-pane-open');
                     navColumn.inert = detailOpen;
@@ -251,6 +419,7 @@
             const activate = (pane, persist) => {
                 panes.forEach(p => p.classList.toggle('active', p === pane));
                 items.forEach(b => b.classList.toggle('active', b.dataset.tab === pane.dataset.pane));
+                if (sectionSelect) sectionSelect.value = pane.dataset.pane;
                 body.classList.add('je-pane-open');
                 syncLayerFocus(persist);
                 if (persist) {
@@ -279,6 +448,31 @@
                 button.addEventListener('click', () => activate(pane, true));
                 navHost.appendChild(button);
                 items.push(button);
+                if (sectionSelect) {
+                    const option = document.createElement('option');
+                    option.value = pane.dataset.pane;
+                    option.textContent = label;
+                    sectionSelect.appendChild(option);
+                }
+            });
+
+            sectionSelect?.addEventListener('change', () => ctx.openPane(sectionSelect.value));
+            ctx.openPane = (slug) => {
+                const pane = panes.find(p => p.dataset.pane === slug);
+                if (pane) activate(pane, true);
+                return !!pane;
+            };
+            // "Open Media Tags" (and any other pointer) buttons in a pane.
+            help.addEventListener('click', (e) => {
+                const pointer = e.target.closest?.('[data-je-open-pane]');
+                if (!pointer) return;
+                ctx.openPane(pointer.dataset.jeOpenPane);
+                const pane = panes.find(p => p.dataset.pane === pointer.dataset.jeOpenPane);
+                const heading = pane?.querySelector('[role="tab"][aria-selected="true"]') || pane?.querySelector('.je-pane-title');
+                if (heading) {
+                    if (!heading.matches('button')) heading.tabIndex = -1;
+                    heading.focus();
+                }
             });
 
             // Mobile back button returns to the section list.
@@ -291,8 +485,44 @@
                 });
             }
 
-            // Search filters the section list by each pane's full text.
+            // Search filters the section list by each pane's full text, and
+            // lists the controls registered sections match by name: choosing
+            // one opens its pane and lets the section reveal and focus it.
             const search = help.querySelector('#jePanelSearch');
+            const results = help.querySelector('#jePanelSearchResults');
+            const MAX_RESULTS = 8;
+            const renderResults = (query) => {
+                if (!results) return;
+                const found = [];
+                if (query) {
+                    for (const provider of searchProviders) {
+                        try {
+                            for (const hit of provider.search(query) || []) found.push({ ...hit, pane: provider.pane });
+                        } catch (err) {
+                            console.warn('🪼 Jellyfin Enhanced: settings search provider failed', err);
+                        }
+                    }
+                }
+                const shown = found.slice(0, MAX_RESULTS);
+                results.replaceChildren(...shown.map((hit) => {
+                    const li = document.createElement('li');
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'je-panel-search-result';
+                    button.textContent = hit.label;
+                    const where = document.createElement('span');
+                    where.textContent = hit.path;
+                    button.appendChild(where);
+                    button.addEventListener('click', () => {
+                        if (hit.pane) ctx.openPane(hit.pane);
+                        hit.run();
+                        resetAutoCloseTimer();
+                    });
+                    li.appendChild(button);
+                    return li;
+                }));
+                results.hidden = shown.length === 0;
+            };
             if (search) {
                 search.addEventListener('input', () => {
                     const query = search.value.trim().toLowerCase();
@@ -301,7 +531,24 @@
                         const hit = !query || (!!pane && (pane.textContent || '').toLowerCase().includes(query));
                         button.style.display = hit ? '' : 'none';
                     });
+                    renderResults(query);
                     resetAutoCloseTimer();
+                });
+                // Enter runs the first match; Down moves into the list.
+                search.addEventListener('keydown', (e) => {
+                    const first = results?.querySelector('button');
+                    if (!first) return;
+                    if (e.key === 'Enter') { e.preventDefault(); first.click(); }
+                    else if (e.key === 'ArrowDown') { e.preventDefault(); first.focus(); }
+                });
+                results?.addEventListener('keydown', (e) => {
+                    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+                    const buttons = Array.from(results.querySelectorAll('button'));
+                    const at = buttons.indexOf(document.activeElement);
+                    if (at < 0) return;
+                    e.preventDefault();
+                    const next = at + (e.key === 'ArrowDown' ? 1 : -1);
+                    (next < 0 ? search : buttons[Math.min(next, buttons.length - 1)]).focus();
                 });
             }
 
@@ -337,15 +584,7 @@
                 && (ev.key === 'Escape' || (ev.key === '?' && !isEditableKeyboardTarget(ev.target)));
             if (keyboardClose || (ev.type === 'click' && ev.target.id === 'closeSettingsPanel')) {
                 ev.stopPropagation();
-                if (autoCloseTimer) clearTimeout(autoCloseTimer);
-                help.remove();
-                runPanelCleanups();
-                document.removeEventListener('keydown', closeHelp);
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-                if (!JE.pluginConfig.DisableAllShortcuts) {
-                    document.addEventListener('keydown', JE.keyListener, true);
-                }
+                closePanel();
             }
         };
 
@@ -363,9 +602,13 @@
         ctx.createToast = createToast;
 
         internal.wireSettingsListeners(ctx);
+        internal.wireTagLooks?.(ctx);
         internal.wireHiddenContentListeners(ctx);
         JE.internals.spoilerGuard?.wireSettings?.(ctx);
         internal.wireMiscSettingsControls(ctx);
+        internal.wireTagGroupEditor(ctx);
         internal.wireLanguageControls(ctx);
+        // Last: the hub drives the tag sections wired above (tab switches, search).
+        internal.wireMediaTagsHub?.(ctx);
     };
 })(window.JellyfinEnhanced);

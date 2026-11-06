@@ -424,11 +424,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             try
             {
                 var plugin = JellyfinEnhanced.Instance;
-                var cfg = plugin?.Configuration;
-                if (plugin == null || cfg == null || !cfg.MaintenanceModeEnabled) return;
-                cfg.MaintenanceModeEnabled = false;
-                plugin.SaveConfiguration();
-                _logger.Info("[Maintenance] Cleared the 'Enable Maintenance Mode' setting.");
+                if (plugin == null) return;
+                // Read, cleared and saved inside the configuration write lock, so a save or Media Tags patch
+                // swapping the configuration at the same moment cannot put the toggle back (or lose this write).
+                // Lock order: _gate, then the configuration lock; no configuration write waits for _gate.
+                var cleared = plugin.UpdateConfiguration(
+                    cfg =>
+                    {
+                        if (!cfg.MaintenanceModeEnabled) return null;
+                        cfg.MaintenanceModeEnabled = false;
+                        return cfg;
+                    },
+                    fullSave: false);
+                if (cleared) _logger.Info("[Maintenance] Cleared the 'Enable Maintenance Mode' setting.");
             }
             catch (Exception ex)
             {

@@ -85,6 +85,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         private readonly ILibraryManager _libraryManager;
         private readonly PosterTagUserCache _users;
         private readonly Logger _logger;
+        private readonly TimeProvider _time;
 
         public PosterTagImageFilter(
             RequestIdentityService identity,
@@ -96,7 +97,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             SpoilerTagDataStripper stripper,
             ILibraryManager libraryManager,
             PosterTagUserCache users,
-            Logger logger)
+            Logger logger,
+            TimeProvider? timeProvider = null)
         {
             _identity = identity;
             _settings = settings;
@@ -108,13 +110,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             _libraryManager = libraryManager;
             _users = users;
             _logger = logger;
+            _time = timeProvider ?? TimeProvider.System;
         }
 
         // Strong: the token pins the tag data in Snapshot (which is then what gets
         // drawn). SpoilerScoped: the token was minted under Spoiler Guard, or the
         // owner is under the viewer's Spoiler Guard now; served no-store either
         // way (see the class comment).
-        private sealed record Plan(BaseItem Item, JUser User, PosterTagSettings Settings, PosterTagVariant Variant, string Tag, PosterTagDataSnapshot? Snapshot, bool Strong, bool SpoilerScoped);
+        internal sealed record Plan(BaseItem Item, JUser User, PosterTagSettings Settings, PosterTagVariant Variant, string Tag, PosterTagDataSnapshot? Snapshot, bool Strong, bool SpoilerScoped, DateTimeOffset Instant);
 
         // Synchronous fast path: registered globally, so every MVC action pays
         // only these checks unless the request is a Primary image whose tag
@@ -221,10 +224,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             }
 
             var userId = identity.Candidates[0];
-            var settings = _settings.Get(userId);
-            if (!settings.NativeEnabled || !settings.AnyGroupEnabled) return null;
-
-            if (!_tokens.Verify(token, userId, itemId, settings.Digest, PosterTagComposer.PixelVersion, out var variant)) return null;
+            var userSettings = _settings.Get(userId);
+            if (!userSettings.NativeEnabled || !userSettings.MayShowTags) return null;
 
             var user = _users.Get(userId);
             if (user == null) return null;
@@ -234,15 +235,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var item = _libraryManager.GetItemById<BaseItem>(itemId, user);
             if (item == null || !TagCacheService.TaggableTypes.Contains(item.GetBaseItemKind())) return null;
 
+            // The item's own look (a lock, a server-wide item look; a season or
+            // episode inherits its series'; else a matching rule), which the stamper
+            // minted the token with, from the same rule facts.
+            var seriesId = item switch
+            {
+                Episode episode => episode.SeriesId,
+                Season season => season.SeriesId,
+                _ => Guid.Empty,
+            };
+            var settings = userSettings.ForItem(itemId, seriesId == Guid.Empty ? null : seriesId.ToString("N"),
+                () => _data.TryGetCachedEntry(itemId, out var entry) ? PosterTagLookFacts.FromEntry(entry) : PosterTagLookFacts.FromItem(_libraryManager, item));
+            if (!settings.AnyGroupEnabled) return null;
+
+            var instant = _time.GetUtcNow();
+            if (!VerifyToken(_tokens, token, userId, itemId, settings, instant, out var variant)) return null;
+
             // Taken once: the composite is drawn from this very snapshot, so a
             // tag-cache update between the check and the render can't put new
             // data under the old token's immutable response.
-            var snapshot = _data.GetPinnedSnapshot(itemId, user);
+            var snapshot = _data.GetPinnedSnapshot(itemId, user, settings.Shows(PosterTagGroup.Status));
             var strong = !variant.IsWeak
                 && snapshot != null
                 && string.Equals(variant.DataHash, snapshot.PinnedHash, StringComparison.Ordinal);
             var spoilerScoped = (variant.Flags & PosterTagVariantFlags.SpoilerScoped) != 0 || IsGuardedNow(context.HttpContext, item, userId);
-            return new Plan(item, user, settings, variant, tag, snapshot, strong, spoilerScoped);
+            return new Plan(item, user, settings, variant, tag, snapshot, strong, spoilerScoped, instant);
         }
 
         // Whether the owner is under the viewer's Spoiler Guard right now, with
@@ -265,11 +282,17 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 seriesId == Guid.Empty ? null : seriesId.ToString("N"));
         }
 
-        private async Task PostProcessAsync(ActionExecutedContext executed, Plan plan, StringValues heldIfNoneMatch)
+        internal async Task PostProcessAsync(ActionExecutedContext executed, Plan plan, StringValues heldIfNoneMatch)
         {
             var http = executed.HttpContext;
             var response = http.Response;
             if (response.HasStarted) return;
+            // Retire even a request whose action crossed the URL's bucket boundary.
+            if (plan.Settings.Shows(PosterTagGroup.Status) && StatusMaxAge(plan.Instant, _time.GetUtcNow()) == 0)
+            {
+                ApplyNoStore(http);
+                return;
+            }
 
             // Only a strong, non-scoped request can get here with a 304 (every
             // other plan had its validators removed before the action ran):
@@ -277,7 +300,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             // identifies exactly one composite.
             if (response.StatusCode == StatusCodes.Status304NotModified)
             {
-                if (!NoStoreAlreadyRequired(http)) response.Headers[HeaderNames.CacheControl] = StrongCacheControl;
+                if (!NoStoreAlreadyRequired(http)) response.Headers[HeaderNames.CacheControl] = plan.Settings.Shows(PosterTagGroup.Status) ? StatusCacheControl(plan.Instant, _time.GetUtcNow()) : StrongCacheControl;
                 return;
             }
 
@@ -310,7 +333,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 quality,
                 useCache: true,
                 http.RequestAborted,
-                plan.Snapshot).ConfigureAwait(false);
+                plan.Snapshot, plan.Instant).ConfigureAwait(false);
+
+            if (plan.Settings.Shows(PosterTagGroup.Status) && StatusMaxAge(plan.Instant, _time.GetUtcNow()) == 0)
+            {
+                ApplyNoStore(http);
+                return;
+            }
 
             if (result.Status == PosterTagComposeStatus.NoData)
             {
@@ -358,7 +387,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return;
             }
 
-            headers[HeaderNames.CacheControl] = plan.Strong ? StrongCacheControl : WeakCacheControl;
+            headers[HeaderNames.CacheControl] = plan.Settings.Shows(PosterTagGroup.Status) ? StatusCacheControl(plan.Instant, _time.GetUtcNow()) : plan.Strong ? StrongCacheControl : WeakCacheControl;
             headers.Remove(HeaderNames.Pragma);
             if (!plan.Strong && !StringValues.IsNullOrEmpty(heldIfNoneMatch))
             {
@@ -366,6 +395,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 http.Request.Headers[HeaderNames.IfNoneMatch] = heldIfNoneMatch;
             }
         }
+
+        /// <summary>
+        /// Checks a poster token against the settings digest now, and, while Status is shown, against the previous
+        /// five-minute bucket too: a URL minted at 12:04:59 and fetched at 12:05:01 still draws its tags (with the
+        /// status as of the request). Older URLs retire as before.
+        /// </summary>
+        internal static bool VerifyToken(PosterTagVariantToken tokens, string token, Guid userId, Guid itemId, PosterTagSettings settings, DateTimeOffset instant, out PosterTagVariant variant)
+            => tokens.Verify(token, userId, itemId, settings.DigestAt(instant), PosterTagComposer.PixelVersion, out variant)
+                || (settings.Shows(PosterTagGroup.Status)
+                    && tokens.Verify(token, userId, itemId, settings.DigestAt(instant.AddSeconds(-300)), PosterTagComposer.PixelVersion, out variant));
+
+        /// <summary>Floor to whole seconds; zero is required for sub-second remaining lifetime and expired buckets.</summary>
+        internal static int StatusMaxAge(DateTimeOffset instant, DateTimeOffset now)
+        {
+            var end = DateTimeOffset.FromUnixTimeSeconds((instant.ToUnixTimeSeconds() / 300 + 1) * 300);
+            return (int)Math.Clamp(Math.Floor((end - now).TotalSeconds), 0, 300);
+        }
+
+        private static string StatusCacheControl(DateTimeOffset instant, DateTimeOffset now)
+            => "public,max-age=" + StatusMaxAge(instant, now).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         /// <summary>JPEG quality used for Spoiler Guard output (its own encoder setting).</summary>
         private const int SpoilerOutputQuality = 85;

@@ -65,6 +65,11 @@
       <EmbeddedResource Include="Assets\PosterTags\*.json;Assets\PosterTags\THIRD_PARTY_NOTICES.md" Exclude="Assets\PosterTags\manifest.json" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.PosterTags.%(Filename)%(Extension)" WithCulture="false" />
     </ItemGroup>
 
+    <!-- Built-in Media Tags presets (Helpers/MediaTagsPortable.cs reads them in file name order). -->
+    <ItemGroup>
+      <EmbeddedResource Include="Assets\TagPresets\*.json" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.TagPresets.%(Filename)%(Extension)" WithCulture="false" />
+    </ItemGroup>
+
     <!-- Logos/icons served by CdnAssetService from inside the DLL (no third-party host at runtime). -->
     <ItemGroup>
       <EmbeddedResource Include="Assets\Cdn\award-logos\*" LogicalName="Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.award-logos.%(Filename)%(Extension)" WithCulture="false" />
@@ -99,6 +104,8 @@
     <EmbeddedResource Include="PluginPages\CatchUpPage.html"/>
     <None Remove="Configuration\configPage.html"/>
     <EmbeddedResource Include="Configuration\configPage.html"/>
+    <None Remove="Configuration\mediaTagsPage.html"/>
+    <EmbeddedResource Include="Configuration\mediaTagsPage.html"/>
     <None Remove="Configuration\jeAdmin.css"/>
     <EmbeddedResource Include="Configuration\jeAdmin.css"/>
     <None Remove="Configuration\jeAdmin.js"/>

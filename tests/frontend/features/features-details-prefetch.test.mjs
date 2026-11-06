@@ -146,3 +146,22 @@ test('no people/info prefetch without people tags, after leaving, or on another 
  const stale=peopleSpy();const e=setup(t,{settings:{showFileSizes:true,peopleTagsEnabled:true},people:stale});
  e.viewshow();await e.resolveItem();e.bumpEpoch();await placeChips(e);assert.deepEqual(stale.calls,[],'the identity moved on');
 });
+
+test('the UI Settings audio-language preference still gates real detail-page links', async t => {
+  const original = ITEMS.movie;
+  ITEMS.movie = { ...original, Tags: ['English'] };
+  t.after(() => { ITEMS.movie = original; });
+  for (const enabled of [false, true]) {
+    const h = setup(t, { settings: { showAudioLanguages: enabled }, config: { AudioLanguageTagSyncEnabled: true, AudioLanguageTagShowAsLinks: true } });
+    h.JE.cdn = { flagSvg: code => `/flags/${code}.svg` };
+    h.load('core/media-language.js');
+    h.window.ApiClient.getUrl = path => path;
+    h.window.ApiClient.ajax = async request => request.url.includes('/audio-language-tags')
+      ? { en: { baseTag: 'English' } }
+      : { Items: [{ Type: 'Movie', MediaStreams: [{ Type: 'Audio', Language: 'en' }] }] };
+    h.viewshow();await h.resolveItem();await placeChips(h);await h.flush();
+    const links = h.row.querySelectorAll('.mediaInfoItem-audioLanguage .audio-language-link');
+    assert.equal(links.length, enabled ? 1 : 0);
+    if (enabled) assert.match(links[0].href, /English/);
+  }
+});

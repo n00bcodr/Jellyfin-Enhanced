@@ -9,6 +9,17 @@ npm run test:browser
 npm run test:visual
 ```
 
+To run the centre-anchor geometry regressions on an existing lab origin without
+starting the fixture server:
+
+```sh
+JE_BROWSER_LAB_URL=http://127.0.0.1:18537 npx playwright test --config tests/browser/playwright.config.cjs tag-centres.spec.cjs
+```
+
+These cases check the selected lab's health, then run production renderers and
+styles in an isolated page on that origin. They use real browser geometry;
+authenticated Jellyfin cards still need the separate lab verification.
+
 The suite runs desktop Chromium, mobile Chromium (Pixel 7 viewport/touch emulation, not Android), and desktop Firefox. It starts and stops its own loopback fixture server on port 4179 (set `JE_BROWSER_PORT` to use another). External requests are blocked except explicitly intercepted locale fixtures. Unexpected console errors and page errors fail tests; retries are disabled. Traces and screenshots are retained for failures under `artifacts/browser`, alongside HTML and JUnit reports. `JE_CHROMIUM_PATH` is an optional local diagnostic override; use Playwright's pinned browser for baseline checks.
 
 Covered behavior:
@@ -31,3 +42,43 @@ npm run test:visual
 Commit the reviewed PNG changes with their reason. Do not update them merely to clear a failure. Existing baselines were initially created on Linux; use Linux for visual comparisons. Missing browsers, missing snapshots, and unavailable servers are failures, not skips.
 
 Remaining scope: full Enhanced panel wiring, poster-tag interactions, bookmarks, hidden-content/Spoiler Guard browser journeys, playback, real touch hardware, and complete native Jellyfin navigation are not established by this fixture suite. Consult the coverage matrix for their other test layers and gaps.
+
+The settings-panel regression loads the production host in the fixture by default and checks real pointer clicks on native inert content, body-retargeted events, late background controls, and destinationless blur in all three browser projects. It can also exercise the deployed bundle on a Jellyfin test server you are authorised to use. Build and install this checkout's plugin on that server first, then run only this spec, serially:
+
+```sh
+JE_PANEL_LAB_URL=http://127.0.0.1:8096 JE_PANEL_LAB_USER=admin \
+  JE_PANEL_LAB_PASSWORD='…' JE_PANEL_SHOTS=./browser-shots \
+  npx playwright test -c tests/browser/playwright.config.cjs settings-panel --project=chromium --workers=1
+```
+
+When `JE_PANEL_LAB_URL` is set, `JE_PANEL_LAB_USER` and `JE_PANEL_LAB_PASSWORD` are required; instead of the password variable, `JE_PANEL_LAB_ACCOUNTS_FILE` may name a file containing a `JE_PANEL_LAB_PASSWORD=…` line. A missing input fails with a message naming it. Repeat with a non-administrator account to check the non-admin path. `JE_PANEL_SHOTS` optionally saves successful screenshots to the named directory. The server mode fails if the deployed host lacks the focus fix; it never injects the checkout's scripts over Jellyfin's bundle. Without `JE_PANEL_LAB_URL` the spec uses the fixture host.
+
+Language-chip navigation also has a real-host mode. Run only that spec against
+an authorized disposable lab, serially, with `JE_LANGUAGE_LAB_URL`,
+`JE_LANGUAGE_LAB_USER` (defaults to `real-admin`) and
+`JE_LANGUAGE_LAB_PASSWORD` supplied in the environment:
+
+```sh
+npx playwright test --config tests/browser/playwright.config.cjs language-navigation --project=chromium --workers=1
+```
+
+Without the lab variables it uses the fixture host. Both modes check actual
+left-click navigation and new tabs from Control/Command-click and middle-click
+for audio flags, codes, subtitle captions, subtitle summary pills and count
+badges, and that Tab and Shift+Tab move through the card's own link without
+stopping on language links or the Summary pill. Lab fixtures change only the
+current browser's display settings and card facts; no user preferences or
+media metadata are saved. In the lab the spec picks a Movie card the pipeline
+has already tagged and uses `getReviewRatings()` as a narrow cache-readiness
+wait, not a pipeline-idle promise. It hands the fixture facts to the unmodified
+registered language renderer, whose `markTagged()` bookkeeping and renderer
+guards protect against later same-card scans and batch renders. The fixture
+also owns language priority, group order/caps, look rules/locks and shape settings
+in browser memory, so saved lab policies cannot change the requested badges.
+
+Awards-chip navigation (`awards-navigation.spec.cjs`) checks rank/year hover hit
+testing, titles, `tabindex=-1`, and native left/modifier/middle navigation in
+Corners, Caption and Summary. Set `JE_AWARDS_LAB_URL`, `JE_AWARDS_LAB_USER` and
+`JE_AWARDS_LAB_PASSWORD` for the real Jellyfin mode; `JE_AWARDS_SHOTS` saves
+successful captures. Synthetic award facts are injected into browser cache
+responses only; server metadata and saved preferences remain unchanged.

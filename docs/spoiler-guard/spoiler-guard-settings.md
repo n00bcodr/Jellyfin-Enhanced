@@ -260,7 +260,7 @@ Choose which information to hide while you browse protected titles. These admin 
 | **Hide TV show descriptions** | On (effective default) | Independently hides guarded TV show descriptions. |
 | **Hide episode descriptions** | On | Replaces nonempty descriptions on eligible episodes, movies, later seasons, and extras. |
 | **Placeholder text** | `Spoiler Guard activated` | Replacement for a protected nonempty description. |
-| **Hide tags** | On | Removes story tags and JE genre, language, and quality overlays on eligible content. Score overlays use the separate ratings policy. |
+| **Hide tags** | On | Removes story tags and JE genre, language, quality, logo and custom overlays on eligible content. Score overlays use the separate ratings policy. |
 | **Hide chapter names (keep timestamps)** | On | Uses `Chapter N` for protected chapter names; keeps timestamps. Image-byte protection is independent. |
 | **Hide taglines** | On | Removes eligible taglines. |
 | **Hide ratings** | On | Clears community and critic scores and suppresses their JE card overlays. |

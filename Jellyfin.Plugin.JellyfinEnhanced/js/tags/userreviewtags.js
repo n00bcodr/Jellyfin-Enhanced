@@ -282,7 +282,7 @@
         // rating is a 1-5 float average — convert to /10, drop trailing .0
         const raw = rating !== null ? rating * 2 : null;
         const displayText = raw !== null
-            ? (Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`)
+            ? (JE.core?.mediaLanguage?.formatNumberText || String)(Number.isInteger(raw) ? `${raw}` : `${raw.toFixed(1)}`)
             : '—';
 
         const tag = document.createElement('div');
@@ -302,6 +302,36 @@
     }
 
     /**
+     * Put the chip on a card's rating group through the layout controller:
+     * the chip joins the group's master copy (creating a review-only group
+     * when the card has no TMDB/RT rating) and the group is committed again,
+     * so its slot, cap, density and summary copies follow — late chips
+     * included. A "no rating" with dashes off removes the chip, and the group
+     * with it when that was its only chip.
+     * @param {any} layout - JE.core.tagLayout.
+     * @param {HTMLElement} target - The card's render target.
+     * @param {number|null} rating
+     */
+    function applyChipToGroup(layout, target, rating) {
+        const existing = layout.getGroup(target, 'rating');
+        if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) {
+            const stale = existing?.querySelector('.je-userreview-tag');
+            if (!stale) return;
+            stale.remove();
+            if (existing.childElementCount === 0) layout.removeGroup(target, 'rating');
+            else layout.commitGroup(target, 'rating', existing);
+            return;
+        }
+        let master = existing;
+        if (!master) {
+            master = document.createElement('div');
+            master.className = 'rating-overlay-container';
+        }
+        appendUserRatingChip(master, rating);
+        layout.commitGroup(target, 'rating', master);
+    }
+
+    /**
      * Put the chip for a resolved rating on a card, creating the rating
      * overlay container when the card has no TMDB/RT rating of its own.
      * @param {HTMLElement} containerOrEl - .rating-overlay-container or the render target.
@@ -315,6 +345,11 @@
      */
     function applyChip(containerOrEl, rating, restack) {
         if (!containerOrEl.isConnected) return; // card gone while the rating was looked up
+        const layout = JE.core?.tagLayout;
+        if (layout && !containerOrEl.classList.contains('rating-overlay-container')) {
+            applyChipToGroup(layout, containerOrEl, rating);
+            return;
+        }
         if (rating === null && JE.pluginConfig?.ShowUserRatingDash === false) {
             // No chip for "no rating"; drop one an earlier value left behind,
             // and the rating container with it when that was its only chip.
@@ -358,6 +393,33 @@
         }
     }
 
+    /** @type {WeakMap<HTMLElement, number>} render target → its latest appendUserRatingToContainer call */
+    const _renderGeneration = new WeakMap();
+    /** @type {WeakMap<HTMLElement, string>} render target → item id its data-je-review-key was set for */
+    const _reviewKeyOwner = new WeakMap();
+
+    /**
+     * Normalised id of the item a card shows (its data-id / data-itemid,
+     * which a virtualised list rewrites when it reuses the card).
+     * @param {HTMLElement} el - Render target or anything inside the card.
+     * @returns {string}
+     */
+    function cardIdentity(el) {
+        const holder = el.closest('[data-id]') || el.closest('[data-itemid]');
+        const raw = holder?.getAttribute('data-id') || holder?.getAttribute('data-itemid') || '';
+        return raw.replace(/-/g, '').toLowerCase();
+    }
+
+    /**
+     * Whether a card's review key was set for the item it shows now (not
+     * for the item a virtualised list showed in it before).
+     * @param {HTMLElement} el - Render target carrying data-je-review-key.
+     * @returns {boolean}
+     */
+    function reviewKeyBelongs(el) {
+        return _reviewKeyOwner.get(el) === cardIdentity(el);
+    }
+
     /**
      * Resolve the tmdbKey and mediaType for a Jellyfin item.
      * Returns null if the item type is unsupported or TMDB ID is missing.
@@ -375,9 +437,11 @@
             return id ? { tmdbKey: String(id), mediaType: 'tv' } : null;
         }
         if (type === 'Season' || type === 'Episode') {
-            // SeriesProviderIds is not in the tag-data response — use parentSeries from extras
+            // The batch path supplies the parent series in extras; the server-cache path puts its
+            // TMDB id on the item itself (SeriesProviderIds, from the entry's SeriesTmdbId).
             const series = extras?.parentSeries;
-            const seriesTmdbId = series?.ProviderIds?.Tmdb || series?.ProviderIds?.tmdb;
+            const seriesTmdbId = series?.ProviderIds?.Tmdb || series?.ProviderIds?.tmdb
+                || item.SeriesProviderIds?.Tmdb || item.SeriesProviderIds?.tmdb;
             if (!seriesTmdbId) return null;
 
             if (type === 'Season') {
@@ -405,11 +469,11 @@
             return;
         }
 
-        JE.core.ui.injectCss('je-userreview-tags-css', `
+        const css = `
             .je-userreview-tag { color: #e91e8c !important; }
             .je-userreview-icon {
                 font-family: 'JE Material Symbols Rounded';
-                font-size: 14px !important;
+                font-size: calc(14px * var(--je-tag-scale, 1)) !important;
                 font-weight: normal;
                 font-style: normal;
                 line-height: 1;
@@ -425,7 +489,8 @@
                 color: #e91e8c !important;
                 vertical-align: middle;
             }
-        `);
+        `;
+        JE.core.ui.injectCss('je-userreview-tags-css', JE.core.tagLayout?.preserveLegacySizing?.(css) || css);
 
         if (!_listening && typeof JE.tagPipeline?.onReviewRatingsChanged === 'function') {
             _listening = true;
@@ -463,6 +528,11 @@
         for (const host of hosts) {
             const key = host.dataset.jeReviewKey;
             if (keys && !keys.has(key)) continue;
+            // Left by the item this card showed before it was reused.
+            if (!reviewKeyBelongs(host)) {
+                delete host.dataset.jeReviewKey;
+                continue;
+            }
             // Per-type / home-row scope: a card the rating renderer leaves
             // bare never gets a chip from here either.
             if (typeof JE.isRatingTagExcludedByScope === 'function' && JE.isRatingTagExcludedByScope(host, null)) continue;
@@ -489,13 +559,24 @@
         if (!JE.pluginConfig?.ShowUserRatingOnPosters) return;
         if (!JE.currentSettings?.ratingTagsEnabled) return;
 
+        // A newer render of this card supersedes any lookup still out for it.
+        const generation = (_renderGeneration.get(containerOrEl) || 0) + 1;
+        _renderGeneration.set(containerOrEl, generation);
         const resolved = resolveTmdbKey(item, extras);
-        if (!resolved) return;
+        if (!resolved) {
+            // This item has no review key: drop the previous item's, so a
+            // change to the averages no longer updates this card.
+            delete containerOrEl.dataset.jeReviewKey;
+            return;
+        }
 
         const { tmdbKey, mediaType } = resolved;
+        const reviewKey = `${mediaType}:${tmdbKey}`;
         // Remember the key on the card so a later change to the averages can
-        // update this chip in place (see refreshChangedChips).
-        containerOrEl.dataset.jeReviewKey = `${mediaType}:${tmdbKey}`;
+        // update this chip in place (see refreshChangedChips), and which item
+        // it belongs to.
+        containerOrEl.dataset.jeReviewKey = reviewKey;
+        _reviewKeyOwner.set(containerOrEl, cardIdentity(containerOrEl));
         const known = peekUserRating(tmdbKey, mediaType);
         if (known !== undefined) {
             applyChip(containerOrEl, known, false);
@@ -504,6 +585,13 @@
 
         fetchUserRating(tmdbKey, mediaType).then((rating) => {
             if (rating === undefined) return; // lookup aborted — render nothing
+            // The card may have been rendered again, cleared, or reused for
+            // another item (a virtualised list) while the lookup was out: the
+            // answer only belongs on the card if it still shows this item,
+            // with this key, from this render.
+            if (_renderGeneration.get(containerOrEl) !== generation
+                || containerOrEl.dataset.jeReviewKey !== reviewKey
+                || !reviewKeyBelongs(containerOrEl)) return;
             // Averages that arrived while this lookup was out are newer than
             // its answer (and may already be on the chip): resolve again.
             const current = peekUserRating(tmdbKey, mediaType);

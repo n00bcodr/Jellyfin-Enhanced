@@ -4,6 +4,7 @@ using System.Linq;
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.JellyfinEnhanced.Configuration;
 using Jellyfin.Plugin.JellyfinEnhanced.Model;
+using Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Resolution;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -29,7 +30,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         /// <summary>The user's spoiler state the policy was built from (non-empty).</summary>
         public UserSpoilerBlur State { get; }
 
-        /// <summary>Strip genres, languages and stream data (SpoilerStripTags).</summary>
+        /// <summary>Strip genres, languages, stream data and Custom tag matches (SpoilerStripTags).</summary>
         public bool StripGenres { get; }
 
         /// <summary>Strip community/critic ratings and an Episode/Season's own age rating (SpoilerStripRatings).</summary>
@@ -119,6 +120,28 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             // The user opted out of everything the admin enabled: nothing to do.
             if (!(stripGenres || stripRatings || replaceTitle || stripOverview)) return null;
             return new SpoilerTagStripPolicy(state, stripGenres, stripRatings, replaceTitle, stripOverview);
+        }
+
+        /// <summary>No tag strip applies to the user (<see cref="TagStripRevision"/>).</summary>
+        public const string NoTagStrip = "none";
+
+        /// <summary>
+        /// Revision of every effective data strip in POST /tag-data: tags, ratings and title-stream
+        /// sanitization, including user opt-outs and the guarded sets. Bootstrap carries the same
+        /// snapshot revision as Prefetched.TagStripRevision. All renderer fallback caches validate
+        /// this stamp centrally; only NoTagStrip results survive a page load.
+        /// </summary>
+        /// <param name="policy">The user's policy (<see cref="CreatePolicy"/>), or null.</param>
+        /// <returns>The revision.</returns>
+        public static string TagStripRevision(SpoilerTagStripPolicy? policy)
+        {
+            if (policy == null || !(policy.StripGenres || policy.StripRatings || policy.SanitizeTitleStreams)) return NoTagStrip;
+            var keys = policy.State.Series.Keys.Select(k => "s:" + k.ToLowerInvariant())
+                .Concat(policy.State.Movies.Keys.Select(k => "m:" + k.ToLowerInvariant()))
+                .Concat(policy.State.Collections.Keys.Select(k => "c:" + k.ToLowerInvariant()))
+                .Order(StringComparer.Ordinal);
+            var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(($"g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|" + string.Join(",", keys))));
+            return "g2:" + Convert.ToHexString(digest, 0, 12).ToLowerInvariant();
         }
 
         /// <summary>
@@ -242,7 +265,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
             var revisionKeys = guardedKinds.Keys.ToList();
             revisionKeys.Sort(StringComparer.Ordinal);
-            var fingerprint = $"g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
+            // "c1": the tag strip covers Custom tag matches too, so copies stored before it are replaced.
+            var fingerprint = $"naming2|c1|g{(policy.StripGenres ? 1 : 0)}r{(policy.StripRatings ? 1 : 0)}t{(policy.SanitizeTitleStreams ? 1 : 0)}|{string.Join(',', revisionKeys)}";
 
             foreach (var kvp in items.ToList())
             {
@@ -403,10 +427,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // server tag cache. Null when there is nothing to strip.
         private static TagCacheEntry? StripExemptSeasonRating(TagCacheEntry entry, bool stripRatingsEnabled)
         {
-            if (!stripRatingsEnabled || (entry.CommunityRating == null && entry.CriticRating == null)) return null;
+            if (!stripRatingsEnabled || (entry.CommunityRating == null && entry.CriticRating == null && entry.Ratings == null && entry.Awards == null)) return null;
             var seasonStripped = entry.Clone();
             seasonStripped.CommunityRating = null;
             seasonStripped.CriticRating = null;
+            seasonStripped.Ratings = null;
+            seasonStripped.Awards = null;
             return seasonStripped;
         }
 
@@ -423,17 +449,56 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             var sanitizeTitleStreams = policy.SanitizeTitleStreams;
 
             var stripped = entry.Clone();
+            if (stripGenresEnabled || sanitizeTitleStreams)
+            {
+                stripped.Source = null;
+                stripped.Edition = null;
+            }
             if (stripGenresEnabled)
             {
                 stripped.Genres = System.Array.Empty<string>();
+                // Hide tags covers every card tag group, the Logos group included.
+                stripped.Logos = null;
                 stripped.AudioLanguages = null;
                 stripped.PartialAudioLanguages = null;
+                stripped.SubtitleLanguages = null;
+                stripped.SdhSubtitleLanguages = null;
+                stripped.Scenes = null;
+                stripped.Leaving = null;
                 stripped.StreamData = null;
+                stripped.QualitySummary = null;
+                stripped.QualityEpisodeIds = null;
+                // Custom tag labels can be plot facts (a tag or collection naming a twist).
+                stripped.CustomTags = null;
+            }
+            // Latest policy reads its naming facts from the summary rather than StreamData.
+            // Replace the shared summary before filtering; keep technical categories unchanged.
+            if (sanitizeTitleStreams && stripped.QualitySummary is { } summary)
+            {
+                stripped.QualitySummary = new TagQualitySummary
+                {
+                    NextPremiere = summary.NextPremiere,
+                    EpisodeCount = summary.EpisodeCount,
+                    // Naming facts (the summarised source) go with the titles; technical categories stay.
+                    Categories = summary.Categories.ContainsKey(QualityTagRules.Source)
+                        ? summary.Categories.Where(pair => pair.Key != QualityTagRules.Source).ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
+                        : summary.Categories,
+                    AudioByLanguage = summary.AudioByLanguage,
+                    AudioRegionFallback = summary.AudioRegionFallback,
+                    // Settings saved before layouts read their sound from these: they are no title facts.
+                    LegacyAudio = summary.LegacyAudio,
+                    LegacyAudioByLanguage = summary.LegacyAudioByLanguage,
+                    LegacyAudioRegionFallback = summary.LegacyAudioRegionFallback,
+                    LatestExtras = summary.LatestExtras.Where(label => QualityTagRules.CategoryOf(label)
+                        is not (QualityTagRules.Source or QualityTagRules.Edition)).ToArray(),
+                };
             }
             if (stripRatingsEnabled)
             {
                 stripped.CommunityRating = null;
                 stripped.CriticRating = null;
+                stripped.Ratings = null;
+                stripped.Awards = null;
                 // Age rating: keep the series-level one (not a spoiler) but
                 // drop an Episode/Season's own, which can differ from the
                 // series and Jellyfin never shows. Mirrors GetTagData's stubs.
@@ -458,6 +523,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                 var sd = stripped.StreamData;
                 var clonedSd = new TagStreamData
                 {
+                    RunTimeTicks = sd.RunTimeTicks,
                     ItemName = null,
                     ItemPath = null,
                     Streams = sd.Streams?.Select(st => new TagMediaStream
@@ -470,18 +536,45 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                         Profile = st.Profile,
                         Height = st.Height,
                         Width = st.Width,
+                        AspectRatio = st.AspectRatio,
+                        RealFrameRate = st.RealFrameRate,
+                        AverageFrameRate = st.AverageFrameRate,
+                        IsInterlaced = st.IsInterlaced,
+                        IsHearingImpaired = st.IsHearingImpaired,
                         Channels = st.Channels,
                         ChannelLayout = st.ChannelLayout,
                         VideoRangeType = st.VideoRangeType,
+                        VideoRange = st.VideoRange,
                         DisplayTitle = null,
+                        // The role the titles named (commentary, description) is no spoiler and decides
+                        // the main audio, so it outlives them.
+                        Role = st.Role ?? (st.Type == "Audio" && Helpers.TrackRoles.IsSecondaryAudio(st.Title, st.DisplayTitle) ? Helpers.TrackRoles.SecondaryRole : null),
                     }).ToList(),
-                    Sources = sd.Sources?.Select(_ => new TagMediaSource
+                    Sources = sd.Sources?.Select(source => new TagMediaSource
                     {
+                        Id = source.Id,
+                        RunTimeTicks = source.RunTimeTicks,
                         Path = null,
                         Name = null,
+                        Is3D = source.Is3D,
+                        // Opaque, title-free: keyed direct-play answers stay valid across the strip.
+                        Revision = source.Revision,
                     }).ToList(),
                 };
                 stripped.StreamData = clonedSd;
+            }
+            // Status Tags: an unwatched episode's or season's air dates and
+            // numbers are what Season Premiere / Season Finale / Series Finale
+            // read, and an air-date gap can itself hint at a finale (the field
+            // strip clears PremiereDate for the same reason), so a guarded
+            // Episode/Season keeps only its added-date badges.
+            if (isEpisode || isSeason)
+            {
+                stripped.EpisodeIndex = null;
+                stripped.PremiereDate = null;
+                stripped.LatestEpisodeAired = null;
+                stripped.LatestEpisodeIndex = null;
+                stripped.SeasonPremiere = null;
             }
             return stripped;
         }

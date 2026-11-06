@@ -32,7 +32,16 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             _pending[id] = removed;
         }
 
+        /// <summary>
+        /// Put a drained update back for the next drain, unless a newer change for
+        /// the id was recorded since the drain (that one wins, as with <see cref="Record"/>).
+        /// </summary>
+        public void Requeue(Guid id) => _pending.TryAdd(id, false);
+
         public bool IsEmpty => _pending.IsEmpty;
+
+        /// <summary>The ids currently pending as an add/update (a snapshot; nothing is removed).</summary>
+        public IReadOnlyList<Guid> Updates() => _pending.Where(pair => !pair.Value).Select(pair => pair.Key).ToList();
 
         public int Count => _pending.Count;
 

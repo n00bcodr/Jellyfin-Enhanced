@@ -85,11 +85,17 @@
                 /* Adaptive settings view: section nav on the left, one pane at a
                    time on the right; below 760px the nav is the first screen and
                    the pane covers it instantly with a back button. */
-                #jellyfin-enhanced-panel .je-panel-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); flex: 1; min-height: 0; background: ${panelBgColor}; }
+                #jellyfin-enhanced-panel .je-panel-body { display: grid; grid-template-columns: clamp(230px, 18%, 280px) minmax(0, 1fr); flex: 1; min-height: 0; background: ${panelBgColor}; }
                 #jellyfin-enhanced-panel .je-panel-nav { display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; border-right: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.18); overflow-y: auto; }
                 #jellyfin-enhanced-panel .je-panel-nav-items { display: flex; flex-direction: column; gap: 3px; }
                 #jellyfin-enhanced-panel .je-panel-search { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: #fff; font-family: inherit; font-size: 13px; outline: none; }
                 #jellyfin-enhanced-panel .je-panel-search:focus { border-color: ${primaryAccentColor}; }
+                #jellyfin-enhanced-panel:focus { outline: none; }
+                #jellyfin-enhanced-panel .je-panel-search-results { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; gap: 2px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.3); max-height: 50%; overflow-y: auto; flex-shrink: 0; }
+                #jellyfin-enhanced-panel .je-panel-search-results[hidden] { display: none; }
+                #jellyfin-enhanced-panel .je-panel-search-result { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 40px; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+                #jellyfin-enhanced-panel .je-panel-search-result:hover, #jellyfin-enhanced-panel .je-panel-search-result:focus-visible { background: rgba(255,255,255,0.1); outline: none; box-shadow: inset 0 0 0 2px ${primaryAccentColor}; }
+                #jellyfin-enhanced-panel .je-panel-search-result span { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.6); }
                 #jellyfin-enhanced-panel .tab-button { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 12px; border: none; border-radius: 8px; background: transparent; color: rgba(255,255,255,0.65); font-family: inherit; font-size: 14px; font-weight: 600; text-align: left; cursor: pointer; transition: background-color 0.15s, color 0.15s; }
                 #jellyfin-enhanced-panel .tab-button:hover { background: rgba(255,255,255,0.06); color: #fff; }
                 #jellyfin-enhanced-panel .tab-button.active { background: rgba(255,255,255,0.08); color: #fff; }
@@ -99,9 +105,16 @@
                 #jellyfin-enhanced-panel .je-pane.active { display: block; }
                 #jellyfin-enhanced-panel .je-pane-title { display: flex; align-items: center; gap: 8px; margin: 14px 0 12px 0; font-size: 17px; font-weight: 700; color: #fff; font-family: inherit; }
                 #jellyfin-enhanced-panel .je-pane-back { display: none; align-items: center; justify-content: center; margin: 12px 0 0 0; padding: 8px; border: none; border-radius: 50%; background: rgba(255,255,255,0.08); color: #fff; font-family: inherit; cursor: pointer; align-self: flex-start; }
+                #jellyfin-enhanced-panel .je-pane-back:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+                #jellyfin-enhanced-panel .je-panel-dock { display: none; }
                 @media (max-width: 760px) {
+                    #jellyfin-enhanced-panel .je-panel-dock { position: relative; display: flex; flex: 0 0 auto; gap: 8px; padding: 8px 12px; background: ${panelBgColor}; z-index: 3; }
+                    #jellyfin-enhanced-panel .je-panel-dock select { width: 40%; min-width: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; background: rgb(24,24,24); color: #fff; font: inherit; font-size: 13px; }
+                    #jellyfin-enhanced-panel .je-panel-dock .je-panel-search { flex: 1; min-width: 0; width: 0; }
+                    #jellyfin-enhanced-panel .je-panel-dock .je-panel-search-results { position: absolute; top: 100%; left: 12px; right: 12px; max-height: 45dvh; background: rgb(24,24,24); }
+
                     #jellyfin-enhanced-panel { top: 0 !important; left: 0 !important; transform: none !important; width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; border: none !important; box-sizing: border-box !important; }
-                    #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: hidden; }
+                    #jellyfin-enhanced-panel .je-panel-body { display: block; position: relative; overflow: clip; }
                     #jellyfin-enhanced-panel .je-panel-nav { position: absolute; inset: 0; border-right: none; z-index: 1; }
                     /* The closed pane is parked off-screen by the transform alone —
                        deliberately untransitioned so opening a section swaps the
@@ -114,17 +127,20 @@
                 .shake-error { animation: shake 0.5s ease-in-out; }
             </style>
             <div class="panel-header" style="position: relative; padding: 14px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; align-items: baseline; gap: 10px; cursor: grab;">
-                <div style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
+                <div id="jePanelTitle" style="font-size: 20px; font-weight: 700; background: ${primaryAccentColor}; -webkit-background-clip: text; -webkit-text-fill-color: transparent;">${JE.icon(JE.IconName.JELLYFISH)} Jellyfin Enhanced</div>
                 <div style="font-size: 12px; color: rgba(255,255,255,0.7);">${escapeHtml(JE.t('panel_version', { version: JE.pluginVersion }))}</div>
-                <button id="closeSettingsPanel" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
+                ${internal.buildPanelSizeControlsHtml ? internal.buildPanelSizeControlsHtml() : ''}
+                <button id="closeSettingsPanel" type="button" aria-label="${escapeHtml(tWithFallback('awards_close', 'Close'))}" style="position:absolute; top:50%; right:20px; transform:translateY(-50%); background:rgba(255,255,255,0.1); border:none; color:#fff; font-size:16px; cursor:pointer; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">×</button>
             </div>
+            <div class="je-panel-dock"><select id="jePanelSection" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}"></select></div>
             <div class="je-panel-body">
                 <nav class="je-panel-nav" aria-label="${escapeHtml(JE.t('panel_settings_tab'))}">
-                    <input id="jePanelSearch" class="je-panel-search" type="text" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" />
+                    <input id="jePanelSearch" class="je-panel-search" type="search" placeholder="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" aria-label="${escapeHtml(tWithFallback('panel_search_placeholder', 'Search settings…'))}" aria-controls="jePanelSearchResults" />
+                    <ul id="jePanelSearchResults" class="je-panel-search-results" aria-label="${escapeHtml(tWithFallback('panel_search_results', 'Matching settings'))}" hidden></ul>
                     <div class="je-panel-nav-items"></div>
                 </nav>
                 <div class="je-panel-main">
-                <button id="jePanelBack" class="je-pane-back" type="button"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
+                <button id="jePanelBack" class="je-pane-back" type="button" aria-label="${escapeHtml(tWithFallback('panel_back_to_sections', 'Back to settings sections'))}"><span class="material-icons" style="font-size:16px;" aria-hidden="true">arrow_back</span></button>
                  ${!JE.pluginConfig.DisableAllShortcuts ? `
                  <div id="shortcuts-content" class="tab-content je-pane" data-pane="shortcuts" data-pane-label="${escapeHtml(JE.t('panel_shortcuts_tab'))}" style="padding-top: 4px; padding-bottom: 20px;">
                  <h3 class="je-pane-title">${JE.icon(JE.IconName.KEYBOARD)} ${JE.t('panel_shortcuts_tab')}</h3>
@@ -355,186 +371,9 @@
                                     <div><div style="font-weight:500;">${JE.t('panel_settings_ui_audio_languages')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_audio_languages_desc')}</div></div>
                                 </label>
                             </div>
-                            ${JE.pluginConfig?.NativePosterTagsEnabled === true ? `
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="nativePosterTagsToggle" ${JE.currentSettings.useNativePosterTags !== false ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer; flex-shrink:0;">
-                                    <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_settings_ui_native_poster_tags_desc'))}</div></div>
-                                </label>
-                            </div>` : ''}
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
-                                        <input type="checkbox" id="qualityTagsToggle" ${JE.currentSettings.qualityTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                        <div><div style="font-weight:500;">${JE.t('panel_settings_ui_quality_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_quality_tags_desc')}</div></div>
-                                    </div>
-                                    <div class="position-selector" data-setting="qualityTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                    </div>
-                                </label>
-                                <div id="qualityTagsSubWrap" class="je-quality-cat-wrap" style="display: ${JE.currentSettings.qualityTagsEnabled ? 'block' : 'none'};">
-                                    <button type="button" id="qualityTagsSubToggleExpander" class="je-quality-cat-expander" aria-expanded="false">
-                                        <span class="material-icons je-cat-chevron" aria-hidden="true">chevron_right</span>
-                                        <span>${JE.t('panel_settings_ui_quality_tags_categories_label')}</span>
-                                    </button>
-                                </div>
-                                <div id="qualityTagsSubToggles" class="je-quality-cat-list" style="display: none;">
-                                    ${(() => {
-                                        const cats = [
-                                            { id: 'showResolutionTagToggle',    settingKey: 'showResolutionTag',    pluginKey: 'ShowResolutionTag',    orderKey: 'resolutionTagOrder',    orderPluginKey: 'ResolutionTagOrder',    defaultOrder: 1, labelKey: 'panel_settings_ui_quality_tags_resolution' },
-                                            { id: 'showSourceTagToggle',        settingKey: 'showSourceTag',        pluginKey: 'ShowSourceTag',        orderKey: 'sourceTagOrder',        orderPluginKey: 'SourceTagOrder',        defaultOrder: 2, labelKey: 'panel_settings_ui_quality_tags_source' },
-                                            { id: 'showDynamicRangeTagToggle',  settingKey: 'showDynamicRangeTag',  pluginKey: 'ShowDynamicRangeTag',  orderKey: 'dynamicRangeTagOrder',  orderPluginKey: 'DynamicRangeTagOrder',  defaultOrder: 3, labelKey: 'panel_settings_ui_quality_tags_dynamic_range' },
-                                            { id: 'showSpecialFormatTagToggle', settingKey: 'showSpecialFormatTag', pluginKey: 'ShowSpecialFormatTag', orderKey: 'specialFormatTagOrder', orderPluginKey: 'SpecialFormatTagOrder', defaultOrder: 4, labelKey: 'panel_settings_ui_quality_tags_special_format' },
-                                            { id: 'showVideoCodecTagToggle',    settingKey: 'showVideoCodecTag',    pluginKey: 'ShowVideoCodecTag',    orderKey: 'videoCodecTagOrder',    orderPluginKey: 'VideoCodecTagOrder',    defaultOrder: 5, labelKey: 'panel_settings_ui_quality_tags_video_codec' },
-                                            { id: 'showAudioInfoTagToggle',     settingKey: 'showAudioInfoTag',     pluginKey: 'ShowAudioInfoTag',     orderKey: 'audioInfoTagOrder',     orderPluginKey: 'AudioInfoTagOrder',     defaultOrder: 6, labelKey: 'panel_settings_ui_quality_tags_audio_info' },
-                                        ];
-                                        // Resolve to the effective enable/order (user override → admin default → hardcoded)
-                                        // so the panel reflects what's actually rendering, even when the user has
-                                        // never customized and inherits the admin value.
-                                        const effEnable = (c) => {
-                                            const u = JE.currentSettings[c.settingKey];
-                                            if (typeof u === 'boolean') return u;
-                                            const a = JE.pluginConfig?.[c.pluginKey];
-                                            return typeof a === 'boolean' ? a : true;
-                                        };
-                                        const effOrder = (c) => {
-                                            const u = JE.currentSettings[c.orderKey];
-                                            if (Number.isFinite(u)) return u;
-                                            const a = JE.pluginConfig?.[c.orderPluginKey];
-                                            return Number.isFinite(a) ? a : c.defaultOrder;
-                                        };
-                                        const sorted = cats.slice().sort((a, b) => {
-                                            const ao = effOrder(a);
-                                            const bo = effOrder(b);
-                                            if (ao !== bo) return ao - bo;
-                                            return a.defaultOrder - b.defaultOrder;
-                                        });
-                                        return sorted.map((c, idx) => {
-                                            const checked = effEnable(c) ? 'checked' : '';
-                                            const upDisabled = idx === 0 ? 'disabled' : '';
-                                            const downDisabled = idx === sorted.length - 1 ? 'disabled' : '';
-                                            return `
-                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}" data-order-key="${c.orderKey}" data-default-order="${c.defaultOrder}">
-                                                    <label class="je-quality-cat-label-wrap">
-                                                        <input type="checkbox" id="${c.id}" ${checked} style="accent-color:${toggleAccentColor};">
-                                                        <span class="je-quality-cat-label">${JE.t(c.labelKey)}</span>
-                                                    </label>
-                                                    <button type="button" class="je-cat-btn je-cat-up" ${upDisabled} aria-label="${JE.t('panel_settings_ui_quality_tags_move_up')}"><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
-                                                    <button type="button" class="je-cat-btn je-cat-down" ${downDisabled} aria-label="${JE.t('panel_settings_ui_quality_tags_move_down')}"><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
-                                                </div>
-                                            `;
-                                        }).join('');
-                                    })()}
-                                    <div class="je-quality-audio-lang">
-                                        <label for="qualityTagsAudioLanguageSelect" style="display:block; font-size:12px; color:rgba(255,255,255,0.6); margin:10px 0 4px;">${JE.t('panel_settings_ui_quality_tags_audio_language')}</label>
-                                        <select id="qualityTagsAudioLanguageSelect" style="width:100%; background:${detailsBackground}; color:#fff; border:1px solid rgba(255,255,255,0.2); border-radius:6px; padding:6px;">
-                                            <option value="">${JE.t('panel_settings_ui_quality_tags_audio_language_default')}</option>
-                                            <option value="auto">${JE.t('panel_settings_ui_quality_tags_audio_language_auto')}</option>
-                                            <option value="none">${JE.t('panel_settings_ui_quality_tags_audio_language_none')}</option>
-                                        </select>
-                                        <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:4px;">${JE.t('panel_settings_ui_quality_tags_audio_language_desc')}</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
-                                        <input type="checkbox" id="genreTagsToggle" ${JE.currentSettings.genreTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                        <div><div style="font-weight:500;">${JE.t('panel_settings_ui_genre_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_genre_tags_desc')}</div></div>
-                                    </div>
-                                    <div class="position-selector" data-setting="genreTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                    </div>
-                                </label>
-                            </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
-                                        <input type="checkbox" id="languageTagsToggle" ${JE.currentSettings.languageTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                        <div><div style="font-weight:500;">${JE.t('panel_settings_ui_language_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_language_tags_desc')}</div></div>
-                                    </div>
-                                    <div class="position-selector" data-setting="languageTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                        <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                    </div>
-                                </label>
-                            </div>
-                                <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
-                                            <input type="checkbox" id="ratingTagsToggle" ${JE.currentSettings.ratingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                            <div><div style="font-weight:500;">${JE.t('panel_settings_ui_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_rating_tags_desc')}</div></div>
-                                        </div>
-                                        <div class="position-selector" data-setting="ratingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                            <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        </div>
-                                    </label>
-                                    <div id="ratingTagsSubWrap" class="je-quality-cat-wrap" style="display: ${JE.currentSettings.ratingTagsEnabled ? 'block' : 'none'};">
-                                        <button type="button" id="ratingTagsSubToggleExpander" class="je-quality-cat-expander" aria-expanded="false">
-                                            <span class="material-icons je-cat-chevron" aria-hidden="true">chevron_right</span>
-                                            <span>${JE.t('panel_settings_ui_rating_tags_scope_label')}</span>
-                                        </button>
-                                    </div>
-                                    <div id="ratingTagsSubToggles" class="je-quality-cat-list" style="display: none;">
-                                        ${[
-                                            { id: 'ratingTagsOnMoviesToggle',           settingKey: 'ratingTagsOnMovies',           pluginKey: 'RatingTagsOnMovies',           labelKey: 'panel_settings_ui_rating_tags_scope_movies' },
-                                            { id: 'ratingTagsOnSeriesToggle',           settingKey: 'ratingTagsOnSeries',           pluginKey: 'RatingTagsOnSeries',           labelKey: 'panel_settings_ui_rating_tags_scope_series' },
-                                            { id: 'ratingTagsOnSeasonsToggle',          settingKey: 'ratingTagsOnSeasons',          pluginKey: 'RatingTagsOnSeasons',          labelKey: 'panel_settings_ui_rating_tags_scope_seasons' },
-                                            { id: 'ratingTagsOnEpisodesToggle',         settingKey: 'ratingTagsOnEpisodes',         pluginKey: 'RatingTagsOnEpisodes',         labelKey: 'panel_settings_ui_rating_tags_scope_episodes' },
-                                            { id: 'ratingTagsOnContinueWatchingToggle', settingKey: 'ratingTagsOnContinueWatching', pluginKey: 'RatingTagsOnContinueWatching', labelKey: 'panel_settings_ui_rating_tags_scope_continue_watching' },
-                                            { id: 'ratingTagsOnNextUpToggle',           settingKey: 'ratingTagsOnNextUp',           pluginKey: 'RatingTagsOnNextUp',           labelKey: 'panel_settings_ui_rating_tags_scope_next_up' },
-                                        ].map((c) => {
-                                            // Effective value (user override -> admin default -> on), same as the renderer.
-                                            const u = JE.currentSettings[c.settingKey];
-                                            const a = JE.pluginConfig?.[c.pluginKey];
-                                            const on = typeof u === 'boolean' ? u : (typeof a === 'boolean' ? a : true);
-                                            return `
-                                                <div class="je-quality-cat-row" data-cat-key="${c.settingKey}">
-                                                    <label class="je-quality-cat-label-wrap">
-                                                        <input type="checkbox" id="${c.id}" ${on ? 'checked' : ''} style="accent-color:${toggleAccentColor};">
-                                                        <span class="je-quality-cat-label">${JE.t(c.labelKey)}</span>
-                                                    </label>
-                                                </div>
-                                            `;
-                                        }).join('')}
-                                    </div>
-                                </div>
-                                <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                    <label style="display: flex; align-items: center; justify-content: space-between; cursor: pointer;">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
-                                            <input type="checkbox" id="ageRatingTagsToggle" ${JE.currentSettings.ageRatingTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                            <div><div style="font-weight:500;">${JE.t('panel_settings_ui_age_rating_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_age_rating_tags_desc')}</div></div>
-                                        </div>
-                                        <div class="position-selector" data-setting="ageRatingTagsPosition" style="display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:2px; width:32px; height:32px; border:1px solid rgba(255,255,255,0.3); border-radius:4px; padding:3px; cursor:pointer; flex-shrink:0;" title="Click to change position">
-                                            <div data-pos="top-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="top-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-left" style="border-radius:2px; transition:background 0.2s;"></div>
-                                            <div data-pos="bottom-right" style="border-radius:2px; transition:background 0.2s;"></div>
-                                        </div>
-                                    </label>
-                                </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="peopleTagsToggle" ${JE.currentSettings.peopleTagsEnabled ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_people_tags')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_people_tags_desc')}</div></div>
-                                </label>
-                            </div>
-                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
-                                <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
-                                    <input type="checkbox" id="tagsHideOnHoverToggle" ${JE.currentSettings.tagsHideOnHover ? 'checked' : ''} style="width:18px; height:18px; accent-color:${toggleAccentColor}; cursor:pointer;">
-                                    <div><div style="font-weight:500;">${JE.t('panel_settings_ui_hide_tags_on_hover')}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${JE.t('panel_settings_ui_hide_tags_on_hover_desc')}</div></div>
-                                </label>
+                            <div style="margin-bottom: 16px; padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor}; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;">
+                                <div><div style="font-weight:500;">${escapeHtml(JE.t('panel_media_tags_moved'))}</div><div style="font-size:12px; color:rgba(255,255,255,0.6); margin-top:2px;">${escapeHtml(JE.t('panel_media_tags_moved_desc'))}</div></div>
+                                <button type="button" id="jeOpenMediaTags" data-je-open-pane="media-tags" style="font-family:inherit; font-size:13px; font-weight:600; color:#fff; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.22); border-radius:6px; min-height:36px; padding:0 12px; cursor:pointer;">${escapeHtml(JE.t('common_open'))}</button>
                             </div>
                             <div style="padding: 12px; background: ${presetBoxBackground}; border-radius: 6px; border-left: 3px solid ${toggleAccentColor};">
                                 <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
@@ -544,6 +383,8 @@
                             </div>
                         </div>
                     </section>
+                    ${/* Media Tags hub: layout, groups, status badges, rules and locks, colours, server pointers (ui-panel-media-tags.js) */ ''}
+                    ${internal.buildMediaTagsHubHtml ? internal.buildMediaTagsHubHtml(ctx) : ''}
                     ${/* Hidden Content settings — only rendered when the module is initialized (controlled by HiddenContentEnabled config) */ ''}
                     ${JE.hiddenContent ? `<section class="je-pane" data-pane="hidden-content">
                         <h3 class="je-pane-title">${JE.icon(JE.IconName.EYE)} ${JE.t('hidden_content_settings_title')}</h3>
@@ -709,6 +550,7 @@
             <div class="panel-footer" style="padding: 10px 20px; border-top: 1px solid rgba(255,255,255,0.1); background: ${headerFooterBg}; display: flex; justify-content: center; align-items: center;">
                 <div class="close-helptext" style="font-size:12px; color:rgba(255,255,255,0.5);">${JE.t('panel_footer_close')}</div>
             </div>
+            ${internal.buildPanelResizeHandlesHtml ? internal.buildPanelResizeHandlesHtml() : ''}
         `;
     };
 

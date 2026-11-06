@@ -7,6 +7,18 @@ import { repositoryRoot } from './discovery.mjs';
 
 export const jsRoot = resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/js');
 const collected = coverage.createCoverageMap({});
+// Cache immutable module sources per file process, never a test's mutable realm.
+// Coverage instrumentation is especially expensive for the full admin page setup.
+const sources = new Map();
+/** Read/instrument a production module once per process, preserving fresh realm evaluation. */
+function moduleSource(file) {
+  if (!sources.has(file)) {
+    let source = readFileSync(file, 'utf8');
+    if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
+    sources.set(file, `[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
+  }
+  return sources.get(file);
+}
 if (process.env.JE_COVERAGE_DIR) process.on('exit', () => {
   mkdirSync(process.env.JE_COVERAGE_DIR, { recursive: true });
   writeFileSync(resolve(process.env.JE_COVERAGE_DIR, `${process.pid}.json`), JSON.stringify(collected));
@@ -53,12 +65,8 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
     allowConsoleError(pattern) { allowedErrors.push({ pattern, required: false, matched: false }); },
     load(path) {
       const file = resolve(jsRoot, path);
-      let source = readFileSync(file, 'utf8');
-      if (process.env.JE_COVERAGE_DIR) source = createInstrumenter().instrumentSync(source, file);
-      // Run each file the way Services/ClientScriptBundle.cs packages it: the file body
-      // inside its own function, called as an element of the module array. Top-level
-      // declarations therefore stay file-local, exactly as in production.
-      window.eval(`[function () {\n${source}\n}][0]();\n//# sourceURL=${file}`);
+      // Each IIFE is evaluated in this test's independent browser realm, as in the bundle.
+      window.eval(moduleSource(file));
       return JE;
     },
     close() {
@@ -70,6 +78,17 @@ export function createHarness({ html = '', url = 'http://jellyfin.test/web/index
       if (errors.length) throw new AggregateError(errors, 'Unexpected browser errors');
     }
   };
+}
+
+/**
+ * The English source strings with plugin.js's placeholder rules (and `_one` forms for a count of one), for
+ * tests that read what a surface shows in English.
+ */
+const englishStrings = JSON.parse(readFileSync(resolve(jsRoot, 'locales/en.json'), 'utf8'));
+export function englishT(key, params = {}) {
+  const counted = params && ['count', 'days', 'n', 'items', 'hours', 'minutes', 'seconds'].find(name => typeof params[name] === 'number');
+  const form = counted && params[counted] === 1 && englishStrings[`${key}_one`] ? `${key}_one` : key;
+  return Object.entries(params || {}).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), englishStrings[form] ?? key);
 }
 
 export function deferred() {

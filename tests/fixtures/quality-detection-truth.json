@@ -1,0 +1,2418 @@
+{
+ "description": "Independent expected Full labels for real Jellyfin MediaStream shapes. highest: current vocabulary, Highest only; all: every display mode All distinct values; legacy: version-0 settings (the documented compatibility detector), Highest only. Web and native tests both assert these values.",
+ "cases": [
+  {
+   "name": "HLG range type",
+   "why": "Known HLG is HLG, never generic HDR or SDR",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "HLG",
+     "DisplayTitle": "4K HEVC HDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HLG",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HLG",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HLG",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision without a fallback layer (profile 5)",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVI"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an HDR10 base layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithHDR10"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an HLG base layer (profile 8.4)",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithHLG"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HLG",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an SDR base layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithSDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision with an HDR10+ base layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithHDR10Plus",
+     "DisplayTitle": "4K HEVC Dolby Vision Profile 8.1 (HDR10)"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10+",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Dolby Vision profile 7 with an enhancement layer",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "DOVIWithEL",
+     "DisplayTitle": "4K - Dolby Vision Profile 7.6 (HDR10)"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "HDR10+ spelled with a plus in the title only",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "DisplayTitle": "4K HEVC HDR10+"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "HDR10Plus range type",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "HDR10Plus",
+     "DisplayTitle": "4K HEVC HDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HDR10+",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "DVD title on an SDR stream is not Dolby Vision",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 480,
+     "Width": 720,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "480p DVD MPEG2 SDR"
+    }
+   ],
+   "highest": [
+    "480p",
+    "MPEG2"
+   ],
+   "all": [
+    "480p",
+    "SDR",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "DVDRip title without a range type stays unknown",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 576,
+     "Width": 720,
+     "Codec": "h264",
+     "DisplayTitle": "DVDRip by Group - 576p - H264"
+    }
+   ],
+   "highest": [
+    "576p",
+    "H264"
+   ],
+   "all": [
+    "576p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Advanced in a title is not Dolby Vision",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "h264",
+     "DisplayTitle": "Advanced encode - 1080p - H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Dolby Vision named only by an abbreviation in the title",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "DisplayTitle": "2160p DV HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "Unprobed video stays unknown",
+   "streams": [
+    {
+     "Type": "Video"
+    }
+   ],
+   "highest": [],
+   "all": []
+  },
+  {
+   "name": "Range type wins over a contradicting title",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "4K HEVC HDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "8K hint on a 1080p picture",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "8K HEVC"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "HEVC"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "1080p",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "VC-1 is not WMV",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "vc1",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "VC-1"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "VC-1"
+   ],
+   "legacy": [
+    "1080p",
+    "VC-1"
+   ]
+  },
+  {
+   "name": "WMV",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 480,
+     "Width": 640,
+     "Codec": "wmv3",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "480p",
+    "WMV"
+   ],
+   "all": [
+    "480p",
+    "SDR",
+    "WMV"
+   ]
+  },
+  {
+   "name": "VVC",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "vvc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "VVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "VVC"
+   ],
+   "legacy": [
+    "4K",
+    "VVC"
+   ]
+  },
+  {
+   "name": "ProRes",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "prores",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "ProRes"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "ProRes"
+   ],
+   "legacy": [
+    "1080p",
+    "ProRes"
+   ]
+  },
+  {
+   "name": "Codec and channels come from one track",
+   "why": "AC-3 5.1 first, TrueHD Atmos 7.1 second",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital - 5.1 - Default"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 7.1"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1",
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "Track order does not change the sound chip",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital - 5.1 - Default"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1",
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "DTS 5.1 and TrueHD 7.1 never make DTS 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "TRUEHD 7.1"
+   ],
+   "all": [
+    "TRUEHD 7.1",
+    "DTS 5.1"
+   ],
+   "legacy": [
+    "TRUEHD 7.1"
+   ]
+  },
+  {
+   "name": "Lossless FLAC stereo",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "flac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - FLAC - Stereo"
+    }
+   ],
+   "highest": [
+    "FLAC 2.0"
+   ],
+   "all": [
+    "FLAC 2.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "Lossless PCM 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - PCM - 7.1"
+    }
+   ],
+   "highest": [
+    "PCM 7.1"
+   ],
+   "all": [
+    "PCM 7.1"
+   ],
+   "legacy": [
+    "7.1"
+   ]
+  },
+  {
+   "name": "AAC keeps the channel-only chip of its richest track",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - AAC - Stereo"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - AAC - 5.1"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "AAC stereo has no sound chip",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - AAC - Stereo"
+    }
+   ],
+   "highest": [],
+   "all": [],
+   "legacy": []
+  },
+  {
+   "name": "A 720p title on a 1080p picture",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 1080,
+     "Width": 1920,
+     "Codec": "h264",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "720p H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "H264"
+   ],
+   "legacy": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "A resolution title on an unknown size",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "h264",
+     "DisplayTitle": "1080p H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ],
+   "legacy": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Quad PCM is 4.0, not stereo",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 4,
+     "ChannelLayout": "quad",
+     "DisplayTitle": "English - PCM - 4.0"
+    }
+   ],
+   "highest": [
+    "PCM 4.0"
+   ],
+   "all": [
+    "PCM 4.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "DTS-ES 6.1 keeps its back channel",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-ES",
+     "Channels": 7,
+     "ChannelLayout": "6.1",
+     "DisplayTitle": "English - DTS-ES - 6.1"
+    }
+   ],
+   "highest": [
+    "DTS 6.1"
+   ],
+   "all": [
+    "DTS 6.1"
+   ],
+   "legacy": [
+    "DTS 5.1"
+   ]
+  },
+  {
+   "name": "Mono PCM",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s16le",
+     "Channels": 1,
+     "ChannelLayout": "mono",
+     "DisplayTitle": "English - PCM - Mono"
+    }
+   ],
+   "highest": [
+    "PCM 1.0"
+   ],
+   "all": [
+    "PCM 1.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "5.0 surround without LFE",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 5,
+     "ChannelLayout": "5.0(side)",
+     "DisplayTitle": "English - Dolby Digital - 5.0"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.0"
+   ],
+   "all": [
+    "Dolby Digital 5.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "Seven channels without a layout read as 6.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 7
+    }
+   ],
+   "highest": [
+    "6.1"
+   ],
+   "all": [
+    "6.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "An unusual channel count without a layout stays unknown",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 3,
+     "DisplayTitle": "English - Dolby Digital"
+    }
+   ],
+   "highest": [
+    "Dolby Digital"
+   ],
+   "all": [
+    "Dolby Digital"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "DVD title on an SDR stream is not Dolby Vision for any account",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 480,
+     "Width": 720,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "480p DVD MPEG2 SDR"
+    }
+   ],
+   "highest": [
+    "480p",
+    "MPEG2"
+   ],
+   "all": [
+    "480p",
+    "SDR",
+    "MPEG2"
+   ],
+   "legacy": [
+    "480p",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "A commentary track never stands for the soundtrack",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Français - Dolby Digital - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Commentary by the director",
+     "DisplayTitle": "Commentary by the director - English - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "Audio description is not the soundtrack either",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital+ - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "English (AD)",
+     "DisplayTitle": "English (AD) - DTS - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
+    "Dolby Digital+ 5.1"
+   ],
+   "legacy": [
+    "Dolby Digital+ 5.1"
+   ]
+  },
+  {
+   "name": "A file with only a commentary track still has a sound chip",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "Title": "Commentary",
+     "DisplayTitle": "Commentary - Dolby Digital - Stereo"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 2.0"
+   ],
+   "all": [
+    "Dolby Digital 2.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "A 4.0 layout named only in the title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 4,
+     "DisplayTitle": "English - PCM - 4.0"
+    }
+   ],
+   "highest": [
+    "PCM 4.0"
+   ],
+   "all": [
+    "PCM 4.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "A 3.0 layout named only in the title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "pcm_s24le",
+     "Channels": 3,
+     "DisplayTitle": "English - PCM - 3.0"
+    }
+   ],
+   "highest": [
+    "PCM 3.0"
+   ],
+   "all": [
+    "PCM 3.0"
+   ],
+   "legacy": []
+  },
+  {
+   "name": "DD+ Atmos and TrueHD Atmos are different sound facts",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "Dolby Digital Plus + Dolby Atmos",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus + Dolby Atmos - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 7.1"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1",
+    "DD+ ATMOS 5.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "DD+ Atmos alone",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "Dolby Digital Plus + Dolby Atmos",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus + Dolby Atmos - 5.1"
+    }
+   ],
+   "highest": [
+    "DD+ ATMOS 5.1"
+   ],
+   "all": [
+    "DD+ ATMOS 5.1"
+   ],
+   "legacy": [
+    "ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "Atmos without a known carrier",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - Atmos - 7.1"
+    }
+   ],
+   "highest": [
+    "ATMOS 7.1"
+   ],
+   "all": [
+    "ATMOS 7.1"
+   ],
+   "legacy": [
+    "ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "A German commentary track never stands for the soundtrack",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "ger",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Deutsch - Dolby Digital - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "ger",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Audiokommentar",
+     "DisplayTitle": "Audiokommentar - Deutsch - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "French and Spanish audio description are not the soundtrack",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Français - Dolby Digital+ - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "dts",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Audiodescription",
+     "DisplayTitle": "Audiodescription - DTS - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "spa",
+     "Codec": "dts",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "Audiodescripción",
+     "DisplayTitle": "Audiodescripción - DTS - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
+    "Dolby Digital+ 5.1"
+   ],
+   "legacy": [
+    "Dolby Digital+ 5.1"
+   ]
+  },
+  {
+   "name": "E-AC-3 with JOC is DD+ Atmos",
+   "why": "Dolby's object coding on an E-AC-3 track is Atmos, even when the title only says Dolby Digital Plus",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "JOC",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus - 5.1 - Default"
+    }
+   ],
+   "highest": [
+    "DD+ ATMOS 5.1"
+   ],
+   "all": [
+    "DD+ ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "A bare DTS-HD title is not Master Audio",
+   "why": "Without MA, XLL or Master Audio it may be High Resolution; claim neither",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS-HD - 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD 5.1"
+   ],
+   "all": [
+    "DTS-HD 5.1"
+   ]
+  },
+  {
+   "name": "A DTS-HD title with an MA profile is Master Audio",
+   "why": "The same track's profile corroborates lossless",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS-HD - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ]
+  },
+  {
+   "name": "Height channels from the layout stay",
+   "why": "ffmpeg's 5.1.2 layout is not 5.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "5.1.2",
+     "DisplayTitle": "English - Dolby TrueHD + Dolby Atmos - 5.1.2"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 5.1.2"
+   ],
+   "all": [
+    "TRUEHD ATMOS 5.1.2"
+   ]
+  },
+  {
+   "name": "Height channels from the title stay and outrank the bed",
+   "why": "7.1.4 has more channels than 7.1 of the same codec",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - TrueHD Atmos - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 12,
+     "DisplayTitle": "English - TrueHD Atmos 7.1.4"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1.4"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1.4",
+    "TRUEHD ATMOS 7.1"
+   ]
+  },
+  {
+   "name": "A codec-less height layout shows its bed",
+   "why": "AAC 5.1.2 has no codec chip; its surround bed is 5.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 8,
+     "ChannelLayout": "5.1.2",
+     "DisplayTitle": "English - AAC - 5.1.2"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "A Japanese commentary track never stands for the soundtrack",
+   "why": "音声解説 is audio commentary",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "jpn",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "日本語 - Dolby Digital - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "jpn",
+     "Codec": "truehd",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "音声解説",
+     "DisplayTitle": "音声解説 - 日本語 - TrueHD - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ]
+  },
+  {
+   "name": "Korean and Chinese commentary tracks never stand for the soundtrack",
+   "why": "코멘터리 and 导演评论 are commentary",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "kor",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "한국어 - Dolby Digital Plus - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "kor",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "감독 코멘터리",
+     "DisplayTitle": "감독 코멘터리 - DTS-HD MA - 7.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "chi",
+     "Codec": "flac",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "Title": "导演评论",
+     "DisplayTitle": "导演评论 - FLAC - 7.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
+    "Dolby Digital+ 5.1"
+   ]
+  },
+  {
+   "name": "DTS-HD Master Audio spelled out is Master Audio",
+   "why": "The full name, in the title or the profile, says lossless",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS-HD Master Audio - 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 5.1"
+   ],
+   "all": [
+    "DTS-HD MA 5.1"
+   ]
+  },
+  {
+   "name": "A DTS-HD Master Audio profile is Master Audio",
+   "why": "Profile corroborates a bare DTS-HD title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-HD Master Audio",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS-HD - 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 5.1"
+   ],
+   "all": [
+    "DTS-HD MA 5.1"
+   ]
+  },
+  {
+   "name": "DTS-HD XLL is Master Audio",
+   "why": "XLL is the lossless extension",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS-HD XLL - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ]
+  },
+  {
+   "name": "DTS:X outranks a DD+ Atmos compatibility track",
+   "why": "TRaSH scores DTS:X 4500, DD+ Atmos 3000",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "Dolby Digital Plus + Dolby Atmos",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus + Dolby Atmos - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS:X",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS:X - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-X 7.1"
+   ],
+   "all": [
+    "DTS-X 7.1",
+    "DD+ ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "DD+ outranks DTS at the same channels",
+   "why": "TRaSH scores DD+ 1750, DTS 1250",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - DTS - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - Dolby Digital Plus - 5.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital+ 5.1"
+   ],
+   "all": [
+    "Dolby Digital+ 5.1",
+    "DTS 5.1"
+   ]
+  },
+  {
+   "name": "A surround AAC soundtrack beats an AC-3 stereo dub",
+   "why": "Among lossy tracks more channels win before the codec",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English - AAC - 5.1"
+    },
+    {
+     "Type": "Audio",
+     "Language": "fre",
+     "Codec": "ac3",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "Français - Dolby Digital - Stereo"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1",
+    "Dolby Digital 2.0"
+   ]
+  },
+  {
+   "name": "A cropped DVD is 480p, not low resolution",
+   "why": "720 wide is SD even when cropped to 304 lines",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "mpeg2video",
+     "Width": 720,
+     "Height": 304,
+     "DisplayTitle": "480p MPEG2"
+    }
+   ],
+   "highest": [
+    "480p",
+    "MPEG2"
+   ],
+   "all": [
+    "480p",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "Ultrawide 2560x1080 is 1080p",
+   "why": "1440p needs a 1440-class height",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "h264",
+     "Width": 2560,
+     "Height": 1080,
+     "DisplayTitle": "1080p H264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "Jellyfin's coarse HDR range counts when the range type is unknown",
+   "why": "VideoRange HDR with VideoRangeType Unknown is HDR, not nothing",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "hevc",
+     "Width": 3840,
+     "Height": 2160,
+     "VideoRangeType": "Unknown",
+     "VideoRange": "HDR",
+     "DisplayTitle": "4K HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "XviD from its codec tag",
+   "why": "Jellyfin reports XviD as mpeg4 with codec tag XVID",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "mpeg4",
+     "CodecTag": "XVID",
+     "Width": 640,
+     "Height": 352,
+     "DisplayTitle": "480p MPEG4"
+    }
+   ],
+   "highest": [
+    "480p",
+    "XVID"
+   ],
+   "all": [
+    "480p",
+    "XVID"
+   ]
+  },
+  {
+   "name": "DivX from its codec tag",
+   "why": "DX50 is DivX 5",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "mpeg4",
+     "CodecTag": "DX50",
+     "Width": 720,
+     "Height": 400,
+     "DisplayTitle": "480p MPEG4"
+    }
+   ],
+   "highest": [
+    "480p",
+    "DIVX"
+   ],
+   "all": [
+    "480p",
+    "DIVX"
+   ]
+  },
+  {
+   "name": "An AC-3 track titled Atmos is Dolby Digital",
+   "why": "AC-3 cannot carry Atmos; the codec bounds what the title may claim",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "English Atmos"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ],
+   "legacy": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "An AAC track titled DTS has no codec chip",
+   "why": "AAC is not DTS; without a chip of its own it shows its surround layout",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "Original DTS mix"
+    }
+   ],
+   "highest": [
+    "5.1"
+   ],
+   "all": [
+    "5.1"
+   ]
+  },
+  {
+   "name": "A stereo AAC track titled TrueHD Atmos 7.1 claims nothing",
+   "why": "The codec and Jellyfin's layout beat a stale title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "English - TrueHD Atmos 7.1"
+    }
+   ],
+   "highest": [],
+   "all": []
+  },
+  {
+   "name": "A DTS track's title still refines it",
+   "why": "A title may add what the codec allows: DTS-HD MA on a DTS stream",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - DTS-HD MA - 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ]
+  },
+  {
+   "name": "A stereo AAC track's title cannot make it surround",
+   "why": "Without a layout, the reported 2 channels beat a title saying 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "DisplayTitle": "English - TrueHD Atmos 7.1"
+    }
+   ],
+   "highest": [],
+   "all": [],
+   "legacy": []
+  },
+  {
+   "name": "A stereo AC-3 track titled 5.1 is Dolby Digital 2.0",
+   "why": "The channel count bounds the title's layout",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 2,
+     "DisplayTitle": "English - Dolby Digital 5.1"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 2.0"
+   ],
+   "all": [
+    "Dolby Digital 2.0"
+   ]
+  },
+  {
+   "name": "A stereo FLAC track titled 5.1 is FLAC 2.0",
+   "why": "The channel count bounds the title's layout",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "flac",
+     "Channels": 2,
+     "DisplayTitle": "Original 5.1 mix"
+    }
+   ],
+   "highest": [
+    "FLAC 2.0"
+   ],
+   "all": [
+    "FLAC 2.0"
+   ]
+  },
+  {
+   "name": "E-AC-3 JOC titled TrueHD Atmos is DD+ Atmos",
+   "why": "The stream codec names the Atmos carrier, not the title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "eac3",
+     "Profile": "JOC",
+     "Channels": 6,
+     "DisplayTitle": "TrueHD Atmos 5.1"
+    }
+   ],
+   "highest": [
+    "DD+ ATMOS 5.1"
+   ],
+   "all": [
+    "DD+ ATMOS 5.1"
+   ]
+  },
+  {
+   "name": "A height layout in the title agrees with its bed channel count",
+   "why": "TrueHD Atmos 7.1.4 over 8 decoded channels keeps its heights",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Profile": "Dolby TrueHD + Dolby Atmos",
+     "Channels": 8,
+     "DisplayTitle": "English - TrueHD Atmos 7.1.4"
+    }
+   ],
+   "highest": [
+    "TRUEHD ATMOS 7.1.4"
+   ],
+   "all": [
+    "TRUEHD ATMOS 7.1.4"
+   ]
+  },
+  {
+   "name": "A stereo-titled track with six channels is 5.1",
+   "why": "A title saying stereo cannot shrink a reported 6-channel track",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "ac3",
+     "Channels": 6,
+     "DisplayTitle": "English - Dolby Digital - Stereo"
+    }
+   ],
+   "highest": [
+    "Dolby Digital 5.1"
+   ],
+   "all": [
+    "Dolby Digital 5.1"
+   ]
+  },
+  {
+   "name": "An XLL profile is DTS-HD MA, not DTS:X, for every account",
+   "why": "XLL is the lossless extension; only DTS:X by name is object audio",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA (XLL)",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 7.1"
+   ],
+   "all": [
+    "DTS-HD MA 7.1"
+   ],
+   "legacy": [
+    "DTS 7.1"
+   ]
+  },
+  {
+   "name": "A stereo TrueHD track beside an AAC 7.1 track is TrueHD 2.0 for every account",
+   "why": "Codec and channels come from one track; no track is TrueHD 7.1",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "DisplayTitle": "TrueHD 2.0"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "AAC 7.1"
+    }
+   ],
+   "highest": [
+    "TRUEHD 2.0"
+   ],
+   "all": [
+    "TRUEHD 2.0",
+    "7.1"
+   ],
+   "legacy": [
+    "TRUEHD 2.0"
+   ]
+  },
+  {
+   "name": "Invalid Dolby Vision is not claimed as Dolby Vision",
+   "why": "Jellyfin's DOVIInvalid means the DV metadata is unusable; the title's DV word cannot claim it",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "hevc",
+     "Width": 3840,
+     "Height": 2160,
+     "VideoRangeType": "DOVIInvalid",
+     "DisplayTitle": "4K DV HDR10"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HDR10",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "HDR10",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A layout field that contradicts the channel count gives way to the count",
+   "why": "Two channels cannot be 7.1, whichever field says so",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "truehd",
+     "Channels": 2,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "English - TrueHD"
+    }
+   ],
+   "highest": [
+    "TRUEHD 2.0"
+   ],
+   "all": [
+    "TRUEHD 2.0"
+   ]
+  },
+  {
+   "name": "The dca codec name is DTS",
+   "why": "dca is ffmpeg's name for the DTS decoder",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "dca",
+     "Channels": 6
+    }
+   ],
+   "highest": [
+    "DTS 5.1"
+   ],
+   "all": [
+    "DTS 5.1"
+   ]
+  },
+  {
+   "name": "An audio track's title is not IMAX evidence",
+   "why": "Only the video, the item and its file names speak for the picture",
+   "streams": [
+    {
+     "Type": "Video",
+     "Codec": "h264",
+     "Width": 1920,
+     "Height": 1080,
+     "VideoRangeType": "SDR",
+     "DisplayTitle": "1080p H264 SDR"
+    },
+    {
+     "Type": "Audio",
+     "Language": "eng",
+     "Codec": "aac",
+     "Channels": 2,
+     "ChannelLayout": "stereo",
+     "Title": "Commentary about IMAX cameras",
+     "DisplayTitle": "Commentary about IMAX cameras - AAC - Stereo"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "H264"
+   ]
+  },
+  {
+   "name": "A video title naming Dolby Vision and HDR10 keeps both when the range type is unknown",
+   "why": "The title is the only range evidence; it names the base layer as the structured type would",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "Unknown",
+     "DisplayTitle": "4K Dolby Vision HDR10 HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HDR10",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A video title naming Dolby Vision alone gives no base layer",
+   "why": "Nothing names one",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "Unknown",
+     "DisplayTitle": "4K Dolby Vision HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A portrait phone video is measured by its short side",
+   "why": "1080x1920 is a 1080p frame turned on its side, not 4K",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1080,
+     "Height": 1920,
+     "Codec": "h264",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "SDR",
+    "H264"
+   ],
+   "legacy": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "A portrait 4K video stays 4K, not 8K",
+   "why": "2160x3840 is a 4K frame turned on its side",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 2160,
+     "Height": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A 2560x1600 frame is 1440p-class, not 4K",
+   "why": "A 4K-class height needs a 4K-class width; 16:10 WQXGA is a 1440p frame",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 2560,
+     "Height": 1600,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "1440p",
+    "HEVC"
+   ],
+   "all": [
+    "1440p",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "1440p",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A 4:3 4096x3072 frame is 4K-class, not 8K",
+   "why": "An 8K-class height needs an 8K-class width",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 4096,
+     "Height": 3072,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A square 3200x3200 frame is 4K-class, not 8K",
+   "why": "An 8K-class height needs an 8K-class width",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 3200,
+     "Height": 3200,
+     "Codec": "hevc",
+     "VideoRangeType": "SDR"
+    }
+   ],
+   "highest": [
+    "4K",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A codec name inside a title word is no codec",
+   "why": "NAV1GATOR is not AV1; an unprobed stream with that title names no codec",
+   "streams": [
+    {
+     "Type": "Video",
+     "DisplayTitle": "NAV1GATOR"
+    }
+   ],
+   "highest": [],
+   "all": [],
+   "legacy": []
+  },
+  {
+   "name": "A codec named as a word in an unprobed stream title still counts",
+   "why": "The title is the only evidence and names it as a word",
+   "streams": [
+    {
+     "Type": "Video",
+     "DisplayTitle": "4K AV1"
+    }
+   ],
+   "highest": [
+    "4K",
+    "AV1"
+   ],
+   "all": [
+    "4K",
+    "AV1"
+   ],
+   "legacy": [
+    "4K",
+    "AV1"
+   ]
+  },
+  {
+   "name": "A known interlaced 1080 frame is 1080i",
+   "why": "Resolution never claims progressive scan for an interlaced stream",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1920,
+     "Height": 1080,
+     "Codec": "h264",
+     "VideoRangeType": "SDR",
+     "IsInterlaced": true
+    }
+   ],
+   "highest": [
+    "1080i",
+    "H264"
+   ],
+   "all": [
+    "1080i",
+    "SDR",
+    "H264"
+   ],
+   "legacy": [
+    "1080i",
+    "H264"
+   ]
+  },
+  {
+   "name": "A title naming Dolby Vision and SDR keeps the SDR base when the range type is unknown",
+   "why": "As the structured DOVIWithSDR type would",
+   "streams": [
+    {
+     "Type": "Video",
+     "Height": 2160,
+     "Width": 3840,
+     "Codec": "hevc",
+     "VideoRangeType": "Unknown",
+     "DisplayTitle": "4K Dolby Vision SDR HEVC"
+    }
+   ],
+   "highest": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ],
+   "all": [
+    "4K",
+    "Dolby Vision",
+    "SDR",
+    "HEVC"
+   ],
+   "legacy": [
+    "4K",
+    "Dolby Vision",
+    "HEVC"
+   ]
+  },
+  {
+   "name": "A known interlaced PAL frame is 576i",
+   "why": "Resolution never claims progressive scan for an interlaced stream",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 720,
+     "Height": 576,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "IsInterlaced": true
+    }
+   ],
+   "highest": [
+    "576i",
+    "MPEG2"
+   ],
+   "all": [
+    "576i",
+    "SDR",
+    "MPEG2"
+   ],
+   "legacy": [
+    "576i",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "A known interlaced NTSC frame is 480i",
+   "why": "Resolution never claims progressive scan for an interlaced stream",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 720,
+     "Height": 480,
+     "Codec": "mpeg2video",
+     "VideoRangeType": "SDR",
+     "IsInterlaced": true
+    }
+   ],
+   "highest": [
+    "480i",
+    "MPEG2"
+   ],
+   "all": [
+    "480i",
+    "SDR",
+    "MPEG2"
+   ],
+   "legacy": [
+    "480i",
+    "MPEG2"
+   ]
+  },
+  {
+   "name": "A title naming 1080i names the resolution when the dimensions are unknown",
+   "why": "The title is the only evidence and names interlaced scan",
+   "streams": [
+    {
+     "Type": "Video",
+     "DisplayTitle": "1080i H264"
+    }
+   ],
+   "highest": [
+    "1080i",
+    "H264"
+   ],
+   "all": [
+    "1080i",
+    "H264"
+   ],
+   "legacy": [
+    "1080i",
+    "H264"
+   ]
+  },
+  {
+   "name": "A DTS-HD MA profile outranks a title's HRA claim",
+   "why": "The profile Jellyfin reads from the stream is structured; a title may refine its carrier, not contradict it",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 6,
+     "ChannelLayout": "5.1",
+     "DisplayTitle": "DTS-HD HRA 5.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD MA 5.1"
+   ],
+   "all": [
+    "DTS-HD MA 5.1"
+   ]
+  },
+  {
+   "name": "A DTS-HD HRA profile outranks a title's MA claim",
+   "why": "A lossy High Resolution track is never shown as lossless because of its title",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Codec": "dts",
+     "Profile": "DTS-HD HRA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "DTS-HD MA 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-HD HRA 7.1"
+   ],
+   "all": [
+    "DTS-HD HRA 7.1"
+   ]
+  },
+  {
+   "name": "A DTS:X title still refines a DTS-HD MA profile",
+   "why": "ffmpeg reports DTS:X tracks under the MA profile; the title names the object layer",
+   "streams": [
+    {
+     "Type": "Audio",
+     "Codec": "dts",
+     "Profile": "DTS-HD MA",
+     "Channels": 8,
+     "ChannelLayout": "7.1",
+     "DisplayTitle": "DTS:X 7.1"
+    }
+   ],
+   "highest": [
+    "DTS-X 7.1"
+   ],
+   "all": [
+    "DTS-X 7.1"
+   ]
+  },
+  {
+   "name": "A title naming H.264 with its dot names the codec",
+   "why": "The usual written spelling of the codec is a whole codec word",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1920,
+     "Height": 1080,
+     "DisplayTitle": "1080p H.264"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "H264"
+   ],
+   "all": [
+    "1080p",
+    "H264"
+   ],
+   "legacy": [
+    "1080p",
+    "H264"
+   ]
+  },
+  {
+   "name": "A title naming VC-1 with its hyphen names the codec",
+   "why": "VC-1 is the codec's written name",
+   "streams": [
+    {
+     "Type": "Video",
+     "Width": 1920,
+     "Height": 1080,
+     "DisplayTitle": "1080p VC-1"
+    }
+   ],
+   "highest": [
+    "1080p",
+    "VC-1"
+   ],
+   "all": [
+    "1080p",
+    "VC-1"
+   ],
+   "legacy": [
+    "1080p",
+    "VC-1"
+   ]
+  }
+ ]
+}

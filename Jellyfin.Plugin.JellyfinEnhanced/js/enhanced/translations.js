@@ -180,6 +180,32 @@
         throw new Error('Failed to load English fallback translations');
     }
 
+    /**
+     * Fill the gaps of a non-English locale with the bundled English strings.
+     * Weblate adds new keys to the other locales (en-GB included) only after a
+     * release, so without this a key added in the same release shows up raw.
+     * The locale's own strings always win; only missing keys come from English.
+     * @param {{translations: Object, usedLang: string}} result - A loaded locale.
+     * @param {string} pluginVersion - Cache key component.
+     * @returns {Promise<Object>} The merged translations.
+     */
+    async function withEnglishFallback(result, pluginVersion) {
+        // JE.t picks plural forms by the language a string is written in (see plugin.js).
+        JE.translationsLang = result?.usedLang || 'en';
+        JE.translationsFromEnglish = null;
+        if (!result || result.usedLang === 'en') return result.translations;
+        try {
+            const english = await tryLoadSingleLanguage('en', pluginVersion);
+            if (english && english.translations) {
+                JE.translationsFromEnglish = new Set(Object.keys(english.translations).filter((key) => !(key in result.translations)));
+                return Object.assign({}, english.translations, result.translations);
+            }
+        } catch (e) {
+            console.warn('🪼 Jellyfin Enhanced: English fallback strings unavailable', e);
+        }
+        return result.translations;
+    }
+
     JE.loadTranslations = async function() {
         try {
             const pluginVersion = await getPluginVersion();
@@ -215,7 +241,7 @@
                 try {
                     const result = await tryLoadSingleLanguage(code, pluginVersion);
                     if (result && result.translations) {
-                        return result.translations;
+                        return await withEnglishFallback(result, pluginVersion);
                     }
                 } catch (e) {
                     console.warn(`🪼 Jellyfin Enhanced: Failed to load translations for ${code}`, e);
