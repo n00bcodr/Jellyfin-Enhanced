@@ -41,10 +41,11 @@ public class PluralFormsTests
         Assert.Equal(StatusRules.Text("quality_versions_count", english), StatusRules.Text("quality_versions_count", english, 2));
         // A locale's own sentence never turns English for one count; a key it lacks is English, with English forms.
         var german = CultureInfo.GetCultureInfo("de");
-        foreach (var key in new[] { "panel_media_tags_badge_window_added", "language_tags_count_tooltip", "admin_tags_presets_name_desc" })
+        foreach (var key in new[] { "panel_media_tags_badge_window_added", "language_tags_count_tooltip", "quality_versions_count" })
         {
-            var own = StatusRules.Text(key, german);
-            Assert.Equal(own == StatusRules.Text(key, english) ? StatusRules.Text(key, english, 1) : own, StatusRules.Text(key, german, 1));
+            // German has its own singular form for some keys and none for others; either way the count never turns it English.
+            Assert.NotEqual(StatusRules.Text(key, english, 1), StatusRules.Text(key, german, 1));
+            Assert.NotEqual(StatusRules.Text(key, english, 2), StatusRules.Text(key, german, 2));
         }
     }
 

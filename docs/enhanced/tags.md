@@ -38,7 +38,7 @@ The **Media Tags** tab gathers every server-wide tag setting, laid out like the 
 ![The Groups section of the Media Tags admin tab with the Quality group open: categories in stacking order, then its Display behaviour and Audio language defaults](../images/media-tags-admin-groups.png)
 
 !!! warning "Apply defaults to all users"
-    **Apply defaults to all users** (Layout defaults tab) copies every saved Jellyfin Enhanced default, not only Media Tags, into every user's settings, replacing what they chose. It asks first and cannot be undone. **Reset all colours** and deleting a rule can be undone for a few seconds from the message at the bottom of the page.
+    **Apply defaults to all users** (Overview tab) copies every saved Jellyfin Enhanced default, not only Media Tags, into every user's settings, replacing what they chose. It asks first and cannot be undone. **Reset all colours** and deleting a rule can be undone for a few seconds from the message at the bottom of the page.
 
 Tables below show factory defaults. Rows marked “Admin / personal” give both exact labels for the same preference. Most admin defaults become the starting values for new personal settings. Saved personal values take precedence, so changing a server default does not overwrite a user's choice.
 

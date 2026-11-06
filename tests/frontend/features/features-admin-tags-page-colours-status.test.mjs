@@ -17,7 +17,7 @@ test('Colours: editor edits save the Tag Styles document; Reset all asks, saves 
   h.$('#tagStyleResetAll').click();
   await h.settle();
   await h.save();
-  assert.deepEqual(h.confirms, ['admin_tags_colours_reset']);
+  assert.deepEqual(h.confirms, ['Reset all colours']);
   assert.equal(h.server.TagStyleOverrides, '');
   assert.equal(h.server.TagStylePreset, 'default');
   h.$('.je-ta-snack .je-ta-button').click();
@@ -47,8 +47,8 @@ test('Status badges › Leaving soon: source fields save, the key is a password 
   const status = { Configured: true, Maintainerr: true, Collections: 1, CollectionsFound: 1, Items: 4, Dated: 3, LastSuccess: Date.UTC(2026, 9, 30, 9), NextRefresh: Date.UTC(2026, 9, 30, 15), LastError: null };
   const h = setup(t, { config: { LeavingSoonCollections: 'Leaving Soon', LeavingSoonMaintainerrApiKey: 'stored-key-canary' }, routes: { '/admin/leaving-soon': () => status } });
   await h.settle(); await h.settle();
-  assert.equal(h.$('[data-leaving-state]').textContent, 'admin_tags_leaving_state_ok:');
-  assert.match(h.$('[data-leaving-detail]').textContent, /^admin_tags_leaving_detail:4\|3\|.* · admin_tags_leaving_detail_collections:1\|1$/);
+  assert.equal(h.$('[data-leaving-state]').textContent, 'Up to date');
+  assert.match(h.$('[data-leaving-detail]').textContent, /^4 items leaving \(3 with a date\) · .* · 1 of 1 collections found$/);
   const key = h.$('#leavingSoonMaintainerrApiKey');
   assert.equal(key.type, 'password');
   assert.equal(key.value, '');
@@ -79,7 +79,7 @@ test('Status badges › Leaving soon: source fields save, the key is a password 
   h.change(h.$('#leavingSoonCollections'), '');
   await h.save();
   assert.equal(h.$('#leavingSoonRefreshBtn').disabled, true);
-  assert.equal(h.$('[data-leaving-state]').textContent, 'admin_tags_leaving_state_off:');
+  assert.equal(h.$('[data-leaving-state]').textContent, 'No source set');
 });
 
 test('Status badges › Leaving soon: Refresh asks nothing while the source edit is refused, and works once it is settled', async t => {
@@ -94,7 +94,7 @@ test('Status badges › Leaving soon: Refresh asks nothing while the source edit
   for (let n = 0; n < 10; n++) await h.settle();
   assert.equal(h.A.pendingState().state, 'conflict');
   assert.deepEqual(refreshes(), [], 'the stored source was not refreshed');
-  assert.equal(h.$('.je-ta-snack')?.textContent, 'admin_tags_leaving_refresh_unsaved');
+  assert.equal(h.$('.je-ta-snack')?.textContent, 'Not refreshed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then refresh again.');
   assert.equal(h.$('#leavingSoonRefreshBtn').disabled, false, 'the button stays usable for a retry');
   // Keep mine saves the draft; Refresh then asks the server.
   h.$('#jeTaSaved [data-je-keep]').click();
@@ -103,7 +103,7 @@ test('Status badges › Leaving soon: Refresh asks nothing while the source edit
   h.$('#leavingSoonRefreshBtn').click();
   for (let n = 0; n < 10; n++) await h.settle();
   assert.equal(refreshes().length, 1);
-  assert.equal(h.$('.je-ta-snack')?.textContent, 'admin_tags_leaving_refresh_done');
+  assert.equal(h.$('.je-ta-snack')?.textContent, 'Leaving soon refreshed');
 });
 
 test('Status badges › Leaving soon: Refresh asks nothing when saving the source edit fails', async t => {
@@ -116,7 +116,7 @@ test('Status badges › Leaving soon: Refresh asks nothing when saving the sourc
   for (let n = 0; n < 10; n++) await h.settle();
   assert.equal(h.A.pendingState().state, 'error');
   assert.deepEqual(h.posts.filter((p) => p.includes('leaving-soon')), []);
-  assert.equal(h.$('.je-ta-snack')?.textContent, 'admin_tags_leaving_refresh_unsaved');
+  assert.equal(h.$('.je-ta-snack')?.textContent, 'Not refreshed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then refresh again.');
   assert.equal(h.$('#leavingSoonRefreshBtn').disabled, false);
 });
 
@@ -138,14 +138,14 @@ for (const outcome of ['answer', 'rejection']) {
     assert.equal(view('#leavingSoonRefreshBtn').disabled, true, 'busy while its own request runs');
     requests[1].resolve({ Configured: true, Items: 2, Dated: 1, LastSuccess: Date.UTC(2026, 9, 30, 9), LastError: null });
     for (let n = 0; n < 5; n++) await h.settle();
-    assert.equal(view('[data-leaving-state]').textContent, 'admin_tags_leaving_state_ok:');
+    assert.equal(view('[data-leaving-state]').textContent, 'Up to date');
     assert.equal(view('#leavingSoonRefreshBtn').disabled, false);
     // The old view's request settles last: the new view keeps its own answer and stays usable.
     if (outcome === 'answer') requests[0].resolve({ Configured: true, Items: 9, LastError: 'old view' });
     else requests[0].reject({ status: 500 });
     for (let n = 0; n < 5; n++) await h.settle();
-    assert.equal(view('[data-leaving-state]').textContent, 'admin_tags_leaving_state_ok:');
-    assert.match(view('[data-leaving-detail]').textContent, /^admin_tags_leaving_detail:2\|1\|/);
+    assert.equal(view('[data-leaving-state]').textContent, 'Up to date');
+    assert.match(view('[data-leaving-detail]').textContent, /^2 items leaving \(1 with a date\) · /);
     assert.equal(view('#leavingSoonRefreshBtn').disabled, false);
     // Its Refresh starts and finishes on its own.
     view('#leavingSoonRefreshBtn').click();

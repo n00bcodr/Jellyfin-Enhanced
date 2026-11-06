@@ -16,7 +16,7 @@ test('Groups › Quality: reordering writes every order key, and the saved audio
   assert.equal(h.server.AudioInfoTagOrder, 5);
   assert.equal(h.server.VideoCodecTagOrder, 6);
   assert.equal(h.server.ResolutionTagOrder, 1);
-  assert.match(h.$('.je-ta-grow[data-group="quality"] .je-ta-grow-sum').textContent, /admin_tags_quality_summary:6\|11/);
+  assert.match(h.$('.je-ta-grow[data-group="quality"] .je-ta-grow-sum').textContent, /6 of 11 categories/);
   h.change(h.$('#qualityTagsEnabled'), false);
   await h.save();
   assert.equal(h.server.QualityTagsEnabled, false);
@@ -40,7 +40,7 @@ test('Groups › Rating: sources keep their order and an empty choice, legacy sw
   h.change(h.$('#ratingTagsMinScore'), '7');
   await h.save();
   assert.equal(h.server.RatingTagsMinScore, 7);
-  assert.match(h.$('[data-mdblist]').textContent, /admin_tags_mdblist_no_key/);
+  assert.match(h.$('[data-mdblist]').textContent, /On, no API key/);
   assert.match(h.$('[data-mdblist] a').href, /name=Jellyfin%20Enhanced&jeSection=mdblistRatingsEnabled$/);
 });
 
@@ -59,7 +59,7 @@ test('Groups › Language, Genre, Age rating, Status and People write their swit
   assert.equal(h.server.LanguageTagsStyle, 'codes');
   assert.equal(h.server.LanguageTagsCountBadge, 'both');
   assert.equal(h.server.LanguageTagsPriority, 'English, ja');
-  assert.match(h.$('.je-ta-grow[data-group="language"] .je-ta-grow-sum').textContent, /admin_tags_language_priority_summary:English, ja/);
+  assert.match(h.$('.je-ta-grow[data-group="language"] .je-ta-grow-sum').textContent, /priority: English, ja/);
 });
 
 
@@ -100,7 +100,7 @@ test('Groups › Logos: both mode selects name Off with the translated track_off
   for (const id of ['#logoTagsMovieMode', '#logoTagsSeriesMode']) {
     const off = h.$(`${id} option[value="off"]`);
     assert.ok(off, `${id} offers Off`);
-    assert.equal(off.textContent.trim(), 'track_off');
+    assert.equal(off.textContent.trim(), 'Off');
   }
   h.change(h.$('#logoTagsMovieMode'), 'off');
   await h.save();

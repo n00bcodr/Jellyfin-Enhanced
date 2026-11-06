@@ -48,26 +48,26 @@
         const trimmed = (text || '').trim();
         if (!trimmed) return { rules: [], error: null };
         let raw;
-        try { raw = JSON.parse(trimmed); } catch (e) { return { rules: [], error: JE.t('admin_tags_rules_json_invalid', { message: e.message }) }; }
-        if (!Array.isArray(raw)) return { rules: [], error: JE.t('admin_tags_rules_json_array') };
-        if (raw.length > MAX_RULES) return { rules: [], error: JE.t('admin_tags_rules_json_too_many', { n: MAX_RULES }) };
+        try { raw = JSON.parse(trimmed); } catch (e) { return { rules: [], error: A.fmt('Not valid JSON: {message}', { message: e.message }) }; }
+        if (!Array.isArray(raw)) return { rules: [], error: A.fmt('Expected a JSON array of rules.') };
+        if (raw.length > MAX_RULES) return { rules: [], error: A.fmt('At most {n} rules.', { n: MAX_RULES }) };
         const rules = [];
         for (let i = 0; i < raw.length; i++) {
             const rule = raw[i];
             const n = i + 1;
-            if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return { rules: [], error: JE.t('admin_tags_rules_json_not_object', { n }) };
+            if (!rule || typeof rule !== 'object' || Array.isArray(rule)) return { rules: [], error: A.fmt('Rule {n}: not an object.', { n }) };
             const layout = String(get(rule, 'layout') || '').toLowerCase();
-            if (!LAYOUTS.includes(layout)) return { rules: [], error: JE.t('admin_tags_rules_json_layout', { n, layout }) };
+            if (!LAYOUTS.includes(layout)) return { rules: [], error: A.fmt('Rule {n}: unknown layout "{layout}".', { n, layout }) };
             const density = String(get(rule, 'density') || 'full').toLowerCase();
-            if (density !== 'full' && density !== 'compact') return { rules: [], error: JE.t('admin_tags_rules_json_density', { n }) };
+            if (density !== 'full' && density !== 'compact') return { rules: [], error: A.fmt('Rule {n}: density must be full or compact.', { n }) };
             const when = get(rule, 'when');
-            if (!Array.isArray(when) || when.length < 1 || when.length > 5) return { rules: [], error: JE.t('admin_tags_rules_json_when', { n }) };
+            if (!Array.isArray(when) || when.length < 1 || when.length > 5) return { rules: [], error: A.fmt('Rule {n}: "when" needs 1 to 5 conditions.', { n }) };
             const conditions = [];
             for (let j = 0; j < when.length; j++) {
                 const field = String(get(when[j], 'field') || '');
                 const value = String(get(when[j], 'value') || '').trim();
-                if (!FIELDS.map((f) => f.toLowerCase()).includes(field.toLowerCase()) || !value) return { rules: [], error: JE.t('admin_tags_rules_json_condition', { n, m: j + 1 }) };
-                if (field.toLowerCase() === 'library' && !/^[0-9a-fA-F]{32}$/.test(value.replace(/-/g, ''))) return { rules: [], error: JE.t('admin_tags_rules_json_library', { n }) };
+                if (!FIELDS.map((f) => f.toLowerCase()).includes(field.toLowerCase()) || !value) return { rules: [], error: A.fmt('Rule {n}: condition {m} needs a known field and a value.', { n, m: j + 1 }) };
+                if (field.toLowerCase() === 'library' && !/^[0-9a-fA-F]{32}$/.test(value.replace(/-/g, ''))) return { rules: [], error: A.fmt('Rule {n}: a library condition needs a library id.', { n }) };
                 conditions.push({ Field: field, Value: value });
             }
             const slots = get(rule, 'slots');
@@ -101,8 +101,8 @@
         const key = field.toLowerCase();
         let shown = value;
         if (key === 'library') shown = libraries[value.replace(/-/g, '').toLowerCase()] || value;
-        else if (key === 'type') shown = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[value.toLowerCase()]);
-        return JE.t('admin_tags_rules_condition', { field: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.field[`${key}`]), value: shown });
+        else if (key === 'type') shown = A.fmt(A.WORDS.type[value.toLowerCase()]);
+        return A.fmt('{field} is {value}', { field: A.fmt(A.WORDS.field[`${key}`]), value: shown });
     }
 
     /**
@@ -115,20 +115,20 @@
      */
     function ruleHtml(ctx, rule, i, count) {
         const enabled = get(rule, 'enabled') !== false;
-        const when = (get(rule, 'when') || []).map((cond) => conditionText(cond, librariesOf(ctx))).join(JE.t('tag_looks_and'));
-        const look = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[String(get(rule, 'layout') || 'corners').toLowerCase()]), density: JE.t(`panel_settings_ui_tag_density_${String(get(rule, 'density') || 'full').toLowerCase() === 'compact' ? 'compact' : 'full'}`) });
-        const extra = hasExtras(rule) ? ` <span class="je-ta-hint">${ctx.tx('admin_tags_rules_has_more')}</span>` : '';
-        const name = JE.t('panel_media_tags_preview_source_rule', { n: i + 1 });
+        const when = (get(rule, 'when') || []).map((cond) => conditionText(cond, librariesOf(ctx))).join(A.fmt(' and '));
+        const look = A.fmt('{layout} · {density}', { layout: A.fmt(A.WORDS.layout[String(get(rule, 'layout') || 'corners').toLowerCase()]), density: A.WORDS.density[String(get(rule, 'density') || 'full').toLowerCase() === 'compact' ? 'compact' : 'full'] });
+        const extra = hasExtras(rule) ? ` <span class="je-ta-hint">${ctx.tx('(also sets positions; edit as JSON)')}</span>` : '';
+        const name = A.fmt('Rule {n}', { n: i + 1 });
         const editing = editsOf(ctx).index === i;
         return `<li class="je-ta-rule" data-index="${i}" data-enabled="${enabled}"${editing ? ' data-editing="true"' : ''}>
             <span class="je-ta-rule-n">${i + 1}</span>
-            <input type="checkbox" data-act="enable" ${enabled ? 'checked' : ''} aria-label="${ctx.esc(JE.t('admin_tags_rules_enable', { name }))}">
+            <input type="checkbox" data-act="enable" ${enabled ? 'checked' : ''} aria-label="${ctx.esc(A.fmt('{name} enabled', { name }))}">
             <span class="je-ta-rule-text">${ctx.esc(when)} → <strong>${ctx.esc(look)}</strong>${extra}</span>
             <span class="je-ta-rule-tools">
-                <button type="button" class="je-ta-button" data-act="edit" aria-label="${ctx.esc(JE.t('tag_looks_edit_named', { rule: name }))}"${editing ? ' aria-current="true"' : ''}>${ctx.tx('reviews_edit')}</button>
-                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="-1" aria-label="${ctx.esc(JE.t('admin_tags_move_up', { name }))}" ${i === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
-                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="1" aria-label="${ctx.esc(JE.t('admin_tags_move_down', { name }))}" ${i === count - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
-                <button type="button" class="je-ta-icon-btn" data-act="delete" aria-label="${ctx.esc(JE.t('admin_tags_rules_delete', { name }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
+                <button type="button" class="je-ta-button" data-act="edit" aria-label="${ctx.esc(A.fmt('Edit rule: {rule}', { rule: name }))}"${editing ? ' aria-current="true"' : ''}>${ctx.tx('Edit')}</button>
+                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="-1" aria-label="${ctx.esc(A.fmt('Move {name} up', { name }))}" ${i === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
+                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="1" aria-label="${ctx.esc(A.fmt('Move {name} down', { name }))}" ${i === count - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
+                <button type="button" class="je-ta-icon-btn" data-act="delete" aria-label="${ctx.esc(A.fmt('Delete {name}', { name }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
             </span>
         </li>`;
     }
@@ -181,14 +181,14 @@
      */
     function valueControl(ctx, field, value, id, first) {
         const attrs = `id="${id}" data-cond-value="1"${first ? ' data-rule="value"' : ''} aria-required="true"`;
-        const choose = `<option value="">${ctx.tx('tag_looks_choose')}</option>`;
+        const choose = `<option value="">${ctx.tx('Choose…')}</option>`;
         const option = (v, label) => `<option value="${ctx.esc(v)}"${v === value ? ' selected' : ''}>${ctx.esc(label)}</option>`;
-        if (field === 'type') return `<select ${attrs}>${choose}${TYPES.map((t) => option(t, JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[t.toLowerCase()]))).join('')}</select>`;
+        if (field === 'type') return `<select ${attrs}>${choose}${TYPES.map((t) => option(t, A.fmt(A.WORDS.type[t.toLowerCase()]))).join('')}</select>`;
         if (field === 'library') {
             const entries = Object.entries(librariesOf(ctx));
-            if (!entries.length) return `<input type="text" ${attrs} value="${ctx.esc(value)}" placeholder="${ctx.tx('admin_tags_rules_library_id')}">`;
+            if (!entries.length) return `<input type="text" ${attrs} value="${ctx.esc(value)}" placeholder="${ctx.tx('Library id')}">`;
             const chosen = value.replace(/-/g, '').toLowerCase();
-            if (chosen && !entries.some(([libId]) => libId === chosen)) entries.push([chosen, JE.t('tag_looks_unknown_library')]);
+            if (chosen && !entries.some(([libId]) => libId === chosen)) entries.push([chosen, A.fmt('an unavailable library')]);
             return `<select ${attrs}>${choose}${entries.map(([libId, name]) => `<option value="${ctx.esc(libId)}"${libId === chosen ? ' selected' : ''}>${ctx.esc(name)}</option>`).join('')}</select>`;
         }
         const known = suggestions.get(ctx);
@@ -199,7 +199,7 @@
         }
         const ratings = field === 'ageRating' ? (known?.ratings || []) : [];
         const list = ratings.length ? ` list="${id}-ratings"` : '';
-        return `<input type="text" ${attrs}${list} maxlength="100" value="${ctx.esc(value)}" placeholder="${ctx.tx(field === 'genre' ? 'admin_tags_rules_genre_placeholder' : 'admin_tags_rules_age_placeholder')}">`
+        return `<input type="text" ${attrs}${list} maxlength="100" value="${ctx.esc(value)}" placeholder="${ctx.tx(field === 'genre' ? 'e.g. Animation' : 'e.g. TV-Y')}">`
             + (ratings.length ? `<datalist id="${id}-ratings">${ratings.map((r) => `<option value="${ctx.esc(r)}"></option>`).join('')}</datalist>` : '');
     }
 
@@ -217,8 +217,8 @@
         return `<div class="je-ta-cond" data-cond>
             <span class="je-ta-cond-n" data-cond-n></span>
             <label class="je-ta-sr" for="jeTaCondField${n}" data-cond-field-label></label>
-            <select id="jeTaCondField${n}" data-cond-field${first ? ' data-rule="field"' : ''}>${FIELDS.map((f) => `<option value="${f}"${f === field ? ' selected' : ''}>${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.field[f.toLowerCase()])}</option>`).join('')}</select>
-            <span class="je-ta-cond-is" aria-hidden="true">${ctx.tx('tag_looks_is')}</span>
+            <select id="jeTaCondField${n}" data-cond-field${first ? ' data-rule="field"' : ''}>${FIELDS.map((f) => `<option value="${f}"${f === field ? ' selected' : ''}>${ctx.tx(A.WORDS.field[f.toLowerCase()])}</option>`).join('')}</select>
+            <span class="je-ta-cond-is" aria-hidden="true">${ctx.tx('is')}</span>
             <label class="je-ta-sr" for="jeTaCondValue${n}" data-cond-value-label></label>
             <span class="je-ta-cond-value" data-rule-value>${valueControl(ctx, field, String(cond.value || ''), `jeTaCondValue${n}`, first)}</span>
             <button type="button" class="je-ta-icon-btn" data-cond-remove><span class="material-icons" aria-hidden="true">close</span></button>
@@ -229,45 +229,45 @@
         id: 'rules',
         tab: 'rules',
         order: 10,
-        title: 'admin_tags_rules_title',
-        hint: 'admin_tags_rules_desc',
+        title: 'Default tag look rules',
+        hint: 'The first enabled rule that matches a card gives it its layout and density. New users (and "Apply defaults to all users") start with these; users edit their own copy.',
         fields: [
-            { id: 'tagLookRulesJson', key: 'TagLookRules', type: 'custom', label: 'admin_tags_rules_json' },
+            { id: 'tagLookRulesJson', key: 'TagLookRules', type: 'custom', label: 'Edit as JSON' },
         ],
         render(ctx, body) {
             const max = JE.core.tagLook?.MAX_CONDITIONS || 5;
             body.innerHTML = `
-                <p class="je-ta-empty" data-rules-empty>${ctx.tx('admin_tags_rules_none')}</p>
+                <p class="je-ta-empty" data-rules-empty>${ctx.tx('No rules. New users start with the default look.')}</p>
                 <ol class="je-ta-rules" data-rules></ol>
-                <h4 class="je-ta-sub" id="jeTaRuleAddTitle" tabindex="-1" data-rule-title>${ctx.tx('tag_looks_add_a_rule')}</h4>
+                <h4 class="je-ta-sub" id="jeTaRuleAddTitle" tabindex="-1" data-rule-title>${ctx.tx('Add a rule')}</h4>
                 <div class="je-ta-rule-form" role="group" aria-labelledby="jeTaRuleAddTitle">
                     <fieldset class="je-ta-conds">
-                        <legend class="je-ta-conds-legend">${ctx.tx('tag_looks_conditions')}</legend>
+                        <legend class="je-ta-conds-legend">${ctx.tx('When all of these hold')}</legend>
                         <div data-conds></div>
-                        <div class="je-ta-cond-add"><button type="button" class="je-ta-button" data-rule="add-cond">${ctx.tx('tag_looks_add_condition')}</button><span class="je-ta-hint" data-cond-count></span></div>
+                        <div class="je-ta-cond-add"><button type="button" class="je-ta-button" data-rule="add-cond">${ctx.tx('+ Condition')}</button><span class="je-ta-hint" data-cond-count></span></div>
                     </fieldset>
                     <fieldset class="je-ta-rule-look">
-                        <legend class="je-ta-conds-legend">${ctx.tx('tag_looks_use_look')}</legend>
+                        <legend class="je-ta-conds-legend">${ctx.tx('Use this look')}</legend>
                         <div class="je-ta-rule-look-row">
-                            <label>${ctx.tx('common_layout')}<select data-rule="layout">${LAYOUTS.map((l) => `<option value="${l}">${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[l])}</option>`).join('')}</select></label>
-                            <label>${ctx.tx('panel_settings_ui_tag_density')}<select data-rule="density"><option value="full">${ctx.tx('panel_settings_ui_tag_density_full')}</option><option value="compact">${ctx.tx('panel_settings_ui_tag_density_compact')}</option></select></label>
+                            <label>${ctx.tx('Layout')}<select data-rule="layout">${LAYOUTS.map((l) => `<option value="${l}">${ctx.tx(A.WORDS.layout[l])}</option>`).join('')}</select></label>
+                            <label>${ctx.tx('Label density')}<select data-rule="density"><option value="full">${ctx.tx('Full')}</option><option value="compact">${ctx.tx('Compact')}</option></select></label>
                         </div>
                     </fieldset>
                     <p class="je-ta-rule-error" id="jeTaRuleError" aria-live="assertive"></p>
-                    <p class="je-ta-hint" data-rule-extras hidden>${ctx.tx('admin_tags_rules_edit_keeps')}</p>
+                    <p class="je-ta-hint" data-rule-extras hidden>${ctx.tx('This rule also sets its own group positions or episode and list-row looks. Saving keeps them; change them as JSON.')}</p>
                     <div class="je-ta-actions je-ta-rule-actions">
-                        <button type="button" class="je-ta-button je-ta-button--primary" data-rule="add"><span class="material-icons" aria-hidden="true">add</span><span data-rule-save-label>${ctx.tx('tag_looks_add_rule')}</span></button>
-                        <button type="button" class="je-ta-button" data-rule="cancel" hidden>${ctx.tx('jellyseerr_modal_cancel')}</button>
-                        <span class="je-ta-hint" data-rule-hint>${ctx.tx('tag_looks_add_hint')}</span>
+                        <button type="button" class="je-ta-button je-ta-button--primary" data-rule="add"><span class="material-icons" aria-hidden="true">add</span><span data-rule-save-label>${ctx.tx('Add rule')}</span></button>
+                        <button type="button" class="je-ta-button" data-rule="cancel" hidden>${ctx.tx('Cancel')}</button>
+                        <span class="je-ta-hint" data-rule-hint>${ctx.tx('Added at the end of the list.')}</span>
                     </div>
                 </div>
                 <details class="je-ta-json" style="margin-top:14px">
-                    <summary class="je-ta-link" id="tagLookRulesJsonLabel">${ctx.tx('admin_tags_rules_json')}</summary>
-                    <p class="je-ta-hint">${ctx.tx('admin_tags_rules_json_desc')}</p>
+                    <summary class="je-ta-link" id="tagLookRulesJsonLabel">${ctx.tx('Edit as JSON')}</summary>
+                    <p class="je-ta-hint">${ctx.tx('For what the form does not set: per-rule group positions and episode or list-row looks. Each rule: when (1-5 conditions, all must hold; field library, type, genre or ageRating), layout and density. At most 50 rules.')}</p>
                     <textarea id="tagLookRulesJson" rows="10" spellcheck="false" aria-labelledby="tagLookRulesJsonLabel" aria-describedby="tagLookRulesJsonStatus tagLookRulesJsonStale"></textarea>
                     <p class="je-ta-json-status" id="tagLookRulesJsonStatus" role="status"></p>
-                    <p class="je-ta-json-status je-ta-json-stale" id="tagLookRulesJsonStale" role="status" hidden>${ctx.tx('admin_tags_rules_json_stale')}</p>
-                    <div class="je-ta-actions"><button type="button" class="je-ta-button" data-rule="json-save">${ctx.tx('admin_tags_rules_json_save')}</button><button type="button" class="je-ta-button" data-rule="json-revert">${ctx.tx('admin_tags_rules_json_revert')}</button></div>
+                    <p class="je-ta-json-status je-ta-json-stale" id="tagLookRulesJsonStale" role="status" hidden>${ctx.tx('The saved rules changed while you were editing. Save JSON replaces them with this text; Revert loads the saved rules.')}</p>
+                    <div class="je-ta-actions"><button type="button" class="je-ta-button" data-rule="json-save">${ctx.tx('Save JSON')}</button><button type="button" class="je-ta-button" data-rule="json-revert">${ctx.tx('Revert')}</button></div>
                 </details>`;
             const form = /** @type {HTMLElement} */ (body.querySelector('.je-ta-rule-form'));
             const conds = /** @type {HTMLElement} */ (form.querySelector('[data-conds]'));
@@ -284,15 +284,15 @@
                 const rows = Array.from(conds.querySelectorAll('[data-cond]'));
                 rows.forEach((row, i) => {
                     const n = String(i + 1);
-                    /** @type {HTMLElement} */ (row.querySelector('[data-cond-n]')).textContent = JE.t('tag_looks_condition', { n });
-                    /** @type {HTMLElement} */ (row.querySelector('[data-cond-field-label]')).textContent = JE.t('tag_looks_condition_field', { n });
-                    /** @type {HTMLElement} */ (row.querySelector('[data-cond-value-label]')).textContent = JE.t('tag_looks_condition_value', { n });
+                    /** @type {HTMLElement} */ (row.querySelector('[data-cond-n]')).textContent = A.fmt('Condition {n}', { n });
+                    /** @type {HTMLElement} */ (row.querySelector('[data-cond-field-label]')).textContent = A.fmt('Condition {n} field', { n });
+                    /** @type {HTMLElement} */ (row.querySelector('[data-cond-value-label]')).textContent = A.fmt('Condition {n} value', { n });
                     const remove = /** @type {HTMLButtonElement} */ (row.querySelector('[data-cond-remove]'));
                     remove.disabled = rows.length <= 1;
-                    remove.setAttribute('aria-label', JE.t('tag_looks_remove_condition_named', { n }));
+                    remove.setAttribute('aria-label', A.fmt('Remove condition {n}', { n }));
                 });
                 addCond.disabled = rows.length >= max;
-                /** @type {HTMLElement} */ (form.querySelector('[data-cond-count]')).textContent = JE.t('tag_looks_condition_count', { count: rows.length, max });
+                /** @type {HTMLElement} */ (form.querySelector('[data-cond-count]')).textContent = A.fmt('{count} of {max}', { count: rows.length, max });
             };
             /** @param {Array<{field: string, value: string}>} list */
             const setRows = (list) => {
@@ -304,7 +304,7 @@
                 const editing = editsOf(ctx).index >= 0;
                 const full = !editing && rulesOf(ctx.config).length >= MAX_RULES;
                 saveButton.disabled = full;
-                /** @type {HTMLElement} */ (form.querySelector('[data-rule-hint]')).textContent = JE.t(full ? 'tag_looks_limit' : editing ? 'tag_looks_edit_hint' : 'tag_looks_add_hint', { count: MAX_RULES });
+                /** @type {HTMLElement} */ (form.querySelector('[data-rule-hint]')).textContent = A.fmt(full ? 'You have {count} rules, the most there can be.' : editing ? 'Keeps the rule\'s place and On/Off state.' : 'Added at the end of the list.', { count: MAX_RULES });
             };
             /**
              * Show the form empty (Add a rule) or holding a rule (Edit rule N).
@@ -318,8 +318,8 @@
                 // New rules start at Caption and Compact, as in each user's own Rules & locks.
                 layoutSelect.value = rule ? String(get(rule, 'layout') || 'corners').toLowerCase() : 'caption';
                 densitySelect.value = rule && String(get(rule, 'density') || '').toLowerCase() !== 'compact' ? 'full' : 'compact';
-                title.textContent = rule ? `${JE.t('tag_looks_edit_rule')} ${index + 1}` : JE.t('tag_looks_add_a_rule');
-                /** @type {HTMLElement} */ (form.querySelector('[data-rule-save-label]')).textContent = JE.t(rule ? 'tag_looks_save' : 'tag_looks_add_rule');
+                title.textContent = rule ? `${A.fmt('Edit rule')} ${index + 1}` : A.fmt('Add a rule');
+                /** @type {HTMLElement} */ (form.querySelector('[data-rule-save-label]')).textContent = A.fmt(rule ? 'Save rule' : 'Add rule');
                 /** @type {HTMLElement} */ (saveButton.querySelector('.material-icons')).textContent = rule ? 'check' : 'add';
                 cancelButton.hidden = !rule;
                 /** @type {HTMLElement} */ (form.querySelector('[data-rule-extras]')).hidden = !(rule && hasExtras(rule));
@@ -367,7 +367,7 @@
                     const control = /** @type {HTMLInputElement} */ (row.querySelector('[data-cond-value]'));
                     const value = String(control.value || '').trim();
                     if (!value || (field === 'library' && !/^[0-9a-fA-F]{32}$/.test(value.replace(/-/g, '')))) {
-                        error.textContent = JE.t(field === 'library' ? 'admin_tags_rules_need_library' : 'tag_looks_error_value');
+                        error.textContent = A.fmt(field === 'library' ? 'Pick a library.' : 'Choose or enter a value for every condition.');
                         control.setAttribute('aria-invalid', 'true');
                         control.setAttribute('aria-describedby', 'jeTaRuleError');
                         control.focus();
@@ -379,7 +379,7 @@
                 const { index, id } = editsOf(ctx);
                 // The rule being edited, found by its id (it may have moved meanwhile), else at its place.
                 const at = index < 0 ? -1 : (id ? rules.findIndex((r) => String(get(r, 'id') || '') === id) : (index < rules.length ? index : -1));
-                if (at < 0 && rules.length >= MAX_RULES) { error.textContent = JE.t('tag_looks_limit', { count: MAX_RULES }); return; }
+                if (at < 0 && rules.length >= MAX_RULES) { error.textContent = A.fmt('You have {count} rules, the most there can be.', { count: MAX_RULES }); return; }
                 error.textContent = '';
                 const layout = layoutSelect.value;
                 const density = densitySelect.value;
@@ -396,7 +396,7 @@
                 }
                 fillForm(null);
                 ctx.set('TagLookRules', rules);
-                ctx.announce(JE.t(at >= 0 ? 'admin_tags_rules_saved' : 'admin_tags_rules_added', { n }));
+                ctx.announce(A.fmt(at >= 0 ? 'Rule {n} saved' : 'Rule {n} added', { n }));
                 if (at >= 0) /** @type {HTMLElement|null} */ (body.querySelector(`.je-ta-rule[data-index="${at}"] [data-act="edit"]`))?.focus();
             });
             body.querySelector('[data-rules]')?.addEventListener('click', (e) => {
@@ -425,10 +425,10 @@
                     rules.splice(i, 1);
                     // The rule in the form is gone: the form goes back to adding (what was typed stays).
                     const editing = editsOf(ctx);
-                    if (editing.index === i) { edits.delete(ctx); title.textContent = JE.t('tag_looks_add_a_rule'); /** @type {HTMLElement} */ (form.querySelector('[data-rule-save-label]')).textContent = JE.t('tag_looks_add_rule'); cancelButton.hidden = true; syncCapacity(); }
+                    if (editing.index === i) { edits.delete(ctx); title.textContent = A.fmt('Add a rule'); /** @type {HTMLElement} */ (form.querySelector('[data-rule-save-label]')).textContent = A.fmt('Add rule'); cancelButton.hidden = true; syncCapacity(); }
                     else if (editing.index > i) edits.set(ctx, { ...editing, index: editing.index - 1 });
                     ctx.set('TagLookRules', rules.length ? rules : null);
-                    ctx.snack(JE.t('admin_tags_rules_deleted', { n: i + 1 }), () => ctx.set('TagLookRules', before));
+                    ctx.snack(A.fmt('Rule {n} deleted', { n: i + 1 }), () => ctx.set('TagLookRules', before));
                     /** @type {HTMLElement|null} */ (body.querySelector(`.je-ta-rule[data-index="${Math.min(i, rules.length - 1)}"] [data-act="delete"]`) || body.querySelector('[data-rule="field"]'))?.focus();
                 }
             });
@@ -448,7 +448,7 @@
             const draft = draftOf(body);
             const check = () => {
                 const parsed = parseRules(box.value);
-                status.textContent = parsed.error ? parsed.error : (parsed.rules.length ? JE.t('admin_tags_rules_json_ok', { n: parsed.rules.length }) : JE.t('admin_tags_rules_none'));
+                status.textContent = parsed.error ? parsed.error : (parsed.rules.length ? A.fmt('{n} {n|rule|rules} will be saved.', { n: parsed.rules.length }) : A.fmt('No rules. New users start with the default look.'));
                 status.dataset.error = String(!!parsed.error);
                 return parsed;
             };
@@ -464,7 +464,7 @@
                 // The draft becomes the saved rules: the server's answer (ids filled in) loads into the box.
                 draft.dirty = false;
                 ctx.set('TagLookRules', parsed.rules.length ? parsed.rules : null);
-                ctx.announce(JE.t('admin_tags_rules_json_saved'));
+                ctx.announce(A.fmt('Rules saved'));
             });
             body.querySelector('[data-rule="json-revert"]')?.addEventListener('click', () => { this.load(ctx, body, true); });
             ApiClient.getJSON(ApiClient.getUrl('Library/VirtualFolders')).then((folders) => {
@@ -551,9 +551,9 @@
             if (editing.index >= 0 && (editing.id ? !rules.some((r) => String(get(r, 'id') || '') === editing.id) : editing.index >= rules.length)) {
                 edits.delete(ctx);
                 const title = /** @type {HTMLElement|null} */ (body.querySelector('[data-rule-title]'));
-                if (title) title.textContent = JE.t('tag_looks_add_a_rule');
+                if (title) title.textContent = A.fmt('Add a rule');
                 const label = /** @type {HTMLElement|null} */ (body.querySelector('[data-rule-save-label]'));
-                if (label) label.textContent = JE.t('tag_looks_add_rule');
+                if (label) label.textContent = A.fmt('Add rule');
                 const cancel = /** @type {HTMLElement|null} */ (body.querySelector('[data-rule="cancel"]'));
                 if (cancel) cancel.hidden = true;
             } else if (editing.id) {
@@ -562,7 +562,7 @@
                 if (at !== editing.index) {
                     edits.set(ctx, { ...editing, index: at });
                     const title = /** @type {HTMLElement|null} */ (body.querySelector('[data-rule-title]'));
-                    if (title) title.textContent = `${JE.t('tag_looks_edit_rule')} ${at + 1}`;
+                    if (title) title.textContent = `${A.fmt('Edit rule')} ${at + 1}`;
                 }
             }
             A.redrawList(list, rules.map((r, i) => ruleHtml(ctx, r, i, rules.length)).join(''), (el) => {
@@ -576,7 +576,7 @@
             if (add && hint) {
                 const full = editsOf(ctx).index < 0 && rules.length >= MAX_RULES;
                 add.disabled = full;
-                hint.textContent = JE.t(full ? 'tag_looks_limit' : editsOf(ctx).index >= 0 ? 'tag_looks_edit_hint' : 'tag_looks_add_hint', { count: MAX_RULES });
+                hint.textContent = A.fmt(full ? 'You have {count} rules, the most there can be.' : editsOf(ctx).index >= 0 ? 'Keeps the rule\'s place and On/Off state.' : 'Added at the end of the list.', { count: MAX_RULES });
             }
             this.load(ctx, body);
         },
@@ -588,9 +588,9 @@
         // A pointer, not a list: after the server-wide item looks, drawn as a note.
         order: 40,
         note: true,
-        title: 'tag_looks_locked_heading',
-        noteLabel: 'admin_tags_locks_how',
-        hint: 'admin_tags_locks_desc',
+        title: 'Locked items',
+        noteLabel: 'How user-locked looks work',
+        hint: 'Locks keep one title\'s look whatever the rules say. They belong to each user, who sets them from an item\'s menu and manages them in their Media Tags settings, so there are none to set here.',
     });
 
     /**
@@ -646,16 +646,16 @@
      */
     function itemLookHtml(ctx, id, look) {
         const info = titlesOf(ctx).titles.get(id);
-        const name = info ? (info.name || JE.t('tag_looks_unknown_item')) : JE.t('hidden_content_admin_loading');
-        const type = info?.type ? `${JE.t(JE.core.tagLayout.VOCABULARY_KEYS.type[info.type.toLowerCase()])} · ` : '';
-        const outcome = JE.t('tag_looks_outcome', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[look.layout]), density: JE.t(`panel_settings_ui_tag_density_${look.density}`) });
-        const scope = info?.type === 'Series' ? ` · ${JE.t(look.scope === 'item' ? 'tag_item_editor_scope_series_only' : 'tag_item_editor_scope_series')}` : '';
+        const name = info ? (info.name || A.fmt('Unavailable item')) : A.fmt('Loading…');
+        const type = info?.type ? `${A.fmt(A.WORDS.type[info.type.toLowerCase()])} · ` : '';
+        const outcome = A.fmt('{layout} · {density}', { layout: A.fmt(A.WORDS.layout[look.layout]), density: A.WORDS.density[look.density] });
+        const scope = info?.type === 'Series' ? ` · ${A.fmt(look.scope === 'item' ? 'This series poster only' : 'This series and its seasons and episodes')}` : '';
         const label = info?.name || id;
         return `<li class="je-ta-rule" data-item="${ctx.esc(id)}" data-je-focus-key="admin-item-look-row-${ctx.esc(id)}">
             <span class="je-ta-rule-text"><strong class="je-ta-rule-title">${ctx.esc(name)}</strong> <span class="je-ta-rule-meta">${ctx.esc(type)}${ctx.esc(outcome)}${ctx.esc(scope)}</span></span>
             <span class="je-ta-rule-tools">
-                <button type="button" class="je-ta-button" data-act="edit" data-je-focus-key="admin-item-look-edit-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_edit_named', { name: label }))}">${ctx.tx('reviews_edit')}</button>
-                <button type="button" class="je-ta-icon-btn" data-act="remove" data-je-focus-key="admin-item-look-remove-${ctx.esc(id)}" aria-label="${ctx.esc(JE.t('admin_tags_item_looks_remove_named', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
+                <button type="button" class="je-ta-button" data-act="edit" data-je-focus-key="admin-item-look-edit-${ctx.esc(id)}" aria-label="${ctx.esc(A.fmt('Edit the server-wide look of {name}', { name: label }))}">${ctx.tx('Edit')}</button>
+                <button type="button" class="je-ta-icon-btn" data-act="remove" data-je-focus-key="admin-item-look-remove-${ctx.esc(id)}" aria-label="${ctx.esc(A.fmt('Remove the server-wide look of {name}', { name: label }))}"><span class="material-icons" aria-hidden="true">delete</span></button>
             </span>
         </li>`;
     }
@@ -664,13 +664,13 @@
         id: 'item-looks',
         tab: 'rules',
         order: 30,
-        title: 'admin_tags_item_looks_title',
-        hint: 'admin_tags_item_looks_desc',
+        title: 'Server-wide item looks',
+        hint: 'Looks one title gets for every user, set with For everyone in the item\'s Media Tags editor (its ⋮ menu). A user\'s own locked look wins; rules never change these.',
         writes: ['TagLookItemOverrides'],
         render(ctx, body) {
             const heading = body.closest('[data-section]')?.querySelector('h3');
             if (heading) heading.tabIndex = -1;
-            body.innerHTML = `<p class="je-ta-empty" data-item-looks-empty>${ctx.tx('admin_tags_item_looks_none')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
+            body.innerHTML = `<p class="je-ta-empty" data-item-looks-empty>${ctx.tx('No server-wide item looks yet.')}</p><ol class="je-ta-rules" data-item-looks></ol>`;
             body.querySelector('[data-item-looks]')?.addEventListener('click', (e) => {
                 const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('button[data-act]'));
                 const row = /** @type {HTMLElement|null} */ (button?.closest('[data-item]') || null);
@@ -684,7 +684,7 @@
                     if (next === undefined) return;
                     ctx.set('TagLookItemOverrides', next);
                     const removed = look.itemOverridesToWire(new Map([[id, look.normalizeItemOverrides(stored).get(id)]]));
-                    ctx.snack(JE.t('tag_item_editor_everyone_removed', { name }), () => {
+                    ctx.snack(A.fmt('Server-wide look removed from {name}', { name }), () => {
                         if (ctx.isCurrent()) ctx.set('TagLookItemOverrides', look.restoreItemOverrides(ctx.config.TagLookItemOverrides, removed));
                     });
                     /** @type {HTMLElement|null} */ (body.querySelector('[data-item] [data-act="remove"]') || (() => {
@@ -706,7 +706,7 @@
                             if (next === undefined) return;
                             focusTarget = target;
                             ctx.set('TagLookItemOverrides', next);
-                            ctx.announce(JE.t('tag_item_editor_everyone_saved', { name }));
+                            ctx.announce(A.fmt('Server-wide look saved for {name}', { name }));
                         },
                     });
                 }

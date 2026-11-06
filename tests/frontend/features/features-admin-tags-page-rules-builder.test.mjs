@@ -26,7 +26,7 @@ function condition(h, i, field, value) {
 test('Rules form: several conditions in one rule, with the condition count and its limit', async t => {
   const h = setup(t, { apiClient: lists });
   await h.settle(); await h.settle();
-  assert.equal(h.$('[data-rule-title]').textContent, 'tag_looks_add_a_rule');
+  assert.equal(h.$('[data-rule-title]').textContent, 'Add a rule');
   assert.equal(h.$('[data-rule="layout"]').value, 'caption', 'a new rule starts at Caption');
   assert.equal(h.$('[data-rule="density"]').value, 'compact', 'and Compact, as in the hub');
   condition(h, 0, 'library', OTHER_LIBRARY);
@@ -35,8 +35,8 @@ test('Rules form: several conditions in one rule, with the condition count and i
   h.$('[data-rule="add-cond"]').click();
   condition(h, 2, 'genre', 'Anime');
   assert.equal(h.$$('[data-cond]').length, 3);
-  assert.equal(h.$('[data-cond-count]').textContent, 'tag_looks_condition_count:3|5');
-  assert.deepEqual(h.$$('[data-cond-n]').map((n) => n.textContent), ['tag_looks_condition:1', 'tag_looks_condition:2', 'tag_looks_condition:3']);
+  assert.equal(h.$('[data-cond-count]').textContent, '3 of 5');
+  assert.deepEqual(h.$$('[data-cond-n]').map((n) => n.textContent), ['Condition 1', 'Condition 2', 'Condition 3']);
   h.$('[data-rule="layout"]').value = 'minimal';
   h.$('[data-rule="density"]').value = 'full';
   h.$('[data-rule="add"]').click();
@@ -45,7 +45,7 @@ test('Rules form: several conditions in one rule, with the condition count and i
   assert.match(rule.Id, /^r[a-z0-9]+$/, 'a new rule gets its id at once');
   assert.deepEqual([rule.Enabled, rule.When, rule.Layout, rule.Density, rule.Slots], [true, [{ Field: 'library', Value: OTHER_LIBRARY }, { Field: 'type', Value: 'Series' }, { Field: 'genre', Value: 'Anime' }], 'minimal', 'full', null]);
   assert.equal(h.$$('[data-cond]').length, 1, 'the form starts over with one condition');
-  assert.match(h.$('.je-ta-rule[data-index="0"]').textContent, /Shows.*tag_looks_and.*tag_looks_type_series.*tag_looks_and.*Anime/s, 'the row reads every condition');
+  assert.match(h.$('.je-ta-rule[data-index="0"]').textContent, /Shows.* and .*Series.* and .*Anime/s, 'the row reads every condition');
   // At most five conditions; the last one cannot be removed.
   for (let i = 0; i < 6; i++) h.$('[data-rule="add-cond"]').click();
   assert.equal(h.$$('[data-cond]').length, 5);
@@ -71,7 +71,7 @@ test('Rules form: genre choices and age rating suggestions come from the library
   assert.equal(age.tagName, 'INPUT');
   assert.deepEqual([...h.document.getElementById(age.getAttribute('list')).options].map((o) => o.value), ['PG-13', 'TV-Y'], 'each rating once');
   h.change(row.querySelector('[data-cond-field]'), 'library');
-  assert.deepEqual([...row.querySelector('[data-cond-value]').options].map((o) => o.textContent), ['tag_looks_choose', 'Movies', 'Shows'], 'libraries by name, never ids');
+  assert.deepEqual([...row.querySelector('[data-cond-value]').options].map((o) => o.textContent), ['Choose…', 'Movies', 'Shows'], 'libraries by name, never ids');
 });
 
 test('Rules form: a condition without a value is refused in place', async t => {
@@ -84,7 +84,7 @@ test('Rules form: a condition without a value is refused in place', async t => {
   await h.save();
   assert.deepEqual(plain(h.server.TagLookRules), [], 'nothing saved');
   const empty = h.$$('[data-cond-value]')[1];
-  assert.equal(h.$('#jeTaRuleError').textContent, 'tag_looks_error_value');
+  assert.equal(h.$('#jeTaRuleError').textContent, 'Choose or enter a value for every condition.');
   assert.equal(empty.getAttribute('aria-invalid'), 'true');
   assert.equal(empty.getAttribute('aria-describedby'), 'jeTaRuleError');
   assert.equal(h.document.activeElement, empty);
@@ -100,10 +100,10 @@ test('Rules form: Edit loads a rule, Save keeps its id, place, On/Off state and 
   const h = setup(t, { config: { TagLookRules: stored }, apiClient: lists });
   await h.settle(); await h.settle();
   const edit = (i) => h.$(`.je-ta-rule[data-index="${i}"] [data-act="edit"]`);
-  assert.equal(edit(1).getAttribute('aria-label'), 'tag_looks_edit_named:panel_media_tags_preview_source_rule:2');
+  assert.equal(edit(1).getAttribute('aria-label'), 'Edit rule: Rule 2');
   edit(1).click();
-  assert.equal(h.$('[data-rule-title]').textContent, 'tag_looks_edit_rule 2');
-  assert.equal(h.$('[data-rule-save-label]').textContent, 'tag_looks_save');
+  assert.equal(h.$('[data-rule-title]').textContent, 'Edit rule 2');
+  assert.equal(h.$('[data-rule-save-label]').textContent, 'Save rule');
   assert.equal(h.$('[data-rule="cancel"]').hidden, false);
   assert.equal(h.$('[data-rule-extras]').hidden, false, 'a rule with its own positions says the form keeps them');
   assert.equal(h.$('.je-ta-rule[data-index="1"]').dataset.editing, 'true');
@@ -113,7 +113,7 @@ test('Rules form: Edit loads a rule, Save keeps its id, place, On/Off state and 
   // Another administrator moved it meanwhile: the edit still lands on it (found by id).
   h.server.TagLookRules = structuredClone([stored[1], stored[0]]);
   h.ctx.reload(structuredClone(h.server));
-  assert.equal(h.$('[data-rule-title]').textContent, 'tag_looks_edit_rule 1');
+  assert.equal(h.$('[data-rule-title]').textContent, 'Edit rule 1');
   condition(h, 1, 'ageRating', 'PG-13');
   h.$('[data-rule="layout"]').value = 'summary';
   h.$('[data-rule="add"]').click();
@@ -122,13 +122,13 @@ test('Rules form: Edit loads a rule, Save keeps its id, place, On/Off state and 
     { ...stored[1], When: [{ Field: 'library', Value: LIBRARY }, { Field: 'ageRating', Value: 'PG-13' }], Layout: 'summary' },
     stored[0],
   ], 'same id, still off, positions and shape looks kept, nothing added');
-  assert.equal(h.$('[data-rule-title]').textContent, 'tag_looks_add_a_rule', 'back to adding');
+  assert.equal(h.$('[data-rule-title]').textContent, 'Add a rule', 'back to adding');
   assert.equal(h.document.activeElement, edit(0), 'focus returns to the rule');
   // Cancel drops the edit and returns to the rule's Edit.
   edit(1).click();
   condition(h, 0, 'type', 'Movie');
   h.$('[data-rule="cancel"]').click();
-  assert.equal(h.$('[data-rule-title]').textContent, 'tag_looks_add_a_rule');
+  assert.equal(h.$('[data-rule-title]').textContent, 'Add a rule');
   assert.equal(h.$$('[data-cond]').length, 1);
   assert.equal(h.document.activeElement, edit(1));
   await h.save();
@@ -136,7 +136,7 @@ test('Rules form: Edit loads a rule, Save keeps its id, place, On/Off state and 
   // The rule being edited is deleted: the form goes back to adding.
   edit(0).click();
   h.$('.je-ta-rule[data-index="0"] [data-act="delete"]').click();
-  assert.equal(h.$('[data-rule-title]').textContent, 'tag_looks_add_a_rule');
+  assert.equal(h.$('[data-rule-title]').textContent, 'Add a rule');
   assert.equal(h.$('[data-rule="cancel"]').hidden, true);
 });
 

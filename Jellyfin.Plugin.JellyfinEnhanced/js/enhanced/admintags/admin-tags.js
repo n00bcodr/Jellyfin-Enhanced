@@ -92,26 +92,26 @@
      */
     const SECTION_SCOPES = {
         'layout-look': 'new', 'layout-groups': 'new', 'layout-shapes': 'new', rules: 'new', 'badges-families': 'new',
-        'layout-apply': 'all', colours: 'all', 'badges-windows': 'all', 'badges-tmdb': 'all', 'badges-leaving': 'all',
+        colours: 'all', 'badges-windows': 'all', 'badges-tmdb': 'all', 'badges-leaving': 'all',
         'item-looks': 'all', 'server-cache': 'all', 'server-native': 'all', 'server-presets': 'all',
     };
 
     /** The icon in each card's header (the configuration page's cards carry one). */
     const SECTION_ICONS = {
-        'layout-look': 'view_quilt', 'layout-groups': 'reorder', 'layout-shapes': 'crop_portrait', 'layout-display': 'tune', 'layout-apply': 'group',
+        'layout-look': 'view_quilt', 'layout-groups': 'reorder', 'layout-shapes': 'crop_portrait', 'layout-display': 'tune',
         'rules': 'rule', 'rules-locks': 'lock', 'item-looks': 'movie', 'colours': 'palette',
-        'badges-families': 'new_releases', 'badges-windows': 'schedule', 'badges-tmdb': 'key', 'badges-leaving': 'event_busy',
+        'badges-families': 'new_releases', 'badges-windows': 'schedule', 'badges-tmdb': 'img:selfhst/svg/tmdb.svg', 'badges-leaving': 'event_busy',
         'server-cache': 'storage', 'server-native': 'devices', 'server-portable': 'import_export', 'server-presets': 'bookmarks',
     };
 
     const TABS = [
-        { id: 'overview', icon: 'dashboard', nameKey: 'admin_tags_tab_overview', descKey: 'admin_tags_tab_overview_desc', lead: 'card' },
-        { id: 'layout', icon: 'view_quilt', nameKey: 'admin_tags_tab_layout', shortKey: 'common_layout', descKey: 'admin_tags_tab_layout_desc', lead: 'card' },
-        { id: 'groups', icon: 'label', nameKey: 'common_groups', descKey: 'admin_tags_tab_groups_desc', lead: 'card' },
-        { id: 'rules', icon: 'rule', nameKey: 'common_rules', descKey: 'admin_tags_tab_rules_desc', lead: 'card' },
-        { id: 'colours', icon: 'palette', nameKey: 'common_colours', descKey: 'admin_tags_tab_colours_desc', lead: 'card' },
-        { id: 'badges', icon: 'new_releases', nameKey: 'panel_media_tags_tab_badges', shortKey: 'common_badges', descKey: 'admin_tags_tab_badges_desc', lead: 'card' },
-        { id: 'server', icon: 'dns', nameKey: 'common_server', descKey: 'admin_tags_tab_server_desc', lead: 'card' },
+        { id: 'overview', icon: 'dashboard', nameKey: 'Overview', descKey: 'What new users get today and the state of the tag cache. Users can still change their own look in their Media Tags settings.', lead: 'card' },
+        { id: 'layout', icon: 'view_quilt', nameKey: 'Layout defaults', shortKey: 'Layout', descKey: 'The layout, label density, group order, positions and limits new users start with.', lead: 'card' },
+        { id: 'groups', icon: 'label', nameKey: 'Groups', descKey: 'Turn each tag group on or off for new users, and open a group for its server settings.', lead: 'card' },
+        { id: 'rules', icon: 'rule', nameKey: 'Rules', descKey: 'Give some cards a different look by library, type, genre or age rating.', lead: 'card' },
+        { id: 'colours', icon: 'palette', nameKey: 'Colours', descKey: 'The colours of the tags, on the web and in native posters.', lead: 'card' },
+        { id: 'badges', icon: 'new_releases', nameKey: 'Status badges', shortKey: 'Badges', descKey: 'Which status badges new users start with, and how long a title counts as new.', lead: 'card' },
+        { id: 'server', icon: 'dns', nameKey: 'Server', descKey: 'The tag data the server keeps, and tags drawn into poster images for other apps.', lead: 'card' },
     ];
 
     /** The user guide section behind each tab (docs/enhanced/tags.md headings). */
@@ -144,10 +144,120 @@
 
     const esc = (value) => JE.escapeHtml(String(value ?? ''));
     /** @param {string} key @param {Object} [params] @returns {string} Translated and escaped. */
-    const tx = (key, params) => esc(JE.t(key, params));
+    /**
+     * The page's text: English as written, with {name} filled in from params and {n|one|many} picking a word by a
+     * count (the configuration page is not translated).
+     * @param {string} text
+     * @param {Object} [params]
+     * @returns {string}
+     */
+    const fmt = (text, params) => {
+        let out = String(text);
+        if (params) {
+            out = out.replace(/\{(\w+)\|([^|{}]*)\|([^|{}]*)\}/g, (m, name, one, many) => (Number(params[name]) === 1 ? one : many));
+            for (const [name, value] of Object.entries(params)) out = out.split('{' + name + '}').join(String(value));
+        }
+        return out;
+    };
+    /** The names the page shows for layouts, groups, positions, presets and the like, in English. */
+    const WORDS = {
+        type: {
+            movie: 'Movie',
+            series: 'Series',
+            season: 'Season',
+            episode: 'Episode',
+            boxset: 'Collection',
+            video: 'Video'
+        },
+        layout: {
+            corners: 'Corners',
+            bands: 'Bands',
+            caption: 'Caption',
+            summary: 'Summary',
+            minimal: 'Minimal'
+        },
+        preset: {
+            default: 'Default',
+            glass: 'Glass',
+            outline: 'Outline',
+            dark: 'Dark',
+            light: 'Light',
+            mono: 'Mono',
+            poster: 'Poster'
+        },
+        group: {
+            status: 'Status',
+            quality: 'Quality',
+            rating: 'Rating',
+            age_rating: 'Age Rating',
+            logos: 'Logos',
+            language: 'Language',
+            genre: 'Genre',
+            custom: 'Custom',
+            awards: 'Awards'
+        },
+        slot: {
+            off: 'Hidden',
+            corners_tl: 'Top left',
+            corners_tc: 'Top centre',
+            corners_bc: 'Bottom centre',
+            corners_ml: 'Left centre',
+            corners_mr: 'Right centre',
+            corners_c: 'Centre',
+            corners_tr: 'Top right',
+            corners_bl: 'Bottom left',
+            corners_br: 'Bottom right',
+            bands_top: 'Top band',
+            bands_bottom: 'Bottom row',
+            caption_poster: 'On poster',
+            caption_caption: 'Caption',
+            summary_pill: 'In pill',
+            summary_hover: 'On hover',
+            minimal_top: 'Top',
+            minimal_dots: 'Dots',
+            minimal_corner: 'Corner',
+            minimal_hover: 'On hover'
+        },
+        field: {
+            library: 'Library',
+            type: 'Type',
+            genre: 'Genre',
+            agerating: 'Age rating'
+        },
+        density: {
+            full: 'Full',
+            compact: 'Compact'
+        },
+        layoutName: {
+            corners: 'Corners: place each group anywhere on the poster',
+            bands: 'Bands: a strip along the top and bottom, the middle stays clear',
+            caption: 'Caption: tags in a line below the poster',
+            summary: 'Summary: one short fact pill, every tag on hover',
+            minimal: 'Minimal: status, quality dots and score, the rest on hover'
+        },
+        shape: {
+            landscape: 'Episode thumbnails',
+            list: 'List rows'
+        },
+        shapeRecommended: {
+            landscape: 'Recommended: bands, compact (status and age on top, quality and rating below)',
+            list: 'Recommended: corners, compact (quality, status and rating, up to 2 each)'
+        },
+        styleTarget: {
+            web: 'Web',
+            native: 'Native posters',
+            both: 'Both'
+        },
+        colourTarget: {
+            web: 'Web only',
+            native: 'Native posters only',
+            both: 'Web + native posters'
+        }
+    };
+    const tx = (text, params) => esc(fmt(text, params));
 
     /** The configuration page's marker for a setting each user holds a personal copy of (its icon, its tooltip). */
-    const perUserMark = () => `<i class="material-icons je-ta-peruser" role="img" aria-label="${tx('admin_tags_peruser_label')}" title="${tx('admin_tags_peruser_hint')}">group</i>`;
+    const perUserMark = () => `<i class="material-icons je-ta-peruser" role="img" aria-label="${tx('Per-user setting')}" title="${tx('Each user has a personal copy. Existing users keep theirs until you overwrite it.')}">group</i>`;
 
     /**
      * Register (or replace) a section.
@@ -216,11 +326,12 @@
      * The main configuration page link, optionally opened at a section
      * (configPage.html reads `jeSection`).
      * @param {string} [section]
+     * @param {string} [tab] - a main page tab to open (`services`).
      * @returns {string}
      */
-    function mainPageUrl(section) {
+    function mainPageUrl(section, tab) {
         const base = `${window.location.origin}${window.location.pathname}`;
-        return `${base}#/configurationpage?name=${encodeURIComponent(MAIN_PAGE_NAME)}${section ? `&jeSection=${encodeURIComponent(section)}` : ''}`;
+        return `${base}#/configurationpage?name=${encodeURIComponent(MAIN_PAGE_NAME)}${section ? `&jeSection=${encodeURIComponent(section)}` : ''}${tab ? `&tab=${encodeURIComponent(tab)}` : ''}`;
     }
 
     /** The address whose section was last opened: returning to the tab later keeps the section the administrator chose since. */
@@ -339,13 +450,13 @@
         const ranked = fields.map((f, i) => ({ f, i, n: Number.isFinite(Number(config[f.orderKey])) ? Number(config[f.orderKey]) : f.defaultOrder }))
             .sort((a, b) => (a.n - b.n) || (a.f.defaultOrder - b.f.defaultOrder) || (a.i - b.i));
         // Phone: the order buttons show only in reorder mode (the button above the list).
-        return `<button type="button" class="je-ta-button je-ta-reorder" data-order-reorder aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${tx('panel_settings_ui_tag_editor_reorder_categories')}</span></button>`
+        return `<button type="button" class="je-ta-button je-ta-reorder" data-order-reorder aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${tx('Reorder categories')}</span></button>`
             + `<ol class="je-ta-order" data-ordered-list>${ranked.map(({ f }, i) => {
-            const name = JE.t(f.label);
+            const name = fmt(f.label);
             return `<li data-ordered="${esc(f.id)}"><span class="je-ta-rank" aria-hidden="true">${i + 1}</span>`
                 + `<label><input type="checkbox" id="${esc(f.id)}" data-je-field="${esc(f.key)}" data-je-setting-id="${esc(f.id)}" ${config[f.key] === true ? 'checked' : ''}><span class="je-ta-order-name" data-je-label>${esc(name)}</span></label>`
-                + `<button type="button" class="je-ta-icon-btn" data-move="-1" aria-label="${tx('admin_tags_move_up', { name })}" ${i === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>`
-                + `<button type="button" class="je-ta-icon-btn" data-move="1" aria-label="${tx('admin_tags_move_down', { name })}" ${i === ranked.length - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button></li>`;
+                + `<button type="button" class="je-ta-icon-btn" data-move="-1" aria-label="${tx('Move {name} up', { name })}" ${i === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>`
+                + `<button type="button" class="je-ta-icon-btn" data-move="1" aria-label="${tx('Move {name} down', { name })}" ${i === ranked.length - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button></li>`;
         }).join('')}</ol>`;
     }
 
@@ -796,7 +907,7 @@
     function fieldName(key) {
         for (const s of sections) {
             for (const f of s.fields || []) {
-                if (f.key === key || f.orderKey === key) return JE.t(f.label);
+                if (f.key === key || f.orderKey === key) return fmt(f.label);
             }
         }
         return key.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
@@ -811,7 +922,7 @@
      */
     function valueLabel(key, value) {
         const control = /** @type {HTMLElement|null} */ (Array.from(document.querySelectorAll('.je-tag-admin [data-je-field]')).find((el) => el.getAttribute('data-je-field') === key) || null);
-        if (typeof value === 'boolean' || (control instanceof HTMLInputElement && control.type === 'checkbox')) return JE.t(value ? 'tag_portable_value_on' : 'tag_portable_value_off');
+        if (typeof value === 'boolean' || (control instanceof HTMLInputElement && control.type === 'checkbox')) return fmt(value ? 'On' : 'Off');
         if (control instanceof HTMLSelectElement) {
             const option = Array.from(control.options).find((o) => o.value === String(value ?? ''));
             if (option) return option.textContent || String(value);
@@ -819,7 +930,7 @@
         // Pills: the chosen option's own label.
         const radio = control ? Array.from(control.querySelectorAll('input[type="radio"]')).find((r) => /** @type {HTMLInputElement} */ (r).value === String(value ?? '')) : null;
         if (radio) return radio.closest('label')?.textContent?.trim() || String(value);
-        return value === null || value === undefined || value === '' ? JE.t('tag_portable_value_inherit') : String(typeof value === 'object' ? JSON.stringify(value) : value);
+        return value === null || value === undefined || value === '' ? fmt('Server default') : String(typeof value === 'object' ? JSON.stringify(value) : value);
     }
 
     // ── The page ───────────────────────────────────────────────────────
@@ -870,21 +981,21 @@
         const panels = TABS.map((tab, i) => {
             const own = sections.filter((s) => s.tab === tab.id && !s.group);
             // Groups: one card holding the group rows (the page's sub-panels inside a card).
-            const rows = tab.id === 'groups' ? `<section class="je-ta-card je-ta-grows-card" aria-labelledby="jeTaSec-groups-all"><h3 class="je-ta-card-title" id="jeTaSec-groups-all"><span class="material-icons je-ta-card-icon" aria-hidden="true">label</span>${tx('admin_tags_groups_card')}</h3><p class="je-ta-hint">${tx(tab.descKey)} <a class="je-ta-docs" href="${DOCS_URL}#${DOCS_ANCHORS[tab.id]}" target="_blank" rel="noopener" aria-label="${tx('media_tags_docs_link_label', { name: JE.t(tab.nameKey) })}">${tx('media_tags_docs_link')}</a></p><div class="je-ta-grows">${groupSections.map((s) => groupRowHtml(s)).join('')}</div></section>` : '';
+            const rows = tab.id === 'groups' ? `<section class="je-ta-card je-ta-grows-card" aria-labelledby="jeTaSec-groups-all"><h3 class="je-ta-card-title" id="jeTaSec-groups-all"><span class="material-icons je-ta-card-icon" aria-hidden="true">label</span>${tx('Tag groups')}</h3><p class="je-ta-hint">${tx(tab.descKey)} <a class="je-ta-docs" href="${DOCS_URL}#${DOCS_ANCHORS[tab.id]}" target="_blank" rel="noopener" aria-label="${tx('Learn more about {name} in the documentation (opens in a new tab)', { name: fmt(tab.nameKey) })}">${tx('Learn more')}</a></p><div class="je-ta-grows">${groupSections.map((s) => groupRowHtml(s)).join('')}</div></section>` : '';
             // A section that opens with its cards starts at the first card, as the page's sections do; its heading stays for screen readers.
             return `<div class="je-ta-panel" role="tabpanel" id="jeTaPanel-${tab.id}" data-tab="${tab.id}"${tab.lead ? ` data-lead="${tab.lead}"` : ''} aria-labelledby="jeTaPanelTitle-${tab.id}" ${i === 0 ? '' : 'hidden'}>`
-                + `<div class="je-ta-panel-head"><h2 tabindex="-1" id="jeTaPanelTitle-${tab.id}">${tx(tab.nameKey)}</h2></div><p class="je-ta-hint">${tx(tab.descKey)} <a class="je-ta-docs" href="${DOCS_URL}#${DOCS_ANCHORS[tab.id]}" target="_blank" rel="noopener" aria-label="${tx('media_tags_docs_link_label', { name: JE.t(tab.nameKey) })}">${tx('media_tags_docs_link')}</a></p>`
+                + `<div class="je-ta-panel-head"><h2 tabindex="-1" id="jeTaPanelTitle-${tab.id}">${tx(tab.nameKey)}</h2></div><p class="je-ta-hint">${tx(tab.descKey)} <a class="je-ta-docs" href="${DOCS_URL}#${DOCS_ANCHORS[tab.id]}" target="_blank" rel="noopener" aria-label="${tx('Learn more about {name} in the documentation (opens in a new tab)', { name: fmt(tab.nameKey) })}">${tx('Learn more')}</a></p>`
                 + own.map((s) => sectionHtml(s)).join('') + rows + '</div>';
         }).join('');
         root.innerHTML = `
-            <div class="je-ta-intro je-tab-intro"><span class="material-icons" aria-hidden="true">info</span><p>${tx('admin_tags_intro')}</p></div>
-            <div class="je-ta-sections"><div class="je-ta-tabs" role="tablist" aria-label="${tx('common_media_tags')}">${tabButtons}</div></div>
-            <span class="je-ta-saved" id="jeTaSaved" data-state="saved" role="status" aria-live="polite" tabindex="-1"><span class="je-ta-saved-long">${tx('admin_tags_saved')}</span><span class="je-ta-saved-short" aria-hidden="true">${tx('admin_tags_saved_short')}</span></span>
-            <div class="je-ta-unsaved" data-je-unsaved hidden><span class="material-icons" aria-hidden="true">sync_problem</span><span data-je-unsaved-text></span><button type="button" class="je-ta-button" data-je-review>${tx('admin_tags_review')}</button></div>
+            <div class="je-ta-intro je-tab-intro"><span class="material-icons" aria-hidden="true">info</span><p>${tx('Changes save automatically. These are the defaults new users start with and the settings everyone shares; existing users keep theirs, and anyone can change their own look in their Media Tags settings.')}</p></div>
+            <div class="je-ta-sections"><div class="je-ta-tabs" role="tablist" aria-label="${tx('Media Tags')}">${tabButtons}</div></div>
+            <span class="je-ta-saved" id="jeTaSaved" data-state="saved" role="status" aria-live="polite" tabindex="-1"><span class="je-ta-saved-long">${tx('All changes saved')}</span><span class="je-ta-saved-short" aria-hidden="true">${tx('Saved')}</span></span>
+            <div class="je-ta-unsaved" data-je-unsaved hidden><span class="material-icons" aria-hidden="true">sync_problem</span><span data-je-unsaved-text></span><button type="button" class="je-ta-button" data-je-review>${tx('Review')}</button></div>
             <div class="je-ta-body">
-                <aside class="je-ta-preview" id="jeTaPreview" aria-label="${tx('admin_tags_preview')}">
-                    <button type="button" class="je-ta-preview-toggle" aria-expanded="false" aria-controls="jeTaPreviewBody" data-je-info>${tx('admin_tags_preview')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
-                    <div class="je-ta-preview-body" id="jeTaPreviewBody"><div class="je-ta-preview-mount"></div><details class="je-ta-preview-why" data-je-info><summary>${tx('panel_media_tags_preview_why')}</summary><p class="je-ta-preview-note">${tx('admin_tags_preview_note')}</p></details><p class="je-ta-native" id="jeTaNative"></p></div>
+                <aside class="je-ta-preview" id="jeTaPreview" aria-label="${tx('Preview: a new user\'s cards')}">
+                    <button type="button" class="je-ta-preview-toggle" aria-expanded="false" aria-controls="jeTaPreviewBody" data-je-info>${tx('Preview: a new user\'s cards')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+                    <div class="je-ta-preview-body" id="jeTaPreviewBody"><div class="je-ta-preview-mount"></div><details class="je-ta-preview-why" data-je-info><summary>${tx('How looks are chosen')}</summary><p class="je-ta-preview-note">${tx('Locked looks come first, then server-wide item looks, then the first matching rule, then episode and list-row looks, then the default.')}</p></details><p class="je-ta-native" id="jeTaNative"></p></div>
                 </aside>
                 <div class="je-ta-panels">${panels}</div>
             </div>
@@ -903,7 +1014,11 @@
                 return `<details class="je-ta-more je-ta-note" data-section="${esc(s.id)}" data-je-info><summary class="je-ta-more-toggle" id="jeTaSec-${esc(s.id)}"><span class="material-icons" aria-hidden="true">expand_more</span>${tx(s.noteLabel || s.title)}</summary>`
                     + `<div class="je-ta-more-body">${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}${fieldsHtml(s.fields, config)}<div class="je-ta-section-body"></div></div></details>`;
             }
-            const icon = SECTION_ICONS[s.id] ? `<span class="material-icons je-ta-card-icon" aria-hidden="true">${SECTION_ICONS[s.id]}</span>` : '';
+            const iconName = SECTION_ICONS[s.id];
+            // `img:<cdn path>` draws a service logo from the CDN instead of a Material icon.
+            const icon = !iconName ? '' : iconName.startsWith('img:')
+                ? `<span class="je-ta-card-icon je-ta-card-icon-img" aria-hidden="true"><img alt="" src="${esc(window.jeCdnUrl(iconName.slice(4)))}"></span>`
+                : `<span class="material-icons je-ta-card-icon" aria-hidden="true">${iconName}</span>`;
             return `<section class="je-ta-card${s.note ? ' je-ta-card--note' : ''}" data-section="${esc(s.id)}" aria-labelledby="jeTaSec-${esc(s.id)}">`
                 + `<h3 class="je-ta-card-title" id="jeTaSec-${esc(s.id)}">${icon}${tx(s.title)}${chip}</h3>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
                 + fieldsHtml(s.fields, config) + '<div class="je-ta-section-body"></div></section>';
@@ -915,12 +1030,12 @@
             for (const f of s.fields || []) if (f.key && f.type !== 'enable' && f.type !== 'custom' && !SEEDED_KEYS.includes(f.key)) f.scope = 'all';
             const enable = (s.fields || []).find((f) => f.type === 'enable');
             const on = enable ? config[enable.key] === true : true;
-            const name = JE.t(s.title);
+            const name = fmt(s.title);
             // Edit only opens something worth opening: a group with settings of its own. Otherwise the
             // row's description and its position-and-limit link sit in the row itself.
             const ownControls = hasOwnControls(s);
             const placement = JE.core?.tagLayout?.GROUPS?.includes(s.group.id)
-                ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}"><span class="je-ta-link-text">${tx('admin_tags_goto_placement', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
+                ? `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="layout:placement-${esc(s.group.id)}"><span class="je-ta-link-text">${tx('{group} position and limit (Layout defaults)', { group: name })}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>` : '';
             if (!ownControls) {
                 // As every row: name first, the sample, then the switch on the right.
                 return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false" data-je-static>`
@@ -938,7 +1053,7 @@
                 + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
                 // Name first, controls on the right (the page's setting rows): the switch, with its own 44px target, only turns the group on or off.
                 + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-labelledby="jeTaSec-${esc(s.id)}" aria-describedby="jeTaSum-${esc(s.id)}"></label>` : '')
-                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('admin_tags_group_open', { name })}"><span class="je-ta-expand-text">${tx('tag_shapes_edit')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
+                + `<button type="button" class="je-ta-expand" aria-expanded="false" aria-controls="jeTaGroup-${esc(s.group.id)}" aria-label="${tx('Edit {name} settings', { name })}"><span class="je-ta-expand-text">${tx('Edit')}</span><span class="material-icons" aria-hidden="true">expand_more</span></button>`
                 + '</div>'
                 + `<div class="je-ta-grow-body" id="jeTaGroup-${esc(s.group.id)}" role="region" aria-labelledby="jeTaSec-${esc(s.id)}" hidden>${s.hint ? `<p class="je-ta-hint">${tx(s.hint)}</p>` : ''}`
                 // Where it goes and how many show live on Layout defaults: say so, and go there.
@@ -971,12 +1086,12 @@
             const offered = JE.core.tagSettingsMatrix?.offers('admin', group, 'scopes') ?? true;
             if (offered !== true) return `<p class="je-ta-hint" data-je-scope-na="${esc(group)}">${tx(offered)}</p>`;
             if (group !== 'rating' && !S.SCOPED_GROUPS.includes(group)) return '';
-            const labels = { movies: 'panel_settings_ui_rating_tags_scope_movies', series: 'panel_settings_ui_rating_tags_scope_series', seasons: 'panel_settings_ui_rating_tags_scope_seasons',
-                episodes: 'panel_settings_ui_rating_tags_scope_episodes', continueWatching: 'panel_settings_ui_rating_tags_scope_continue_watching', nextUp: 'panel_settings_ui_rating_tags_scope_next_up' };
-            return `<fieldset class="je-ta-scopes" data-je-scope-block="${esc(group)}"><legend class="je-ta-sub">${tx('admin_tags_scope_label')}</legend>`
-                + `<p class="je-ta-hint">${tx('admin_tags_scope_hint')}</p>`
+            const labels = { movies: 'Movies', series: 'Series', seasons: 'Seasons',
+                episodes: 'Episodes', continueWatching: 'Continue Watching row', nextUp: 'Next Up row' };
+            return `<fieldset class="je-ta-scopes" data-je-scope-block="${esc(group)}"><legend class="je-ta-sub">${tx('Where to show')}</legend>`
+                + `<p class="je-ta-hint">${tx('New users start with these choices, and users who have not changed theirs follow them.')}</p>`
                 + S.SCOPE_IDS.map((scope) => `<label class="je-ta-switch"><input type="checkbox" id="${group === 'rating' ? `ratingTagsOn${scope.charAt(0).toUpperCase()}${scope.slice(1)}` : `jeTaScope-${esc(group)}-${scope}`}"${group === 'rating' ? ` data-je-setting-id="ratingTagsOn${scope.charAt(0).toUpperCase()}${scope.slice(1)}" data-je-field="RatingTagsOn${scope.charAt(0).toUpperCase()}${scope.slice(1)}"` : ''} data-je-scope-admin="${esc(group)}" data-je-scope="${scope}" ${S.scopeDefault(group, scope, config) ? 'checked' : ''}><span class="je-ta-switch-text"><span class="je-ta-switch-name">${tx(labels[scope])}</span></span></label>`).join('')
-                + `<p class="je-ta-hint">${tx('tag_scope_hint')}</p></fieldset>`;
+                + `<p class="je-ta-hint">${tx('Item types apply everywhere, native posters included. The Continue Watching and Next Up rows apply on the web. Collections and other videos always show the group.')}</p></fieldset>`;
         }
 
         const tabs = /** @type {HTMLElement[]} */ (Array.from(root.querySelectorAll('[role="tab"]')));
@@ -1000,7 +1115,7 @@
             unsaved.hidden = !open;
             // The sticky preview moves down while the row is shown, so neither covers the other.
             root.classList.toggle('je-ta-unsaved-on', open);
-            if (open) /** @type {HTMLElement} */ (unsaved.querySelector('[data-je-unsaved-text]')).textContent = JE.t('admin_tags_unsaved_count', { count: Math.max(1, store.conflicts.size || store.failed.length || store.values.size) });
+            if (open) /** @type {HTMLElement} */ (unsaved.querySelector('[data-je-unsaved-text]')).textContent = fmt('Unsaved changes: {count}', { count: Math.max(1, store.conflicts.size || store.failed.length || store.values.size) });
         };
         if (typeof IntersectionObserver === 'function') {
             const watch = new IntersectionObserver(([entry]) => { chipInView = !!entry?.isIntersecting; drawUnsaved(); });
@@ -1025,18 +1140,18 @@
                 const mine = one ? valueLabel(keys[0], store.values.get(keys[0])) : '';
                 // Several: each field with both values, so the bulk choice is still an informed one.
                 const pairs = () => keys.map((k) => (store.values.has(k)
-                    ? JE.t('admin_tags_conflict_pair', { field: fieldName(k), theirs: valueLabel(k, store.conflicts.get(k)), mine: valueLabel(k, store.values.get(k)) })
+                    ? fmt('{field} (yours: {mine}, saved elsewhere: {theirs})', { field: fieldName(k), theirs: valueLabel(k, store.conflicts.get(k)), mine: valueLabel(k, store.values.get(k)) })
                     : fieldName(k))).join('; ');
                 html = `<span>${one
-                    ? tx('admin_tags_conflict_one', { field: fieldName(keys[0]), theirs, mine })
-                    : esc(JE.t('admin_tags_conflict', { fields: pairs() }))}</span>`
+                    ? tx('{field} was changed elsewhere to {theirs} (yours: {mine})', { field: fieldName(keys[0]), theirs, mine })
+                    : esc(fmt('Changed elsewhere: {fields}', { fields: pairs() }))}</span>`
                     // One field: each button names the value it keeps.
-                    + `<button type="button" data-je-keep>${one ? tx('admin_tags_keep_value', { value: mine }) : tx('admin_tags_keep_mine')}</button>`
-                    + `<button type="button" data-je-theirs>${one ? tx('admin_tags_use_value', { value: theirs }) : tx('admin_tags_take_theirs')}</button>`;
+                    + `<button type="button" data-je-keep>${one ? tx('Keep {value}', { value: mine }) : tx('Keep mine')}</button>`
+                    + `<button type="button" data-je-theirs>${one ? tx('Use {value}', { value: theirs }) : tx('Take theirs')}</button>`;
             } else if (state === 'error') {
                 const fields = names(store.failed.length ? store.failed : Array.from(store.values.keys()));
-                html = `<span>${fields ? tx('admin_tags_save_failed_fields', { fields }) : tx('admin_tags_save_failed')}</span><button type="button" data-je-retry>${tx('admin_tags_retry')}</button>`;
-            } else html = `<span class="je-ta-saved-long">${tx(state === 'saving' ? 'admin_tags_saving' : 'admin_tags_saved')}</span><span class="je-ta-saved-short" aria-hidden="true">${tx(state === 'saving' ? 'admin_tags_saving_short' : 'admin_tags_saved_short')}</span>`;
+                html = `<span>${fields ? tx('Not saved: {fields}', { fields }) : tx('Not saved')}</span><button type="button" data-je-retry>${tx('Retry')}</button>`;
+            } else html = `<span class="je-ta-saved-long">${tx(state === 'saving' ? 'Saving…' : 'All changes saved')}</span><span class="je-ta-saved-short" aria-hidden="true">${tx(state === 'saving' ? 'Saving…' : 'Saved')}</span>`;
             if (html === savedHtml) return;
             savedHtml = html;
             const active = /** @type {HTMLElement|null} */ (document.activeElement);
@@ -1223,7 +1338,7 @@
             if (!toggle) return;
             const on = toggle.getAttribute('aria-pressed') !== 'true';
             toggle.setAttribute('aria-pressed', String(on));
-            /** @type {HTMLElement} */ (toggle.lastElementChild).textContent = JE.t(on ? 'panel_settings_ui_tag_editor_reorder_done' : 'panel_settings_ui_tag_editor_reorder_categories');
+            /** @type {HTMLElement} */ (toggle.lastElementChild).textContent = fmt(on ? 'Finish reordering' : 'Reorder categories');
             toggle.focus({ preventScroll: true });
         }, { signal });
 
@@ -1249,7 +1364,7 @@
             setMany(values, { redraw: false });
             const again = /** @type {HTMLButtonElement|null} */ (li.querySelector(`[data-move="${dir}"]`));
             (again && !again.disabled ? again : li.querySelector('[data-move]:not([disabled])') || li.querySelector('input'))?.focus();
-            announce(JE.t('admin_tags_moved', { name: li.querySelector('.je-ta-order-name')?.textContent || '', n: Array.from(list.children).indexOf(li) + 1 }));
+            announce(fmt('{name} moved to position {n}', { name: li.querySelector('.je-ta-order-name')?.textContent || '', n: Array.from(list.children).indexOf(li) + 1 }));
         }, { signal });
 
         // ── Tabs ──
@@ -1367,7 +1482,7 @@
             button.setAttribute('aria-expanded', String(open));
             const text = button.querySelector('.je-ta-expand-text');
             // "Edit" as on every other group row; the chevron and aria-expanded carry open / closed.
-            if (text) text.textContent = JE.t('tag_shapes_edit');
+            if (text) text.textContent = fmt('Edit');
             const s = sections.find((x) => x.group?.id === group);
             if (open && s?.show) s.show(ctx, bodyOf(s));
             if (open && opts.focus) {
@@ -1387,6 +1502,16 @@
             return /** @type {HTMLElement} */ (root.querySelector(`[data-section="${s.id}"] .je-ta-section-body`));
         }
 
+        /**
+         * One sample chip. `flag` draws a country flag (text is the flag-icons code), `icon` a Material
+         * Symbol (text is the icon name); anything else is plain text.
+         */
+        function sampleChip([kind, text]) {
+            if (kind === 'flag') return `<img class="je-ta-chip je-ta-chip-flag" data-kind="lang" alt="" src="${esc(window.jeCdnUrl('flag-icons/flags/4x3/' + text + '.svg'))}">`;
+            if (kind === 'icon') return `<span class="je-ta-chip" data-kind="genre"><i class="je-ts-genre-glyph" aria-hidden="true">${esc(text)}</i></span>`;
+            return `<span class="je-ta-chip" data-kind="${esc(kind)}">${esc(text)}</span>`;
+        }
+
         /** Rewrite each group row's summary and sample chips. */
         function syncGroupRows() {
             for (const s of groupSections) {
@@ -1397,7 +1522,7 @@
                 const sum = row.querySelector('.je-ta-grow-sum');
                 if (sum) sum.textContent = s.group.summary ? s.group.summary(ctx) : '';
                 const sample = row.querySelector('.je-ta-grow-sample');
-                if (sample) sample.innerHTML = (s.group.sample ? s.group.sample(ctx) : []).map(([kind, text]) => `<span class="je-ta-chip" data-kind="${esc(kind)}">${esc(text)}</span>`).join('');
+                if (sample) sample.innerHTML = (s.group.sample ? s.group.sample(ctx) : []).map(sampleChip).join('');
             }
         }
 
@@ -1463,13 +1588,13 @@
             const colours = config.TagStylesEnabled === true && ['native', 'both'].includes(String(config.TagStyleTarget || 'both'));
             // The look new users' native posters get: Corners and Bands as set, the title and hover layouts as Corners
             // with full labels (Services/PosterTags/PosterTagSettings.cs).
-            const names = JE.core?.tagLayout?.VOCABULARY_KEYS?.layout || {};
+            const names = WORDS.layout;
             const layout = String(config.TagLayout || 'corners').toLowerCase();
-            const name = (l) => JE.t(names[l] || names.corners || 'tag_looks_layout_corners');
+            const name = (l) => fmt(names[l] || names.corners || 'Corners');
             const look = ['corners', 'bands'].includes(layout)
-                ? JE.t('tag_looks_outcome', { layout: name(layout), density: JE.t(config.TagLabelDensity === 'compact' ? 'panel_settings_ui_tag_density_compact' : 'panel_settings_ui_tag_density_full') })
-                : JE.t('admin_tags_native_as_corners', { corners: name('corners'), full: JE.t('panel_settings_ui_tag_density_full'), layout: name(layout) });
-            line.innerHTML = `<strong>${tx('admin_tags_native_label')}</strong> ${on ? tx(colours ? 'admin_tags_native_on_colours' : 'admin_tags_native_on', { look }) : tx('admin_tags_native_off')}`;
+                ? fmt('{layout} · {density}', { layout: name(layout), density: fmt(config.TagLabelDensity === 'compact' ? 'Compact' : 'Full') })
+                : fmt('{corners} · {full} ({layout} is drawn as {corners})', { corners: name('corners'), full: fmt('Full'), layout: name(layout) });
+            line.innerHTML = `<strong>${tx('Native posters:')}</strong> ${on ? tx(colours ? 'on, with your tag colours. Apps such as Android TV get these tags drawn into the poster, as {look}.' : 'on. Apps such as Android TV get these tags drawn into the poster, as {look}.', { look }) : tx('off. Apps such as Android TV show untagged posters.')}`;
         }
 
         // ── Feedback ──
@@ -1536,8 +1661,8 @@
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = 'je-ta-button';
-                button.textContent = JE.t('hidden_content_undo');
-                button.addEventListener('click', () => { removeSnack(bar); undo(); announce(JE.t('admin_tags_undone')); });
+                button.textContent = fmt('Undo');
+                button.addEventListener('click', () => { removeSnack(bar); undo(); announce(fmt('Undone')); });
                 bar.appendChild(button);
             }
             root.appendChild(bar);
@@ -1595,7 +1720,7 @@
 
         const ctx = {
             perUserMark,
-            root, config, t: JE.t, tx, esc,
+            root, config, t: fmt, tx, esc,
             /** @param {string} key @param {*} value */
             set: (key, value) => setMany({ [key]: value }, { itemEdit: true }),
             isCurrent: () => !disposed && sameSession(contextMark),
@@ -1670,7 +1795,7 @@
         // Signed out meanwhile: the edits went with that session, nothing to go back to.
         if (ok || !sameSession(mark) || onMediaTagsPage()) return;
         const names = Array.from(new Set((store.failed.length ? store.failed : Array.from(store.values.keys())).map(fieldName))).join(', ');
-        const back = await askConfirm(JE.t('admin_tags_leave_confirm', { fields: names }), JE.t('admin_tags_leave_title'));
+        const back = await askConfirm(fmt('These Media Tags changes could not be saved: {fields}. Go back to the Media Tags page to retry? They stay waiting there either way.', { fields: names }), fmt('Media Tags changes not saved'));
         // The answer belongs to the session that was asked: after a sign-out or another sign-in it navigates no one.
         if (!back || !sameSession(mark) || onMediaTagsPage()) return;
         // Back to the Media Tags tab, at the section shown last.
@@ -1853,8 +1978,8 @@
      * @param {HTMLElement} root
      */
     function showLoadError(page, root) {
-        root.innerHTML = `<div class="je-ta-wait je-ta-load-error" role="alert"><p>${tx('admin_tags_load_failed')}</p>`
-            + `<button type="button" class="je-ta-button" data-je-reload><span class="material-icons" aria-hidden="true">refresh</span>${tx('admin_tags_retry')}</button></div>`;
+        root.innerHTML = `<div class="je-ta-wait je-ta-load-error" role="alert"><p>${tx('The Media Tags settings could not be loaded from the server.')}</p>`
+            + `<button type="button" class="je-ta-button" data-je-reload><span class="material-icons" aria-hidden="true">refresh</span>${tx('Retry')}</button></div>`;
         const retry = /** @type {HTMLButtonElement} */ (root.querySelector('[data-je-reload]'));
         retry.addEventListener('click', () => {
             retry.disabled = true;
@@ -1914,6 +2039,7 @@
     });
 
     JE.adminTags = {
+        fmt, WORDS,
         TABS,
         SECTION_FILES,
         SEEDED_KEYS,

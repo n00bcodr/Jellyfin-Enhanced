@@ -1,14 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
-import { createHarness, jsRoot } from '../helpers/harness.mjs';
+import { jsRoot } from '../helpers/harness.mjs';
 
-// The Media Tags settings surfaces (admin page and its sections, the hub, its editors and the item editor) show
-// no hard-coded English: every word comes from the locale files through JE.t. Codec and brand samples, icon
-// ligatures and code are not words a user reads in their language.
+// The Media Tags surfaces users see (the hub, its editors and the item editor) show no hard-coded English: every
+// word comes from the locale files through JE.t. Codec and brand samples, icon ligatures and code are not words a
+// user reads in their language. The administrator's configuration page (enhanced/admintags) is plain English like
+// the rest of that page, so it is not checked here.
 const files = [
-  ...readdirSync(`${jsRoot}/enhanced/admintags`).filter(f => f.endsWith('.js')).map(f => `enhanced/admintags/${f}`),
-  ...readdirSync(`${jsRoot}/enhanced/admintags/sections`).filter(f => f.endsWith('.js')).map(f => `enhanced/admintags/sections/${f}`),
   ...readdirSync(`${jsRoot}/enhanced/settingspanel`).filter(f => /^ui-panel-(tag-|media-tags)/.test(f)).map(f => `enhanced/settingspanel/${f}`),
   'tags/tag-item-editor.js',
 ];
@@ -57,28 +56,4 @@ test('counted strings get their count as a number, never filled in by hand', () 
     });
   }
   assert.deepEqual(found, []);
-});
-
-test('the Custom rules table speaks only the loaded language, accessible names included', t => {
-  const h = createHarness({ JE: { t: (key, params) => `«${key}${params ? JSON.stringify(params) : ''}»` },
-    apiClient: { getCurrentUserId: () => 'user', getUrl: path => path, ajax: async () => ({ Tags: [], Items: [] }) } });
-  t.after(() => h.close());
-  h.JE.adminTags = {};
-  h.load('enhanced/admintags/custom-rules-editor.js');
-  h.document.body.innerHTML = h.JE.adminTags.CUSTOM_HTML;
-  const rules = h.JE.adminTags.createCustomTagRules(h.document.body);
-  rules.load({ CustomTagRules: [] });
-  const texts = () => {
-    const out = [];
-    const walker = h.document.createTreeWalker(h.document.body, h.window.NodeFilter.SHOW_TEXT);
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.textContent.trim()) out.push(node.textContent.trim());
-    for (const el of h.document.querySelectorAll('[aria-label], [title], [placeholder]')) for (const name of ['aria-label', 'title', 'placeholder']) if (el.getAttribute(name)) out.push(el.getAttribute(name));
-    return out;
-  };
-  assert.ok(texts().some(text => text.includes('custom_tags_rules_empty')), 'the empty state is drawn');
-  h.document.querySelector('#customTagRuleAdd').click();
-  // Icon names are the icons' own identifiers, shown as they are.
-  const stray = texts().filter(text => !/^«.*»$/.test(text) && !/^[a-z]+( [a-z]+)*$/.test(text) && !/^(delete)$/.test(text));
-  assert.deepEqual(stray, []);
-  assert.ok(texts().some(text => text.includes('custom_tags_rules_count{"count":1,"max":20}')), 'the count is a number');
 });

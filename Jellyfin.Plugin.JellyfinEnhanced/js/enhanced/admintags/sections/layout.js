@@ -28,7 +28,7 @@
     /** @returns {Object} The settings panel editor's cap rules (stepCap, GROUP_META). */
     const editorData = () => JE.internals?.enhancedUi?.tagGroupEditorData || null;
     /** @param {string} g @returns {string} */
-    const groupName = (g) => JE.t(JE.core.tagLayout.VOCABULARY_KEYS.group[`${g === 'ageRating' ? 'age_rating' : g}`]);
+    const groupName = (g) => A.fmt(A.WORDS.group[`${g === 'ageRating' ? 'age_rating' : g}`]);
     /** @param {string} g @returns {string} The group's enable setting. */
     const enabledKey = (g) => `${g === 'logos' ? 'Logo' : pascal(g)}TagsEnabled`;
 
@@ -146,38 +146,38 @@
         let slots;
         if (state.layout === 'corners') {
             const anchors = ANCHORS.map((a) => {
-                const label = JE.t(JE.core.tagLayout.VOCABULARY_KEYS.slot[`corners_${a}`]);
-                return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" tabindex="${slot === a ? 0 : -1}" aria-label="${ctx.esc(JE.t('admin_tags_position_aria', { group: name, slot: label }))}">${ctx.esc(label)}</button>`;
+                const label = A.fmt(A.WORDS.slot[`corners_${a}`]);
+                return `<button type="button" class="je-ta-anchor" data-slot="${a}" aria-pressed="${slot === a}" tabindex="${slot === a ? 0 : -1}" aria-label="${ctx.esc(A.fmt('{group}: {slot}', { group: name, slot: label }))}">${ctx.esc(label)}</button>`;
             }).join('');
             // The nine positions by name, as on the hub and in the item editor; Hidden spans the row under them.
-            slots = `<span class="je-ta-anchors" role="group" id="${L().POSITION_SETTINGS[g].userKey}" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${anchors}`
-                + `<button type="button" class="je-ta-pill je-ta-anchor-off" data-slot="off" aria-pressed="${slot === 'off'}" tabindex="${slot === 'off' ? 0 : -1}">${ctx.tx('panel_settings_ui_tag_slot_off')}</button></span>`;
+            slots = `<span class="je-ta-anchors" role="group" id="${L().POSITION_SETTINGS[g].userKey}" aria-label="${ctx.esc(A.fmt('{group} position', { group: name }))}">${anchors}`
+                + `<button type="button" class="je-ta-pill je-ta-anchor-off" data-slot="off" aria-pressed="${slot === 'off'}" tabindex="${slot === 'off' ? 0 : -1}">${ctx.tx('Hidden')}</button></span>`;
         } else {
-            slots = `<span class="je-ta-pills" role="group" aria-label="${ctx.esc(JE.t('admin_tags_position_for', { group: name }))}">${L().LAYOUT_SLOTS[state.layout].filter((s) => s !== 'dots' || g === 'quality').map((s) => {
-                const label = JE.t(s === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${s}`]);
+            slots = `<span class="je-ta-pills" role="group" aria-label="${ctx.esc(A.fmt('{group} position', { group: name }))}">${L().LAYOUT_SLOTS[state.layout].filter((s) => s !== 'dots' || g === 'quality').map((s) => {
+                const label = A.fmt(s === 'off' ? 'Hidden' : A.WORDS.slot[`${state.layout}_${s}`]);
                 return `<button type="button" class="je-ta-pill" data-slot="${s}" aria-pressed="${slot === s}">${ctx.esc(label)}</button>`;
             }).join('')}</span>`;
         }
         const fixed = L().singleChipGroup(g, c);
-        const where = JE.t(slot === 'off' ? 'panel_settings_ui_tag_slot_off' : JE.core.tagLayout.VOCABULARY_KEYS.slot[`${state.layout}_${slot}`]);
-        const capText = cap === 0 ? JE.t('panel_settings_ui_tag_editor_cap_all') : String(cap);
-        const summary = slot === 'off' || fixed ? where : JE.t(cap === 0 ? 'tag_item_editor_group_summary_all' : 'tag_item_editor_group_summary', { where, cap: capText });
+        const where = A.fmt(slot === 'off' ? 'Hidden' : A.WORDS.slot[`${state.layout}_${slot}`]);
+        const capText = cap === 0 ? A.fmt('All') : String(cap);
+        const summary = slot === 'off' || fixed ? where : A.fmt(cap === 0 ? '{where} · all tags' : '{where} · up to {cap}', { where, cap: capText });
         // Collapsed, a row says where the group goes and its limit; one row's controls open at a time.
         const open = openGroups.get(ctx) === g;
         return `<li class="je-ta-lrow" data-group="${g}" data-off="${off}" data-open="${open}" data-je-anchor="placement-${g}">
             <span class="je-ta-lrow-move">
-                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="-1" aria-label="${ctx.esc(JE.t('admin_tags_move_up', { name }))}" ${index === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
-                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="1" aria-label="${ctx.esc(JE.t('admin_tags_move_down', { name }))}" ${index === count - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
+                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="-1" aria-label="${ctx.esc(A.fmt('Move {name} up', { name }))}" ${index === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>
+                <button type="button" class="je-ta-icon-btn" data-act="move" data-dir="1" aria-label="${ctx.esc(A.fmt('Move {name} down', { name }))}" ${index === count - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button>
             </span>
-            <span class="je-ta-lrow-name">${ctx.esc(name)}${off ? `<small>${ctx.tx('admin_tags_group_off_for_new')}</small>` : ''}</span>
+            <span class="je-ta-lrow-name">${ctx.esc(name)}${off ? `<small>${ctx.tx('Off for new users')}</small>` : ''}</span>
             <span class="je-ta-lrow-sum">${ctx.esc(summary)}</span>
-            <button type="button" class="je-ta-button je-ta-lrow-open" data-act="open" data-dir="0" aria-expanded="${open}" aria-controls="jeTaLrow-${g}" aria-label="${ctx.esc(JE.t('admin_tags_lrow_edit', { group: name }))}">${ctx.tx('tag_shapes_edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
+            <button type="button" class="je-ta-button je-ta-lrow-open" data-act="open" data-dir="0" aria-expanded="${open}" aria-controls="jeTaLrow-${g}" aria-label="${ctx.esc(A.fmt('Edit {group} position and limit', { group: name }))}">${ctx.tx('Edit')}<span class="material-icons" aria-hidden="true">expand_more</span></button>
             <span class="je-ta-lrow-detail" id="jeTaLrow-${g}" ${open ? '' : 'hidden'}>
             <span class="je-ta-lrow-slots">${slots}</span>
-            ${fixed ? '' : `<span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(JE.t('admin_tags_limit_for', { group: name }))}">${ctx.tx('panel_settings_ui_tag_editor_show_up_to')}
-                <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="-1" aria-label="${ctx.esc(JE.t('tag_shapes_fewer', { group: name }))}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">remove</span></button>
-                <output aria-live="polite">${cap === 0 ? ctx.tx('panel_settings_ui_tag_editor_cap_all') : cap}</output>
-                <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="1" aria-label="${ctx.esc(JE.t('tag_shapes_more', { group: name }))}" ${stepCap(cap, 1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">add</span></button>
+            ${fixed ? '' : `<span class="je-ta-lrow-cap" role="group" aria-label="${ctx.esc(A.fmt('{group} limit', { group: name }))}">${ctx.tx('Show up to')}
+                <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="-1" aria-label="${ctx.esc(A.fmt('Fewer {group} tags', { group: name }))}" ${stepCap(cap, -1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">remove</span></button>
+                <output aria-live="polite">${cap === 0 ? ctx.tx('All') : cap}</output>
+                <button type="button" class="je-ta-icon-btn" data-act="cap" data-dir="1" aria-label="${ctx.esc(A.fmt('More {group} tags', { group: name }))}" ${stepCap(cap, 1, meta) === null ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">add</span></button>
             </span>`}
             ${groupSettingsLink(ctx, g, name)}
             </span>
@@ -188,22 +188,22 @@
         id: 'layout-look',
         tab: 'layout',
         order: 10,
-        title: 'admin_tags_overview_look',
-        hint: 'admin_tags_layout_look_desc',
+        title: 'Default look',
+        hint: 'Where the tags sit on a poster, and how long their labels are.',
         fields: [
-            { id: 'tagLayout', key: 'TagLayout', type: 'custom', label: 'admin_tags_layout_default' },
-            { id: 'tagLabelDensity', key: 'TagLabelDensity', type: 'pills', label: 'panel_settings_ui_tag_density', desc: 'panel_settings_ui_tag_density_desc', options: [['full', 'panel_settings_ui_tag_density_full'], ['compact', 'panel_settings_ui_tag_density_compact']], read: (v) => (String(v || '').toLowerCase() === 'compact' ? 'compact' : 'full') },
+            { id: 'tagLayout', key: 'TagLayout', type: 'custom', label: 'Default layout' },
+            { id: 'tagLabelDensity', key: 'TagLabelDensity', type: 'pills', label: 'Label density', desc: 'Compact shortens quality labels (DV, Atmos) and hides the critic score next to a community score.', options: [['full', 'Full'], ['compact', 'Compact']], read: (v) => (String(v || '').toLowerCase() === 'compact' ? 'compact' : 'full') },
             // Size, gap and edge as the hub shows them: a row of choices with its help line.
-            { id: 'tagScale', key: 'TagScale', type: 'pills', label: 'admin_tags_tagScale', desc: 'tag_scale_desc', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
-            { id: 'tagGap', key: 'TagGap', type: 'pills', label: 'admin_tags_tagGap', desc: 'tag_gap_desc', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
-            { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'pills', label: 'admin_tags_tagEdgeSpacing', desc: 'panel_settings_ui_tag_edge_desc', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
+            { id: 'tagScale', key: 'TagScale', type: 'pills', label: 'Tag size', desc: 'Scale tag text, icons and padding on web and native posters.', options: [['smaller', '=85%'], ['default', '=100%'], ['larger', '=115%'], ['largest', '=130%']] },
+            { id: 'tagGap', key: 'TagGap', type: 'pills', label: 'Gap', desc: 'Adjust spacing between tags in stacks, rows, bands and captions.', options: [['tight', '=Tight'], ['default', '=Default'], ['roomy', '=Roomy']] },
+            { id: 'tagEdgeSpacing', key: 'TagEdgeSpacing', type: 'pills', label: 'Edge spacing', desc: 'How close the Corners layout puts tags to the poster edge. Flush tags touch the edge and follow the poster\'s rounded corners.', options: [['default', '=Default'], ['tight', '=Tight'], ['flush', '=Flush']] },
         ],
         render(ctx, body) {
             const card = body.closest('.je-ta-card');
             const tiles = document.createElement('div');
-            tiles.innerHTML = `<span class="je-ta-label" id="tagLayoutLabel">${ctx.tx('admin_tags_layout_default')}</span>
+            tiles.innerHTML = `<span class="je-ta-label" id="tagLayoutLabel">${ctx.tx('Default layout')}</span>
                 <div class="je-ta-tiles" role="radiogroup" id="tagLayout" data-je-setting-id="tagLayout" aria-labelledby="tagLayoutLabel" aria-describedby="tagLayoutDesc">${LAYOUTS.map((id) => `
-                    <label class="je-ta-tile"><input type="radio" name="jeTaLayout" value="${id}"><span class="je-ta-tile-art" data-layout="${id}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="je-ta-tile-name">${ctx.tx(JE.core.tagLayout.VOCABULARY_KEYS.layout[id])}</span></label>`).join('')}</div>
+                    <label class="je-ta-tile"><input type="radio" name="jeTaLayout" value="${id}"><span class="je-ta-tile-art" data-layout="${id}" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="je-ta-tile-name">${ctx.tx(A.WORDS.layout[id])}</span></label>`).join('')}</div>
                 <p class="je-ta-hint" id="tagLayoutDesc" aria-live="polite" style="margin-top:8px"></p>`;
             card.querySelector('.je-ta-hint')?.after(tiles);
             tiles.addEventListener('change', (e) => {
@@ -215,7 +215,7 @@
             const layout = readState(ctx.config).layout;
             ctx.root.querySelectorAll('input[name="jeTaLayout"]').forEach((r) => { /** @type {HTMLInputElement} */ (r).checked = /** @type {HTMLInputElement} */ (r).value === layout; });
             const desc = ctx.root.querySelector('#tagLayoutDesc');
-            if (desc) desc.textContent = JE.t(`panel_settings_ui_tag_layout_${layout}`);
+            if (desc) desc.textContent = A.WORDS.layoutName[layout];
         },
     });
 
@@ -239,7 +239,7 @@
      * @returns {string}
      */
     function groupSettingsLink(ctx, g, name) {
-        return `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="groups:${g}"><span class="je-ta-link-text">${ctx.esc(JE.t('admin_tags_goto_group', { group: name }))}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>`;
+        return `<a class="je-ta-link je-ta-crosslink" href="#" data-je-goto="groups:${g}"><span class="je-ta-link-text">${ctx.esc(A.fmt('{group} settings (Groups)', { group: name }))}</span><span class="material-icons" aria-hidden="true">arrow_forward</span></a>`;
     }
 
     /** Per page view: the group row whose controls are open. */
@@ -249,29 +249,29 @@
         id: 'layout-groups',
         tab: 'layout',
         order: 20,
-        title: 'admin_tags_layout_groups',
-        hint: 'admin_tags_layout_groups_desc',
+        title: 'Group placement',
+        hint: 'Higher groups win when space is short and stack nearest the edge. The limit is how many chips a group shows.',
         writes: ['TagLayouts', 'TagGroupOrder', 'TagGroupCaps'],
         fields: [
-            { id: 'qualityTagsPosition', key: 'QualityTagsPosition', type: 'custom', label: 'admin_tags_position_quality' },
-            { id: 'genreTagsPosition', key: 'GenreTagsPosition', type: 'custom', label: 'admin_tags_position_genre' },
-            { id: 'languageTagsPosition', key: 'LanguageTagsPosition', type: 'custom', label: 'admin_tags_position_language' },
-            { id: 'ratingTagsPosition', key: 'RatingTagsPosition', type: 'custom', label: 'admin_tags_position_rating' },
-            { id: 'ageRatingTagsPosition', key: 'AgeRatingTagsPosition', type: 'custom', label: 'admin_tags_position_age_rating' },
-            { id: 'statusTagsPosition', key: 'StatusTagsPosition', type: 'custom', label: 'admin_tags_position_status' },
-            { id: 'awardsTagsPosition', key: 'AwardsTagsPosition', type: 'custom', label: 'admin_tags_awardsTagsPosition' },
-            { id: 'logoTagsPosition', key: 'LogoTagsPosition', type: 'custom', label: 'admin_tags_logoTagsPosition' },
-            { id: 'customTagsPosition', key: 'CustomTagsPosition', type: 'custom', label: 'admin_tags_customTagsPosition' },
+            { id: 'qualityTagsPosition', key: 'QualityTagsPosition', type: 'custom', label: 'Quality position' },
+            { id: 'genreTagsPosition', key: 'GenreTagsPosition', type: 'custom', label: 'Genre position' },
+            { id: 'languageTagsPosition', key: 'LanguageTagsPosition', type: 'custom', label: 'Language position' },
+            { id: 'ratingTagsPosition', key: 'RatingTagsPosition', type: 'custom', label: 'Rating position' },
+            { id: 'ageRatingTagsPosition', key: 'AgeRatingTagsPosition', type: 'custom', label: 'Age rating position' },
+            { id: 'statusTagsPosition', key: 'StatusTagsPosition', type: 'custom', label: 'Status position' },
+            { id: 'awardsTagsPosition', key: 'AwardsTagsPosition', type: 'custom', label: 'Awards position' },
+            { id: 'logoTagsPosition', key: 'LogoTagsPosition', type: 'custom', label: 'Logos position' },
+            { id: 'customTagsPosition', key: 'CustomTagsPosition', type: 'custom', label: 'Custom position' },
         ],
         render(ctx, body) {
-            body.innerHTML = `<p class="je-ta-hint" data-layout-note></p><button type="button" class="je-ta-button je-ta-reorder" data-reorder aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${ctx.tx('panel_settings_ui_tag_editor_reorder_groups')}</span></button><ol class="je-ta-lrows" id="tagGroupAdminRows"></ol>`;
+            body.innerHTML = `<p class="je-ta-hint" data-layout-note></p><button type="button" class="je-ta-button je-ta-reorder" data-reorder aria-pressed="false"><span class="material-icons" aria-hidden="true">swap_vert</span><span>${ctx.tx('Reorder groups')}</span></button><ol class="je-ta-lrows" id="tagGroupAdminRows"></ol>`;
             // Phone: the order buttons show only in reorder mode.
             body.querySelector('[data-reorder]')?.addEventListener('click', (e) => {
                 const toggle = /** @type {HTMLElement} */ (e.currentTarget);
                 const on = !body.classList.contains('je-ta-reordering');
                 body.classList.toggle('je-ta-reordering', on);
                 toggle.setAttribute('aria-pressed', String(on));
-                /** @type {HTMLElement} */ (toggle.lastElementChild).textContent = JE.t(on ? 'panel_settings_ui_tag_editor_reorder_done' : 'panel_settings_ui_tag_editor_reorder_groups');
+                /** @type {HTMLElement} */ (toggle.lastElementChild).textContent = A.fmt(on ? 'Finish reordering' : 'Reorder groups');
             });
             // One Tab stop per position picker; arrow keys, Home and End move along it (Enter or Space picks).
             body.addEventListener('keydown', (e) => {
@@ -309,14 +309,14 @@
                     list.splice(to, 0, list.splice(from, 1)[0]);
                     state.order = list;
                     keep = `[data-act="move"][data-dir="${button.dataset.dir}"]`;
-                    ctx.announce(JE.t('admin_tags_moved', { name: groupName(g), n: to + 1 }));
+                    ctx.announce(A.fmt('{name} moved to position {n}', { name: groupName(g), n: to + 1 }));
                 } else if (button.dataset.act === 'cap') {
                     const next = editorData()?.stepCap(capOf(g, state, ctx.config), Number(button.dataset.dir), editorData().GROUP_META[g] || {});
                     if (next === null || next === undefined) return;
                     state.caps[g] = next;
                     keep = `[data-act="cap"][data-dir="${button.dataset.dir}"]`;
                     // The redrawn row's <output> arrives already filled, which screen readers do not read out.
-                    ctx.announce(JE.t('admin_tags_limit_set', { group: groupName(g), n: next === 0 ? JE.t('panel_settings_ui_tag_editor_summary_all') : next }));
+                    ctx.announce(A.fmt('{group} limit: {n}', { group: groupName(g), n: next === 0 ? A.fmt('all tags') : next }));
                 } else if (button.dataset.slot) {
                     const slot = button.dataset.slot;
                     if (state.layout === 'corners') {
@@ -352,7 +352,7 @@
             const order = state.order || L().DEFAULT_ORDER;
             A.redrawList(list, order.map((g, i) => rowHtml(ctx, state, g, i, order.length)).join(''), focusSelector);
             const note = body.querySelector('[data-layout-note]');
-            if (note) note.textContent = JE.t('admin_tags_layout_groups_for', { layout: JE.t(JE.core.tagLayout.VOCABULARY_KEYS.layout[state.layout]) });
+            if (note) note.textContent = A.fmt('Positions for the {layout} layout. Pick another layout above to set its positions.', { layout: A.fmt(A.WORDS.layout[state.layout]) });
         },
     };
     A.registerSection(groupsSection);
@@ -401,19 +401,19 @@
         id: 'layout-shapes',
         tab: 'layout',
         order: 30,
-        title: 'admin_tags_layout_shapes',
-        hint: 'admin_tags_layout_shapes_desc',
+        title: 'Card shapes',
+        hint: 'Episode thumbnails and list rows have less room than a poster: give them their own look or keep the default one. Native Poster Tags draw on posters only and ignore these.',
         fields: [
-            { id: 'tagShapeLandscapeDefault', key: 'TagShapeOverrides', type: 'custom', label: 'tag_shapes_landscape' },
-            { id: 'tagShapeListDefault', key: 'TagShapeOverrides', type: 'custom', label: 'tag_shapes_list' },
+            { id: 'tagShapeLandscapeDefault', key: 'TagShapeOverrides', type: 'custom', label: 'Episode thumbnails' },
+            { id: 'tagShapeListDefault', key: 'TagShapeOverrides', type: 'custom', label: 'List rows' },
         ],
         render(ctx, body) {
             body.innerHTML = `<div class="je-ta-fields">${Object.entries(SHAPE_FIELDS).map(([shape, id]) => `
-                <div class="je-ta-field"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${id}">${ctx.tx(`tag_shapes_${shape}`)}</label></span>
+                <div class="je-ta-field"><span class="je-ta-switch-text"><label class="je-ta-switch-name" for="${id}">${ctx.tx(A.WORDS.shape[shape])}</label></span>
                 <span class="je-ta-field-control"><select id="${id}" data-shape="${shape}">
-                    <option value="inherit">${ctx.tx('admin_tags_shape_inherit')}</option>
-                    <option value="recommended">${ctx.tx(`admin_tags_shape_recommended_${shape}`)}</option>
-                    <option value="custom">${ctx.tx('admin_tags_shape_custom')}</option>
+                    <option value="inherit">${ctx.tx('Same look as posters')}</option>
+                    <option value="recommended">${ctx.tx(A.WORDS.shapeRecommended[shape])}</option>
+                    <option value="custom">${ctx.tx('Custom (kept as saved)')}</option>
                 </select></span></div>`).join('')}</div>`;
             body.addEventListener('change', (e) => {
                 const select = /** @type {HTMLSelectElement} */ (e.target);
@@ -444,39 +444,11 @@
         id: 'layout-display',
         tab: 'layout',
         order: 40,
-        title: 'admin_tags_layout_display',
+        title: 'Display',
         fields: [
-            { id: 'tagsHideOnHover', key: 'TagsHideOnHover', type: 'switch', label: 'admin_tags_hide_on_hover', desc: 'admin_tags_hide_on_hover_desc' },
-            { id: 'disableTagsOnSearchPage', key: 'DisableTagsOnSearchPage', type: 'switch', label: 'admin_tags_disable_on_search', desc: 'admin_tags_disable_on_search_desc' },
+            { id: 'tagsHideOnHover', key: 'TagsHideOnHover', type: 'switch', label: 'Hide tags on hover', desc: 'Tags fade out while the pointer is over a card. Users can change this.' },
+            { id: 'disableTagsOnSearchPage', key: 'DisableTagsOnSearchPage', type: 'switch', label: 'No tags on the search page', desc: 'Keeps quality, language, genre and rating tags off search results. Recommended with the Gelato plugin.' },
         ],
-    });
-
-    A.registerSection({
-        id: 'layout-apply',
-        tab: 'layout',
-        order: 50,
-        title: 'admin_tags_apply_all',
-        hint: 'admin_tags_apply_all_desc',
-        render(ctx, body) {
-            body.closest('.je-ta-card')?.setAttribute('data-je-anchor', 'apply');
-            body.innerHTML = `<div class="je-ta-actions"><button type="button" class="je-ta-button je-ta-button--danger" id="jeTaApplyAll"><span class="material-icons" aria-hidden="true">group</span>${ctx.tx('admin_tags_apply_all')}</button></div>`;
-            body.querySelector('#jeTaApplyAll')?.addEventListener('click', async () => {
-                const ok = await ctx.confirm(JE.t('admin_tags_apply_all_confirm'), JE.t('admin_tags_apply_all'));
-                if (!ok) return;
-                const saved = await ctx.flush();
-                if (!ctx.isCurrent()) return;
-                if (!saved) { ctx.snack(JE.t('admin_tags_apply_all_failed')); return; }
-                try {
-                    await ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('/JellyfinEnhanced/reset-all-users-settings'), dataType: 'json' });
-                    if (!ctx.isCurrent()) return;
-                    ctx.snack(JE.t('admin_tags_apply_all_done'));
-                } catch (err) {
-                    if (!ctx.isCurrent()) return;
-                    console.error('🪼 Jellyfin Enhanced: applying the defaults to all users failed', err);
-                    ctx.snack(JE.t('admin_tags_apply_all_failed'));
-                }
-            });
-        },
     });
 
     // Exposed for tests.

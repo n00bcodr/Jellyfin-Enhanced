@@ -34,30 +34,30 @@
         id: 'server-cache',
         tab: 'server',
         order: 10,
-        title: 'admin_tags_overview_cache',
-        hint: 'admin_tags_server_cache_desc',
+        title: 'Server tag cache',
+        hint: 'Tag data for every item, worked out on the server. Browsers download it once, in pages, keep a copy and then fetch only what changed.',
         writes: ['ClearLocalStorageTimestamp', 'TagCacheExcludedLibraryIds'],
         fields: [
-            { id: 'tagCacheServerMode', key: 'TagCacheServerMode', type: 'switch', label: 'admin_tags_server_cache_on', desc: 'admin_tags_server_cache_on_desc', read: (v) => v !== false, onChange: (on) => (on ? {} : { EnableTagsLocalStorageFallback: true }), master: true },
-            { id: 'tagCacheExcludeLibraries', key: 'TagCacheExcludeLibraries', type: 'switch', label: 'admin_tags_server_exclude', desc: 'admin_tags_server_exclude_desc', when: (c) => c.TagCacheServerMode !== false },
+            { id: 'tagCacheServerMode', key: 'TagCacheServerMode', type: 'switch', label: 'Server-side tag cache', desc: 'Tags load at once, without per-page requests. Off uses the older per-page mode and releases the cache; turning it on again restores the last copy and catches up in the background.', read: (v) => v !== false, onChange: (on) => (on ? {} : { EnableTagsLocalStorageFallback: true }), master: true },
+            { id: 'tagCacheExcludeLibraries', key: 'TagCacheExcludeLibraries', type: 'switch', label: 'Exclude libraries from the tag cache', desc: 'For very large libraries that use a lot of memory to scan. Takes effect on the next rebuild.', when: (c) => c.TagCacheServerMode !== false },
             // Without the server cache the browser fallback cache is always used (as on the old page).
-            { id: 'enableTagsLocalStorageFallback', key: 'EnableTagsLocalStorageFallback', type: 'switch', label: 'admin_tags_server_fallback', desc: 'admin_tags_server_fallback_desc', visible: (c) => c.TagCacheServerMode === false, when: () => false, read: () => true },
-            { id: 'tagsCacheTtlDays', key: 'TagsCacheTtlDays', type: 'number', min: 1, max: 365, fallback: 30, unit: 'admin_tags_days', label: 'admin_tags_server_ttl', desc: 'admin_tags_server_ttl_desc', read: (v) => Number(v) || 30 },
+            { id: 'enableTagsLocalStorageFallback', key: 'EnableTagsLocalStorageFallback', type: 'switch', label: 'Keep a tag cache in each browser', desc: 'Without the server cache, browsers keep tag data in local storage for faster repeat visits.', visible: (c) => c.TagCacheServerMode === false, when: () => false, read: () => true },
+            { id: 'tagsCacheTtlDays', key: 'TagsCacheTtlDays', type: 'number', min: 1, max: 365, fallback: 30, unit: 'days', label: 'Browser tag cache lifetime', desc: 'How long browsers keep tag data fetched without the server cache, and People Tags facts (1-365). The server cache keeps itself current.', read: (v) => Number(v) || 30 },
         ],
         render(ctx, body) {
-            body.innerHTML = `<div class="je-ta-libs" data-libs role="group" aria-label="${ctx.tx('admin_tags_server_exclude_list')}"><p class="je-ta-hint">${ctx.tx('hidden_content_admin_loading')}</p></div>
+            body.innerHTML = `<div class="je-ta-libs" data-libs role="group" aria-label="${ctx.tx('Libraries to exclude')}"><p class="je-ta-hint">${ctx.tx('Loading…')}</p></div>
                 <div class="je-ta-actions">
-                    <button type="button" class="je-ta-button" id="rebuildTagCacheBtn"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx('admin_tags_rebuild')}</button>
-                    <button type="button" class="je-ta-button" id="clearTagsCacheBtn"><span class="material-icons" aria-hidden="true">delete_sweep</span>${ctx.tx('admin_tags_server_clear')}</button>
+                    <button type="button" class="je-ta-button" id="rebuildTagCacheBtn"><span class="material-icons" aria-hidden="true">refresh</span>${ctx.tx('Rebuild cache')}</button>
+                    <button type="button" class="je-ta-button" id="clearTagsCacheBtn"><span class="material-icons" aria-hidden="true">delete_sweep</span>${ctx.tx('Clear all browser caches')}</button>
                 </div>
                 <p class="je-ta-hint" data-cache-help></p>`;
             body.querySelector('#rebuildTagCacheBtn')?.addEventListener('click', () => A.rebuildCache(ctx));
             body.querySelector('#clearTagsCacheBtn')?.addEventListener('click', async () => {
-                const ok = await ctx.confirm(JE.t('admin_tags_server_clear_confirm'), JE.t('admin_tags_server_clear'));
+                const ok = await ctx.confirm(A.fmt('Every browser clears its quality and genre tag data on its next page load.'), A.fmt('Clear all browser caches'));
                 if (!ok) return;
                 ctx.set('ClearLocalStorageTimestamp', Date.now());
                 const saved = await ctx.flush();
-                if (ctx.isCurrent()) ctx.snack(JE.t(saved ? 'admin_tags_server_clear_done' : 'admin_tags_server_clear_failed'));
+                if (ctx.isCurrent()) ctx.snack(A.fmt(saved ? 'Clear signal sent. Browsers clear their caches on their next load.' : 'The clear signal could not be saved. Check the server log.'));
             });
             const libs = /** @type {HTMLElement} */ (body.querySelector('[data-libs]'));
             // The list belongs to its switch, so it sits right under it, not after the card's other settings.
@@ -94,7 +94,7 @@
             if (!ctx.isCurrent()) return;
             const { folders, failed } = librariesOf(ctx);
             if (!folders) {
-                const key = failed ? 'admin_tags_server_libraries_failed' : 'hidden_content_admin_loading';
+                const key = failed ? 'Could not load the library list. The current selection is kept.' : 'Loading…';
                 if (libs.dataset.libsState !== key) {
                     libs.dataset.libsState = key;
                     libs.innerHTML = `<p class="je-ta-hint">${ctx.tx(key)}</p>`;
@@ -119,7 +119,7 @@
             /** @type {HTMLButtonElement} */ (body.querySelector('#rebuildTagCacheBtn')).hidden = !cacheOn;
             /** @type {HTMLButtonElement} */ (body.querySelector('#clearTagsCacheBtn')).hidden = cacheOn;
             const help = body.querySelector('[data-cache-help]');
-            if (help) help.textContent = JE.t(cacheOn ? 'admin_tags_server_rebuild_desc' : 'admin_tags_server_clear_desc');
+            if (help) help.textContent = A.fmt(cacheOn ? 'Rebuild re-computes every item\'s tags. Use it after an update changes how tags are worked out, or when asked to. Large libraries take a few minutes.' : 'Clearing makes every browser drop its tag data on its next load, which may be slow once.');
         },
     });
 
@@ -127,14 +127,14 @@
         id: 'server-native',
         tab: 'server',
         order: 20,
-        title: 'panel_media_tags_server_native',
-        hint: 'admin_tags_server_native_desc',
+        title: 'Native poster tags',
+        hint: 'Each user\'s tags drawn into poster images, for apps that can\'t show the web overlays.',
         fields: [
-            { id: 'nativePosterTagsEnabled', key: 'NativePosterTagsEnabled', type: 'switch', label: 'admin_tags_server_native_on', desc: 'admin_tags_server_native_on_desc', master: true },
-            { id: 'nativePosterTagsWebClientNames', key: 'NativePosterTagsWebClientNames', type: 'textarea', label: 'admin_tags_server_native_clients', desc: 'admin_tags_server_native_clients_desc', placeholder: 'admin_tags_server_native_clients_placeholder', when: (c) => c.NativePosterTagsEnabled === true, hideWhenOff: true },
+            { id: 'nativePosterTagsEnabled', key: 'NativePosterTagsEnabled', type: 'switch', label: 'Native poster tags (experimental)', desc: 'Uses each user\'s own tag choices, corners and order. Users can turn it off with Show Tags in Native Clients.', master: true },
+            { id: 'nativePosterTagsWebClientNames', key: 'NativePosterTagsWebClientNames', type: 'textarea', label: 'Additional excluded apps', desc: 'Apps that already show these tags themselves, such as a wrapper around the web UI, by their name under Dashboard › Devices; one per line or comma separated. Jellyfin Web, Media Player, Desktop, WebOS and Android are always excluded.', placeholder: 'One per line', when: (c) => c.NativePosterTagsEnabled === true, hideWhenOff: true },
         ],
         render(ctx, body) {
-            body.innerHTML = `<ul class="je-ta-list">${['admin_tags_server_native_note_1', 'admin_tags_server_native_note_2', 'admin_tags_server_native_note_3', 'admin_tags_server_native_note_4'].map((k) => `<li>${ctx.tx(k)}</li>`).join('')}</ul>`;
+            body.innerHTML = `<ul class="je-ta-list">${['Web-based apps already show the overlays and keep the original posters.', 'Each poster is drawn the first time it is viewed, which uses some server CPU, then cached.', 'Apps may need to reopen the library or restart to show changes.', 'Original artwork files are never modified.'].map((k) => `<li>${ctx.tx(k)}</li>`).join('')}</ul>`;
         },
     });
 })(window.JellyfinEnhanced);

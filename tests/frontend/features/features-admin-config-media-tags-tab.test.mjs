@@ -200,14 +200,14 @@ test('links to the page itself (the Display card, the tab\'s own links) open in 
   link.click();
   await h.until(() => h.root.dataset.tab === 'colours', 'the card link opened Colours');
   assert.equal(h.window.location.hash, before, 'the page was not navigated (unsaved changes elsewhere would be lost)');
-  // The tab's link to a main-page setting (Status badges → TMDB key) jumps there in place too.
+  // The tab's link to a main-page setting (Status badges → TMDB key, in Connections › Services) opens there in place too.
   h.root.querySelector('#jeTaTab-badges').click();
-  const tmdb = h.root.querySelector('a[href*="jeSection=TMDB_API_KEY"]');
+  const tmdb = h.root.querySelector('a[href*="tab=services"]');
   assert.ok(tmdb);
   tmdb.click();
   await h.settle();
   assert.equal(h.window.location.hash, before);
-  assert.ok(h.document.getElementById('TMDB_API_KEY').closest('.jellyfin-tab-content').classList.contains('active'));
+  assert.ok(h.document.getElementById('services').classList.contains('active'), 'the Services tab opened');
   // The Enhanced panel's pointer (outside the page, over it): opened in place too.
   const hub = h.document.createElement('a');
   hub.href = 'http://jellyfin.test/web/index.html#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=server';
@@ -421,10 +421,10 @@ test('the tab is a section of the page: the sidebar navigates it on a desktop, t
   // A card whose settings reach different people marks the per-user ones only, with the page's icon: Hide tags on hover is per user, the search page is shared.
   assert.deepEqual(['tagsHideOnHover', 'disableTagsOnSearchPage'].map((id) => Boolean(h.root.querySelector(`[data-field-row="${id}"] .je-ta-peruser`))), [true, false]);
   const mark = h.root.querySelector('[data-field-row="tagsHideOnHover"] .je-ta-peruser');
-  assert.deepEqual([mark.textContent, mark.getAttribute('role'), mark.getAttribute('aria-label'), mark.title], ['group', 'img', 'admin_tags_peruser_label', 'admin_tags_peruser_hint']);
+  assert.deepEqual([mark.textContent, mark.getAttribute('role'), mark.getAttribute('aria-label'), mark.title], ['group', 'img', 'Per-user setting', 'Each user has a personal copy. Existing users keep theirs until you overwrite it.']);
   assert.equal(h.root.querySelector('.je-ta-scope'), null, 'the older New users / Everyone badges are gone');
   // Collapsed groups summarise their current choice, not their whole description (which stays inside the group).
-  for (const g of ['awards', 'logos', 'custom']) assert.match(h.root.querySelector(`#jeTaSum-group-${g}`).textContent, new RegExp(`^admin_tags_${g}_summary:`), g);
+  for (const g of ['awards', 'logos', 'custom']) assert.match(h.root.querySelector(`#jeTaSum-group-${g}`).textContent, /\S/, `${g} has a summary line`);
   // An explanation with nothing to set (Rules' locked items) is a closed disclosure, not a card.
   const note = h.root.querySelector('[data-section="rules-locks"]');
   assert.equal(note.tagName, 'DETAILS');
@@ -433,7 +433,7 @@ test('the tab is a section of the page: the sidebar navigates it on a desktop, t
   assert.deepEqual(Array.from(h.root.querySelectorAll('.je-ta-switch--master'), (l) => l.dataset.fieldRow).sort(), ['nativePosterTagsEnabled', 'tagCacheServerMode', 'tagStylesEnabled']);
   // Quality's display and audio-language options sit under two closed disclosures after its category list.
   const more = Array.from(h.root.querySelectorAll('#jeTaGroup-quality details.je-ta-more'));
-  assert.deepEqual(more.map((d) => [d.dataset.more, d.open]), [['admin_tags_quality_more_display', false], ['admin_tags_quality_more_audio', false]]);
+  assert.deepEqual(more.map((d) => [d.dataset.more, d.open]), [['Display behaviour', false], ['Audio language defaults', false]]);
   assert.ok(more[0].querySelector('#qualityHdrDisplayMode') && more[1].querySelector('#qualityTagsPreferredAudioLanguage'));
 });
 

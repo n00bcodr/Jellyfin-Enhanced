@@ -85,8 +85,8 @@
         if (!retry || !P) return;
         const again = d.foot.querySelector('[data-pt-action="retry"]');
         if (again) { again.removeAttribute('aria-disabled'); return; }
-        const close = d.foot.querySelector('[data-pt-action="close"]') ? P.buttonHtml('close', 'awards_close') : P.buttonHtml('cancel', 'jellyseerr_modal_cancel');
-        d.foot.innerHTML = close + P.buttonHtml('retry', 'admin_tags_retry', { primary: true });
+        const close = d.foot.querySelector('[data-pt-action="close"]') ? P.buttonHtml('close', 'Close') : P.buttonHtml('cancel', 'Cancel');
+        d.foot.innerHTML = close + P.buttonHtml('retry', 'Retry', { primary: true });
         /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="retry"]'))?.focus();
     }
 
@@ -105,37 +105,37 @@
         id: 'server-portable',
         tab: 'server',
         order: 30,
-        title: 'tag_portable_title',
-        hint: 'admin_tags_portable_desc',
+        title: 'Import & export',
+        hint: 'Copy these server-wide Media Tags settings to another server, or keep a backup. You can also import your own settings from the Enhanced panel as the defaults. An import shows what changes and is saved like any edit on this page.',
         render(ctx, body) {
             const P = tools();
             body.innerHTML = `<div class="je-ta-actions">
-                    <button type="button" class="je-ta-button" id="jeTaExport"><span class="material-icons" aria-hidden="true">download</span>${ctx.tx('admin_tags_portable_export')}</button>
-                    <button type="button" class="je-ta-button" id="jeTaImport"><span class="material-icons" aria-hidden="true">upload</span>${ctx.tx('admin_tags_portable_import')}</button>
+                    <button type="button" class="je-ta-button" id="jeTaExport"><span class="material-icons" aria-hidden="true">download</span>${ctx.tx('Export server settings')}</button>
+                    <button type="button" class="je-ta-button" id="jeTaImport"><span class="material-icons" aria-hidden="true">upload</span>${ctx.tx('Import server settings')}</button>
                 </div>
-                <p class="je-ta-hint">${ctx.tx('admin_tags_portable_secrets')}</p>`;
+                <p class="je-ta-hint">${ctx.tx('API keys and the custom rule key are never exported or imported.')}</p>`;
             if (!P) return;
             P.injectDialogCss();
             /** @type {ReturnType<typeof P.openDialog>|null} */
             let dialog = null;
             const show = (titleKey) => {
                 dialog?.close();
-                dialog = P.openDialog({ host: ctx.root, title: JE.t(titleKey), onClose: () => { dialog = null; } });
+                dialog = P.openDialog({ host: ctx.root, title: A.fmt(titleKey), onClose: () => { dialog = null; } });
                 return dialog;
             };
             ctx.signal.addEventListener('abort', () => dialog?.close());
 
             body.querySelector('#jeTaExport')?.addEventListener('click', async () => {
-                const d = show('admin_tags_portable_export_title');
-                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p><p class="je-pt-hint" data-pt-loading>${ctx.tx('hidden_content_admin_loading')}</p>`;
-                d.foot.innerHTML = P.buttonHtml('close', 'awards_close');
+                const d = show('Export server Media Tags settings');
+                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('Every setting on this page: defaults, groups, Tag Styles, custom rules, award lists, logo choices, status windows, cache options and offered presets.')}</p><p class="je-pt-hint" data-pt-loading>${ctx.tx('Loading…')}</p>`;
+                d.foot.innerHTML = P.buttonHtml('close', 'Close');
                 d.foot.onclick = (e) => {
                     const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
                     const action = button?.getAttribute('data-pt-action');
                     if (action === 'close') d.close();
                     else if (action === 'retry' && startRetry(button)) {
                         /** @type {HTMLElement} */ (d.body.querySelector('[data-pt-loading]')).hidden = false;
-                        d.status(JE.t('tag_portable_checking'));
+                        d.status(A.fmt('Checking…'));
                         load();
                     }
                 };
@@ -149,14 +149,14 @@
                         const saved = await ctx.flush();
                         if (!ctx.isCurrent() || d.closed()) return;
                         if (!saved) {
-                            failed(d, JE.t('admin_tags_portable_export_unsaved'), true);
+                            failed(d, A.fmt('Not exported: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then export again.'), true);
                             return;
                         }
                         document = await request('GET', 'admin/media-tags/export');
                     } catch (err) {
                         if (!ctx.isCurrent() || d.closed()) return;
                         console.warn('🪼 Jellyfin Enhanced: could not export the Media Tags settings', err);
-                        failed(d, JE.t('tag_portable_export_failed'), true);
+                        failed(d, A.fmt('Could not read the settings. Try again.'), true);
                         return;
                     }
                     if (!ctx.isCurrent() || d.closed()) return;
@@ -173,17 +173,17 @@
              */
             const showExport = (d, document) => {
                 const text = JSON.stringify(document, null, 2);
-                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_portable_export_desc')}</p>
-                    <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${ctx.tx('tag_portable_show_document', { count: Object.keys(document?.settings || {}).length })}</summary>
-                    <label class="je-pt-label" for="jeTaExportText">${ctx.tx('tag_portable_export_document', { count: Object.keys(document?.settings || {}).length })}</label>
+                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('Every setting on this page: defaults, groups, Tag Styles, custom rules, award lists, logo choices, status windows, cache options and offered presets.')}</p>
+                    <details class="je-pt-doc"><summary class="je-pt-doc-toggle"><span class="material-icons" aria-hidden="true">expand_more</span>${ctx.tx('Show the settings document ({count} {count|setting|settings})', { count: Object.keys(document?.settings || {}).length })}</summary>
+                    <label class="je-pt-label" for="jeTaExportText">${ctx.tx('Settings document ({count} {count|setting|settings})', { count: Object.keys(document?.settings || {}).length })}</label>
                     <textarea id="jeTaExportText" class="je-pt-text" rows="12" readonly spellcheck="false">${ctx.esc(text)}</textarea></details>`;
-                d.foot.innerHTML = P.buttonHtml('close', 'awards_close') + P.buttonHtml('copy', 'tag_portable_copy', { icon: 'content_copy' }) + P.buttonHtml('download', 'tag_portable_download', { icon: 'download', primary: true });
+                d.foot.innerHTML = P.buttonHtml('close', 'Close') + P.buttonHtml('copy', 'Copy', { icon: 'content_copy' }) + P.buttonHtml('download', 'Download', { icon: 'download', primary: true });
                 d.foot.onclick = async (e) => {
                     const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
                     if (action === 'download') {
                         P.download(document, `jellyfin-media-tags-server-${P.stamp()}`);
-                        d.status(JE.t('tag_portable_downloaded'));
-                    } else if (action === 'copy') d.status(JE.t(await P.copyText(text, /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'))) ? 'tag_portable_copied' : 'tag_portable_copy_failed'));
+                        d.status(A.fmt('Downloaded.'));
+                    } else if (action === 'copy') d.status(A.fmt(await P.copyText(text, /** @type {HTMLTextAreaElement} */ (d.body.querySelector('textarea'))) ? 'Copied' : 'Could not copy. Select the text and copy it yourself.'));
                     else if (action === 'close') d.close();
                 };
                 /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="download"]'))?.focus();
@@ -205,19 +205,19 @@
                 if (!ctx.isCurrent()) return;
                 if (!saved) {
                     // A field another administrator changed meanwhile (or a failed save): the save indicator offers the choice.
-                    d.status(JE.t('admin_tags_portable_apply_refused'), 'error');
+                    d.status(A.fmt('Another administrator changed some of these settings meanwhile: choose Keep mine or Take theirs at the top of the page. The other settings were saved.'), 'error');
                     return;
                 }
                 d.close();
                 await reloadPage(ctx);
-                ctx.snack(JE.t('admin_tags_portable_applied', { count: changes.length }), () => {
+                ctx.snack(A.fmt('{count} server {count|setting|settings} changed.', { count: changes.length }), () => {
                     ctx.setMany(before);
                     ctx.flush().then((ok) => (ok ? reloadPage(ctx) : null));
                 }, () => body.querySelector('#jeTaImport'));
             };
 
             body.querySelector('#jeTaImport')?.addEventListener('click', () => {
-                const d = show('admin_tags_portable_import_title');
+                const d = show('Import server Media Tags settings');
                 /**
                  * Ask the server what the document changes, compared with what this page
                  * shows: edits not saved yet (on their way, failed or refused) are saved
@@ -227,10 +227,10 @@
                  * @param {string} [note] - Status shown with the preview.
                  */
                 const preview = async (document, note) => {
-                    d.status(JE.t('tag_portable_checking'));
+                    d.status(A.fmt('Checking…'));
                     const saved = await ctx.flush();
                     if (!ctx.isCurrent() || d.closed()) return;
-                    if (!saved) { d.status(JE.t('admin_tags_portable_import_unsaved'), 'error'); return; }
+                    if (!saved) { d.status(A.fmt('Not previewed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then preview again.'), 'error'); return; }
                     // A field this page never edited can be older here than on the server
                     // (another administrator or tab saved it since): read the settings again,
                     // so the page and the preview compare the same values and Apply writes
@@ -243,14 +243,16 @@
                         console.warn('🪼 Jellyfin Enhanced: could not read the configuration before the import preview', err);
                     }
                     if (!ctx.isCurrent() || d.closed()) return;
-                    if (!fresh) { d.status(JE.t('tag_portable_export_failed'), 'error'); return; }
+                    if (!fresh) { d.status(A.fmt('Could not read the settings. Try again.'), 'error'); return; }
                     ctx.reload(fresh);
                     let answer;
                     try {
                         answer = await request('POST', 'admin/media-tags/preview', document);
                     } catch (err) {
                         if (!ctx.isCurrent() || d.closed()) return;
-                        d.status(P.errorText((await P.errorOf(err)).code), 'error');
+                        const { code } = await P.errorOf(err);
+                        // The shared text says "for users"; this page also takes server exports and personal exports.
+                        d.status(code === 'kind' ? A.fmt('This is not a Media Tags settings document. Paste an export from this page, or your own export from the Enhanced panel.') : P.errorText(code), 'error');
                         return;
                     }
                     if (!ctx.isCurrent() || d.closed()) return;
@@ -261,22 +263,22 @@
                     const snapshot = () => JSON.stringify(Array.from(fields, (f) => ctx.config[f] ?? null));
                     const compared = snapshot();
                     d.body.innerHTML = P.previewHtml(answer || {});
-                    d.foot.innerHTML = P.buttonHtml('back', 'tag_portable_back') + P.buttonHtml('cancel', 'jellyseerr_modal_cancel')
-                        + (changes.length ? P.buttonHtml('apply', 'tag_portable_apply_count', { primary: true, params: { count: changes.length } }) : '');
+                    d.foot.innerHTML = P.buttonHtml('back', 'Back') + P.buttonHtml('cancel', 'Cancel')
+                        + (changes.length ? P.buttonHtml('apply', A.fmt('Apply {count} {count|change|changes}', { count: changes.length }), { primary: true }) : '');
                     d.foot.onclick = async (ev) => {
                         const button = /** @type {HTMLButtonElement|null} */ (/** @type {HTMLElement} */ (ev.target).closest('[data-pt-action]'));
                         const next = button?.dataset.ptAction;
                         if (next === 'back') { d.status(''); step(); d.focusFirst(); }
                         else if (next === 'cancel') d.close();
                         else if (next === 'apply' && button) {
-                            const ok = await ctx.confirm(JE.t('admin_tags_portable_apply_confirm', { count: changes.length }), JE.t('admin_tags_portable_import_title'));
+                            const ok = await ctx.confirm(A.fmt('Change {count} server {count|setting|settings} for everyone?', { count: changes.length }), A.fmt('Import server Media Tags settings'));
                             if (!ok || d.closed()) return;
                             button.disabled = true;
                             // Edited on this page since the preview: it no longer says what Apply changes.
                             const settled = await ctx.flush();
                             if (!ctx.isCurrent() || d.closed()) return;
-                            if (!settled) { button.disabled = false; d.status(JE.t('admin_tags_portable_import_unsaved'), 'error'); return; }
-                            if (snapshot() !== compared) { await preview(document, JE.t('admin_tags_portable_import_changed')); return; }
+                            if (!settled) { button.disabled = false; d.status(A.fmt('Not previewed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then preview again.'), 'error'); return; }
+                            if (snapshot() !== compared) { await preview(document, A.fmt('Settings on this page changed since the preview. This is the preview again: check it, then apply.')); return; }
                             await apply(d, changes);
                             if (!d.closed()) button.disabled = false;
                         }
@@ -284,8 +286,8 @@
                     /** @type {HTMLElement|null} */ (d.foot.querySelector('[data-pt-action="apply"]') || d.foot.querySelector('[data-pt-action="cancel"]'))?.focus();
                 };
                 const step = () => {
-                    d.body.innerHTML = P.sourceHtml('admin_tags_portable_import_desc');
-                    d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('next', 'tag_portable_preview', { primary: true });
+                    d.body.innerHTML = P.sourceHtml('Choose a server export, or your own export from the Enhanced panel to make your settings the defaults, or paste its text. Settings the server does not accept are listed and skipped.');
+                    d.foot.innerHTML = P.buttonHtml('cancel', 'Cancel') + P.buttonHtml('next', 'Check', { primary: true });
                     P.wireSource(d);
                     d.foot.onclick = async (e) => {
                         const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
@@ -319,17 +321,17 @@
         id: 'server-presets',
         tab: 'server',
         order: 40,
-        title: 'admin_tags_presets_title',
-        hint: 'admin_tags_presets_desc',
+        title: 'Presets for users',
+        hint: 'Offer these presets in every user\'s Presets list, next to the built-in ones. Up to 20.',
         fields: [
-            { id: 'tagOfferedPresets', key: 'TagOfferedPresets', type: 'custom', label: 'admin_tags_presets_title' },
+            { id: 'tagOfferedPresets', key: 'TagOfferedPresets', type: 'custom', label: 'Presets for users' },
         ],
         render(ctx, body) {
             const P = tools();
             body.innerHTML = `<div class="je-ta-offered" data-offered aria-live="polite"></div>
                 <div class="je-ta-actions">
-                    <button type="button" class="je-ta-button" id="jeTaOfferMine"><span class="material-icons" aria-hidden="true">person</span>${ctx.tx('admin_tags_presets_add_mine')}</button>
-                    <button type="button" class="je-ta-button" id="jeTaOfferImport"><span class="material-icons" aria-hidden="true">file_open</span>${ctx.tx('admin_tags_presets_add_import')}</button>
+                    <button type="button" class="je-ta-button" id="jeTaOfferMine"><span class="material-icons" aria-hidden="true">person</span>${ctx.tx('Offer my settings')}</button>
+                    <button type="button" class="je-ta-button" id="jeTaOfferImport"><span class="material-icons" aria-hidden="true">file_open</span>${ctx.tx('Offer from a file')}</button>
                 </div>`;
             if (!P) return;
             P.injectDialogCss();
@@ -337,7 +339,7 @@
             let dialog = null;
             const show = (titleKey) => {
                 dialog?.close();
-                dialog = P.openDialog({ host: ctx.root, title: JE.t(titleKey), onClose: () => { dialog = null; } });
+                dialog = P.openDialog({ host: ctx.root, title: A.fmt(titleKey), onClose: () => { dialog = null; } });
                 return dialog;
             };
             ctx.signal.addEventListener('abort', () => dialog?.close());
@@ -348,13 +350,13 @@
              * @param {{name?: string, description?: string, imported: Object, skipped: Array<Object>}} checked
              */
             const nameStep = (d, checked) => {
-                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('admin_tags_presets_name_desc', { count: Object.keys(checked.imported).length })}</p>
-                    <label class="je-pt-label" for="jeTaOfferName">${ctx.tx('tag_presets_name')}</label>
+                d.body.innerHTML = `<p class="je-pt-hint">${ctx.tx('{count} {count|setting|settings}. Name the preset as users will see it.', { count: Object.keys(checked.imported).length })}</p>
+                    <label class="je-pt-label" for="jeTaOfferName">${ctx.tx('Name')}</label>
                     <input id="jeTaOfferName" class="je-pt-input" type="text" maxlength="${MAX_NAME}" value="${ctx.esc(checked.name || '')}" data-pt-autofocus>
-                    <label class="je-pt-label" for="jeTaOfferDesc">${ctx.tx('tag_presets_description')}</label>
+                    <label class="je-pt-label" for="jeTaOfferDesc">${ctx.tx('Description (optional)')}</label>
                     <textarea id="jeTaOfferDesc" class="je-pt-input" rows="2" maxlength="${MAX_DESCRIPTION}">${ctx.esc(checked.description || '')}</textarea>
                     ${checked.skipped.length ? P.previewHtml({ skipped: checked.skipped }, { summary: false }) : ''}`;
-                d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('offer', 'admin_tags_presets_offer', { primary: true });
+                d.foot.innerHTML = P.buttonHtml('cancel', 'Cancel') + P.buttonHtml('offer', 'Offer', { primary: true });
                 // This dialog's preset, once offered: a retry after a failed or refused
                 // save replaces it instead of adding another copy.
                 let offeredId = '';
@@ -367,7 +369,7 @@
                     if (!name) { d.status(P.errorText('name'), 'error'); /** @type {HTMLElement} */ (d.body.querySelector('#jeTaOfferName')).focus(); return; }
                     const list = offered(ctx.config);
                     const again = offeredId ? list.findIndex((p) => p.id === offeredId) : -1;
-                    if (again < 0 && list.length >= MAX_OFFERED) { d.status(JE.t('admin_tags_presets_full', { max: MAX_OFFERED }), 'error'); return; }
+                    if (again < 0 && list.length >= MAX_OFFERED) { d.status(A.fmt('{max} presets are offered already. Remove one first.', { max: MAX_OFFERED }), 'error'); return; }
                     if (again < 0 && !offeredId) offeredId = presetId(name, list);
                     const preset = { v: 1, kind: 'je-media-tags-preset', id: offeredId, name, description, settings: checked.imported };
                     if (again < 0) list.push(preset);
@@ -376,9 +378,9 @@
                     ctx.set('TagOfferedPresets', JSON.stringify(list));
                     const saved = await ctx.flush();
                     if (!ctx.isCurrent() || d.closed()) return;
-                    if (!saved) { button.disabled = false; d.status(JE.t('admin_tags_presets_save_failed'), 'error'); return; }
+                    if (!saved) { button.disabled = false; d.status(A.fmt('Not saved. Try again.'), 'error'); return; }
                     d.close();
-                    ctx.snack(JE.t('admin_tags_presets_offered', { name }));
+                    ctx.snack(A.fmt('{name} is offered to users.', { name }));
                 };
                 d.focusFirst();
             };
@@ -390,7 +392,7 @@
              * @param {boolean} [retry] - Offer Retry when it fails (no source step to check again from).
              */
             const check = async (d, document, retry = false) => {
-                d.status(JE.t('tag_portable_checking'));
+                d.status(A.fmt('Checking…'));
                 let preview;
                 try {
                     preview = await request('POST', `user-settings/${ApiClient.getCurrentUserId()}/media-tags/preview`, document);
@@ -412,9 +414,9 @@
             };
 
             body.querySelector('#jeTaOfferMine')?.addEventListener('click', async () => {
-                const d = show('admin_tags_presets_add_title');
-                d.body.innerHTML = `<p class="je-pt-hint" data-pt-loading>${ctx.tx('hidden_content_admin_loading')}</p>`;
-                d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel');
+                const d = show('Offer a preset');
+                d.body.innerHTML = `<p class="je-pt-hint" data-pt-loading>${ctx.tx('Loading…')}</p>`;
+                d.foot.innerHTML = P.buttonHtml('cancel', 'Cancel');
                 d.foot.onclick = (e) => {
                     const button = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]');
                     const action = button?.getAttribute('data-pt-action');
@@ -426,7 +428,7 @@
                 };
                 d.focusFirst();
                 const load = async () => {
-                    d.status(JE.t('tag_portable_checking'));
+                    d.status(A.fmt('Checking…'));
                     try {
                         // The export reads the stored settings: a change of the administrator's
                         // own settings that failed to save would offer older ones instead.
@@ -435,7 +437,7 @@
                         } catch (err) {
                             if (!ctx.isCurrent() || d.closed()) return;
                             console.warn('🪼 Jellyfin Enhanced: your own Media Tags settings are not saved yet', err);
-                            failed(d, JE.t('admin_tags_presets_mine_unsaved'), true);
+                            failed(d, A.fmt('Not offered: your latest change to your own Media Tags settings is not saved yet. Check the connection, then try again.'), true);
                             return;
                         }
                         if (!ctx.isCurrent() || d.closed()) return;
@@ -445,16 +447,16 @@
                     } catch (err) {
                         if (!ctx.isCurrent() || d.closed()) return;
                         console.warn('🪼 Jellyfin Enhanced: could not read your Media Tags settings', err);
-                        failed(d, JE.t('tag_portable_export_failed'), true);
+                        failed(d, A.fmt('Could not read the settings. Try again.'), true);
                     }
                 };
                 await load();
             }, { signal: ctx.signal });
 
             body.querySelector('#jeTaOfferImport')?.addEventListener('click', () => {
-                const d = show('admin_tags_presets_add_title');
-                d.body.innerHTML = P.sourceHtml('admin_tags_presets_import_desc');
-                d.foot.innerHTML = P.buttonHtml('cancel', 'jellyseerr_modal_cancel') + P.buttonHtml('next', 'tag_portable_preview', { primary: true });
+                const d = show('Offer a preset');
+                d.body.innerHTML = P.sourceHtml('Choose a preset or settings file, or paste one a user shared.');
+                d.foot.innerHTML = P.buttonHtml('cancel', 'Cancel') + P.buttonHtml('next', 'Check', { primary: true });
                 P.wireSource(d);
                 d.foot.onclick = (e) => {
                     const action = /** @type {HTMLElement} */ (e.target).closest('[data-pt-action]')?.getAttribute('data-pt-action');
@@ -476,30 +478,30 @@
                 if (!preset) return;
                 if (button.dataset.offerAction === 'share') {
                     const copied = await P.copyText(JSON.stringify(preset, null, 2));
-                    ctx.snack(JE.t(copied ? 'tag_presets_shared' : 'tag_portable_copy_failed', { name: preset.name }));
+                    ctx.snack(A.fmt(copied ? '{name} copied. Paste it to share it.' : 'Could not copy. Select the text and copy it yourself.', { name: preset.name }));
                     return;
                 }
-                const ok = await ctx.confirm(JE.t('admin_tags_presets_remove_confirm', { name: preset.name }), JE.t('remove_button_text'));
+                const ok = await ctx.confirm(A.fmt('Stop offering {name}? Users who applied it keep their settings.', { name: preset.name }), A.fmt('Remove'));
                 if (!ok) return;
                 const rest = list.filter((p) => p !== preset);
                 ctx.set('TagOfferedPresets', rest.length ? JSON.stringify(rest) : '');
                 // The row is gone: focus the list's first action instead.
                 /** @type {HTMLElement|null} */ (body.querySelector('#jeTaOfferMine'))?.focus();
-                ctx.snack(JE.t('admin_tags_presets_removed', { name: preset.name }), () => ctx.set('TagOfferedPresets', JSON.stringify(list)));
+                ctx.snack(A.fmt('{name} removed.', { name: preset.name }), () => ctx.set('TagOfferedPresets', JSON.stringify(list)));
             }, { signal: ctx.signal });
         },
         refresh(ctx, body) {
             const box = /** @type {HTMLElement|null} */ (body?.querySelector('[data-offered]'));
             if (!box) return;
             const list = offered(ctx.config);
-            const count = `<p class="je-ta-hint">${ctx.tx('admin_tags_presets_count', { count: list.length, max: MAX_OFFERED })}</p>`;
+            const count = `<p class="je-ta-hint">${ctx.tx('{count} of {max} offered', { count: list.length, max: MAX_OFFERED })}</p>`;
             // Redrawn by other views' saves and the library list answer too: keep focus on the same preset's button.
             A.redrawList(box, count + (list.length ? `<ul class="je-ta-list je-ta-offered-list">${list.map((p) => `<li data-offer-id="${ctx.esc(p.id)}">
                     <span class="je-ta-offered-text"><strong>${ctx.esc(p.name)}</strong>${p.description ? `<span class="je-ta-hint">${ctx.esc(p.description)}</span>` : ''}</span>
                     <span class="je-ta-offered-buttons">
-                        <button type="button" class="je-ta-button" data-offer-action="share" aria-label="${ctx.tx('tag_presets_share_named', { name: p.name })}">${ctx.tx('tag_presets_share')}</button>
-                        <button type="button" class="je-ta-button" data-offer-action="remove" aria-label="${ctx.tx('admin_tags_presets_remove_named', { name: p.name })}">${ctx.tx('remove_button_text')}</button>
-                    </span></li>`).join('')}</ul>` : `<p class="je-ta-hint">${ctx.tx('admin_tags_presets_none')}</p>`), (el) => {
+                        <button type="button" class="je-ta-button" data-offer-action="share" aria-label="${ctx.tx('Share {name} (copies it)', { name: p.name })}">${ctx.tx('Share')}</button>
+                        <button type="button" class="je-ta-button" data-offer-action="remove" aria-label="${ctx.tx('Remove {name}', { name: p.name })}">${ctx.tx('Remove')}</button>
+                    </span></li>`).join('')}</ul>` : `<p class="je-ta-hint">${ctx.tx('No presets offered yet.')}</p>`), (el) => {
                 const id = el.closest('[data-offer-id]')?.getAttribute('data-offer-id');
                 const act = el.dataset.offerAction;
                 return id && act ? `[data-offer-id="${id.replace(/["\\]/g, '\\$&')}"] [data-offer-action="${act}"]` : null;

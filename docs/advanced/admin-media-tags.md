@@ -56,12 +56,12 @@ The **Media Tags** tab of the Jellyfin Enhanced configuration page (`#/configura
             id: 'group-awards',
             tab: 'groups',            // overview, layout, groups, rules, colours, badges, server
             order: 55,                // position within the tab
-            title: 'awards_label',
-            hint: 'admin_tags_awards_desc',
+            title: 'Awards',
+            hint: 'Awards ribbons from Wikidata and MDBList.',
             group: { id: 'awards', summary: (ctx) => '…', sample: () => [['status', 'Oscar']] }, // Groups tab rows only
             fields: [
-                { id: 'awardsTagsEnabled', key: 'AwardsTagsEnabled', type: 'enable', label: 'admin_tags_awardsTagsEnabled' },
-                { id: 'awardsTagsRefreshHours', key: 'AwardsTagsRefreshHours', type: 'number', min: 1, max: 168, fallback: 24, label: 'admin_tags_awardsTagsRefreshHours' },
+                { id: 'awardsTagsEnabled', key: 'AwardsTagsEnabled', type: 'enable', label: 'Awards ribbons for new users' },
+                { id: 'awardsTagsRefreshHours', key: 'AwardsTagsRefreshHours', type: 'number', min: 1, max: 168, fallback: 24, label: 'Refresh every' },
             ],
             render(ctx, body) { /* optional custom controls into body */ },
             refresh(ctx, body) { /* optional: redraw after any change */ },
@@ -70,7 +70,7 @@ The **Media Tags** tab of the Jellyfin Enhanced configuration page (`#/configura
     ```
 
 2. Add the file to `SECTION_FILES` in `admin-tags.js` (a frontend test checks the list matches the directory).
-3. Add the strings to `js/locales/en.json` only.
+3. Write the text in place, as plain English. The configuration page is not translated: it has no locale keys and does not use `JE.t` (`A.fmt(text, params)` fills `{name}` placeholders and `{n|one|many}` plural words).
 
 ## Field declarations
 
@@ -81,8 +81,8 @@ Keep each field on **one line** starting `{ id: '…', key: '…', type: '…'` 
 | `id` | The control's DOM id. When a control moves here from `configPage.html`, keep its old id so What's New and the analytics map keep tracking it; a new id appears in What's New as a new setting, listed under **Media Tags** with a link to the section's tab (and group). |
 | `key` | The `PluginConfiguration` property it reads and writes (PascalCase). |
 | `type` | `switch`, `select`, `number`, `text`, `textarea`, `pills`, `ordered` (a checkbox in a reorderable list; `orderKey`, `defaultOrder`), `enable` (a Groups row switch) or `custom` (drawn by the section's `render`, declared only for tracking). |
-| `label`, `desc` | `en.json` keys. |
-| `options` | `[[value, labelKey]]` for `select` and `pills`; a label starting `=` is shown as written. |
+| `label`, `desc` | The text shown, in English. |
+| `options` | `[[value, label]]` for `select` and `pills`. |
 | `min`, `max`, `fallback`, `unit` | Numbers are clamped and fall back when empty. |
 | `secret` | A `text` field drawn as a password input (`autocomplete="new-password"`), for a key the server keeps private (public configuration, logs and exports never carry it). |
 | `read(raw, config)`, `write(value, config)` | Convert between the stored value and the control. |
@@ -91,7 +91,7 @@ Keep each field on **one line** starting `{ id: '…', key: '…', type: '…'` 
 | `place: 'section'` | The section draws the control itself with `A.fieldHtml(f, config)`; the tab still binds it. |
 | `break: true` | Start a new box before this field. |
 | `master: true` | A `switch` that the card's other settings depend on: drawn as the page's master switch (accent tint and edge). |
-| `more: '<key>'` | Fields sharing it sit under one closed disclosure named by that `en.json` key, after the card's other fields (Quality's **Display behaviour** and **Audio language defaults**). |
+| `more: '<title>'` | Fields sharing it sit under one closed disclosure with that title, after the card's other fields (Quality's **Display behaviour** and **Audio language defaults**). |
 | `hideWhenOff: true` | With `when`, hide the row (not only disable it) while `when` is false, as the page's dependent settings do. |
 
 A section with `note: true` (an explanation with nothing to set) is drawn as a closed disclosure after the cards, named by `noteLabel` (or `title`). A card with no scope of its own in `SECTION_SCOPES` marks each per-user setting with the configuration page's people icon; shared settings carry no marker.

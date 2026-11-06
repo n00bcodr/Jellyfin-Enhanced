@@ -6,18 +6,18 @@
         id: 'group-custom',
         tab: 'groups',
         order: 80,
-        title: 'common_custom', hint: 'admin_tags_custom_desc',
+        title: 'Custom', hint: 'Match existing tags or collections to labels and icons. Up to 20 rules; labels up to 24 characters. Collections require the server cache.',
         group: {
             id: 'custom',
-            summary: (ctx) => JE.t('admin_tags_custom_summary', { n: Array.isArray(ctx.config.CustomTagRules) ? ctx.config.CustomTagRules.length : 0, max: 20 }), sample: () => [['status', JE.t('common_custom')]] },
+            summary: (ctx) => A.fmt('{n} of {max} rules', { n: Array.isArray(ctx.config.CustomTagRules) ? ctx.config.CustomTagRules.length : 0, max: 20 }), sample: () => [['status', A.fmt('Custom')]] },
         // "Where to show" (drawn for every group row by admin-tags.js).
         writes: ['TagGroupScopes'],
         fields: [
-            { id: 'customTagsEnabled', key: 'CustomTagsEnabled', type: 'enable', label: 'admin_tags_customTagsEnabled' },
-            { id: 'customTagRules', key: 'CustomTagRules', type: 'custom', label: 'admin_tags_customTagRules' },
+            { id: 'customTagsEnabled', key: 'CustomTagsEnabled', type: 'enable', label: 'Custom tags for new users' },
+            { id: 'customTagRules', key: 'CustomTagRules', type: 'custom', label: 'Custom tag rules' },
         ],
         render(ctx, body) {
-            body.innerHTML = `<p class="je-ta-hint" id="customTagRulesHelp">${ctx.tx('admin_tags_custom_desc')}</p>` + A.CUSTOM_HTML;
+            body.innerHTML = `<p class="je-ta-hint" id="customTagRulesHelp">${ctx.tx('Match existing tags or collections to labels and icons. Up to 20 rules; labels up to 24 characters. Collections require the server cache.')}</p>` + A.CUSTOM_HTML;
             const editor = A.createCustomTagRules(body, (rules) => {
                 ctx.set('CustomTagRules', rules);
                 ctx.root.dispatchEvent(new CustomEvent('je-custom-labels'));

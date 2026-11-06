@@ -11,17 +11,17 @@
         id: 'group-age-rating',
         tab: 'groups',
         order: 50,
-        title: 'panel_settings_ui_tag_group_age_rating',
-        hint: 'admin_tags_age_rating_desc',
+        title: 'Age Rating',
+        hint: 'The age rating (PG-13, TV-MA, FSK 12…) as a badge coloured by its board. Episodes and seasons use their series\' rating.',
         group: {
             id: 'ageRating',
-            summary: () => JE.t('admin_tags_age_rating_summary'),
+            summary: () => A.fmt('Colour-coded by board'),
             sample: () => [['age', 'PG-13']],
         },
         // "Where to show" (drawn for every group row by admin-tags.js).
         writes: ['TagGroupScopes'],
         fields: [
-            { id: 'ageRatingTagsEnabled', key: 'AgeRatingTagsEnabled', type: 'enable', label: 'admin_tags_age_rating_enabled' },
+            { id: 'ageRatingTagsEnabled', key: 'AgeRatingTagsEnabled', type: 'enable', label: 'Age rating tags for new users' },
         ],
     });
 })(window.JellyfinEnhanced);

@@ -11,17 +11,17 @@
         id: 'group-genre',
         tab: 'groups',
         order: 20,
-        title: 'common_genre',
-        hint: 'admin_tags_genre_desc',
+        title: 'Genre',
+        hint: 'Themed icons for the genres of a title, with the names on hover.',
         group: {
             id: 'genre',
-            summary: () => JE.t('admin_tags_genre_summary'),
-            sample: () => [['genre', 'Drama']],
+            summary: () => A.fmt('Themed icons, names on hover'),
+            sample: () => [['icon', 'theater_comedy']],
         },
         // "Where to show" (drawn for every group row by admin-tags.js).
         writes: ['TagGroupScopes'],
         fields: [
-            { id: 'genreTagsEnabled', key: 'GenreTagsEnabled', type: 'enable', label: 'admin_tags_genre_enabled' },
+            { id: 'genreTagsEnabled', key: 'GenreTagsEnabled', type: 'enable', label: 'Genre tags for new users' },
         ],
     });
 })(window.JellyfinEnhanced);

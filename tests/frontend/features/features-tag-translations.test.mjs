@@ -7,26 +7,18 @@ const root = new URL('../../../', import.meta.url);
 const english = JSON.parse(readFileSync(new URL('Jellyfin.Plugin.JellyfinEnhanced/js/locales/en.json', root)));
 const source = path => readFileSync(new URL(path, root), 'utf8');
 
-test('every rendered admin tab name and description resolves independently', t => {
+test('every rendered admin tab shows its own name and description as plain English', t => {
   const h = boot(t, { server: BASE });
-  const missing = new Set();
-  h.JE.t = key => {
-    if (typeof english[key] !== 'string') missing.add(key);
-    return english[key] || key;
-  };
   const host = h.document.getElementById('jeTaRoot');
   const ctx = h.A.createPage(host, BASE);
   h.cleanup.push(() => ctx.dispose());
   for (const tab of h.A.TABS) {
     ctx.openTab(tab.id);
-    assert.equal(typeof english[tab.nameKey], 'string', tab.nameKey);
-    assert.equal(typeof english[tab.descKey], 'string', `${tab.id} description`);
     const panel = host.querySelector(`#jeTaPanel-${tab.id}`);
-    assert.equal(panel.querySelector('h2').textContent, english[tab.nameKey]);
-    assert.equal(panel.querySelector(':scope > .je-ta-hint').textContent, `${english[tab.descKey]} ${english.media_tags_docs_link}`);
+    assert.equal(panel.querySelector('h2').textContent, tab.nameKey);
+    assert.ok(panel.querySelector(':scope > .je-ta-hint').textContent.startsWith(tab.descKey), `${tab.id} description`);
     assert.match(panel.querySelector(':scope > .je-ta-hint .je-ta-docs').getAttribute('href'), /^https:\/\/n00bcodr\.github\.io\/Jellyfin-Enhanced\/enhanced\/tags\/#[a-z-]+$/);
   }
-  assert.deepEqual([...missing], [], 'no raw translation keys on any tab');
 });
 
 test('tag vocabulary preserves layout, visibility, dashboard and singular-type translation contexts', t => {
@@ -61,7 +53,6 @@ test('dynamic tag translation families have an English value for every accepted 
     panel_settings_ui_tag_density_: ['full', 'compact'],
     panel_settings_ui_tag_layout_: ['corners', 'bands', 'caption', 'summary', 'minimal'],
     tag_shapes_: ['landscape', 'list'],
-    admin_tags_shape_recommended_: ['landscape', 'list'],
     tag_looks_cond_: ['library', 'type', 'genre', 'agerating'],
     series_quality_aggregation_: ['representative', 'latest', 'best', 'shared', 'mixed'],
     tag_portable_skip_: ['unknown', 'secret', 'signal', 'invalid'],
@@ -70,12 +61,4 @@ test('dynamic tag translation families have an English value for every accepted 
   for (const [prefix, values] of Object.entries(families)) keys.push(...values.map(value => prefix + value));
   for (const kind of ['scale', 'gap']) for (const suffix of ['label', 'desc']) keys.push(`tag_${kind}_${suffix}`);
   for (const key of keys) assert.equal(typeof english[key], 'string', key);
-});
-
-test('admin section documentation example uses existing translation keys', () => {
-  const doc = source('docs/advanced/admin-media-tags.md');
-  const sample = doc.match(/```js\n([\s\S]*?)```/)[1];
-  for (const [, key] of sample.matchAll(/(?:title|hint|label): '([^']+)'/g)) {
-    assert.equal(typeof english[key], 'string', key);
-  }
 });

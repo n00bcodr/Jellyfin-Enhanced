@@ -142,14 +142,14 @@ test('Overview shows the defaults, the cache state, and rebuilds after a confirm
   const groups = h.$$('.je-ta-ov-group');
   assert.deepEqual(groups.map((b) => [b.dataset.group, b.dataset.on]), [['quality', 'true'], ['genre', 'false'], ['language', 'true'], ['rating', 'true'], ['ageRating', 'false'], ['status', 'true'], ['awards', 'false'], ['logos', 'false'], ['custom', 'false'], ['people', 'false']]);
   assert.match(h.$('[data-ov="cache"]').textContent, /1,234|1234/);
-  assert.match(h.$('[data-ov="look"]').textContent, /admin_tags_overview_rules_n:1/);
+  assert.match(h.$('[data-ov="look"]').textContent, /1 rule/);
   groups[3].click();
   assert.equal(h.root.dataset.tab, 'groups');
   assert.equal(h.$('.je-ta-grow[data-group="rating"]').dataset.open, 'true');
   h.$('#jeTaTab-overview').click();
   h.$('[data-ov="rebuild"]').click();
   await h.settle(); await h.settle();
-  assert.deepEqual(h.confirms, ['admin_tags_rebuild_title']);
+  assert.deepEqual(h.confirms, ['Rebuild the server tag cache?']);
   assert.deepEqual(h.posts, ['/JellyfinEnhanced/tag-cache/rebuild']);
 });
 
@@ -209,12 +209,12 @@ test('Layout defaults: card shapes write the recommended look, keep a custom one
   assert.equal(h.server.TagShapeOverrides, null);
 });
 
-test('Layout defaults: Apply defaults to all users saves first, then asks the server to copy them', async t => {
+test('Overview: Apply defaults to all users saves first, then asks the server to copy them', async t => {
   const h = setup(t);
   h.change(h.$('#tagsHideOnHover'), true);
   h.$('#jeTaApplyAll').click();
   await h.settle(); await h.settle(); await h.settle();
-  assert.deepEqual(h.confirms, ['admin_tags_apply_all']);
+  assert.deepEqual(h.confirms, ['Apply defaults to all users']);
   assert.equal(h.server.TagsHideOnHover, true, 'pending changes are saved before the copy');
   assert.deepEqual(h.posts, ['/JellyfinEnhanced/reset-all-users-settings']);
 });
@@ -266,8 +266,6 @@ test('What\'s New on the main page lists new Media Tags settings with a link to 
   const h = createHarness({ JE: {} });
   try {
     h.window.eval(`${humanize}\n${helper}\nwindow.entries = jeMediaTagsWhatsNewEntries;`);
-    const names = { common_media_tags: 'Media Tags', admin_tags_tab_layout: 'Layout defaults', common_groups: 'Groups', panel_media_tags_tab_badges: 'Status badges', panel_settings_ui_tag_group_rating: 'Rating', panel_settings_ui_tag_group_age_rating: 'Age Rating' };
-    const t = (key) => names[key] || key;
     // GET whats-new `mediaTags`: where on the Media Tags tab each new setting lives (`page` is the older page's name).
     const page0 = 'JellyfinEnhancedMediaTags';
     const where = {
@@ -278,7 +276,7 @@ test('What\'s New on the main page lists new Media Tags settings with a link to 
       // A setting new in a later release, on a tab this build has no name for.
       tagFutureThing: { page: page0, tab: 'extras', group: null },
     };
-    const entries = plain(h.window.entries(Object.keys(where).concat('notOnAnyPage'), where, t));
+    const entries = plain(h.window.entries(Object.keys(where).concat('notOnAnyPage'), where));
     const base = '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=';
     assert.deepEqual(entries, [
       { tab: 'media-tags', tabLabel: 'Media Tags', title: 'Layout defaults', href: `${base}layout`, mediaTags: { section: 'layout', group: null }, ids: ['tagLayout', 'tagsHideOnHover'] },
@@ -286,11 +284,9 @@ test('What\'s New on the main page lists new Media Tags settings with a link to 
       { tab: 'media-tags', tabLabel: 'Media Tags', title: 'Groups › Age Rating', href: `${base}groups&group=ageRating`, mediaTags: { section: 'groups', group: 'ageRating' }, ids: ['ageRatingTagsEnabled'] },
       { tab: 'media-tags', tabLabel: 'Media Tags', title: 'Extras', href: `${base}extras`, mediaTags: { section: 'extras', group: null }, ids: ['tagFutureThing'] },
     ]);
-    // Without the client bundle the names fall back to English.
-    assert.equal(plain(h.window.entries(['ratingTagsOnNextUp'], where, null))[0].title, 'Groups › Rating');
   } finally { h.close(); }
   // checkWhatsNew routes the ids the tab draws only once it opens through it, and the chip opens the tab in place.
-  assert.match(page, /var movedEntries = jeMediaTagsWhatsNewEntries\(moved, mediaTags,/);
+  assert.match(page, /var movedEntries = jeMediaTagsWhatsNewEntries\(moved, mediaTags\);/);
   assert.match(page, /renderWhatsNewBanner\(\(perSetting\.length \? groupWhatsNewByFieldset\(perSetting\) : \[\]\)\.concat\(movedEntries\)/);
   assert.match(page, /if \(f\.mediaTags\) jeOpenMediaTags\(f\.mediaTags\.section, f\.mediaTags\.group, true\);/);
   // Controls of the Media Tags tab already open are routed the same way, not as main-page settings.
@@ -360,7 +356,7 @@ test('Layout defaults: the limit stepper says the new limit to screen readers an
   const live = h.$('.je-ta-live');
   h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]').click();
   await new Promise((r) => setTimeout(r, 60));
-  assert.equal(live.textContent, 'admin_tags_limit_set:common_genre|4');
+  assert.equal(live.textContent, 'Genre limit: 4');
   assert.equal(h.document.activeElement, h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] [data-act="cap"][data-dir="1"]'), 'focus stays on More');
   assert.equal(h.$('#tagGroupAdminRows .je-ta-lrow[data-group="genre"] output').textContent.trim(), '4');
   await h.save();
@@ -371,7 +367,7 @@ test('Layout defaults: each group row reads as a summary and opens one row\'s po
   const h = setup(t);
   const row = (g) => h.$(`.je-ta-lrow[data-group="${g}"]`);
   assert.ok(h.$$('.je-ta-lrow-detail').every((d) => d.hidden), 'rows start collapsed');
-  assert.match(row('genre').querySelector('.je-ta-lrow-sum').textContent, /tag_item_editor_group_summary/);
+  assert.match(row('genre').querySelector('.je-ta-lrow-sum').textContent, /Top right · up to 3/);
   row('genre').querySelector('[data-act="open"]').click();
   assert.equal(row('genre').querySelector('.je-ta-lrow-detail').hidden, false);
   assert.equal(row('genre').querySelector('[data-act="open"]').getAttribute('aria-expanded'), 'true');
@@ -386,11 +382,11 @@ test('the native poster line names the look new users\' native posters get: Corn
   const h = setup(t, { config: { NativePosterTagsEnabled: true, TagLayout: 'bands', TagLabelDensity: 'compact' } });
   await h.settle();
   const line = () => h.$('#jeTaNative').textContent;
-  assert.match(line(), /admin_tags_native_on(_colours)?:tag_looks_outcome:tag_looks_layout_bands\|panel_settings_ui_tag_density_compact/);
+  assert.match(line(), /on, .*as Bands · Compact\./);
   h.ctx.setMany({ TagLayout: 'summary' });
   await h.settle();
-  assert.match(line(), /admin_tags_native_as_corners:tag_looks_layout_corners\|panel_settings_ui_tag_density_full\|tag_layout_summary/);
+  assert.match(line(), /Corners · Full \(Summary is drawn as Corners\)/);
   h.ctx.setMany({ NativePosterTagsEnabled: false });
   await h.settle();
-  assert.match(line(), /admin_tags_native_off/);
+  assert.match(line(), /off\. Apps such as Android TV show untagged posters\./);
 });

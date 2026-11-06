@@ -35,8 +35,8 @@
             const name = JE.ratingSources.name(id);
             return `<li data-source="${id}"><span class="je-ta-rank" aria-hidden="true">${i + 1}</span>`
                 + `<label><input type="checkbox" ${selected.includes(id) ? 'checked' : ''}><span class="je-ta-order-name">${ctx.esc(name)}</span></label>`
-                + `<button type="button" class="je-ta-icon-btn" data-step="-1" aria-label="${ctx.esc(JE.t('rating_sources_up', { source: name }))}" ${i === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>`
-                + `<button type="button" class="je-ta-icon-btn" data-step="1" aria-label="${ctx.esc(JE.t('rating_sources_down', { source: name }))}" ${i === order.length - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button></li>`;
+                + `<button type="button" class="je-ta-icon-btn" data-step="-1" aria-label="${ctx.esc(A.fmt('Move {source} up', { source: name }))}" ${i === 0 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_upward</span></button>`
+                + `<button type="button" class="je-ta-icon-btn" data-step="1" aria-label="${ctx.esc(A.fmt('Move {source} down', { source: name }))}" ${i === order.length - 1 ? 'disabled' : ''}><span class="material-icons" aria-hidden="true">arrow_downward</span></button></li>`;
         }).join('');
     }
 
@@ -53,36 +53,36 @@
         id: 'group-rating',
         tab: 'groups',
         order: 40,
-        title: 'panel_settings_ui_tag_group_rating',
-        hint: 'admin_tags_rating_desc',
+        title: 'Rating',
+        hint: 'Scores on posters: where they show, which sources and in what order. Users can override these.',
         group: {
             id: 'rating',
             summary(ctx) {
                 const c = ctx.config;
                 const sources = selectedSources(c).map((id) => JE.ratingSources.name(id));
                 const types = ['Movies', 'Series', 'Seasons', 'Episodes'].filter((t) => c[`RatingTagsOn${t}`] !== false).length;
-                return [sources.length ? sources.join(', ') : JE.t('admin_tags_none'), types === 4 ? JE.t('admin_tags_rating_every_type') : JE.t('admin_tags_rating_types', { n: types })].join(' · ');
+                return [sources.length ? sources.join(', ') : A.fmt('None'), types === 4 ? A.fmt('every item type') : A.fmt('{n} of 4 item types', { n: types })].join(' · ');
             },
             sample: () => [['rating', '★ 8.1'], ['rating', '92%']],
         },
         fields: [
-            { id: 'ratingTagsEnabled', key: 'RatingTagsEnabled', type: 'enable', label: 'admin_tags_rating_enabled' },
-            { id: 'ratingTagsOnMovies', key: 'RatingTagsOnMovies', type: 'custom', label: 'admin_tags_rating_on_movies' },
-            { id: 'ratingTagsOnSeries', key: 'RatingTagsOnSeries', type: 'custom', label: 'admin_tags_rating_on_series' },
-            { id: 'ratingTagsOnSeasons', key: 'RatingTagsOnSeasons', type: 'custom', label: 'admin_tags_rating_on_seasons' },
-            { id: 'ratingTagsOnEpisodes', key: 'RatingTagsOnEpisodes', type: 'custom', label: 'admin_tags_rating_on_episodes', desc: 'admin_tags_rating_on_episodes_desc' },
-            { id: 'ratingTagsOnContinueWatching', key: 'RatingTagsOnContinueWatching', type: 'custom', label: 'admin_tags_rating_on_continue' },
-            { id: 'ratingTagsOnNextUp', key: 'RatingTagsOnNextUp', type: 'custom', label: 'admin_tags_rating_on_next_up' },
-            { id: 'ratingTagsSources', key: 'RatingTagsSources', type: 'custom', label: 'rating_sources_label' },
-            { id: 'ratingTagsMinScore', key: 'RatingTagsMinScore', type: 'select', label: 'rating_sources_minimum', desc: 'admin_tags_rating_min_desc', options: [['0', 'track_off'], ['5', '=5'], ['6', '=6'], ['7', '=7'], ['8', '=8']], read: (v) => String(Number(v) || 0), write: (v) => Number(v) },
-            { id: 'ratingTagsColorByScore', key: 'RatingTagsColorByScore', type: 'switch', label: 'rating_sources_color', break: true },
-            { id: 'showRatingInPlayer', key: 'ShowRatingInPlayer', type: 'switch', label: 'admin_tags_rating_in_player', desc: 'admin_tags_rating_in_player_desc' },
+            { id: 'ratingTagsEnabled', key: 'RatingTagsEnabled', type: 'enable', label: 'Rating tags for new users' },
+            { id: 'ratingTagsOnMovies', key: 'RatingTagsOnMovies', type: 'custom', label: 'Show on movies' },
+            { id: 'ratingTagsOnSeries', key: 'RatingTagsOnSeries', type: 'custom', label: 'Show on series' },
+            { id: 'ratingTagsOnSeasons', key: 'RatingTagsOnSeasons', type: 'custom', label: 'Show on seasons' },
+            { id: 'ratingTagsOnEpisodes', key: 'RatingTagsOnEpisodes', type: 'custom', label: 'Show on episodes', desc: 'Off keeps ratings off every episode card, Next Up and Continue Watching included.' },
+            { id: 'ratingTagsOnContinueWatching', key: 'RatingTagsOnContinueWatching', type: 'custom', label: 'Show in the Continue Watching row' },
+            { id: 'ratingTagsOnNextUp', key: 'RatingTagsOnNextUp', type: 'custom', label: 'Show in the Next Up row' },
+            { id: 'ratingTagsSources', key: 'RatingTagsSources', type: 'custom', label: 'Rating sources' },
+            { id: 'ratingTagsMinScore', key: 'RatingTagsMinScore', type: 'select', label: 'Minimum score', desc: 'Hide scores below this, on a scale of ten.', options: [['0', 'Off'], ['5', '=5'], ['6', '=6'], ['7', '=7'], ['8', '=8']], read: (v) => String(Number(v) || 0), write: (v) => Number(v) },
+            { id: 'ratingTagsColorByScore', key: 'RatingTagsColorByScore', type: 'switch', label: 'Colour by score', break: true },
+            { id: 'showRatingInPlayer', key: 'ShowRatingInPlayer', type: 'switch', label: 'Show the rating in the video player', desc: 'TMDB and Rotten Tomatoes ratings before the "Ends at" time.' },
         ],
         render(ctx, body) {
-            body.innerHTML = `<h4 class="je-ta-sub" id="ratingTagsSourcesLabel">${ctx.tx('rating_sources_label')}</h4>
-                <p class="je-ta-hint">${ctx.tx('rating_sources_help')}</p>
+            body.innerHTML = `<h4 class="je-ta-sub" id="ratingTagsSourcesLabel">${ctx.tx('Rating sources')}</h4>
+                <p class="je-ta-hint">${ctx.tx('Source scores use MDBList when an API key is configured. Minimum score compares every source on a scale of ten.')}</p>
                 <ol class="je-ta-order" id="ratingTagsSourceRows" aria-labelledby="ratingTagsSourcesLabel"></ol>
-                <h4 class="je-ta-sub">${ctx.tx('admin_tags_mdblist')}</h4>
+                <h4 class="je-ta-sub">${ctx.tx('MDBList')}</h4>
                 <div class="je-ta-card" style="margin:0" data-mdblist></div>`;
             const list = /** @type {HTMLElement} */ (body.querySelector('#ratingTagsSourceRows'));
             list.addEventListener('change', () => ctx.set('RatingTagsSources', collect(list)));
@@ -126,13 +126,13 @@
             // Drawn once, then updated in place: a refresh never replaces a focused link.
             if (!box.querySelector('[data-mdblist-state]')) {
                 box.innerHTML = '<div class="je-ta-card-head"><span class="je-ta-state" data-mdblist-state></span></div><p class="je-ta-hint" data-mdblist-hint></p>'
-                    + `<a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl('mdblistRatingsEnabled'))}"><span class="je-ta-link-text">${ctx.tx('admin_tags_mdblist_open')}</span><span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
+                    + `<a class="je-ta-link" href="${ctx.esc(ctx.mainPageUrl('mdblistRatingsEnabled'))}"><span class="je-ta-link-text">${ctx.tx('MDBList settings')}</span><span class="material-icons" aria-hidden="true">open_in_new</span></a>`;
             }
             const state = /** @type {HTMLElement} */ (box.querySelector('[data-mdblist-state]'));
             state.dataset.state = on && key ? 'on' : on ? 'warn' : 'off';
-            state.textContent = JE.t(on ? (key ? 'common_on' : 'admin_tags_mdblist_no_key') : 'track_off');
-            /** @type {HTMLElement} */ (box.querySelector('[data-mdblist-hint]')).textContent = JE.t('admin_tags_mdblist_desc')
-                + (on && key ? ` ${JE.t(c.MdblistRatingsFetchEnabled === true ? 'admin_tags_mdblist_fetch_on' : 'admin_tags_mdblist_fetch_off')}` : '');
+            state.textContent = A.fmt(on ? (key ? 'On' : 'On, no API key') : 'Off');
+            /** @type {HTMLElement} */ (box.querySelector('[data-mdblist-hint]')).textContent = A.fmt('Source scores (IMDb, Metacritic, Letterboxd…) come from MDBList when it is set up. Its key, quota and fetch task live with MDBList Ratings.')
+                + (on && key ? ` ${A.fmt(c.MdblistRatingsFetchEnabled === true ? 'The fetch task is on.' : 'The fetch task is off, so only live lookups fill the scores.')}` : '');
         },
     });
 

@@ -92,7 +92,7 @@ body.je-hide-descriptions .je-tag-admin :is(.je-ta-switch-desc, .je-ta-panel > .
 
 /* ── Intro (Overview only, the page's tab-intro banner: the page's Descriptions switch hides it too) ── */
 .je-ta-intro { display: none; align-items: flex-start; gap: 14px; margin: 0 0 20px; padding: 14px 20px; border-radius: 8px; border-left: 4px solid var(--je-ta-accent); background: color-mix(in srgb, var(--je-ta-accent) 10%, transparent); font-size: 14px; line-height: 1.5; }
-.je-ta-intro .material-icons { flex: none; margin-top: 1px; font-size: 22px; color: var(--je-ta-accent-text); }
+.je-ta-intro .material-icons { flex: none; margin-top: 1px; font-size: 22px; color: var(--je-ta-accent); }
 .je-ta-intro p { margin: 0; max-width: 80ch; }
 .je-tag-admin[data-tab="overview"] .je-ta-intro { display: flex; }
 body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
@@ -185,8 +185,10 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 .je-ta-card-head > .je-ta-card-title { flex: 1 1 auto; margin: 0; padding: 0; border: 0; background: none; }
 .je-ta-card-head > .je-ta-card-title::before { display: none; }
 /* The page's card icon: a 32px tile in the accent tint. */
-.je-ta-card-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border-radius: 9px; background: color-mix(in srgb, var(--je-ta-accent) 16%, transparent); color: var(--je-ta-accent-text); }
-.je-tag-admin .je-ta-card-icon { font-size: 19px; }
+.je-ta-card-icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border-radius: 9px; background: color-mix(in srgb, var(--je-ta-accent) 16%, transparent); color: var(--je-ta-accent); }
+/* More specific than the host page's own .material-icons (inline-block), so the glyph stays centred in its tile. */
+.je-tag-admin .je-ta-card-icon { display: inline-flex; align-items: center; justify-content: center; font-size: 19px; line-height: 1; text-align: center; }
+.je-ta-card-icon-img img { width: 22px; height: 22px; object-fit: contain; }
 .je-ta-card-title { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 -24px 16px; padding: 16px 24px; border-bottom: 1px solid var(--je-ta-border); background: linear-gradient(90deg, color-mix(in srgb, var(--je-ta-accent) 10%, transparent), transparent 65%); font-size: 1.05em; font-weight: 650; letter-spacing: 0.2px; }
 .je-ta-card-title::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 4px 4px 0; background: var(--je-ta-accent); }
 .je-ta-card-title + .je-ta-hint { margin-top: -4px; }
@@ -363,6 +365,8 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 .je-ta-chip[data-kind="status"] { background: rgba(15, 15, 15, 0.8); border-color: rgba(255, 255, 255, 0.25); }
 .je-ta-chip[data-kind="genre"] { background: rgba(10, 10, 10, 0.8); border-color: rgba(255, 255, 255, 0.2); color: #e0e0e0; }
 .je-ta-chip[data-kind="lang"] { background: #1565c0; }
+.je-ta-chip-flag { width: 22px; height: 16px; padding: 0; object-fit: cover; border: 0; background: transparent; }
+.je-ta-chip .je-ts-genre-glyph { font-size: 14px; }
 
 /* Overview. */
 .je-ta-ov { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 12px; }
@@ -487,6 +491,8 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 .je-tag-admin .je-ts-pill { min-height: 32px; padding: 4px 12px; border: 1px solid var(--je-ta-control-border); border-radius: 16px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
 .je-tag-admin .je-ts-pill.active { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); font-weight: 600; }
 .je-tag-admin .je-ts-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+/* The presets are the whole design's starting point; the group tabs below edit one group of it. */
+.je-tag-admin .je-ts-presets { margin-bottom: 16px; padding-bottom: 18px; border-bottom: 1px solid color-mix(in srgb, currentColor 16%, transparent); }
 .je-tag-admin .je-ts-preset { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px; border: 2px solid var(--je-border); border-radius: 8px; background: linear-gradient(135deg, #3a4a5c 0%, #1c2430 55%, #4b3b2a 100%); color: #fff; cursor: pointer; font: inherit; text-align: left; }
 .je-tag-admin .je-ts-preset.active { border-color: var(--je-ta-accent); box-shadow: 0 0 0 2px var(--je-ta-accent); }
 .je-tag-admin .je-ts-preset-title { font-weight: 600; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
@@ -496,6 +502,9 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 .je-tag-admin .je-ts-tab { min-height: 36px; padding: 0 14px; border: 1px solid var(--je-ta-control-border); border-radius: 999px; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
 .je-tag-admin .je-ts-tab:hover { background: var(--je-ta-surface-2); }
 .je-tag-admin .je-ts-group-select { display: none; }
+/* One group can take a preset of its own, whatever the design uses. */
+.je-tag-admin .je-ts-group-preset { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.je-tag-admin .je-ts-group-preset select { min-width: 200px; max-width: 100%; }
 .je-tag-admin .je-ts-tab.active { background: var(--je-ta-selected-bg); border-color: var(--je-ta-selected-bg); color: var(--je-ta-selected-text); font-weight: 600; }
 .je-tag-admin .je-ts-group-panel { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--je-border); border-radius: 10px; background: var(--je-ta-sunken); }
 .je-tag-admin .je-ts-targets { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; padding: 8px; max-height: 260px; overflow-y: auto; scrollbar-gutter: stable; overscroll-behavior: contain; background: #262626; border-radius: 6px; }
@@ -897,3 +906,9 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 /* "Where to show": the same switches on every group. */
 .je-ta-scopes { margin: 12px 0 0; padding: 0; border: 0; min-width: 0; }
 .je-ta-scopes > legend { padding: 0; }
+
+.je-tag-admin .je-ts-opacity-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-top: 10px; }
+.je-tag-admin .je-ts-opacity-label { font-size: 13px; font-weight: 600; color: var(--je-ta-muted); min-width: 64px; }
+
+/* The two card-shape selects share one width, so their edges line up whatever the chosen option says. */
+.je-tag-admin .je-ta-field-control select[data-shape] { width: 360px; max-width: 100%; }

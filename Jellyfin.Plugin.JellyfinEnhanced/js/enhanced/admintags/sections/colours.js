@@ -19,22 +19,22 @@
         id: 'colours',
         tab: 'colours',
         order: 10,
-        title: 'admin_tags_overview_colours',
-        hint: 'admin_tags_colours_desc',
+        title: 'Tag colours',
+        hint: 'Colours for quality, age rating, rating, genre, status, language, awards, logo and custom tags.',
         writes: ['TagStyleOverrides', 'TagStylePreset'],
         fields: [
-            { id: 'tagStylesEnabled', key: 'TagStylesEnabled', type: 'switch', label: 'admin_tags_colours_enabled', desc: 'admin_tags_colours_enabled_desc', master: true },
-            { id: 'tagStyleTarget', key: 'TagStyleTarget', type: 'pills', label: 'tag_item_editor_scope', desc: 'admin_tags_colours_target_desc', options: [['web', 'admin_tags_style_target_web'], ['native', 'admin_tags_style_target_native'], ['both', 'admin_tags_style_target_both']], read: (v) => (['web', 'native', 'both'].includes(v) ? v : 'both'), when: (c) => c.TagStylesEnabled === true },
-            { id: 'tagStylesAllowUserPreset', key: 'TagStylesAllowUserPreset', type: 'switch', label: 'admin_tags_colours_allow_preset', desc: 'admin_tags_colours_allow_preset_desc', break: true },
+            { id: 'tagStylesEnabled', key: 'TagStylesEnabled', type: 'switch', label: 'Use tag colours', desc: 'Off shows the original colours (custom CSS keeps working). Your edits are kept.', master: true },
+            { id: 'tagStyleTarget', key: 'TagStyleTarget', type: 'pills', label: 'Apply to', desc: 'Web recolours the overlays and wins over custom CSS colours. Native posters draws the colours into the posters of apps such as Android TV (needs Native Poster Tags; status tags are not drawn there).', options: [['web', 'Web'], ['native', 'Native posters'], ['both', 'Both']], read: (v) => (['web', 'native', 'both'].includes(v) ? v : 'both'), when: (c) => c.TagStylesEnabled === true },
+            { id: 'tagStylesAllowUserPreset', key: 'TagStylesAllowUserPreset', type: 'switch', label: 'Let users pick their own preset', desc: 'Shows a colour preset choice in each user\'s Media Tags settings. Your group and label colours stay on top of their preset.', break: true },
         ],
         render(ctx, body) {
             body.innerHTML = `<div id="tagStylesBody" style="margin-top:14px">${A.EDITOR_HTML}
-                <div class="je-ta-actions"><button type="button" class="je-ta-button je-ta-button--danger" id="tagStyleResetAll"><span class="material-icons" aria-hidden="true">restart_alt</span>${ctx.tx('admin_tags_colours_reset')}</button></div></div>`;
-            body.querySelector('#tagStylePresetLabel').textContent = JE.t('admin_tags_overview_preset');
-            body.querySelector('#tagStyleTargetsLabel').textContent = JE.t('admin_tags_colours_editing');
-            body.querySelector('#tagStylePreviewLabel').textContent = JE.t('common_preview');
-            body.querySelector('#tagStylePresets').textContent = JE.t('hidden_content_admin_loading');
-            body.querySelector('#tagStyleTabs').setAttribute('aria-label', JE.t('admin_tags_colours_group'));
+                <div class="je-ta-actions"><button type="button" class="je-ta-button je-ta-button--danger" id="tagStyleResetAll"><span class="material-icons" aria-hidden="true">restart_alt</span>${ctx.tx('Reset all colours')}</button></div></div>`;
+            body.querySelector('#tagStylePresetLabel').textContent = A.fmt('Preset');
+            body.querySelector('#tagStyleTargetsLabel').textContent = A.fmt('Editing');
+            body.querySelector('#tagStylePreviewLabel').textContent = A.fmt('Preview');
+            body.querySelector('#tagStylePresets').textContent = A.fmt('Loading…');
+            body.querySelector('#tagStyleTabs').setAttribute('aria-label', A.fmt('Tag group'));
             // Apply to and the user-preset switch are options most visits never change: one closed row.
             const section = body.closest('[data-section]');
             const wraps = ['tagStyleTarget', 'tagStylesAllowUserPreset'].map((id) => section?.querySelector(`[data-field-row="${id}"]`)?.parentElement).filter(Boolean);
@@ -47,10 +47,10 @@
                 const sum = () => {
                     const target = /** @type {HTMLInputElement|null} */ (more.querySelector('[name="tagStyleTarget"]:checked'));
                     const allow = /** @type {HTMLInputElement|null} */ (more.querySelector('#tagStylesAllowUserPreset'));
-                    const parts = [JE.t('admin_tags_colours_options')];
+                    const parts = [A.fmt('Options')];
                     // Apply to counts while tag colours are on (its row is shown then).
-                    if (target && ctx.config.TagStylesEnabled === true) parts.push(JE.t(`admin_tags_colours_applies_${['web', 'native', 'both'].includes(target.value) ? target.value : 'both'}`));
-                    if (allow) parts.push(JE.t(allow.checked ? 'admin_tags_colours_presets_on' : 'admin_tags_colours_presets_off'));
+                    if (target && ctx.config.TagStylesEnabled === true) parts.push(A.WORDS.colourTarget[['web', 'native', 'both'].includes(target.value) ? target.value : 'both']);
+                    if (allow) parts.push(A.fmt(allow.checked ? 'User presets allowed' : 'No user presets'));
                     /** @type {HTMLElement} */ (more.querySelector('[data-more-text]')).textContent = parts.filter(Boolean).join(' · ');
                 };
                 sum();
@@ -69,13 +69,13 @@
             editorEl.addEventListener('click', changed);
             editorEl.addEventListener('input', changed);
             body.querySelector('#tagStyleResetAll')?.addEventListener('click', async () => {
-                const ok = await ctx.confirm(JE.t('admin_tags_colours_reset_confirm'), JE.t('admin_tags_colours_reset'));
+                const ok = await ctx.confirm(A.fmt('Every group and label colour goes back to the Default preset.'), A.fmt('Reset all colours'));
                 if (!ok) return;
                 const before = { json: ctx.config.TagStyleOverrides || '', preset: ctx.config.TagStylePreset || 'default' };
                 editor.load('', 'default');
                 last = editor.snapshot();
                 ctx.setMany({ TagStyleOverrides: '', TagStylePreset: 'default' }, { redraw: false });
-                ctx.snack(JE.t('admin_tags_colours_reset_done'), () => {
+                ctx.snack(A.fmt('All colours reset'), () => {
                     editor.load(before.json, before.preset);
                     last = editor.snapshot();
                     ctx.setMany({ TagStyleOverrides: before.json, TagStylePreset: before.preset }, { redraw: false });

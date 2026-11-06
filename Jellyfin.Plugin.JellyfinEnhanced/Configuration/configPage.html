@@ -726,11 +726,11 @@
             // (jeHoldMediaTags) so they never put an older Media Tags value back.
             // Declared with var: activateTab may run before this block (no temporal dead zone).
             var JE_MT_TAB = 'media-tags';
-            /** The tab's sections (JE.adminTags.TABS): id, the en.json key of its name, its English name. */
+            /** The tab's sections (JE.adminTags.TABS): id and its name. */
             var JE_MT_SECTIONS = [
-                ['overview', 'admin_tags_tab_overview', 'Overview'], ['layout', 'admin_tags_tab_layout', 'Layout defaults'],
-                ['groups', 'common_groups', 'Groups'], ['rules', 'common_rules', 'Rules'], ['colours', 'common_colours', 'Colours'],
-                ['badges', 'panel_media_tags_tab_badges', 'Status badges'], ['server', 'common_server', 'Server']
+                ['overview', 'Overview'], ['layout', 'Layout defaults'],
+                ['groups', 'Groups'], ['rules', 'Rules'], ['colours', 'Colours'],
+                ['badges', 'Status badges'], ['server', 'Server']
             ];
             var _jeMtLoaded = null;
             var _jeMtMounting = null;
@@ -783,13 +783,6 @@
                 return _jeMtLoaded;
             }
 
-            /** The tab's own words come from the locale files once JE.t exists; until then the English source. */
-            function jeMtSay(key, english) {
-                var je = window.JellyfinEnhanced;
-                var text = je && typeof je.t === 'function' ? je.t(key) : key;
-                return text && text !== key ? text : english;
-            }
-
             function jeMtEsc(text) {
                 return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             }
@@ -799,9 +792,9 @@
                 var root = page && page.querySelector('#' + JE_MT_TAB + ' > .je-tag-admin');
                 if (!root) return;
                 root.innerHTML = '<div class="je-ta-wait" role="alert">'
-                    + jeMtEsc(jeMtSay('admin_tags_page_not_ready', 'Jellyfin Enhanced has not finished loading in this browser, so the Media Tags settings cannot be shown. '
-                    + 'Retry, and if this stays, check that the plugin is active and see the browser console.'))
-                    + ' <button type="button" class="jea-btn" data-je-mt-retry>' + jeMtEsc(jeMtSay('admin_tags_retry', 'Retry')) + '</button></div>';
+                    + jeMtEsc('Jellyfin Enhanced has not finished loading in this browser, so the Media Tags settings cannot be shown. '
+                    + 'Retry, and if this stays, check that the plugin is active and see the browser console.')
+                    + ' <button type="button" class="jea-btn" data-je-mt-retry>' + jeMtEsc('Retry') + '</button></div>';
                 root.querySelector('[data-je-mt-retry]').addEventListener('click', function () { jeMountMediaTags(); }, { once: true });
             }
 
@@ -814,7 +807,7 @@
                 var tab = page && page.querySelector('#' + JE_MT_TAB);
                 if (!tab) return Promise.resolve(null);
                 var wait = tab.querySelector('.je-tag-admin > .je-ta-wait:not([role=alert])');
-                if (wait) wait.textContent = jeMtSay('admin_tags_page_loading', wait.textContent);
+                if (wait) wait.textContent = wait.textContent;
                 _jeMtMounting = jeLoadMediaTags().then(function () {
                     return window.JellyfinEnhanced.adminTags.mountTab(tab, window.jeCssVersion || '');
                 }).catch(function (err) {
@@ -850,8 +843,6 @@
             (function jeBuildMediaTagsTree() {
                 var btn = page && page.querySelector('.jea-nav .jellyfin-tab-button[data-tab="' + JE_MT_TAB + '"]');
                 if (!btn || (btn.nextElementSibling && btn.nextElementSibling.classList.contains('jea-nav-tree'))) return;
-                var je = window.JellyfinEnhanced;
-                var label = function (key, fallback) { var text = je && typeof je.t === 'function' ? je.t(key) : ''; return text && text !== key ? text : fallback; };
                 var tree = document.createElement('div');
                 tree.className = 'jea-nav-tree';
                 tree.setAttribute('data-je-mt-tree', '');
@@ -860,7 +851,7 @@
                     a.className = 'jea-nav-leaf';
                     a.href = '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=' + JE_MT_TAB + '&tab=' + sec[0];
                     a.dataset.jeMtSection = sec[0];
-                    a.textContent = label(sec[1], sec[2]);
+                    a.textContent = sec[1];
                     tree.appendChild(a);
                 });
                 btn.after(tree);
@@ -5412,16 +5403,12 @@
          * that tab, per group on Groups, opening it there.
          * @param {string[]} ids - The new setting ids to route.
          * @param {Object} locations - GET whats-new `mediaTags`: id -> {page, tab, group} (`tab`: one of the Media Tags tab's own tabs).
-         * @param {?function(string): string} t - JE.t when the client bundle is loaded.
          * @returns {Array<{tab: string, tabLabel: string, title: string, href: string, mediaTags: {section: string, group: ?string}, ids: string[]}>}
          */
-        function jeMediaTagsWhatsNewEntries(ids, locations, t) {
-            var label = function(key, fallback) {
-                var text = t ? t(key) : '';
-                return text && text !== key ? text : fallback;
-            };
-            var groupKey = function(group) {
-                return ({people:'admin_tags_group_people',quality:'panel_settings_ui_tag_group_quality',rating:'panel_settings_ui_tag_group_rating',ageRating:'panel_settings_ui_tag_group_age_rating',language:'panel_settings_ui_tag_group_language',genre:'common_genre',status:'panel_settings_ui_tag_group_status',awards:'awards_label',logos:'common_logos',custom:'common_custom'})[group];
+        function jeMediaTagsWhatsNewEntries(ids, locations) {
+            // The page is plain English: no translation keys.
+            var groupName = function(group) {
+                return ({people:'People',quality:'Quality',rating:'Rating',ageRating:'Age Rating',language:'Language',genre:'Genre',status:'Status',awards:'Awards',logos:'Logos',custom:'Custom'})[group] || jeHumanizeSettingId(group);
             };
             var entries = {};
             var order = [];
@@ -5431,11 +5418,11 @@
                 var group = at.tab === 'groups' && at.group ? at.group : null;
                 var key = at.tab + ':' + (group || '');
                 if (!entries[key]) {
-                    var tabName = label(({overview:'admin_tags_tab_overview',layout:'admin_tags_tab_layout',groups:'common_groups',rules:'common_rules',colours:'common_colours',badges:'panel_media_tags_tab_badges',server:'common_server'})[at.tab], jeHumanizeSettingId(at.tab));
+                    var tabName = ({overview:'Overview',layout:'Layout defaults',groups:'Groups',rules:'Rules',colours:'Colours',badges:'Status badges',server:'Server'})[at.tab] || jeHumanizeSettingId(at.tab);
                     entries[key] = {
                         tab: 'media-tags',
-                        tabLabel: label('common_media_tags', 'Media Tags'),
-                        title: group ? tabName + ' \u203a ' + label(groupKey(group), jeHumanizeSettingId(group)) : tabName,
+                        tabLabel: 'Media Tags',
+                        title: group ? tabName + ' \u203a ' + groupName(group) : tabName,
                         href: '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=' + encodeURIComponent(at.tab) + (group ? '&group=' + encodeURIComponent(group) : ''),
                         mediaTags: { section: at.tab, group: group },
                         ids: []
@@ -5511,7 +5498,7 @@
                 var onMain = new Set(perSetting.map(function(f) { return f.id; }));
                 var moved = Object.keys(newSettings).filter(function(id) { return !onMain.has(id) && mediaTags[id]; });
                 var je = window.JellyfinEnhanced;
-                var movedEntries = jeMediaTagsWhatsNewEntries(moved, mediaTags, je && typeof je.t === 'function' ? je.t : null);
+                var movedEntries = jeMediaTagsWhatsNewEntries(moved, mediaTags);
 
                 var versions = perSetting.map(function(f) { return f.version; }).concat(moved.map(function(id) { return newSettings[id]; }));
                 var distinctVersions = new Set(versions);

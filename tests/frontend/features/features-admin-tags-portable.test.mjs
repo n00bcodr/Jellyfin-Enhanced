@@ -115,8 +115,8 @@ test('the Server tab has the import and export block and the offered presets, de
   assert.ok(portable.querySelector('#jeTaExport') && portable.querySelector('#jeTaImport'));
   assert.ok(presets.querySelector('#jeTaOfferMine') && presets.querySelector('#jeTaOfferImport'));
   assert.ok(h.A.pageFields().has('TagOfferedPresets'));
-  assert.match(presets.textContent, /admin_tags_presets_count:0\|20/);
-  assert.match(presets.textContent, /admin_tags_presets_none/);
+  assert.match(presets.textContent, /0 of 20 offered/);
+  assert.match(presets.textContent, /No presets offered yet\./);
 });
 
 test('export saves pending edits first and shows the server document, without secrets', async t => {
@@ -144,7 +144,7 @@ test('export refuses while a pending edit is refused by a conflict, and exports 
   assert.ok(!h.requests.some((r) => r.path.endsWith('/admin/media-tags/export')), 'the stored settings were not read');
   assert.equal(h.dialog().querySelector('textarea'), null, 'no document is offered');
   assert.equal(h.action('download'), null);
-  assert.equal(h.status(), 'admin_tags_portable_export_unsaved');
+  assert.equal(h.status(), 'Not exported: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then export again.');
   // Keep mine, then export again: the document has this page's value.
   h.click(h.$('#jeTaSaved [data-je-keep]'));
   await h.ctx.flush();
@@ -163,7 +163,7 @@ test('export refuses while a pending edit failed to save, and exports after a su
   assert.equal(h.A.pendingState().state, 'error');
   assert.ok(!h.requests.some((r) => r.path.endsWith('/admin/media-tags/export')));
   assert.equal(h.action('download'), null);
-  assert.equal(h.status(), 'admin_tags_portable_export_unsaved');
+  assert.equal(h.status(), 'Not exported: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then export again.');
   h.flags.failSave = false;
   h.click(h.$('#jeTaExport'));
   await h.settle(10);
@@ -184,7 +184,7 @@ test('import previews, confirms and writes the changed fields through the locked
   assert.equal(h.server.TagLayout, 'bands');
   assert.equal(h.dialog(), null);
   const snack = h.root.querySelector('.je-ta-snack');
-  assert.match(snack.textContent, /admin_tags_portable_applied:2/);
+  assert.match(snack.textContent, /2 server settings changed/);
   h.click(snack.querySelector('button'));
   await h.ctx.flush();
   await h.settle(6);
@@ -205,7 +205,7 @@ test('a field another administrator changed meanwhile waits for Keep mine / Take
   assert.equal(h.server.TagLayout, 'minimal', 'their value is kept');
   assert.equal(h.patches[0].Expected.TagLayout, 'corners', 'the import expected what this page read');
   assert.equal(h.server.TagGap, 'roomy', 'the field nobody else touched is saved');
-  assert.equal(h.status(), 'admin_tags_portable_apply_refused');
+  assert.equal(h.status(), 'Another administrator changed some of these settings meanwhile: choose Keep mine or Take theirs at the top of the page. The other settings were saved.');
   assert.equal(h.$('#jeTaSaved').dataset.state, 'conflict', 'the page offers Keep mine / Take theirs');
   // Keep mine: the imported layout is saved over theirs.
   h.click(h.$('#jeTaSaved [data-je-keep]'));
@@ -233,7 +233,7 @@ test('import after another administrator changed a field this page never edited 
   assert.equal(h.A.pendingState().state, 'saved');
   assert.equal(h.ctx.config.TagLayout, 'corners');
   const snack = h.root.querySelector('.je-ta-snack');
-  assert.match(snack.textContent, /admin_tags_portable_applied:2/);
+  assert.match(snack.textContent, /2 server settings changed/);
 
   h.click(snack.querySelector('button'));
   await h.ctx.flush();
@@ -256,7 +256,7 @@ test('import: a field changed by another administrator to another value after th
   await h.settle(20);
   assert.equal(h.server.TagLayout, 'minimal', 'their value is kept');
   assert.equal(h.server.StatusTagsJustAddedDays, 9);
-  assert.equal(h.status(), 'admin_tags_portable_apply_refused');
+  assert.equal(h.status(), 'Another administrator changed some of these settings meanwhile: choose Keep mine or Take theirs at the top of the page. The other settings were saved.');
   assert.equal(h.A.pendingState().state, 'conflict');
 });
 
@@ -297,7 +297,7 @@ test('import refuses while an edit failed to save, and previews and applies afte
   h.click(h.action('next'));
   await h.settle(10);
   assert.ok(!h.requests.some((r) => r.path.endsWith('/admin/media-tags/preview')), 'not previewed against settings the page does not show');
-  assert.equal(h.status(), 'admin_tags_portable_import_unsaved');
+  assert.equal(h.status(), 'Not previewed: changes on this page are not saved yet. Retry the save, or choose Keep mine or Take theirs, then preview again.');
   assert.equal(h.action('apply'), null);
   h.flags.failSave = false;
   h.click(h.action('next'));
@@ -322,7 +322,7 @@ test('import: an edit on the page after the preview to a field the document sets
   await h.settle(10);
   assert.equal(h.server.TagLayout, 'bands', 'the edit was saved first');
   assert.equal(h.server.StatusTagsJustAddedDays, 7, 'nothing applied from the old preview');
-  assert.equal(h.status(), 'admin_tags_portable_import_changed');
+  assert.equal(h.status(), 'Settings on this page changed since the preview. This is the preview again: check it, then apply.');
   assert.deepEqual(Array.from(h.dialog().querySelectorAll('.je-pt-change .je-pt-field'), (el) => el.textContent), ['Tag Layout', 'Status Tags Just Added Days']);
   h.click(h.action('apply'));
   await h.settle(10);
@@ -387,7 +387,7 @@ test('offered presets: Offer again after a failed save stores the preset once', 
   h.flags.failSave = true;
   h.click(h.action('offer'));
   await h.settle(10);
-  assert.equal(h.status(), 'admin_tags_presets_save_failed');
+  assert.equal(h.status(), 'Not saved. Try again.');
   assert.equal(h.action('offer').disabled, false, 'Offer can be pressed again');
   h.flags.failSave = false;
   h.click(h.action('offer'));
@@ -396,7 +396,7 @@ test('offered presets: Offer again after a failed save stores the preset once', 
   assert.deepEqual(stored.map((p) => p.name), ['Retry preset']);
   assert.equal(h.dialog(), null);
   assert.equal(h.root.querySelectorAll('[data-offer-id]').length, 1);
-  assert.match(h.$('[data-section="server-presets"]').textContent, /admin_tags_presets_count:1\|20/);
+  assert.match(h.$('[data-section="server-presets"]').textContent, /1 of 20 offered/);
 });
 
 test('offered presets: Offer again while the save is refused, then Keep mine, stores the preset once', async t => {
@@ -439,7 +439,7 @@ test('offer my settings uses the administrator\'s own export, and settings the s
 
 /** The dialog's loading line is shown (by its text, not only its hook). */
 const loadingShown = (h) => Array.from(h.dialog().querySelectorAll('.je-pt-hint'))
-  .some((el) => el.textContent === 'hidden_content_admin_loading' && !el.closest('[hidden]'));
+  .some((el) => el.textContent === 'Loading…' && !el.closest('[hidden]'));
 
 test('offer my settings: a failed read of my settings hides the loading line and Retry reads them again', async t => {
   const h = setup(t);
@@ -452,7 +452,7 @@ test('offer my settings: a failed read of my settings hides the loading line and
   };
   h.click(h.$('#jeTaOfferMine'));
   await h.settle(10);
-  assert.equal(h.status(), 'tag_portable_export_failed');
+  assert.equal(h.status(), 'Could not read the settings. Try again.');
   assert.equal(loadingShown(h), false, 'no "Loading" beside the error');
   assert.equal(h.document.activeElement, h.action('retry'), 'Retry in the same dialog');
   refuse = false;
@@ -487,7 +487,7 @@ test('export: a failed read offers Retry in the same dialog, which exports', asy
   };
   h.click(h.$('#jeTaExport'));
   await h.settle(10);
-  assert.equal(h.status(), 'tag_portable_export_failed');
+  assert.equal(h.status(), 'Could not read the settings. Try again.');
   assert.equal(loadingShown(h), false);
   assert.equal(h.document.activeElement, h.action('retry'));
   refuse = false;
@@ -523,7 +523,7 @@ test('offer my settings stops when my own settings fail to save, offers nothing,
   };
   h.click(h.$('#jeTaOfferMine'));
   await h.settle(15);
-  assert.equal(h.status(), 'admin_tags_presets_mine_unsaved');
+  assert.equal(h.status(), 'Not offered: your latest change to your own Media Tags settings is not saved yet. Check the connection, then try again.');
   assert.ok(!h.requests.some((r) => r.path.endsWith('/media-tags/export')), 'the stored settings are not read');
   assert.equal(h.dialog().querySelector('#jeTaOfferName'), null, 'no name step');
   assert.equal(h.document.activeElement, h.action('retry'));

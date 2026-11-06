@@ -56,9 +56,9 @@ test('both administrators editing the same field: Changed elsewhere, nothing ove
   assert.equal(h.server.TagsHideOnHover, true, 'the other field in the refused request still saves');
   const chip = h.$('#jeTaSaved');
   assert.equal(chip.dataset.state, 'conflict');
-  assert.match(chip.textContent, /admin_tags_conflict_one:admin_tags_badges_just_added_days\|9\|8/, 'names the field, the value saved elsewhere and this page\'s');
-  assert.equal(chip.querySelector('[data-je-keep]').textContent, 'admin_tags_keep_value:8', 'each button names the value it keeps');
-  assert.equal(chip.querySelector('[data-je-theirs]').textContent, 'admin_tags_use_value:9');
+  assert.match(chip.textContent, /Just added was changed elsewhere to 9 \(yours: 8\)/, 'names the field, the value saved elsewhere and this page\'s');
+  assert.equal(chip.querySelector('[data-je-keep]').textContent, 'Keep 8', 'each button names the value it keeps');
+  assert.equal(chip.querySelector('[data-je-theirs]').textContent, 'Use 9');
   // A later edit elsewhere saves without touching the refused field.
   h.change(h.$('#disableTagsOnSearchPage'), true);
   assert.equal(await h.ctx.flush(), false);
@@ -125,7 +125,7 @@ test('a failed save survives navigating to another Media Tags view: still pendin
   h.change(first.querySelector('#tagsHideOnHover'), true);
   assert.equal(await a.flush(), false, 'the save failed');
   assert.equal(first.querySelector('#jeTaSaved').dataset.state, 'error');
-  assert.match(first.querySelector('#jeTaSaved').textContent, /admin_tags_save_failed_fields:admin_tags_hide_on_hover/);
+  assert.match(first.querySelector('#jeTaSaved').textContent, /Not saved: Hide tags on hover/);
   // Another Media Tags deep link: the first view is torn down, the edit is not.
   h.window.location.hash = '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=groups';
   const b = await h.A.activate(second);
@@ -136,12 +136,12 @@ test('a failed save survives navigating to another Media Tags view: still pendin
   assert.equal(b.config.TagsHideOnHover, true);
   const chip = second.querySelector('#jeTaSaved');
   assert.equal(chip.dataset.state, 'error', 'not "All changes saved"');
-  assert.match(chip.textContent, /admin_tags_save_failed_fields:admin_tags_hide_on_hover/);
+  assert.match(chip.textContent, /Not saved: Hide tags on hover/);
   assert.deepEqual(plain(h.A.pendingState()), { state: 'error', fields: ['TagsHideOnHover'], failed: ['TagsHideOnHover'] });
   // Leaving Media Tags altogether while it is still failing asks; the edit stays either way.
   h.window.location.hash = '#/dashboard';
   await h.A.leaveWithPending();
-  assert.deepEqual(asked, ['admin_tags_leave_title']);
+  assert.deepEqual(asked, ['Media Tags changes not saved']);
   assert.deepEqual(plain(h.A.pendingState().fields), ['TagsHideOnHover']);
   // Back on the page with the server healthy again: Retry saves it.
   h.window.location.hash = '#/configurationpage?name=Jellyfin%20Enhanced&jeSection=media-tags&tab=groups';
@@ -222,7 +222,7 @@ test('the cache rebuild poll redraws only the cache card: a focused Layout or Ru
   const ctx = h.A.createPage(root, structuredClone({ ...BASE, TagLookRules: rules }));
   h.cleanup.push(() => ctx.dispose());
   for (let i = 0; i < 5; i++) await h.settle();
-  assert.equal(root.querySelector('[data-ov="cache-state"]').textContent, 'admin_tags_rebuilding');
+  assert.equal(root.querySelector('[data-ov="cache-state"]').textContent, 'Rebuilding');
   assert.equal(polls.length, 1, 'following the rebuild');
   ctx.openTab('layout');
   const selector = '#tagGroupAdminRows [data-group="quality"] [data-slot="tc"]';
@@ -247,7 +247,7 @@ test('the cache rebuild poll redraws only the cache card: a focused Layout or Ru
   rebuilding = false;
   polls.shift()();
   for (let i = 0; i < 5; i++) await h.settle();
-  assert.equal(root.querySelector('[data-ov="cache-state"]').textContent, 'common_on');
+  assert.equal(root.querySelector('[data-ov="cache-state"]').textContent, 'On');
   assert.equal(root.querySelector('[data-ov="rebuild"]').disabled, false);
   assert.equal(polls.length, 0);
 });
@@ -294,7 +294,7 @@ test('the settings failing to load show an error with Retry, not an endless load
   const root = page.querySelector('.je-tag-admin');
   assert.equal(await h.A.activate(page), null);
   assert.equal(root.querySelector('[role="status"]'), null, 'the loading line is gone');
-  assert.match(root.querySelector('[role="alert"]').textContent, /admin_tags_load_failed/);
+  assert.match(root.querySelector('[role="alert"]').textContent, /The Media Tags settings could not be loaded from the server\./);
   fail = false;
   root.querySelector('[data-je-reload]').click();
   for (let i = 0; i < 50 && !root.querySelector('.je-ta-tabs'); i++) await h.settle();
@@ -343,7 +343,7 @@ test('each section module is a self-contained file the page loads, and every dec
   for (const file of readdirSync(dir)) {
     const text = readFileSync(resolve(dir, file), 'utf8');
     for (const line of text.split('\n')) {
-      if (/^\s*\{ id: '/.test(line)) assert.match(line, /^\s*\{ id: '\w+', key: '\w+', type: '\w+'.*label: '\w+'/, `${file}: ${line.trim().slice(0, 60)}`);
+      if (/^\s*\{ id: '/.test(line)) assert.match(line, /^\s*\{ id: '\w+', key: '\w+', type: '\w+'.*label: '.+'/, `${file}: ${line.trim().slice(0, 60)}`);
       // Helpers/MediaTagsPageFields.cs reads a section's own writes from one line too.
       if (/^\s*writes:/.test(line)) assert.match(line, /^\s*writes: \['\w+'(, '\w+')*\],$/, `${file}: ${line.trim()}`);
     }
@@ -713,7 +713,7 @@ test('Server: a replacement view never shows or writes the previous view\'s libr
   next.openTab('server');
   await settleMany(h);
   assert.deepEqual(libraryBoxes(h.root), [], 'no list until this view\'s own answer');
-  assert.match(h.root.querySelector('[data-libs]').textContent, /hidden_content_admin_loading/);
+  assert.match(h.root.querySelector('[data-libs]').textContent, /Loading…/);
   gate.resolve([...old, { ItemId: OTHER_LIBRARY, Name: 'New library' }]);
   await settleMany(h);
   assert.deepEqual(libraryBoxes(h.root), [{ id: LIBRARY, checked: false }, { id: OTHER_LIBRARY, checked: true }]);
@@ -760,7 +760,7 @@ test('Server: after a same-tab server switch the new view shows only its own lib
   gate.reject(new Error('offline'));
   await settleMany(h);
   assert.deepEqual(libraryBoxes(second), []);
-  assert.match(second.querySelector('[data-libs]').textContent, /admin_tags_server_libraries_failed/);
+  assert.match(second.querySelector('[data-libs]').textContent, /Could not load the library list\. The current selection is kept\./);
   assert.equal(server.TagCacheExcludedLibraryIds, OTHER_LIBRARY, 'the stored exclusion stays');
   assert.equal(h.patches.length, 0);
 });
@@ -802,7 +802,7 @@ test('Overview: a new view shows its own cache summary, never the previous view\
   assert.doesNotMatch(h.root.querySelector('[data-ov="cache"]').textContent, /1,234|1234/, 'not the previous view\'s count');
   gate.resolve({ enabled: true, entries: 7, lastModified: 0, rebuilding: false });
   await settleMany(h);
-  assert.match(h.root.querySelector('[data-ov="cache"]').textContent, /^7admin_tags_overview_cached/);
+  assert.match(h.root.querySelector('[data-ov="cache"]').textContent, /^7items cached/);
 });
 
 // ── The Rules add form's library condition (astra R5-5) ──────────────
@@ -878,7 +878,7 @@ for (const why of ['failed', 'conflict']) {
     h.$('#rebuildTagCacheBtn').click();
     for (let i = 0; i < 8; i++) await h.settle();
     assert.deepEqual(h.posts, [], 'nothing is rebuilt');
-    assert.match(h.root.querySelector('.je-ta-snack')?.textContent || '', /admin_tags_rebuild_unsaved/, 'and it says why');
+    assert.match(h.root.querySelector('.je-ta-snack')?.textContent || '', /Not rebuilt: changes on this page are not saved yet\. Retry the save, or choose Keep mine or Take theirs, then rebuild again\./, 'and it says why');
     assert.deepEqual(h.confirms, [], 'before asking');
     // Saved (Retry, or Keep mine): Rebuild asks and rebuilds.
     fail = false;
@@ -886,7 +886,7 @@ for (const why of ['failed', 'conflict']) {
     await h.ctx.flush();
     h.$('#rebuildTagCacheBtn').click();
     for (let i = 0; i < 8; i++) await h.settle();
-    assert.deepEqual(h.confirms, ['admin_tags_rebuild_title']);
+    assert.deepEqual(h.confirms, ['Rebuild the server tag cache?']);
     assert.deepEqual(h.posts, ['/JellyfinEnhanced/tag-cache/rebuild']);
   });
 }
@@ -963,8 +963,8 @@ test('the TMDB and MDBList card links keep keyboard focus when their section is 
   // The cards still say what they said.
   const h = setup(t, { config: { MdblistRatingsEnabled: true, TMDB_API_KEY: '' } });
   await settleMany(h, 4);
-  assert.match(h.$('[data-mdblist]').textContent, /admin_tags_mdblist_no_key/);
-  assert.match(h.$('[data-section="badges-tmdb"]').textContent, /admin_tags_badges_tmdb_missing/);
+  assert.match(h.$('[data-mdblist]').textContent, /On, no API key/);
+  assert.match(h.$('[data-section="badges-tmdb"]').textContent, /Not set/);
 });
 
 // ── Focus sweep: the custom rules table redrawn under focus ──────────

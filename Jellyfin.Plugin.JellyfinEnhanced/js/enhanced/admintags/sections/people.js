@@ -12,14 +12,14 @@
         id: 'group-people',
         tab: 'groups',
         order: 70,
-        title: 'admin_tags_group_people',
-        hint: 'admin_tags_people_desc',
+        title: 'People',
+        hint: 'Age and birthplace on cast members\' cards on detail pages.',
         group: {
             id: 'people',
-            summary: () => JE.t('admin_tags_people_summary'),
+            summary: () => A.fmt('Age and birthplace on cast cards'),
         },
         fields: [
-            { id: 'peopleTagsEnabled', key: 'PeopleTagsEnabled', type: 'enable', label: 'admin_tags_people_enabled' },
+            { id: 'peopleTagsEnabled', key: 'PeopleTagsEnabled', type: 'enable', label: 'People tags for new users' },
         ],
     });
 })(window.JellyfinEnhanced);

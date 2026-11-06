@@ -20,7 +20,7 @@ test('Rules: add, switch off, reorder, delete with undo, and JSON with the old c
   h.$('[data-rule="add"]').click();
   await h.save();
   assert.deepEqual(plain(h.server.TagLookRules.map((r) => [r.When[0].Field, r.When[0].Value, r.Layout, r.Density])), [['type', 'Episode', 'bands', 'compact'], ['library', LIBRARY, 'corners', 'full']]);
-  assert.match(h.$('.je-ta-rule[data-index="1"]').textContent, /admin_tags_rules_condition:tag_looks_field_library\|Movies/, 'library rules show the library name');
+  assert.match(h.$('.je-ta-rule[data-index="1"]').textContent, /Library is Movies/, 'library rules show the library name');
   h.change(h.$('.je-ta-rule[data-index="0"] [data-act="enable"]'), false);
   h.$('.je-ta-rule[data-index="1"] [data-act="move"][data-dir="-1"]').click();
   await h.save();
@@ -36,7 +36,7 @@ test('Rules: add, switch off, reorder, delete with undo, and JSON with the old c
   box.value = '[{"when": [{"field": "library", "value": "nope"}], "layout": "bands"}]';
   box.dispatchEvent(new h.window.Event('input'));
   h.$('[data-rule="json-save"]').click();
-  assert.match(h.$('#tagLookRulesJsonStatus').textContent, /admin_tags_rules_json_library:1/);
+  assert.match(h.$('#tagLookRulesJsonStatus').textContent, /Rule 1: a library condition needs a library id\./);
   box.value = JSON.stringify([{ when: [{ field: 'genre', value: 'Anime' }], layout: 'minimal', shapes: { landscape: { layout: 'bands' } } }]);
   box.dispatchEvent(new h.window.Event('input'));
   h.$('[data-rule="json-save"]').click();
@@ -71,7 +71,7 @@ test('Rules: server-wide item looks are listed with titles; Remove saves and can
   assert.deepEqual(titles, [`${MOVIE},${SERIES}`], 'titles in one request');
   assert.match(rows()[0].textContent, /Movie <i>One<\/i>/);
   assert.equal(rows()[0].querySelector('i'), null, 'names are text');
-  assert.match(rows()[1].textContent, /tag_item_editor_scope_series_only/, 'a series poster only look says so');
+  assert.match(rows()[1].textContent, /This series poster only/, 'a series poster only look says so');
   assert.equal(h.$('[data-item-looks-empty]').hidden, true);
 
   rows()[0].querySelector('[data-act="remove"]').click();
@@ -133,7 +133,7 @@ for (const outcome of ['answer', 'rejection']) test(`Rules: a view replaced whil
   else held.reject(new Error('signed out'));
   for (let i = 0; i < 5; i++) await h.settle();
   assert.equal(requests.length, 3, 'the torn-down view asks for nothing more');
-  const loading = () => Array.from(pages[1].querySelectorAll('[data-item-looks] strong')).filter((e) => e.textContent.includes('hidden_content_admin_loading')).length;
+  const loading = () => Array.from(pages[1].querySelectorAll('[data-item-looks] strong')).filter((e) => e.textContent.includes('Loading…')).length;
   assert.equal(loading(), 0);
   assert.equal(pages[1].querySelector(`[data-item="${looks[50].ItemId}"] strong`).textContent, `Title ${looks[50].ItemId}`);
   assert.ok(!pages[1].textContent.includes('Old '), 'the old view\'s late answer is not shown');

@@ -928,8 +928,9 @@ public sealed class LeavingSoonTests : IDisposable
         Assert.Equal("Leaving in 5d", StatusRules.LeavingBadge(leaving, Native("UTC"), now).Text);
         Assert.Equal("5d left", StatusRules.LeavingBadge(leaving, Native("UTC", "compact"), now).Text);
         Assert.Equal("Leaving soon", StatusRules.LeavingBadge(new TagLeaving(), Native("UTC"), now).Text);
-        // A locale without the new strings yet falls back to English, as JE.t() does.
-        Assert.Equal("Leaving in 5d", StatusRules.LeavingBadge(leaving, Native("UTC", locale: "de-DE"), now).Text);
+        // A locale without the strings falls back to English, as JE.t() does; one that has them speaks its own language.
+        Assert.Equal("Leaving in 5d", StatusRules.LeavingBadge(leaving, Native("UTC", locale: "xx-XX"), now).Text);
+        Assert.NotEqual("Leaving in 5d", StatusRules.LeavingBadge(leaving, Native("UTC", locale: "de-DE"), now).Text);
         Assert.Contains(StatusRules.StyleLabels, l => l.Key == "leaving" && l.Name == "Leaving soon");
     }
 

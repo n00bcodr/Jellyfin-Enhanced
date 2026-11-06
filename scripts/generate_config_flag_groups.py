@@ -24,8 +24,8 @@ Also reads the config page's Media Tags tab (#media-tags, drawn by
 js/enhanced/admintags/ only once it opens, so the rendered page has none of its
 controls), whose controls are declared in its section modules
 (js/enhanced/admintags/sections/*.js) as one-line field objects: `{ id: '<control id>', key: '<PropertyName>', type: ...,
-label: '<en.json key>' ... }`, grouped under the nearest preceding section
-`title: '<en.json key>'`. Those settings go under a "Media Tags" tab with the
+label: '<English text>' ... }`, grouped under the nearest preceding section
+`title: '<English text>'`. Those settings go under a "Media Tags" tab with the
 section's title as their group and the field's label as their label.
 
 Output shape: {"groups": {...}, "labels": {...}, "tabs": {...}, "tabIcons": {TabLabel: {...}}, "defaults": {PropertyName: value}}
@@ -306,8 +306,14 @@ class ConfigPageParser(HTMLParser):
         if self._in_legend and self._legend_skip_depth == 0:
             self._current_title_parts.append(data)
 
-SECTION_TITLE_RE = re.compile(r"^\s*title: '(\w+)',", re.M)
-FIELD_RE = re.compile(r"^\s*\{ id: '(\w+)', key: '(\w+)', type: '(\w+)'.*?\blabel: '(\w+)'", re.M)
+SECTION_TITLE_RE = re.compile(r"^\s*title: '((?:[^'\\]|\\.)*)',", re.M)
+FIELD_RE = re.compile(r"^\s*\{ id: '(\w+)', key: '(\w+)', type: '(\w+)'.*?\blabel: '((?:[^'\\]|\\.)*)'", re.M)
+
+
+def _text(raw):
+    """A declared title or label: the page's own English text (an older en.json key still resolves)."""
+    raw = raw.replace("\'", "'")
+    return ENGLISH_LABELS.get(raw, raw)
 
 
 def media_tags_fields():
@@ -316,10 +322,10 @@ def media_tags_fields():
     out = []
     for path in sorted(MEDIA_TAGS_SECTIONS.glob("*.js")):
         text = path.read_text(encoding="utf-8")
-        titles = [(m.start(), ENGLISH_LABELS.get(m.group(1), m.group(1))) for m in SECTION_TITLE_RE.finditer(text)]
+        titles = [(m.start(), _text(m.group(1))) for m in SECTION_TITLE_RE.finditer(text)]
         for m in FIELD_RE.finditer(text):
             title = next((t for start, t in reversed(titles) if start < m.start()), MEDIA_TAGS_TAB)
-            out.append((m.group(2), title, ENGLISH_LABELS.get(m.group(4), m.group(4))))
+            out.append((m.group(2), title, _text(m.group(4))))
     return out
 
 
