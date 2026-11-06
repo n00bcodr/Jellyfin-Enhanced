@@ -831,6 +831,8 @@
             });
             if (!worst) return;
             const grade = contrastLevel(worst.ratio);
+            // Every group has a lowest tag, so the whole group only speaks up when one is hard to read. A single tag always shows its rating.
+            if (target === ALL && grade.level !== 'low') return;
             // The ratio in the interface language's numbers (8,1:1 in German), as every other number the tab shows.
             let ratioText = worst.ratio.toFixed(1);
             try { ratioText = new Intl.NumberFormat(JE.core?.mediaLanguage?.uiLocale?.() || undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(worst.ratio); } catch { /* keep the plain form */ }
@@ -843,7 +845,7 @@
                 : worst.poster ? T('tag_styles_contrast_artwork')
                 : T('tag_styles_contrast_set_here', { hint })));
             // Whole group: open the tag that reads worst (choosing it changes nothing).
-            if (target === ALL && worst.key && grade.level !== 'aa') {
+            if (target === ALL && worst.key) {
                 const inspect = el('button', 'je-ts-inspect', T('tag_styles_inspect', { name: worst.name }));
                 inspect.type = 'button';
                 inspect.addEventListener('click', () => { target = worst.key; targetsOpen = true; renderGroup(); root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]')?.focus(); });
@@ -853,7 +855,7 @@
 
         /**
          * The tag being edited, drawn in its current colours next to its controls (Whole
-         * group: the tag that reads worst, else the first).
+         * group: the tag that is hard to read, else the first).
          * @returns {void}
          */
         function renderSample() {
@@ -862,6 +864,7 @@
             box.textContent = '';
             const labels = labelsOf(current);
             let label = target === ALL ? null : labels.find((l) => l.key === target);
+            let weak = false;
             if (!label) {
                 let low = null;
                 labels.forEach((l) => {
@@ -869,11 +872,12 @@
                     const ratio = contrastRatio(c.text, c.background);
                     if (ratio !== null && (!low || ratio < low.ratio)) low = { ratio, l };
                 });
-                label = (low && low.l) || labels[0];
+                weak = !!low && contrastLevel(low.ratio).level === 'low';
+                label = weak ? low.l : labels[0];
             }
             if (!label) return;
             box.appendChild(chip(current, label, effective(current, label.key)));
-            box.appendChild(el('span', 'je-ts-sample-note', target === ALL ? T('tag_styles_sample_lowest') : T('tag_styles_sample_editing')));
+            box.appendChild(el('span', 'je-ts-sample-note', target !== ALL ? T('tag_styles_sample_editing') : T(weak ? 'tag_styles_sample_lowest' : 'tag_styles_sample_group')));
         }
 
         /** @returns {void} */

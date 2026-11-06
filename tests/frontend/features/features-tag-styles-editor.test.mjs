@@ -172,7 +172,7 @@ test('presets apply at once, tiles preview their palette and overrides survive a
   // Whole group: labels differ, so the swatch shows "varies" and fading needs a colour first.
   assert.ok(h.$('.je-ts-field-row[data-field="background"] .je-ts-swatch-current').classList.contains('je-ts-swatch-varies'));
   assert.equal(h.$('.je-ts-field-row[data-field="background"] .je-ts-opacity-pill').disabled, true);
-  assert.match(h.$('.je-ts-contrast-hint').textContent, /Lowest in the group/);
+  assert.equal(h.$('.je-ts-contrast').textContent, '', 'a readable group has nothing to warn about');
   // A swatch writes groups.quality.
   h.$('.je-ts-field-row[data-field="background"] .je-ts-swatch[title="#1e88e5"]').click();
   // One label: the text row writes labels['quality:HEVC'].
@@ -425,7 +425,7 @@ test('the tag list of a group opens on Change target and stays with the colour r
   assert.equal(h.$('#tagStyleTargetBox').hidden, true);
 });
 
-test('the preset reads as one line until Change preset, the edited tag is drawn beside its controls and Inspect opens the weakest tag', async t => {
+test('the preset reads as one line until Change preset, and the edited tag is drawn beside its controls', async t => {
   const h = await setup(t);
   assert.equal(h.$('#tagStylePresets').hidden, true, 'presets start closed');
   assert.ok(h.$('#tagStylePresetNow').textContent.length > 0, 'the current preset is named');
@@ -433,17 +433,11 @@ test('the preset reads as one line until Change preset, the edited tag is drawn 
   assert.equal(h.$('#tagStylePresets').hidden, false);
   assert.equal(h.$('#tagStylePresetToggle').getAttribute('aria-expanded'), 'true');
   assert.equal(h.$('#tagStyleSample').querySelectorAll('.je-ts-chip').length, 1, 'one sample tag next to the colour rows');
-  assert.equal(h.$('#tagStyleSample .je-ts-sample-note').textContent, 'Lowest-contrast sample', 'it says why this tag');
+  assert.equal(h.$('#tagStyleSample .je-ts-sample-note').textContent, 'Sample tag', 'a readable group is not called the lowest');
   assert.equal(h.$('#tagStyleSample').nextElementSibling.id, 'tagStyleContrast', 'the contrast line follows the sample');
   assert.equal(h.$('#tagStylePreview').hidden, true, 'poster samples start closed');
   h.$('#tagStylePreviewToggle').click();
   assert.equal(h.$('#tagStylePreview').hidden, false);
-  const inspect = h.$('.je-ts-inspect');
-  if (inspect) {
-    inspect.click();
-    assert.notEqual(h.$('.je-ts-target[aria-checked="true"]').dataset.label, '*', 'Inspect selects the weakest tag');
-    assert.equal(h.$('#tagStyleTargetBox').hidden, false);
-  }
 });
 
 test('no default Quality or Age Rating colour reads below 3:1 on a dark poster, the editor\'s Low contrast line', () => {
@@ -464,4 +458,28 @@ test('no default Quality or Age Rating colour reads below 3:1 on a dark poster, 
     return (Math.max(chip, text) + 0.05) / (Math.min(chip, text) + 0.05) < 3;
   }).map(([label]) => label);
   assert.deepEqual(low, []);
+});
+
+test('the whole group only warns when a tag is hard to read; a single tag always shows its rating', async t => {
+  const h = await setup(t);
+  // Make every tag of the group readable, so no tag is under 3:1.
+  h.$('.je-ts-field-row[data-field="background"] .je-ts-swatch[title="#111111"]').click();
+  h.$('.je-ts-field-row[data-field="text"] .je-ts-swatch[title="#ffffff"]').click();
+  assert.equal(h.$('.je-ts-contrast').textContent, '', 'nothing to say about a readable group');
+  assert.equal(h.$('#tagStyleSample .je-ts-sample-note').textContent, 'Sample tag', 'not called the lowest when nothing is wrong');
+  // A middling group (3:1 to 4.5:1) stays quiet too: every group has a lowest tag.
+  h.$('.je-ts-field-row[data-field="text"] .je-ts-swatch[title="#757575"]')?.click();
+  assert.notEqual(h.$('.je-ts-contrast-badge')?.dataset.level, 'large');
+  // A single tag keeps its rating.
+  h.click('.je-ts-target[data-label="4K"]');
+  assert.ok(h.$('.je-ts-contrast-badge'), 'one tag always shows its rating');
+  // A hard-to-read group warns, names the tag and offers Inspect.
+  h.click('.je-ts-target[data-label="*"]');
+  h.$('.je-ts-field-row[data-field="background"] .je-ts-swatch[title="#ffffff"]').click();
+  assert.equal(h.$('.je-ts-contrast-badge').dataset.level, 'low');
+  assert.match(h.$('.je-ts-contrast-hint').textContent, /^Lowest in the group/);
+  assert.equal(h.$('#tagStyleSample .je-ts-sample-note').textContent, 'Lowest-contrast sample');
+  h.click('.je-ts-inspect');
+  assert.notEqual(h.$('.je-ts-target[aria-checked="true"]').dataset.label, '*', 'Inspect selects the weakest tag');
+  assert.equal(h.$('#tagStyleTargetBox').hidden, false);
 });

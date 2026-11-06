@@ -1430,7 +1430,7 @@ The badge under the colour rows rates the text against the background, both show
 | **AA large only** (amber) | 3:1 to 4.5:1 | Readable for large or bold text only |
 | **Low contrast** (red) | under 3:1 | Hard to read |
 
-With **Whole group** selected, the badge shows the tag that reads worst. Translucent presets also depend on the artwork behind them, so check the preview. Under **Poster**, a tag whose text or background comes from the artwork is rated by the worst case over any artwork, and the badge says so; a tag whose text and background are both set here is rated by those colours, and **Whole group** shows whichever reads worst.
+With **Whole group** selected, the badge only appears when a tag reads under 3:1, and names the tag that reads worst. Pick a single tag to see its own rating. Translucent presets also depend on the artwork behind them, so check the preview. Under **Poster**, a tag whose text or background comes from the artwork is rated by the worst case over any artwork, and the badge says so; a tag whose text and background are both set here is rated by those colours, and **Whole group** shows whichever reads worst.
 
 ### User presets
 

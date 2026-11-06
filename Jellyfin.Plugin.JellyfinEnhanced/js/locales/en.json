@@ -1522,6 +1522,7 @@
     "tag_styles_contrast_set_here": "{hint}. Its colours are all set here; tags without their own take them from the poster they sit on",
     "tag_styles_inspect": "Inspect {name}",
     "tag_styles_sample_lowest": "Lowest-contrast sample",
+    "tag_styles_sample_group": "Sample tag",
     "tag_styles_sample_editing": "Editing this tag",
     "tag_styles_load_failed": "Could not load the tag list.",
     "admin_tags_colours_genre_filter": "Find a genre",
