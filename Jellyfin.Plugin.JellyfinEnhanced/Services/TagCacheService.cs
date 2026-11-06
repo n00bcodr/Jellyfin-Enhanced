@@ -2642,6 +2642,8 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
                     QueueCustomTagRefreshIfStale();
                     // A Leaving answer published just before a crash may be newer than this snapshot.
                     ReconcileLeaving();
+                    // Awards already on but never fetched (enabled before this was automatic): fetch in the background.
+                    QueueAwardsFirstRefresh();
                     _logger.Info($"[TagCache] Loaded {_cache.Count} entries from disk (v{data.Version}, schema v{data.SchemaVersion})");
                 }
             }

@@ -194,4 +194,25 @@ public class AwardQuotaTests
         Assert.Equal(MdblistReservedBatchStatus.ReserveReached, batch.Status);
         Assert.Equal(1, requests);
     }
+    [Fact]
+    public async Task FactsExistOnlyAfterTheFirstRefreshUnderTheCurrentConfiguration()
+    {
+        using var f = new ApiPluginFixture();
+        var config = f.Plugin.Configuration;
+        config.AwardsTagsEnabled = true;
+        config.AwardsTagsImdb = config.AwardsTagsLetterboxd = config.AwardsTagsCertifiedFresh = config.AwardsTagsOscar = config.AwardsTagsEmmy = false;
+        using var transport = new IntegrationTransport((_, _) => Task.FromResult(IntegrationTransport.Response("{}")));
+        using var mdblist = new MdblistService(transport, f.Core.Paths.Object, f.Core.Logger);
+        using var wiki = new WikidataAwardsService(transport, f.Core.Paths.Object, f.Core.Logger);
+        var awards = new AwardTagsService(transport, f.Core.Paths.Object, mdblist, wiki, f.Core.Logger);
+        // Just turned on: nothing fetched, so the background first refresh has work to do.
+        Assert.False(awards.HasFacts(config));
+        await awards.RefreshAsync([("movie", "278")], config, null, default);
+        Assert.True(awards.HasFacts(config));
+        // Changing a provider is a new configuration: it has no facts yet, so it refreshes again.
+        config.AwardsTagsOscar = true;
+        Assert.False(awards.HasFacts(config));
+        Assert.False(awards.HasFacts(null));
+    }
+
 }

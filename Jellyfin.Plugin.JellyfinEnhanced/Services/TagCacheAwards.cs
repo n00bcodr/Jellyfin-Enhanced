@@ -45,6 +45,26 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
             finally { _rebuildLock.Release(); }
         }
 
+        private int _awardsFirstRefreshQueued;
+
+        /// <summary>
+        /// Fetch the Awards facts in the background when Awards is on and nothing has been fetched yet under the current
+        /// configuration (it was just turned on, or its providers changed, or this is the first start with it on), instead of
+        /// leaving every tag missing until the nightly task. Does nothing when facts already exist or a run is queued.
+        /// </summary>
+        internal void QueueAwardsFirstRefresh()
+        {
+            var config = JellyfinEnhanced.Instance?.Configuration;
+            if (_awardTagsService == null || config?.AwardsTagsEnabled != true || _awardTagsService.HasFacts(config)) return;
+            if (Interlocked.Exchange(ref _awardsFirstRefreshQueued, 1) == 1) return;
+            _ = Task.Run(async () =>
+            {
+                try { await RefreshAwardsAsync(new Progress<double>(), CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception ex) { _logger.Warning($"[AwardTags] The first refresh failed: {ex.Message}. The daily task will retry."); }
+                finally { Interlocked.Exchange(ref _awardsFirstRefreshQueued, 0); }
+            });
+        }
+
         /// <summary>Republish cached facts after configuration changes, without provider calls.</summary>
         internal void RefreshAwardAvailability()
         {

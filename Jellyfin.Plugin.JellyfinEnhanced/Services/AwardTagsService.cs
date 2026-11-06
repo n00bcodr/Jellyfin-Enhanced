@@ -60,6 +60,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
 
         private static string Key(string type, string id, PluginConfiguration config) => Signature(config) + ":" + type + ":" + id;
 
+        /// <summary>
+        /// Whether any title has been fetched under the current configuration. False right after Awards is first turned
+        /// on (or its providers change), until a refresh has run.
+        /// </summary>
+        /// <param name="config">The configuration.</param>
+        /// <returns>True when at least one title has facts.</returns>
+        public bool HasFacts(PluginConfiguration? config)
+        {
+            if (config == null) return false;
+            var prefix = Signature(config) + ":";
+            lock (_sync) return _titles.Keys.Any(key => key.StartsWith(prefix, StringComparison.Ordinal));
+        }
+
         /// <summary>Cache-only facts, unavailable while the master is off or after provider configuration changes.</summary>
         public TagAwards? GetCached(string type, string id, PluginConfiguration? config)
         {

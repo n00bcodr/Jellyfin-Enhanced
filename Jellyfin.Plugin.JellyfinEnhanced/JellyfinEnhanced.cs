@@ -424,7 +424,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced
                 Services.TagCacheService.Instance?.RefreshRatingSourceAvailability();
 
             if (awardsBefore != Services.AwardTagsService.ConfigurationIdentity(Configuration))
+            {
                 Services.TagCacheService.Instance?.RefreshAwardAvailability();
+                // Turned on (or its providers changed) with nothing fetched yet: fetch now, not at the nightly run.
+                Services.TagCacheService.Instance?.QueueAwardsFirstRefresh();
+            }
 
             // A new Leaving soon source (URL, key or names) is read in the background.
             if (leavingBefore != Services.LeavingSoonService.ConfigurationIdentity(Configuration))
