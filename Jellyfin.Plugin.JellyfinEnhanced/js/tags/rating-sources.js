@@ -60,12 +60,25 @@
             return [{ id, value, text, color: conf.color ? scoreColor(score) : null }];
         });
     }
-    /** Create one decorative SVG sprite without fetching remote assets. */
-    function logo(id) {
+    // The source's own logo from the plugin's bundled MDBList set (the item-details rating row's logos), served by the
+    // plugin itself. Rotten Tomatoes' critic score takes the fresh or rotten splat (60% and over is fresh, as on native posters).
+    const LOGO_FILES = { imdb: 'imdb.png', tmdb: 'tmdb.png', trakt: 'trakt.png', letterboxd: 'letterboxd.png', metacritic: 'metacritic.png', rtAudience: 'rottentomatoes_audience.png' };
+    const logoFile = (id, value) => id === 'rtCritic' ? (value < 60 ? 'rottentomatoes_rotten.png' : 'rottentomatoes_fresh.png') : LOGO_FILES[id];
+    /** One decorative source logo: the bundled image, or the inline sprite where the plugin's asset route is not available. */
+    function logo(id, value) {
         const el = document.createElement('span');
         el.className = 'je-rating-source-logo';
         el.setAttribute('aria-hidden', 'true');
-        el.innerHTML = LOGOS[id] || '';
+        const file = logoFile(id, value);
+        if (file && typeof JE.cdn?.url === 'function') {
+            const img = document.createElement('img');
+            img.src = JE.cdn.url('mdblist-logos', file);
+            img.alt = '';
+            img.decoding = 'async';
+            el.appendChild(img);
+        } else {
+            el.innerHTML = LOGOS[id] || '';
+        }
         return el;
     }
     /** Render the same chip for posters and the settings hub preview. */
@@ -78,7 +91,7 @@
         if (fact.color) el.style.color = fact.color;
         el.title = name(fact.id) + ': ' + fact.text;
         el.setAttribute('aria-label', el.title);
-        const icon = fact.id === 'community' || fact.id === 'critic' ? document.createElement('span') : logo(fact.id);
+        const icon = fact.id === 'community' || fact.id === 'critic' ? document.createElement('span') : logo(fact.id, fact.value);
         if (fact.id === 'community') { icon.className = 'material-icons rating-star-icon'; icon.textContent = 'star'; }
         if (fact.id === 'critic') icon.className = 'rating-tomato-icon ' + (fact.value < 60 ? 'rotten' : 'fresh');
         icon.setAttribute('aria-hidden', 'true');

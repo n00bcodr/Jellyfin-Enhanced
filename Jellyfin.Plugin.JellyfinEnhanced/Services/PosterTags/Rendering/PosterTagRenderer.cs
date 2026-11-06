@@ -669,8 +669,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 }
                 else if (tag.IsSource)
                 {
-                    if (Assets.GetVectorIcon("rating-" + tag.SourceId) is { } sourceLogo)
-                        DrawVectorContain(canvas, sourceLogo, SKRect.Create(x, iconTop, item.IconWidth, item.IconHeight));
+                    var logoBox = SKRect.Create(x, iconTop, item.IconWidth, item.IconHeight);
+                    if (Assets.GetSourceLogo(tag.SourceId, tag.Fresh) is { } logoImage) DrawImageContain(canvas, logoImage, logoBox, space);
+                    else if (Assets.GetVectorIcon("rating-" + tag.SourceId) is { } sourceLogo) DrawVectorContain(canvas, sourceLogo, logoBox);
                 }
                 else switch (tag.Source)
                 {
@@ -1038,6 +1039,19 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 using var paint = new SKPaint { IsAntialias = true, Color = color };
                 canvas.DrawPath(icon.Path, paint);
                 canvas.Restore();
+            }
+
+            /// <summary>background-size: contain; background-position: center, for a raster.</summary>
+            private static void DrawImageContain(SKCanvas canvas, SKImage image, SKRect box, TileSpace space)
+            {
+                float k = Math.Min(box.Width / image.Width, box.Height / image.Height);
+                float width = image.Width * k, height = image.Height * k;
+                var target = SKRect.Create(box.MidX - (width / 2f), box.MidY - (height / 2f), width, height);
+                int deviceWidth = Math.Max(1, (int)MathF.Round(width * space.Scale));
+                int deviceHeight = Math.Max(1, (int)MathF.Round(height * space.Scale));
+                using var scaled = PosterTagImageScaler.Scale(image, deviceWidth, deviceHeight);
+                using var paint = new SKPaint { IsAntialias = true };
+                canvas.DrawImage(scaled ?? image, target, new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear), paint);
             }
 
             /// <summary>background-size: contain; background-position: center.</summary>

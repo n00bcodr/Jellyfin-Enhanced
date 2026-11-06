@@ -22,6 +22,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         private static readonly Assembly ResourceAssembly = typeof(PosterTagAssets).Assembly;
 
         private readonly ConcurrentDictionary<string, Lazy<SKImage?>> _flags = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, Lazy<SKImage?>> _sourceLogos = new(StringComparer.Ordinal);
+
+        /// <summary>The bundled MDBList logo file of each rating source (the web's mdblist-logos source).</summary>
+        private static readonly Dictionary<string, string> SourceLogoFiles = new(StringComparer.Ordinal)
+        {
+            ["imdb"] = "imdb.png", ["tmdb"] = "tmdb.png", ["trakt"] = "trakt.png", ["letterboxd"] = "letterboxd.png",
+            ["metacritic"] = "metacritic.png", ["rtAudience"] = "rottentomatoes_audience.png",
+        };
         private readonly ConcurrentDictionary<string, SKImage> _logos = new(StringComparer.Ordinal);
 
         /// <summary>Decoded logos kept at most; past it further logos draw as name chips.</summary>
@@ -127,6 +135,21 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
         /// <summary>Looks up an icon by its icons.json key (genre icon name, or "Family:name" for the others).</summary>
         public PosterTagIcon? GetIcon(string key) => _icons.TryGetValue(key, out var icon) ? icon : null;
 
+        /// <summary>
+        /// The MDBList logo a rating source chip shows (the same bundled PNGs as the web's chips and rating row), or null when
+        /// the source has none. Rotten Tomatoes' critic score takes the fresh or rotten splat. Owned by this instance.
+        /// </summary>
+        /// <param name="sourceId">The chip's source id (imdb, rtCritic, ...).</param>
+        /// <param name="fresh">Whether a critic score is fresh.</param>
+        /// <returns>The decoded logo.</returns>
+        public SKImage? GetSourceLogo(string sourceId, bool fresh)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var file = sourceId == "rtCritic" ? (fresh ? "rottentomatoes_fresh.png" : "rottentomatoes_rotten.png")
+                : SourceLogoFiles.GetValueOrDefault(sourceId);
+            return file is null ? null : _sourceLogos.GetOrAdd(file, f => new Lazy<SKImage?>(() => DecodeSourceLogo(f), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+        }
+
         public PosterTagVectorIcon? GetVectorIcon(string key) => _vectorIcons.TryGetValue(key, out var icon) ? icon : null;
 
         /// <summary>True when a flag raster exists for <paramref name="code"/> (flag-icons code or "zxx").</summary>
@@ -214,6 +237,15 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
 
             _flags.Clear();
+            foreach (var lazy in _sourceLogos.Values)
+            {
+                if (lazy.IsValueCreated)
+                {
+                    lazy.Value?.Dispose();
+                }
+            }
+
+            _sourceLogos.Clear();
             foreach (var icon in _icons.Values)
             {
                 icon.Dispose();
@@ -225,6 +257,18 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             }
 
             TextTypeface.Dispose();
+        }
+
+        private static SKImage? DecodeSourceLogo(string file)
+        {
+            using var stream = ResourceAssembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.mdblist-logos." + file);
+            if (stream is null) return null;
+            using var data = SKData.Create(stream);
+            using var codec = SKCodec.Create(data);
+            if (codec is null) return null;
+            var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using var bitmap = SKBitmap.Decode(codec, info);
+            return bitmap is null ? null : SKImage.FromPixelCopy(bitmap.Info, bitmap.GetPixels(), bitmap.RowBytes);
         }
 
         private static SKImage? DecodeFlag(string code)

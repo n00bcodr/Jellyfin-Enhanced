@@ -274,7 +274,7 @@
                 .rating-tomato-icon.rotten { background-image: url(assets/img/rotten.svg); }
                 .rating-text { line-height: 1; }
                 .je-rating-source-logo { display: inline-flex; width: calc(14px * var(--je-tag-scale, 1)); height: calc(14px * var(--je-tag-scale, 1)); flex-shrink: 0; }
-                .je-rating-source-logo svg { width: 100%; height: 100%; }
+                .je-rating-source-logo :is(svg, img) { width: 100%; height: 100%; display: block; object-fit: contain; }
                 .rating-tag--source { color: #fff; }
                 .rating-tag[data-je-rating-compact] > :first-child { display: none; }
                 .rating-tag[data-je-rating-compact]::before { content: ''; width: calc(2px * var(--je-tag-scale, 1)); height: calc(2px * var(--je-tag-scale, 1)); border-radius: 50%; background: var(--je-rating-source-color); }
