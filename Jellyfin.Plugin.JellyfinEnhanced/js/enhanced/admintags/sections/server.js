@@ -60,6 +60,8 @@
                 if (ctx.isCurrent()) ctx.snack(JE.t(saved ? 'admin_tags_server_clear_done' : 'admin_tags_server_clear_failed'));
             });
             const libs = /** @type {HTMLElement} */ (body.querySelector('[data-libs]'));
+            // The list belongs to its switch, so it sits right under it, not after the card's other settings.
+            body.closest('[data-section]')?.querySelector('[data-field-row="tagCacheExcludeLibraries"]')?.after(libs);
             libs.addEventListener('change', (e) => {
                 const box = /** @type {HTMLInputElement|null} */ (/** @type {HTMLElement} */ (e.target).closest('input[data-library-id]'));
                 if (!box || !librariesOf(ctx).folders) return;
@@ -87,7 +89,7 @@
             if (!body) return;
             const c = ctx.config;
             const cacheOn = c.TagCacheServerMode !== false;
-            const libs = /** @type {HTMLElement} */ (body.querySelector('[data-libs]'));
+            const libs = /** @type {HTMLElement} */ ((body.closest('[data-section]') || body).querySelector('[data-libs]'));
             libs.hidden = !(cacheOn && c.TagCacheExcludeLibraries === true);
             if (!ctx.isCurrent()) return;
             const { folders, failed } = librariesOf(ctx);

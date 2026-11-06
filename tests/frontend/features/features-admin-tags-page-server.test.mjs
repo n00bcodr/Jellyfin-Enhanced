@@ -311,6 +311,7 @@ test('Server: cache off keeps the browser cache on, excluded libraries and the c
   await h.settle(); await h.settle();
   const boxes = h.$$('[data-libs] input');
   assert.deepEqual(boxes.map((b) => [b.dataset.libraryId, b.checked]), [[LIBRARY, false], [OTHER_LIBRARY, true]]);
+  assert.equal(h.root.querySelector('[data-field-row="tagCacheExcludeLibraries"]').nextElementSibling, h.root.querySelector('[data-libs]'), 'the list sits right under its switch');
   h.change(boxes[0], true);
   await h.save();
   // Only the ticked library is added; the stored ids stay as they were.
