@@ -312,7 +312,7 @@ FIELD_RE = re.compile(r"^\s*\{ id: '(\w+)', key: '(\w+)', type: '(\w+)'.*?\blabe
 
 def _text(raw):
     """A declared title or label: the page's own English text (an older en.json key still resolves)."""
-    raw = raw.replace("\'", "'")
+    raw = raw.replace("\\'", "'")
     return ENGLISH_LABELS.get(raw, raw)
 
 
