@@ -519,7 +519,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Helpers
         public static Preview PreviewAdmin(JsonElement document, PluginConfiguration config, IReadOnlySet<string> allowed)
         {
             ArgumentNullException.ThrowIfNull(config);
-            var header = ReadHeader(document, new[] { AdminKind });
+            // A personal export is accepted too: an administrator can make their own settings the server's defaults. Its fields
+            // go through the same checks, and the ones the page does not own are listed and skipped.
+            var header = ReadHeader(document, new[] { AdminKind, UserKind });
             if (header.Error != null) return header;
             var fields = new HashSet<string>(AdminFields(allowed), StringComparer.Ordinal);
             var imported = new JsonObject();

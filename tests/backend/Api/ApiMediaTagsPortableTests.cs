@@ -139,6 +139,24 @@ public class ApiMediaTagsPortableTests
     }
 
     [Fact]
+    public void AnAdministratorCanImportAPersonalExportAsTheServerDefaults()
+    {
+        using var f = new ApiPluginFixture();
+        var (controller, _, _) = Signed(f, true);
+        f.Plugin.Configuration.TagGap = "default";
+        var personal = new JsonObject { ["v"] = 1, ["kind"] = "je-media-tags-user", ["settings"] = new JsonObject { ["TagGap"] = "roomy", ["NotASetting"] = 1 } };
+        var preview = Body(controller.PreviewAdminMediaTags(Json(personal)));
+        Assert.Null((string?)preview["error"]);
+        var change = preview["changes"]!.AsArray().Single(c => (string?)c!["field"] == "TagGap")!;
+        Assert.Equal("roomy", (string?)change["to"]);
+        // What the page does not own is listed and skipped, not applied.
+        Assert.Equal("unknown", (string?)preview["skipped"]!.AsArray().Single(x => (string?)x!["field"] == "NotASetting")!["reason"]);
+        // A preset document is still not a server document.
+        var refused = Body(controller.PreviewAdminMediaTags(Json(new JsonObject { ["v"] = 1, ["kind"] = "je-media-tags-preset", ["settings"] = new JsonObject() })));
+        Assert.Equal("kind", (string?)refused["error"]);
+    }
+
+    [Fact]
     public void AdminExportImportAndGenreEditKeepStoredSingleChipCaps()
     {
         using var f = new ApiPluginFixture();
