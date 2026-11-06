@@ -196,12 +196,12 @@ test('the genre tab shows Whole group then one named icon tile per genre, with a
   assert.equal(horror.querySelector('.je-ts-genre-glyph').textContent, 'skull');
   assert.equal(horror.querySelector('.je-ts-target-name').textContent, 'Horror');
   assert.equal(h.$('.je-ts-target[data-label="other"] .je-ts-genre-glyph').textContent, 'theaters');
-  assert.equal(h.$('#tagStyleGroupNote').textContent, '«admin_tags_colours_genre_note»');
+  assert.equal(h.$('#tagStyleGroupNote').textContent, 'Each genre has its own colours (spellings and translations of a genre share them); Text colours the icon. Genres without an icon of their own use Other.');
 
   // More than twelve labels: the filter box shows and narrows the tiles by name.
   const filter = h.$('#tagStyleTargetFilter');
   assert.equal(filter.hidden, false);
-  assert.equal(filter.placeholder, '«admin_tags_colours_genre_filter»');
+  assert.equal(filter.placeholder, 'Find a genre');
   filter.value = 'SCI';
   filter.dispatchEvent(new h.window.Event('input', { bubbles: true }));
   assert.deepEqual(h.$$('#tagStyleTargets .je-ts-target:not([hidden])').map(n => n.dataset.label), ['*', 'science fiction']);
@@ -297,12 +297,12 @@ test('one genre takes its own colours, its own contrast badge and its preview ch
 
   // Comedy's badge is its own: the built-in light grey icon on yellow reads poorly.
   assert.equal(h.$('.je-ts-contrast-badge').dataset.level, 'low');
-  assert.equal(h.$('.je-ts-contrast-hint').textContent, '«tag_styles_contrast_text»');
+  assert.equal(h.$('.je-ts-contrast-hint').textContent, 'Text over background, on a dark poster');
   h.$('.je-ts-target[data-label="drama"]').click();
   assert.equal(h.$('.je-ts-contrast-badge').dataset.level, 'aa');
   // Whole group: the worst genre, named.
   h.$('.je-ts-target[data-label="*"]').click();
-  assert.match(h.$('.je-ts-contrast-hint').textContent, /^«tag_styles_contrast_lowest Comedy»$/);
+  assert.match(h.$('.je-ts-contrast-hint').textContent, /^Lowest in the group \(Comedy\): text over background, on a dark poster$/);
 
   // The preview shows a few genres, each through the generated stylesheet.
   const horror = h.$('#tagStylePreview .genre-overlay-container .genre-tag[data-je-genre="horror"]');

@@ -1018,10 +1018,12 @@
                             const icon = glyph.querySelector('.je-mth-chip-glyph');
                             if (icon) icon.textContent = JE.genreTags?.iconFor(genre) || 'theaters';
                         }
-                        const sampled = styles?.preset === 'poster' ? JE.tagPosterColours : null;
+                        const sampled = styles?.preset === 'poster' || styles?.posterGroups?.length ? JE.tagPosterColours : null;
                         box.querySelectorAll('[data-chip]').forEach((chip) => {
                             const kind = /** @type {HTMLElement} */ (chip).dataset.chip || 'quality';
-                            const art = sampled ? sampled.normalise(POSTER_SAMPLE_ART[kind]) : null;
+                            // With a preset per group, only the chips of a group under Poster take the artwork's colours.
+                            const posterGroups = styles?.preset === 'poster' ? null : (styles?.posterGroups || []);
+                            const art = sampled && (!posterGroups || posterGroups.includes(kind === 'age' ? 'ageRating' : kind)) ? sampled.normalise(POSTER_SAMPLE_ART[kind]) : null;
                             const base = art ? { background: sampled.css(art.background), color: sampled.css(art.text), border: sampled.css(art.border) } : CHIP_DEFAULTS[kind];
                             // Overrides the admin set stay on top, field by field.
                             const own = Object.fromEntries(Object.entries(pick[kind] || {}).filter(([, v]) => v));

@@ -9,18 +9,26 @@
  */
 (function(JE) {
     'use strict';
-    // Every word the editor shows comes from the locale files (read when drawn, after they load).
-    const T = (key, params) => (typeof JE.t === 'function' ? JE.t(key, params) : key);
+    // The editor's text is plain English (the configuration page is not translated).
+    const fmt = (text, params) => {
+        let out = String(text);
+        if (params) {
+            out = out.replace(/\{(\w+)\|([^|{}]*)\|([^|{}]*)\}/g, (m, name, one, many) => (Number(params[name]) === 1 ? one : many));
+            for (const [name, value] of Object.entries(params)) out = out.split('{' + name + '}').join(String(value));
+        }
+        return out;
+    };
+    const T = fmt;
 
     /** The editor's markup (the old configuration page's, without the controls the Colours section owns). */
     const EDITOR_HTML = `
         <div id="tagStyleEditor" class="je-ts-editor">
-            <div class="je-ts-editing-head je-ts-preset-head"><div class="je-ts-section-label" id="tagStylePresetLabel"></div><span class="je-ts-editing-now" id="tagStylePresetNow"></span>
-                <button type="button" class="je-ts-target-toggle" id="tagStylePresetToggle" aria-expanded="false" aria-controls="tagStylePresets" hidden></button></div>
-            <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel" hidden><div class="je-ta-hint"></div></div>
+            <div class="je-ts-editing-head je-ts-preset-head"><div class="je-ts-section-label" id="tagStylePresetLabel"></div><span class="je-ts-editing-now" id="tagStylePresetNow"></span></div>
+            <div id="tagStylePresets" class="je-ts-presets" role="radiogroup" aria-labelledby="tagStylePresetLabel"><div class="je-ta-hint"></div></div>
             <div id="tagStyleTabs" class="je-ts-tabs" role="tablist"></div>
             <label class="je-ts-group-select"><span class="je-ts-section-label" id="tagStyleGroupSelectLabel"></span><select id="tagStyleGroupSelect"></select></label>
             <div id="tagStyleGroupPanel" class="je-ts-group-panel" role="tabpanel">
+                <label class="je-ts-group-preset"><span class="je-ts-section-label" id="tagStyleGroupPresetLabel"></span><select id="tagStyleGroupPreset"></select></label>
                 <div class="je-ts-editing-head"><div class="je-ts-section-label" id="tagStyleTargetsLabel"></div><span class="je-ts-editing-now" id="tagStyleEditingNow" aria-live="polite"></span>
                     <button type="button" class="je-ts-target-toggle" id="tagStyleTargetToggle" aria-expanded="false" aria-controls="tagStyleTargetBox" hidden></button></div>
                 <div class="je-ts-sample" id="tagStyleSample" aria-hidden="true"></div>
@@ -50,30 +58,30 @@
     function createTagStylesEditor(root, customLabels = () => [], isCurrent = () => true) {
 
         const GROUPS = [
-            { key: 'quality', title: T('panel_settings_ui_tag_group_quality') }, { key: 'ageRating', title: T('panel_settings_ui_tag_group_age_rating') }, { key: 'rating', title: T('panel_settings_ui_tag_group_rating') },
-            { key: 'genre', title: T('common_genre') }, { key: 'status', title: T('panel_settings_ui_tag_group_status') }, { key: 'language', title: T('panel_settings_ui_tag_group_language') }, { key: 'awards', title: T('awards_label') },
-            { key: 'logos', title: T('common_logos') },
-            { key: 'custom', title: T('common_custom') }
+            { key: 'quality', title: T('Quality') }, { key: 'ageRating', title: T('Age Rating') }, { key: 'rating', title: T('Rating') },
+            { key: 'genre', title: T('Genre') }, { key: 'status', title: T('Status') }, { key: 'language', title: T('Language') }, { key: 'awards', title: T('Awards') },
+            { key: 'logos', title: T('Logos') },
+            { key: 'custom', title: T('Custom') }
         ];
-        const PRESET_TITLES = { default: T('common_default'), glass: T('panel_settings_ui_tag_style_preset_glass'), outline: T('panel_settings_ui_tag_style_preset_outline'), dark: T('panel_settings_ui_tag_style_preset_dark'),
-            light: T('panel_settings_ui_tag_style_preset_light'), mono: T('panel_settings_ui_tag_style_preset_mono'), poster: T('panel_settings_ui_tag_style_preset_poster') };
-        const FIELDS = [['background', T('tag_styles_field_background')], ['border', T('tag_styles_field_border')], ['text', T('tag_styles_field_text')]];
+        const PRESET_TITLES = { default: T('Default'), glass: T('Glass'), outline: T('Outline'), dark: T('Dark'),
+            light: T('Light'), mono: T('Mono'), poster: T('Poster') };
+        const FIELDS = [['background', T('Background')], ['border', T('Border')], ['text', T('Text')]];
         // The same names inside a sentence ("Reset border"), as the language writes them there.
-        const IN_SENTENCE = { background: T('tag_styles_field_background_in_sentence'), border: T('tag_styles_field_border_in_sentence'),
-            text: T('tag_styles_field_text_in_sentence'), icon: T('tag_styles_field_icon_in_sentence') };
+        const IN_SENTENCE = { background: T('background'), border: T('border'),
+            text: T('text'), icon: T('icon') };
         const SWATCHES = ['#1e88e5', '#ef6c00', '#2e7d32', '#546e7a', '#8e24aa', '#ffd166', '#ff6b6b', '#111111', '#ffffff', '#e0e0e0'];
         const OPACITIES = [40, 60, 80, 100];
-        const POSTER_NOTE = T('tag_styles_note_poster');
+        const POSTER_NOTE = T('Poster: each tag takes its background from the artwork it sits on (white or black text, whichever reads better). Colours set here stay on top; Default falls back to the artwork. The preview shows a red poster.');
         const NOTES = {
-            genre: 'admin_tags_colours_genre_note',
-            status: 'tag_styles_note_status',
-            language: 'tag_styles_note_language',
-            logos: 'tag_styles_note_logos',
-            custom: 'tag_styles_note_custom'
+            genre: 'Each genre has its own colours (spellings and translations of a genre share them); Text colours the icon. Genres without an icon of their own use Other.',
+            status: 'Status badges use the same colours on web cards and native posters.',
+            language: 'Language chips use Background, Border and Text, including per-language colours and Dual/Multi. Flag images keep only their border ring; partial flags keep their dashed outline.',
+            logos: 'Colours the pill behind a logo, or the name chip a logo without an image shows (Text colours the name).',
+            custom: 'One target per label of the Custom tag rules above (labels shared by several rules share their colours). The icon takes the text colour.'
         };
-        const LOGO_SAMPLES = { provider: T('tag_styles_sample_stream'), company: T('tag_styles_sample_studio'), text: 'HBO' };
+        const LOGO_SAMPLES = { provider: T('Stream'), company: T('Studio'), text: 'HBO' };
         const RATING_SAMPLES = { community: ['star', '8.1'], critic: [null, '85%'], userReview: ['favorite', '9'], imdb: [null, '8.1'], tmdb: [null, '81%'], rtCritic: [null, '92%'], rtAudience: [null, '88%'], metacritic: [null, '74'], letterboxd: [null, '4.1'], trakt: [null, '85%'] };
-        const STATUS_SAMPLES = { added: T('status_tag_just_added'), newMovie: T('status_tag_new_movie'), newSeries: T('status_tag_new_series'), newEpisode: T('status_tag_new_episode'), trending: T('status_tag_trending_today', { rank: 3 }) };
+        const STATUS_SAMPLES = { added: T('Just Added'), newMovie: T('New Movie'), newSeries: T('New Series'), newEpisode: T('New Episode'), trending: T('#{rank} Today', { rank: 3 }) };
         const ALL = '*';
         // The one genre label documents held before each genre had its own.
         const LEGACY_GENRE = 'genre:genre';
@@ -84,7 +92,7 @@
         const GENRE_SAMPLES = { movie: ['horror', 'comedy'], episode: ['animation'] };
 
         let cat = null;
-        let state = { preset: 'default', groups: {}, labels: {} };
+        let state = { preset: 'default', groupPresets: {}, groups: {}, labels: {} };
         let current = 'quality';
         let target = ALL;
         // The label filter's text (tile groups with many labels); cleared on a group change.
@@ -93,8 +101,6 @@
         let openField = null;
         /** Whether the tag list (pick one tag of the group) is open. */
         let targetsOpen = false;
-        /** Whether the preset tiles, and the poster samples, are open. */
-        let presetsOpen = false;
         let previewOpen = false;
         let canvas = null;
         // A version 1 document waiting for the catalog (its built-in colours) to be migrated: { json, doc }.
@@ -160,8 +166,8 @@
          */
         function contrastLevel(ratio) {
             if (ratio >= 4.5) return { level: 'aa', label: 'AA' };
-            if (ratio >= 3) return { level: 'large', label: T('tag_styles_contrast_large') };
-            return { level: 'low', label: T('tag_styles_contrast_low') };
+            if (ratio >= 3) return { level: 'large', label: T('AA large only') };
+            return { level: 'low', label: T('Low contrast') };
         }
         // </tag-style-contrast>
 
@@ -220,7 +226,7 @@
          * @param {string} key
          * @returns {string}
          */
-        const tr = (key) => (typeof JE.t === 'function' ? JE.t(key) : key);
+        const tr = T;
 
         /**
          * A genre label's glyph (the catalog's; the default glyph when it has none).
@@ -251,6 +257,15 @@
         const fieldsOf = (g) => (g === 'language' && target === 'flag' ? FIELDS.filter(([f]) => f === 'border') : FIELDS);
 
         /**
+         * The preset one group uses: its own when it has one, else the design's.
+         * @param {string} g
+         * @returns {string}
+         */
+        function presetOf(g) {
+            return state.groupPresets[g] || state.preset;
+        }
+
+        /**
          * A preset's colours for one label, as {background, border, text}.
          * @param {string} preset
          * @param {string} g - Group id.
@@ -275,7 +290,7 @@
             const shared = state.groups[g] || {};
             const kind = g === 'language' && !['flag', 'code', 'subtitles', 'countBadge'].includes(l)
                 ? state.labels[labelKey(g, ['dual', 'multi'].includes(l) ? 'countBadge' : 'code')] || {} : {};
-            const pal = palette(state.preset, g, l);
+            const pal = palette(presetOf(g), g, l);
             const out = {};
             FIELDS.forEach(([f]) => { out[f] = own[f] || kind[f] || shared[f] || pal[f]; });
             return out;
@@ -291,7 +306,7 @@
             const shared = state.groups[current] || {};
             const out = {};
             FIELDS.forEach(([f]) => {
-                const values = new Set(labelsOf(current).map((l) => palette(state.preset, current, l.key)[f]));
+                const values = new Set(labelsOf(current).map((l) => palette(presetOf(current), current, l.key)[f]));
                 out[f] = shared[f] || (values.size === 1 ? [...values][0] : null);
             });
             return out;
@@ -363,7 +378,7 @@
         /** A real language-chip class and style label for one colour-editor sample. */
         function languageSample(label) {
             const count = ['dual', 'multi', 'countBadge'].includes(label.key);
-            const text = label.key === 'subtitles' ? 'CC EN' : count ? label.key === 'dual' ? T('language_tags_dual') : T('language_tags_multi') : label.key === 'code' ? 'EN' : label.key.toUpperCase();
+            const text = label.key === 'subtitles' ? 'CC EN' : count ? label.key === 'dual' ? T('Dual') : T('Multi') : label.key === 'code' ? 'EN' : label.key.toUpperCase();
             const n = el('span', 'je-ts-chip language-chip ' + (count ? 'language-count-badge' : 'language-code'), text);
             n.dataset.jeLanguage = count ? 'countBadge' : label.key === 'subtitles' ? 'subtitles' : 'flag';
             n.dataset.jeLanguageLabel = count ? label.key === 'dual' ? 'dual' : 'multi' : label.key === 'code' || label.key === 'subtitles' ? 'en' : label.key;
@@ -408,7 +423,7 @@
                 n.appendChild(icon ? el('i', 'material-icons je-ts-rate-icon', icon) : el('i', 'je-ts-tomato'));
                 n.appendChild(document.createTextNode(text));
             } else if (g === 'awards') {
-                n = el('div', 'awards-tag je-ts-chip je-ts-rate', label.name.includes('250') ? T('awards_tags_label_imdbTop250') : label.name);
+                n = el('div', 'awards-tag je-ts-chip je-ts-rate', label.name.includes('250') ? T('Top 250') : label.name);
                 n.dataset.jeAward = label.key;
             } else if (g === 'genre') {
                 n = el('span', 'je-ts-chip je-ts-genre genre-tag');
@@ -454,22 +469,12 @@
             const bar = root.querySelector('#tagStylePresets');
             rebuildKeepingFocus(bar, () => buildPresets(bar));
             rove(bar, '.je-ts-preset', 'aria-checked');
-            // Closed, the preset reads as one line with Change; the tiles open on request.
-            bar.hidden = !presetsOpen;
             const now = root.querySelector('#tagStylePresetNow');
             if (now) now.textContent = PRESET_TITLES[state.preset] || state.preset || '';
-            const toggle = root.querySelector('#tagStylePresetToggle');
-            if (toggle) {
-                // Hidden until the presets are drawn: a toggle with nothing behind it yet is not offered.
-                toggle.hidden = false;
-                toggle.textContent = presetsOpen ? tr('admin_tags_colours_presets_close') : tr('admin_tags_colours_presets_open');
-                toggle.setAttribute('aria-expanded', String(presetsOpen));
-                toggle.onclick = () => { presetsOpen = !presetsOpen; renderPresets(); if (presetsOpen) bar.querySelector('.je-ts-preset[tabindex="0"]')?.focus(); };
-            }
             const previewToggle = root.querySelector('#tagStylePreviewToggle');
             if (previewToggle && !previewToggle.onclick) {
                 const name = previewToggle.querySelector('.je-ts-preview-toggle-name');
-                if (name) name.textContent = tr('admin_tags_colours_poster_samples');
+                if (name) name.textContent = tr('Movie and episode samples');
                 previewToggle.onclick = () => {
                     previewOpen = !previewOpen;
                     previewToggle.setAttribute('aria-expanded', String(previewOpen));
@@ -518,7 +523,7 @@
                 tile.appendChild(el('span', 'je-ts-preset-title', PRESET_TITLES[id] || id));
                 const mini = el('span', 'je-ts-preset-chips');
                 mini.appendChild(chip('quality', { key: '4K', name: '4K' }, palette(id, 'quality', '4K')));
-                mini.appendChild(chip('rating', { key: 'community', name: T('rating_source_community') }, palette(id, 'rating', 'community')));
+                mini.appendChild(chip('rating', { key: 'community', name: T('Community') }, palette(id, 'rating', 'community')));
                 if (age) mini.appendChild(chip('ageRating', age, palette(id, 'ageRating', age.key)));
                 tile.appendChild(mini);
                 bar.appendChild(tile);
@@ -550,7 +555,7 @@
                 select.innerHTML = GROUPS.map((g) => '<option value="' + g.key + '"' + (g.key === current ? ' selected' : '') + '>' + g.title + '</option>').join('');
                 select.onchange = () => tabs.querySelector('.je-ts-tab[data-group="' + select.value + '"]')?.click();
                 const label = root.querySelector('#tagStyleGroupSelectLabel');
-                if (label) label.textContent = tr('admin_tags_colours_group');
+                if (label) label.textContent = tr('Tag group');
             }
             root.querySelector('#tagStyleGroupPanel')?.setAttribute('aria-labelledby', 'tagStyleTab-' + current);
         }
@@ -605,19 +610,19 @@
             const toggle = root.querySelector('#tagStyleTargetToggle');
             if (toggle) {
                 toggle.hidden = false;
-                toggle.textContent = targetsOpen ? tr('admin_tags_colours_targets_close') : tr('admin_tags_colours_targets_open');
+                toggle.textContent = targetsOpen ? tr('Close tag list') : tr('Choose a tag');
                 toggle.setAttribute('aria-expanded', String(targetsOpen));
                 toggle.onclick = () => { targetsOpen = !targetsOpen; renderTargets(); if (targetsOpen) root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]')?.focus(); };
             }
             const targetBox = root.querySelector('#tagStyleTargetBox');
             if (targetBox) targetBox.hidden = !targetsOpen;
             const hint = root.querySelector('#tagStyleTargetHint');
-            if (hint) hint.textContent = tr('admin_tags_colours_target_hint');
+            if (hint) hint.textContent = tr('Choose a tag to change only its colours.');
             const search = root.querySelector('#tagStyleTargetFilter');
             if (search) {
                 // Any group with more labels than a glance takes gets the filter (genres name the box after themselves).
                 search.hidden = labelsOf(current).length <= FILTER_MIN;
-                const filterKey = current === 'genre' ? 'admin_tags_colours_genre_filter' : 'admin_tags_colours_target_filter';
+                const filterKey = current === 'genre' ? 'Find a genre' : 'Find a tag';
                 search.placeholder = tr(filterKey);
                 search.setAttribute('aria-label', tr(filterKey));
                 search.value = search.hidden ? '' : filter;
@@ -629,10 +634,10 @@
                 const groupTitle = (GROUPS.find((g) => g.key === current) || {}).title || current;
                 const label = target === ALL ? null : labelsOf(current).find((l) => l.key === target);
                 // The group part is dropped on a phone, where the group select above names it.
-                now.replaceChildren(el('span', 'je-ts-now-group', groupTitle + ' · '), document.createTextNode(label ? label.name : T('tag_styles_whole_group')));
+                now.replaceChildren(el('span', 'je-ts-now-group', groupTitle + ' · '), document.createTextNode(label ? label.name : T('Whole group')));
             }
             const all = radio('je-ts-target je-ts-target-all' + (state.groups[current] ? ' changed' : ''), target === ALL, () => { target = ALL; renderGroup(); });
-            all.textContent = T('tag_styles_whole_group');
+            all.textContent = T('Whole group');
             all.dataset.label = ALL;
             box.appendChild(all);
             labelsOf(current).forEach((label) => {
@@ -640,9 +645,9 @@
                 const cell = radio('je-ts-target' + (changed ? ' changed' : ''), target === label.key, () => { target = label.key; renderGroup(); });
                 cell.dataset.label = label.key;
                 cell.title = current === 'ageRating'
-                    ? T('tag_styles_applies_to', { ratings: ((cat.age.find((a) => a.id === label.key) || {}).ratings || []).join(', ') })
+                    ? T('Applies to: {ratings}', { ratings: ((cat.age.find((a) => a.id === label.key) || {}).ratings || []).join(', ') })
                     : label.name;
-                cell.setAttribute('aria-label', current === 'ageRating' ? T('tag_styles_board_aria', { name: label.name }) : label.name);
+                cell.setAttribute('aria-label', current === 'ageRating' ? T('{name} board', { name: label.name }) : label.name);
                 cell.appendChild(chip(current, label, effective(current, label.key)));
                 // Tiles carry their name too (shown where there is room; the tooltip always has it).
                 if (tiles) cell.appendChild(el('span', 'je-ts-target-name', label.name));
@@ -662,7 +667,7 @@
             // Say when the list scrolls inside its box.
             if (hint) {
                 const count = labelsOf(current).length;
-                hint.textContent = tr('admin_tags_colours_target_hint') + (targetsOpen && box.scrollHeight > box.clientHeight + 2 ? ' ' + T('admin_tags_colours_target_more', { count: Number(count) }) : '');
+                hint.textContent = tr('Choose a tag to change only its colours.') + (targetsOpen && box.scrollHeight > box.clientHeight + 2 ? ' ' + T('{count} tags; scroll for more.', { count: Number(count) }) : '');
             }
             // A long strip scrolls inside its box: keep the selected label in view there (never the page).
             if (selected && box.scrollHeight > box.clientHeight) {
@@ -692,7 +697,7 @@
                 const varies = !colours[field];
                 const c = parse(colours[field] || 'rgba(0, 0, 0, 0)');
                 const alpha = c.a > 0 && !varies ? c.a : 1;
-                const shownName = current === 'genre' && field === 'text' ? T('custom_tags_rules_col_icon') : name;
+                const shownName = current === 'genre' && field === 'text' ? T('Icon') : name;
                 const sentenceName = current === 'genre' && field === 'text' ? IN_SENTENCE.icon : IN_SENTENCE[field];
                 const row = el('div', 'je-ts-field-row');
                 row.dataset.field = field;
@@ -703,24 +708,24 @@
                 if (!varies) now.style.setProperty('--je-ts-swatch', colours[field]);
                 now.setAttribute('aria-hidden', 'true');
                 head.appendChild(now);
-                const from = own[field] ? T('tag_styles_from_here') : shared[field] ? T('tag_styles_from_group') : T('tag_styles_from_preset');
-                head.appendChild(el('span', 'je-ts-value', varies ? T('tag_styles_varies') : T('tag_styles_value', { hex: toHex(c), percent: Math.round(c.a * 100), from })));
+                const from = own[field] ? T('set here') : shared[field] ? T('from the group') : T('from the preset');
+                head.appendChild(el('span', 'je-ts-value', varies ? T('Varies by label') : T('{hex} · {percent}% · {from}', { hex: toHex(c), percent: Math.round(c.a * 100), from })));
                 const open = openField === field;
                 const bodyId = 'tagStyleField-' + field;
-                const edit = el('button', 'je-ts-edit', open ? T('tag_item_editor_done') : T('tag_styles_change'));
+                const edit = el('button', 'je-ts-edit', open ? T('Done') : T('Change'));
                 edit.type = 'button';
                 edit.setAttribute('aria-expanded', String(open));
                 edit.setAttribute('aria-controls', bodyId);
-                edit.setAttribute('aria-label', T(open ? 'tag_styles_done_changing_aria' : 'tag_styles_change_aria', { name: sentenceName }));
+                edit.setAttribute('aria-label', T(open ? 'Done changing {name}' : 'Change {name}', { name: sentenceName }));
                 edit.dataset.tsKey = field + ':edit';
                 edit.addEventListener('click', () => { openField = open ? null : field; renderRows(); });
                 head.appendChild(edit);
-                const reset = el('button', 'je-ts-reset', T('tag_styles_reset'));
+                const reset = el('button', 'je-ts-reset', T('Reset'));
                 reset.type = 'button';
                 reset.disabled = !own[field];
                 reset.dataset.tsKey = field + ':reset';
-                reset.setAttribute('aria-label', T('tag_styles_reset_aria', { name: sentenceName }));
-                reset.title = target === ALL ? T('tag_styles_reset_to_preset') : T('tag_styles_reset_to_group');
+                reset.setAttribute('aria-label', T('Reset {name}', { name: sentenceName }));
+                reset.title = target === ALL ? T('Back to the preset colour') : T('Back to the group or preset colour');
                 reset.addEventListener('click', () => setField(field, null));
                 head.appendChild(reset);
                 row.appendChild(head);
@@ -735,7 +740,7 @@
                     const b = el('button', 'je-ts-swatch');
                     b.type = 'button';
                     b.style.setProperty('--je-ts-swatch', hex);
-                    b.setAttribute('aria-label', T('tag_styles_swatch_aria', { name, hex }));
+                    b.setAttribute('aria-label', T('{name} {hex}', { name, hex }));
                     b.dataset.tsKey = field + ':swatch:' + hex;
                     b.title = hex;
                     const picked = !!own[field] && toHex(parse(own[field])) === hex;
@@ -748,15 +753,17 @@
                 any.type = 'color';
                 any.className = 'je-ts-any';
                 any.value = toHex(c);
-                any.setAttribute('aria-label', T('tag_styles_any_colour_aria', { name: IN_SENTENCE[field] }));
+                any.setAttribute('aria-label', T('Any {name} colour', { name: IN_SENTENCE[field] }));
                 any.dataset.tsKey = field + ':any';
                 any.addEventListener('input', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha })), true));
                 any.addEventListener('change', () => setField(field, toCss(Object.assign(parse(any.value), { a: alpha }))));
                 list.appendChild(any);
                 body.appendChild(list);
+                const opacityRow = el('div', 'je-ts-opacity-row');
+                opacityRow.appendChild(el('span', 'je-ts-opacity-label', T('Opacity')));
                 const opacity = el('div', 'je-ts-opacity');
                 opacity.setAttribute('role', 'group');
-                opacity.setAttribute('aria-label', T('tag_styles_opacity_aria', { name }));
+                opacity.setAttribute('aria-label', T('{name} opacity', { name }));
                 OPACITIES.forEach((pct) => {
                     const on = !varies && Math.round(c.a * 100) === pct;
                     const b = el('button', 'je-ts-pill je-ts-opacity-pill' + (on ? ' active' : ''), pct + '%');
@@ -765,12 +772,13 @@
                     b.dataset.tsKey = field + ':opacity:' + pct;
                     // A colour that varies by label has no single value to fade: pick one first.
                     b.disabled = varies;
-                    if (varies) b.title = T('tag_styles_pick_first');
+                    if (varies) b.title = T('Pick a colour first');
                     b.addEventListener('click', () => setField(field, toCss(Object.assign({}, c, { a: pct / 100 }))));
                     opacity.appendChild(b);
                 });
-                body.appendChild(opacity);
-                if (varies) body.appendChild(el('span', 'je-ts-opacity-note', T('tag_styles_opacity_note')));
+                opacityRow.appendChild(opacity);
+                body.appendChild(opacityRow);
+                if (varies) body.appendChild(el('span', 'je-ts-opacity-note', T('Choose a colour to set its opacity')));
                 row.appendChild(body);
                 rows.appendChild(row);
             });
@@ -784,7 +792,7 @@
          * @returns {number|null} Null when neither field comes from the artwork.
          */
         function posterContrast(label) {
-            if (state.preset !== 'poster' || (current === 'language' && label.key === 'flag')) return null;
+            if (presetOf(current) !== 'poster' || (current === 'language' && label.key === 'flag')) return null;
             const own = state.labels[labelKey(current, label.key)] || {};
             const shared = state.groups[current] || {};
             const text = own.text || shared.text;
@@ -840,13 +848,13 @@
             badge.dataset.level = grade.level;
             if (sampled) badge.dataset.poster = worst.poster ? 'worst' : 'fixed';
             box.appendChild(badge);
-            const hint = target === ALL ? T('tag_styles_contrast_lowest', { name: worst.name }) : T('tag_styles_contrast_text');
+            const hint = target === ALL ? T('Lowest in the group ({name}): text over background, on a dark poster', { name: worst.name }) : T('Text over background, on a dark poster');
             box.appendChild(el('span', 'je-ts-contrast-hint', !sampled ? hint
-                : worst.poster ? T('tag_styles_contrast_artwork')
-                : T('tag_styles_contrast_set_here', { hint })));
+                : worst.poster ? T('Worst case over any artwork: Poster takes each tag\'s colours from the poster it sits on, so this is the lowest contrast the poster colours can give')
+                : T('{hint}. Its colours are all set here; tags without their own take them from the poster they sit on', { hint })));
             // Whole group: open the tag that reads worst (choosing it changes nothing).
             if (target === ALL && worst.key) {
-                const inspect = el('button', 'je-ts-inspect', T('tag_styles_inspect', { name: worst.name }));
+                const inspect = el('button', 'je-ts-inspect', T('Inspect {name}', { name: worst.name }));
                 inspect.type = 'button';
                 inspect.addEventListener('click', () => { target = worst.key; targetsOpen = true; renderGroup(); root.querySelector('#tagStyleTargets .je-ts-target[tabindex="0"]')?.focus(); });
                 box.appendChild(inspect);
@@ -873,18 +881,39 @@
                     if (ratio !== null && (!low || ratio < low.ratio)) low = { ratio, l };
                 });
                 weak = !!low && contrastLevel(low.ratio).level === 'low';
-                label = weak ? low.l : labels[0];
+                // The first label is not the typical one (R18+ sits in the plain unrated colour group, 1080i comes before
+                // 1080p), so the group sample shows PG-13 and 1080p.
+                const typical = { ageRating: 'PG-13', quality: '1080p' }[current];
+                label = weak ? low.l : (typical && labels.find((l) => l.name === typical)) || labels[0];
             }
             if (!label) return;
             box.appendChild(chip(current, label, effective(current, label.key)));
-            box.appendChild(el('span', 'je-ts-sample-note', target !== ALL ? T('tag_styles_sample_editing') : T(weak ? 'tag_styles_sample_lowest' : 'tag_styles_sample_group')));
+            box.appendChild(el('span', 'je-ts-sample-note', target !== ALL ? T('Editing this tag') : T(weak ? 'Lowest-contrast sample' : 'Sample tag')));
+        }
+
+        /** The select that gives the open group a preset of its own. @returns {void} */
+        function renderGroupPreset() {
+            const select = /** @type {HTMLSelectElement|null} */ (root.querySelector('#tagStyleGroupPreset'));
+            if (!select) return;
+            const label = root.querySelector('#tagStyleGroupPresetLabel');
+            if (label) label.textContent = T('Preset for this group');
+            select.setAttribute('aria-labelledby', 'tagStyleGroupPresetLabel');
+            select.innerHTML = '<option value="">' + T('Same as the design ({name})', { name: PRESET_TITLES[state.preset] || state.preset }) + '</option>'
+                + cat.presets.map((id) => '<option value="' + id + '">' + (PRESET_TITLES[id] || id) + '</option>').join('');
+            select.value = state.groupPresets[current] || '';
+            select.onchange = () => {
+                if (select.value) state.groupPresets[current] = select.value;
+                else delete state.groupPresets[current];
+                render();
+            };
         }
 
         /** @returns {void} */
         function renderGroup() {
+            renderGroupPreset();
             renderTargets();
             const note = NOTES[current] ? T(NOTES[current]) : '';
-            root.querySelector('#tagStyleGroupNote').textContent = [state.preset === 'poster' && (current !== 'language' || target !== 'flag') ? POSTER_NOTE : '', note].filter(Boolean).join(' ');
+            root.querySelector('#tagStyleGroupNote').textContent = [presetOf(current) === 'poster' && (current !== 'language' || target !== 'flag') ? POSTER_NOTE : '', note].filter(Boolean).join(' ');
             renderRows();
             renderContrast();
             renderSample();
@@ -952,7 +981,7 @@
                 else { n.dataset.jeRatingSource = label.key; n.appendChild(el('span', 'je-rating-source-logo', label.name)); }
                 n.appendChild(el('span', 'rating-text', text));
             } else if (g === 'awards') {
-                n = el('div', 'awards-tag je-ts-chip je-ts-rate', label.name.includes('250') ? T('awards_tags_label_imdbTop250') : label.name);
+                n = el('div', 'awards-tag je-ts-chip je-ts-rate', label.name.includes('250') ? T('Top 250') : label.name);
                 n.dataset.jeAward = label.key;
             } else if (g === 'genre') {
                 n = el('div', 'genre-tag je-ts-chip je-ts-genre');
@@ -964,7 +993,7 @@
                 n.dataset.jeStatus = label.key;
                 if (label.key === 'trending') {
                     // "#{rank} Today" with the rank in its own span, as the status module draws it.
-                    const [before, after = ''] = T('status_tag_trending_today', { rank: '\u0001' }).split('\u0001');
+                    const [before, after = ''] = T('#{rank} Today', { rank: '\u0001' }).split('\u0001');
                     const hash = before.endsWith('#') ? '#' : '';
                     n.append(before.slice(0, before.length - hash.length), el('span', 'status-tag-rank', hash + '3'), after);
                 }
@@ -1044,13 +1073,13 @@
                 box.appendChild(sheet);
             }
             const custom = labelsOf('custom').slice(0, 2).map((l) => ['custom', l.key]);
-            box.appendChild(card('je-ts-card-movie', T('jellyseerr_card_badge_movie'), {
+            box.appendChild(card('je-ts-card-movie', T('Movie'), {
                 tl: [['quality', '4K'], ['quality', 'Dolby Vision'], ['quality', 'ATMOS']].concat(custom),
                 tr: [['status', 'trending']].concat(GENRE_SAMPLES.movie.map((l) => ['genre', l])),
                 bl: [['language', 'flag']],
                 br: [['rating', 'critic'], ['rating', 'community'], ['ageRating', 'PG-13']]
             }, !generate));
-            box.appendChild(card('je-ts-card-episode', T('calendar_episode'), {
+            box.appendChild(card('je-ts-card-episode', T('Episode'), {
                 tl: [['quality', '1080p'], ['quality', 'HEVC']],
                 tr: [['status', 'newEpisode']].concat(GENRE_SAMPLES.episode.map((l) => ['genre', l])),
                 bl: [['language', 'flag']],
@@ -1092,7 +1121,7 @@
          * @returns {void}
          */
         function migrateV1(doc) {
-            state = { preset: 'default', groups: {}, labels: {} };
+            state = { preset: 'default', groupPresets: {}, groups: {}, labels: {} };
             [['quality', 'quality'], ['age', 'ageRating'], ['rating', 'rating'], ['genre', 'genre']].forEach(([section, g]) => {
                 const entries = section === 'genre' ? { genre: doc.genre } : doc[section];
                 if (!entries || typeof entries !== 'object') return;
@@ -1140,7 +1169,7 @@
          * @returns {void}
          */
         function load(json, preset) {
-            state = { preset: PRESET_TITLES[preset] ? preset : 'default', groups: {}, labels: {} };
+            state = { preset: PRESET_TITLES[preset] ? preset : 'default', groupPresets: {}, groups: {}, labels: {} };
             // The group and label being edited stay when the page loads the stored document again
             // (after a save the server normalised, or the page shown again).
             if (!GROUPS.some((g) => g.key === current)) current = 'quality';
@@ -1150,6 +1179,7 @@
             try {
                 const p = json ? JSON.parse(json) : {};
                 if (p && p.v === 2) {
+                    Object.keys(p.groupPresets || {}).forEach((g) => { if (GROUPS.some((x) => x.key === g) && PRESET_TITLES[p.groupPresets[g]]) state.groupPresets[g] = p.groupPresets[g]; });
                     Object.keys(p.groups || {}).forEach((g) => { const c = readColours(p.groups[g], 'text'); if (c) state.groups[g] = c; });
                     Object.keys(p.labels || {}).forEach((k) => { const c = readColours(p.labels[k], 'text'); if (c) state.labels[k] = c; });
                     // The one genre label older documents held coloured every genre: fold it onto the
@@ -1173,7 +1203,7 @@
                     render();
                 }).catch(() => {
                     if (!isCurrent()) return;
-                    root.querySelector('#tagStylePresets').textContent = T('tag_styles_load_failed');
+                    root.querySelector('#tagStylePresets').textContent = T('Could not load the tag list.');
                 });
             }
             render();
@@ -1209,8 +1239,9 @@
         /** @returns {string} The stored document, or '' when nothing is overridden. */
         function serialize() {
             if (legacy) return legacy.json;
-            if (!Object.keys(state.groups).length && !Object.keys(state.labels).length) return '';
+            if (!Object.keys(state.groupPresets).length && !Object.keys(state.groups).length && !Object.keys(state.labels).length) return '';
             const out = { v: 2, preset: state.preset };
+            if (Object.keys(state.groupPresets).length) out.groupPresets = Object.fromEntries(Object.keys(state.groupPresets).sort().map((g) => [g, state.groupPresets[g]]));
             if (Object.keys(state.groups).length) out.groups = canonical(state.groups);
             if (Object.keys(state.labels).length) out.labels = canonical(state.labels);
             return JSON.stringify(out);

@@ -273,3 +273,25 @@ test('Poster and explicit Tier 2 colours leave the admin preview to its scoped s
     assert.ok(matches[0].closest('#adminPreview'));
   }
 });
+
+test('a preset per group: only the groups under Poster get the artwork rules, and the whole design gets all of them', async t => {
+  const h = setup(t, { respond: () => ({}) });
+  const model = { quality: { '*': c('rgba(1, 1, 1, 1)', null, null) } };
+  const some = h.JE.tagStyles.buildCss({ ...model, preset: 'glass', posterGroups: ['status'] });
+  assert.match(some, /\[data-je-poster-colour\] \.status-overlay-container \.status-tag/, 'Status takes the artwork colours');
+  assert.doesNotMatch(some, /\[data-je-poster-colour\] \.quality-overlay-container/, 'Quality does not');
+  assert.doesNotMatch(some, /\.je-tag-pill/, 'the +N pill follows the whole design only');
+  const none = h.JE.tagStyles.buildCss({ ...model, preset: 'glass', posterGroups: [] });
+  assert.doesNotMatch(none, /data-je-poster-colour/);
+  const all = h.JE.tagStyles.buildCss({ ...model, preset: 'poster', posterGroups: ['quality', 'status'] });
+  assert.match(all, /\[data-je-poster-colour\] \.quality-overlay-container/);
+  assert.match(all, /\.je-tag-pill/);
+});
+
+test('every status badge the server sends is styled, and an id that is not a plain word never reaches the sheet', async t => {
+  const h = setup(t, { respond: () => ({}) });
+  const css = h.JE.tagStyles.buildCss({ status: { added: c('rgba(1, 2, 3, 1)', null, null), seasonFinale: c('rgba(4, 5, 6, 1)', null, null), 'x"]{}': c('rgba(7, 8, 9, 1)', null, null) } });
+  assert.match(css, /\.status-tag\[data-je-status="added"\]/);
+  assert.match(css, /\.status-tag\[data-je-status="seasonFinale"\][^}]*rgba\(4, 5, 6, 1\)/, 'a badge outside the first five is styled too');
+  assert.doesNotMatch(css, /7, 8, 9/);
+});

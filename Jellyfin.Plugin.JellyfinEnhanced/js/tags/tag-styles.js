@@ -18,7 +18,8 @@
     const logPrefix = '🪼 Jellyfin Enhanced: Tag Styles:';
     const styleId = 'je-tag-style-overrides';
     const PRESETS = ['default', 'glass', 'outline', 'dark', 'light', 'mono', 'poster'];
-    const STATUS_LABELS = ['added', 'newMovie', 'newSeries', 'newEpisode', 'trending'];
+    // A status badge id is a plain word (the data-je-status values); anything else never reaches the stylesheet.
+    const STATUS_KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 
     // Values come from the server already validated as rgba() colours; this is
     // a second guard so nothing but a colour can ever reach the stylesheet.
@@ -93,29 +94,46 @@
      * of its group (buildCss), so those, coming later, win field by field;
      * !important beats the tag modules' own colours. Flags keep theirs.
      * @param {string} P - Scope prefix ('' or '#id ').
+     * @param {string[]} [groups] - The groups under the Poster preset (all of them when omitted).
      * @returns {string[]}
      */
-    function posterRules(P) {
+    function posterRules(P, groups) {
         const M = `${P}[data-je-poster-colour]`;
         const fill = 'background: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important;';
         const edge = 'border-color: var(--je-tag-border) !important;';
         const ringed = 'outline: 1px solid var(--je-tag-border) !important; outline-offset: -1px !important; --je-tag-ring-color: var(--je-tag-border) !important; outline-color: var(--je-tag-ring-outline, var(--je-tag-border)) !important;';
-        return [
+        const all = !groups;
+        const on = (g) => all || groups.includes(g);
+        const byGroup = [
             // (0,4,0): over the quality module's !important label rules, level with the "*" override.
-            `${M} .quality-overlay-container.quality-overlay-container .quality-overlay-label { ${fill} ${edge} }`,
-            `${M} .age-rating-overlay-container .age-rating-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
-            `${M} .rating-overlay-container .rating-tag { ${fill} ${ringed} }`,
-            `${M} .rating-overlay-container .rating-tag :is(.rating-star-icon, .je-userreview-icon) { color: var(--je-tag-fg) !important; }`,
-            `${M} .awards-overlay-container .awards-tag { ${fill} ${ringed} }`,
-            `${M} .logo-overlay-container .je-logo-chip[data-je-logo-style] { ${fill} ${edge} }`,
-            `${M} .custom-overlay-container.custom-overlay-container .custom-tag { ${fill} ${edge} }`,
-            `${M} .genre-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
-            `${M} .language-overlay-container .language-chip { ${fill} ${edge} }`,
-            `${M} .status-overlay-container .status-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`,
-            `${M} .status-overlay-container .status-tag .status-tag-rank { color: var(--je-tag-fg) !important; }`,
+            ['quality', `${M} .quality-overlay-container.quality-overlay-container .quality-overlay-label { ${fill} ${edge} }`],
+            ['ageRating', `${M} .age-rating-overlay-container .age-rating-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`],
+            ['rating', `${M} .rating-overlay-container .rating-tag { ${fill} ${ringed} }`],
+            ['rating', `${M} .rating-overlay-container .rating-tag :is(.rating-star-icon, .je-userreview-icon) { color: var(--je-tag-fg) !important; }`],
+            ['awards', `${M} .awards-overlay-container .awards-tag { ${fill} ${ringed} }`],
+            ['logos', `${M} .logo-overlay-container .je-logo-chip[data-je-logo-style] { ${fill} ${edge} }`],
+            ['custom', `${M} .custom-overlay-container.custom-overlay-container .custom-tag { ${fill} ${edge} }`],
+            ['genre', `${M} .genre-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`],
+            ['language', `${M} .language-overlay-container .language-chip { ${fill} ${edge} }`],
+            ['status', `${M} .status-overlay-container .status-tag { background-color: var(--je-tag-bg) !important; color: var(--je-tag-fg) !important; ${edge} }`],
+            ['status', `${M} .status-overlay-container .status-tag .status-tag-rank { color: var(--je-tag-fg) !important; }`],
+        ].filter(([g]) => on(g)).map(([, rule]) => rule);
+        // The "+N" pill belongs to no group: it follows the preset for the whole design only.
+        return all ? [
+            ...byGroup,
             `${M} .je-tag-pill { background: var(--je-tag-bg); border-color: var(--je-tag-border); color: var(--je-tag-fg); }`,
             `${M} .je-tag-pill .je-tag-pill-glyph { color: inherit; }`,
-        ];
+        ] : byGroup;
+    }
+
+    /**
+     * The groups the server model puts under the Poster preset (all of them when the whole design is).
+     * @param {Object} styles - The server's web model.
+     * @returns {string[]|null} null when the whole design is Poster, [] when none is.
+     */
+    function posterGroupsOf(styles) {
+        if (styles?.preset === 'poster') return null;
+        return Array.isArray(styles?.posterGroups) ? styles.posterGroups : [];
     }
 
     /**
@@ -142,7 +160,8 @@
          */
         const add = (selectors, body) => push(rules, [].concat(selectors).map((sel) => (scope ? sel : sel + OUTSIDE_SCOPES)).join(', '), body);
         // Poster preset: the artwork's colours first, every override after them.
-        if (styles.preset === 'poster') rules.push(...posterRules(P).map((rule) => scope ? rule : rule.replace(/ (\{)/, OUTSIDE_SCOPES + ' $1')));
+        const posterGroups = posterGroupsOf(styles);
+        if (!posterGroups || posterGroups.length) rules.push(...posterRules(P, posterGroups || undefined).map((rule) => scope ? rule : rule.replace(/ (\{)/, OUTSIDE_SCOPES + ' $1')));
         const quality = styles.quality || {};
         // Beat category rules (including editions) regardless of reinjection order.
         const Q = `${P}.quality-overlay-container.quality-overlay-container.quality-overlay-container .quality-overlay-label`;
@@ -193,7 +212,7 @@
             add(`${G}${L}`, box(c));
             // Under Poster the name first takes the artwork colours its chip
             // has (same specificity as the rules below, which win field by field).
-            if (styles.preset === 'poster') {
+            if (!posterGroups || posterGroups.includes('genre')) {
                 add(`${P}[data-je-poster-colour] .genre-tag${L} .genre-text`, 'color: var(--je-tag-fg) !important;');
                 add(`${P}[data-je-poster-colour] .genre-tag${L} .genre-text${GENRE_NAME_FLOATS}`, 'background-color: var(--je-tag-bg) !important;');
             }
@@ -206,9 +225,9 @@
         }
 
         const status = styles.status || {};
-        for (const key of STATUS_LABELS) {
+        for (const key of Object.keys(status)) {
             const c = status[key];
-            if (!c) continue;
+            if (!c || !STATUS_KEY.test(key)) continue;
             const S = `${P}.status-overlay-container .status-tag[data-je-status="${key}"]`;
             add(S, box(c));
             // The rank ("#3") keeps its accent unless the text colour is styled.
@@ -308,7 +327,8 @@
             if (css) JE.core.ui.injectCss(styleId, css);
             else JE.core.ui.removeCss(styleId);
             // Poster preset: cards take their artwork's colours from here on.
-            JE.tagPosterColours?.setActive(styles?.preset === 'poster');
+            const posterGroups = posterGroupsOf(styles);
+            JE.tagPosterColours?.setActive(!posterGroups || posterGroups.length > 0);
         } catch (e) {
             console.warn(`${logPrefix} Could not load tag style overrides.`, e);
         }

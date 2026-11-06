@@ -69,24 +69,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// read as the genre group's colours under any group colours stored with it, so nothing is recoloured.
         /// </summary>
         private const string LegacyGenreLabel = TagStyleKeys.Genre + ":genre";
-        private static readonly string[] V2Keys = { "v", "preset", "groups", "labels" };
+        private static readonly string[] V2Keys = { "v", "preset", "groupPresets", "groups", "labels" };
+        private static readonly Dictionary<string, string> NoPresets = new(StringComparer.Ordinal);
         private static readonly Dictionary<string, TagColors> NoEntries = new(StringComparer.Ordinal);
 
         /// <summary>No overrides and the default preset.</summary>
-        public static readonly TagStyleSet Empty = new(TagStyleKeys.DefaultPreset, NoEntries, NoEntries);
+        public static readonly TagStyleSet Empty = new(TagStyleKeys.DefaultPreset, NoPresets, NoEntries, NoEntries);
 
-        private TagStyleSet(string preset, Dictionary<string, TagColors> groups, Dictionary<string, TagColors> labels)
+        private TagStyleSet(string preset, Dictionary<string, string> groupPresets, Dictionary<string, TagColors> groups, Dictionary<string, TagColors> labels)
         {
             Preset = preset;
+            GroupPresets = groupPresets;
             Groups = groups;
             Labels = labels;
-            IsEmpty = preset == TagStyleKeys.DefaultPreset && groups.Count == 0 && labels.Count == 0;
+            IsEmpty = preset == TagStyleKeys.DefaultPreset && groupPresets.Count == 0 && groups.Count == 0 && labels.Count == 0;
             Hash = IsEmpty ? string.Empty : ComputeHash();
         }
 
         private TagStyleSet(TagStyleSet set, TagColors sampled)
         {
             Preset = set.Preset;
+            GroupPresets = set.GroupPresets;
             Groups = set.Groups;
             Labels = set.Labels;
             IsEmpty = set.IsEmpty;
@@ -96,6 +99,14 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         /// <summary>The preset id (see <see cref="TagStyleKeys.Presets"/>).</summary>
         public string Preset { get; }
+
+        /// <summary>Group id to the preset that group uses instead of <see cref="Preset"/> (only groups that differ are listed).</summary>
+        public IReadOnlyDictionary<string, string> GroupPresets { get; }
+
+        /// <summary>The preset one group uses: its own when it has one, else <see cref="Preset"/>.</summary>
+        /// <param name="group">A group id.</param>
+        /// <returns>A preset id.</returns>
+        public string PresetOf(string group) => GroupPresets.TryGetValue(group, out var own) ? own : Preset;
 
         /// <summary>Group id to the colours every chip of the group takes.</summary>
         public IReadOnlyDictionary<string, TagColors> Groups { get; }
@@ -109,8 +120,11 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <summary>Stable hash of the preset and overrides, empty when the set is empty. Part of the poster cache key.</summary>
         public string Hash { get; }
 
-        /// <summary>True under the Poster preset: chips take their colours from the artwork they are drawn on.</summary>
-        public bool IsPoster => Preset == TagStyleKeys.PosterPreset;
+        /// <summary>True when any group is under the Poster preset: its chips take their colours from the artwork they are drawn on.</summary>
+        public bool IsPoster => Preset == TagStyleKeys.PosterPreset || GroupPresets.Values.Contains(TagStyleKeys.PosterPreset);
+
+        /// <summary>The groups under the Poster preset, in catalog order (all of them when <see cref="Preset"/> is Poster).</summary>
+        public IReadOnlyList<string> PosterGroups => TagStyleKeys.Groups.Where(g => PresetOf(g) == TagStyleKeys.PosterPreset).ToArray();
 
         /// <summary>
         /// The artwork's colours under the Poster preset (<see cref="WithSampled"/>), or null. Not part of
@@ -238,7 +252,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             var known = TagStyleKeys.KnownPreset(preset);
             return known is null || known == Preset
                 ? this
-                : Create(known, new Dictionary<string, TagColors>(Groups, StringComparer.Ordinal), new Dictionary<string, TagColors>(Labels, StringComparer.Ordinal));
+                : Create(known, new Dictionary<string, string>(GroupPresets, StringComparer.Ordinal), new Dictionary<string, TagColors>(Groups, StringComparer.Ordinal), new Dictionary<string, TagColors>(Labels, StringComparer.Ordinal));
         }
 
         /// <summary>The set one user sees: their own preset when the admin lets users pick one, else this set.</summary>
@@ -259,9 +273,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             Labels.TryGetValue(group + ":" + label, out var own);
             Groups.TryGetValue(group, out var shared);
-            var c = (own ?? new TagColors(null, null, null)).Over(shared).Over(TagStylePalettes.Preset(Preset, group, label));
+            var preset = PresetOf(group);
+            var c = (own ?? new TagColors(null, null, null)).Over(shared).Over(TagStylePalettes.Preset(preset, group, label));
             if (group == TagStyleKeys.Language && label == "flag") return c with { Background = null, Text = null };
-            return Sampled is null ? c : c.Over(Sampled);
+            return Sampled is null || preset != TagStyleKeys.PosterPreset ? c : c.Over(Sampled);
         }
 
         /// <summary>Language-code and Dual/Multi label colours over the chip kind, group and preset.</summary>
@@ -284,11 +299,12 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         /// <returns>The document.</returns>
         public string Serialize()
         {
-            if (Groups.Count == 0 && Labels.Count == 0) return string.Empty;
+            if (GroupPresets.Count == 0 && Groups.Count == 0 && Labels.Count == 0) return string.Empty;
             static Dictionary<string, object> Entries(IReadOnlyDictionary<string, TagColors> map) => map
                 .OrderBy(kv => kv.Key, StringComparer.Ordinal)
                 .ToDictionary(kv => kv.Key, kv => (object)Stored(kv.Value), StringComparer.Ordinal);
             var doc = new Dictionary<string, object> { ["v"] = 2, ["preset"] = Preset };
+            if (GroupPresets.Count > 0) doc["groupPresets"] = GroupPresets.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
             if (Groups.Count > 0) doc["groups"] = Entries(Groups);
             if (Labels.Count > 0) doc["labels"] = Entries(Labels);
             return JsonSerializer.Serialize(doc);
@@ -335,6 +351,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
             {
                 v = 2,
                 preset = Preset,
+                posterGroups = PosterGroups,
                 quality = Map(TagStyleKeys.Quality, TagStyleCatalog.Quality.Select(q => q.Label).Prepend(TagStyleKeys.AnyLabel)),
                 age,
                 ageDefault = Resolve(TagStyleKeys.AgeRating, TagStyleKeys.AnyLabel) is { IsEmpty: false } d ? Web(d) : null,
@@ -358,8 +375,10 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
         private static IEnumerable<string> GenreLabelKeys() => TagStyleCatalog.Labels(TagStyleKeys.Genre).Select(l => l.Key);
 
-        private static TagStyleSet Create(string preset, Dictionary<string, TagColors> groups, Dictionary<string, TagColors> labels) =>
-            preset == TagStyleKeys.DefaultPreset && groups.Count == 0 && labels.Count == 0 ? Empty : new TagStyleSet(preset, groups, labels);
+        private static TagStyleSet Create(string preset, Dictionary<string, TagColors> groups, Dictionary<string, TagColors> labels) => Create(preset, NoPresets, groups, labels);
+
+        private static TagStyleSet Create(string preset, Dictionary<string, string> groupPresets, Dictionary<string, TagColors> groups, Dictionary<string, TagColors> labels) =>
+            preset == TagStyleKeys.DefaultPreset && groupPresets.Count == 0 && groups.Count == 0 && labels.Count == 0 ? Empty : new TagStyleSet(preset, groupPresets, groups, labels);
 
         private static Dictionary<string, string> Stored(TagColors c)
         {
@@ -494,6 +513,31 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
                 return null;
             }
 
+            var groupPresets = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (root.TryGetProperty("groupPresets", out var gp))
+            {
+                if (gp.ValueKind != JsonValueKind.Object)
+                {
+                    error = Fail("groupPresets must be an object");
+                    if (error is not null) return null;
+                }
+                else
+                {
+                    foreach (var entry in gp.EnumerateObject())
+                    {
+                        var known = entry.Value.ValueKind == JsonValueKind.String ? TagStyleKeys.KnownPreset(entry.Value.GetString()) : null;
+                        if (!TagStyleKeys.IsGroup(entry.Name) || known is null)
+                        {
+                            error = Fail($"unknown group preset '{Clip(entry.Name)}'");
+                            if (error is not null) return null;
+                            continue;
+                        }
+
+                        groupPresets[entry.Name] = known;
+                    }
+                }
+            }
+
             var groups = new Dictionary<string, TagColors>(StringComparer.Ordinal);
             if (root.TryGetProperty("groups", out var gs))
             {
@@ -566,7 +610,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
 
             // The old single genre label sat above the group colours for every genre chip.
             if (legacyGenre is not null) groups[TagStyleKeys.Genre] = legacyGenre.Over(groups.GetValueOrDefault(TagStyleKeys.Genre));
-            return Create(preset ?? TagStyleKeys.KnownPreset(docPreset) ?? TagStyleKeys.DefaultPreset, groups, labels);
+            return Create(preset ?? TagStyleKeys.KnownPreset(docPreset) ?? TagStyleKeys.DefaultPreset, groupPresets, groups, labels);
         }
 
         private static TagColors? ReadColorsV2(JsonElement e, string group, bool strict, out string? error)
@@ -659,6 +703,7 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags
         {
             var sb = new StringBuilder();
             sb.Append("p|").Append(Preset).Append('\n');
+            foreach (var (g, gp) in GroupPresets.OrderBy(i => i.Key, StringComparer.Ordinal)) sb.Append("gp|").Append(g).Append('|').Append(gp).Append('\n');
             void Add(string section, IEnumerable<KeyValuePair<string, TagColors>> items)
             {
                 foreach (var (k, v) in items.OrderBy(i => i.Key, StringComparer.Ordinal))

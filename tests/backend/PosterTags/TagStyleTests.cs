@@ -453,6 +453,33 @@ public class TagStyleTests
         Assert.Equal("mono", set.ForUser("MONO", allowed: true).Preset);
     }
 
+    [Fact]
+    public void AGroupCanTakeAPresetOfItsOwnWhileTheRestKeepTheDesigns()
+    {
+        var json = "{\"v\":2,\"preset\":\"glass\",\"groupPresets\":{\"status\":\"poster\",\"rating\":\"dark\"}}";
+        Assert.True(TagStyleSet.TryValidate(json, "glass", out var set, out var error), error);
+        Assert.Equal("poster", set.PresetOf(TagStyleKeys.Status));
+        Assert.Equal("dark", set.PresetOf(TagStyleKeys.Rating));
+        Assert.Equal("glass", set.PresetOf(TagStyleKeys.Quality));
+        Assert.True(set.IsPoster);
+        Assert.Equal(new[] { TagStyleKeys.Status }, set.PosterGroups);
+        // Only the Poster group takes the artwork's colours; the others stay with their own preset.
+        var sampled = set.WithSampled(PosterColour.Example);
+        Assert.Equal(PosterColour.Example.Background, sampled.Resolve(TagStyleKeys.Status, "new_movie").Background);
+        Assert.Equal(set.Resolve(TagStyleKeys.Quality, "4K"), sampled.Resolve(TagStyleKeys.Quality, "4K"));
+        Assert.NotEqual(PosterColour.Example.Background, sampled.Resolve(TagStyleKeys.Quality, "4K").Background);
+        // It is stored, hashed and read back.
+        var again = TagStyleSet.Parse(set.Serialize(), "glass");
+        Assert.Equal("poster", again.PresetOf(TagStyleKeys.Status));
+        Assert.Equal(set.Hash, again.Hash);
+        Assert.NotEqual(TagStyleSet.Parse("{\"v\":2,\"preset\":\"glass\",\"groupPresets\":{\"status\":\"dark\"}}", "glass").Hash, set.Hash);
+        Assert.False(TagStyleSet.TryValidate("{\"v\":2,\"groupPresets\":{\"status\":\"nope\"}}", null, out _, out _));
+        Assert.False(TagStyleSet.TryValidate("{\"v\":2,\"groupPresets\":{\"nogroup\":\"dark\"}}", null, out _, out _));
+        var web = JsonSerializer.SerializeToNode(set.ToWebModel())!;
+        Assert.Equal("status", (string?)web["posterGroups"]![0]);
+        Assert.Single(web["posterGroups"]!.AsArray());
+    }
+
     private static SKColor QualityPixel(TagStyleSet? styles)
     {
         using var renderer = new PosterTagRenderer();

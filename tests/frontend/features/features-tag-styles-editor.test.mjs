@@ -425,13 +425,11 @@ test('the tag list of a group opens on Change target and stays with the colour r
   assert.equal(h.$('#tagStyleTargetBox').hidden, true);
 });
 
-test('the preset reads as one line until Change preset, and the edited tag is drawn beside its controls', async t => {
+test('the presets are always shown, and the edited tag is drawn beside its controls', async t => {
   const h = await setup(t);
-  assert.equal(h.$('#tagStylePresets').hidden, true, 'presets start closed');
+  assert.equal(h.$('#tagStylePresets').hidden, false, 'the presets are open from the start');
+  assert.equal(h.$('#tagStylePresetToggle'), null, 'there is no open/close button');
   assert.ok(h.$('#tagStylePresetNow').textContent.length > 0, 'the current preset is named');
-  h.$('#tagStylePresetToggle').click();
-  assert.equal(h.$('#tagStylePresets').hidden, false);
-  assert.equal(h.$('#tagStylePresetToggle').getAttribute('aria-expanded'), 'true');
   assert.equal(h.$('#tagStyleSample').querySelectorAll('.je-ts-chip').length, 1, 'one sample tag next to the colour rows');
   assert.equal(h.$('#tagStyleSample .je-ts-sample-note').textContent, 'Sample tag', 'a readable group is not called the lowest');
   assert.equal(h.$('#tagStyleSample').nextElementSibling.id, 'tagStyleContrast', 'the contrast line follows the sample');
@@ -482,4 +480,23 @@ test('the whole group only warns when a tag is hard to read; a single tag always
   h.click('.je-ts-inspect');
   assert.notEqual(h.$('.je-ts-target[aria-checked="true"]').dataset.label, '*', 'Inspect selects the weakest tag');
   assert.equal(h.$('#tagStyleTargetBox').hidden, false);
+});
+
+test('one group can take a preset of its own, which is stored with the document and read back', async t => {
+  const h = await setup(t);
+  const select = h.$('#tagStyleGroupPreset');
+  assert.ok(select, 'the group panel has a preset select');
+  assert.equal(select.value, '', 'a group starts on the design\'s preset');
+  assert.match(select.options[0].textContent, /Same as the design/);
+  assert.equal(h.editor.serialize(), '', 'nothing is stored until something differs');
+  select.value = 'glass';
+  select.dispatchEvent(new h.window.Event('change'));
+  assert.deepEqual(JSON.parse(h.editor.serialize()), { v: 2, preset: 'default', groupPresets: { quality: 'glass' } });
+  assert.equal(h.editor.settings().preset, 'default', 'the design\'s own preset is unchanged');
+  h.$('#tagStyleGroupPreset').value = '';
+  h.$('#tagStyleGroupPreset').dispatchEvent(new h.window.Event('change'));
+  assert.equal(h.editor.serialize(), '', 'setting it back to the design clears it');
+  const stored = JSON.stringify({ v: 2, preset: 'default', groupPresets: { status: 'glass', nope: 'glass' } });
+  h.editor.load(stored, 'default');
+  assert.deepEqual(JSON.parse(h.editor.serialize()).groupPresets, { status: 'glass' }, 'an unknown group is dropped on load');
 });
