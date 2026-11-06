@@ -331,37 +331,13 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services
         // fallback, and the served payload shrinks by roughly a fifth.
         // v8 includes Series members in a BoxSet's language union (it was movies only), so
         // collection entries built before it are stale.
-        // v9 adds DateCreated, PremiereDate (Movie/Series) and LatestEpisodeAdded
-        // (Series/Season) for the Status Tags badges.
-        // v10 adds LatestEpisodeId (the episode LatestEpisodeAdded came from), so the
-        // per-user filter can drop a date taken from an episode the user can't see.
-        // v11 adds LibraryId (the item's library; a Season/Episode takes its
-        // Series') for the tag look rules.
-        // v12 adds the Status Tags schedule and milestone facts (Status,
-        // LatestEpisodeAired/Index, SeasonPremiere, SeasonAddedSpan,
-        // StatusEpisodeIds) and an Episode's own PremiereDate.
-        // v13 combines both field sets; v11 and v12 snapshots must rebuild.
-        // v14 adds SubtitleLanguages (Series/Season: the union over their episodes).
+        // v9 stores each video stream's Width (cropped scope encodes were tagged by height alone)
+        // and the SourceId of the version every stream belongs to (per-version quality badges).
+        // v10 is the Media Tags redesign's cache: Status facts (dates, schedule, milestones, scenes, leaving),
+        // source ratings, awards, logos, custom tag matches, library ids, subtitle languages, naming labels,
+        // per-version quality facts and the series quality summaries.
         // A schema mismatch discards the stale cache so it can be rebuilt.
-        // v15 combines naming labels, source ratings and series quality summaries.
-        // v16 adds subtitle languages to the deployed combined v15 shape.
-        // Current schema includes Awards, Logos, Custom rule matches, per-track distinct
-        // quality values and full union/shared/latest sets for container display modes.
-        // Technical stream/subtitle facts, Scenes and Leaving share the integrated shape.
-        // v21 adds stream/version identity and version-scoped distinct quality and naming facts;
-        // dimension fallback now uses Width for cropped video.
-        // v23 retains parallel version-0 audio summaries for every aggregation policy.
-        // v24 recomputes per-track quality facts with structured detection: dynamic range from
-        // VideoRangeType (HLG, Dolby Vision with its base layer, unknown is not SDR), VC-1/VVC/ProRes,
-        // FLAC/PCM, and a sound chip that takes codec and channels from one track.
-        // v25 leaves commentary/audio-description audio out of AudioLanguages and forced-only languages
-        // out of SubtitleLanguages, and reads edition and low-quality source words only after a title.
-        // v26 records each track's own channel layout (1.0, 4.0, 5.0, 6.1, ...) in the per-track facts.
-        // v27 keeps forced subtitle tracks out of the stored subtitle facts and commentary/description
-        // audio out of the per-track sound facts of versions with an ordinary track.
-        // v28 tells TrueHD Atmos from DD+ Atmos, recognises localized commentary/description tracks,
-        // lists the SDR base of DOVIWithSDR and reads naming after the item's own title.
-        internal const int CurrentCacheSchemaVersion = 51;
+        internal const int CurrentCacheSchemaVersion = 10;
 
         // Page size for hydrating library items during full builds and
         // reconciliation. Fetching the whole library with one GetItemList call

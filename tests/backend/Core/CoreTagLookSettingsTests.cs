@@ -244,15 +244,9 @@ public class CoreTagLookSettingsTests
 
     [Theory]
     [InlineData(9)]
+    [InlineData(11)]
     [InlineData(20)]
-    [InlineData(10)]
-    [InlineData(13)]
-    [InlineData(14)]
-    [InlineData(15)]
-    [InlineData(16)]
-    [InlineData(17)]
-    [InlineData(18)]
-    [InlineData(19)]
+    [InlineData(51)] // a development build's snapshot
     public void OlderSnapshotsAreDiscardedForRebuild(int oldSchema)
     {
         using var f = new ApiPluginFixture();

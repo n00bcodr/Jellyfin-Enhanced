@@ -56,8 +56,8 @@
     const KEY_SEP = '|';
     // The server's tag-cache entry schema (TagCacheService
     // CurrentCacheSchemaVersion) the stored entries were written with; a copy
-    // from another schema is never restored. The current schema includes Awards, Logos and Custom matches.
-    const ENTRY_SCHEMA = 51;
+    // from another schema is never restored.
+    const ENTRY_SCHEMA = 10;
 
     /** @type {Promise<IDBDatabase>|null} */
     let dbPromise = null;
