@@ -445,3 +445,17 @@ test('the preset reads as one line until Change preset, the edited tag is drawn 
     assert.equal(h.$('#tagStyleTargetBox').hidden, false);
   }
 });
+
+test('no default Quality colour reads below 3:1 on a dark poster, the editor\'s Low contrast line', () => {
+  const { labels } = JSON.parse(readFileSync(resolve(repositoryRoot, 'Jellyfin.Plugin.JellyfinEnhanced/Assets/PosterTags/quality-colours.json'), 'utf8'));
+  const channel = (v) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+  const luminance = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  const parts = (css) => (css.startsWith('#') ? [1, 3, 5].map((i) => parseInt(css.slice(i, i + 2), 16)).concat(1) : css.match(/[\d.]+/g).map(Number));
+  const low = Object.entries(labels).filter(([, c]) => {
+    const [r, g, b, a = 1] = parts(c.background);
+    const chip = luminance([r, g, b].map((v) => a * v + (1 - a) * 38));
+    const text = luminance(parts(c.color).slice(0, 3));
+    return (Math.max(chip, text) + 0.05) / (Math.min(chip, text) + 0.05) < 3;
+  }).map(([label]) => label);
+  assert.deepEqual(low, []);
+});
