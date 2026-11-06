@@ -146,6 +146,9 @@
     /** @param {string} key @param {Object} [params] @returns {string} Translated and escaped. */
     const tx = (key, params) => esc(JE.t(key, params));
 
+    /** The configuration page's marker for a setting each user holds a personal copy of (its icon, its tooltip). */
+    const perUserMark = () => `<i class="material-icons je-ta-peruser" role="img" aria-label="${tx('admin_tags_peruser_label')}" title="${tx('admin_tags_peruser_hint')}">group</i>`;
+
     /**
      * Register (or replace) a section.
      * @param {Object} def - See the file header.
@@ -301,8 +304,8 @@
         const descId = f.desc ? `${f.id}Desc` : '';
         const described = descId ? ` aria-describedby="${descId}"` : '';
         const data = `data-je-field="${esc(f.key)}" data-je-setting-id="${esc(f.id)}"`;
-        // A shared setting inside a card of new-user defaults says who it reaches.
-        const label = tx(f.label) + (f.scope === 'all' || f.scope === 'new' ? ` <span class="je-ta-scope" data-scope="${f.scope}">${tx(f.scope === 'all' ? 'admin_tags_scope_all' : 'admin_tags_scope_new')}</span>` : '');
+        // A per-user setting in a card that is not marked as a whole carries the marker itself.
+        const label = tx(f.label) + (f.scope === 'new' ? ` ${perUserMark()}` : '');
         const text = `<span class="je-ta-switch-text"><span class="je-ta-switch-name" data-je-label>${label}</span>${f.desc ? `<span class="je-ta-switch-desc" id="${descId}">${tx(f.desc, f.descParams)}</span>` : ''}</span>`;
         switch (f.type) {
             case 'switch':
@@ -889,11 +892,11 @@
 
         /** @param {Object} s @returns {string} A section card. */
         function sectionHtml(s) {
-            // Who a card's settings reach: brand-new users' starting point, or everyone now.
+            // Who a card's settings reach: users hold a personal copy of 'new' cards; shared settings have no marker.
             const scope = SECTION_SCOPES[s.id];
-            // A card whose settings reach different people (no scope of its own): each setting says who it reaches.
+            // A card whose settings reach different people (no scope of its own): each per-user setting is marked.
             if (!scope && s.tab !== 'groups') for (const f of s.fields || []) if (f.key && f.type !== 'custom' && !f.scope) f.scope = SEEDED_KEYS.includes(f.key) ? 'new' : 'all';
-            const chip = scope ? ` <span class="je-ta-scope" data-scope="${scope}">${tx(scope === 'new' ? 'admin_tags_scope_new' : 'admin_tags_scope_all')}</span>` : '';
+            const chip = scope === 'new' ? ` ${perUserMark()}` : '';
             // A note (an explanation with nothing to set): a closed disclosure after the cards, not a card of its own,
             // marked as help text (data-je-info) for the settings guards.
             if (s.note) {
@@ -922,7 +925,7 @@
                 // As every row: name first, the sample, then the switch on the right.
                 return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false" data-je-static>`
                     + '<div class="je-ta-grow-head">'
-                    + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` <span class="je-ta-scope" data-scope="new">${tx('admin_tags_scope_new')}</span>` : ''}</span><span class="je-ta-grow-sum"></span>`
+                    + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` ${perUserMark()}` : ''}</span><span class="je-ta-grow-sum"></span>`
                     + `${scopesHtml(s.group.id)}${placement}</div>`
                     + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
                     + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-label="${tx(enable.label)}"></label>` : '')
@@ -931,7 +934,7 @@
             return `<div class="je-ta-grow" data-group="${esc(s.group.id)}" data-section="${esc(s.id)}" data-enabled="${on}" data-open="false">`
                 + '<div class="je-ta-grow-head">'
                 // Turning a group on or off sets new users' default; say so beside it.
-                + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` <span class="je-ta-scope" data-scope="new">${tx('admin_tags_scope_new')}</span>` : ''}</span><span class="je-ta-grow-sum" id="jeTaSum-${esc(s.id)}"></span></div>`
+                + `<div class="je-ta-grow-text"><span class="je-ta-grow-name" id="jeTaSec-${esc(s.id)}">${esc(name)}${enable ? ` ${perUserMark()}` : ''}</span><span class="je-ta-grow-sum" id="jeTaSum-${esc(s.id)}"></span></div>`
                 + '<span class="je-ta-grow-sample" aria-hidden="true"></span>'
                 // Name first, controls on the right (the page's setting rows): the switch, with its own 44px target, only turns the group on or off.
                 + (enable ? `<label class="je-ta-grow-check"><input type="checkbox" id="${esc(enable.id)}" data-je-field="${esc(enable.key)}" data-je-setting-id="${esc(enable.id)}" ${on ? 'checked' : ''} aria-labelledby="jeTaSec-${esc(s.id)}" aria-describedby="jeTaSum-${esc(s.id)}"></label>` : '')
@@ -1591,6 +1594,7 @@
         }
 
         const ctx = {
+            perUserMark,
             root, config, t: JE.t, tx, esc,
             /** @param {string} key @param {*} value */
             set: (key, value) => setMany({ [key]: value }, { itemEdit: true }),

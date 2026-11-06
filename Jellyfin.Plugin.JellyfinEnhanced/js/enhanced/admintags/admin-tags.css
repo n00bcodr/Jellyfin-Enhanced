@@ -201,11 +201,9 @@ body.je-hide-descriptions .je-tag-admin .je-ta-intro { display: none; }
 .je-ta-more > :not(summary) { margin: 0 8px 8px; }
 .je-ta-note { margin: 0 0 20px; }
 .je-ta-note .je-ta-hint { margin: 4px 0 10px; }
-.je-ta-scope { display: inline-block; margin-left: 2px; padding: 2px 9px; border: 0; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, transparent); font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; line-height: 1.4; white-space: nowrap; vertical-align: 2px; }
-.je-ta-scope[data-scope="new"] { color: #33bdea; }
-.je-ta-scope[data-scope="all"] { color: #ffc46b; }
-.je-ta-light .je-ta-scope[data-scope="new"] { color: #005270; }
-.je-ta-light .je-ta-scope[data-scope="all"] { color: #7a4a00; }
+/* The configuration page's per-user marker (.jea-badge): same icon, size and weight as its other sections. */
+.je-ta-peruser { margin-left: .25em; font-size: 16px; font-style: normal; font-weight: 400; line-height: 1; opacity: .45; vertical-align: -3px; cursor: help; }
+.je-ta-peruser:hover { opacity: .9; }
 .je-ta-hint { margin: 0 0 10px; max-width: 80ch; font-size: 13px; line-height: 1.6; color: var(--je-ta-muted); }
 .je-ta-docs { color: inherit; text-decoration: underline; white-space: nowrap; }
 .je-ta-label { display: block; margin: 0 0 6px; font-size: 13px; font-weight: 600; }

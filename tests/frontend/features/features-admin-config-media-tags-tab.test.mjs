@@ -418,8 +418,11 @@ test('the tab is a section of the page: the sidebar navigates it on a desktop, t
   const sw = head.querySelector('.je-ta-grow-check input');
   assert.equal(h.root.querySelector(`#${sw.getAttribute('aria-labelledby')}`), head.querySelector('.je-ta-grow-name'));
   assert.equal(h.root.querySelector(`#${sw.getAttribute('aria-describedby')}`), head.querySelector('.je-ta-grow-sum'));
-  // A card whose settings reach different people marks each one: Hide tags on hover is a new-user default, the search page is everyone's.
-  assert.deepEqual(['tagsHideOnHover', 'disableTagsOnSearchPage'].map((id) => h.root.querySelector(`[data-field-row="${id}"] .je-ta-scope`)?.dataset.scope), ['new', 'all']);
+  // A card whose settings reach different people marks the per-user ones only, with the page's icon: Hide tags on hover is per user, the search page is shared.
+  assert.deepEqual(['tagsHideOnHover', 'disableTagsOnSearchPage'].map((id) => Boolean(h.root.querySelector(`[data-field-row="${id}"] .je-ta-peruser`))), [true, false]);
+  const mark = h.root.querySelector('[data-field-row="tagsHideOnHover"] .je-ta-peruser');
+  assert.deepEqual([mark.textContent, mark.getAttribute('role'), mark.getAttribute('aria-label'), mark.title], ['group', 'img', 'admin_tags_peruser_label', 'admin_tags_peruser_hint']);
+  assert.equal(h.root.querySelector('.je-ta-scope'), null, 'the older New users / Everyone badges are gone');
   // Collapsed groups summarise their current choice, not their whole description (which stays inside the group).
   for (const g of ['awards', 'logos', 'custom']) assert.match(h.root.querySelector(`#jeTaSum-group-${g}`).textContent, new RegExp(`^admin_tags_${g}_summary:`), g);
   // An explanation with nothing to set (Rules' locked items) is a closed disclosure, not a card.

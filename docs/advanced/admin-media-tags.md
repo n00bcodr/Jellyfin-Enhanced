@@ -94,7 +94,7 @@ Keep each field on **one line** starting `{ id: '…', key: '…', type: '…'` 
 | `more: '<key>'` | Fields sharing it sit under one closed disclosure named by that `en.json` key, after the card's other fields (Quality's **Display behaviour** and **Audio language defaults**). |
 | `hideWhenOff: true` | With `when`, hide the row (not only disable it) while `when` is false, as the page's dependent settings do. |
 
-A section with `note: true` (an explanation with nothing to set) is drawn as a closed disclosure after the cards, named by `noteLabel` (or `title`). A card with no scope of its own in `SECTION_SCOPES` marks each of its settings **New users** or **Everyone**.
+A section with `note: true` (an explanation with nothing to set) is drawn as a closed disclosure after the cards, named by `noteLabel` (or `title`). A card with no scope of its own in `SECTION_SCOPES` marks each per-user setting with the configuration page's people icon; shared settings carry no marker.
 
 A section whose own editors write fields that are not declared as above (the layout editor's profiles, order and caps; the Tag Styles document and preset; excluded library ids; the clear-cache signal) names them on one line: `writes: ['TagLayouts', 'TagGroupOrder', 'TagGroupCaps'],`.
 
