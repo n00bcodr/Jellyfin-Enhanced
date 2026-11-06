@@ -147,8 +147,27 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             ObjectDisposedException.ThrowIf(_disposed, this);
             var file = sourceId == "rtCritic" ? (fresh ? "rottentomatoes_fresh.png" : "rottentomatoes_rotten.png")
                 : SourceLogoFiles.GetValueOrDefault(sourceId);
-            return file is null ? null : _sourceLogos.GetOrAdd(file, f => new Lazy<SKImage?>(() => DecodeSourceLogo(f), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+            return file is null ? null : BundledLogo("mdblist-logos." + file);
         }
+
+        /// <summary>The bundled logo file of each Awards chip: the web's MDBList logos, and the Oscar and Emmy artwork.</summary>
+        private static readonly Dictionary<string, string> AwardLogoFiles = new(StringComparer.Ordinal)
+        {
+            ["imdbTop250"] = "mdblist-logos.imdb.png", ["letterboxdTop250"] = "mdblist-logos.letterboxd.png",
+            ["certifiedFresh"] = "mdblist-logos.rottentomatoes_fresh.png", ["oscar"] = "award-logos.oscar.png", ["emmy"] = "award-logos.emmy.png",
+        };
+
+        /// <summary>The logo an Awards chip shows (the same artwork as the web's chips), or null. Owned by this instance.</summary>
+        /// <param name="awardId">The chip's award id (imdbTop250, oscar, ...).</param>
+        /// <returns>The decoded logo.</returns>
+        public SKImage? GetAwardLogo(string awardId)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return AwardLogoFiles.TryGetValue(awardId, out var file) ? BundledLogo(file) : null;
+        }
+
+        private SKImage? BundledLogo(string resource) =>
+            _sourceLogos.GetOrAdd(resource, r => new Lazy<SKImage?>(() => DecodeBundledLogo(r), System.Threading.LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
         public PosterTagVectorIcon? GetVectorIcon(string key) => _vectorIcons.TryGetValue(key, out var icon) ? icon : null;
 
@@ -259,9 +278,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
             TextTypeface.Dispose();
         }
 
-        private static SKImage? DecodeSourceLogo(string file)
+        private static SKImage? DecodeBundledLogo(string resource)
         {
-            using var stream = ResourceAssembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn.mdblist-logos." + file);
+            using var stream = ResourceAssembly.GetManifestResourceStream("Jellyfin.Plugin.JellyfinEnhanced.Assets.Cdn." + resource);
             if (stream is null) return null;
             using var data = SKData.Create(stream);
             using var codec = SKCodec.Create(data);

@@ -724,8 +724,9 @@ namespace Jellyfin.Plugin.JellyfinEnhanced.Services.PosterTags.Rendering
                 using var box = new SKRoundRect(local, 4f);
                 PaintBox(canvas, box, background, ring, ring == null ? 0 : border, ChipShadow, item.FlushEdges);
                 var x = PosterTagCss.Lu(css.ChipPaddingH);
-                if (Assets.GetVectorIcon("award-" + tag.Id) is { } icon)
-                    DrawVectorContain(canvas, icon, SKRect.Create(x, (local.Height - item.IconHeight) / 2, item.IconWidth, item.IconHeight));
+                var awardBox = SKRect.Create(x, (local.Height - item.IconHeight) / 2, item.IconWidth, item.IconHeight);
+                if (Assets.GetAwardLogo(tag.Id) is { } awardImage) DrawImageContain(canvas, awardImage, awardBox, space);
+                else if (Assets.GetVectorIcon("award-" + tag.Id) is { } icon) DrawVectorContain(canvas, icon, awardBox);
                 var textHeight = PosterTagCss.Lu(css.ChipFontSize);
                 DrawText(canvas, item.TextLayout!, x + item.IconWidth + PosterTagCss.Lu(css.RatingInnerGap),
                     (local.Height - textHeight) / 2 + Assets.TextMetrics.BaselineOffset(css.ChipFontSize, textHeight), text, null, space);

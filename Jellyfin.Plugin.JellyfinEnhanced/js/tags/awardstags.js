@@ -14,7 +14,7 @@
         .je-tag-pill[href] { pointer-events:auto; text-decoration:none; }
         .awards-tag { display:inline-flex; align-items:center; gap:calc(4px * var(--je-tag-scale, 1)); padding:calc(4px * var(--je-tag-scale, 1)) calc(8px * var(--je-tag-scale, 1)); background:rgba(15,15,15,.85); color:#fff; border-radius:4px; font-size:calc(13px * var(--je-tag-scale, 1)); font-weight:700; line-height:1; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.3); }
         .awards-tag-logo { display:inline-flex; width:calc(14px * var(--je-tag-scale, 1)); height:calc(14px * var(--je-tag-scale, 1)); flex:0 0 calc(14px * var(--je-tag-scale, 1)); }
-        .awards-tag-logo svg { width:100%; height:100%; }
+        .awards-tag-logo :is(svg, img) { width:100%; height:100%; display:block; object-fit:contain; }
         @supports (container-type:inline-size) { html:not(.layout-mobile) .je-tag-host .awards-tag { font-size:calc(clamp(9px,6.8cqw,13px) * var(--je-tag-scale, 1)); padding:calc(clamp(2px,2cqw,4px) * var(--je-tag-scale, 1)) calc(clamp(4px,4.5cqw,8px) * var(--je-tag-scale, 1)); } }
         .layout-mobile .awards-tag { font-size:calc(11px * var(--je-tag-scale, 1)); padding:calc(2px * var(--je-tag-scale, 1)) calc(6px * var(--je-tag-scale, 1)); }
         @media(max-width:480px) { .awards-tag { font-size:calc(11px * var(--je-tag-scale, 1)); padding:calc(2px * var(--je-tag-scale, 1)) calc(4px * var(--je-tag-scale, 1)); } }
@@ -35,6 +35,9 @@
         push('letterboxdTop250', admin.AwardsTagsLetterboxd !== false && letterboxd != null, letterboxd);
         return out;
     }
+    // [CDN source, file]: the bundled artwork each chip shows; the inline sprites above remain the fallback.
+    const LOGO_FILES = { imdbTop250: ['mdblist-logos', 'imdb.png'], letterboxdTop250: ['mdblist-logos', 'letterboxd.png'],
+        certifiedFresh: ['mdblist-logos', 'rottentomatoes_fresh.png'], oscar: ['award-logos', 'oscar.svg'], emmy: ['award-logos', 'emmy.svg'] };
     /** Build an escaped text chip around trusted, bundled decorative logo artwork. */
     function chip(fact) {
         const el = document.createElement('div');
@@ -46,7 +49,17 @@
         const logo = document.createElement('span');
         logo.className = 'awards-tag-logo';
         logo.setAttribute('aria-hidden', 'true');
-        logo.innerHTML = LOGOS[fact.id] || '';
+        const file = LOGO_FILES[fact.id];
+        if (file && typeof JE.cdn?.url === 'function') {
+            // The same artwork as the item-details rating row and the Awards banner, from the plugin's bundled assets.
+            const img = document.createElement('img');
+            img.src = JE.cdn.url(file[0], file[1]);
+            img.alt = '';
+            img.decoding = 'async';
+            logo.appendChild(img);
+        } else {
+            logo.innerHTML = LOGOS[fact.id] || '';
+        }
         const text = document.createElement('span');
         text.textContent = JE.t(CAPTION_KEYS[fact.id]);
         el.append(logo, text);
